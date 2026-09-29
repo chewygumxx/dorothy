@@ -1,0 +1,33 @@
+# vim:set expandtab shiftwidth=4 filetype=diff:
+# SPDX-License-Identifier: GPL-3.0-only
+
+#
+#
+# ~chewygumxx/dorothy.git
+# ::: :/patches/@commitlint+cz-commitlint+21.2.3.patch
+#
+#
+
+diff --git a/node_modules/@commitlint/cz-commitlint/lib/services/getRuleQuestionConfig.js b/node_modules/@commitlint/cz-commitlint/lib/services/getRuleQuestionConfig.js
+index 856bbb7..c0302b2 100644
+--- a/node_modules/@commitlint/cz-commitlint/lib/services/getRuleQuestionConfig.js
++++ b/node_modules/@commitlint/cz-commitlint/lib/services/getRuleQuestionConfig.js
+@@ -61,7 +61,8 @@ export default function (rulePrefix) {
+         const emojiInHeader = questionSettings?.emojiInHeader;
+         if (enumDescriptions) {
+             const enumNames = Object.keys(enumDescriptions);
+-            const longest = Math.max(...enumRuleList.map((enumName) => enumName.length));
++            const displayName = (enumName) => enumDescriptions[enumName]?.title || enumName;
++            const longest = Math.max(...enumRuleList.map((enumName) => displayName(enumName).length));
+             const firstHasEmoji = (enumDescriptions[enumNames[0]]?.emoji?.length ?? 0) > 0;
+             const hasConsistentEmojiUsage = !enumRuleList.some((enumName) => (enumDescriptions[enumName]?.emoji?.length ?? 0) > 0 !== firstHasEmoji);
+             enumList = enumRuleList
+@@ -72,7 +73,7 @@ export default function (rulePrefix) {
+                     const rawEmoji = enumDescriptions[enumName]?.emoji;
+                     const emoji = rawEmoji ? normalizeEmoji(rawEmoji) : rawEmoji;
+                     const emojiPrefix = emoji ? `${emoji}  ` : hasConsistentEmojiUsage ? "" : "    ";
+-                    const paddedName = `${enumName}:`.padEnd(longest + 4);
++                    const paddedName = displayName(enumName).padEnd(longest + 4);
+                     const name = `${emojiPrefix}${paddedName}${enumDescription}`;
+                     const value = emojiInHeader && emoji ? `${emoji.trim()} ${enumName}` : enumName;
+                     return { name, value, short: enumName };
