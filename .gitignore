@@ -12,6 +12,8 @@
 *.local.*
 
 node_modules/
+
+.mcp.json
 /.herdr/
 /.claude/worktrees/
 
