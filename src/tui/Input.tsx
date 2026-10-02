@@ -8,7 +8,7 @@
 //
 //
 
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useWindowSize } from "ink";
 import { useRef } from "react";
 
 export type InputProps = {
@@ -19,10 +19,12 @@ export type InputProps = {
 };
 
 export const KEY_HINTS = "enter send · esc stop · ctrl+r raw · ctrl+c quit";
+const PROMPT_WIDTH = 2;
 
 // Hand-rolled on useInput rather than ink-text-input: App owns Esc, Ctrl+R,
 // Ctrl+C and Ctrl+D, so this only edits one line.
 export function Input({ value, disabled, onChange, onSubmit }: InputProps) {
+    const { columns } = useWindowSize();
     // Ink splits one stdin chunk (a held Backspace, fast typing) into several
     // events before React re-renders, so each edit builds on the last one
     // here rather than on the value prop.
@@ -45,13 +47,32 @@ export function Input({ value, disabled, onChange, onSubmit }: InputProps) {
             change(latest.current + input.replace(/[\r\n]+/g, " "));
         }
     });
+    // Every row must fit the terminal: one that wraps there takes a row Ink
+    // does not count, so its next erase leaves a stale line behind. The draft
+    // wraps beside the prompt; the hints, right-aligned by padding, show only
+    // while it is empty and are cut short rather than wrapped.
+    const cursor = disabled ? "" : "▏";
+    const pad = Math.max(
+        1,
+        columns - PROMPT_WIDTH - cursor.length - KEY_HINTS.length,
+    );
     return (
-        <Box justifyContent="space-between">
-            <Text>
-                › {value}
-                {disabled ? "" : "▏"}
-            </Text>
-            <Text dimColor>{KEY_HINTS}</Text>
+        <Box>
+            <Box width={PROMPT_WIDTH} flexShrink={0}>
+                <Text>›</Text>
+            </Box>
+            {value === "" ? (
+                <Text wrap="truncate">
+                    {cursor}
+                    {" ".repeat(pad)}
+                    <Text dimColor>{KEY_HINTS}</Text>
+                </Text>
+            ) : (
+                <Text>
+                    {value}
+                    {cursor}
+                </Text>
+            )}
         </Box>
     );
 }

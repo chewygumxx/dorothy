@@ -15,7 +15,7 @@ import { useState } from "react";
 import type { TurnStats } from "../conversation.js";
 import { Header, shortId } from "./Header.js";
 import { History } from "./History.js";
-import { Input } from "./Input.js";
+import { Input, KEY_HINTS } from "./Input.js";
 import { formatStats, LiveReply, wrapRows } from "./LiveReply.js";
 import { describeRaw, RawPane } from "./RawPane.js";
 
@@ -251,6 +251,27 @@ describe("Input", () => {
         stdin.write("ab\u007F");
         await tick();
         expect(lastFrame()).toContain("› xa▏");
+    });
+
+    it("stays within the terminal width at every length", () => {
+        const text = long("lorem");
+        const props = { disabled: false, onChange() {}, onSubmit() {} };
+        const { rerender, lastFrame } = render(<Input value="" {...props} />);
+        for (let length = 0; length <= text.length; length++) {
+            rerender(<Input value={text.slice(0, length)} {...props} />);
+            expect([length, widest(lastFrame())]).toEqual([
+                length,
+                Math.min(widest(lastFrame()), COLUMNS),
+            ]);
+        }
+    });
+
+    it("shows the key hints only while the line is empty", async () => {
+        const { stdin, lastFrame } = render(<Harness submitted={[]} />);
+        expect(lastFrame()).toContain(KEY_HINTS);
+        stdin.write("hi");
+        await tick();
+        expect(lastFrame()).not.toContain(KEY_HINTS);
     });
 
     it("ignores typing and Enter while disabled", async () => {
