@@ -35,5 +35,10 @@ export default defineConfig({
             description:
                 "Repository tooling configuration, ie. tsconfig, editorconfig, etc.",
         },
+        {
+            name: "tui",
+            fullName: "TUI",
+            description: "Terminal chat interface, ie. src/tui/",
+        },
     ],
 });
