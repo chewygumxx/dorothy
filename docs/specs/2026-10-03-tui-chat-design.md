@@ -150,8 +150,6 @@ stands for `bun run dev --` or `bun start --`:
 ## TUI
 
 ```text
- dorothy · tumble-orchid-vapor-lantern · <model> · sdk 3f2a…c91 · ready
- ───────────────────────────────────────────────────────────────────────
  you      What is your name?
  dorothy  I'm Dorothy! It's lovely to meet you.
           12 in · 40 out · ttft 0.9s · 2.1s · $0.0012 (session $0.0012)
@@ -159,8 +157,13 @@ stands for `bun run dev --` or `bun start --`:
  ─ raw (ctrl+r) ────────────────────────────────────────────────────────
  stream_event content_block_delta {"type":"text_delta","text":"whether"}
  ───────────────────────────────────────────────────────────────────────
+ dorothy · tumble-orchid-vapor-lantern · <model> · sdk 3f2a…c91 · ready
  › _                        enter send · esc stop · ctrl+r raw · ctrl+c quit
 ```
+
+The header is a status bar directly above the input: Ink always draws
+`<Static>` output above the live region, so a header that updates cannot stay
+pinned above the scrollback.
 
 The header's connection state is `starting` until `ready` arrives, then
 `ready`, and `disconnected` after an `error`; model and SDK id show once known.
