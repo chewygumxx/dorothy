@@ -5,6 +5,7 @@
         "module": "nodenext",
         "moduleResolution": "nodenext",
         "verbatimModuleSyntax": true,
+        "jsx": "react-jsx",
         "strict": true,
         "noUncheckedIndexedAccess": true,
         "noEmit": true,
