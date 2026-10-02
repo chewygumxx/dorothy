@@ -187,6 +187,22 @@ describe("Input", () => {
         expect(lastFrame()).not.toContain("�");
     });
 
+    it("applies every key of a single chunk, as a held Backspace sends", async () => {
+        const { stdin, lastFrame } = render(<Harness submitted={[]} />);
+        stdin.write("hello\u007F\u007F\u007F");
+        await tick();
+        expect(lastFrame()).toContain("› he▏");
+    });
+
+    it("keeps fast typing that shares a chunk with a Backspace", async () => {
+        const { stdin, lastFrame } = render(<Harness submitted={[]} />);
+        stdin.write("x");
+        await tick();
+        stdin.write("ab\u007F");
+        await tick();
+        expect(lastFrame()).toContain("› xa▏");
+    });
+
     it("ignores typing and Enter while disabled", async () => {
         const submitted: string[] = [];
         const { stdin, lastFrame } = render(
