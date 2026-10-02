@@ -8,7 +8,7 @@
 //
 //
 
-import { Box, useApp, useInput } from "ink";
+import { Box, useApp, useInput, useWindowSize } from "ink";
 import { useEffect, useReducer, useRef, useState } from "react";
 import type { ChatSession, ConversationEvent } from "../conversation.js";
 import type { Turn } from "../persona.js";
@@ -17,6 +17,7 @@ import { Header } from "./Header.js";
 import { History } from "./History.js";
 import { Input } from "./Input.js";
 import { LiveReply } from "./LiveReply.js";
+import { fitLayout } from "./layout.js";
 import { RawPane } from "./RawPane.js";
 import { initialState, reduce } from "./state.js";
 
@@ -45,6 +46,7 @@ export function App({
     initialWarning = null,
 }: AppProps) {
     const { exit } = useApp();
+    const { columns, rows } = useWindowSize();
     const [state, dispatch] = useReducer(reduce, undefined, () =>
         initialState(history, initialWarning),
     );
@@ -172,11 +174,24 @@ export function App({
         }
     });
 
+    const { replyRows, rawRows } = fitLayout(rows, {
+        showRaw: state.showRaw,
+        rawCount: state.raw.length,
+        warning: state.warning !== null,
+    });
+
     return (
         <Box flexDirection="column">
             <History lines={state.lines} />
-            <LiveReply text={state.live} streaming={state.streaming} />
-            {state.showRaw ? <RawPane entries={state.raw} /> : null}
+            <LiveReply
+                text={state.live}
+                streaming={state.streaming}
+                width={columns}
+                maxRows={replyRows}
+            />
+            {state.showRaw ? (
+                <RawPane entries={state.raw.slice(-rawRows)} />
+            ) : null}
             <Box
                 flexDirection="column"
                 borderStyle="single"

@@ -16,7 +16,7 @@ import type { TurnStats } from "../conversation.js";
 import { Header, shortId } from "./Header.js";
 import { History } from "./History.js";
 import { Input } from "./Input.js";
-import { formatStats, LiveReply } from "./LiveReply.js";
+import { formatStats, LiveReply, wrapRows } from "./LiveReply.js";
 import { describeRaw, RawPane } from "./RawPane.js";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
@@ -97,11 +97,45 @@ describe("History and LiveReply", () => {
 
     it("shows the live reply only while streaming", () => {
         expect(
-            render(<LiveReply text="Hel" streaming />).lastFrame(),
+            render(
+                <LiveReply text="Hel" streaming width={80} maxRows={5} />,
+            ).lastFrame(),
         ).toContain("Hel▍");
         expect(
-            render(<LiveReply text="" streaming={false} />).lastFrame(),
+            render(
+                <LiveReply text="" streaming={false} width={80} maxRows={5} />,
+            ).lastFrame(),
         ).toBe("");
+    });
+});
+
+describe("wrapRows", () => {
+    it("wraps at the last space that fits", () => {
+        expect(wrapRows("hello world foo", 11)).toEqual(["hello world", "foo"]);
+    });
+
+    it("breaks words longer than the width", () => {
+        expect(wrapRows("abcdefghij", 4)).toEqual(["abcd", "efgh", "ij"]);
+    });
+
+    it("keeps blank lines", () => {
+        expect(wrapRows("a\n\nb", 10)).toEqual(["a", "", "b"]);
+    });
+});
+
+describe("LiveReply height", () => {
+    it("shows only the last rows that fit, cursor included", () => {
+        const text = Array.from({ length: 10 }, (_, i) => `line ${i}`).join(
+            "\n",
+        );
+        const frame =
+            render(
+                <LiveReply text={text} streaming width={20} maxRows={3} />,
+            ).lastFrame() ?? "";
+        expect(frame.split("\n")).toHaveLength(3);
+        expect(frame).toContain("line 9▍");
+        expect(frame).toContain("line 7");
+        expect(frame).not.toContain("line 6");
     });
 });
 
