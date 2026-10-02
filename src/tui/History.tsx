@@ -43,10 +43,13 @@ export function LineView({ line }: { line: Line }) {
 }
 
 // <Static> prints each line once into the terminal's own scrollback, so
-// finished turns are never redrawn.
+// finished turns are never redrawn. Ink positions it absolutely, which frees
+// it from the terminal's width unless it is given one.
+const FULL_WIDTH = { width: "100%" };
+
 export function History({ lines }: { lines: Line[] }) {
     return (
-        <Static items={lines}>
+        <Static items={lines} style={FULL_WIDTH}>
             {(line) => <LineView key={line.id} line={line} />}
         </Static>
     );

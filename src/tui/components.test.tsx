@@ -20,6 +20,12 @@ import { formatStats, LiveReply, wrapRows } from "./LiveReply.js";
 import { describeRaw, RawPane } from "./RawPane.js";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
+// ink-testing-library's stdout is this wide. A wider line wraps again in a
+// real terminal, which Ink does not count when it erases the last frame.
+const COLUMNS = 100;
+const widest = (frame = "") =>
+    Math.max(...frame.split("\n").map((line) => Array.from(line).length));
+const long = (word: string) => `${word} `.repeat(40).trim();
 const stats: TurnStats = {
     inputTokens: 12,
     outputTokens: 40,
@@ -93,6 +99,16 @@ describe("History and LiveReply", () => {
         expect(frame).toContain("I'm Dorothy!");
         expect(frame).toContain("12 in · 40 out");
         expect(frame).toContain("Well [interrupted]");
+    });
+
+    it("wraps finished lines to the terminal width", () => {
+        const { lastFrame } = render(
+            <History
+                lines={[{ id: 0, role: "dorothy", text: long("words") }]}
+            />,
+        );
+        expect(lastFrame()).toContain("words");
+        expect(widest(lastFrame())).toBeLessThanOrEqual(COLUMNS);
     });
 
     it("shows the live reply only while streaming", () => {
