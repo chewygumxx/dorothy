@@ -8,11 +8,12 @@
 //
 //
 
-// niceware ships CommonJS without type declarations.
+// niceware ships CommonJS without type declarations. Outside a browser it
+// rejects anything but a Buffer.
 declare module "niceware" {
     const niceware: {
-        bytesToPassphrase(bytes: Uint8Array): string[];
-        passphraseToBytes(words: string[]): Uint8Array;
+        bytesToPassphrase(bytes: Buffer): string[];
+        passphraseToBytes(words: string[]): Buffer;
     };
     export = niceware;
 }
