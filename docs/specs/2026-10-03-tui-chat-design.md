@@ -6,7 +6,7 @@ __cgxx: |
   #
   #
   # ~chewygumxx/dorothy.git
-  # ::: :/docs/superpowers/specs/2026-10-03-tui-chat-design.md
+  # ::: :/docs/specs/2026-10-03-tui-chat-design.md
   #
   #
 
@@ -140,12 +140,12 @@ subscribes the transcript writer to the conversation's events.
 Mode selection is a pure function, `parseArgs(argv, isTTY)`. Below, `dorothy`
 stands for `bun run dev --` or `bun start --`:
 
-| Invocation | Mode |
-| --- | --- |
-| `dorothy "prompt"` | One-shot, unchanged behaviour |
-| `dorothy` in a TTY | TUI, new session |
-| `dorothy --resume <phrase>` | TUI, resumed from that transcript |
-| `dorothy` without a TTY | Usage message on stderr, exit code 2 |
+| Invocation                  | Mode                                 |
+| --------------------------- | ------------------------------------ |
+| `dorothy "prompt"`          | One-shot, unchanged behaviour        |
+| `dorothy` in a TTY          | TUI, new session                     |
+| `dorothy --resume <phrase>` | TUI, resumed from that transcript    |
+| `dorothy` without a TTY     | Usage message on stderr, exit code 2 |
 
 ## TUI
 
@@ -168,13 +168,13 @@ Finished turns render through `<Static>`, so only the header, live reply, raw
 pane and input are redrawn. The input is locked while a reply streams and
 unlocks on `turn-end`.
 
-| Key | Action |
-| --- | --- |
-| Enter | Send |
-| Esc | Interrupt the streaming reply |
-| Ctrl+R | Toggle the raw pane |
-| Ctrl+C | Interrupt if streaming, otherwise quit |
-| Ctrl+D or `/exit` | Quit |
+| Key               | Action                                 |
+| ----------------- | -------------------------------------- |
+| Enter             | Send                                   |
+| Esc               | Interrupt the streaming reply          |
+| Ctrl+R            | Toggle the raw pane                    |
+| Ctrl+C            | Interrupt if streaming, otherwise quit |
+| Ctrl+D or `/exit` | Quit                                   |
 
 An interrupted reply is kept, marked `interrupted`, and its stats come from the
 `result` that follows the interrupt.
@@ -194,14 +194,14 @@ An interrupted reply is kept, marked `interrupted`, and its stats come from the
 
 Test-first, unit by unit. No test spawns the real subprocess or calls the API.
 
-| Unit | Coverage |
-| --- | --- |
-| `session-id.ts` | Four hyphenated words from niceware's list; deterministic with injected bytes |
-| `transcript.ts` | Write and read back under a temporary `XDG_DATA_HOME`; `~/.local/share` fallback; malformed lines skipped and counted; turns extracted in order; resumed `session` line appended |
+| Unit              | Coverage                                                                                                                                                                           |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session-id.ts`   | Four hyphenated words from niceware's list; deterministic with injected bytes                                                                                                      |
+| `transcript.ts`   | Write and read back under a temporary `XDG_DATA_HOME`; `~/.local/share` fallback; malformed lines skipped and counted; turns extracted in order; resumed `session` line appended   |
 | `conversation.ts` | Scripted fake `query`: `ready`, `delta`, `turn-end` with stats and cost difference, interrupted partial reply, `close()` ends the queue, resume section added to the system prompt |
-| `index.ts` | `parseArgs` for all four modes |
-| `tui/*` | `ink-testing-library` with a fake `Conversation`: header content, History, input lock while streaming, Ctrl+R toggle, Esc calls `interrupt()` |
-| `persona.ts` | The existing tests, moved with the code |
+| `index.ts`        | `parseArgs` for all four modes                                                                                                                                                     |
+| `tui/*`           | `ink-testing-library` with a fake `Conversation`: header content, History, input lock while streaming, Ctrl+R toggle, Esc calls `interrupt()`                                      |
+| `persona.ts`      | The existing tests, moved with the code                                                                                                                                            |
 
 Manual smoke checkpoints:
 
