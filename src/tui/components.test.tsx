@@ -111,6 +111,15 @@ describe("History and LiveReply", () => {
         expect(widest(lastFrame())).toBeLessThanOrEqual(COLUMNS);
     });
 
+    it("starts no wrapped row with the space it broke at", () => {
+        // 9 columns of label, then 91 of text: the break falls on a space.
+        const text = `${"x".repeat(91)} next`;
+        const { lastFrame } = render(
+            <History lines={[{ id: 0, role: "dorothy", text }]} />,
+        );
+        expect(lastFrame()?.split("\n")[1]).toBe(`${" ".repeat(9)}next`);
+    });
+
     it("shows the live reply only while streaming", () => {
         expect(
             render(

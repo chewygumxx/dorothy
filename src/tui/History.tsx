@@ -8,8 +8,8 @@
 //
 //
 
-import { Box, Static, Text } from "ink";
-import { formatStats, LABEL_WIDTH } from "./LiveReply.js";
+import { Box, Static, Text, useWindowSize } from "ink";
+import { formatStats, LABEL_WIDTH, wrapRows } from "./LiveReply.js";
 import type { Line } from "./state.js";
 
 const LABELS: Record<Line["role"], { text: string; color: string }> = {
@@ -20,6 +20,13 @@ const LABELS: Record<Line["role"], { text: string; color: string }> = {
 
 export function LineView({ line }: { line: Line }) {
     const label = LABELS[line.role];
+    const { columns } = useWindowSize();
+    // Wrapped here rather than by Ink, which starts a row with the space it
+    // broke at; Ink still wraps any row that wide characters push over.
+    const text = wrapRows(
+        `${line.text}${line.interrupted ? " [interrupted]" : ""}`,
+        columns - LABEL_WIDTH,
+    ).join("\n");
     return (
         <Box flexDirection="column">
             <Box>
@@ -29,8 +36,7 @@ export function LineView({ line }: { line: Line }) {
                     </Text>
                 </Box>
                 <Text color={line.role === "error" ? "red" : undefined}>
-                    {line.text}
-                    {line.interrupted ? " [interrupted]" : ""}
+                    {text}
                 </Text>
             </Box>
             {line.stats ? (
