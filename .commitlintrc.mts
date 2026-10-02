@@ -24,5 +24,16 @@ export default defineConfig({
             fullName: "Api",
             description: "Api",
         },
+        {
+            name: "sdk",
+            fullName: "SDK",
+            description: "Agent SDK source, ie. src/",
+        },
+        {
+            name: "config",
+            fullName: "Config",
+            description:
+                "Repository tooling configuration, ie. tsconfig, editorconfig, etc.",
+        },
     ],
 });
