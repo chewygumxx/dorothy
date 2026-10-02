@@ -9,7 +9,7 @@
 #
 
 # The shared standard checks (commitlint, header sync, generic lint and
-# format, metadata sync), then this repository's own `npm run check` against
+# format, metadata sync), then this repository's own `bun run check` against
 # the commit the header sync pushed. See chewygumxx/.github for each part.
 #
 # workflow_dispatch re-runs the metadata sync once the METADATA_APP_* secret
