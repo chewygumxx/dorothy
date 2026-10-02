@@ -75,9 +75,24 @@ bun run build
 bun start -- "What is your name?"
 ```
 
-Omit the trailing argument to fall back to a default greeting. Either command
-streams the reply to stdout as it is generated, in character as Dorothy per the
-system prompt in `src/index.ts`.
+Either command streams one reply to stdout as it is generated, in character as
+Dorothy per the system prompt in `src/persona.ts`.
+
+Run with no argument for a chat in the terminal:
+
+```sh
+bun run dev
+```
+
+Enter sends, Esc stops a reply, Ctrl+R shows the raw SDK messages and Ctrl+C
+or `/exit` quits. Each chat is named by a four-word phrase shown in the status
+bar and saved as it happens to
+`~/.local/share/dorothy/transcripts/<phrase>.jsonl` (`$XDG_DATA_HOME` if set).
+Continue one with:
+
+```sh
+bun run dev -- --resume <phrase>
+```
 
 ## CI
 
