@@ -9,16 +9,44 @@
 //
 
 import { describe, expect, it } from "bun:test";
-import { resolvePrompt } from "./index.js";
+import { parseArgs } from "./index.js";
+import { newPhrase } from "./session-id.js";
 
-describe("resolvePrompt", () => {
-    it("joins argv into a single prompt string", () => {
-        expect(resolvePrompt(["What", "is", "your", "name?"])).toBe(
-            "What is your name?",
-        );
+const phrase = newPhrase(() => Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]));
+
+describe("parseArgs", () => {
+    it("joins argv into a one-shot prompt, terminal or not", () => {
+        expect(parseArgs(["What", "is", "your", "name?"], false)).toEqual({
+            kind: "oneshot",
+            prompt: "What is your name?",
+        });
     });
 
-    it("falls back to a default greeting when no argv is given", () => {
-        expect(resolvePrompt([])).toBe("Hello, who are you?");
+    it("opens the TUI with no argv in a terminal", () => {
+        expect(parseArgs([], true)).toEqual({ kind: "tui", resume: null });
+    });
+
+    it("refuses the TUI without a terminal", () => {
+        expect(parseArgs([], false).kind).toBe("usage");
+    });
+
+    it("resumes a valid phrase in a terminal", () => {
+        expect(parseArgs(["--resume", phrase], true)).toEqual({
+            kind: "tui",
+            resume: phrase,
+        });
+    });
+
+    it.each([
+        [["--resume"]],
+        [["--resume", "../../etc/passwd"]],
+        [["--resume", phrase.toUpperCase()]],
+        [["--resume", phrase, "extra"]],
+    ])("rejects %p", (argv) => {
+        expect(parseArgs(argv, true).kind).toBe("usage");
+    });
+
+    it("refuses --resume without a terminal", () => {
+        expect(parseArgs(["--resume", phrase], false).kind).toBe("usage");
     });
 });
