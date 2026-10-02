@@ -82,6 +82,15 @@ export function App({
                 interrupted: event.interrupted,
             });
             record({ kind: "stats", ...event.stats });
+        } else if (event.type === "error" && event.partial) {
+            // Keep what was already on screen, so a reconnect or --resume
+            // carries it too.
+            turns.current.push({ role: "assistant", text: event.partial });
+            record({
+                kind: "assistant",
+                text: event.partial,
+                interrupted: true,
+            });
         }
     };
 
@@ -97,6 +106,17 @@ export function App({
             }
             dispatch({ type: "event", event });
             onEvent(event);
+        });
+    };
+
+    // A session that is dying can fail the interrupt request; say so rather
+    // than let the rejection go unhandled.
+    const interrupt = () => {
+        session.current?.interrupt().catch((error: unknown) => {
+            dispatch({
+                type: "warning",
+                message: `interrupt failed: ${describeError(error)}`,
+            });
         });
     };
 
@@ -137,13 +157,13 @@ export function App({
     useInput((input, key) => {
         if (key.escape) {
             if (state.streaming) {
-                void session.current?.interrupt();
+                interrupt();
             }
         } else if (key.ctrl && input === "r") {
             dispatch({ type: "toggle-raw" });
         } else if (key.ctrl && input === "c") {
             if (state.streaming) {
-                void session.current?.interrupt();
+                interrupt();
             } else {
                 quit();
             }

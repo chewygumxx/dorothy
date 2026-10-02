@@ -34,6 +34,7 @@ class FakeSession implements ChatSession {
     readonly sent: string[] = [];
     interrupts = 0;
     closed = false;
+    failInterrupt = false;
     subscribe(listener: (event: ConversationEvent) => void): () => void {
         this.listeners.add(listener);
         return () => {
@@ -45,6 +46,9 @@ class FakeSession implements ChatSession {
     }
     async interrupt(): Promise<void> {
         this.interrupts++;
+        if (this.failInterrupt) {
+            throw new Error("subprocess gone");
+        }
     }
     async close(): Promise<void> {
         this.closed = true;
@@ -187,7 +191,7 @@ describe("App", () => {
     });
 
     it("reconnects with full history after the session dies mid-reply", async () => {
-        const { app, sessions, histories, type } = setup({
+        const { app, sessions, histories, entries, type } = setup({
             history: [
                 { role: "user", text: "earlier" },
                 { role: "assistant", text: "yes" },
@@ -197,7 +201,7 @@ describe("App", () => {
         await type("hello");
         await type("\r");
         sessions[0]?.emit({ type: "delta", text: "Par" });
-        sessions[0]?.emit({ type: "error", message: "boom" });
+        sessions[0]?.emit({ type: "error", message: "boom", partial: "Par" });
         await tick();
         expect(app.lastFrame()).toContain("Par [interrupted]");
         expect(app.lastFrame()).toContain("boom");
@@ -210,8 +214,26 @@ describe("App", () => {
             { role: "user", text: "earlier" },
             { role: "assistant", text: "yes" },
             { role: "user", text: "hello" },
+            { role: "assistant", text: "Par" },
         ]);
+        expect(entries).toContainEqual({
+            kind: "assistant",
+            text: "Par",
+            interrupted: true,
+        });
         expect(sessions[1]?.sent).toEqual(["again"]);
+    });
+
+    it("survives an interrupt that rejects", async () => {
+        const { app, session, type } = setup();
+        await tick();
+        session().failInterrupt = true;
+        await type("a");
+        await type("\r");
+        await type("\u001B");
+        await tick();
+        expect(session().interrupts).toBe(1);
+        expect(app.lastFrame()).toContain("interrupt failed: subprocess gone");
     });
 
     it("records a resumed session as resumed", async () => {
