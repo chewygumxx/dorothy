@@ -26,6 +26,21 @@ if [ -n "$yaml" ]; then
             xargs -0 yamllint --strict
 fi
 
+# .env is committed encrypted, so refuse any staged env file holding a
+# plaintext value, and any .env.keys private-key file. The check is
+# dotenvx's own (`protect --git-file`, fed the staged blob rather than the
+# working tree); `dotenvx protect` itself is avoided because it installs a
+# required clean filter into the global git config instead of this repo.
+git diff --cached --name-only --diff-filter=ACMR | while IFS= read -r file; do
+    case "${file##*/}" in
+        .env* | *.env)
+            git show ":$file" |
+                bunx --bun --no-install dotenvx protect --git-file "$file" >/dev/null ||
+                exit 1
+            ;;
+    esac
+done
+
 # U+2014 as UTF-8 bytes, so this file does not trip its own check.
 emdash=$(printf '\342\200\224')
 if git diff --cached -U0 | grep '^+' | grep -q "$emdash"; then
