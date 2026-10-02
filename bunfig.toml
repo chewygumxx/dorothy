@@ -19,3 +19,12 @@
 
 [run]
 bun = true
+
+#
+# dotenvx owns .env (see src/index.ts): its values are encrypted, and Bun
+# would otherwise preload the raw ciphertext into process.env, which
+# dotenvx then declines to overwrite.
+#
+
+[env]
+file = false
