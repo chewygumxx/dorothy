@@ -1,0 +1,183 @@
+// vim:set expandtab shiftwidth=4 filetype=typescriptreact:
+// SPDX-License-Identifier: GPL-3.0-only
+
+//
+//
+// ~chewygumxx/dorothy.git
+// ::: :/src/tui/App.tsx
+//
+//
+
+import { Box, useApp, useInput } from "ink";
+import { useEffect, useReducer, useRef, useState } from "react";
+import type { ChatSession, ConversationEvent } from "../conversation.js";
+import type { Turn } from "../persona.js";
+import type { TranscriptEntry } from "../transcript.js";
+import { Header } from "./Header.js";
+import { History } from "./History.js";
+import { Input } from "./Input.js";
+import { LiveReply } from "./LiveReply.js";
+import { RawPane } from "./RawPane.js";
+import { initialState, reduce } from "./state.js";
+
+export type TranscriptSink = {
+    append(entry: TranscriptEntry): Promise<void>;
+};
+
+export type AppProps = {
+    phrase: string;
+    promptSha256: string;
+    history: Turn[];
+    createSession(history: Turn[]): ChatSession;
+    transcript: TranscriptSink | null;
+    initialWarning?: string | null;
+};
+
+const describeError = (error: unknown) =>
+    error instanceof Error ? error.message : String(error);
+
+export function App({
+    phrase,
+    promptSha256,
+    history,
+    createSession,
+    transcript,
+    initialWarning = null,
+}: AppProps) {
+    const { exit } = useApp();
+    const [state, dispatch] = useReducer(reduce, undefined, () =>
+        initialState(history, initialWarning),
+    );
+    const [draft, setDraft] = useState("");
+    // Refs, not state: event listeners registered once must see current values.
+    const turns = useRef<Turn[]>([...history]);
+    const session = useRef<ChatSession | null>(null);
+    const resumed = useRef(history.length > 0);
+
+    const record = (entry: TranscriptEntry) => {
+        transcript?.append(entry).catch((error: unknown) => {
+            dispatch({
+                type: "warning",
+                message: `transcript not saved: ${describeError(error)}`,
+            });
+        });
+    };
+
+    const onEvent = (event: ConversationEvent) => {
+        if (event.type === "ready") {
+            record({
+                kind: "session",
+                phrase,
+                sdkSessionId: event.sdkSessionId,
+                model: event.model,
+                promptSha256,
+                resumed: resumed.current,
+            });
+            resumed.current = true;
+        } else if (event.type === "turn-end") {
+            turns.current.push({ role: "assistant", text: event.reply });
+            record({
+                kind: "assistant",
+                text: event.reply,
+                interrupted: event.interrupted,
+            });
+            record({ kind: "stats", ...event.stats });
+        }
+    };
+
+    // A new session is seeded with every turn so far: the same path serves
+    // first start, --resume and reconnecting after an error.
+    const connect = () => {
+        void session.current?.close();
+        const next = createSession(turns.current);
+        session.current = next;
+        next.subscribe((event) => {
+            if (session.current !== next) {
+                return;
+            }
+            dispatch({ type: "event", event });
+            onEvent(event);
+        });
+    };
+
+    const quit = () => {
+        const current = session.current;
+        session.current = null;
+        void (current?.close() ?? Promise.resolve()).finally(exit);
+    };
+
+    // biome-ignore lint/correctness/useExhaustiveDependencies: connect once on mount; later sessions come from reconnecting.
+    useEffect(() => {
+        connect();
+        return () => {
+            void session.current?.close();
+        };
+    }, []);
+
+    const submit = (value: string) => {
+        const text = value.trim();
+        if (text === "/exit") {
+            quit();
+            return;
+        }
+        if (state.status === "disconnected") {
+            dispatch({ type: "reconnecting" });
+            connect();
+        }
+        if (text === "") {
+            return;
+        }
+        setDraft("");
+        turns.current.push({ role: "user", text });
+        record({ kind: "user", text });
+        dispatch({ type: "sent", text });
+        session.current?.send(text);
+    };
+
+    useInput((input, key) => {
+        if (key.escape) {
+            if (state.streaming) {
+                void session.current?.interrupt();
+            }
+        } else if (key.ctrl && input === "r") {
+            dispatch({ type: "toggle-raw" });
+        } else if (key.ctrl && input === "c") {
+            if (state.streaming) {
+                void session.current?.interrupt();
+            } else {
+                quit();
+            }
+        } else if (key.ctrl && input === "d") {
+            quit();
+        }
+    });
+
+    return (
+        <Box flexDirection="column">
+            <History lines={state.lines} />
+            <LiveReply text={state.live} streaming={state.streaming} />
+            {state.showRaw ? <RawPane entries={state.raw} /> : null}
+            <Box
+                flexDirection="column"
+                borderStyle="single"
+                borderLeft={false}
+                borderRight={false}
+                borderBottom={false}
+            >
+                <Header
+                    phrase={phrase}
+                    model={state.model}
+                    sdkSessionId={state.sdkSessionId}
+                    status={state.status}
+                    warning={state.warning}
+                />
+                <Input
+                    value={draft}
+                    disabled={state.streaming}
+                    onChange={setDraft}
+                    onSubmit={submit}
+                />
+            </Box>
+        </Box>
+    );
+}
