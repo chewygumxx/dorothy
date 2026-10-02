@@ -4,12 +4,14 @@
         "target": "esnext",
         "module": "nodenext",
         "moduleResolution": "nodenext",
+        "verbatimModuleSyntax": true,
         "strict": true,
+        "noUncheckedIndexedAccess": true,
         "noEmit": true,
         "allowJs": true,
         "checkJs": true,
         "types": ["bun"],
         "skipLibCheck": true
     },
-    "include": [".commitlintrc.mts", "scripts/**/*.mjs"]
+    "include": [".commitlintrc.mts", "scripts/**/*.mjs", "src"]
 }

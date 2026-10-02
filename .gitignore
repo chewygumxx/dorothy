@@ -12,6 +12,8 @@
 *.local.*
 
 node_modules/
+/dist/
+/coverage/
 
 .mcp.json
 /.herdr/
