@@ -35,8 +35,10 @@
         "typescript": "^7.0.2"
     },
     "scripts": {
-        "check": "bun run typecheck && bun run format:check && bun run lint && bun run lint:md && bun run lint:yaml",
+        "build": "tsc -p tsconfig.build.json",
+        "check": "bun run typecheck && bun run format:check && bun run lint && bun run lint:md && bun run lint:yaml && bun run test",
         "commit": "cz",
+        "dev": "bun src/index.ts",
         "format": "biome format --write . && bun run format:yaml",
         "format:check": "biome format .",
         "format:yaml": "git ls-files -z '*.yaml' '*.yml' | xargs -0 -r prettier --write --log-level warn",
@@ -44,6 +46,8 @@
         "lint:md": "git ls-files -z '*.md' | xargs -0 remark --frail --quiet --no-stdout",
         "lint:yaml": "git ls-files -z '*.yaml' '*.yml' | xargs -0 -r prettier --check && git ls-files -z '*.yaml' '*.yml' | YAMLLINT_CONFIG_FILE=node_modules/@chewygumxx/yamllint-config/config.yaml xargs -0 -r yamllint --strict",
         "prepare": "test -d node_modules/husky && husky || true",
+        "start": "bun dist/index.js",
+        "test": "bun test",
         "typecheck": "tsc"
     },
     "config": {
