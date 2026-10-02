@@ -35,7 +35,8 @@ export type ConversationEvent =
           stats: TurnStats;
       }
     | { type: "sdk"; message: SDKMessage }
-    | { type: "error"; message: string };
+    // partial: the reply streamed so far, when the turn died mid-reply.
+    | { type: "error"; message: string; partial?: string };
 
 export type QueryHandle = AsyncIterable<SDKMessage> & {
     interrupt(): Promise<unknown>;
@@ -120,6 +121,7 @@ export class Conversation implements ChatSession {
     #streaming = false;
     #interrupted = false;
     #sessionCost = 0;
+    #ready = false;
 
     constructor({
         history = [],
@@ -188,18 +190,13 @@ export class Conversation implements ChatSession {
                 this.#handleMessage(message);
             }
             if (this.#closed === null) {
-                this.#emit({
-                    type: "error",
-                    message: "Dorothy's session ended unexpectedly.",
-                });
+                this.#fail("Dorothy's session ended unexpectedly.");
             }
         } catch (error) {
             if (this.#closed === null) {
-                this.#emit({
-                    type: "error",
-                    message:
-                        error instanceof Error ? error.message : String(error),
-                });
+                this.#fail(
+                    error instanceof Error ? error.message : String(error),
+                );
             }
         } finally {
             this.#streaming = false;
@@ -208,7 +205,14 @@ export class Conversation implements ChatSession {
 
     #handleMessage(message: SDKMessage): void {
         this.#emit({ type: "sdk", message });
-        if (message.type === "system" && message.subtype === "init") {
+        // The CLI sends init at the start of every turn; only the first one
+        // means the session is ready.
+        if (
+            message.type === "system" &&
+            message.subtype === "init" &&
+            !this.#ready
+        ) {
+            this.#ready = true;
             this.#emit({
                 type: "ready",
                 model: message.model,
@@ -221,6 +225,19 @@ export class Conversation implements ChatSession {
         ) {
             this.#reply += message.event.delta.text;
             this.#emit({ type: "delta", text: message.event.delta.text });
+        } else if (
+            message.type === "result" &&
+            message.is_error &&
+            !this.#interrupted
+        ) {
+            // API failures (auth, rate limit, overload) do not throw: the turn
+            // ends with an error result carrying the text instead of a reply.
+            const text =
+                message.subtype === "success"
+                    ? message.result
+                    : message.errors.join("; ");
+            this.#fail(text || message.subtype);
+            this.#streaming = false;
         } else if (message.type === "result") {
             this.#emit({
                 type: "turn-end",
@@ -232,6 +249,17 @@ export class Conversation implements ChatSession {
             this.#interrupted = false;
             this.#streaming = false;
         }
+    }
+
+    #fail(message: string): void {
+        const partial = this.#reply;
+        this.#reply = "";
+        this.#interrupted = false;
+        this.#emit(
+            partial
+                ? { type: "error", message, partial }
+                : { type: "error", message },
+        );
     }
 
     #stats(result: ResultMessage): TurnStats {

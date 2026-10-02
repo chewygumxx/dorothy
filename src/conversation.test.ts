@@ -45,6 +45,20 @@ const result = (totalCostUsd: number, subtype = "success") =>
         duration_ms: 1500,
         ttft_ms: 300,
     }) as unknown as SDKMessage;
+// How the CLI ends a turn the API refused (auth, rate limit, overload): a
+// result flagged is_error, with the error text in place of the reply.
+const apiError = (text: string) =>
+    ({
+        ...(result(0) as object),
+        is_error: true,
+        result: text,
+    }) as unknown as SDKMessage;
+const executionError = (errors: string[]) =>
+    ({
+        ...(result(0, "error_during_execution") as object),
+        is_error: true,
+        errors,
+    }) as unknown as SDKMessage;
 
 type Fake = {
     fn: QueryFn;
@@ -189,7 +203,7 @@ describe("Conversation", () => {
             [
                 delta("Part"),
                 WAIT_FOR_INTERRUPT,
-                result(0.001, "error_during_execution"),
+                executionError(["Request was aborted."]),
             ],
         ]);
         const { conversation, events } = started(fake);
@@ -255,5 +269,47 @@ describe("Conversation", () => {
         const prompt = String(fake.options?.systemPrompt);
         expect(prompt.startsWith(systemPrompt)).toBe(true);
         expect(prompt).toContain("User: My cat is Miso.");
+    });
+
+    it("emits ready once, though the CLI sends init every turn", async () => {
+        const fake = fakeQuery([
+            [init(), result(0.001)],
+            [init(), result(0.002)],
+        ]);
+        const { conversation, events } = started(fake);
+        conversation.send("one");
+        await until(() => of(events, "turn-end").length === 1);
+        conversation.send("two");
+        await until(() => of(events, "turn-end").length === 2);
+        expect(of(events, "ready")).toHaveLength(1);
+    });
+
+    it("reports an API error result as an error, not an empty reply", async () => {
+        const fake = fakeQuery([[apiError("Invalid API key")]]);
+        const { conversation, events } = started(fake);
+        conversation.send("hi");
+        await until(() => of(events, "error").length === 1);
+        expect(of(events, "error")[0]?.message).toBe("Invalid API key");
+        expect(of(events, "turn-end")).toHaveLength(0);
+    });
+
+    it("reports an execution error result with its errors", async () => {
+        const fake = fakeQuery([[executionError(["one", "two"])]]);
+        const { conversation, events } = started(fake);
+        conversation.send("hi");
+        await until(() => of(events, "error").length === 1);
+        expect(of(events, "error")[0]?.message).toBe("one; two");
+    });
+
+    it("hands the partial reply to the error when the session dies", async () => {
+        const fake = fakeQuery([[delta("Par")]], { fail: new Error("boom") });
+        const { conversation, events } = started(fake);
+        conversation.send("hi");
+        await until(() => of(events, "error").length === 1);
+        expect(of(events, "error")[0]).toEqual({
+            type: "error",
+            message: "boom",
+            partial: "Par",
+        });
     });
 });
