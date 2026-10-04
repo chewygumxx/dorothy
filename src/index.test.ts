@@ -46,6 +46,35 @@ describe("parseArgs", () => {
         expect(parseArgs(argv, true).kind).toBe("usage");
     });
 
+    it.each([[["--help"]], [["-h"]]])("shows help for %p", (argv) => {
+        expect(parseArgs(argv, false)).toEqual({ kind: "help" });
+    });
+
+    it.each([[["--resme", phrase]], [["-v"]], [["--model", "x", "hi"]]])(
+        "takes no unknown option, so %p costs nothing",
+        (argv) => {
+            expect(parseArgs(argv, true)).toEqual({
+                kind: "usage",
+                message: `unknown option ${argv[0]}`,
+            });
+        },
+    );
+
+    it("takes the words after -- as the prompt, dashes included", () => {
+        expect(parseArgs(["--", "-v", "means?"], false)).toEqual({
+            kind: "oneshot",
+            prompt: "-v means?",
+        });
+        expect(parseArgs(["--"], true)).toEqual({ kind: "tui", resume: null });
+    });
+
+    it("leaves options after the first word in the prompt", () => {
+        expect(parseArgs(["what", "does", "--force", "do?"], false)).toEqual({
+            kind: "oneshot",
+            prompt: "what does --force do?",
+        });
+    });
+
     it("refuses --resume without a terminal", () => {
         expect(parseArgs(["--resume", phrase], false).kind).toBe("usage");
     });

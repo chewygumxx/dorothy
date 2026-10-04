@@ -17,18 +17,24 @@ import { isPhrase } from "./session-id.js";
 export type Mode =
     | { kind: "oneshot"; prompt: string }
     | { kind: "tui"; resume: string | null }
+    | { kind: "help" }
     | { kind: "usage"; message: string };
 
 export const USAGE = [
-    "usage: dorothy <prompt...>         one reply, then exit",
+    "usage: dorothy <prompt...>        one reply, then exit",
     "       dorothy                    chat (needs a terminal)",
     "       dorothy --resume <phrase>  continue a saved chat",
+    "       dorothy -- <prompt...>     a prompt that starts with -",
 ].join("\n");
 
 export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
-    if (argv[0] === "--resume") {
-        const phrase = argv[1];
-        if (argv.length !== 2 || phrase === undefined || !isPhrase(phrase)) {
+    const [first, ...rest] = argv;
+    if (first === "--help" || first === "-h") {
+        return { kind: "help" };
+    }
+    if (first === "--resume") {
+        const phrase = rest[0];
+        if (rest.length !== 1 || phrase === undefined || !isPhrase(phrase)) {
             return {
                 kind: "usage",
                 message: "--resume takes one four-word phrase",
@@ -38,8 +44,13 @@ export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
             ? { kind: "tui", resume: phrase }
             : { kind: "usage", message: "--resume needs a terminal" };
     }
-    if (argv.length > 0) {
-        return { kind: "oneshot", prompt: argv.join(" ") };
+    // A mistyped option would otherwise be sent, and paid for, as a prompt.
+    if (first !== undefined && first !== "--" && /^-./.test(first)) {
+        return { kind: "usage", message: `unknown option ${first}` };
+    }
+    const words = first === "--" ? rest : argv;
+    if (words.length > 0) {
+        return { kind: "oneshot", prompt: words.join(" ") };
     }
     return isTTY
         ? { kind: "tui", resume: null }
@@ -74,7 +85,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
         process.argv.slice(2),
         process.stdin.isTTY === true && process.stdout.isTTY === true,
     );
-    if (mode.kind === "usage") {
+    if (mode.kind === "help") {
+        process.stdout.write(`${USAGE}\n`);
+    } else if (mode.kind === "usage") {
         process.stderr.write(`dorothy: ${mode.message}\n${USAGE}\n`);
         process.exitCode = 2;
     } else if (mode.kind === "oneshot") {
