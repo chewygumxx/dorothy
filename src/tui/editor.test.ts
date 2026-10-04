@@ -13,14 +13,18 @@ import {
     backspace,
     type Draft,
     deleteForward,
+    down,
+    draftWindow,
     insert,
     killLineEnd,
     killLineStart,
     killWordBack,
+    layoutDraft,
     left,
     lineEnd,
     lineStart,
     right,
+    up,
     wordLeft,
     wordRight,
 } from "./editor.js";
@@ -85,5 +89,91 @@ describe("editing a draft", () => {
             draft: at("one "),
             killed: "two ",
         });
+    });
+});
+
+const rowsOf = (draft: Draft, width: number) =>
+    layoutDraft(draft, width).rows.map((row) => row.text);
+
+describe("layoutDraft", () => {
+    it("wraps at the width, dropping the space at a break", () => {
+        expect(layoutDraft(at("aaaa bbbb"), 6)).toEqual({
+            rows: [
+                { text: "aaaa", start: 0 },
+                { text: "bbbb", start: 5 },
+            ],
+            cursorRow: 1,
+            cursorColumn: 4,
+        });
+    });
+
+    it("shows a cursor on a dropped space at the end of the row before", () => {
+        const layout = layoutDraft(at("aaaa bbbb", 4), 6);
+        expect([layout.cursorRow, layout.cursorColumn]).toEqual([0, 4]);
+        const after = layoutDraft(at("aaaa bbbb", 5), 6);
+        expect([after.cursorRow, after.cursorColumn]).toEqual([1, 0]);
+    });
+
+    it("puts a cursor at a hard break on the next row", () => {
+        expect(rowsOf(at("abcdefgh"), 3)).toEqual(["abc", "def", "gh"]);
+        const layout = layoutDraft(at("abcdefgh", 3), 3);
+        expect([layout.cursorRow, layout.cursorColumn]).toEqual([1, 0]);
+    });
+
+    it("keeps blank lines as rows", () => {
+        const layout = layoutDraft(at("ab\n\ncd", 3), 10);
+        expect(layout.rows).toEqual([
+            { text: "ab", start: 0 },
+            { text: "", start: 3 },
+            { text: "cd", start: 4 },
+        ]);
+        expect([layout.cursorRow, layout.cursorColumn]).toEqual([1, 0]);
+    });
+
+    it("counts columns by display width", () => {
+        expect(rowsOf(at("中文中"), 4)).toEqual(["中文", "中"]);
+        const layout = layoutDraft(at("中文中", 1), 4);
+        expect([layout.cursorRow, layout.cursorColumn]).toEqual([0, 2]);
+    });
+
+    it("lays out an empty draft as one empty row", () => {
+        expect(layoutDraft(at(""), 10).rows).toEqual([{ text: "", start: 0 }]);
+    });
+});
+
+describe("up and down", () => {
+    it("move by visual row, keeping the column", () => {
+        expect(up(at("aaaa bbbb", 7), 6)).toEqual(at("aaaa bbbb", 2));
+        expect(down(at("aaaa bbbb", 2), 6)).toEqual(at("aaaa bbbb", 7));
+    });
+
+    it("return null past the first or last row", () => {
+        expect(up(at("aaaa bbbb", 2), 6)).toBeNull();
+        expect(down(at("aaaa bbbb", 7), 6)).toBeNull();
+    });
+
+    it("keep a goal column through a shorter row", () => {
+        const text = "abcdef\nab\nabcdef";
+        const once = down(at(text, 5), 20, 5);
+        expect(once).toEqual(at(text, 9));
+        expect(down(once ?? at(text), 20, 5)).toEqual(at(text, 15));
+    });
+});
+
+describe("draftWindow", () => {
+    const layout = (rows: number, cursorRow: number) => ({
+        rows: Array.from({ length: rows }, (_, start) => ({ text: "", start })),
+        cursorRow,
+        cursorColumn: 0,
+    });
+
+    it("shows every row of a short draft", () => {
+        expect(draftWindow(layout(2, 1), 3)).toEqual({ first: 0, last: 2 });
+    });
+
+    it("keeps the cursor in view of a tall draft", () => {
+        expect(draftWindow(layout(10, 0), 3)).toEqual({ first: 0, last: 3 });
+        expect(draftWindow(layout(10, 5), 3)).toEqual({ first: 3, last: 6 });
+        expect(draftWindow(layout(10, 9), 3)).toEqual({ first: 7, last: 10 });
     });
 });
