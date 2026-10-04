@@ -133,3 +133,44 @@ describe("renderMarkdown blocks", () => {
         expect(texts(md("<div>x</div>"))).toEqual(["<div>x</div>"]);
     });
 });
+
+describe("renderMarkdown lists and quotes", () => {
+    it("bullets an unordered list", () => {
+        expect(texts(md("- one\n- two"))).toEqual(["• one", "• two"]);
+    });
+
+    it("numbers an ordered list from its start, right-aligned", () => {
+        expect(texts(md("3. a\n4. b"))).toEqual(["3. a", "4. b"]);
+        expect(texts(md("9. a\n10. b"))).toEqual([" 9. a", "10. b"]);
+    });
+
+    it("hangs wrapped item text under the item's first word", () => {
+        expect(texts(md("- aaaa bbbb", 8))).toEqual(["• aaaa", "  bbbb"]);
+    });
+
+    it("nests a list under its parent item's text", () => {
+        expect(texts(md("- a\n  - b\n    - c"))).toEqual([
+            "• a",
+            "  • b",
+            "    • c",
+        ]);
+    });
+
+    it("shows task items with boxes", () => {
+        expect(texts(md("- [x] done\n- [ ] todo"))).toEqual([
+            "• ☑ done",
+            "• ☐ todo",
+        ]);
+    });
+
+    it("spaces a loose list's items", () => {
+        expect(texts(md("- a\n\n- b"))).toEqual(["• a", "", "• b"]);
+    });
+
+    it("puts a quote behind a dim bar", () => {
+        expect(md("> a\n> b")).toEqual([
+            [{ text: "│ ", style: { dim: true } }, plain("a b")],
+        ]);
+        expect(texts(md("> aaa bbb", 5))).toEqual(["│ aaa", "│ bbb"]);
+    });
+});

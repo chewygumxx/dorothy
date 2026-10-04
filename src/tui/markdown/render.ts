@@ -8,7 +8,8 @@
 //
 //
 
-import { type MarkedToken, marked, type Token } from "marked";
+import { type MarkedToken, marked, type Token, type Tokens } from "marked";
+import stringWidth from "string-width";
 import { highlight } from "./highlight.js";
 import {
     breakSpans,
@@ -22,6 +23,7 @@ import {
 
 const DIM: Style = { dim: true };
 const GUTTER: Span = { text: "┃ ", style: DIM };
+const QUOTE: Span = { text: "│ ", style: DIM };
 const CONTINUED: Span = { text: "↪ ", style: DIM };
 
 const ENTITIES: Record<string, string> = {
@@ -130,6 +132,34 @@ function codeBlock(
     return rows;
 }
 
+// Each item hangs its text under its first word; a nested list starts there.
+function list(token: Tokens.List, width: number): Row[] {
+    const start = token.start === "" ? 1 : token.start;
+    const numbers = token.items.map((_, index) => `${start + index}.`);
+    const numberWidth = Math.max(...numbers.map((number) => number.length));
+    const rows: Row[] = [];
+    token.items.forEach((item, index) => {
+        const bullet = token.ordered
+            ? (numbers[index] ?? "").padStart(numberWidth)
+            : "•";
+        const box = item.task ? (item.checked ? " ☑" : " ☐") : "";
+        const marker = `${bullet}${box} `;
+        const indent = stringWidth(marker);
+        const body = blocks(item.tokens, width - indent, item.loose);
+        if (item.loose && index > 0) {
+            rows.push([]);
+        }
+        rows.push(
+            ...withGutter(
+                body.length > 0 ? body : [[]],
+                { text: marker, style: PLAIN },
+                { text: " ".repeat(indent), style: PLAIN },
+            ),
+        );
+    });
+    return rows;
+}
+
 function block(token: MarkedToken, width: number): Row[] {
     switch (token.type) {
         case "space":
@@ -162,6 +192,10 @@ function block(token: MarkedToken, width: number): Row[] {
                 [{ text: token.text.replace(/\n+$/, ""), style: PLAIN }],
                 width,
             );
+        case "blockquote":
+            return withGutter(blocks(token.tokens, width - 2), QUOTE, QUOTE);
+        case "list":
+            return list(token, width);
         default:
             return wrapSpans(
                 [{ text: token.raw.trimEnd(), style: PLAIN }],
