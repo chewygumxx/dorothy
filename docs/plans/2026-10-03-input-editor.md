@@ -47,6 +47,36 @@ draft, the quit keys, the row budget and Ctrl+G, which runs
 `src/tui/markdown/spans.ts` exports `wrapSpans`, `rowText`, `graphemes` and
 `PLAIN`, and `string-width` is a dependency.
 
+## Amendments of 2026-10-04
+
+Fixes landed on `main` after this plan was written (`76d583e` to `3b00d92`);
+where a task disagrees, these win.
+
+- **Row budget is done.** `fitLayout(rows, { showRaw, rawCount, warnings,
+  inputRows })` takes the rows the input wants and returns
+  `{ replyRows, rawRows, inputRows }`, the input's rows capped at
+  `max(3, floor(rows / 3))` and by the room left. `STATUS_ROWS` is 2 and
+  `warnings` is a count. Skip Task 5's layout steps; in App pass
+  `inputRows: layoutDraft(draft, draftWidth(columns)).rows.length` and give
+  `<Input>` `maxRows={layout.inputRows}` instead of `maxDraftRows(rows)`.
+- **Typed newlines send.** Input uses `usePaste`, so a `\r` or `\n` inside a
+  typed chunk is an Enter typed ahead, not pasted text: it submits at each
+  newline and the rest becomes the draft. Keep that in Task 4 rather than
+  inserting it through `cleanPaste`, and move the test "submits an Enter
+  typed ahead in the same chunk" into `Input.test.tsx`. Shift+Enter arrives as
+  its own escape sequence, never inside a chunk.
+- **Closing.** Quitting sets status `closing`: `quit()` does nothing a second
+  time and `submit` ignores messages. Task 4's `canSend` becomes
+  `!state.streaming && state.status !== "closing"`.
+- **State.** `ChatState` has `warnings: string[]` (the Header takes
+  `warnings`) and `costUsd`; `initialState(history, warnings, costUsd)`.
+- **SDK types.** The `sdk` event carries `RawMessage` from
+  `conversation.ts`; `boundary.test.ts` fails on any Agent SDK import under
+  `src/tui/`.
+- Today's Input already windows a tall draft with an `↑` marker
+  (`inputRows(value, columns)`), and App has the test "keeps a tall draft
+  shorter than the window"; Task 4 replaces both with the editor's.
+
 ## Global Constraints
 
 - Shift+Enter is the only newline key; Enter sends; Ink renders with

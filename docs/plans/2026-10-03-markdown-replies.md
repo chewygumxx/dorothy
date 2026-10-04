@@ -40,6 +40,21 @@ width-aware `wrapSpans`, with code coloured by `lowlight`. `History`'s
 
 **Spec:** `docs/specs/2026-10-03-markdown-replies-design.md`
 
+## Amendments of 2026-10-04
+
+Fixes landed on `main` after this plan was written; where a task disagrees,
+these win.
+
+- `string-width` `^8.3.0` is already a dependency (`13960f8`): skip Task 1's
+  Step 1 and its `build(tui): Add string-width` commit.
+- `wrapRows` already wraps by grapheme and display width, expands tabs and
+  drops control characters (`9ae453f`), with tests for wide characters,
+  composite emoji, tabs and controls in `components.test.tsx`. Task 1 Step 6
+  still moves it onto `wrapSpans`; those tests must keep passing.
+- `formatStats(stats, chatCostUsd)` takes the chat's running cost, and
+  `TurnStats` has `cacheReadTokens` and `cacheWriteTokens` (`3b00d92`). Task 6
+  keeps History's stats row as it is now.
+
 ## Global Constraints
 
 - No rendered row is wider than the width it was rendered for (for widths of
