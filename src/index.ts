@@ -79,12 +79,15 @@ async function oneShot(prompt: string): Promise<void> {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-    // quiet: dotenvx would otherwise log to stdout, over the TUI.
-    config({ quiet: true });
     const mode = parseArgs(
         process.argv.slice(2),
         process.stdin.isTTY === true && process.stdout.isTTY === true,
     );
+    // Credentials are decrypted only for the modes that talk to the model.
+    // quiet: dotenvx would otherwise log to stdout, over the TUI.
+    if (mode.kind === "oneshot" || mode.kind === "tui") {
+        config({ quiet: true });
+    }
     if (mode.kind === "help") {
         process.stdout.write(`${USAGE}\n`);
     } else if (mode.kind === "usage") {
