@@ -49,6 +49,11 @@ in streaming input mode and emits `ready`, `delta`, `turn-end`, `sdk` and
 structural `RawMessage`, and `src/tui/boundary.test.ts` fails on any SDK
 import there).
 `src/tui/state.ts` is a pure reducer, so screen logic is tested without Ink.
+The input editor is pure too: `src/tui/editor.ts` (draft edits, wrapped layout,
+cursor movement) and `recall.ts`, with `Input.tsx` only mapping keys onto them.
+`App` owns the draft and the editor's memory (kill buffer, goal column,
+recall), since the Too Small screen unmounts `Input`, and runs Ctrl+G's
+`$EDITOR` (`external-editor.ts`) inside Ink's `suspendTerminal`.
 Transcripts (`src/transcript.ts`) are private JSONL under
 `$XDG_DATA_HOME/dorothy/`. Reconnecting seeds a new session with the turns held
 in memory, and `--resume` with the transcript's, both via `withHistory`
