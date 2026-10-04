@@ -20,8 +20,17 @@ tags:
 
 # CLAUDE.md
 
-Compose single-line commits for granular commits and continuously commit as you
-work.
+Continuously granularly commit as you work. Compose single-line commit messages
+whenever appropriate. If the granular commit does indeed warrant further
+context, include such within the commit message body.
+
+When appropriate and worthwhile to compact, append the following
+newline-delimited items to your response:
+
+- A `/compact <summary>`
+- Appraisal rating scaled 1-100
+- Risk assessment rating scaled 1-100
+- Terse single-sentence justification.
 
 ## Architecture
 
@@ -33,11 +42,24 @@ and streams the `text_delta` events of `stream_event` messages to stdout
 iteration moves to Anthropic's Messages API (the `api` commit scope), which is
 the only way to fully control the system prompt.
 
-`query()` spawns the SDK's bundled `claude` binary on every call, so the
-exported `options` keep that subprocess lean: `tools: []` drops roughly 32k
-input tokens of tool definitions, and `settingSources: []` stops it loading
-`~/.claude` and `.claude/` settings, which would otherwise run this repository's
-`SessionStart` hook and every enabled plugin before the first token. The CLI
+With no argument the entry point opens an Ink TUI (`src/tui/`). The TUI talks
+only to `Conversation` (`src/conversation.ts`), which keeps one `query()` alive
+in streaming input mode and emits `ready`, `delta`, `turn-end`, `sdk` and
+`error` events; keep SDK types out of `src/tui/` (the `sdk` event carries a
+structural `RawMessage`, and `src/tui/boundary.test.ts` fails on any SDK
+import there).
+`src/tui/state.ts` is a pure reducer, so screen logic is tested without Ink.
+Transcripts (`src/transcript.ts`) are private JSONL under
+`$XDG_DATA_HOME/dorothy/`. Reconnecting seeds a new session with the turns held
+in memory, and `--resume` with the transcript's, both via `withHistory`
+(`src/persona.ts`). Design: `docs/specs/`, plans: `docs/plans/`.
+
+`query()` spawns the SDK's bundled `claude` binary on every call, so
+`baseOptions` (`src/persona.ts`) keeps that subprocess lean: `tools: []` drops
+roughly 32k input tokens of tool definitions, and `settingSources: []` stops it
+loading `~/.claude` and `.claude/` settings, which would otherwise run this
+repository's `SessionStart` hook and every enabled plugin before the first
+token. The CLI
 still prepends its own identity line and environment context (working
 directory, model, date) regardless of `systemPrompt`; the persona prompt tells
 the model to treat those as incidental and not to volunteer its provenance.
