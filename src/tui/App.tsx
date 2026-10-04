@@ -215,11 +215,18 @@ export function App({
         } else if (key.ctrl && input === "c") {
             if (state.streaming) {
                 interrupt();
+            } else if (draft.text !== "") {
+                // Clearing is an edit, so it ends recall too.
+                memory.current.recall = null;
+                setDraft(EMPTY_DRAFT);
             } else {
                 quit();
             }
         } else if (key.ctrl && input === "d") {
-            quit();
+            // With a draft, Input deletes forward instead.
+            if (draft.text === "") {
+                quit();
+            }
         }
     });
 

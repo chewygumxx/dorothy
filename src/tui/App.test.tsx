@@ -545,6 +545,27 @@ describe("App", () => {
         expect(lines.length - 3 - top + 1).toBe(5);
     });
 
+    it("clears a draft on Ctrl+C, then quits", async () => {
+        const { app, session, type } = setup();
+        await tick();
+        await type("abc");
+        await type("\u0003");
+        expect(session().closed).toBe(false);
+        expect(app.lastFrame()).toContain("enter send");
+        await type("\u0003");
+        expect(session().closed).toBe(true);
+    });
+
+    it("deletes forward on Ctrl+D while there is a draft", async () => {
+        const { app, session, type } = setup();
+        await tick();
+        await type("ab");
+        await type("\u001B[D");
+        await type("\u0004");
+        expect(session().closed).toBe(false);
+        expect(app.lastFrame()).toContain("› a▏");
+    });
+
     it("quits on Ctrl+D", async () => {
         const { session, type } = setup();
         await tick();
