@@ -195,6 +195,7 @@ export function App({
         showRaw: state.showRaw,
         rawCount: state.raw.length,
         warnings: state.warnings.length,
+        statusRows: 0,
         inputRows: inputRows(draft, columns),
     });
 
