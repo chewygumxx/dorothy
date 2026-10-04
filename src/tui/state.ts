@@ -13,7 +13,7 @@ import type {
     RawMessage,
     TurnStats,
 } from "../conversation.js";
-import type { Turn } from "../persona.js";
+import type { ResumedTurn } from "../transcript.js";
 
 export const RAW_LIMIT = 20;
 export const WARNING_LIMIT = 3;
@@ -54,7 +54,7 @@ export type Action =
     | { type: "warning"; message: string };
 
 export function initialState(
-    history: readonly Turn[],
+    history: readonly ResumedTurn[],
     warnings: readonly string[] = [],
     costUsd = 0,
 ): ChatState {
@@ -63,6 +63,8 @@ export function initialState(
             id,
             role: turn.role === "user" ? "you" : "dorothy",
             text: turn.text,
+            stats: turn.stats,
+            chatCostUsd: turn.chatCostUsd,
         })),
         live: "",
         streaming: false,

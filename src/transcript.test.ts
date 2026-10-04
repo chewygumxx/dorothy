@@ -132,6 +132,90 @@ describe("TranscriptWriter", () => {
 });
 
 describe("readTranscript", () => {
+    const statsLine = (costUsd: number, extra = {}) =>
+        JSON.stringify({
+            v: 1,
+            kind: "stats",
+            at: "x",
+            inputTokens: 1,
+            cacheReadTokens: 2,
+            cacheWriteTokens: 3,
+            outputTokens: 4,
+            ttftMs: 5,
+            durationMs: 6,
+            costUsd,
+            sessionCostUsd: costUsd,
+            ...extra,
+        });
+    const turnLine = (kind: string, text: string) =>
+        JSON.stringify({ v: 1, kind, at: "x", text, interrupted: false });
+    const turnStats = (costUsd: number) => ({
+        inputTokens: 1,
+        cacheReadTokens: 2,
+        cacheWriteTokens: 3,
+        outputTokens: 4,
+        ttftMs: 5,
+        durationMs: 6,
+        costUsd,
+        sessionCostUsd: costUsd,
+    });
+
+    it("gives each reply its stats and the chat's cost by then", async () => {
+        const path = join(dir, "stats.jsonl");
+        await writeFile(
+            path,
+            [
+                turnLine("user", "a"),
+                turnLine("assistant", "b"),
+                statsLine(0.25),
+                turnLine("user", "c"),
+                turnLine("assistant", "d"),
+                turnLine("user", "e"),
+                turnLine("assistant", "f"),
+                statsLine(0.5),
+            ].join("\n"),
+        );
+        expect((await readTranscript(path)).turns).toEqual([
+            { role: "user", text: "a" },
+            {
+                role: "assistant",
+                text: "b",
+                stats: turnStats(0.25),
+                chatCostUsd: 0.25,
+            },
+            { role: "user", text: "c" },
+            { role: "assistant", text: "d" },
+            { role: "user", text: "e" },
+            {
+                role: "assistant",
+                text: "f",
+                stats: turnStats(0.5),
+                chatCostUsd: 0.75,
+            },
+        ]);
+    });
+
+    it("attaches no stats that are malformed or follow no reply", async () => {
+        const path = join(dir, "stray.jsonl");
+        await writeFile(
+            path,
+            [
+                turnLine("user", "a"),
+                statsLine(0.25),
+                turnLine("assistant", "b"),
+                statsLine(0.5, { inputTokens: "many" }),
+            ].join("\n"),
+        );
+        expect(await readTranscript(path)).toEqual({
+            turns: [
+                { role: "user", text: "a" },
+                { role: "assistant", text: "b" },
+            ],
+            skipped: 0,
+            costUsd: 0.75,
+        });
+    });
+
     it("returns turns in order and the cost so far, skipping malformed lines", async () => {
         const path = join(dir, "read.jsonl");
         await writeFile(
@@ -152,7 +236,21 @@ describe("readTranscript", () => {
         expect(await readTranscript(path)).toEqual({
             turns: [
                 { role: "user", text: "hello" },
-                { role: "assistant", text: "hi there" },
+                {
+                    role: "assistant",
+                    text: "hi there",
+                    stats: {
+                        inputTokens: 1,
+                        cacheReadTokens: 0,
+                        cacheWriteTokens: 0,
+                        outputTokens: 2,
+                        ttftMs: null,
+                        durationMs: 3,
+                        costUsd: 0.25,
+                        sessionCostUsd: 0.25,
+                    },
+                    chatCostUsd: 0.25,
+                },
             ],
             skipped: 3,
             costUsd: 0.75,

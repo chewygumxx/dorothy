@@ -17,7 +17,7 @@ import type {
     TurnStats,
 } from "../conversation.js";
 import type { Turn } from "../persona.js";
-import type { TranscriptEntry } from "../transcript.js";
+import type { ResumedTurn, TranscriptEntry } from "../transcript.js";
 import { App } from "./App.js";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
@@ -73,7 +73,7 @@ function setup({
     failWrites = false,
     config = DEFAULT_CONFIG,
 }: {
-    history?: Turn[];
+    history?: ResumedTurn[];
     failWrites?: boolean;
     config?: Config;
 } = {}) {
@@ -111,6 +111,24 @@ function setup({
 }
 
 describe("App", () => {
+    it("shows a resumed reply's stats", async () => {
+        const { app } = setup({
+            history: [
+                { role: "user", text: "earlier" },
+                {
+                    role: "assistant",
+                    text: "yes",
+                    stats,
+                    chatCostUsd: 0.002,
+                },
+            ],
+        });
+        await tick();
+        expect(app.lastFrame()).toContain(
+            "1 in · 2 out · ttft 0.3s · 1.5s · $0.0010 · chat $0.0020",
+        );
+    });
+
     it("draws reply stats as configured", async () => {
         const { app, session, type } = setup({
             // No statusline, whose defaults would show "1 in" too.

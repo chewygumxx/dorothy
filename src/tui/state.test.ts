@@ -29,6 +29,18 @@ function streaming(): ChatState {
 }
 
 describe("initialState", () => {
+    it("initialState gives resumed replies their stats", () => {
+        expect(
+            initialState([
+                { role: "user", text: "a" },
+                { role: "assistant", text: "b", stats, chatCostUsd: 0.5 },
+            ]).lines,
+        ).toEqual([
+            { id: 0, role: "you", text: "a" },
+            { id: 1, role: "dorothy", text: "b", stats, chatCostUsd: 0.5 },
+        ]);
+    });
+
     it("initialState keeps the last three distinct warnings", () => {
         expect(initialState([], ["a", "b", "a", "c", "d"]).warnings).toEqual([
             "b",

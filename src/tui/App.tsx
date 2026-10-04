@@ -13,7 +13,7 @@ import { useEffect, useReducer, useRef, useState } from "react";
 import { type Config, DEFAULT_CONFIG } from "../config.js";
 import type { ChatSession, ConversationEvent } from "../conversation.js";
 import type { Turn } from "../persona.js";
-import type { TranscriptEntry } from "../transcript.js";
+import type { ResumedTurn, TranscriptEntry } from "../transcript.js";
 import { Header } from "./Header.js";
 import { History } from "./History.js";
 import { Input, inputRows } from "./Input.js";
@@ -29,7 +29,7 @@ export type TranscriptSink = {
 export type AppProps = {
     phrase: string;
     promptSha256: string;
-    history: Turn[];
+    history: ResumedTurn[];
     createSession(history: Turn[]): ChatSession;
     transcript: TranscriptSink | null;
     initialWarnings?: string[];
