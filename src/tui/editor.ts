@@ -194,7 +194,18 @@ function vertical(
     if (!row) {
         return null;
     }
-    return { ...draft, cursor: offsetAt(row, column ?? layout.cursorColumn) };
+    const cursor = offsetAt(row, column ?? layout.cursorColumn);
+    // Where a row breaks without a space, its end is the next row's start;
+    // stop on its last grapheme instead, or the cursor would not leave the
+    // row it is on (or would skip the one it meant to reach).
+    const next = layout.rows[layout.cursorRow + step + 1];
+    return {
+        ...draft,
+        cursor:
+            next?.start === cursor && cursor > row.start
+                ? previousBoundary(draft.text, cursor)
+                : cursor,
+    };
 }
 
 export const up = (draft: Draft, width: number, column?: number) =>
