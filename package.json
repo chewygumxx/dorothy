@@ -20,7 +20,8 @@
         "@dotenvx/dotenvx": "^2.32.4",
         "ink": "^7.1.1",
         "niceware": "^4.0.0",
-        "react": "^19.2.0"
+        "react": "^19.2.0",
+        "string-width": "^8.3.0"
     },
     "devDependencies": {
         "@biomejs/biome": "2.5.14",
