@@ -99,6 +99,10 @@ Continue one with:
 bun run dev -- --resume <phrase>
 ```
 
+Replies stream as plain text, then render as Markdown once complete:
+emphasis, lists, quotes, tables and code blocks, highlighted when labelled
+with a language.
+
 The chat needs a window of at least 40 columns and 20 lines, one more line
 for each extra statusline line; a smaller one shows only how large it needs
 to be. Both stats lines are set in `~/.config/dorothy/config.toml`

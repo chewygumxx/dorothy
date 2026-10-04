@@ -96,6 +96,33 @@ describe("Warnings and Statusline", () => {
 });
 
 describe("History and LiveReply", () => {
+    it("renders a reply's Markdown, not its markers", () => {
+        const { lastFrame } = render(
+            <History
+                lines={[
+                    { id: 0, role: "you", text: "is **this** bold?" },
+                    { id: 1, role: "dorothy", text: "Yes, **this** is." },
+                ]}
+                replyStats={DEFAULT_CONFIG.replyStats}
+            />,
+        );
+        expect(lastFrame()).toContain("is **this** bold?");
+        expect(lastFrame()).toContain("Yes, this is.");
+    });
+
+    it("shows the label of an empty reply", () => {
+        const { lastFrame } = render(
+            <History
+                lines={[
+                    { id: 0, role: "dorothy", text: "", interrupted: true },
+                ]}
+                replyStats={DEFAULT_CONFIG.replyStats}
+            />,
+        );
+        expect(lastFrame()).toContain("dorothy");
+        expect(lastFrame()).toContain("[interrupted]");
+    });
+
     it("renders finished lines with stats and interruption", () => {
         const { lastFrame } = render(
             <History

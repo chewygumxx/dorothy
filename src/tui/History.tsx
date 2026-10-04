@@ -10,7 +10,16 @@
 
 import { Box, Static, Text, useWindowSize } from "ink";
 import type { LineConfig } from "../config.js";
-import { LABEL_WIDTH, wrapRows } from "./LiveReply.js";
+import { LABEL_WIDTH } from "./LiveReply.js";
+import { RowsView } from "./Markdown.js";
+import { renderMarkdown } from "./markdown/render.js";
+import {
+    PLAIN,
+    type Row,
+    rowWidth,
+    type Span,
+    wrapSpans,
+} from "./markdown/spans.js";
 import type { Line } from "./state.js";
 import { moduleRows } from "./statusline.js";
 
@@ -19,6 +28,34 @@ const LABELS: Record<Line["role"], { text: string; color: string }> = {
     dorothy: { text: "dorothy", color: "magenta" },
     error: { text: "error", color: "red" },
 };
+
+const RED = { color: "red" };
+const DIM = { dim: true };
+const INTERRUPTED: Span = { text: " [interrupted]", style: DIM };
+
+function rowsOf(line: Line, width: number): Row[] {
+    const rows =
+        line.role === "dorothy"
+            ? renderMarkdown(line.text, width)
+            : wrapSpans(
+                  [
+                      {
+                          text: line.text,
+                          style: line.role === "error" ? RED : PLAIN,
+                      },
+                  ],
+                  width,
+              );
+    if (line.interrupted) {
+        const last = rows.at(-1);
+        if (last && rowWidth(last) + rowWidth([INTERRUPTED]) <= width) {
+            last.push(INTERRUPTED);
+        } else {
+            rows.push([{ text: INTERRUPTED.text.trim(), style: DIM }]);
+        }
+    }
+    return rows;
+}
 
 export function LineView({
     line,
@@ -29,12 +66,7 @@ export function LineView({
 }) {
     const label = LABELS[line.role];
     const { columns } = useWindowSize();
-    // Wrapped here rather than by Ink, which starts a row with the space it
-    // broke at; Ink still wraps any row that wide characters push over.
-    const text = wrapRows(
-        `${line.text}${line.interrupted ? " [interrupted]" : ""}`,
-        columns - LABEL_WIDTH,
-    ).join("\n");
+    const rows = rowsOf(line, columns - LABEL_WIDTH);
     return (
         <Box flexDirection="column">
             <Box>
@@ -43,9 +75,7 @@ export function LineView({
                         {label.text}
                     </Text>
                 </Box>
-                <Text color={line.role === "error" ? "red" : undefined}>
-                    {text}
-                </Text>
+                <RowsView rows={rows} />
             </Box>
             {line.stats ? (
                 <Box marginLeft={LABEL_WIDTH} flexDirection="column">
