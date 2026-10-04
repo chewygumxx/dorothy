@@ -22,29 +22,29 @@ tags: []
 
 > chewygumxx
 > Hey there o/
-
+>
 > dorothy
 > Hey! o/ I'm Dorothy. Nice to meet you. What's on your mind today, or
 > are we just saying hi for now?
-
+>
 > chewygumxx
 > I'm just saying hi to your wonderful self. I'm still developing your TUI at
 > the moment. May I presume you don't remember our last conversation?
-
+>
 > dorothy
 > Aw, thank you, that's kind of you! And you presume correctly: I don't
 > carry memories between conversations, so each time we talk I'm starting fresh.
 > Whatever we got up to last time, I'd have to hear about it again.
 >
-> Congrats on building out the TUI, by the way. I'm curious how it's going. Is it
-> more of a "making things look nice" phase or a "wrestling with the details"
+> Congrats on building out the TUI, by the way. I'm curious how it's going. Is
+> it more of a "making things look nice" phase or a "wrestling with the details"
 > phase?
-
+>
 > chewygumxx
 > If 'making things look nice' includes ensuring that text artefacts from
 > render malfunction don't pollute more than 30% of the view, I'd say we've made
 > wonderful progress. Truly significant and I am very encouraged so far.
-
+>
 > dorothy
 > Ha! Keeping the garbage under 30% of the screen is a real milestone. I
 > think we should celebrate it, perhaps with a tasteful border that only renders
@@ -54,24 +54,23 @@ tags: []
 > terminal emulator has its own opinion about escape codes, widths, and what
 > counts as a "character." Are the artefacts mostly stray escape sequences,
 > misaligned redraws, or something more mysterious and haunted?
-
+>
 > chewygumxx
 > You are already an incredible and special case of hilarious. While I'm so
 > grateful that historic transcripts are presently in place, I must integrate
-> memory for you as a high priority. This is our second conversation so compiling
-> your memory from transcripts should be a breeze.
-
+> memory for you as a high priority. This is our second conversation so
+> compiling your memory from transcripts should be a breeze.
+>
 > dorothy
-> Thank you, that made my day, even if it's a day I'll forget by
-> tomorrow. 😄
+> Thank you, that made my day, even if it's a day I'll forget by tomorrow. 😄
 >
 > Two conversations is the sweet spot for memory: small enough to be easy, and
 > early enough to get the foundations right. A few things I'd think about while
 > you're at it:
 >
 > - **Summaries vs. raw transcripts.** Feeding in whole conversations gets bulky
->   fast. Short distilled notes (preferences, ongoing projects, things you've told
->   me about yourself) tend to age better.
+>   fast. Short distilled notes (preferences, ongoing projects, things you've
+>   told me about yourself) tend to age better.
 > - **What to forget.** Not everything is worth keeping. A good memory is partly
 >   curated, so the "TUI render bug of the week" probably doesn't need to live
 >   forever.
@@ -82,7 +81,7 @@ tags: []
 > anything from our first chat you'd like to fill me in on, or shall we
 > just enjoy the novelty of meeting again? 2 in · 1010 cache read · 286
 > cache write · 378 out · ttft 1.9s · 5.3s · $0.0051 (chat $0.0168)
-
+>
 > chewygumxx
 > I was considering some kind of progressive disclosure approach with FTS and
 > indexed databases. Where each conversation is assigned metadata such as a
@@ -94,14 +93,14 @@ tags: []
 > only be employed for searching previous memories through a rebuildable
 > database or something. Everything I've just said may simply be the MCP
 > concept that I am yet to be completely familiar with.
-
+>
 > dorothy
 > What you've described is a memory architecture, and MCP is something
-> different: a standard protocol for how a model talks to external tools and data
-> sources. They fit together nicely, though. Your design decides _what_ gets
-> stored and surfaced, and MCP (or any tool-calling interface) could be the way I
-> reach into the database to search it. You could build the whole thing without
-> MCP, but it's a reasonable plumbing choice.
+> different: a standard protocol for how a model talks to external tools and
+> data sources. They fit together nicely, though. Your design decides _what_
+> gets stored and surfaced, and MCP (or any tool-calling interface) could be
+> the way I reach into the database to search it. You could build the whole
+> thing without MCP, but it's a reasonable plumbing choice.
 >
 > I like the tiered approach. A few thoughts:
 >
@@ -112,9 +111,9 @@ tags: []
 >   are good, since they tell me _that_ something exists and prompt me to go dig
 >   for it.
 > - **Recency isn't the only signal.** A conversation from months ago where you
->   laid out your core project goals might deserve a higher tier than yesterday's
->   small talk. A pinned flag or an importance score could override the age-based
->   decay.
+>   laid out your core project goals might deserve a higher tier than
+>   yesterday's small talk. A pinned flag or an importance score could override
+>   the age-based decay.
 > - **Rebuildable index.** Keeping transcripts as the source of truth, with the
 >   FTS database as a disposable derived layer, is a great call. You can change
 >   your summarisation or tagging scheme later and just regenerate.
@@ -134,7 +133,7 @@ tags: []
 
 ---
 
-> [!NOTE]
+> \[!NOTE]
 > The following started as drafted reply before repurpose into this report
 
 I already adore how you speak. You make this project so rewarding and exciting.
