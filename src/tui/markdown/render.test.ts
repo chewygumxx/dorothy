@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { decodeEntities, fitColumns, renderMarkdown } from "./render.js";
-import { PLAIN, type Row, rowText, type Span } from "./spans.js";
+import { PLAIN, type Row, rowText, rowWidth, type Span } from "./spans.js";
 
 const plain = (text: string): Span => ({ text, style: PLAIN });
 const texts = (rows: Row[]) => rows.map(rowText);
@@ -227,5 +227,31 @@ describe("renderMarkdown tables", () => {
             "two",
             "three",
         ]);
+    });
+});
+
+// Replies from the first live test, plus the shapes most likely to overflow.
+const CORPUS = [
+    "Thanks for testing me! I can only speak to what I see from my side.\n\n- **Formatting:** ask for a list, a table, or a code snippet and see how it displays.\n- **Longer responses:** request something multi-paragraph.",
+    "1. Tell me about the display. If the prompt says the output is a plain-text terminal with a narrow text column, I can skip markdown.\n\n2. Keep the prompt focused.",
+    "| Option | Trade-off | Cost |\n|---|:-:|--:|\n| Subset | cheaper, but tables print raw | medium |\n| Full | everything renders, more dependencies | high |",
+    "```ts\nconst total = items.reduce((sum, item) => sum + item.cost, 0); // a long line of code\n```",
+    "See [the documentation](https://example.com/a/very/long/path/that/never/ends/and/keeps/going/on) or https://example.com/another/very/long/unbroken/address",
+    "> - quoted list\n>   - nested in a quote\n>     1. deeper still with words that wrap around",
+    "中文中文中文中文中文中文中文中文 👩‍💻👩‍💻👩‍💻👩‍💻👩‍💻👩‍💻👩‍💻👩‍💻👩‍💻👩‍💻 supercalifragilisticexpialidocious",
+];
+
+describe("renderMarkdown width", () => {
+    it("never yields a row wider than the width", () => {
+        for (const width of [20, 40, 91]) {
+            for (const text of CORPUS) {
+                for (const row of renderMarkdown(text, width)) {
+                    expect([width, rowWidth(row)]).toEqual([
+                        width,
+                        Math.min(rowWidth(row), width),
+                    ]);
+                }
+            }
+        }
     });
 });
