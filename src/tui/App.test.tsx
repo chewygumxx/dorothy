@@ -34,7 +34,10 @@ class FakeSession implements ChatSession {
     readonly sent: string[] = [];
     interrupts = 0;
     closed = false;
+    closes = 0;
     failInterrupt = false;
+    // Resolves close() when set; stands for the subprocess's grace period.
+    closing: Promise<void> | null = null;
     subscribe(listener: (event: ConversationEvent) => void): () => void {
         this.listeners.add(listener);
         return () => {
@@ -52,6 +55,8 @@ class FakeSession implements ChatSession {
     }
     async close(): Promise<void> {
         this.closed = true;
+        this.closes++;
+        await this.closing;
     }
     emit(event: ConversationEvent): void {
         for (const listener of this.listeners) {
@@ -270,6 +275,20 @@ describe("App", () => {
         await tick();
         await type("\u0004");
         expect(session().closed).toBe(true);
+    });
+
+    it("takes no message while closing, and closes once", async () => {
+        const { app, session, entries, type } = setup();
+        await tick();
+        session().closing = new Promise(() => {});
+        await type("\u0004");
+        await type("late");
+        await type("\r");
+        await type("\u0004");
+        expect(app.lastFrame()).not.toContain("late");
+        expect(app.lastFrame()).toContain("closing");
+        expect(entries.filter((entry) => entry.kind === "user")).toEqual([]);
+        expect(session().closes).toBe(1);
     });
 
     it("quits on /exit", async () => {

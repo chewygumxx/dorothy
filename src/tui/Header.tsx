@@ -23,6 +23,7 @@ const STATUS_COLORS: Record<Status, string> = {
     starting: "yellow",
     ready: "green",
     disconnected: "red",
+    closing: "yellow",
 };
 
 export function shortId(id: string): string {

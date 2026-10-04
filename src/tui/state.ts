@@ -21,7 +21,7 @@ export type Line = {
     stats?: TurnStats;
     interrupted?: boolean;
 };
-export type Status = "starting" | "ready" | "disconnected";
+export type Status = "starting" | "ready" | "disconnected" | "closing";
 export type RawEntry = { id: number; message: SDKMessage };
 
 export type ChatState = {
@@ -42,6 +42,7 @@ export type Action =
     | { type: "sent"; text: string }
     | { type: "toggle-raw" }
     | { type: "reconnecting" }
+    | { type: "closing" }
     | { type: "warning"; message: string };
 
 export function initialState(
@@ -141,6 +142,8 @@ export function reduce(state: ChatState, action: Action): ChatState {
                 model: null,
                 sdkSessionId: null,
             };
+        case "closing":
+            return { ...state, status: "closing" };
         case "warning":
             return state.warning
                 ? state

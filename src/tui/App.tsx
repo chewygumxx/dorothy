@@ -122,7 +122,14 @@ export function App({
         });
     };
 
+    // The session gets a grace period to exit, during which nothing more is
+    // sent and a second quit key does not cut it short.
+    const closing = state.status === "closing";
     const quit = () => {
+        if (closing) {
+            return;
+        }
+        dispatch({ type: "closing" });
         const current = session.current;
         session.current = null;
         void (current?.close() ?? Promise.resolve()).finally(exit);
@@ -138,6 +145,9 @@ export function App({
 
     const submit = (value: string) => {
         const text = value.trim();
+        if (closing) {
+            return;
+        }
         if (text === "/exit") {
             quit();
             return;
@@ -208,7 +218,7 @@ export function App({
                 />
                 <Input
                     value={draft}
-                    disabled={state.streaming}
+                    disabled={state.streaming || closing}
                     onChange={setDraft}
                     onSubmit={submit}
                 />
