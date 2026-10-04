@@ -1,0 +1,178 @@
+// vim:set expandtab shiftwidth=4 filetype=typescript:
+// SPDX-License-Identifier: GPL-3.0-only
+
+//
+//
+// ~chewygumxx/dorothy.git
+// ::: :/src/config.ts
+//
+//
+
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { type Env, xdgDir } from "./xdg.js";
+
+export const MODULE_NAMES = [
+    "in",
+    "cache-read",
+    "cache-write",
+    "out",
+    "ttft",
+    "duration",
+    "cost",
+    "chat-cost",
+] as const;
+export type ModuleName = (typeof MODULE_NAMES)[number];
+export type LineConfig = { modules: ModuleName[]; maxLines: number };
+export type Config = { statusline: LineConfig; replyStats: LineConfig };
+
+// More would let a statusline crowd out the reply; five keeps the smallest
+// window at 24 lines.
+export const MAX_LINES = 5;
+
+export const DEFAULT_CONFIG: Config = {
+    statusline: {
+        modules: ["chat-cost", "cost", "in", "out", "ttft", "duration"],
+        maxLines: 1,
+    },
+    replyStats: {
+        modules: [
+            "in",
+            "cache-read",
+            "cache-write",
+            "out",
+            "ttft",
+            "duration",
+            "cost",
+            "chat-cost",
+        ],
+        maxLines: 1,
+    },
+};
+
+// Tables as the file names them, and the field of Config each fills.
+const TABLES = {
+    statusline: "statusline",
+    "reply-stats": "replyStats",
+} as const;
+
+const describeError = (error: unknown) =>
+    error instanceof Error ? error.message : String(error);
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+const isModule = (name: string): name is ModuleName =>
+    (MODULE_NAMES as readonly string[]).includes(name);
+
+function parseLine(
+    table: string,
+    value: unknown,
+    fallback: LineConfig,
+    warnings: string[],
+): LineConfig {
+    if (!isRecord(value)) {
+        warnings.push(`config.toml: ${table} is not a table`);
+        return fallback;
+    }
+    const line = { ...fallback };
+    for (const [key, field] of Object.entries(value)) {
+        if (key === "modules") {
+            if (
+                !Array.isArray(field) ||
+                !field.every((name) => typeof name === "string")
+            ) {
+                warnings.push(
+                    `config.toml: ${table}.modules is not a list of module names`,
+                );
+                continue;
+            }
+            const modules: ModuleName[] = [];
+            for (const name of field as string[]) {
+                if (!isModule(name)) {
+                    warnings.push(
+                        `config.toml: unknown module ${name} in ${table}`,
+                    );
+                } else if (modules.includes(name)) {
+                    warnings.push(`config.toml: ${name} repeated in ${table}`);
+                } else {
+                    modules.push(name);
+                }
+            }
+            line.modules = modules;
+        } else if (key === "max-lines") {
+            const valid =
+                typeof field === "number" &&
+                Number.isInteger(field) &&
+                field >= 1 &&
+                field <= MAX_LINES;
+            if (!valid) {
+                warnings.push(
+                    `config.toml: ${table}.max-lines must be a whole number from 1 to ${MAX_LINES}`,
+                );
+            }
+            line.maxLines = valid ? field : 1;
+        } else {
+            warnings.push(`config.toml: unknown key ${table}.${key}`);
+        }
+    }
+    return line;
+}
+
+// A broken file never stops Dorothy: each problem is a warning, and whatever
+// it spoils falls back to the default.
+export function parseConfig(text: string): {
+    config: Config;
+    warnings: string[];
+} {
+    let data: unknown;
+    try {
+        data = Bun.TOML.parse(text);
+    } catch (error) {
+        const reason = describeError(error).replace(/^TOML Parse error: /, "");
+        return { config: DEFAULT_CONFIG, warnings: [`config.toml: ${reason}`] };
+    }
+    const config = { ...DEFAULT_CONFIG };
+    const warnings: string[] = [];
+    for (const [key, value] of Object.entries(
+        data as Record<string, unknown>,
+    )) {
+        if (Object.hasOwn(TABLES, key)) {
+            const field = TABLES[key as keyof typeof TABLES];
+            config[field] = parseLine(
+                key,
+                value,
+                DEFAULT_CONFIG[field],
+                warnings,
+            );
+        } else {
+            warnings.push(`config.toml: unknown key ${key}`);
+        }
+    }
+    return { config, warnings };
+}
+
+export function configPath(env: Env = process.env): string {
+    return join(
+        xdgDir(env, "XDG_CONFIG_HOME", ".config"),
+        "dorothy",
+        "config.toml",
+    );
+}
+
+// No file is the defaults, quietly; a file that cannot be read is a warning.
+export async function readConfig(
+    env: Env = process.env,
+): Promise<{ config: Config; warnings: string[] }> {
+    let text: string;
+    try {
+        text = await readFile(configPath(env), "utf8");
+    } catch (error) {
+        if ((error as { code?: unknown }).code === "ENOENT") {
+            return { config: DEFAULT_CONFIG, warnings: [] };
+        }
+        return {
+            config: DEFAULT_CONFIG,
+            warnings: [`config.toml: ${describeError(error)}`],
+        };
+    }
+    return parseConfig(text);
+}
