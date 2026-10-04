@@ -55,6 +55,20 @@ these win.
   `TurnStats` has `cacheReadTokens` and `cacheWriteTokens` (`3b00d92`). Task 6
   keeps History's stats row as it is now.
 
+## Amendments of 2026-10-05
+
+The statusline plan (`2026-10-05-statusline-and-minimum-size.md`) landed
+first; where a task disagrees, these win.
+
+- **`formatStats` is gone.** Task 6 Step 4 imports only `LABEL_WIDTH` from
+  `./LiveReply.js` and keeps `LineView`'s stats rows as they are on main,
+  drawn by `moduleRows(replyStats, …)` from `./statusline.js`.
+- **`History` and `LineView` take `replyStats: LineConfig`**, so every
+  `<History lines={…} />` in the plan's tests also takes
+  `replyStats={DEFAULT_CONFIG.replyStats}` (from `../config.js`).
+- **App tests set the window** to 100 × 24 through `setup`; below 40 × 20
+  App draws only the Too Small message.
+
 ## Global Constraints
 
 - No rendered row is wider than the width it was rendered for (for widths of

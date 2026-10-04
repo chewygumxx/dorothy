@@ -77,6 +77,27 @@ where a task disagrees, these win.
   (`inputRows(value, columns)`), and App has the test "keeps a tall draft
   shorter than the window"; Task 4 replaces both with the editor's.
 
+## Amendments of 2026-10-05
+
+The statusline plan (`2026-10-05-statusline-and-minimum-size.md`) landed
+first; where a task disagrees, these win.
+
+- **The draft caps at 5 rows.** `fitLayout(rows, { showRaw, rawCount,
+  warnings, statusRows, inputRows })` gives the input at most
+  `INPUT_MAX_ROWS` (5, from `layout.ts`). Drop `maxDraftRows` from Task 2
+  (its Produces line, its two test lines and its definition); Input's window
+  is `maxRows={layout.inputRows}`.
+- **The bottom box is warnings, input, statusline, header.** `Header` no
+  longer takes `warnings`; `<Warnings>` and `<Statusline>` come from
+  `Header.tsx`, and `App` computes `statusRows` with `moduleRows`. In App
+  tests the input is `lines.at(-3)`, above the statusline and header.
+- **App tests set the window.** `setup` calls `setSize(app, 100, 24)` and
+  returns `resize`. Below 40 columns or `minRows` lines App draws only the
+  Too Small message; Input is unmounted and only Ctrl+C and Ctrl+D act, so
+  the editor's keys need no check for it.
+- **History takes `replyStats`**, and resumed turns are `ResumedTurn`s that
+  may carry `stats` and `chatCostUsd`.
+
 ## Global Constraints
 
 - Shift+Enter is the only newline key; Enter sends; Ink renders with
