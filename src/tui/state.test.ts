@@ -9,7 +9,6 @@
 //
 
 import { describe, expect, it } from "bun:test";
-import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { TurnStats } from "../conversation.js";
 import { type ChatState, initialState, RAW_LIMIT, reduce } from "./state.js";
 
@@ -21,7 +20,7 @@ const stats: TurnStats = {
     costUsd: 0.001,
     sessionCostUsd: 0.001,
 };
-const message = { type: "system" } as unknown as SDKMessage;
+const message = { type: "system" };
 
 function streaming(): ChatState {
     return reduce(initialState([]), { type: "sent", text: "hi" });

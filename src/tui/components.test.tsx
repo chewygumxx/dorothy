@@ -9,7 +9,6 @@
 //
 
 import { describe, expect, it } from "bun:test";
-import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { render } from "ink-testing-library";
 import { useState } from "react";
 import type { TurnStats } from "../conversation.js";
@@ -172,7 +171,7 @@ describe("RawPane", () => {
                 type: "content_block_delta",
                 delta: { type: "text_delta", text: "whether" },
             },
-        } as unknown as SDKMessage;
+        };
         expect(describeRaw(message)).toBe(
             'stream_event content_block_delta {"type":"text_delta","text":"whether"}',
         );
@@ -183,7 +182,7 @@ describe("RawPane", () => {
             type: "system",
             subtype: "init",
             cwd: "x".repeat(300),
-        } as unknown as SDKMessage;
+        };
         const line = describeRaw(message, 40);
         expect(line.startsWith("system init ")).toBe(true);
         expect(line).toHaveLength(40);
@@ -194,7 +193,7 @@ describe("RawPane", () => {
         const message = {
             type: "system",
             subtype: "init",
-        } as unknown as SDKMessage;
+        };
         const frame =
             render(<RawPane entries={[{ id: 0, message }]} />).lastFrame() ??
             "";

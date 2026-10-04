@@ -25,6 +25,14 @@ export type TurnStats = {
     sessionCostUsd: number;
 };
 
+// The fields of an SDK message the raw pane reads. Every SDKMessage fits it,
+// so the TUI shows them without depending on the SDK's types.
+export type RawMessage = {
+    type: string;
+    subtype?: string;
+    event?: { type?: string; delta?: unknown };
+};
+
 export type ConversationEvent =
     | { type: "ready"; model: string; sdkSessionId: string }
     | { type: "delta"; text: string }
@@ -34,7 +42,7 @@ export type ConversationEvent =
           interrupted: boolean;
           stats: TurnStats;
       }
-    | { type: "sdk"; message: SDKMessage }
+    | { type: "sdk"; message: RawMessage }
     // partial: the reply streamed so far, when the turn died mid-reply.
     | { type: "error"; message: string; partial?: string };
 

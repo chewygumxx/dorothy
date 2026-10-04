@@ -8,8 +8,11 @@
 //
 //
 
-import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { ConversationEvent, TurnStats } from "../conversation.js";
+import type {
+    ConversationEvent,
+    RawMessage,
+    TurnStats,
+} from "../conversation.js";
 import type { Turn } from "../persona.js";
 
 export const RAW_LIMIT = 20;
@@ -22,7 +25,7 @@ export type Line = {
     interrupted?: boolean;
 };
 export type Status = "starting" | "ready" | "disconnected" | "closing";
-export type RawEntry = { id: number; message: SDKMessage };
+export type RawEntry = { id: number; message: RawMessage };
 
 export type ChatState = {
     lines: Line[];
