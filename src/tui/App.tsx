@@ -15,7 +15,7 @@ import type { Turn } from "../persona.js";
 import type { TranscriptEntry } from "../transcript.js";
 import { Header } from "./Header.js";
 import { History } from "./History.js";
-import { Input } from "./Input.js";
+import { Input, inputRows } from "./Input.js";
 import { LiveReply } from "./LiveReply.js";
 import { fitLayout } from "./layout.js";
 import { RawPane } from "./RawPane.js";
@@ -184,10 +184,11 @@ export function App({
         }
     });
 
-    const { replyRows, rawRows } = fitLayout(rows, {
+    const layout = fitLayout(rows, {
         showRaw: state.showRaw,
         rawCount: state.raw.length,
         warning: state.warning !== null,
+        inputRows: inputRows(draft, columns),
     });
 
     return (
@@ -197,10 +198,10 @@ export function App({
                 text={state.live}
                 streaming={state.streaming}
                 width={columns}
-                maxRows={replyRows}
+                maxRows={layout.replyRows}
             />
             {state.showRaw ? (
-                <RawPane entries={state.raw.slice(-rawRows)} />
+                <RawPane entries={state.raw.slice(-layout.rawRows)} />
             ) : null}
             <Box
                 flexDirection="column"
@@ -219,6 +220,7 @@ export function App({
                 <Input
                     value={draft}
                     disabled={state.streaming || closing}
+                    maxRows={layout.inputRows}
                     onChange={setDraft}
                     onSubmit={submit}
                 />

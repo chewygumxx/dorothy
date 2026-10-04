@@ -14,7 +14,7 @@ import { useState } from "react";
 import type { TurnStats } from "../conversation.js";
 import { Header, shortId } from "./Header.js";
 import { History } from "./History.js";
-import { Input, KEY_HINTS } from "./Input.js";
+import { Input, inputRows, KEY_HINTS } from "./Input.js";
 import { formatStats, LiveReply, wrapRows } from "./LiveReply.js";
 import { describeRaw, RawPane } from "./RawPane.js";
 
@@ -229,6 +229,7 @@ function Harness({
             disabled={disabled}
             onChange={setValue}
             onSubmit={(text) => submitted.push(text)}
+            maxRows={3}
         />
     );
 }
@@ -276,7 +277,12 @@ describe("Input", () => {
 
     it("stays within the terminal width at every length", () => {
         const text = long("lorem");
-        const props = { disabled: false, onChange() {}, onSubmit() {} };
+        const props = {
+            disabled: false,
+            maxRows: 3,
+            onChange() {},
+            onSubmit() {},
+        };
         const { rerender, lastFrame } = render(<Input value="" {...props} />);
         for (let length = 0; length <= text.length; length++) {
             rerender(<Input value={text.slice(0, length)} {...props} />);
@@ -285,6 +291,29 @@ describe("Input", () => {
                 Math.min(widest(lastFrame()), COLUMNS),
             ]);
         }
+    });
+
+    it("shows only the last rows of a tall draft, marking those hidden", () => {
+        const props = { disabled: false, onChange() {}, onSubmit() {} };
+        const value = "word ".repeat(200);
+        const { lastFrame } = render(
+            <Input value={value} maxRows={3} {...props} />,
+        );
+        const lines = (lastFrame() ?? "").split("\n");
+        expect(lines).toHaveLength(3);
+        expect(lines[0]).toStartWith("↑ word");
+        expect(lines[1]).toStartWith("  word");
+        expect(lines[2]).toContain("▏");
+        expect(inputRows(value, COLUMNS)).toBe(11);
+        expect(inputRows("", COLUMNS)).toBe(1);
+    });
+
+    it("shows the prompt on a draft's first row", () => {
+        const props = { disabled: false, onChange() {}, onSubmit() {} };
+        const { lastFrame } = render(
+            <Input value="one" maxRows={3} {...props} />,
+        );
+        expect(lastFrame()).toBe("› one▏");
     });
 
     it("shows the key hints only while the line is empty", async () => {

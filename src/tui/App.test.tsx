@@ -270,6 +270,15 @@ describe("App", () => {
         expect(session().closed).toBe(true);
     });
 
+    it("keeps a tall draft shorter than the window", async () => {
+        const { app, type } = setup();
+        await tick();
+        await type("word ".repeat(600));
+        const lines = (app.lastFrame() ?? "").split("\n");
+        expect(lines.length).toBeLessThan(24);
+        expect(lines.at(-1)).toContain("▏");
+    });
+
     it("quits on Ctrl+D", async () => {
         const { session, type } = setup();
         await tick();
