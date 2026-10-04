@@ -33,11 +33,11 @@ fi
 # required clean filter into the global git config instead of this repo.
 git diff --cached --name-only --diff-filter=ACMR | while IFS= read -r file; do
     case "${file##*/}" in
-        .env* | *.env)
-            git show ":$file" |
-                bunx --bun --no-install dotenvx protect --git-file "$file" >/dev/null ||
-                exit 1
-            ;;
+    .env* | *.env)
+        git show ":$file" |
+            bunx --bun --no-install dotenvx protect --git-file "$file" >/dev/null ||
+            exit 1
+        ;;
     esac
 done
 
