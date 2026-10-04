@@ -9,9 +9,9 @@
 //
 
 import { type FileHandle, mkdir, open, readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname, join } from "node:path";
 import type { Turn } from "./persona.js";
+import { type Env, xdgDir } from "./xdg.js";
 
 export type SessionEvent = {
     v: 1;
@@ -54,16 +54,12 @@ export type TranscriptEvent =
 type Unstamped<E> = E extends unknown ? Omit<E, "v" | "at"> : never;
 export type TranscriptEntry = Unstamped<TranscriptEvent>;
 
-type Env = Record<string, string | undefined>;
-
 export function transcriptDir(env: Env = process.env): string {
-    // XDG treats an empty or relative XDG_DATA_HOME as unset. An empty HOME
-    // would otherwise put transcripts under the working directory.
-    const xdg = env.XDG_DATA_HOME ?? "";
-    const data = isAbsolute(xdg)
-        ? xdg
-        : join(env.HOME || homedir(), ".local", "share");
-    return join(data, "dorothy", "transcripts");
+    return join(
+        xdgDir(env, "XDG_DATA_HOME", ".local/share"),
+        "dorothy",
+        "transcripts",
+    );
 }
 
 export function transcriptPath(phrase: string, env: Env = process.env): string {
