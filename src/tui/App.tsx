@@ -18,7 +18,13 @@ import { Header, Statusline, Warnings } from "./Header.js";
 import { History } from "./History.js";
 import { Input, inputRows } from "./Input.js";
 import { LiveReply, wrapRows } from "./LiveReply.js";
-import { fitLayout, MIN_COLUMNS, minRows, tooSmallMessage } from "./layout.js";
+import {
+    fitLayout,
+    MIN_COLUMNS,
+    minRows,
+    tooSmallMessage,
+    tooSmallShort,
+} from "./layout.js";
 import { RawPane } from "./RawPane.js";
 import { initialState, reduce } from "./state.js";
 import { moduleRows } from "./statusline.js";
@@ -213,10 +219,16 @@ export function App({
     // again would print them all again. The message is cut short of the
     // window, which Ink would otherwise clear on every frame.
     if (tooSmall) {
-        const message = wrapRows(
+        const room = Math.max(1, rows - 1);
+        const full = wrapRows(
             tooSmallMessage(neededRows, rows, columns),
             columns,
-        ).slice(0, Math.max(1, rows - 1));
+        );
+        const message = (
+            full.length <= room
+                ? full
+                : wrapRows(tooSmallShort(neededRows, rows, columns), columns)
+        ).slice(0, room);
         return (
             <Box flexDirection="column">
                 <History lines={lines} replyStats={config.replyStats} />

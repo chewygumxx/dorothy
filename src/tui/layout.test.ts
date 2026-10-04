@@ -15,6 +15,7 @@ import {
     MIN_COLUMNS,
     minRows,
     tooSmallMessage,
+    tooSmallShort,
 } from "./layout.js";
 
 type Options = Parameters<typeof fitLayout>[1];
@@ -46,6 +47,10 @@ describe("tooSmallMessage", () => {
         expect(tooSmallMessage(20, 14, 80)).toBe(
             "Too Small: Dorothy's TUI needs at least 20 lines and 40 columns (this window is 14 × 80)",
         );
+    });
+
+    it("has a short form that leads with the sizes", () => {
+        expect(tooSmallShort(20, 3, 20)).toBe("Needs 20 × 40 (is 3 × 20)");
     });
 });
 

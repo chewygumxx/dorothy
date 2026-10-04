@@ -213,6 +213,8 @@ describe("App", () => {
         await tick();
         await resize(20, 3);
         expect((app.lastFrame() ?? "").split("\n")).toHaveLength(2);
+        // The full message would be cut before its sizes.
+        expect(flat(app.lastFrame())).toContain("Needs 20 × 40 (is 3 × 20)");
     });
 
     it("prints a reply that ends while too small at the grown width", async () => {

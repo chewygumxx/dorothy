@@ -48,6 +48,15 @@ export function tooSmallMessage(
     return `Too Small: Dorothy's TUI needs at least ${neededRows} lines and ${MIN_COLUMNS} columns (this window is ${rows} × ${columns})`;
 }
 
+// For a window too short to show tooSmallMessage up to its sizes.
+export function tooSmallShort(
+    neededRows: number,
+    rows: number,
+    columns: number,
+): string {
+    return `Needs ${neededRows} × ${MIN_COLUMNS} (is ${rows} × ${columns})`;
+}
+
 // Ink clears the whole terminal, scrollback included, and repaints every line
 // on each frame once the live region is as tall as the window, so the
 // streaming reply and the raw pane share the rows the rest leaves. At or
