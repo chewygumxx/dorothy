@@ -97,6 +97,21 @@ first; where a task disagrees, these win.
   the editor's keys need no check for it.
 - **History takes `replyStats`**, and resumed turns are `ResumedTurn`s that
   may carry `stats` and `chatCostUsd`.
+- **App owns the editor's memory.** Input is unmounted while the window is
+  too small, which would reset its kill buffer, goal column and recall
+  state. Task 4 exports
+  `type EditorMemory = { killed: string; goal: number | null; recall: Recall | null }`
+  from `Input.tsx` and adds `memory: EditorMemory` to `InputProps`; Input
+  reads and writes `memory.killed`, `memory.goal` and `memory.recall` where
+  the plan has `killed.current`, `goal.current` and `recall.current`
+  (`latest` stays Input's own ref). App keeps
+  `const memory = useRef<EditorMemory>({ killed: "", goal: null, recall: null })`
+  and passes `memory={memory.current}`; `Input.test.tsx` passes a fresh
+  memory to each render. Task 4 adds the App test "keeps recall and the kill
+  buffer through the Too Small screen": send "one", type "wip", press Up
+  (`\u001B[A`), `resize(30, 10)`, `resize(100, 24)`, press Down
+  (`\u001B[B`) and expect the draft `wip`; then Ctrl+U (`\u0015`),
+  shrink, grow, Ctrl+Y (`\u0019`) and expect `wip` again.
 
 ## Global Constraints
 

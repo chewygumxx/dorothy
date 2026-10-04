@@ -119,8 +119,9 @@ max-lines = 1
 
 Modules show left to right as far as the width allows, then on up to
 `max-lines` lines (at most 5); those that still do not fit are left out from
-the right. An empty `modules` hides the line. A mistake in the file shows as
-a warning and the defaults apply.
+the right. An empty `modules` hides the line; for the statusline it also
+frees its rows, so the window then needs only 19 lines. A mistake in the
+file shows as a warning, naming its line, and the defaults apply.
 
 ## CI
 
