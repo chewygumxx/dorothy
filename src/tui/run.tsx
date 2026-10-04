@@ -20,6 +20,7 @@ import {
     transcriptPath,
 } from "../transcript.js";
 import { App } from "./App.js";
+import { editInEditor } from "./external-editor.js";
 
 const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
@@ -63,6 +64,7 @@ export async function runTui(resume: string | null): Promise<number> {
             phrase={phrase}
             promptSha256={promptSha256()}
             history={history}
+            editDraft={(text) => editInEditor(text)}
             createSession={(turns) => {
                 const conversation = new Conversation({ history: turns });
                 conversation.start();
