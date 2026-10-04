@@ -73,7 +73,8 @@ export async function runTui(resume: string | null): Promise<number> {
             initialCostUsd={costUsd}
             config={config}
         />,
-        { exitOnCtrlC: false },
+        // Kitty-protocol terminals report Shift+Enter apart from Enter.
+        { exitOnCtrlC: false, kittyKeyboard: { mode: "auto" } },
     );
     await app.waitUntilExit();
     await writer?.close();
