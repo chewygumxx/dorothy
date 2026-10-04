@@ -213,7 +213,8 @@ export function App({
     const lines = frozenLines ?? state.lines.slice(0, printable.current);
 
     const openEditor = () => {
-        if (editing.current) {
+        // Nothing more is sent once closing, so an edit would be lost.
+        if (editing.current || closing) {
             return;
         }
         editing.current = true;

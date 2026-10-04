@@ -712,6 +712,21 @@ describe("App", () => {
         expect(session().closes).toBe(1);
     });
 
+    it("opens no editor while closing", async () => {
+        let calls = 0;
+        const { session, type } = setup({
+            editDraft: async (text) => {
+                calls++;
+                return { ok: true, text };
+            },
+        });
+        await tick();
+        session().closing = new Promise(() => {});
+        await type("\u0004");
+        await type("\u0007");
+        expect(calls).toBe(0);
+    });
+
     it("quits on /exit", async () => {
         const { session, type } = setup();
         await tick();
