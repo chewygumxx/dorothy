@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { editInEditor, editorCommand } from "./external-editor.js";
@@ -32,20 +32,29 @@ describe("editInEditor", () => {
             ok: false,
             message: "editor exited with 1",
         });
-        expect(await editInEditor("abc", "no-such-editor-for-dorothy")).toEqual(
-            {
-                ok: false,
-                message: "editor exited with 127",
-            },
-        );
+        // The redirect keeps sh's "not found" out of the test output.
+        expect(
+            await editInEditor("abc", "no-such-editor-for-dorothy 2>/dev/null"),
+        ).toEqual({ ok: false, message: "editor exited with 127" });
     });
 
     it("writes a private file and removes it afterwards", async () => {
-        const out = join(await mkdtemp(join(tmpdir(), "dorothy-test-")), "out");
-        await editInEditor("x", `stat -c '%a %n' "$1" > ${out}; true`);
-        const [mode, path] = (await readFile(out, "utf8")).trim().split(" ");
-        expect(mode).toBe("600");
-        expect(existsSync(path ?? "")).toBe(false);
+        const dir = await mkdtemp(join(tmpdir(), "dorothy-test-"));
+        const out = join(dir, "out");
+        try {
+            // ls -l's mode string is POSIX, where stat's flags are not.
+            await editInEditor(
+                "x",
+                `{ ls -l "$1"; printf '%s\\n' "$1"; } > '${out}'; true`,
+            );
+            const [listing = "", path = ""] = (await readFile(out, "utf8"))
+                .trim()
+                .split("\n");
+            expect(listing.slice(0, 10)).toBe("-rw-------");
+            expect(existsSync(path)).toBe(false);
+        } finally {
+            await rm(dir, { recursive: true, force: true });
+        }
     });
 });
 
