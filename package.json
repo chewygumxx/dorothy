@@ -20,6 +20,7 @@
         "@dotenvx/dotenvx": "^2.32.4",
         "ink": "^7.1.1",
         "lowlight": "^3.3.0",
+        "marked": "^18.0.14",
         "niceware": "^4.0.0",
         "react": "^19.2.0",
         "string-width": "^8.3.0"
