@@ -215,6 +215,25 @@ describe("App", () => {
         expect((app.lastFrame() ?? "").split("\n")).toHaveLength(2);
     });
 
+    it("prints a reply that ends while too small at the grown width", async () => {
+        const { app, session, type, resize } = setup();
+        await tick();
+        await type("hi");
+        await type("\r");
+        await resize(30, 10);
+        const reply = "Hello there, this reply is long enough to wrap";
+        session().emit({ type: "delta", text: reply });
+        session().emit({ type: "turn-end", reply, interrupted: false, stats });
+        await tick();
+        await resize(100, 24);
+        const frame = app.lastFrame() ?? "";
+        expect(frame).toContain(`dorothy  ${reply}`);
+        expect(frame).toContain(
+            "1 in · 2 out · ttft 0.3s · 1.5s · $0.0010 · chat $0.0010",
+        );
+        expect(frame.split(reply)).toHaveLength(2);
+    });
+
     it("keeps a draft typed before the window shrank", async () => {
         const { app, type, resize } = setup();
         await tick();

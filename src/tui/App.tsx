@@ -179,6 +179,13 @@ export function App({
         config.statusline.modules.length > 0 ? config.statusline.maxLines : 0;
     const neededRows = minRows(statusLines);
     const tooSmall = columns < MIN_COLUMNS || rows < neededRows;
+    // <Static> prints a line once, at the width of the moment, so lines that
+    // finish while the window is too small wait to print until it is not.
+    const printable = useRef(state.lines.length);
+    if (!tooSmall) {
+        printable.current = state.lines.length;
+    }
+    const lines = state.lines.slice(0, printable.current);
 
     useInput((input, key) => {
         const quitKey = key.ctrl && (input === "c" || input === "d");
@@ -212,7 +219,7 @@ export function App({
         ).slice(0, Math.max(1, rows - 1));
         return (
             <Box flexDirection="column">
-                <History lines={state.lines} replyStats={config.replyStats} />
+                <History lines={lines} replyStats={config.replyStats} />
                 <Text>{message.join("\n")}</Text>
             </Box>
         );
@@ -234,7 +241,7 @@ export function App({
 
     return (
         <Box flexDirection="column">
-            <History lines={state.lines} replyStats={config.replyStats} />
+            <History lines={lines} replyStats={config.replyStats} />
             <LiveReply
                 text={state.live}
                 streaming={state.streaming}
