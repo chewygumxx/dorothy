@@ -9,7 +9,7 @@
 //
 
 import { describe, expect, it } from "bun:test";
-import { decodeEntities, renderMarkdown } from "./render.js";
+import { decodeEntities, fitColumns, renderMarkdown } from "./render.js";
 import { PLAIN, type Row, rowText, type Span } from "./spans.js";
 
 const plain = (text: string): Span => ({ text, style: PLAIN });
@@ -172,5 +172,60 @@ describe("renderMarkdown lists and quotes", () => {
             [{ text: "│ ", style: { dim: true } }, plain("a b")],
         ]);
         expect(texts(md("> aaa bbb", 5))).toEqual(["│ aaa", "│ bbb"]);
+    });
+});
+
+describe("fitColumns", () => {
+    it("keeps natural widths that fit", () => {
+        expect(fitColumns([3, 5], 20)).toEqual([3, 5]);
+    });
+
+    it("shrinks columns in proportion, to at least 3", () => {
+        expect(fitColumns([10, 30], 20)).toEqual([5, 15]);
+        expect(fitColumns([2, 40], 10)).toEqual([3, 7]);
+    });
+
+    it("gives up when 3 columns each cannot fit", () => {
+        expect(fitColumns([5, 5, 5], 8)).toBeNull();
+    });
+});
+
+describe("renderMarkdown tables", () => {
+    const small = "| a | b |\n|:--|--:|\n| 1 | 22 |";
+
+    it("draws a bordered table with an aligned, bold header", () => {
+        const rows = md(small);
+        expect(texts(rows)).toEqual([
+            "┌───┬────┐",
+            "│ a │  b │",
+            "├───┼────┤",
+            "│ 1 │ 22 │",
+            "└───┴────┘",
+        ]);
+        expect(rows[1]).toContainEqual({ text: "a", style: { bold: true } });
+    });
+
+    it("wraps cells when the table is too wide", () => {
+        const table = "| a | b |\n|---|---|\n| x | one two three |";
+        expect(texts(md(table, 16))).toEqual([
+            "┌─────┬────────┐",
+            "│ a   │ b      │",
+            "├─────┼────────┤",
+            "│ x   │ one    │",
+            "│     │ two    │",
+            "│     │ three  │",
+            "└─────┴────────┘",
+        ]);
+    });
+
+    it("falls back to plain rows when even narrow columns cannot fit", () => {
+        const table = "| a | b |\n|---|---|\n| x | one two three |";
+        expect(texts(md(table, 6))).toEqual([
+            "a │ b",
+            "x │",
+            "one",
+            "two",
+            "three",
+        ]);
     });
 });

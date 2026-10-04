@@ -15,6 +15,7 @@ import {
     breakSpans,
     PLAIN,
     type Row,
+    rowWidth,
     type Span,
     type Style,
     splitLines,
@@ -160,6 +161,125 @@ function list(token: Tokens.List, width: number): Row[] {
     return rows;
 }
 
+const MIN_COLUMN = 3;
+const BORDER: Style = DIM;
+
+export function fitColumns(natural: number[], room: number): number[] | null {
+    const total = natural.reduce((sum, width) => sum + width, 0);
+    if (total <= room) {
+        return natural;
+    }
+    if (MIN_COLUMN * natural.length > room) {
+        return null;
+    }
+    const widths = natural.map((width) =>
+        Math.max(MIN_COLUMN, Math.floor((width * room) / total)),
+    );
+    let excess = widths.reduce((sum, width) => sum + width, 0) - room;
+    while (excess > 0) {
+        const widest = widths.indexOf(Math.max(...widths));
+        widths[widest] = (widths[widest] ?? MIN_COLUMN) - 1;
+        excess--;
+    }
+    return widths;
+}
+
+const naturalWidth = (spans: Span[]) =>
+    Math.max(0, ...wrapSpans(spans, Number.MAX_SAFE_INTEGER).map(rowWidth));
+
+type Align = Tokens.Table["align"][number];
+
+function pad(row: Row, width: number, align: Align): Row {
+    const space = Math.max(0, width - rowWidth(row));
+    const before =
+        align === "right"
+            ? space
+            : align === "center"
+              ? Math.floor(space / 2)
+              : 0;
+    return [
+        { text: " ".repeat(before), style: PLAIN },
+        ...row,
+        { text: " ".repeat(space - before), style: PLAIN },
+    ];
+}
+
+function tableRow(cells: Span[][], widths: number[], align: Align[]): Row[] {
+    const wrapped = widths.map((width, column) =>
+        wrapSpans(cells[column] ?? [], width),
+    );
+    const height = Math.max(...wrapped.map((rows) => rows.length));
+    const rows: Row[] = [];
+    for (let line = 0; line < height; line++) {
+        const row: Row = [{ text: "│ ", style: BORDER }];
+        widths.forEach((width, column) => {
+            if (column > 0) {
+                row.push({ text: " │ ", style: BORDER });
+            }
+            row.push(
+                ...pad(
+                    wrapped[column]?.[line] ?? [],
+                    width,
+                    align[column] ?? null,
+                ),
+            );
+        });
+        row.push({ text: " │", style: BORDER });
+        rows.push(row);
+    }
+    return rows;
+}
+
+function plainTable(header: Span[][], body: Span[][][], width: number): Row[] {
+    const separator: Span = { text: " │ ", style: BORDER };
+    return [header, ...body].flatMap((cells) =>
+        wrapSpans(
+            cells.flatMap((spans, column) =>
+                column === 0 ? spans : [separator, ...spans],
+            ),
+            width,
+        ),
+    );
+}
+
+// Borders and a space either side of each cell take 3 * columns + 1.
+function table(token: Tokens.Table, width: number): Row[] {
+    const header = token.header.map((cell) =>
+        inline(cell.tokens, { bold: true }),
+    );
+    const body = token.rows.map((row) =>
+        row.map((cell) => inline(cell.tokens, PLAIN)),
+    );
+    const natural = header.map((_, column) =>
+        Math.max(
+            1,
+            ...[header, ...body].map((cells) =>
+                naturalWidth(cells[column] ?? []),
+            ),
+        ),
+    );
+    const widths = fitColumns(natural, width - (3 * natural.length + 1));
+    if (!widths) {
+        return plainTable(header, body, width);
+    }
+    const border = (left: string, join: string, right: string): Row => [
+        {
+            text:
+                left +
+                widths.map((each) => "─".repeat(each + 2)).join(join) +
+                right,
+            style: BORDER,
+        },
+    ];
+    return [
+        border("┌", "┬", "┐"),
+        ...tableRow(header, widths, token.align),
+        border("├", "┼", "┤"),
+        ...body.flatMap((cells) => tableRow(cells, widths, token.align)),
+        border("└", "┴", "┘"),
+    ];
+}
+
 function block(token: MarkedToken, width: number): Row[] {
     switch (token.type) {
         case "space":
@@ -196,6 +316,8 @@ function block(token: MarkedToken, width: number): Row[] {
             return withGutter(blocks(token.tokens, width - 2), QUOTE, QUOTE);
         case "list":
             return list(token, width);
+        case "table":
+            return table(token, width);
         default:
             return wrapSpans(
                 [{ text: token.raw.trimEnd(), style: PLAIN }],
