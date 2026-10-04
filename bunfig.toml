@@ -28,3 +28,11 @@ bun = true
 
 [env]
 file = false
+
+#
+# Tests compare rendered frames as plain text, whatever the shell's
+# FORCE_COLOR says (see test-setup.ts).
+#
+
+[test]
+preload = ["./test-setup.ts"]
