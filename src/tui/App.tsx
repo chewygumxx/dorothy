@@ -8,18 +8,26 @@
 //
 //
 
-import { Box, useApp, useInput, useWindowSize } from "ink";
+import { Box, Text, useApp, useInput, useWindowSize } from "ink";
 import { useEffect, useReducer, useRef, useState } from "react";
+import { type Config, DEFAULT_CONFIG } from "../config.js";
 import type { ChatSession, ConversationEvent } from "../conversation.js";
 import type { Turn } from "../persona.js";
-import type { TranscriptEntry } from "../transcript.js";
-import { Header } from "./Header.js";
+import type { ResumedTurn, TranscriptEntry } from "../transcript.js";
+import { Header, Statusline, Warnings } from "./Header.js";
 import { History } from "./History.js";
 import { Input, inputRows } from "./Input.js";
-import { LiveReply } from "./LiveReply.js";
-import { fitLayout } from "./layout.js";
+import { LiveReply, wrapRows } from "./LiveReply.js";
+import {
+    fitLayout,
+    MIN_COLUMNS,
+    minRows,
+    tooSmallMessage,
+    tooSmallShort,
+} from "./layout.js";
 import { RawPane } from "./RawPane.js";
 import { initialState, reduce } from "./state.js";
+import { moduleRows } from "./statusline.js";
 
 export type TranscriptSink = {
     append(entry: TranscriptEntry): Promise<void>;
@@ -28,12 +36,14 @@ export type TranscriptSink = {
 export type AppProps = {
     phrase: string;
     promptSha256: string;
-    history: Turn[];
+    history: ResumedTurn[];
     createSession(history: Turn[]): ChatSession;
     transcript: TranscriptSink | null;
     initialWarnings?: string[];
     // What the chat cost before this run, for --resume.
     initialCostUsd?: number;
+    // The statusline and reply stats; the defaults when not given.
+    config?: Config;
 };
 
 const describeError = (error: unknown) =>
@@ -47,6 +57,7 @@ export function App({
     transcript,
     initialWarnings = [],
     initialCostUsd = 0,
+    config = DEFAULT_CONFIG,
 }: AppProps) {
     const { exit } = useApp();
     const { columns, rows } = useWindowSize();
@@ -169,7 +180,24 @@ export function App({
         session.current?.send(text);
     };
 
+    // Below the minimum only the quit keys act; the draft waits in state.
+    const statusLines =
+        config.statusline.modules.length > 0 ? config.statusline.maxLines : 0;
+    const neededRows = minRows(statusLines);
+    const tooSmall = columns < MIN_COLUMNS || rows < neededRows;
+    // <Static> prints a line once, at the width of the moment, so lines that
+    // finish while the window is too small wait to print until it is not.
+    const printable = useRef(state.lines.length);
+    if (!tooSmall) {
+        printable.current = state.lines.length;
+    }
+    const lines = state.lines.slice(0, printable.current);
+
     useInput((input, key) => {
+        const quitKey = key.ctrl && (input === "c" || input === "d");
+        if (tooSmall && !quitKey) {
+            return;
+        }
         if (key.escape) {
             if (state.streaming) {
                 interrupt();
@@ -187,16 +215,45 @@ export function App({
         }
     });
 
+    // History stays mounted: <Static> prints each line once, and mounting it
+    // again would print them all again. The message is cut short of the
+    // window, which Ink would otherwise clear on every frame.
+    if (tooSmall) {
+        const room = Math.max(1, rows - 1);
+        const full = wrapRows(
+            tooSmallMessage(neededRows, rows, columns),
+            columns,
+        );
+        const message = (
+            full.length <= room
+                ? full
+                : wrapRows(tooSmallShort(neededRows, rows, columns), columns)
+        ).slice(0, room);
+        return (
+            <Box flexDirection="column">
+                <History lines={lines} replyStats={config.replyStats} />
+                <Text>{message.join("\n")}</Text>
+            </Box>
+        );
+    }
+
+    const statusRows = moduleRows(
+        config.statusline,
+        state.lastStats,
+        state.costUsd,
+        columns,
+    );
     const layout = fitLayout(rows, {
         showRaw: state.showRaw,
         rawCount: state.raw.length,
         warnings: state.warnings.length,
+        statusRows: statusRows.length,
         inputRows: inputRows(draft, columns),
     });
 
     return (
         <Box flexDirection="column">
-            <History lines={state.lines} />
+            <History lines={lines} replyStats={config.replyStats} />
             <LiveReply
                 text={state.live}
                 streaming={state.streaming}
@@ -213,19 +270,20 @@ export function App({
                 borderRight={false}
                 borderBottom={false}
             >
-                <Header
-                    phrase={phrase}
-                    model={state.model}
-                    sdkSessionId={state.sdkSessionId}
-                    status={state.status}
-                    warnings={state.warnings}
-                />
+                <Warnings warnings={state.warnings} />
                 <Input
                     value={draft}
                     disabled={state.streaming || closing}
                     maxRows={layout.inputRows}
                     onChange={setDraft}
                     onSubmit={submit}
+                />
+                <Statusline rows={statusRows} />
+                <Header
+                    phrase={phrase}
+                    model={state.model}
+                    sdkSessionId={state.sdkSessionId}
+                    status={state.status}
                 />
             </Box>
         </Box>

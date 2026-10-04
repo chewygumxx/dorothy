@@ -29,6 +29,47 @@ function streaming(): ChatState {
 }
 
 describe("initialState", () => {
+    it("keeps the latest turn's stats, starting from a resumed reply's", () => {
+        expect(initialState([]).lastStats).toBeNull();
+        const resumed = initialState([
+            { role: "assistant", text: "b", stats, chatCostUsd: 0.5 },
+            { role: "user", text: "c" },
+        ]);
+        expect(resumed.lastStats).toEqual(stats);
+        const later = { ...stats, outputTokens: 99 };
+        expect(
+            reduce(resumed, {
+                type: "event",
+                event: {
+                    type: "turn-end",
+                    reply: "d",
+                    interrupted: false,
+                    stats: later,
+                },
+            }).lastStats,
+        ).toEqual(later);
+    });
+
+    it("initialState gives resumed replies their stats", () => {
+        expect(
+            initialState([
+                { role: "user", text: "a" },
+                { role: "assistant", text: "b", stats, chatCostUsd: 0.5 },
+            ]).lines,
+        ).toEqual([
+            { id: 0, role: "you", text: "a" },
+            { id: 1, role: "dorothy", text: "b", stats, chatCostUsd: 0.5 },
+        ]);
+    });
+
+    it("initialState keeps the last three distinct warnings", () => {
+        expect(initialState([], ["a", "b", "a", "c", "d"]).warnings).toEqual([
+            "b",
+            "c",
+            "d",
+        ]);
+    });
+
     it("renders resumed history as finished lines", () => {
         const state = initialState([
             { role: "user", text: "a" },

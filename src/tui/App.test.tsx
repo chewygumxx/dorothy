@@ -10,16 +10,34 @@
 
 import { describe, expect, it } from "bun:test";
 import { render } from "ink-testing-library";
+import { type Config, DEFAULT_CONFIG } from "../config.js";
 import type {
     ChatSession,
     ConversationEvent,
     TurnStats,
 } from "../conversation.js";
 import type { Turn } from "../persona.js";
-import type { TranscriptEntry } from "../transcript.js";
+import type { ResumedTurn, TranscriptEntry } from "../transcript.js";
 import { App } from "./App.js";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
+// ink-testing-library leaves rows unset, so Ink would take the size of the
+// terminal running the tests; every test gets 100 × 24 unless it resizes.
+const setSize = (
+    app: ReturnType<typeof render>,
+    columns: number,
+    rows: number,
+) => {
+    Object.defineProperty(app.stdout, "columns", {
+        value: columns,
+        configurable: true,
+    });
+    Object.defineProperty(app.stdout, "rows", {
+        value: rows,
+        configurable: true,
+    });
+    app.stdout.emit("resize");
+};
 const stats: TurnStats = {
     inputTokens: 1,
     cacheReadTokens: 0,
@@ -70,15 +88,18 @@ class FakeSession implements ChatSession {
 function setup({
     history = [],
     failWrites = false,
+    config = DEFAULT_CONFIG,
 }: {
-    history?: Turn[];
+    history?: ResumedTurn[];
     failWrites?: boolean;
+    config?: Config;
 } = {}) {
     const sessions: FakeSession[] = [];
     const histories: Turn[][] = [];
     const entries: TranscriptEntry[] = [];
     const app = render(
         <App
+            config={config}
             phrase="tumble-orchid-vapor-lantern"
             promptSha256="abc"
             history={history}
@@ -98,15 +119,216 @@ function setup({
             }}
         />,
     );
+    setSize(app, 100, 24);
     const session = () => sessions.at(-1) as FakeSession;
     const type = async (text: string) => {
         app.stdin.write(text);
         await tick();
     };
-    return { app, sessions, histories, entries, session, type };
+    const resize = async (columns: number, rows: number) => {
+        setSize(app, columns, rows);
+        await tick();
+    };
+    return { app, sessions, histories, entries, session, type, resize };
 }
 
 describe("App", () => {
+    // The message wraps at narrow widths; joining its rows restores it.
+    const flat = (frame = "") => frame.split("\n").join(" ");
+
+    it("asks for a larger window below either minimum, and not at it", async () => {
+        const { app, resize } = setup();
+        await tick();
+        await resize(39, 24);
+        expect(flat(app.lastFrame())).toContain(
+            "Too Small: Dorothy's TUI needs at least 20 lines and 40 columns (this window is 24 × 39)",
+        );
+        expect(app.lastFrame()).not.toContain("tumble-orchid-vapor-lantern");
+        await resize(40, 19);
+        expect(flat(app.lastFrame())).toContain("(this window is 19 × 40)");
+        await resize(40, 20);
+        expect(app.lastFrame()).not.toContain("Too Small");
+        expect(app.lastFrame()).toContain("tumble-orchid-vapor-lantern");
+    });
+
+    it("needs a line more for each statusline line, and none when hidden", async () => {
+        const tall = setup({
+            config: {
+                ...DEFAULT_CONFIG,
+                statusline: { ...DEFAULT_CONFIG.statusline, maxLines: 3 },
+            },
+        });
+        await tick();
+        await tall.resize(100, 21);
+        expect(flat(tall.app.lastFrame())).toContain("at least 22 lines");
+        const hidden = setup({
+            config: {
+                ...DEFAULT_CONFIG,
+                statusline: { modules: [], maxLines: 1 },
+            },
+        });
+        await tick();
+        await hidden.resize(100, 19);
+        expect(hidden.app.lastFrame()).not.toContain("Too Small");
+    });
+
+    it("keeps the draft, the reply and the scrollback while too small", async () => {
+        const { app, session, type, resize } = setup();
+        await tick();
+        await type("hi");
+        await type("\r");
+        session().emit({
+            type: "turn-end",
+            reply: "Hi there",
+            interrupted: false,
+            stats,
+        });
+        await tick();
+        await type("draft");
+        await type("\r");
+        await resize(30, 10);
+        session().emit({ type: "delta", text: "Streamed" });
+        await type("x");
+        await type("\u0012");
+        await type("\u001B");
+        await resize(100, 24);
+        const frame = app.lastFrame() ?? "";
+        expect(frame).toContain("Streamed▍");
+        expect(frame).not.toContain("raw (ctrl+r)");
+        expect(session().interrupts).toBe(0);
+        expect(frame.split("Hi there")).toHaveLength(2);
+        expect(session().sent).toEqual(["hi", "draft"]);
+    });
+
+    it("quits on Ctrl+C while too small", async () => {
+        const { session, type, resize } = setup();
+        await tick();
+        await resize(30, 10);
+        await type("\u0003");
+        expect(session().closed).toBe(true);
+    });
+
+    it("keeps the message shorter than a tiny window", async () => {
+        const { app, resize } = setup();
+        await tick();
+        await resize(20, 3);
+        expect((app.lastFrame() ?? "").split("\n")).toHaveLength(2);
+        // The full message would be cut before its sizes.
+        expect(flat(app.lastFrame())).toContain("Needs 20 × 40 (is 3 × 20)");
+    });
+
+    it("prints a reply that ends while too small at the grown width", async () => {
+        const { app, session, type, resize } = setup();
+        await tick();
+        await type("hi");
+        await type("\r");
+        await resize(30, 10);
+        const reply = "Hello there, this reply is long enough to wrap";
+        session().emit({ type: "delta", text: reply });
+        session().emit({ type: "turn-end", reply, interrupted: false, stats });
+        await tick();
+        await resize(100, 24);
+        const frame = app.lastFrame() ?? "";
+        expect(frame).toContain(`dorothy  ${reply}`);
+        expect(frame).toContain(
+            "1 in · 2 out · ttft 0.3s · 1.5s · $0.0010 · chat $0.0010",
+        );
+        expect(frame.split(reply)).toHaveLength(2);
+    });
+
+    it("keeps a draft typed before the window shrank", async () => {
+        const { app, type, resize } = setup();
+        await tick();
+        await type("draft");
+        await resize(30, 10);
+        await type("x");
+        await resize(100, 24);
+        expect(app.lastFrame()).toContain("› draft▏");
+    });
+
+    it("orders warnings, input, statusline and header under the border", async () => {
+        const { app, session, type } = setup({ failWrites: true });
+        await tick();
+        await type("hello");
+        await type("\r");
+        session().emit({
+            type: "turn-end",
+            reply: "Hi there",
+            interrupted: false,
+            stats,
+        });
+        await tick();
+        const lines = (app.lastFrame() ?? "").split("\n");
+        const warning = lines.findIndex((line) =>
+            line.startsWith("! transcript not saved"),
+        );
+        expect(lines[warning - 1]).toStartWith("────");
+        expect(lines[warning + 1]).toStartWith("›");
+        expect(lines.at(-2)).toBe(
+            "chat $0.0010 · $0.0010 · 1 in · 2 out · ttft 0.3s · 1.5s",
+        );
+        expect(lines.at(-1)).toStartWith(
+            "dorothy · tumble-orchid-vapor-lantern",
+        );
+    });
+
+    it("shows the chat's cost in the statusline before the first reply", async () => {
+        const { app } = setup();
+        await tick();
+        expect((app.lastFrame() ?? "").split("\n").at(-2)).toBe("chat $0.0000");
+    });
+
+    it("draws no statusline when it has no modules", async () => {
+        const { app } = setup({
+            config: {
+                ...DEFAULT_CONFIG,
+                statusline: { modules: [], maxLines: 1 },
+            },
+        });
+        await tick();
+        expect((app.lastFrame() ?? "").split("\n").at(-2)).toStartWith("›");
+    });
+
+    it("shows a resumed reply's stats", async () => {
+        const { app } = setup({
+            history: [
+                { role: "user", text: "earlier" },
+                {
+                    role: "assistant",
+                    text: "yes",
+                    stats,
+                    chatCostUsd: 0.002,
+                },
+            ],
+        });
+        await tick();
+        expect(app.lastFrame()).toContain(
+            "1 in · 2 out · ttft 0.3s · 1.5s · $0.0010 · chat $0.0020",
+        );
+    });
+
+    it("draws reply stats as configured", async () => {
+        const { app, session, type } = setup({
+            // No statusline, whose defaults would show "1 in" too.
+            config: {
+                statusline: { modules: [], maxLines: 1 },
+                replyStats: { modules: ["out"], maxLines: 1 },
+            },
+        });
+        await tick();
+        await type("hello");
+        await type("\r");
+        session().emit({
+            type: "turn-end",
+            reply: "Hi there",
+            interrupted: false,
+            stats,
+        });
+        await tick();
+        expect(app.lastFrame()).toContain(`${" ".repeat(9)}2 out`);
+        expect(app.lastFrame()).not.toContain("1 in");
+    });
+
     it("starts a session and records it once ready", async () => {
         const { app, session, entries } = setup();
         await tick();
@@ -278,7 +500,9 @@ describe("App", () => {
         await type("word ".repeat(600));
         const lines = (app.lastFrame() ?? "").split("\n");
         expect(lines.length).toBeLessThan(24);
-        expect(lines.at(-1)).toContain("▏");
+        expect(lines.at(-3)).toContain("▏");
+        const top = lines.findIndex((line) => line.startsWith("↑"));
+        expect(lines.length - 3 - top + 1).toBe(5);
     });
 
     it("quits on Ctrl+D", async () => {

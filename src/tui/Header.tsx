@@ -16,7 +16,6 @@ export type HeaderProps = {
     model: string | null;
     sdkSessionId: string | null;
     status: Status;
-    warnings: string[];
 };
 
 const STATUS_COLORS: Record<Status, string> = {
@@ -30,13 +29,7 @@ export function shortId(id: string): string {
     return id.length > 10 ? `${id.slice(0, 4)}…${id.slice(-3)}` : id;
 }
 
-export function Header({
-    phrase,
-    model,
-    sdkSessionId,
-    status,
-    warnings,
-}: HeaderProps) {
+export function Header({ phrase, model, sdkSessionId, status }: HeaderProps) {
     const parts = [
         "dorothy",
         phrase,
@@ -44,15 +37,35 @@ export function Header({
         `sdk ${sdkSessionId ? shortId(sdkSessionId) : "…"}`,
     ];
     return (
+        <Text wrap="truncate">
+            <Text bold>{parts.join(" · ")}</Text>
+            {" · "}
+            <Text color={STATUS_COLORS[status]}>{status}</Text>
+        </Text>
+    );
+}
+
+// Above the input, one row each, cut short rather than wrapped.
+export function Warnings({ warnings }: { warnings: string[] }) {
+    return (
         <Box flexDirection="column">
-            <Text>
-                <Text bold>{parts.join(" · ")}</Text>
-                {" · "}
-                <Text color={STATUS_COLORS[status]}>{status}</Text>
-            </Text>
             {warnings.map((warning) => (
                 <Text key={warning} color="yellow" wrap="truncate">
                     ! {warning}
+                </Text>
+            ))}
+        </Box>
+    );
+}
+
+// Under the input; fitModules has already fitted each row to the width.
+export function Statusline({ rows }: { rows: string[] }) {
+    return (
+        <Box flexDirection="column">
+            {rows.map((row, index) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: rows are positional.
+                <Text key={index} dimColor wrap="truncate">
+                    {row}
                 </Text>
             ))}
         </Box>

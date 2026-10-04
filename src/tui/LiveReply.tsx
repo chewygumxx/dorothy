@@ -10,28 +10,8 @@
 
 import { Box, Text } from "ink";
 import stringWidth from "string-width";
-import type { TurnStats } from "../conversation.js";
 
 export const LABEL_WIDTH = 9;
-
-export function formatStats(stats: TurnStats, chatCostUsd: number): string {
-    const parts = [`${stats.inputTokens} in`];
-    if (stats.cacheReadTokens > 0) {
-        parts.push(`${stats.cacheReadTokens} cache read`);
-    }
-    if (stats.cacheWriteTokens > 0) {
-        parts.push(`${stats.cacheWriteTokens} cache write`);
-    }
-    parts.push(`${stats.outputTokens} out`);
-    if (stats.ttftMs !== null) {
-        parts.push(`ttft ${(stats.ttftMs / 1000).toFixed(1)}s`);
-    }
-    parts.push(
-        `${(stats.durationMs / 1000).toFixed(1)}s`,
-        `$${stats.costUsd.toFixed(4)} (chat $${chatCostUsd.toFixed(4)})`,
-    );
-    return parts.join(" · ");
-}
 
 const graphemes = new Intl.Segmenter();
 // Newlines are split on first; anything else would move the terminal's

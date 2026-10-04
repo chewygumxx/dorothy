@@ -89,14 +89,39 @@ bun run dev
 Enter sends and Esc stops a reply. Ctrl+C stops a reply too, and quits when
 none is streaming; Ctrl+D and `/exit` quit. Ctrl+R shows the raw SDK messages.
 Each reply ends with its tokens, timings, cost and what the chat has cost so
-far. Each chat is named by a four-word phrase shown in the status bar and saved
-as it happens, readable only by you, to
-`~/.local/share/dorothy/transcripts/<phrase>.jsonl` (`$XDG_DATA_HOME` if set).
+far, and the statusline under the input shows the latest of them. Each chat
+is named by a four-word phrase shown in the header and saved as it happens,
+readable only by you, to `~/.local/share/dorothy/transcripts/<phrase>.jsonl`
+(`$XDG_DATA_HOME` if set).
 Continue one with:
 
 ```sh
 bun run dev -- --resume <phrase>
 ```
+
+The chat needs a window of at least 40 columns and 20 lines, one more line
+for each extra statusline line; a smaller one shows only how large it needs
+to be. Both stats lines are set in `~/.config/dorothy/config.toml`
+(`$XDG_CONFIG_HOME` if set), read at startup:
+
+```toml
+[statusline]
+modules = ["chat-cost", "cost", "in", "out", "ttft", "duration"]
+max-lines = 1
+
+[reply-stats]
+modules = [
+  "in", "cache-read", "cache-write", "out", "ttft", "duration", "cost",
+  "chat-cost",
+]
+max-lines = 1
+```
+
+Modules show left to right as far as the width allows, then on up to
+`max-lines` lines (at most 5); those that still do not fit are left out from
+the right. An empty `modules` hides the line; for the statusline it also
+frees its rows, so the window then needs only 19 lines. A mistake in the
+file shows as a warning, naming its line, and the defaults apply.
 
 ## CI
 

@@ -9,8 +9,10 @@
 //
 
 import { Box, Static, Text, useWindowSize } from "ink";
-import { formatStats, LABEL_WIDTH, wrapRows } from "./LiveReply.js";
+import type { LineConfig } from "../config.js";
+import { LABEL_WIDTH, wrapRows } from "./LiveReply.js";
 import type { Line } from "./state.js";
+import { moduleRows } from "./statusline.js";
 
 const LABELS: Record<Line["role"], { text: string; color: string }> = {
     you: { text: "you", color: "cyan" },
@@ -18,7 +20,13 @@ const LABELS: Record<Line["role"], { text: string; color: string }> = {
     error: { text: "error", color: "red" },
 };
 
-export function LineView({ line }: { line: Line }) {
+export function LineView({
+    line,
+    replyStats,
+}: {
+    line: Line;
+    replyStats: LineConfig;
+}) {
     const label = LABELS[line.role];
     const { columns } = useWindowSize();
     // Wrapped here rather than by Ink, which starts a row with the space it
@@ -40,13 +48,18 @@ export function LineView({ line }: { line: Line }) {
                 </Text>
             </Box>
             {line.stats ? (
-                <Box marginLeft={LABEL_WIDTH}>
-                    <Text dimColor>
-                        {formatStats(
-                            line.stats,
-                            line.chatCostUsd ?? line.stats.sessionCostUsd,
-                        )}
-                    </Text>
+                <Box marginLeft={LABEL_WIDTH} flexDirection="column">
+                    {moduleRows(
+                        replyStats,
+                        line.stats,
+                        line.chatCostUsd ?? line.stats.sessionCostUsd,
+                        columns - LABEL_WIDTH,
+                    ).map((row, index) => (
+                        // biome-ignore lint/suspicious/noArrayIndexKey: rows are positional.
+                        <Text key={index} dimColor>
+                            {row}
+                        </Text>
+                    ))}
                 </Box>
             ) : null}
         </Box>
@@ -58,10 +71,18 @@ export function LineView({ line }: { line: Line }) {
 // it from the terminal's width unless it is given one.
 const FULL_WIDTH = { width: "100%" };
 
-export function History({ lines }: { lines: Line[] }) {
+export function History({
+    lines,
+    replyStats,
+}: {
+    lines: Line[];
+    replyStats: LineConfig;
+}) {
     return (
         <Static items={lines} style={FULL_WIDTH}>
-            {(line) => <LineView key={line.id} line={line} />}
+            {(line) => (
+                <LineView key={line.id} line={line} replyStats={replyStats} />
+            )}
         </Static>
     );
 }

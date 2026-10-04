@@ -9,9 +9,10 @@
 //
 
 import { type FileHandle, mkdir, open, readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname, join } from "node:path";
+import type { TurnStats } from "./conversation.js";
 import type { Turn } from "./persona.js";
+import { type Env, xdgDir } from "./xdg.js";
 
 export type SessionEvent = {
     v: 1;
@@ -54,16 +55,12 @@ export type TranscriptEvent =
 type Unstamped<E> = E extends unknown ? Omit<E, "v" | "at"> : never;
 export type TranscriptEntry = Unstamped<TranscriptEvent>;
 
-type Env = Record<string, string | undefined>;
-
 export function transcriptDir(env: Env = process.env): string {
-    // XDG treats an empty or relative XDG_DATA_HOME as unset. An empty HOME
-    // would otherwise put transcripts under the working directory.
-    const xdg = env.XDG_DATA_HOME ?? "";
-    const data = isAbsolute(xdg)
-        ? xdg
-        : join(env.HOME || homedir(), ".local", "share");
-    return join(data, "dorothy", "transcripts");
+    return join(
+        xdgDir(env, "XDG_DATA_HOME", ".local/share"),
+        "dorothy",
+        "transcripts",
+    );
 }
 
 export function transcriptPath(phrase: string, env: Env = process.env): string {
@@ -81,11 +78,39 @@ function toTurn(event: unknown): Turn | "ignore" | "malformed" {
     return kind === "session" || kind === "stats" ? "ignore" : "malformed";
 }
 
+// A turn read back from a transcript: a reply keeps the stats recorded after
+// it and what the chat had cost by then.
+export type ResumedTurn = Turn & { stats?: TurnStats; chatCostUsd?: number };
+
+const finite = (value: unknown): value is number =>
+    typeof value === "number" && Number.isFinite(value);
+
+// Transcripts from before cache use was recorded have no cache counts.
+function toStats(event: Record<string, unknown>): TurnStats | null {
+    const stats = {
+        inputTokens: event.inputTokens,
+        cacheReadTokens: event.cacheReadTokens ?? 0,
+        cacheWriteTokens: event.cacheWriteTokens ?? 0,
+        outputTokens: event.outputTokens,
+        ttftMs: event.ttftMs,
+        durationMs: event.durationMs,
+        costUsd: event.costUsd,
+        sessionCostUsd: event.sessionCostUsd,
+    };
+    const { ttftMs, ...counts } = stats;
+    return Object.values(counts).every(finite) &&
+        (ttftMs === null || finite(ttftMs))
+        ? (stats as TurnStats)
+        : null;
+}
+
 export async function readTranscript(
     path: string,
-): Promise<{ turns: Turn[]; skipped: number; costUsd: number }> {
+): Promise<{ turns: ResumedTurn[]; skipped: number; costUsd: number }> {
     const text = await readFile(path, "utf8");
-    const turns: Turn[] = [];
+    const turns: ResumedTurn[] = [];
+    // The reply a stats line would belong to.
+    let reply: ResumedTurn | null = null;
     let skipped = 0;
     let costUsd = 0;
     for (const line of text.split("\n")) {
@@ -99,20 +124,26 @@ export async function readTranscript(
             skipped++;
             continue;
         }
-        const cost = (event as { kind?: unknown; costUsd?: unknown } | null)
-            ?.costUsd;
-        if (
-            (event as { kind?: unknown } | null)?.kind === "stats" &&
-            typeof cost === "number" &&
-            Number.isFinite(cost)
-        ) {
-            costUsd += cost;
+        if ((event as { kind?: unknown } | null)?.kind === "stats") {
+            const fields = event as Record<string, unknown>;
+            const cost = fields.costUsd;
+            if (finite(cost)) {
+                costUsd += cost;
+            }
+            const stats = toStats(fields);
+            if (reply !== null && stats !== null) {
+                reply.stats = stats;
+                reply.chatCostUsd = costUsd;
+            }
+            reply = null;
+            continue;
         }
         const turn = toTurn(event);
         if (turn === "malformed") {
             skipped++;
         } else if (turn !== "ignore") {
             turns.push(turn);
+            reply = turn.role === "assistant" ? turn : null;
         }
     }
     return { turns, skipped, costUsd };

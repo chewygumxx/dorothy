@@ -9,10 +9,12 @@
 //
 
 import { render } from "ink";
+import { readConfig } from "../config.js";
 import { Conversation } from "../conversation.js";
-import { promptSha256, type Turn } from "../persona.js";
+import { promptSha256 } from "../persona.js";
 import { newPhrase } from "../session-id.js";
 import {
+    type ResumedTurn,
     readTranscript,
     TranscriptWriter,
     transcriptPath,
@@ -25,9 +27,11 @@ const describeError = (error: unknown) =>
 export async function runTui(resume: string | null): Promise<number> {
     const phrase = resume ?? newPhrase();
     const path = transcriptPath(phrase);
-    let history: Turn[] = [];
+    let history: ResumedTurn[] = [];
     let costUsd = 0;
     const warnings: string[] = [];
+    const { config, warnings: configWarnings } = await readConfig();
+    warnings.push(...configWarnings);
 
     if (resume !== null) {
         try {
@@ -67,6 +71,7 @@ export async function runTui(resume: string | null): Promise<number> {
             transcript={writer}
             initialWarnings={warnings}
             initialCostUsd={costUsd}
+            config={config}
         />,
         { exitOnCtrlC: false },
     );
