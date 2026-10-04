@@ -16,6 +16,7 @@ import type {
 import type { Turn } from "../persona.js";
 
 export const RAW_LIMIT = 20;
+export const WARNING_LIMIT = 3;
 
 export type Line = {
     id: number;
@@ -37,7 +38,7 @@ export type ChatState = {
     raw: RawEntry[];
     rawCount: number;
     showRaw: boolean;
-    warning: string | null;
+    warnings: string[];
 };
 
 export type Action =
@@ -50,7 +51,7 @@ export type Action =
 
 export function initialState(
     history: readonly Turn[],
-    warning: string | null = null,
+    warnings: readonly string[] = [],
 ): ChatState {
     return {
         lines: history.map((turn, id) => ({
@@ -66,7 +67,7 @@ export function initialState(
         raw: [],
         rawCount: 0,
         showRaw: false,
-        warning,
+        warnings: [...warnings],
     };
 }
 
@@ -147,10 +148,16 @@ export function reduce(state: ChatState, action: Action): ChatState {
             };
         case "closing":
             return { ...state, status: "closing" };
+        // A repeated warning shows once; the oldest give way to new ones.
         case "warning":
-            return state.warning
+            return state.warnings.includes(action.message)
                 ? state
-                : { ...state, warning: action.message };
+                : {
+                      ...state,
+                      warnings: [...state.warnings, action.message].slice(
+                          -WARNING_LIMIT,
+                      ),
+                  };
         case "event":
             return reduceEvent(state, action.event);
     }

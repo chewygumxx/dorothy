@@ -21,21 +21,23 @@ const used = (rows: number, options: Options) => {
         rawRows +
         2 +
         inputRows +
-        (options.warning ? 1 : 0) +
+        options.warnings +
         (options.showRaw ? 3 : 0)
     );
 };
 
 describe("fitLayout", () => {
+    // Ten rows hold one warning beside the raw pane; every warning there
+    // would need the reply's or the raw pane's last row.
     it("keeps the live region shorter than the terminal", () => {
         for (const rows of [10, 24, 50]) {
             for (const showRaw of [false, true]) {
-                for (const warning of [false, true]) {
+                for (const warnings of rows > 10 ? [0, 1, 3] : [0, 1]) {
                     for (const inputRows of [1, 3, 30]) {
                         const options = {
                             showRaw,
                             rawCount: 20,
-                            warning,
+                            warnings,
                             inputRows,
                         };
                         expect(used(rows, options)).toBeLessThan(rows);
@@ -50,7 +52,7 @@ describe("fitLayout", () => {
             fitLayout(24, {
                 showRaw: false,
                 rawCount: 20,
-                warning: false,
+                warnings: 0,
                 inputRows: 1,
             }),
         ).toEqual({
@@ -62,7 +64,7 @@ describe("fitLayout", () => {
             fitLayout(24, {
                 showRaw: true,
                 rawCount: 20,
-                warning: false,
+                warnings: 0,
                 inputRows: 1,
             }),
         ).toEqual({
@@ -77,7 +79,7 @@ describe("fitLayout", () => {
             fitLayout(50, {
                 showRaw: true,
                 rawCount: 2,
-                warning: false,
+                warnings: 0,
                 inputRows: 1,
             }).rawRows,
         ).toBe(2);
@@ -88,7 +90,7 @@ describe("fitLayout", () => {
             fitLayout(4, {
                 showRaw: true,
                 rawCount: 20,
-                warning: true,
+                warnings: 1,
                 inputRows: 1,
             }).replyRows,
         ).toBe(1);
@@ -98,7 +100,7 @@ describe("fitLayout", () => {
         const options = {
             showRaw: false,
             rawCount: 0,
-            warning: false,
+            warnings: 0,
             inputRows: 30,
         };
         expect(fitLayout(24, options)).toEqual({

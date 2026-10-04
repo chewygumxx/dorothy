@@ -26,14 +26,16 @@ export async function runTui(resume: string | null): Promise<number> {
     const phrase = resume ?? newPhrase();
     const path = transcriptPath(phrase);
     let history: Turn[] = [];
-    let warning: string | null = null;
+    const warnings: string[] = [];
 
     if (resume !== null) {
         try {
             const read = await readTranscript(path);
             history = read.turns;
             if (read.skipped > 0) {
-                warning = `skipped ${read.skipped} malformed line(s) in ${path}`;
+                warnings.push(
+                    `skipped ${read.skipped} malformed line(s) in ${path}`,
+                );
             }
         } catch (error) {
             process.stderr.write(
@@ -47,7 +49,7 @@ export async function runTui(resume: string | null): Promise<number> {
     try {
         writer = await TranscriptWriter.open(path);
     } catch (error) {
-        warning ??= `transcript not saved: ${describeError(error)}`;
+        warnings.push(`transcript not saved: ${describeError(error)}`);
     }
 
     const app = render(
@@ -61,7 +63,7 @@ export async function runTui(resume: string | null): Promise<number> {
                 return conversation;
             }}
             transcript={writer}
-            initialWarning={warning}
+            initialWarnings={warnings}
         />,
         { exitOnCtrlC: false },
     );

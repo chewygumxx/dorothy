@@ -16,7 +16,7 @@ export type HeaderProps = {
     model: string | null;
     sdkSessionId: string | null;
     status: Status;
-    warning: string | null;
+    warnings: string[];
 };
 
 const STATUS_COLORS: Record<Status, string> = {
@@ -35,7 +35,7 @@ export function Header({
     model,
     sdkSessionId,
     status,
-    warning,
+    warnings,
 }: HeaderProps) {
     const parts = [
         "dorothy",
@@ -50,7 +50,11 @@ export function Header({
                 {" · "}
                 <Text color={STATUS_COLORS[status]}>{status}</Text>
             </Text>
-            {warning ? <Text color="yellow">! {warning}</Text> : null}
+            {warnings.map((warning) => (
+                <Text key={warning} color="yellow" wrap="truncate">
+                    ! {warning}
+                </Text>
+            ))}
         </Box>
     );
 }

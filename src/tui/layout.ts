@@ -28,16 +28,16 @@ export function fitLayout(
     {
         showRaw,
         rawCount,
-        warning,
+        warnings,
         inputRows: wanted,
     }: {
         showRaw: boolean;
         rawCount: number;
-        warning: boolean;
+        warnings: number;
         inputRows: number;
     },
 ): Layout {
-    const fixed = STATUS_ROWS + (warning ? 1 : 0) + SPARE_ROWS;
+    const fixed = STATUS_ROWS + warnings + SPARE_ROWS;
     // The reply and the raw pane each keep at least one row.
     const room = rows - fixed - 1 - (showRaw ? RAW_FRAME_ROWS + 1 : 0);
     const inputRows = Math.max(

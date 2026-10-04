@@ -40,8 +40,8 @@ describe("initialState", () => {
         expect(state.streaming).toBe(false);
     });
 
-    it("carries an initial warning", () => {
-        expect(initialState([], "careful").warning).toBe("careful");
+    it("carries the initial warnings", () => {
+        expect(initialState([], ["careful"]).warnings).toEqual(["careful"]);
     });
 });
 
@@ -146,12 +146,11 @@ describe("reduce", () => {
         });
     });
 
-    it("keeps only the first warning", () => {
-        let state = reduce(initialState([]), {
-            type: "warning",
-            message: "first",
-        });
-        state = reduce(state, { type: "warning", message: "second" });
-        expect(state.warning).toBe("first");
+    it("keeps each distinct warning, the last three at most", () => {
+        let state = initialState([], ["first"]);
+        for (const message of ["second", "first", "third", "fourth"]) {
+            state = reduce(state, { type: "warning", message });
+        }
+        expect(state.warnings).toEqual(["second", "third", "fourth"]);
     });
 });

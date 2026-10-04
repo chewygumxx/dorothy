@@ -54,7 +54,7 @@ describe("Header", () => {
                 model="test-model"
                 sdkSessionId="3f2a0000-0000-0000-0000-000000000c91"
                 status="ready"
-                warning={null}
+                warnings={[]}
             />,
         );
         const frame = lastFrame() ?? "";
@@ -64,17 +64,20 @@ describe("Header", () => {
         expect(frame).toContain("ready");
     });
 
-    it("shows a warning when given one", () => {
+    it("shows each warning on one row of its own", () => {
         const { lastFrame } = render(
             <Header
                 phrase="p"
                 model={null}
                 sdkSessionId={null}
                 status="starting"
-                warning="no transcript"
+                warnings={["no transcript", long("skipped")]}
             />,
         );
-        expect(lastFrame()).toContain("no transcript");
+        const lines = (lastFrame() ?? "").split("\n");
+        expect(lines).toHaveLength(3);
+        expect(lines[1]).toBe("! no transcript");
+        expect(lines[2]).toStartWith("! skipped skipped");
     });
 
     it("shortens long ids only", () => {

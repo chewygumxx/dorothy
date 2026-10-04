@@ -31,7 +31,7 @@ export type AppProps = {
     history: Turn[];
     createSession(history: Turn[]): ChatSession;
     transcript: TranscriptSink | null;
-    initialWarning?: string | null;
+    initialWarnings?: string[];
 };
 
 const describeError = (error: unknown) =>
@@ -43,12 +43,12 @@ export function App({
     history,
     createSession,
     transcript,
-    initialWarning = null,
+    initialWarnings = [],
 }: AppProps) {
     const { exit } = useApp();
     const { columns, rows } = useWindowSize();
     const [state, dispatch] = useReducer(reduce, undefined, () =>
-        initialState(history, initialWarning),
+        initialState(history, initialWarnings),
     );
     const [draft, setDraft] = useState("");
     // Refs, not state: event listeners registered once must see current values.
@@ -187,7 +187,7 @@ export function App({
     const layout = fitLayout(rows, {
         showRaw: state.showRaw,
         rawCount: state.raw.length,
-        warning: state.warning !== null,
+        warnings: state.warnings.length,
         inputRows: inputRows(draft, columns),
     });
 
@@ -215,7 +215,7 @@ export function App({
                     model={state.model}
                     sdkSessionId={state.sdkSessionId}
                     status={state.status}
-                    warning={state.warning}
+                    warnings={state.warnings}
                 />
                 <Input
                     value={draft}
