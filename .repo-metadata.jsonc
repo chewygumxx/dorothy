@@ -15,8 +15,9 @@
     "slug": "chewygumxx/dorothy",
     "default_branch": "main",
     "description": "Conversational LLM interface",
-    "category": "repository",
+    "category": "dorothy",
     "topics": ["llm", "chatbot", "dorothy"],
+    "visibility": "private",
     "license": {
         "filepath": "./LICENSE",
         "spdx_id": "GPL-3.0-only",
