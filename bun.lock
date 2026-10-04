@@ -6,9 +6,9 @@
       "name": "dorothy",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.3.283",
+        "@chewygumxx/markdownlint-cli2-config": "^1.0.1",
         "@dotenvx/dotenvx": "^2.32.4",
         "ink": "^7.1.1",
-        "markdownlint-cli2": "^0.23.3",
         "niceware": "^4.0.0",
         "react": "^19.2.0",
         "string-width": "^8.3.0",
@@ -26,6 +26,7 @@
         "commitizen": "^4.3.2",
         "husky": "^9.1.7",
         "ink-testing-library": "^4.0.0",
+        "markdownlint-cli2": "^0.23.3",
         "prettier": "^3.9.9",
         "remark-cli": "^12.0.1",
         "typescript": "^7.0.2",
@@ -84,6 +85,8 @@
     "@chewygumxx/commitlint-config": ["@chewygumxx/commitlint-config@1.1.0", "", { "dependencies": { "@commitlint/config-conventional": "^21.2.2", "@commitlint/types": "^21.2.2", "conventional-changelog-conventionalcommits": "^10.4.0" }, "peerDependencies": { "@commitlint/cli": "^21.2.2" } }, "sha512-4C6E86NXrp+z1wb/CW27FZ+AEs2gcxPNcG9lIaNSkxF6Kym43dRHR3jrqu9FEiUVespS0UO4BIU3iF+/JkTO9A=="],
 
     "@chewygumxx/cz-commitlint": ["@chewygumxx/cz-commitlint@1.0.2", "", { "dependencies": { "@commitlint/cz-commitlint": "^21.2.3", "@commitlint/load": "^21.2.3", "@commitlint/types": "^21.2.3" }, "peerDependencies": { "commitizen": "^4.3.2", "inquirer": "^9.0.0 || ^10.0.0 || ^11.0.0 || ^12.0.0" } }, "sha512-MkyoPNHLA8JOQMJakC+s6XamOpYJBkp6EUQyFch4lDDWBC9WTBxAq1c7ZQIQNr8j46yrwliQIgfAFE0V3o77SA=="],
+
+    "@chewygumxx/markdownlint-cli2-config": ["@chewygumxx/markdownlint-cli2-config@1.0.1", "", { "peerDependencies": { "markdownlint-cli2": "^0.23.3" } }, "sha512-DDzLMon209zg/S4T4we7+h+mWso28SM0VdE8E0mB9O/bWTOigSNTDYxcl4Y2gVsS5/XZFLm6vPkHwSd8p3TwKQ=="],
 
     "@chewygumxx/remark-preset": ["@chewygumxx/remark-preset@1.0.3", "", { "dependencies": { "remark-frontmatter": "^5.0.0", "remark-gfm": "^4.0.1", "remark-lint-maximum-line-length": "^4.1.1", "remark-lint-no-undefined-references": "^5.0.2", "remark-preset-lint-consistent": "^6.0.1", "remark-preset-lint-recommended": "^7.0.1" }, "peerDependencies": { "remark-cli": "^12.0.1" } }, "sha512-DVM+17zzlQIFjYaQQcJXzOyPq/cFFTkX56sSsDBLgWulpdXgPqACiyt03x3zId2YqrY7E7Hqdv/D2+2CWW1s7w=="],
 
