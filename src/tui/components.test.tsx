@@ -27,6 +27,8 @@ const widest = (frame = "") =>
 const long = (word: string) => `${word} `.repeat(40).trim();
 const stats: TurnStats = {
     inputTokens: 12,
+    cacheReadTokens: 3000,
+    cacheWriteTokens: 400,
     outputTokens: 40,
     ttftMs: 900,
     durationMs: 2100,
@@ -35,14 +37,17 @@ const stats: TurnStats = {
 };
 
 describe("formatStats", () => {
-    it("formats tokens, timings and cost", () => {
-        expect(formatStats(stats)).toBe(
-            "12 in · 40 out · ttft 0.9s · 2.1s · $0.0012 (session $0.0034)",
+    it("formats tokens, timings and the turn's and chat's cost", () => {
+        expect(formatStats(stats, 0.005)).toBe(
+            "12 in · 3000 cache read · 400 cache write · 40 out · ttft 0.9s · 2.1s · $0.0012 (chat $0.0050)",
         );
     });
 
-    it("omits ttft when unknown", () => {
-        expect(formatStats({ ...stats, ttftMs: null })).not.toContain("ttft");
+    it("omits ttft and cache use when there is none", () => {
+        const plain = { ...stats, ttftMs: null, cacheReadTokens: 0 };
+        expect(formatStats({ ...plain, cacheWriteTokens: 0 }, 0)).toBe(
+            "12 in · 40 out · 2.1s · $0.0012 (chat $0.0000)",
+        );
     });
 });
 
@@ -99,7 +104,7 @@ describe("History and LiveReply", () => {
         const frame = lastFrame() ?? "";
         expect(frame).toContain("What is your name?");
         expect(frame).toContain("I'm Dorothy!");
-        expect(frame).toContain("12 in · 40 out");
+        expect(frame).toContain("12 in · 3000 cache read");
         expect(frame).toContain("Well [interrupted]");
     });
 

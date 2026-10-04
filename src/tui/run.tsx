@@ -26,12 +26,14 @@ export async function runTui(resume: string | null): Promise<number> {
     const phrase = resume ?? newPhrase();
     const path = transcriptPath(phrase);
     let history: Turn[] = [];
+    let costUsd = 0;
     const warnings: string[] = [];
 
     if (resume !== null) {
         try {
             const read = await readTranscript(path);
             history = read.turns;
+            costUsd = read.costUsd;
             if (read.skipped > 0) {
                 warnings.push(
                     `skipped ${read.skipped} malformed line(s) in ${path}`,
@@ -64,6 +66,7 @@ export async function runTui(resume: string | null): Promise<number> {
             }}
             transcript={writer}
             initialWarnings={warnings}
+            initialCostUsd={costUsd}
         />,
         { exitOnCtrlC: false },
     );

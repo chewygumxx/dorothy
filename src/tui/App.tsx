@@ -32,6 +32,8 @@ export type AppProps = {
     createSession(history: Turn[]): ChatSession;
     transcript: TranscriptSink | null;
     initialWarnings?: string[];
+    // What the chat cost before this run, for --resume.
+    initialCostUsd?: number;
 };
 
 const describeError = (error: unknown) =>
@@ -44,11 +46,12 @@ export function App({
     createSession,
     transcript,
     initialWarnings = [],
+    initialCostUsd = 0,
 }: AppProps) {
     const { exit } = useApp();
     const { columns, rows } = useWindowSize();
     const [state, dispatch] = useReducer(reduce, undefined, () =>
-        initialState(history, initialWarnings),
+        initialState(history, initialWarnings, initialCostUsd),
     );
     const [draft, setDraft] = useState("");
     // Refs, not state: event listeners registered once must see current values.

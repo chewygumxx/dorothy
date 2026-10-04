@@ -14,6 +14,8 @@ import { type ChatState, initialState, RAW_LIMIT, reduce } from "./state.js";
 
 const stats: TurnStats = {
     inputTokens: 1,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
     outputTokens: 2,
     ttftMs: 300,
     durationMs: 1500,
@@ -38,6 +40,28 @@ describe("initialState", () => {
         ]);
         expect(state.status).toBe("starting");
         expect(state.streaming).toBe(false);
+    });
+
+    it("totals the chat's cost across sessions, from what was spent before", () => {
+        const end = (sessionCostUsd: number) => ({
+            type: "event" as const,
+            event: {
+                type: "turn-end" as const,
+                reply: "ok",
+                interrupted: false,
+                stats: { ...stats, costUsd: 0.001, sessionCostUsd },
+            },
+        });
+        let state = reduce(initialState([], [], 0.01), end(0.001));
+        state = reduce(state, {
+            type: "event",
+            event: { type: "error", message: "boom" },
+        });
+        state = reduce(state, { type: "reconnecting" });
+        state = reduce(state, end(0.001));
+        const costs = state.lines.map((line) => line.chatCostUsd);
+        expect(costs[0]).toBeCloseTo(0.011, 10);
+        expect(costs[2]).toBeCloseTo(0.012, 10);
     });
 
     it("carries the initial warnings", () => {
@@ -89,6 +113,7 @@ describe("reduce", () => {
             role: "dorothy",
             text: "Hello",
             stats,
+            chatCostUsd: 0.001,
             interrupted: false,
         });
         expect(state.live).toBe("");

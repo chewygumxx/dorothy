@@ -22,6 +22,8 @@ import { App } from "./App.js";
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
 const stats: TurnStats = {
     inputTokens: 1,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
     outputTokens: 2,
     ttftMs: 300,
     durationMs: 1500,

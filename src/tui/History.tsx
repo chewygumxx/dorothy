@@ -41,7 +41,12 @@ export function LineView({ line }: { line: Line }) {
             </Box>
             {line.stats ? (
                 <Box marginLeft={LABEL_WIDTH}>
-                    <Text dimColor>{formatStats(line.stats)}</Text>
+                    <Text dimColor>
+                        {formatStats(
+                            line.stats,
+                            line.chatCostUsd ?? line.stats.sessionCostUsd,
+                        )}
+                    </Text>
                 </Box>
             ) : null}
         </Box>

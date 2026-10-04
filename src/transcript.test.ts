@@ -132,7 +132,7 @@ describe("TranscriptWriter", () => {
 });
 
 describe("readTranscript", () => {
-    it("returns user and assistant turns in order, skipping malformed lines", async () => {
+    it("returns turns in order and the cost so far, skipping malformed lines", async () => {
         const path = join(dir, "read.jsonl");
         await writeFile(
             path,
@@ -141,7 +141,9 @@ describe("readTranscript", () => {
                 '{"v":1,"kind":"user","at":"x","text":"hello"}',
                 "not json",
                 '{"v":1,"kind":"assistant","at":"x","text":"hi there","interrupted":false}',
-                '{"v":1,"kind":"stats","at":"x","inputTokens":1,"outputTokens":2,"ttftMs":null,"durationMs":3,"costUsd":0,"sessionCostUsd":0}',
+                '{"v":1,"kind":"stats","at":"x","inputTokens":1,"outputTokens":2,"ttftMs":null,"durationMs":3,"costUsd":0.25,"sessionCostUsd":0.25}',
+                '{"v":1,"kind":"stats","at":"x","costUsd":0.5}',
+                '{"v":1,"kind":"stats","at":"x","costUsd":"lots"}',
                 '{"v":1,"kind":"mystery"}',
                 '{"v":1,"kind":"user","at":"x"}',
                 "",
@@ -153,6 +155,7 @@ describe("readTranscript", () => {
                 { role: "assistant", text: "hi there" },
             ],
             skipped: 3,
+            costUsd: 0.75,
         });
     });
 

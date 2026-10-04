@@ -40,7 +40,12 @@ const result = (totalCostUsd: number, subtype = "success") =>
     ({
         type: "result",
         subtype,
-        usage: { input_tokens: 10, output_tokens: 20 },
+        usage: {
+            input_tokens: 10,
+            output_tokens: 20,
+            cache_read_input_tokens: 3000,
+            cache_creation_input_tokens: 400,
+        },
         total_cost_usd: totalCostUsd,
         duration_ms: 1500,
         ttft_ms: 300,
@@ -169,6 +174,8 @@ describe("Conversation", () => {
             interrupted: false,
             stats: {
                 inputTokens: 10,
+                cacheReadTokens: 3000,
+                cacheWriteTokens: 400,
                 outputTokens: 20,
                 ttftMs: 300,
                 durationMs: 1500,
@@ -188,6 +195,19 @@ describe("Conversation", () => {
         const second = of(events, "turn-end")[1]?.stats;
         expect(second?.costUsd).toBeCloseTo(0.003, 10);
         expect(second?.sessionCostUsd).toBe(0.005);
+    });
+
+    it("never costs a turn below zero", async () => {
+        const fake = fakeQuery([[result(0.005)], [result(0)], [result(0.007)]]);
+        const { conversation, events } = started(fake);
+        for (const [index, text] of ["one", "two", "three"].entries()) {
+            conversation.send(text);
+            await until(() => of(events, "turn-end").length === index + 1);
+        }
+        const costs = of(events, "turn-end").map((e) => e.stats.costUsd);
+        expect(costs[0]).toBe(0.005);
+        expect(costs[1]).toBe(0);
+        expect(costs[2]).toBeCloseTo(0.002, 10);
     });
 
     it("re-emits every SDK message as an sdk event", async () => {

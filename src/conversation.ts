@@ -17,7 +17,10 @@ import {
 import { baseOptions, type Turn, withHistory } from "./persona.js";
 
 export type TurnStats = {
+    // Input the cache did not serve; cached input is counted apart.
     inputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
     outputTokens: number;
     ttftMs: number | null;
     durationMs: number;
@@ -272,11 +275,14 @@ export class Conversation implements ChatSession {
 
     #stats(result: ResultMessage): TurnStats {
         // total_cost_usd is the session's running total, so a turn costs the
-        // difference from the previous result.
-        const costUsd = result.total_cost_usd - this.#sessionCost;
-        this.#sessionCost = result.total_cost_usd;
+        // difference from the previous result. A total that went down is not
+        // trusted as a new baseline.
+        const costUsd = Math.max(0, result.total_cost_usd - this.#sessionCost);
+        this.#sessionCost = Math.max(this.#sessionCost, result.total_cost_usd);
         return {
             inputTokens: result.usage.input_tokens,
+            cacheReadTokens: result.usage.cache_read_input_tokens ?? 0,
+            cacheWriteTokens: result.usage.cache_creation_input_tokens ?? 0,
             outputTokens: result.usage.output_tokens,
             ttftMs:
                 result.subtype === "success" ? (result.ttft_ms ?? null) : null,

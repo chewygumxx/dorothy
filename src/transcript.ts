@@ -36,6 +36,8 @@ export type StatsEvent = {
     kind: "stats";
     at: string;
     inputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
     outputTokens: number;
     ttftMs: number | null;
     durationMs: number;
@@ -81,10 +83,11 @@ function toTurn(event: unknown): Turn | "ignore" | "malformed" {
 
 export async function readTranscript(
     path: string,
-): Promise<{ turns: Turn[]; skipped: number }> {
+): Promise<{ turns: Turn[]; skipped: number; costUsd: number }> {
     const text = await readFile(path, "utf8");
     const turns: Turn[] = [];
     let skipped = 0;
+    let costUsd = 0;
     for (const line of text.split("\n")) {
         if (line.trim() === "") {
             continue;
@@ -96,6 +99,15 @@ export async function readTranscript(
             skipped++;
             continue;
         }
+        const cost = (event as { kind?: unknown; costUsd?: unknown } | null)
+            ?.costUsd;
+        if (
+            (event as { kind?: unknown } | null)?.kind === "stats" &&
+            typeof cost === "number" &&
+            Number.isFinite(cost)
+        ) {
+            costUsd += cost;
+        }
         const turn = toTurn(event);
         if (turn === "malformed") {
             skipped++;
@@ -103,7 +115,7 @@ export async function readTranscript(
             turns.push(turn);
         }
     }
-    return { turns, skipped };
+    return { turns, skipped, costUsd };
 }
 
 export class TranscriptWriter {

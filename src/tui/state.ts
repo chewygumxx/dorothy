@@ -23,6 +23,9 @@ export type Line = {
     role: "you" | "dorothy" | "error";
     text: string;
     stats?: TurnStats;
+    // What the whole chat has cost by the end of this reply, across
+    // reconnects and resumes; a session's own total starts again with it.
+    chatCostUsd?: number;
     interrupted?: boolean;
 };
 export type Status = "starting" | "ready" | "disconnected" | "closing";
@@ -39,6 +42,7 @@ export type ChatState = {
     rawCount: number;
     showRaw: boolean;
     warnings: string[];
+    costUsd: number;
 };
 
 export type Action =
@@ -52,6 +56,7 @@ export type Action =
 export function initialState(
     history: readonly Turn[],
     warnings: readonly string[] = [],
+    costUsd = 0,
 ): ChatState {
     return {
         lines: history.map((turn, id) => ({
@@ -68,6 +73,7 @@ export function initialState(
         rawCount: 0,
         showRaw: false,
         warnings: [...warnings],
+        costUsd,
     };
 }
 
@@ -88,18 +94,22 @@ function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
             };
         case "delta":
             return { ...state, live: state.live + event.text };
-        case "turn-end":
+        case "turn-end": {
+            const costUsd = state.costUsd + event.stats.costUsd;
             return {
                 ...state,
                 lines: append(state.lines, {
                     role: "dorothy",
                     text: event.reply,
                     stats: event.stats,
+                    chatCostUsd: costUsd,
                     interrupted: event.interrupted,
                 }),
+                costUsd,
                 live: "",
                 streaming: false,
             };
+        }
         case "sdk":
             return {
                 ...state,
