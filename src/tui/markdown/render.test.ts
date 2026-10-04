@@ -156,11 +156,17 @@ describe("renderMarkdown lists and quotes", () => {
         ]);
     });
 
-    it("shows task items with boxes", () => {
-        expect(texts(md("- [x] done\n- [ ] todo"))).toEqual([
-            "• ☑ done",
-            "• ☐ todo",
+    it("shows task items with a box in place of the bullet", () => {
+        expect(texts(md("- [x] done\n- [ ] todo\n- plain"))).toEqual([
+            "☑ done",
+            "☐ todo",
+            "• plain",
         ]);
+        expect(texts(md("- [ ] aaaa bbbb", 8))).toEqual(["☐ aaaa", "  bbbb"]);
+    });
+
+    it("keeps the number of an ordered task item", () => {
+        expect(texts(md("1. [x] done"))).toEqual(["1. ☑ done"]);
     });
 
     it("spaces a loose list's items", () => {

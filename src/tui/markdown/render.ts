@@ -143,8 +143,13 @@ function list(token: Tokens.List, width: number): Row[] {
         const bullet = token.ordered
             ? (numbers[index] ?? "").padStart(numberWidth)
             : "•";
-        const box = item.task ? (item.checked ? " ☑" : " ☐") : "";
-        const marker = `${bullet}${box} `;
+        const box = item.checked ? "☑" : "☐";
+        // A task's box replaces its bullet, as on GitHub; a number stays.
+        const marker = !item.task
+            ? `${bullet} `
+            : token.ordered
+              ? `${bullet} ${box} `
+              : `${box} `;
         const indent = stringWidth(marker);
         const body = blocks(item.tokens, width - indent, item.loose);
         if (item.loose && index > 0) {
