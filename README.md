@@ -86,8 +86,12 @@ Run with no argument for a chat in the terminal:
 bun run dev
 ```
 
-Enter sends and Esc stops a reply. Ctrl+C stops a reply too, and quits when
-none is streaming; Ctrl+D and `/exit` quit. Ctrl+R shows the raw SDK messages.
+Enter sends and Shift+Enter starts a new line (in terminals with the kitty
+keyboard protocol). Arrows, Home, End and the usual readline keys move and
+edit; Up and Down past the first or last line recall earlier messages, and
+Ctrl+G opens the draft in `$VISUAL` or `$EDITOR`. You can keep writing while
+a reply streams; Esc or Ctrl+C stops it. Ctrl+R shows the raw SDK messages.
+Ctrl+C clears the draft, then quits; Ctrl+D or `/exit` quits too.
 Each reply ends with its tokens, timings, cost and what the chat has cost so
 far, and the statusline under the input shows the latest of them. Each chat
 is named by a four-word phrase shown in the header and saved as it happens,

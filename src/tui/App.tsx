@@ -14,9 +14,11 @@ import { type Config, DEFAULT_CONFIG } from "../config.js";
 import type { ChatSession, ConversationEvent } from "../conversation.js";
 import type { Turn } from "../persona.js";
 import type { ResumedTurn, TranscriptEntry } from "../transcript.js";
+import { type Draft, EMPTY_DRAFT, layoutDraft } from "./editor.js";
+import type { EditResult } from "./external-editor.js";
 import { Header, Statusline, Warnings } from "./Header.js";
 import { History } from "./History.js";
-import { Input, inputRows } from "./Input.js";
+import { draftWidth, type EditorMemory, Input } from "./Input.js";
 import { LiveReply, wrapRows } from "./LiveReply.js";
 import {
     fitLayout,
@@ -26,7 +28,7 @@ import {
     tooSmallShort,
 } from "./layout.js";
 import { RawPane } from "./RawPane.js";
-import { initialState, reduce } from "./state.js";
+import { initialState, type Line, reduce } from "./state.js";
 import { moduleRows } from "./statusline.js";
 
 export type TranscriptSink = {
@@ -44,6 +46,8 @@ export type AppProps = {
     initialCostUsd?: number;
     // The statusline and reply stats; the defaults when not given.
     config?: Config;
+    // Opens the draft in $EDITOR; run.tsx supplies the real one.
+    editDraft(text: string): Promise<EditResult>;
 };
 
 const describeError = (error: unknown) =>
@@ -58,13 +62,28 @@ export function App({
     initialWarnings = [],
     initialCostUsd = 0,
     config = DEFAULT_CONFIG,
+    editDraft,
 }: AppProps) {
-    const { exit } = useApp();
+    const { exit, suspendTerminal } = useApp();
     const { columns, rows } = useWindowSize();
     const [state, dispatch] = useReducer(reduce, undefined, () =>
         initialState(history, initialWarnings, initialCostUsd),
     );
-    const [draft, setDraft] = useState("");
+    const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+    // Ink discards renders while the editor has the terminal, which would
+    // lose <Static> lines printed meanwhile; History keeps the lines it had
+    // until the editor closes, then prints the rest.
+    const [frozenLines, setFrozenLines] = useState<Line[] | null>(null);
+    const editing = useRef(false);
+    const latestDraft = useRef(draft);
+    latestDraft.current = draft;
+    // Kept here, not in Input, which is unmounted while the window is too
+    // small.
+    const memory = useRef<EditorMemory>({
+        killed: "",
+        goal: null,
+        recall: null,
+    });
     // Refs, not state: event listeners registered once must see current values.
     const turns = useRef<Turn[]>([...history]);
     const session = useRef<ChatSession | null>(null);
@@ -173,7 +192,7 @@ export function App({
         if (text === "") {
             return;
         }
-        setDraft("");
+        setDraft(EMPTY_DRAFT);
         turns.current.push({ role: "user", text });
         record({ kind: "user", text });
         dispatch({ type: "sent", text });
@@ -191,7 +210,34 @@ export function App({
     if (!tooSmall) {
         printable.current = state.lines.length;
     }
-    const lines = state.lines.slice(0, printable.current);
+    const lines = frozenLines ?? state.lines.slice(0, printable.current);
+
+    const openEditor = () => {
+        if (editing.current) {
+            return;
+        }
+        editing.current = true;
+        setFrozenLines(lines);
+        let result: EditResult = { ok: false, message: "editor did not run" };
+        suspendTerminal(async () => {
+            result = await editDraft(latestDraft.current.text);
+        })
+            .catch((error: unknown) => {
+                result = {
+                    ok: false,
+                    message: `editor failed: ${describeError(error)}`,
+                };
+            })
+            .finally(() => {
+                editing.current = false;
+                setFrozenLines(null);
+                if (result.ok) {
+                    setDraft({ text: result.text, cursor: result.text.length });
+                } else {
+                    dispatch({ type: "warning", message: result.message });
+                }
+            });
+    };
 
     useInput((input, key) => {
         const quitKey = key.ctrl && (input === "c" || input === "d");
@@ -204,14 +250,23 @@ export function App({
             }
         } else if (key.ctrl && input === "r") {
             dispatch({ type: "toggle-raw" });
+        } else if (key.ctrl && input === "g") {
+            openEditor();
         } else if (key.ctrl && input === "c") {
             if (state.streaming) {
                 interrupt();
+            } else if (draft.text !== "") {
+                // Clearing is an edit, so it ends recall too.
+                memory.current.recall = null;
+                setDraft(EMPTY_DRAFT);
             } else {
                 quit();
             }
         } else if (key.ctrl && input === "d") {
-            quit();
+            // With a draft, Input deletes forward instead.
+            if (draft.text === "") {
+                quit();
+            }
         }
     });
 
@@ -248,8 +303,12 @@ export function App({
         rawCount: state.raw.length,
         warnings: state.warnings.length,
         statusRows: statusRows.length,
-        inputRows: inputRows(draft, columns),
+        inputRows: layoutDraft(draft, draftWidth(columns)).rows.length,
     });
+
+    const messages = turns.current
+        .filter((turn) => turn.role === "user")
+        .map((turn) => turn.text);
 
     return (
         <Box flexDirection="column">
@@ -272,9 +331,11 @@ export function App({
             >
                 <Warnings warnings={state.warnings} />
                 <Input
-                    value={draft}
-                    disabled={state.streaming || closing}
+                    draft={draft}
+                    messages={messages}
+                    canSend={!state.streaming && !closing}
                     maxRows={layout.inputRows}
+                    memory={memory.current}
                     onChange={setDraft}
                     onSubmit={submit}
                 />

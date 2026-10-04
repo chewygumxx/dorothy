@@ -19,6 +19,7 @@ import type {
 import type { Turn } from "../persona.js";
 import type { ResumedTurn, TranscriptEntry } from "../transcript.js";
 import { App } from "./App.js";
+import type { EditResult } from "./external-editor.js";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
 // ink-testing-library leaves rows unset, so Ink would take the size of the
@@ -89,10 +90,15 @@ function setup({
     history = [],
     failWrites = false,
     config = DEFAULT_CONFIG,
+    editDraft = async (text: string): Promise<EditResult> => ({
+        ok: true,
+        text,
+    }),
 }: {
     history?: ResumedTurn[];
     failWrites?: boolean;
     config?: Config;
+    editDraft?: (text: string) => Promise<EditResult>;
 } = {}) {
     const sessions: FakeSession[] = [];
     const histories: Turn[][] = [];
@@ -100,6 +106,7 @@ function setup({
     const app = render(
         <App
             config={config}
+            editDraft={editDraft}
             phrase="tumble-orchid-vapor-lantern"
             promptSha256="abc"
             history={history}
@@ -388,14 +395,54 @@ describe("App", () => {
         expect(entries).toEqual([]);
     });
 
-    it("ignores typing and Enter while a reply streams", async () => {
-        const { session, type } = setup();
+    it("keeps composing while a reply streams, and sends after", async () => {
+        const { app, session, type } = setup();
         await tick();
         await type("a");
         await type("\r");
         await type("b");
         await type("\r");
         expect(session().sent).toEqual(["a"]);
+        expect(app.lastFrame()).toContain("› b▏");
+        session().emit({
+            type: "turn-end",
+            reply: "ok",
+            interrupted: false,
+            stats,
+        });
+        await tick();
+        await type("\r");
+        expect(session().sent).toEqual(["a", "b"]);
+    });
+
+    it("recalls earlier messages, resumed ones included", async () => {
+        const { app, type } = setup({
+            history: [
+                { role: "user", text: "earlier" },
+                { role: "assistant", text: "yes" },
+            ],
+        });
+        await tick();
+        await type("\u001B[A");
+        expect(app.lastFrame()).toContain("› earlier▏");
+    });
+
+    it("keeps recall and the kill buffer through the Too Small screen", async () => {
+        const { app, type, resize } = setup();
+        await tick();
+        await type("one");
+        await type("\r");
+        await type("wip");
+        await type("\u001B[A");
+        await resize(30, 10);
+        await resize(100, 24);
+        await type("\u001B[B");
+        expect(app.lastFrame()).toContain("› wip▏");
+        await type("\u0015");
+        await resize(30, 10);
+        await resize(100, 24);
+        await type("\u0019");
+        expect(app.lastFrame()).toContain("› wip▏");
     });
 
     it("interrupts on Esc only while streaming", async () => {
@@ -505,6 +552,102 @@ describe("App", () => {
         expect(lines.length - 3 - top + 1).toBe(5);
     });
 
+    it("clears a draft on Ctrl+C, then quits", async () => {
+        const { app, session, type } = setup();
+        await tick();
+        await type("abc");
+        await type("\u0003");
+        expect(session().closed).toBe(false);
+        expect(app.lastFrame()).toContain("enter send");
+        await type("\u0003");
+        expect(session().closed).toBe(true);
+    });
+
+    it("deletes forward on Ctrl+D while there is a draft", async () => {
+        const { app, session, type } = setup();
+        await tick();
+        await type("ab");
+        await type("\u001B[D");
+        await type("\u0004");
+        expect(session().closed).toBe(false);
+        expect(app.lastFrame()).toContain("› a▏");
+    });
+
+    it("replaces the draft with what the editor saved", async () => {
+        const seen: string[] = [];
+        const { app, type } = setup({
+            editDraft: async (text) => {
+                seen.push(text);
+                return { ok: true, text: "from the editor" };
+            },
+        });
+        await tick();
+        await type("abc");
+        await type("\u0007");
+        await tick();
+        expect(seen).toEqual(["abc"]);
+        expect(app.lastFrame()).toContain("› from the editor▏");
+    });
+
+    it("keeps the draft and warns when the editor fails", async () => {
+        const { app, type } = setup({
+            editDraft: async () => ({
+                ok: false,
+                message: "editor exited with 1",
+            }),
+        });
+        await tick();
+        await type("abc");
+        await type("\u0007");
+        await tick();
+        expect(app.lastFrame()).toContain("› abc▏");
+        expect(app.lastFrame()).toContain("editor exited with 1");
+    });
+
+    it("opens one editor at a time", async () => {
+        let calls = 0;
+        let finish = (_: EditResult) => {};
+        const { type } = setup({
+            editDraft: () => {
+                calls++;
+                return new Promise((resolve) => {
+                    finish = resolve;
+                });
+            },
+        });
+        await tick();
+        await type("\u0007");
+        await type("\u0007");
+        expect(calls).toBe(1);
+        finish({ ok: true, text: "" });
+        await tick();
+    });
+
+    it("shows a reply that ended while the editor was open", async () => {
+        let finish = (_: EditResult) => {};
+        const { app, session, type } = setup({
+            editDraft: () =>
+                new Promise((resolve) => {
+                    finish = resolve;
+                }),
+        });
+        await tick();
+        await type("question");
+        await type("\r");
+        await type("\u0007");
+        session().emit({
+            type: "turn-end",
+            reply: "Finished while editing",
+            interrupted: false,
+            stats,
+        });
+        await tick();
+        finish({ ok: true, text: "next" });
+        await tick();
+        await tick();
+        expect(app.lastFrame()).toContain("Finished while editing");
+    });
+
     it("quits on Ctrl+D", async () => {
         const { session, type } = setup();
         await tick();
@@ -520,7 +663,6 @@ describe("App", () => {
         await type("late");
         await type("\r");
         await type("\u0004");
-        expect(app.lastFrame()).not.toContain("late");
         expect(app.lastFrame()).toContain("closing");
         expect(entries.filter((entry) => entry.kind === "user")).toEqual([]);
         expect(session().closes).toBe(1);

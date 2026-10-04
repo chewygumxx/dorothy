@@ -11,16 +11,13 @@
 import { describe, expect, it } from "bun:test";
 import { Box } from "ink";
 import { render } from "ink-testing-library";
-import { useState } from "react";
 import { DEFAULT_CONFIG } from "../config.js";
 import type { TurnStats } from "../conversation.js";
 import { Header, Statusline, shortId, Warnings } from "./Header.js";
 import { History } from "./History.js";
-import { Input, inputRows, KEY_HINTS } from "./Input.js";
 import { LiveReply, wrapRows } from "./LiveReply.js";
 import { describeRaw, RawPane } from "./RawPane.js";
 
-const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
 // ink-testing-library's stdout is this wide. A wider line wraps again in a
 // real terminal, which Ink does not count when it erases the last frame.
 const COLUMNS = 100;
@@ -315,153 +312,5 @@ describe("RawPane", () => {
             "";
         expect(frame).toContain("raw (ctrl+r)");
         expect(frame).toContain("system init");
-    });
-});
-
-function Harness({
-    disabled = false,
-    submitted,
-}: {
-    disabled?: boolean;
-    submitted: string[];
-}) {
-    const [value, setValue] = useState("");
-    return (
-        <Input
-            value={value}
-            disabled={disabled}
-            onChange={setValue}
-            onSubmit={(text) => submitted.push(text)}
-            maxRows={3}
-        />
-    );
-}
-
-describe("Input", () => {
-    it("edits and submits the line", async () => {
-        const submitted: string[] = [];
-        const { stdin, lastFrame } = render(<Harness submitted={submitted} />);
-        stdin.write("hi");
-        await tick();
-        expect(lastFrame()).toContain("› hi");
-        stdin.write("\u007F");
-        await tick();
-        expect(lastFrame()).toContain("› h");
-        stdin.write("\r");
-        await tick();
-        expect(submitted).toEqual(["h"]);
-    });
-
-    it("removes a whole emoji on backspace", async () => {
-        const { stdin, lastFrame } = render(<Harness submitted={[]} />);
-        stdin.write("a🐈");
-        await tick();
-        stdin.write("\u007F");
-        await tick();
-        expect(lastFrame()).toContain("› a");
-        expect(lastFrame()).not.toContain("�");
-    });
-
-    it("applies every key of a single chunk, as a held Backspace sends", async () => {
-        const { stdin, lastFrame } = render(<Harness submitted={[]} />);
-        stdin.write("hello\u007F\u007F\u007F");
-        await tick();
-        expect(lastFrame()).toContain("› he▏");
-    });
-
-    it("keeps fast typing that shares a chunk with a Backspace", async () => {
-        const { stdin, lastFrame } = render(<Harness submitted={[]} />);
-        stdin.write("x");
-        await tick();
-        stdin.write("ab\u007F");
-        await tick();
-        expect(lastFrame()).toContain("› xa▏");
-    });
-
-    it("stays within the terminal width at every length", () => {
-        const text = long("lorem");
-        const props = {
-            disabled: false,
-            maxRows: 3,
-            onChange() {},
-            onSubmit() {},
-        };
-        const { rerender, lastFrame } = render(<Input value="" {...props} />);
-        for (let length = 0; length <= text.length; length++) {
-            rerender(<Input value={text.slice(0, length)} {...props} />);
-            expect([length, widest(lastFrame())]).toEqual([
-                length,
-                Math.min(widest(lastFrame()), COLUMNS),
-            ]);
-        }
-    });
-
-    it("shows only the last rows of a tall draft, marking those hidden", () => {
-        const props = { disabled: false, onChange() {}, onSubmit() {} };
-        const value = "word ".repeat(200);
-        const { lastFrame } = render(
-            <Input value={value} maxRows={3} {...props} />,
-        );
-        const lines = (lastFrame() ?? "").split("\n");
-        expect(lines).toHaveLength(3);
-        expect(lines[0]).toStartWith("↑ word");
-        expect(lines[1]).toStartWith("  word");
-        expect(lines[2]).toContain("▏");
-        expect(inputRows(value, COLUMNS)).toBe(11);
-        expect(inputRows("", COLUMNS)).toBe(1);
-    });
-
-    it("shows the prompt on a draft's first row", () => {
-        const props = { disabled: false, onChange() {}, onSubmit() {} };
-        const { lastFrame } = render(
-            <Input value="one" maxRows={3} {...props} />,
-        );
-        expect(lastFrame()).toBe("› one▏");
-    });
-
-    it("shows the key hints only while the line is empty", async () => {
-        const { stdin, lastFrame } = render(<Harness submitted={[]} />);
-        expect(lastFrame()).toContain(KEY_HINTS);
-        stdin.write("hi");
-        await tick();
-        expect(lastFrame()).not.toContain(KEY_HINTS);
-    });
-
-    it("submits an Enter typed ahead in the same chunk", async () => {
-        const submitted: string[] = [];
-        const { stdin, lastFrame } = render(<Harness submitted={submitted} />);
-        stdin.write("one\rtwo");
-        await tick();
-        expect(submitted).toEqual(["one"]);
-        expect(lastFrame()).toContain("› two▏");
-    });
-
-    it("pastes on one line, without control characters", async () => {
-        const submitted: string[] = [];
-        const { stdin, lastFrame } = render(<Harness submitted={submitted} />);
-        stdin.write("\u001B[200~one\r\ntwo\u0007\u001B[201~");
-        await tick();
-        expect(submitted).toEqual([]);
-        expect(lastFrame()).toContain("› one two▏");
-    });
-
-    it("drops control characters from typed text", async () => {
-        const { stdin, lastFrame } = render(<Harness submitted={[]} />);
-        stdin.write("a\u0004\u0004b");
-        await tick();
-        expect(lastFrame()).toContain("› ab▏");
-    });
-
-    it("ignores typing and Enter while disabled", async () => {
-        const submitted: string[] = [];
-        const { stdin, lastFrame } = render(
-            <Harness disabled submitted={submitted} />,
-        );
-        stdin.write("hi");
-        await tick();
-        stdin.write("\r");
-        await tick();
-        expect(lastFrame()).not.toContain("› hi");
-        expect(submitted).toEqual([]);
     });
 });

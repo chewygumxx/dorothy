@@ -179,6 +179,12 @@ unlocks on `turn-end`.
 | Ctrl+C            | Interrupt if streaming, otherwise quit |
 | Ctrl+D or `/exit` | Quit                                   |
 
+Amended 2026-10-05: the input editor design
+(`2026-10-03-input-editor-design.md`) replaces the single-line input, its
+lock during a reply and these keys, and the statusline and minimum size
+design (`2026-10-05-statusline-and-minimum-size-design.md`) moves the header
+below the input.
+
 An interrupted reply is kept, marked `interrupted`, and its stats come from the
 `result` that follows the interrupt.
 
