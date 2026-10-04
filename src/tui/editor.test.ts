@@ -152,6 +152,12 @@ describe("up and down", () => {
         expect(down(at("aaaa bbbb", 7), 6)).toBeNull();
     });
 
+    it("stop short of a hard break, which belongs to the next row", () => {
+        expect(up(at("abcdef"), 3)).toEqual(at("abcdef", 2));
+        expect(down(at("abcdefgh", 0), 3, 3)).toEqual(at("abcdefgh", 5));
+        expect(up(at("中中中中"), 5)).toEqual(at("中中中中", 1));
+    });
+
     it("keep a goal column through a shorter row", () => {
         const text = "abcdef\nab\nabcdef";
         const once = down(at(text, 5), 20, 5);

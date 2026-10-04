@@ -193,7 +193,7 @@ describe("Input", () => {
         expect(frame()).toContain("› l0▏\n  l1\n↓ l2");
     });
 
-    it("stays within the terminal width at every length and cursor", () => {
+    it("wraps a draft within the terminal at every width, length and cursor", async () => {
         const text = "lorem ipsum dolor ".repeat(12);
         const props = {
             messages: [],
@@ -203,21 +203,46 @@ describe("Input", () => {
             onChange() {},
             onSubmit() {},
         };
-        const { rerender, lastFrame } = render(
-            <Input draft={EMPTY_DRAFT} {...props} />,
-        );
-        for (let length = 0; length <= text.length; length += 7) {
-            for (const cursor of [0, Math.floor(length / 2), length]) {
+        for (const columns of [40, COLUMNS]) {
+            const { rerender, lastFrame, stdout } = render(
+                <Input draft={EMPTY_DRAFT} {...props} />,
+            );
+            Object.defineProperty(stdout, "columns", {
+                value: columns,
+                configurable: true,
+            });
+            stdout.emit("resize");
+            await tick();
+            // Ink cuts a row too wide for the terminal short with an
+            // ellipsis, so a draft row that does not fit shows one.
+            for (let length = 1; length <= text.length; length += 7) {
+                for (const cursor of [0, Math.floor(length / 2), length]) {
+                    rerender(
+                        <Input
+                            draft={{ text: text.slice(0, length), cursor }}
+                            {...props}
+                        />,
+                    );
+                    const frame = lastFrame() ?? "";
+                    expect([
+                        columns,
+                        length,
+                        cursor,
+                        frame.includes("…"),
+                    ]).toEqual([columns, length, cursor, false]);
+                    expect(widest(frame)).toBeLessThanOrEqual(columns);
+                }
+            }
+            // A cursor after a full row takes the column kept for it.
+            for (let length = 1; length <= 2 * columns; length++) {
+                const full = "x".repeat(length);
                 rerender(
-                    <Input
-                        draft={{ text: text.slice(0, length), cursor }}
-                        {...props}
-                    />,
+                    <Input draft={{ text: full, cursor: length }} {...props} />,
                 );
-                expect([length, cursor, widest(lastFrame())]).toEqual([
+                expect([columns, length, lastFrame()?.includes("…")]).toEqual([
+                    columns,
                     length,
-                    cursor,
-                    Math.min(widest(lastFrame()), COLUMNS),
+                    false,
                 ]);
             }
         }
