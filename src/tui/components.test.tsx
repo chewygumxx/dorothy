@@ -145,6 +145,19 @@ describe("wrapRows", () => {
     it("keeps blank lines", () => {
         expect(wrapRows("a\n\nb", 10)).toEqual(["a", "", "b"]);
     });
+
+    it("measures wide characters as two columns", () => {
+        expect(wrapRows("你好世界", 5)).toEqual(["你好", "世界"]);
+        expect(wrapRows("ab 你好", 5)).toEqual(["ab", "你好"]);
+    });
+
+    it("keeps a composite emoji whole", () => {
+        expect(wrapRows("👩‍💻👩‍💻", 2)).toEqual(["👩‍💻", "👩‍💻"]);
+    });
+
+    it("expands tabs and drops control characters", () => {
+        expect(wrapRows("a\tb\u0007\u001B[2J", 20)).toEqual(["a    b[2J"]);
+    });
 });
 
 describe("LiveReply height", () => {

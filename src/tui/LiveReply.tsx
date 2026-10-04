@@ -9,6 +9,7 @@
 //
 
 import { Box, Text } from "ink";
+import stringWidth from "string-width";
 import type { TurnStats } from "../conversation.js";
 
 export const LABEL_WIDTH = 9;
@@ -25,22 +26,48 @@ export function formatStats(stats: TurnStats): string {
     return parts.join(" · ");
 }
 
-// Greedy word wrap by code point, breaking words longer than the width.
+const graphemes = new Intl.Segmenter();
+// Newlines are split on first; anything else would move the terminal's
+// cursor in ways no width counts.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching them is the point.
+const CONTROLS = /[\u0000-\u0008\u000B-\u001F\u007F]/g;
+
+type Cell = { text: string; width: number };
+const widthOf = (cells: Cell[]) =>
+    cells.reduce((sum, cell) => sum + cell.width, 0);
+const join = (cells: Cell[]) => cells.map((cell) => cell.text).join("");
+
+// Greedy word wrap by grapheme and display width (a CJK character or emoji
+// takes two columns), breaking words wider than the width.
 export function wrapRows(text: string, width: number): string[] {
     const limit = Math.max(1, width);
     const rows: string[] = [];
-    for (const paragraph of text.split("\n")) {
-        let row: string[] = [];
-        for (const char of Array.from(paragraph)) {
-            row.push(char);
-            if (row.length > limit) {
-                const space = row.lastIndexOf(" ", limit);
-                const cut = space > 0 ? space : limit;
-                rows.push(row.slice(0, cut).join(""));
+    const clean = text.replace(/\t/g, "    ").replace(CONTROLS, "");
+    for (const paragraph of clean.split("\n")) {
+        let row: Cell[] = [];
+        for (const { segment } of graphemes.segment(paragraph)) {
+            row.push({ text: segment, width: stringWidth(segment) });
+            while (row.length > 1 && widthOf(row) > limit) {
+                // The last space after which the row still fits, else the
+                // most graphemes that fit, at least one.
+                let fit = 0;
+                let space = -1;
+                for (let used = 0; fit < row.length; fit++) {
+                    const cell = row[fit] as Cell;
+                    if (cell.text === " " && fit > 0) {
+                        space = fit;
+                    }
+                    if (used + cell.width > limit) {
+                        break;
+                    }
+                    used += cell.width;
+                }
+                const cut = space > 0 ? space : Math.max(1, fit);
+                rows.push(join(row.slice(0, cut)));
                 row = row.slice(space > 0 ? cut + 1 : cut);
             }
         }
-        rows.push(row.join(""));
+        rows.push(join(row));
     }
     return rows;
 }
