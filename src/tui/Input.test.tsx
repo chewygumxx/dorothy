@@ -1,0 +1,225 @@
+// vim:set expandtab shiftwidth=4 filetype=typescriptreact:
+// SPDX-License-Identifier: GPL-3.0-only
+
+//
+//
+// ~chewygumxx/dorothy.git
+// ::: :/src/tui/Input.test.tsx
+//
+//
+
+import { describe, expect, it } from "bun:test";
+import { render } from "ink-testing-library";
+import { useState } from "react";
+import { type Draft, EMPTY_DRAFT } from "./editor.js";
+import { cleanPaste, type EditorMemory, Input, KEY_HINTS } from "./Input.js";
+
+const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
+const COLUMNS = 100;
+const freshMemory = (): EditorMemory => ({
+    killed: "",
+    goal: null,
+    recall: null,
+});
+const widest = (frame = "") =>
+    Math.max(...frame.split("\n").map((line) => Array.from(line).length));
+
+function Harness({
+    canSend = true,
+    messages = [],
+    maxRows = 5,
+    submitted,
+}: {
+    canSend?: boolean;
+    messages?: string[];
+    maxRows?: number;
+    submitted: string[];
+}) {
+    const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+    const [memory] = useState(freshMemory);
+    return (
+        <Input
+            draft={draft}
+            messages={messages}
+            canSend={canSend}
+            maxRows={maxRows}
+            memory={memory}
+            onChange={setDraft}
+            onSubmit={(text) => {
+                submitted.push(text);
+                setDraft(EMPTY_DRAFT);
+            }}
+        />
+    );
+}
+
+function setup(props: Partial<Parameters<typeof Harness>[0]> = {}) {
+    const submitted: string[] = [];
+    const app = render(<Harness submitted={submitted} {...props} />);
+    const keys = async (...chunks: string[]) => {
+        for (const chunk of chunks) {
+            app.stdin.write(chunk);
+            await tick();
+        }
+    };
+    return { app, submitted, keys, frame: () => app.lastFrame() ?? "" };
+}
+
+const LEFT = "\u001B[D";
+const UP = "\u001B[A";
+const DOWN = "\u001B[B";
+const SHIFT_ENTER = "\u001B[13;2u";
+
+describe("Input", () => {
+    it("edits and submits", async () => {
+        const { keys, frame, submitted } = setup();
+        await keys("hi");
+        expect(frame()).toContain("› hi▏");
+        await keys("\u007F", "\r");
+        expect(submitted).toEqual(["h"]);
+    });
+
+    it("shows the key hints only while empty", async () => {
+        const { keys, frame } = setup();
+        expect(frame()).toContain(KEY_HINTS.slice(0, 40));
+        await keys("x");
+        expect(frame()).not.toContain("enter send");
+    });
+
+    it("inserts a newline on Shift+Enter and sends on Enter", async () => {
+        const { keys, frame, submitted } = setup();
+        await keys("a", SHIFT_ENTER, "b");
+        expect(frame()).toContain("› a\n  b▏");
+        await keys("\r");
+        expect(submitted).toEqual(["a\nb"]);
+    });
+
+    it("keeps the draft when it cannot send", async () => {
+        const { keys, frame, submitted } = setup({ canSend: false });
+        await keys("hi", "\r");
+        expect(submitted).toEqual([]);
+        expect(frame()).toContain("› hi▏");
+    });
+
+    it("moves the cursor and inserts there", async () => {
+        const { keys, frame } = setup();
+        await keys("abc", LEFT, LEFT, "X");
+        expect(frame()).toContain("› aXbc");
+        await keys("\u001B[H", "<", "\u001B[F", ">");
+        expect(frame()).toContain("› <aXbc>▏");
+    });
+
+    it("moves by words and to line ends with readline keys", async () => {
+        const { keys, frame } = setup();
+        await keys("one two", "\u0001", "[", "\u0005", "]");
+        expect(frame()).toContain("› [one two]▏");
+        await keys("\u001Bb", "_");
+        expect(frame()).toContain("› [one _two]");
+        await keys("\u001B[1;5D", "^", "\u0002", "\u0006", "\u0006");
+        expect(frame()).toContain("› [one ^_two]");
+    });
+
+    it("kills and yanks", async () => {
+        const { keys, frame } = setup();
+        await keys("one two", "\u0017");
+        expect(frame()).toContain("› one ▏");
+        await keys("\u0019");
+        expect(frame()).toContain("› one two▏");
+        await keys("\u001B\u007F");
+        expect(frame()).toContain("› one ▏");
+        await keys("\u0001", "\u000B");
+        expect(frame()).toContain(KEY_HINTS.slice(0, 20));
+        await keys("ab", LEFT, "\u0015");
+        expect(frame()).toContain("› b");
+    });
+
+    it("deletes forward with Delete and Ctrl+D", async () => {
+        const { keys, frame } = setup();
+        await keys("abc", LEFT, LEFT, "\u001B[3~");
+        expect(frame()).toContain("› ac");
+        await keys("\u0004");
+        expect(frame()).toContain("› a▏");
+    });
+
+    it("submits an Enter typed ahead in the same chunk", async () => {
+        const { keys, frame, submitted } = setup();
+        await keys("one\rtwo");
+        expect(submitted).toEqual(["one"]);
+        expect(frame()).toContain("› two▏");
+    });
+
+    it("applies every key of a single chunk", async () => {
+        const { keys, frame } = setup();
+        await keys("hello\u007F\u007F\u007F");
+        expect(frame()).toContain("› he▏");
+    });
+
+    it("removes a whole composite emoji on backspace", async () => {
+        const { keys, frame } = setup();
+        await keys("a👩‍💻", "\u007F");
+        expect(frame()).toContain("› a▏");
+    });
+
+    it("pastes as one edit, with newlines and without control characters", async () => {
+        const { keys, frame, submitted } = setup();
+        await keys("\u001B[200~one\r\ntwo\tthree\u001B[2J\u001B[201~");
+        expect(frame()).toContain("› one\n  two    three[2J▏");
+        expect(submitted).toEqual([]);
+        expect(cleanPaste("a\rb\u0007")).toBe("a\nb");
+    });
+
+    it("recalls earlier messages past the first row, restoring the draft", async () => {
+        const { keys, frame } = setup({ messages: ["first", "second"] });
+        await keys("wip", UP);
+        expect(frame()).toContain("› second▏");
+        await keys(UP);
+        expect(frame()).toContain("› first▏");
+        await keys(DOWN, DOWN);
+        expect(frame()).toContain("› wip▏");
+    });
+
+    it("moves between rows of a draft before recalling", async () => {
+        const { keys, submitted } = setup({ messages: ["old"] });
+        await keys("ab", SHIFT_ENTER, "c", UP, "X", "\r");
+        expect(submitted).toEqual(["aXb\nc"]);
+    });
+
+    it("scrolls a tall draft, marking hidden rows", async () => {
+        const { keys, frame } = setup({ maxRows: 3 });
+        const lines = Array.from({ length: 6 }, (_, index) => `l${index}`);
+        await keys(lines.join(SHIFT_ENTER));
+        expect(frame()).toContain("↑ l3\n  l4\n  l5▏");
+        await keys(UP, UP, UP, UP, UP);
+        expect(frame()).toContain("› l0▏\n  l1\n↓ l2");
+    });
+
+    it("stays within the terminal width at every length and cursor", () => {
+        const text = "lorem ipsum dolor ".repeat(12);
+        const props = {
+            messages: [],
+            canSend: true,
+            maxRows: 50,
+            memory: freshMemory(),
+            onChange() {},
+            onSubmit() {},
+        };
+        const { rerender, lastFrame } = render(
+            <Input draft={EMPTY_DRAFT} {...props} />,
+        );
+        for (let length = 0; length <= text.length; length += 7) {
+            for (const cursor of [0, Math.floor(length / 2), length]) {
+                rerender(
+                    <Input
+                        draft={{ text: text.slice(0, length), cursor }}
+                        {...props}
+                    />,
+                );
+                expect([length, cursor, widest(lastFrame())]).toEqual([
+                    length,
+                    cursor,
+                    Math.min(widest(lastFrame()), COLUMNS),
+                ]);
+            }
+        }
+    });
+});

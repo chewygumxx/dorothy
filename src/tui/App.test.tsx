@@ -388,14 +388,54 @@ describe("App", () => {
         expect(entries).toEqual([]);
     });
 
-    it("ignores typing and Enter while a reply streams", async () => {
-        const { session, type } = setup();
+    it("keeps composing while a reply streams, and sends after", async () => {
+        const { app, session, type } = setup();
         await tick();
         await type("a");
         await type("\r");
         await type("b");
         await type("\r");
         expect(session().sent).toEqual(["a"]);
+        expect(app.lastFrame()).toContain("› b▏");
+        session().emit({
+            type: "turn-end",
+            reply: "ok",
+            interrupted: false,
+            stats,
+        });
+        await tick();
+        await type("\r");
+        expect(session().sent).toEqual(["a", "b"]);
+    });
+
+    it("recalls earlier messages, resumed ones included", async () => {
+        const { app, type } = setup({
+            history: [
+                { role: "user", text: "earlier" },
+                { role: "assistant", text: "yes" },
+            ],
+        });
+        await tick();
+        await type("\u001B[A");
+        expect(app.lastFrame()).toContain("› earlier▏");
+    });
+
+    it("keeps recall and the kill buffer through the Too Small screen", async () => {
+        const { app, type, resize } = setup();
+        await tick();
+        await type("one");
+        await type("\r");
+        await type("wip");
+        await type("\u001B[A");
+        await resize(30, 10);
+        await resize(100, 24);
+        await type("\u001B[B");
+        expect(app.lastFrame()).toContain("› wip▏");
+        await type("\u0015");
+        await resize(30, 10);
+        await resize(100, 24);
+        await type("\u0019");
+        expect(app.lastFrame()).toContain("› wip▏");
     });
 
     it("interrupts on Esc only while streaming", async () => {
@@ -520,7 +560,6 @@ describe("App", () => {
         await type("late");
         await type("\r");
         await type("\u0004");
-        expect(app.lastFrame()).not.toContain("late");
         expect(app.lastFrame()).toContain("closing");
         expect(entries.filter((entry) => entry.kind === "user")).toEqual([]);
         expect(session().closes).toBe(1);

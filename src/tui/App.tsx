@@ -14,9 +14,10 @@ import { type Config, DEFAULT_CONFIG } from "../config.js";
 import type { ChatSession, ConversationEvent } from "../conversation.js";
 import type { Turn } from "../persona.js";
 import type { ResumedTurn, TranscriptEntry } from "../transcript.js";
+import { type Draft, EMPTY_DRAFT, layoutDraft } from "./editor.js";
 import { Header, Statusline, Warnings } from "./Header.js";
 import { History } from "./History.js";
-import { Input, inputRows } from "./Input.js";
+import { draftWidth, type EditorMemory, Input } from "./Input.js";
 import { LiveReply, wrapRows } from "./LiveReply.js";
 import {
     fitLayout,
@@ -64,7 +65,14 @@ export function App({
     const [state, dispatch] = useReducer(reduce, undefined, () =>
         initialState(history, initialWarnings, initialCostUsd),
     );
-    const [draft, setDraft] = useState("");
+    const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+    // Kept here, not in Input, which is unmounted while the window is too
+    // small.
+    const memory = useRef<EditorMemory>({
+        killed: "",
+        goal: null,
+        recall: null,
+    });
     // Refs, not state: event listeners registered once must see current values.
     const turns = useRef<Turn[]>([...history]);
     const session = useRef<ChatSession | null>(null);
@@ -173,7 +181,7 @@ export function App({
         if (text === "") {
             return;
         }
-        setDraft("");
+        setDraft(EMPTY_DRAFT);
         turns.current.push({ role: "user", text });
         record({ kind: "user", text });
         dispatch({ type: "sent", text });
@@ -248,8 +256,12 @@ export function App({
         rawCount: state.raw.length,
         warnings: state.warnings.length,
         statusRows: statusRows.length,
-        inputRows: inputRows(draft, columns),
+        inputRows: layoutDraft(draft, draftWidth(columns)).rows.length,
     });
+
+    const messages = turns.current
+        .filter((turn) => turn.role === "user")
+        .map((turn) => turn.text);
 
     return (
         <Box flexDirection="column">
@@ -272,9 +284,11 @@ export function App({
             >
                 <Warnings warnings={state.warnings} />
                 <Input
-                    value={draft}
-                    disabled={state.streaming || closing}
+                    draft={draft}
+                    messages={messages}
+                    canSend={!state.streaming && !closing}
                     maxRows={layout.inputRows}
+                    memory={memory.current}
                     onChange={setDraft}
                     onSubmit={submit}
                 />
