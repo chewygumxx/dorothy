@@ -163,9 +163,18 @@ describe("Input", () => {
     it("pastes as one edit, with newlines and without control characters", async () => {
         const { keys, frame, submitted } = setup();
         await keys("\u001B[200~one\r\ntwo\tthree\u001B[2J\u001B[201~");
-        expect(frame()).toContain("› one\n  two    three[2J▏");
+        expect(frame()).toContain("› one\n  two    three▏");
         expect(submitted).toEqual([]);
         expect(cleanPaste("a\rb\u0007")).toBe("a\nb");
+    });
+
+    it("drops whole escape sequences and C1 controls from a paste", () => {
+        expect(cleanPaste("a\u001B[1;31mb\u001B[0m")).toBe("ab");
+        expect(cleanPaste("a\u001B]0;title\u0007b")).toBe("ab");
+        expect(cleanPaste("a\u001B]8;;url\u001B\\b")).toBe("ab");
+        expect(cleanPaste("a\u009B2Jb\u0085c")).toBe("abc");
+        expect(cleanPaste("a\u001BOPb\u001B7c")).toBe("abc");
+        expect(cleanPaste("é ü 日本")).toBe("é ü 日本");
     });
 
     it("recalls earlier messages past the first row, restoring the draft", async () => {

@@ -665,7 +665,7 @@ describe("App", () => {
 
     it("cleans the editor's text as a paste is cleaned", async () => {
         const { app, type } = setup({
-            editDraft: async () => ({ ok: true, text: "x\r\na\u001Bb\tcd" }),
+            editDraft: async () => ({ ok: true, text: "x\r\na\u0007b\tcd" }),
         });
         await tick();
         await type("\u0007");

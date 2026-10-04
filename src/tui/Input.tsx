@@ -64,11 +64,21 @@ export const PROMPT_WIDTH = 2;
 export const draftWidth = (columns: number): number =>
     Math.max(1, columns - PROMPT_WIDTH - 1);
 
+// Whole sequences, so none leaves its printable tail behind: CSI (7- or
+// 8-bit), then strings such as OSC ended by BEL or ST, then SS3, then any
+// other escape. An unended string loses only its introducer.
+const ESCAPES =
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: matching them is the point.
+    /(?:\u001B\[|\u009B)[0-?]*[ -/]*[@-~]|\u001B[\]PX^_][^\u0007\u001B]*(?:\u0007|\u001B\\)|\u001B[NO][ -~]|\u001B[ -/]*[0-~]/g;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: matching them is the point.
-const CONTROLS = /[\u0000-\u0008\u000B-\u001F\u007F]/g;
+const CONTROLS = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
 
 export const cleanPaste = (text: string): string =>
-    text.replace(/\r\n?/g, "\n").replace(/\t/g, "    ").replace(CONTROLS, "");
+    text
+        .replace(ESCAPES, "")
+        .replace(/\r\n?/g, "\n")
+        .replace(/\t/g, "    ")
+        .replace(CONTROLS, "");
 
 function withCursor(row: DraftRow, cursor: number): ReactNode {
     const offset = Math.min(Math.max(cursor - row.start, 0), row.text.length);
