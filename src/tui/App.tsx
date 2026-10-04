@@ -8,7 +8,7 @@
 //
 //
 
-import { Box, useApp, useInput, useWindowSize } from "ink";
+import { Box, Text, useApp, useInput, useWindowSize } from "ink";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { type Config, DEFAULT_CONFIG } from "../config.js";
 import type { ChatSession, ConversationEvent } from "../conversation.js";
@@ -17,8 +17,8 @@ import type { ResumedTurn, TranscriptEntry } from "../transcript.js";
 import { Header, Statusline, Warnings } from "./Header.js";
 import { History } from "./History.js";
 import { Input, inputRows } from "./Input.js";
-import { LiveReply } from "./LiveReply.js";
-import { fitLayout } from "./layout.js";
+import { LiveReply, wrapRows } from "./LiveReply.js";
+import { fitLayout, MIN_COLUMNS, minRows, tooSmallMessage } from "./layout.js";
 import { RawPane } from "./RawPane.js";
 import { initialState, reduce } from "./state.js";
 import { moduleRows } from "./statusline.js";
@@ -174,7 +174,17 @@ export function App({
         session.current?.send(text);
     };
 
+    // Below the minimum only the quit keys act; the draft waits in state.
+    const statusLines =
+        config.statusline.modules.length > 0 ? config.statusline.maxLines : 0;
+    const neededRows = minRows(statusLines);
+    const tooSmall = columns < MIN_COLUMNS || rows < neededRows;
+
     useInput((input, key) => {
+        const quitKey = key.ctrl && (input === "c" || input === "d");
+        if (tooSmall && !quitKey) {
+            return;
+        }
         if (key.escape) {
             if (state.streaming) {
                 interrupt();
@@ -191,6 +201,22 @@ export function App({
             quit();
         }
     });
+
+    // History stays mounted: <Static> prints each line once, and mounting it
+    // again would print them all again. The message is cut short of the
+    // window, which Ink would otherwise clear on every frame.
+    if (tooSmall) {
+        const message = wrapRows(
+            tooSmallMessage(neededRows, rows, columns),
+            columns,
+        ).slice(0, Math.max(1, rows - 1));
+        return (
+            <Box flexDirection="column">
+                <History lines={state.lines} replyStats={config.replyStats} />
+                <Text>{message.join("\n")}</Text>
+            </Box>
+        );
+    }
 
     const statusRows = moduleRows(
         config.statusline,

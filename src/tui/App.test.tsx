@@ -133,6 +133,98 @@ function setup({
 }
 
 describe("App", () => {
+    // The message wraps at narrow widths; joining its rows restores it.
+    const flat = (frame = "") => frame.split("\n").join(" ");
+
+    it("asks for a larger window below either minimum, and not at it", async () => {
+        const { app, resize } = setup();
+        await tick();
+        await resize(39, 24);
+        expect(flat(app.lastFrame())).toContain(
+            "Too Small: Dorothy's TUI needs at least 20 lines and 40 columns (this window is 24 × 39)",
+        );
+        expect(app.lastFrame()).not.toContain("tumble-orchid-vapor-lantern");
+        await resize(40, 19);
+        expect(flat(app.lastFrame())).toContain("(this window is 19 × 40)");
+        await resize(40, 20);
+        expect(app.lastFrame()).not.toContain("Too Small");
+        expect(app.lastFrame()).toContain("tumble-orchid-vapor-lantern");
+    });
+
+    it("needs a line more for each statusline line, and none when hidden", async () => {
+        const tall = setup({
+            config: {
+                ...DEFAULT_CONFIG,
+                statusline: { ...DEFAULT_CONFIG.statusline, maxLines: 3 },
+            },
+        });
+        await tick();
+        await tall.resize(100, 21);
+        expect(flat(tall.app.lastFrame())).toContain("at least 22 lines");
+        const hidden = setup({
+            config: {
+                ...DEFAULT_CONFIG,
+                statusline: { modules: [], maxLines: 1 },
+            },
+        });
+        await tick();
+        await hidden.resize(100, 19);
+        expect(hidden.app.lastFrame()).not.toContain("Too Small");
+    });
+
+    it("keeps the draft, the reply and the scrollback while too small", async () => {
+        const { app, session, type, resize } = setup();
+        await tick();
+        await type("hi");
+        await type("\r");
+        session().emit({
+            type: "turn-end",
+            reply: "Hi there",
+            interrupted: false,
+            stats,
+        });
+        await tick();
+        await type("draft");
+        await type("\r");
+        await resize(30, 10);
+        session().emit({ type: "delta", text: "Streamed" });
+        await type("x");
+        await type("\u0012");
+        await type("\u001B");
+        await resize(100, 24);
+        const frame = app.lastFrame() ?? "";
+        expect(frame).toContain("Streamed▍");
+        expect(frame).not.toContain("raw (ctrl+r)");
+        expect(session().interrupts).toBe(0);
+        expect(frame.split("Hi there")).toHaveLength(2);
+        expect(session().sent).toEqual(["hi", "draft"]);
+    });
+
+    it("quits on Ctrl+C while too small", async () => {
+        const { session, type, resize } = setup();
+        await tick();
+        await resize(30, 10);
+        await type("\u0003");
+        expect(session().closed).toBe(true);
+    });
+
+    it("keeps the message shorter than a tiny window", async () => {
+        const { app, resize } = setup();
+        await tick();
+        await resize(20, 3);
+        expect((app.lastFrame() ?? "").split("\n")).toHaveLength(2);
+    });
+
+    it("keeps a draft typed before the window shrank", async () => {
+        const { app, type, resize } = setup();
+        await tick();
+        await type("draft");
+        await resize(30, 10);
+        await type("x");
+        await resize(100, 24);
+        expect(app.lastFrame()).toContain("› draft▏");
+    });
+
     it("orders warnings, input, statusline and header under the border", async () => {
         const { app, session, type } = setup({ failWrites: true });
         await tick();
