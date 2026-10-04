@@ -193,6 +193,20 @@ describe("Input", () => {
         expect(submitted).toEqual(["aXb\nc"]);
     });
 
+    it("moves between rows of a recalled message before recalling on", async () => {
+        const { keys, frame } = setup({ messages: ["first", "one\ntwo"] });
+        await keys(UP);
+        expect(frame()).toContain("› one\n  two▏");
+        await keys(UP);
+        expect(frame()).toContain("› one▏\n  two");
+        await keys(DOWN);
+        expect(frame()).toContain("› one\n  two▏");
+        await keys(UP, UP);
+        expect(frame()).toContain("› first▏");
+        await keys(DOWN);
+        expect(frame()).toContain("› one\n  two▏");
+    });
+
     it("scrolls a tall draft, marking hidden rows", async () => {
         const { keys, frame } = setup({ maxRows: 3 });
         const lines = Array.from({ length: 6 }, (_, index) => `l${index}`);
