@@ -180,9 +180,11 @@ describe("fitColumns", () => {
         expect(fitColumns([3, 5], 20)).toEqual([3, 5]);
     });
 
-    it("shrinks columns in proportion, to at least 3", () => {
-        expect(fitColumns([10, 30], 20)).toEqual([5, 15]);
-        expect(fitColumns([2, 40], 10)).toEqual([3, 7]);
+    it("keeps columns within an equal share, the rest splitting what is left", () => {
+        expect(fitColumns([13, 6, 47, 4], 58)).toEqual([13, 6, 35, 4]);
+        expect(fitColumns([10, 30], 20)).toEqual([10, 10]);
+        expect(fitColumns([2, 40], 10)).toEqual([2, 8]);
+        expect(fitColumns([20, 30, 40], 20)).toEqual([6, 7, 7]);
     });
 
     it("gives up when 3 columns each cannot fit", () => {
@@ -208,14 +210,26 @@ describe("renderMarkdown tables", () => {
     it("wraps cells when the table is too wide", () => {
         const table = "| a | b |\n|---|---|\n| x | one two three |";
         expect(texts(md(table, 16))).toEqual([
-            "┌─────┬────────┐",
-            "│ a   │ b      │",
-            "├─────┼────────┤",
-            "│ x   │ one    │",
-            "│     │ two    │",
-            "│     │ three  │",
-            "└─────┴────────┘",
+            "┌───┬──────────┐",
+            "│ a │ b        │",
+            "├───┼──────────┤",
+            "│ x │ one two  │",
+            "│   │ three    │",
+            "└───┴──────────┘",
         ]);
+    });
+
+    it("keeps short columns whole beside a long one", () => {
+        const table = [
+            "| Feature | Python | Rust | Go |",
+            "|---|---|---|---|",
+            "| Memory safety | GC | Ownership and borrowing checked at compile time | GC |",
+            "| Speed | Slow | Fast | Fast |",
+        ].join("\n");
+        const rows = texts(md(table, 71));
+        expect(rows[1]).toStartWith("│ Feature       │ Python │ Rust ");
+        expect(rows[1]).toEndWith(" │ Go   │");
+        expect(rows.at(-2)).toStartWith("│ Speed         │ Slow   │ Fast ");
     });
 
     it("falls back to plain rows when even narrow columns cannot fit", () => {

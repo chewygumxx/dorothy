@@ -164,6 +164,10 @@ function list(token: Tokens.List, width: number): Row[] {
 const MIN_COLUMN = 3;
 const BORDER: Style = DIM;
 
+// Water-filling: a column no wider than an equal share of the room left
+// keeps its natural width, and the wider ones split the rest evenly, so a
+// long column wraps before a short one breaks mid-word. Each share is at
+// least room / columns, so no column drops below 3.
 export function fitColumns(natural: number[], room: number): number[] | null {
     const total = natural.reduce((sum, width) => sum + width, 0);
     if (total <= room) {
@@ -172,15 +176,26 @@ export function fitColumns(natural: number[], room: number): number[] | null {
     if (MIN_COLUMN * natural.length > room) {
         return null;
     }
-    const widths = natural.map((width) =>
-        Math.max(MIN_COLUMN, Math.floor((width * room) / total)),
-    );
-    let excess = widths.reduce((sum, width) => sum + width, 0) - room;
-    while (excess > 0) {
-        const widest = widths.indexOf(Math.max(...widths));
-        widths[widest] = (widths[widest] ?? MIN_COLUMN) - 1;
-        excess--;
+    const widths = [...natural];
+    let open = natural.map((_, column) => column);
+    let left = room;
+    for (;;) {
+        const share = left / open.length;
+        const kept = open.filter((column) => (natural[column] ?? 0) <= share);
+        if (kept.length === 0) {
+            break;
+        }
+        for (const column of kept) {
+            left -= natural[column] ?? 0;
+        }
+        open = open.filter((column) => !kept.includes(column));
     }
+    // The widest columns take any columns left over.
+    open.sort((a, b) => (natural[b] ?? 0) - (natural[a] ?? 0));
+    const each = Math.floor(left / open.length);
+    open.forEach((column, rank) => {
+        widths[column] = each + (rank < left - each * open.length ? 1 : 0);
+    });
     return widths;
 }
 
