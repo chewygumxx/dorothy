@@ -9,8 +9,8 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
     readTranscript,
@@ -53,6 +53,14 @@ describe("transcriptDir", () => {
         );
     });
 
+    it("ignores an empty HOME and a relative XDG_DATA_HOME", () => {
+        const expected = join(homedir(), ".local/share/dorothy/transcripts");
+        expect(transcriptDir({ HOME: "" })).toBe(expected);
+        expect(transcriptDir({ XDG_DATA_HOME: "data", HOME: "" })).toBe(
+            expected,
+        );
+    });
+
     it("names the file after the phrase", () => {
         expect(transcriptPath("a-b-c-d", { XDG_DATA_HOME: "/data" })).toBe(
             "/data/dorothy/transcripts/a-b-c-d.jsonl",
@@ -69,6 +77,14 @@ describe("TranscriptWriter", () => {
         expect(await readFile(path, "utf8")).toBe(
             '{"v":1,"kind":"user","at":"2026-10-03T00:00:00.000Z","text":"hi"}\n',
         );
+    });
+
+    it("creates the transcript and its directory private to the user", async () => {
+        const path = join(dir, "nested", "a-b-c-d.jsonl");
+        const writer = await TranscriptWriter.open(path, clock);
+        await writer.close();
+        expect((await stat(path)).mode & 0o777).toBe(0o600);
+        expect((await stat(join(dir, "nested"))).mode & 0o777).toBe(0o700);
     });
 
     it("keeps order when appends are not awaited", async () => {

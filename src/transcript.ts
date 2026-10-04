@@ -10,7 +10,7 @@
 
 import { type FileHandle, mkdir, open, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import type { Turn } from "./persona.js";
 
 export type SessionEvent = {
@@ -55,9 +55,12 @@ export type TranscriptEntry = Unstamped<TranscriptEvent>;
 type Env = Record<string, string | undefined>;
 
 export function transcriptDir(env: Env = process.env): string {
-    // XDG treats an empty XDG_DATA_HOME as unset.
-    const data =
-        env.XDG_DATA_HOME || join(env.HOME ?? homedir(), ".local", "share");
+    // XDG treats an empty or relative XDG_DATA_HOME as unset. An empty HOME
+    // would otherwise put transcripts under the working directory.
+    const xdg = env.XDG_DATA_HOME ?? "";
+    const data = isAbsolute(xdg)
+        ? xdg
+        : join(env.HOME || homedir(), ".local", "share");
     return join(data, "dorothy", "transcripts");
 }
 
@@ -117,8 +120,10 @@ export class TranscriptWriter {
         path: string,
         now: () => Date = () => new Date(),
     ): Promise<TranscriptWriter> {
-        await mkdir(dirname(path), { recursive: true });
-        return new TranscriptWriter(await open(path, "a"), now);
+        // Chats are private: new directories and transcripts are the user's
+        // alone.
+        await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+        return new TranscriptWriter(await open(path, "a", 0o600), now);
     }
 
     // Appends are chained so un-awaited calls still land in call order, and a
