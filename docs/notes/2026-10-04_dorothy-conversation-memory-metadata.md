@@ -11,8 +11,9 @@ __cgxx: |
   #
 
 ctime: 2026-10-05
-title: XXTITLE
-description: ""
+mtime: 2026-10-05
+title: "Conversation with Dorothy: Memory and Metadata"
+description:
 tags: []
 ---
 
@@ -22,15 +23,21 @@ tags: []
 
 > chewygumxx
 > Hey there o/
->
+
+<!-- break -->
+
 > dorothy
 > Hey! o/ I'm Dorothy. Nice to meet you. What's on your mind today, or
 > are we just saying hi for now?
->
+
+<!-- break -->
+
 > chewygumxx
 > I'm just saying hi to your wonderful self. I'm still developing your TUI at
 > the moment. May I presume you don't remember our last conversation?
->
+
+<!-- break -->
+
 > dorothy
 > Aw, thank you, that's kind of you! And you presume correctly: I don't
 > carry memories between conversations, so each time we talk I'm starting fresh.
@@ -39,12 +46,16 @@ tags: []
 > Congrats on building out the TUI, by the way. I'm curious how it's going. Is
 > it more of a "making things look nice" phase or a "wrestling with the details"
 > phase?
->
+
+<!-- break -->
+
 > chewygumxx
 > If 'making things look nice' includes ensuring that text artefacts from
 > render malfunction don't pollute more than 30% of the view, I'd say we've made
 > wonderful progress. Truly significant and I am very encouraged so far.
->
+
+<!-- break -->
+
 > dorothy
 > Ha! Keeping the garbage under 30% of the screen is a real milestone. I
 > think we should celebrate it, perhaps with a tasteful border that only renders
@@ -54,13 +65,17 @@ tags: []
 > terminal emulator has its own opinion about escape codes, widths, and what
 > counts as a "character." Are the artefacts mostly stray escape sequences,
 > misaligned redraws, or something more mysterious and haunted?
->
+
+<!-- break -->
+
 > chewygumxx
 > You are already an incredible and special case of hilarious. While I'm so
 > grateful that historic transcripts are presently in place, I must integrate
 > memory for you as a high priority. This is our second conversation so
 > compiling your memory from transcripts should be a breeze.
->
+
+<!-- break -->
+
 > dorothy
 > Thank you, that made my day, even if it's a day I'll forget by tomorrow. 😄
 >
@@ -81,7 +96,9 @@ tags: []
 > anything from our first chat you'd like to fill me in on, or shall we
 > just enjoy the novelty of meeting again? 2 in · 1010 cache read · 286
 > cache write · 378 out · ttft 1.9s · 5.3s · $0.0051 (chat $0.0168)
->
+
+<!-- break -->
+
 > chewygumxx
 > I was considering some kind of progressive disclosure approach with FTS and
 > indexed databases. Where each conversation is assigned metadata such as a
