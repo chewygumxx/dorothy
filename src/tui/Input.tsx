@@ -52,6 +52,10 @@ export type InputProps = {
     memory: EditorMemory;
     onChange(draft: Draft): void;
     onSubmit(text: string): void;
+    // Ctrl keys that are not edits: C and D on an empty draft (or C while
+    // a reply streams), G, R and the rest. Only Input sees those typed in
+    // the same chunk as text.
+    onCtrl(letter: string): void;
 };
 
 export const KEY_HINTS =
@@ -72,6 +76,12 @@ const ESCAPES =
     /(?:\u001B\[|\u009B)[0-?]*[ -/]*[@-~]|\u001B[\]PX^_][^\u0007\u001B]*(?:\u0007|\u001B\\)|\u001B[NO][ -~]|\u001B[ -/]*[0-~]/g;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: matching them is the point.
 const CONTROLS = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
+
+// A chunk splits into text, Enters and Ctrl keys (Ctrl+A to Ctrl+Z, less
+// Tab and Enter, and the rest of C0, which do nothing).
+const TYPED_KEYS =
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: matching them is the point.
+    /(\r\n?|\n|[\u0000-\u0008\u000B\u000C\u000E-\u001F])/;
 
 export const cleanPaste = (text: string): string =>
     text
@@ -100,6 +110,7 @@ export function Input({
     memory,
     onChange,
     onSubmit,
+    onCtrl,
 }: InputProps) {
     const { columns } = useWindowSize();
     const width = draftWidth(columns);
@@ -154,12 +165,30 @@ export function Input({
         u: (current) => kill(killLineStart(current)),
         k: (current) => kill(killLineEnd(current)),
         y: (current) => change(insert(current, memory.killed)),
-        // On an empty draft App quits instead.
+        // Clearing is an edit, so it ends recall too; while a reply streams
+        // App stops it instead, and on an empty draft quits.
+        c: (current) => {
+            if (canSend && current.text !== "") {
+                change(EMPTY_DRAFT);
+            } else {
+                onCtrl("c");
+            }
+        },
         d: (current) => {
             if (current.text !== "") {
                 change(deleteForward(current));
+            } else {
+                onCtrl("d");
             }
         },
+    };
+    const control = (letter: string) => {
+        const edit = ctrl[letter];
+        if (edit) {
+            edit(latest.current);
+        } else {
+            onCtrl(letter);
+        }
     };
 
     useInput((input, key) => {
@@ -192,7 +221,7 @@ export function Input({
         } else if (key.delete) {
             change(deleteForward(current));
         } else if (key.ctrl) {
-            ctrl[input]?.(current);
+            control(input);
         } else if (key.meta) {
             if (input === "b") {
                 change(wordLeft(current));
@@ -201,17 +230,31 @@ export function Input({
             }
         } else if (!key.escape && !key.tab && input) {
             // Keys the terminal sends together (fast typing, or typing before
-            // raw mode is on) reach here as one chunk, Enter included; Ink
-            // leaves it in the text. Pastes come through usePaste instead.
-            const [first = "", ...rest] = input.split(/\r\n?|\n/);
-            change(insert(current, cleanPaste(first)));
-            for (const line of rest) {
-                if (canSend) {
-                    memory.recall = null;
-                    onSubmit(latest.current.text);
-                    latest.current = EMPTY_DRAFT;
+            // raw mode is on) reach here as one chunk, Enter and Ctrl keys
+            // included; Ink leaves them in the text. Each acts as if typed
+            // alone, but only the first Enter sends: App cannot stop sending
+            // until it renders again, so later ones start new lines, as does
+            // one that cannot send. Pastes come through usePaste instead.
+            let sent = false;
+            for (const part of input.split(TYPED_KEYS)) {
+                if (/^[\r\n]/.test(part)) {
+                    const text = latest.current.text;
+                    if (canSend && !sent) {
+                        memory.recall = null;
+                        onSubmit(text);
+                        sent = text.trim() !== "";
+                        latest.current = EMPTY_DRAFT;
+                    } else {
+                        change(insert(latest.current, "\n"));
+                    }
+                } else if (TYPED_KEYS.test(part)) {
+                    const code = part.charCodeAt(0);
+                    if (code >= 1 && code <= 26) {
+                        control(String.fromCharCode(code + 96));
+                    }
+                } else if (part !== "") {
+                    change(insert(latest.current, cleanPaste(part)));
                 }
-                change(insert(latest.current, cleanPaste(line)));
             }
         }
     });

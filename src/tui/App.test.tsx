@@ -589,6 +589,28 @@ describe("App", () => {
         expect(app.lastFrame()).toContain("› from the editor▏");
     });
 
+    it("opens the editor on a Ctrl+G typed with text", async () => {
+        const seen: string[] = [];
+        const { type } = setup({
+            editDraft: async (text) => {
+                seen.push(text);
+                return { ok: true, text };
+            },
+        });
+        await tick();
+        await type("abc\u0007");
+        await tick();
+        expect(seen).toEqual(["abc"]);
+    });
+
+    it("clears rather than quits on a Ctrl+C typed with text", async () => {
+        const { app, session, type } = setup();
+        await tick();
+        await type("abc\u0003");
+        expect(session().closed).toBe(false);
+        expect(app.lastFrame()).toContain("enter send");
+    });
+
     it("keeps the draft and warns when the editor fails", async () => {
         const { app, type } = setup({
             editDraft: async () => ({

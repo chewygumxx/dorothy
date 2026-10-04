@@ -29,11 +29,13 @@ function Harness({
     messages = [],
     maxRows = 5,
     submitted,
+    ctrls = [],
 }: {
     canSend?: boolean;
     messages?: string[];
     maxRows?: number;
     submitted: string[];
+    ctrls?: string[];
 }) {
     const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
     const [memory] = useState(freshMemory);
@@ -45,6 +47,7 @@ function Harness({
             maxRows={maxRows}
             memory={memory}
             onChange={setDraft}
+            onCtrl={(letter) => ctrls.push(letter)}
             onSubmit={(text) => {
                 submitted.push(text);
                 setDraft(EMPTY_DRAFT);
@@ -55,14 +58,23 @@ function Harness({
 
 function setup(props: Partial<Parameters<typeof Harness>[0]> = {}) {
     const submitted: string[] = [];
-    const app = render(<Harness submitted={submitted} {...props} />);
+    const ctrls: string[] = [];
+    const app = render(
+        <Harness submitted={submitted} ctrls={ctrls} {...props} />,
+    );
     const keys = async (...chunks: string[]) => {
         for (const chunk of chunks) {
             app.stdin.write(chunk);
             await tick();
         }
     };
-    return { app, submitted, keys, frame: () => app.lastFrame() ?? "" };
+    return {
+        app,
+        submitted,
+        ctrls,
+        keys,
+        frame: () => app.lastFrame() ?? "",
+    };
 }
 
 const LEFT = "\u001B[D";
@@ -148,6 +160,42 @@ describe("Input", () => {
         expect(frame()).toContain("› two▏");
     });
 
+    it("sends only a chunk's first Enter, starting new lines after", async () => {
+        const { keys, frame, submitted } = setup();
+        await keys("one\rtwo\rthree");
+        expect(submitted).toEqual(["one"]);
+        expect(frame()).toContain("› two\n  three▏");
+    });
+
+    it("starts a new line for an Enter typed ahead while it cannot send", async () => {
+        const { keys, frame, submitted } = setup({ canSend: false });
+        await keys("one\rtwo");
+        expect(submitted).toEqual([]);
+        expect(frame()).toContain("› one\n  two▏");
+    });
+
+    it("acts on Ctrl keys typed in the same chunk as text", async () => {
+        const { keys, submitted } = setup();
+        await keys("hello\u0001X\u0005!\r");
+        expect(submitted).toEqual(["Xhello!"]);
+    });
+
+    it("clears on Ctrl+C, leaving the rest of Ctrl+C and D to App", async () => {
+        const { keys, frame, ctrls } = setup();
+        await keys("abc\u0003");
+        expect(frame()).toContain(KEY_HINTS);
+        await keys("\u0003", "\u0004", "ab\u0007\u0012");
+        expect(ctrls).toEqual(["c", "d", "g", "r"]);
+        expect(frame()).toContain("› ab▏");
+    });
+
+    it("leaves Ctrl+C to App while it cannot send", async () => {
+        const { keys, frame, ctrls } = setup({ canSend: false });
+        await keys("abc", "\u0003");
+        expect(ctrls).toEqual(["c"]);
+        expect(frame()).toContain("› abc▏");
+    });
+
     it("applies every key of a single chunk", async () => {
         const { keys, frame } = setup();
         await keys("hello\u007F\u007F\u007F");
@@ -225,6 +273,7 @@ describe("Input", () => {
             memory: freshMemory(),
             onChange() {},
             onSubmit() {},
+            onCtrl() {},
         };
         for (const columns of [40, COLUMNS]) {
             const { rerender, lastFrame, stdout } = render(

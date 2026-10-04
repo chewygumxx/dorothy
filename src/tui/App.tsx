@@ -245,40 +245,28 @@ export function App({
             });
     };
 
+    // Ctrl keys that are not edits. Input passes them on, having seen any
+    // typed in the same chunk as text and cleared or deleted with C or D.
+    const control = (letter: string) => {
+        if (letter === "c" && state.streaming) {
+            interrupt();
+        } else if (letter === "c" || letter === "d") {
+            quit();
+        } else if (letter === "g") {
+            openEditor();
+        } else if (letter === "r") {
+            dispatch({ type: "toggle-raw" });
+        }
+    };
+
     useInput((input, key) => {
-        const quitKey = key.ctrl && (input === "c" || input === "d");
         if (tooSmall) {
             // Only the quit keys act, and the draft, unseen, is kept.
-            if (quitKey && state.streaming && input === "c") {
-                interrupt();
-            } else if (quitKey) {
-                quit();
+            if (key.ctrl && (input === "c" || input === "d")) {
+                control(input);
             }
-            return;
-        }
-        if (key.escape) {
-            if (state.streaming) {
-                interrupt();
-            }
-        } else if (key.ctrl && input === "r") {
-            dispatch({ type: "toggle-raw" });
-        } else if (key.ctrl && input === "g") {
-            openEditor();
-        } else if (key.ctrl && input === "c") {
-            if (state.streaming) {
-                interrupt();
-            } else if (draft.text !== "") {
-                // Clearing is an edit, so it ends recall too.
-                memory.current.recall = null;
-                setDraft(EMPTY_DRAFT);
-            } else {
-                quit();
-            }
-        } else if (key.ctrl && input === "d") {
-            // With a draft, Input deletes forward instead.
-            if (draft.text === "") {
-                quit();
-            }
+        } else if (key.escape && state.streaming) {
+            interrupt();
         }
     });
 
@@ -348,7 +336,11 @@ export function App({
                     canSend={!state.streaming && !closing}
                     maxRows={layout.inputRows}
                     memory={memory.current}
-                    onChange={setDraft}
+                    onChange={(next) => {
+                        latestDraft.current = next;
+                        setDraft(next);
+                    }}
+                    onCtrl={control}
                     onSubmit={submit}
                 />
                 <Statusline rows={statusRows} />
