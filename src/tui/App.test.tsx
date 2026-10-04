@@ -10,6 +10,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { render } from "ink-testing-library";
+import { type Config, DEFAULT_CONFIG } from "../config.js";
 import type {
     ChatSession,
     ConversationEvent,
@@ -70,15 +71,18 @@ class FakeSession implements ChatSession {
 function setup({
     history = [],
     failWrites = false,
+    config = DEFAULT_CONFIG,
 }: {
     history?: Turn[];
     failWrites?: boolean;
+    config?: Config;
 } = {}) {
     const sessions: FakeSession[] = [];
     const histories: Turn[][] = [];
     const entries: TranscriptEntry[] = [];
     const app = render(
         <App
+            config={config}
             phrase="tumble-orchid-vapor-lantern"
             promptSha256="abc"
             history={history}
@@ -107,6 +111,28 @@ function setup({
 }
 
 describe("App", () => {
+    it("draws reply stats as configured", async () => {
+        const { app, session, type } = setup({
+            // No statusline, whose defaults would show "1 in" too.
+            config: {
+                statusline: { modules: [], maxLines: 1 },
+                replyStats: { modules: ["out"], maxLines: 1 },
+            },
+        });
+        await tick();
+        await type("hello");
+        await type("\r");
+        session().emit({
+            type: "turn-end",
+            reply: "Hi there",
+            interrupted: false,
+            stats,
+        });
+        await tick();
+        expect(app.lastFrame()).toContain(`${" ".repeat(9)}2 out`);
+        expect(app.lastFrame()).not.toContain("1 in");
+    });
+
     it("starts a session and records it once ready", async () => {
         const { app, session, entries } = setup();
         await tick();

@@ -29,6 +29,14 @@ function streaming(): ChatState {
 }
 
 describe("initialState", () => {
+    it("initialState keeps the last three distinct warnings", () => {
+        expect(initialState([], ["a", "b", "a", "c", "d"]).warnings).toEqual([
+            "b",
+            "c",
+            "d",
+        ]);
+    });
+
     it("renders resumed history as finished lines", () => {
         const state = initialState([
             { role: "user", text: "a" },

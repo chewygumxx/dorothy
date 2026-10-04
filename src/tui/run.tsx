@@ -9,6 +9,7 @@
 //
 
 import { render } from "ink";
+import { readConfig } from "../config.js";
 import { Conversation } from "../conversation.js";
 import { promptSha256, type Turn } from "../persona.js";
 import { newPhrase } from "../session-id.js";
@@ -28,6 +29,8 @@ export async function runTui(resume: string | null): Promise<number> {
     let history: Turn[] = [];
     let costUsd = 0;
     const warnings: string[] = [];
+    const { config, warnings: configWarnings } = await readConfig();
+    warnings.push(...configWarnings);
 
     if (resume !== null) {
         try {
@@ -67,6 +70,7 @@ export async function runTui(resume: string | null): Promise<number> {
             transcript={writer}
             initialWarnings={warnings}
             initialCostUsd={costUsd}
+            config={config}
         />,
         { exitOnCtrlC: false },
     );

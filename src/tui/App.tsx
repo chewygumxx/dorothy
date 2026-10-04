@@ -10,6 +10,7 @@
 
 import { Box, useApp, useInput, useWindowSize } from "ink";
 import { useEffect, useReducer, useRef, useState } from "react";
+import { type Config, DEFAULT_CONFIG } from "../config.js";
 import type { ChatSession, ConversationEvent } from "../conversation.js";
 import type { Turn } from "../persona.js";
 import type { TranscriptEntry } from "../transcript.js";
@@ -34,6 +35,8 @@ export type AppProps = {
     initialWarnings?: string[];
     // What the chat cost before this run, for --resume.
     initialCostUsd?: number;
+    // The statusline and reply stats; the defaults when not given.
+    config?: Config;
 };
 
 const describeError = (error: unknown) =>
@@ -47,6 +50,7 @@ export function App({
     transcript,
     initialWarnings = [],
     initialCostUsd = 0,
+    config = DEFAULT_CONFIG,
 }: AppProps) {
     const { exit } = useApp();
     const { columns, rows } = useWindowSize();
@@ -196,7 +200,7 @@ export function App({
 
     return (
         <Box flexDirection="column">
-            <History lines={state.lines} />
+            <History lines={state.lines} replyStats={config.replyStats} />
             <LiveReply
                 text={state.live}
                 streaming={state.streaming}

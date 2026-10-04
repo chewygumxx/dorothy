@@ -72,7 +72,7 @@ export function initialState(
         raw: [],
         rawCount: 0,
         showRaw: false,
-        warnings: [...warnings],
+        warnings: [...new Set(warnings)].slice(-WARNING_LIMIT),
         costUsd,
     };
 }
