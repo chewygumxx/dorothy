@@ -69,8 +69,24 @@ describe("parseConfig", () => {
     it("falls back to the defaults on invalid TOML, saying why", () => {
         expect(parseConfig("[statusline]\nmax-lines =")).toEqual({
             config: DEFAULT_CONFIG,
-            warnings: ["config.toml: Missing value after '='"],
+            warnings: ["config.toml line 2: Missing value after '='"],
         });
+    });
+
+    it("names the line a mistake is on, past a list that spans lines", () => {
+        const fine = '[statusline]\nmodules = [\n  "cost",\n  "in",\n]\n';
+        const { warnings } = parseConfig(
+            `${fine}max-lines = 2\nmax-lines = 3\n`,
+        );
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toStartWith("config.toml line 7: ");
+    });
+
+    it("names the line a list opens on for a mistake inside it", () => {
+        const text = '[statusline]\nmodules = [\n  "cost"\n  "in",\n]';
+        expect(parseConfig(text).warnings[0]).toStartWith(
+            "config.toml line 2: ",
+        );
     });
 
     it("skips unknown and repeated modules, one warning each", () => {

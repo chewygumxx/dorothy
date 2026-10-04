@@ -117,6 +117,20 @@ function parseLine(
     return line;
 }
 
+// Bun's TOML errors carry no position. The mistake is on the line after the
+// longest run of whole lines that parses: a shorter run can fail only
+// because it cuts a list or string that spans lines.
+function errorLine(text: string): number {
+    const lines = text.split("\n");
+    for (let count = lines.length - 1; count > 0; count--) {
+        try {
+            Bun.TOML.parse(lines.slice(0, count).join("\n"));
+            return count + 1;
+        } catch {}
+    }
+    return 1;
+}
+
 // A broken file never stops Dorothy: each problem is a warning, and whatever
 // it spoils falls back to the default.
 export function parseConfig(text: string): {
@@ -128,7 +142,10 @@ export function parseConfig(text: string): {
         data = Bun.TOML.parse(text);
     } catch (error) {
         const reason = describeError(error).replace(/^TOML Parse error: /, "");
-        return { config: DEFAULT_CONFIG, warnings: [`config.toml: ${reason}`] };
+        return {
+            config: DEFAULT_CONFIG,
+            warnings: [`config.toml line ${errorLine(text)}: ${reason}`],
+        };
     }
     const config = { ...DEFAULT_CONFIG };
     const warnings: string[] = [];
