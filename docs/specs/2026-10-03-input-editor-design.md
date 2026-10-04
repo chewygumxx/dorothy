@@ -55,13 +55,17 @@ after that one.
 - **Up and Down move by visual row first**, keeping the cursor's display
   column; above the first row or below the last they walk the message history.
 - **Compose during a reply; send after.** Typing, editing, recall and Ctrl+G
-  work while a reply streams. Enter does nothing then and keeps the draft. Esc
-  still stops the reply.
+  work while a reply streams, and while Dorothy closes. Enter does nothing
+  then and keeps the draft. Esc still stops the reply.
 - **Ctrl+C and Ctrl+D act like a shell's.** Ctrl+C stops a streaming reply;
-  otherwise it clears a non-empty draft, and quits on an empty one. Ctrl+D
-  quits on an empty draft and deletes forward otherwise.
-- **The draft's height is capped** at `max(3, floor(rows / 3))` rows,
-  scrolled to keep the cursor visible.
+  otherwise it clears a non-empty draft (ending recall, as any edit does),
+  and quits on an empty one. Ctrl+D quits on an empty draft and deletes
+  forward otherwise.
+- **The draft's height is capped** at `INPUT_MAX_ROWS` (5, from `layout.ts`)
+  rows, scrolled to keep the cursor visible.
+
+Amended 2026-10-05: the cap was `max(3, floor(rows / 3))` rows until the
+statusline and minimum size design fixed the window's smallest size.
 
 ## Units
 
@@ -85,7 +89,8 @@ Edits are functions from a `Draft` (and arguments) to a new `Draft`:
   of a line with nothing after it kills the `\n`.
 
 ```ts
-type DraftLayout = { rows: string[]; cursorRow: number; cursorColumn: number };
+type DraftRow = { text: string; start: number }; // start: offset of its first character
+type DraftLayout = { rows: DraftRow[]; cursorRow: number; cursorColumn: number };
 function layoutDraft(draft: Draft, width: number): DraftLayout;
 function up(draft: Draft, width: number, column?: number): Draft | null;
 function down(draft: Draft, width: number, column?: number): Draft | null;
@@ -97,7 +102,8 @@ row and display column. When the cursor sits on a space a wrap dropped, it
 shows at the end of the row before. `up` and `down` return `null` on the first
 or last row, which hands the key to recall. The goal column `column` is kept by
 the caller across consecutive vertical moves, so moving through a short row
-does not lose it.
+does not lose it. `draftWindow(layout, maxRows)` picks the rows to show,
+ending at the cursor's when the draft is taller than the window.
 
 ### `src/tui/recall.ts`
 
@@ -117,8 +123,11 @@ recall (`index` back to `null`). Consecutive duplicates appear once.
 
 ### `src/tui/Input.tsx`
 
-A key map from `useInput` and `usePaste` onto `editor.ts` and `recall.ts`; it
-owns the draft, the kill buffer, the goal column and recall state. It renders
+A key map from `useInput` and `usePaste` onto `editor.ts` and `recall.ts`.
+`App` owns the draft, and an `EditorMemory` (`{ killed, goal, recall }`: the
+kill buffer, the goal column and recall state) that it passes in as
+`memory`, because Input is unmounted while the window is too small and would
+otherwise forget them. It renders
 the visible window of `layoutDraft` rows behind a 2-column gutter: `› ` on the
 draft's first row, `↑ ` on the top visible row when rows are hidden above,
 `↓ ` on the bottom one when rows are hidden below, and spaces otherwise. The
@@ -126,14 +135,19 @@ cursor is drawn as an inverse cell (or `▏` at a row's end). The key hints show
 padded and truncated, only while the draft is empty.
 
 A paste inserts at the cursor as one edit, with `\r\n` and `\r` turned into
-`\n` and each tab into 4 spaces.
+`\n`, each tab into 4 spaces, and other control characters dropped. A `\r`
+or `\n` inside a typed chunk (fast typing, or keys sent before raw mode is
+on) is an Enter typed ahead, not a newline: it sends at each one, when
+sending is allowed, and the rest of the chunk becomes the draft.
 
 ### `src/tui/App.tsx`, `layout.ts`, `run.tsx`
 
-- `App` takes `editDraft(text: string): Promise<string | null>`; `null` means
-  "keep the old draft". It reports the draft's visible row count to
-  `fitLayout`, which subtracts it from the reply's rows (replacing the one row
-  `STATUS_ROWS` assumed for the input).
+- `App` takes `editDraft(text: string): Promise<EditResult>`, where
+  `EditResult` is `{ ok: true; text }` or `{ ok: false; message }`. A
+  failure keeps the old draft and shows `message` as a warning. Ctrl+G does
+  nothing while an editor is open. App reports the draft's row count from
+  `layoutDraft` to `fitLayout`, which caps it at `INPUT_MAX_ROWS` and
+  subtracts it from the reply's rows.
 - While `editDraft` runs, `History` is passed the lines it had when the editor
   opened, so `<Static>` writes nothing during the suspension (Ink discards
   renders then) and prints the lines that arrived meanwhile after resume.
@@ -145,8 +159,8 @@ A paste inserts at the cursor as one edit, with `\r\n` and `\r` turned into
      `sh -c '<editor> "$1"' sh <file>`, with `<editor>` being `$VISUAL`, else
      `$EDITOR`, else `vi`, inheriting stdio, and await its exit.
   3. Exit status 0: read the file and drop one trailing newline. Otherwise
-     return `null` and raise the warning `editor exited with <status>`; a
-     launch failure warns `editor failed: <message>`.
+     fail with `editor exited with <status>` (127 when the editor is not
+     found); any other error fails with `editor failed: <message>`.
   4. Remove the directory either way.
 
 ## Keys
@@ -184,11 +198,13 @@ truncated where the terminal is narrower.
 - `Input` through stdin: Shift+Enter as kitty `ESC[13;2u`, Enter, arrows,
   Ctrl+W then Ctrl+Y, bracketed paste (`ESC[200~ ... ESC[201~`) with
   newlines, and a width sweep over draft lengths and cursor positions.
-- `App` with a fake `editDraft`: the result replaces the draft; `null` keeps
-  it; a reply that ends while it is pending reaches `History` afterwards;
-  Enter during a reply keeps the draft; Ctrl+C and Ctrl+D per the table;
+- `App` with a fake `editDraft`: the result replaces the draft; a failure
+  keeps it and warns; a second Ctrl+G while it is pending opens nothing; a
+  reply that ends while it is pending reaches `History` afterwards; Enter
+  during a reply keeps the draft; Ctrl+C and Ctrl+D per the table;
   `fitLayout` keeps the live region shorter than the window with a tall draft
-  and the raw pane open.
+  and the raw pane open; recall and the kill buffer survive the Too Small
+  screen.
 - A pty probe of the real `editDraft` with `EDITOR` set to a script that
   rewrites the file, and one with a script that exits 1.
 
