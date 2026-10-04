@@ -18,7 +18,7 @@ import { type Draft, EMPTY_DRAFT, layoutDraft } from "./editor.js";
 import type { EditResult } from "./external-editor.js";
 import { Header, Statusline, Warnings } from "./Header.js";
 import { History } from "./History.js";
-import { draftWidth, type EditorMemory, Input } from "./Input.js";
+import { cleanPaste, draftWidth, type EditorMemory, Input } from "./Input.js";
 import { LiveReply, wrapRows } from "./LiveReply.js";
 import {
     fitLayout,
@@ -232,7 +232,12 @@ export function App({
                 editing.current = false;
                 setFrozenLines(null);
                 if (result.ok) {
-                    setDraft({ text: result.text, cursor: result.text.length });
+                    // A new draft, so recall ends as it does on any edit; its
+                    // text is cleaned as a paste is, so offsets match rows.
+                    const text = cleanPaste(result.text);
+                    memory.current.recall = null;
+                    memory.current.goal = null;
+                    setDraft({ text, cursor: text.length });
                 } else {
                     dispatch({ type: "warning", message: result.message });
                 }
@@ -241,7 +246,13 @@ export function App({
 
     useInput((input, key) => {
         const quitKey = key.ctrl && (input === "c" || input === "d");
-        if (tooSmall && !quitKey) {
+        if (tooSmall) {
+            // Only the quit keys act, and the draft, unseen, is kept.
+            if (quitKey && state.streaming && input === "c") {
+                interrupt();
+            } else if (quitKey) {
+                quit();
+            }
             return;
         }
         if (key.escape) {

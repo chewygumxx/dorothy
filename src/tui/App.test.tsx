@@ -648,6 +648,50 @@ describe("App", () => {
         expect(app.lastFrame()).toContain("Finished while editing");
     });
 
+    it("ends recall when the editor returns a draft", async () => {
+        const { app, type } = setup({
+            editDraft: async () => ({ ok: true, text: "one edited" }),
+        });
+        await tick();
+        await type("one");
+        await type("\r");
+        await type("wip");
+        await type("\u001B[A");
+        await type("\u0007");
+        await tick();
+        await type("\u001B[B");
+        expect(app.lastFrame()).toContain("› one edited▏");
+    });
+
+    it("cleans the editor's text as a paste is cleaned", async () => {
+        const { app, type } = setup({
+            editDraft: async () => ({ ok: true, text: "x\r\na\u001Bb\tcd" }),
+        });
+        await tick();
+        await type("\u0007");
+        await tick();
+        await type("X");
+        expect(app.lastFrame()).toContain("› x\n  ab    cdX▏");
+    });
+
+    it("quits on Ctrl+D while too small, keeping a draft", async () => {
+        const { session, type, resize } = setup();
+        await tick();
+        await type("abc");
+        await resize(30, 10);
+        await type("\u0004");
+        expect(session().closed).toBe(true);
+    });
+
+    it("quits on Ctrl+C while too small rather than clearing the draft", async () => {
+        const { session, type, resize } = setup();
+        await tick();
+        await type("abc");
+        await resize(30, 10);
+        await type("\u0003");
+        expect(session().closed).toBe(true);
+    });
+
     it("quits on Ctrl+D", async () => {
         const { session, type } = setup();
         await tick();
