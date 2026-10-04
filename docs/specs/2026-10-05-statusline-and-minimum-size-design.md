@@ -133,9 +133,9 @@ when `XDG_CONFIG_HOME` is empty or relative. The XDG resolution in
 ```ts
 // src/xdg.ts
 export function xdgDir(
-    env: Record<string, string | undefined>,
-    variable: "XDG_DATA_HOME" | "XDG_CONFIG_HOME",
-    fallback: string, // ".local/share" or ".config", joined under HOME
+  env: Record<string, string | undefined>,
+  variable: "XDG_DATA_HOME" | "XDG_CONFIG_HOME",
+  fallback: string, // ".local/share" or ".config", joined under HOME
 ): string;
 ```
 
@@ -160,15 +160,24 @@ max-lines = 1
 
 ```ts
 export type ModuleName =
-    | "in" | "cache-read" | "cache-write" | "out"
-    | "ttft" | "duration" | "cost" | "chat-cost";
+  | "in"
+  | "cache-read"
+  | "cache-write"
+  | "out"
+  | "ttft"
+  | "duration"
+  | "cost"
+  | "chat-cost";
 export type LineConfig = { modules: ModuleName[]; maxLines: number };
 export type Config = { statusline: LineConfig; replyStats: LineConfig };
 export const DEFAULT_CONFIG: Config;
 
-export function parseConfig(text: string): { config: Config; warnings: string[] };
+export function parseConfig(text: string): {
+  config: Config;
+  warnings: string[];
+};
 export async function readConfig(
-    env: Record<string, string | undefined>,
+  env: Record<string, string | undefined>,
 ): Promise<{ config: Config; warnings: string[] }>;
 ```
 
@@ -181,16 +190,16 @@ config to `App` and its warnings into `initialWarnings`.
 
 Every problem is one warning and a fallback; Dorothy always starts.
 
-| Problem | Fallback | Warning |
-| --- | --- | --- |
-| No file | defaults | none |
-| Unreadable file | defaults | `config.toml: <reason>` |
-| Invalid TOML | defaults | `config.toml line 3: <parser message>` |
-| Unknown table or key | ignored | `config.toml: unknown key max_lines` |
-| `modules` not a list of strings | that table's default | names the table |
-| Unknown module name | that name skipped | names the module |
-| Repeated module name | later copy skipped | names the module |
-| `max-lines` not an integer 1 to 5 | 1 | names the table |
+| Problem                           | Fallback             | Warning                                |
+| --------------------------------- | -------------------- | -------------------------------------- |
+| No file                           | defaults             | none                                   |
+| Unreadable file                   | defaults             | `config.toml: <reason>`                |
+| Invalid TOML                      | defaults             | `config.toml line 3: <parser message>` |
+| Unknown table or key              | ignored              | `config.toml: unknown key max_lines`   |
+| `modules` not a list of strings   | that table's default | names the table                        |
+| Unknown module name               | that name skipped    | names the module                       |
+| Repeated module name              | later copy skipped   | names the module                       |
+| `max-lines` not an integer 1 to 5 | 1                    | names the table                        |
 
 The warnings share the existing three warning rows.
 
@@ -202,34 +211,34 @@ The warnings share the existing three warning rows.
 
 ```ts
 export function renderModule(
-    name: ModuleName,
-    stats: TurnStats | null,
-    chatCostUsd: number,
+  name: ModuleName,
+  stats: TurnStats | null,
+  chatCostUsd: number,
 ): string | null;
 export function fitModules(
-    pieces: string[],
-    width: number,
-    maxLines: number,
+  pieces: string[],
+  width: number,
+  maxLines: number,
 ): string[];
 ```
 
-| Module | Text | Renders nothing when |
-| --- | --- | --- |
-| `in` | `2 in` | no turn yet |
-| `cache-read` | `1010 cache read` | no turn yet, or 0 |
-| `cache-write` | `286 cache write` | no turn yet, or 0 |
-| `out` | `378 out` | no turn yet |
-| `ttft` | `ttft 1.9s` | no turn yet, or no first token |
-| `duration` | `5.3s` | no turn yet |
-| `cost` | `$0.0051` | no turn yet |
-| `chat-cost` | `chat $0.0168` | never |
+| Module        | Text              | Renders nothing when           |
+| ------------- | ----------------- | ------------------------------ |
+| `in`          | `2 in`            | no turn yet                    |
+| `cache-read`  | `1010 cache read` | no turn yet, or 0              |
+| `cache-write` | `286 cache write` | no turn yet, or 0              |
+| `out`         | `378 out`         | no turn yet                    |
+| `ttft`        | `ttft 1.9s`       | no turn yet, or no first token |
+| `duration`    | `5.3s`            | no turn yet                    |
+| `cost`        | `$0.0051`         | no turn yet                    |
+| `chat-cost`   | `chat $0.0168`    | never                          |
 
 A module that renders nothing is skipped; it is not a module that failed to
 fit.
 
 ### Fitting
 
-`fitModules` joins pieces with ` · ` and measures by display width
+`fitModules` joins pieces with `·` and measures by display width
 (`string-width`). It places each piece on the current row if it fits with its
 separator, else on a new row if fewer than `maxLines` rows are used, else it
 stops and drops that piece and all after it. A piece never splits: at 40
