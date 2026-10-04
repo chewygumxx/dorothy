@@ -21,6 +21,23 @@ import type { ResumedTurn, TranscriptEntry } from "../transcript.js";
 import { App } from "./App.js";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
+// ink-testing-library leaves rows unset, so Ink would take the size of the
+// terminal running the tests; every test gets 100 × 24 unless it resizes.
+const setSize = (
+    app: ReturnType<typeof render>,
+    columns: number,
+    rows: number,
+) => {
+    Object.defineProperty(app.stdout, "columns", {
+        value: columns,
+        configurable: true,
+    });
+    Object.defineProperty(app.stdout, "rows", {
+        value: rows,
+        configurable: true,
+    });
+    app.stdout.emit("resize");
+};
 const stats: TurnStats = {
     inputTokens: 1,
     cacheReadTokens: 0,
@@ -102,15 +119,63 @@ function setup({
             }}
         />,
     );
+    setSize(app, 100, 24);
     const session = () => sessions.at(-1) as FakeSession;
     const type = async (text: string) => {
         app.stdin.write(text);
         await tick();
     };
-    return { app, sessions, histories, entries, session, type };
+    const resize = async (columns: number, rows: number) => {
+        setSize(app, columns, rows);
+        await tick();
+    };
+    return { app, sessions, histories, entries, session, type, resize };
 }
 
 describe("App", () => {
+    it("orders warnings, input, statusline and header under the border", async () => {
+        const { app, session, type } = setup({ failWrites: true });
+        await tick();
+        await type("hello");
+        await type("\r");
+        session().emit({
+            type: "turn-end",
+            reply: "Hi there",
+            interrupted: false,
+            stats,
+        });
+        await tick();
+        const lines = (app.lastFrame() ?? "").split("\n");
+        const warning = lines.findIndex((line) =>
+            line.startsWith("! transcript not saved"),
+        );
+        expect(lines[warning - 1]).toStartWith("────");
+        expect(lines[warning + 1]).toStartWith("›");
+        expect(lines.at(-2)).toBe(
+            "chat $0.0010 · $0.0010 · 1 in · 2 out · ttft 0.3s · 1.5s",
+        );
+        expect(lines.at(-1)).toStartWith(
+            "dorothy · tumble-orchid-vapor-lantern",
+        );
+    });
+
+    it("shows the chat's cost in the statusline before the first reply", async () => {
+        const { app } = setup();
+        await tick();
+        expect((app.lastFrame() ?? "").split("\n").at(-2)).toBe("chat $0.0000");
+    });
+
+    it("draws no statusline when it has no modules", async () => {
+        const { app } = setup({
+            config: {
+                ...DEFAULT_CONFIG,
+                statusline: { modules: [], maxLines: 1 },
+            },
+        });
+        await tick();
+        expect((app.lastFrame() ?? "").split("\n").at(-2)).toStartWith("›");
+    });
+
     it("shows a resumed reply's stats", async () => {
         const { app } = setup({
             history: [
@@ -322,7 +387,9 @@ describe("App", () => {
         await type("word ".repeat(600));
         const lines = (app.lastFrame() ?? "").split("\n");
         expect(lines.length).toBeLessThan(24);
-        expect(lines.at(-1)).toContain("▏");
+        expect(lines.at(-3)).toContain("▏");
+        const top = lines.findIndex((line) => line.startsWith("↑"));
+        expect(lines.length - 3 - top + 1).toBe(5);
     });
 
     it("quits on Ctrl+D", async () => {

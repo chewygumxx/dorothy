@@ -14,13 +14,14 @@ import { type Config, DEFAULT_CONFIG } from "../config.js";
 import type { ChatSession, ConversationEvent } from "../conversation.js";
 import type { Turn } from "../persona.js";
 import type { ResumedTurn, TranscriptEntry } from "../transcript.js";
-import { Header } from "./Header.js";
+import { Header, Statusline, Warnings } from "./Header.js";
 import { History } from "./History.js";
 import { Input, inputRows } from "./Input.js";
 import { LiveReply } from "./LiveReply.js";
 import { fitLayout } from "./layout.js";
 import { RawPane } from "./RawPane.js";
 import { initialState, reduce } from "./state.js";
+import { moduleRows } from "./statusline.js";
 
 export type TranscriptSink = {
     append(entry: TranscriptEntry): Promise<void>;
@@ -191,11 +192,17 @@ export function App({
         }
     });
 
+    const statusRows = moduleRows(
+        config.statusline,
+        state.lastStats,
+        state.costUsd,
+        columns,
+    );
     const layout = fitLayout(rows, {
         showRaw: state.showRaw,
         rawCount: state.raw.length,
         warnings: state.warnings.length,
-        statusRows: 0,
+        statusRows: statusRows.length,
         inputRows: inputRows(draft, columns),
     });
 
@@ -218,19 +225,20 @@ export function App({
                 borderRight={false}
                 borderBottom={false}
             >
-                <Header
-                    phrase={phrase}
-                    model={state.model}
-                    sdkSessionId={state.sdkSessionId}
-                    status={state.status}
-                    warnings={state.warnings}
-                />
+                <Warnings warnings={state.warnings} />
                 <Input
                     value={draft}
                     disabled={state.streaming || closing}
                     maxRows={layout.inputRows}
                     onChange={setDraft}
                     onSubmit={submit}
+                />
+                <Statusline rows={statusRows} />
+                <Header
+                    phrase={phrase}
+                    model={state.model}
+                    sdkSessionId={state.sdkSessionId}
+                    status={state.status}
                 />
             </Box>
         </Box>

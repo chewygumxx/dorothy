@@ -43,6 +43,8 @@ export type ChatState = {
     showRaw: boolean;
     warnings: string[];
     costUsd: number;
+    // The latest finished turn's, for the statusline.
+    lastStats: TurnStats | null;
 };
 
 export type Action =
@@ -76,6 +78,8 @@ export function initialState(
         showRaw: false,
         warnings: [...new Set(warnings)].slice(-WARNING_LIMIT),
         costUsd,
+        lastStats:
+            history.findLast((turn) => turn.stats !== undefined)?.stats ?? null,
     };
 }
 
@@ -108,6 +112,7 @@ function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
                     interrupted: event.interrupted,
                 }),
                 costUsd,
+                lastStats: event.stats,
                 live: "",
                 streaming: false,
             };

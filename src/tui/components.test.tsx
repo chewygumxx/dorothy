@@ -9,11 +9,12 @@
 //
 
 import { describe, expect, it } from "bun:test";
+import { Box } from "ink";
 import { render } from "ink-testing-library";
 import { useState } from "react";
 import { DEFAULT_CONFIG } from "../config.js";
 import type { TurnStats } from "../conversation.js";
-import { Header, shortId } from "./Header.js";
+import { Header, Statusline, shortId, Warnings } from "./Header.js";
 import { History } from "./History.js";
 import { Input, inputRows, KEY_HINTS } from "./Input.js";
 import { LiveReply, wrapRows } from "./LiveReply.js";
@@ -45,7 +46,6 @@ describe("Header", () => {
                 model="test-model"
                 sdkSessionId="3f2a0000-0000-0000-0000-000000000c91"
                 status="ready"
-                warnings={[]}
             />,
         );
         const frame = lastFrame() ?? "";
@@ -55,20 +55,39 @@ describe("Header", () => {
         expect(frame).toContain("ready");
     });
 
-    it("shows each warning on one row of its own", () => {
+    it("keeps to one row however narrow the window", () => {
         const { lastFrame } = render(
-            <Header
-                phrase="p"
-                model={null}
-                sdkSessionId={null}
-                status="starting"
-                warnings={["no transcript", long("skipped")]}
-            />,
+            <Box width={40}>
+                <Header
+                    phrase="tumble-orchid-vapor-lantern"
+                    model="claude-sonnet-5-5"
+                    sdkSessionId="3f2a0000-0000-0000-0000-000000000c91"
+                    status="disconnected"
+                />
+            </Box>,
         );
-        const lines = (lastFrame() ?? "").split("\n");
-        expect(lines).toHaveLength(3);
-        expect(lines[1]).toBe("! no transcript");
-        expect(lines[2]).toStartWith("! skipped skipped");
+        expect((lastFrame() ?? "").split("\n")).toHaveLength(1);
+    });
+});
+
+describe("Warnings and Statusline", () => {
+    it("shows each warning on one row of its own", () => {
+        const lines = (
+            render(
+                <Warnings warnings={["no transcript", long("skipped")]} />,
+            ).lastFrame() ?? ""
+        ).split("\n");
+        expect(lines).toHaveLength(2);
+        expect(lines[0]).toBe("! no transcript");
+        expect(lines[1]).toStartWith("! skipped skipped");
+    });
+
+    it("draws the statusline's rows and nothing without them", () => {
+        expect(render(<Statusline rows={["a · b", "c"]} />).lastFrame()).toBe(
+            "a · b\nc",
+        );
+        expect(render(<Warnings warnings={[]} />).lastFrame()).toBe("");
+        expect(render(<Statusline rows={[]} />).lastFrame()).toBe("");
     });
 
     it("shortens long ids only", () => {
