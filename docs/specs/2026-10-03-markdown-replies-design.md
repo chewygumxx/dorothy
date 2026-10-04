@@ -154,10 +154,17 @@ Blocks are separated by one empty row; no leading or trailing empty rows.
 
 Each column's natural width is its widest cell. Borders and one space of
 padding either side of each cell take `3 * columns + 1`. If the natural widths
-fit the rest, they are used. Otherwise each column shrinks in proportion to its
-natural width, never below 3, and cells wrap within their column. A table that
-cannot fit even at 3 per column renders as one plain row per table row, its
-cells joined with ` │ `, wrapped like a paragraph.
+fit the rest, they are used. Otherwise the room is water-filled: a column no
+wider than an equal share of the room left keeps its natural width, and the
+wider columns split what remains evenly (the widest take any odd columns), so
+cells wrap within their column and a long column wraps before a short one
+breaks mid-word. A table that cannot fit even at 3 per column renders as one
+plain row per table row, its cells joined with ` │ `, wrapped like a
+paragraph.
+
+Amended 2026-10-05: columns first shrank in proportion to their natural
+widths, which at 80 columns split short cells such as `Pyth`/`on` beside a
+long column with room to spare.
 
 ## Testing
 
