@@ -76,7 +76,9 @@ bun start -- "What is your name?"
 ```
 
 Either command streams one reply to stdout as it is generated, in character as
-Dorothy per the system prompt in `src/persona.ts`.
+Dorothy per the system prompt in `src/persona.ts`. A prompt that starts with a
+dash follows `--`, as in `bun run dev -- -- "-v means?"`; any other leading
+option is refused rather than sent, and `--help` prints the usage.
 
 Run with no argument for a chat in the terminal:
 
@@ -84,9 +86,11 @@ Run with no argument for a chat in the terminal:
 bun run dev
 ```
 
-Enter sends, Esc stops a reply, Ctrl+R shows the raw SDK messages and Ctrl+C
-or `/exit` quits. Each chat is named by a four-word phrase shown in the status
-bar and saved as it happens to
+Enter sends and Esc stops a reply. Ctrl+C stops a reply too, and quits when
+none is streaming; Ctrl+D and `/exit` quit. Ctrl+R shows the raw SDK messages.
+Each reply ends with its tokens, timings, cost and what the chat has cost so
+far. Each chat is named by a four-word phrase shown in the status bar and saved
+as it happens, readable only by you, to
 `~/.local/share/dorothy/transcripts/<phrase>.jsonl` (`$XDG_DATA_HOME` if set).
 Continue one with:
 
