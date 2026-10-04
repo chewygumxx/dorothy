@@ -8,7 +8,7 @@
 //
 //
 
-import { Box, Text, useInput, useWindowSize } from "ink";
+import { Box, Text, useInput, usePaste, useWindowSize } from "ink";
 import { useRef } from "react";
 
 export type InputProps = {
@@ -20,6 +20,12 @@ export type InputProps = {
 
 export const KEY_HINTS = "enter send · esc stop · ctrl+r raw · ctrl+c quit";
 const PROMPT_WIDTH = 2;
+
+// Newlines are handled before this, so it leaves only printable text.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching them is the point.
+const CONTROLS = /[\u0000-\u0008\u000B-\u001F\u007F]/g;
+const clean = (text: string) =>
+    text.replace(/\t/g, "    ").replace(CONTROLS, "");
 
 // Hand-rolled on useInput rather than ink-text-input: App owns Esc, Ctrl+R,
 // Ctrl+C and Ctrl+D, so this only edits one line.
@@ -44,7 +50,22 @@ export function Input({ value, disabled, onChange, onSubmit }: InputProps) {
             // Array.from splits by code point, so an emoji goes in one press.
             change(Array.from(latest.current).slice(0, -1).join(""));
         } else if (!key.ctrl && !key.meta && !key.escape && !key.tab && input) {
-            change(latest.current + input.replace(/[\r\n]+/g, " "));
+            // Keys the terminal sends together (fast typing, or typing before
+            // raw mode is on) reach here as one chunk, Enter included; Ink
+            // leaves it in the text. Pastes come through usePaste instead.
+            const [first = "", ...rest] = input.split(/\r\n?|\n/);
+            change(latest.current + clean(first));
+            for (const line of rest) {
+                onSubmit(latest.current);
+                change(clean(line));
+            }
+        }
+    });
+    // Bracketed paste, so a pasted newline is not taken for Enter. The input
+    // is one line, so newlines become spaces.
+    usePaste((text) => {
+        if (!disabled) {
+            change(latest.current + clean(text.replace(/[\r\n]+/g, " ")));
         }
     });
     // Every row must fit the terminal: one that wraps there takes a row Ink

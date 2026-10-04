@@ -283,6 +283,31 @@ describe("Input", () => {
         expect(lastFrame()).not.toContain(KEY_HINTS);
     });
 
+    it("submits an Enter typed ahead in the same chunk", async () => {
+        const submitted: string[] = [];
+        const { stdin, lastFrame } = render(<Harness submitted={submitted} />);
+        stdin.write("one\rtwo");
+        await tick();
+        expect(submitted).toEqual(["one"]);
+        expect(lastFrame()).toContain("› two▏");
+    });
+
+    it("pastes on one line, without control characters", async () => {
+        const submitted: string[] = [];
+        const { stdin, lastFrame } = render(<Harness submitted={submitted} />);
+        stdin.write("\u001B[200~one\r\ntwo\u0007\u001B[201~");
+        await tick();
+        expect(submitted).toEqual([]);
+        expect(lastFrame()).toContain("› one two▏");
+    });
+
+    it("drops control characters from typed text", async () => {
+        const { stdin, lastFrame } = render(<Harness submitted={[]} />);
+        stdin.write("a\u0004\u0004b");
+        await tick();
+        expect(lastFrame()).toContain("› ab▏");
+    });
+
     it("ignores typing and Enter while disabled", async () => {
         const submitted: string[] = [];
         const { stdin, lastFrame } = render(
