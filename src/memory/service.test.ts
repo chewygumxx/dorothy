@@ -407,6 +407,36 @@ describe("MemoryService", () => {
         expect(notices).toEqual([{ type: "memory-cost", usd: 0.25 }]);
     });
 
+    it("warns of pins over the budget once, even when a review resizes them", async () => {
+        const pinned = phrase(1);
+        const fields = {
+            title: "Pinned",
+            description: "A pin.",
+            abstract: "x".repeat(1000),
+            pinned: true,
+        };
+        await transcript(pinned, [user("Hi"), reply("Hello")]);
+        await updateSidecar(dir, pinned, () => ({
+            ...EMPTY_SIDECAR,
+            ...fields,
+        }));
+        const { memory, notices } = setup({
+            queryFn: reviews({ ...NOTES, abstract: "y".repeat(900) }).fn,
+            config: { ...DEFAULT_CONFIG.memory, budget: 200 },
+            entries: [entry(pinned, fields)],
+        });
+        expect(memory.warnings()).toHaveLength(1);
+        memory.ready();
+        await until(
+            async () => (await sidecarOf(pinned))?.title === "Remembering",
+        );
+        await settle();
+        expect(memory.block()).toContain("yyyy");
+        expect(notices.filter((notice) => notice.type === "warning")).toEqual(
+            [],
+        );
+    });
+
     it("on stop, cancels the review without a word", async () => {
         await transcript(LIVE, [user("Hi"), reply("Hello")]);
         const query = reviews("hang");

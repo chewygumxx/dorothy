@@ -84,8 +84,9 @@ export class MemoryService implements MemoryHooks {
     readonly #listeners = new Set<(notice: Notice) => void>();
     readonly #scheduler: ReviewScheduler;
     readonly #initialWarnings: string[];
-    // The warnings already shown, so a rebuild repeats none of them.
-    #shown: Set<string>;
+    // The pin warning's count changes with every review of a pinned note, so
+    // it is told once a run, not once per wording.
+    #pinWarned: boolean;
     #block: string;
     #titled = false;
     #caughtUp = false;
@@ -119,7 +120,7 @@ export class MemoryService implements MemoryHooks {
         const built = this.#build(options.phrase);
         this.#block = built.block;
         this.#initialWarnings = built.warnings;
-        this.#shown = new Set(built.warnings);
+        this.#pinWarned = built.warnings.length > 0;
     }
 
     // The block a new session starts with, as of the latest review.
@@ -291,12 +292,11 @@ export class MemoryService implements MemoryHooks {
         if (phrase !== this.#phrase) {
             const built = this.#build(this.#phrase);
             this.#block = built.block;
-            for (const warning of built.warnings) {
-                if (!this.#shown.has(warning)) {
-                    this.#warn(warning);
-                }
+            const [warning] = built.warnings;
+            if (warning !== undefined && !this.#pinWarned) {
+                this.#pinWarned = true;
+                this.#warn(warning);
             }
-            this.#shown = new Set(built.warnings);
         }
     }
 }
