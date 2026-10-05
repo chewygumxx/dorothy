@@ -17,6 +17,7 @@ import {
     type ReviewQueryFn,
     reviewPrompt,
     runReview,
+    validateNotes,
 } from "./review.js";
 import type { Timers } from "./scheduler.js";
 import { EMPTY_SIDECAR, mergeEdit, withProvisional } from "./sidecar.js";
@@ -281,5 +282,36 @@ describe("REVIEW_INSTRUCTIONS", () => {
         for (const limit of ["60", "160", "1,000"]) {
             expect(REVIEW_INSTRUCTIONS).toContain(limit);
         }
+    });
+
+    it("says the message escapes characters and notes are plain text", () => {
+        expect(REVIEW_INSTRUCTIONS).toContain("&amp;");
+        expect(REVIEW_INSTRUCTIONS).toContain("&lt;");
+        expect(REVIEW_INSTRUCTIONS).toContain("&gt;");
+        expect(REVIEW_INSTRUCTIONS).toContain("plain text");
+    });
+});
+
+describe("escaped notes", () => {
+    it("stores what the model echoed of the escaping as plain text", async () => {
+        const fake = fakeQuery([
+            init(),
+            success({ ...NOTES, abstract: "Array&lt;T&gt; &amp; more" }),
+        ]);
+        const outcome = await run(fake);
+        expect(outcome.ok && outcome.notes.abstract).toBe("Array<T> & more");
+    });
+
+    it("decodes once, so an escaped entity does not become a bracket", () => {
+        const checked = validateNotes({ ...NOTES, title: "&amp;lt;" });
+        expect(checked.ok && checked.notes.title).toBe("&lt;");
+    });
+
+    it("decodes before the limit check", () => {
+        const checked = validateNotes({
+            ...NOTES,
+            title: "&lt;".repeat(60),
+        });
+        expect(checked.ok && checked.notes.title).toBe("<".repeat(60));
     });
 });

@@ -56,7 +56,8 @@ export const REVIEW_INSTRUCTIONS = [
     "1,000 characters summarising what was discussed, what was decided and",
     "what was left open, including what you learned about the user. A note",
     "marked fixed was written by the user: return it exactly as it is, and",
-    "keep your other notes consistent with it.",
+    "keep your other notes consistent with it. The message escapes &, < and",
+    "> as &amp;, &lt; and &gt;; write the notes as plain text, not escaped.",
 ].join(" ");
 
 export type ReviewOutcome =
@@ -117,6 +118,14 @@ export function reviewPrompt(
     ].join("\n");
 }
 
+// The prompt escapes &, < and >; a note that echoes them is read as text.
+// &amp; goes last, so &amp;lt; decodes once, to &lt;.
+const unescapeXml = (text: string) =>
+    text
+        .replaceAll("&lt;", "<")
+        .replaceAll("&gt;", ">")
+        .replaceAll("&amp;", "&");
+
 // The schema already asked for this; the model's output is checked again.
 export function validateNotes(
     output: unknown,
@@ -130,7 +139,7 @@ export function validateNotes(
         if (typeof value !== "string") {
             return { ok: false, reason: `no ${field} in the notes` };
         }
-        const text = normalise(value);
+        const text = normalise(unescapeXml(value));
         if (text === "") {
             return { ok: false, reason: `the ${field} is empty` };
         }
