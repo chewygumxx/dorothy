@@ -144,6 +144,9 @@ the transcripts directory (already `0700`).
   by the review schema, the edit view and on read: title at most 60
   characters, description one sentence of at most 160, abstract one paragraph
   of at most 1,000. A field breaking a limit on read is treated as `null`.
+- Notes are normalised as they are read. Only bad JSON, a non-object or an
+  unknown `v` make a sidecar unparseable; a field of the wrong shape reads as
+  absent.
 - `fields` holds provenance per field. `by` is `prompt` (the provisional
   title), `dorothy` or `user`. Dorothy's entries add `model` and
   `throughTurn`, the number of transcript turns she had seen.
@@ -155,7 +158,9 @@ the transcripts directory (already `0700`).
   transcript has more turns than `reviewedThrough`. Turns are counted as
   `readTranscript` returns them.
 - `rev` increments on every write; it is for diagnostics and tests.
-- `reviewCostUsd` accumulates the cost of every review of the conversation.
+- `reviewCostUsd` accumulates the cost of the conversation's successful
+  reviews; the `memory-cost` statusline module counts every review's cost,
+  failed ones included.
 - `hidden: true` is the light form of forgetting: the conversation leaves the
   memory block and is never reviewed, but its transcript stays. Deleting both
   files is the full form.
@@ -183,10 +188,12 @@ Emptying a field in the edit view sets it to `null` and hands it back.
 
 ### Wiring
 
-`src/tui/` learns nothing about memory. In `run.tsx`, `createSession` wraps
-each `Conversation` in `trackMemory(session, phrase, memory)`, a `ChatSession`
-decorator that observes `send`, `ready` and `turn-end` and passes everything
-through unchanged.
+`src/tui/` learns nothing about memory beyond `run.tsx`, which wires it in.
+There, `createSession` wraps each `Conversation` in
+`trackMemory(session, hooks)`, a `ChatSession` decorator that observes `send`,
+`ready` and `turn-end` and passes everything through unchanged; the
+`MemoryService` is the hooks. Without a saved transcript the live
+conversation gets no title and no reviews.
 
 `App` gains one optional prop, `notices`: a subscription delivering
 `{ type: "warning"; message }` and `{ type: "memory-cost"; usd }`. Warnings go
@@ -199,21 +206,27 @@ accumulates this session's review spend in the state.
 | -------------------------------------------------- | ---------------------------------------------------------- |
 | First `send` in a conversation with no sidecar     | Write the provisional title                                |
 | `ready` of the first session                       | Start catch-up                                             |
-| `turn-end` (no error) and `reviewedThrough` is `0` | Review now                                                 |
+| `turn-end` (no error), conversation to review now  | Review now                                                 |
 | Any other `turn-end`                               | (Re)start the idle timer                                   |
 | `send`                                             | Cancel the idle timer                                      |
 | Idle timer fires                                   | Review                                                     |
 | Quit                                               | Drop the timer, close any running review, wait for nothing |
 
+"Review now" is decided from the launch catalogue: the conversation had not
+been reviewed (`reviewedThrough` of `0`) and none has been asked for yet this
+run. A failed first review is retried after the idle timer, not at once. A
+review may still start in the close grace period; it is then cancelled.
+
 The provisional title is the first non-blank line of the first message,
 trimmed, cut to 60 characters with a trailing `…` when longer, with
-`by: "prompt"`.
+`by: "prompt"`. A resumed conversation without a sidecar takes its provisional
+title from its transcript's first user turn.
 
 Catch-up reviews the stale, non-hidden conversations that have at least one
 visit (see Catalogue) and a parseable sidecar or none, most recently active
-first, at most `catch-up` per launch. It runs
-only in the TUI, after the first session is `ready`, so it does not compete
-with Dorothy's own start.
+first, at most `catch-up` per launch. It skips the live conversation, which
+its own turns review. It runs only in the TUI, after the first session is
+`ready`, so it does not compete with Dorothy's own start.
 
 ### Scheduler
 
@@ -270,7 +283,9 @@ The scanning implementation reads every transcript.
 
 A **visit** is a `session` event followed by at least one `user` event before
 the next `session` event. It carries the number of those user turns and the
-time of its last one. Conversations without a visit are left out.
+time of its last one. A user turn before the first `session` event belongs to
+the first visit; a visit with no readable time is dropped. Conversations
+without a visit are left out.
 
 ### Ranking
 
@@ -291,14 +306,16 @@ long session from outweighing several returns.
 
 `full` (title, description, abstract), `described` (title, description),
 `titled` (title). Size is estimated as `ceil(chars / 4)` tokens over the
-entry's rendered text.
+entry's rendered text. The budget counts entries only.
 
 1. Pins always get the richest tier their fields allow, and are charged to
    the budget first. If pins alone exceed the budget they all still appear,
-   and a warning names the overrun.
+   and a warning names the overrun, shown once per run even when later reviews
+   change the pinned notes' size.
 2. Walk the rest in rank order. Each gets the richest tier that its fields
    allow, that fits the remaining budget, and that is no richer than the
-   previous unpinned entry's.
+   previous unpinned entry's. The cap drops only where the budget, not the
+   entry's own fields, limited the entry before.
 3. When not even its title fits, stop. The number of conversations left out
    is shown as a count.
 
@@ -367,11 +384,13 @@ conversation, and works without a terminal:
  h 2026-10-03   hidden     exercised-pardoning-unblushing-toiled     Probe (stale)
 ```
 
-`*` marks a pin and `h` a hidden conversation. The tier column also reads
-`omitted` for an entry past the budget. A title gets `(provisional)` while
-owned by `prompt` and `(stale)` while awaiting review. Unparseable sidecars are
-listed on stderr. Conversations without a title are listed as `(untitled)`.
-There is no current conversation to exclude here.
+`*` marks a pin and `h` a hidden conversation; `h` wins over `*`. The tier
+column also reads `omitted` for an entry past the budget. A title gets
+`(provisional)` while owned by `prompt`, which stands in for `(stale)` while
+awaiting review. Unparseable sidecars are listed on stderr; their rows and
+those of conversations without a title read `(untitled)` and `omitted`. Dates
+are local. With no conversations only the header is printed. There is no
+current conversation to exclude here.
 
 ### `dorothy --memory <phrase>`
 
@@ -404,7 +423,11 @@ Parsing, in `edit-view.ts`:
 
 - Lines starting with `#` are dropped. `Title:`, `Pinned:` and `Hidden:` take
   the rest of their line. `Description:` and `Abstract:` take the following
-  lines up to the next field, joined with single spaces.
+  lines up to the next field, joined with single spaces; text may also follow
+  the field name on its own line. `Pinned` and `Hidden` take yes or no in any
+  case.
+- A line that looks like a field inside a paragraph is text. A line under no
+  field is an error. A field line deleted outright keeps its value.
 - A field is edited only if its whitespace-normalised text differs from what
   was rendered. Edited fields get `by: "user"`; an edited title appends the
   old one to `titles`.
@@ -412,7 +435,10 @@ Parsing, in `edit-view.ts`:
   next review (live or catch-up) rewrites it.
 - An invalid result (an unknown or repeated field, a limit broken, `Pinned`
   or `Hidden` not `yes` or `no`) reopens the editor with `# error: <reason>`
-  at the top and the text as saved.
+  at the top and the text as saved; a reopened template carries one
+  `# error:` line.
+- Comment dates are the UTC day. When wrapping a paragraph, a word starting
+  with `#` or a field name never starts a line.
 - Saving the template unchanged, or emptying the file, exits without writing.
 - With no sidecar yet, the template has empty fields and saving creates one.
 
@@ -442,15 +468,17 @@ conversation's own turns only.
 
 | File                      | Does                                                       | Pure |
 | ------------------------- | ---------------------------------------------------------- | ---- |
-| `src/memory/sidecar.ts`   | schema, validation on read, field-diff merge, atomic write | no   |
+| `src/memory/sidecar.ts`   | schema, validation on read, the merges, atomic write       | no   |
 | `src/memory/catalogue.ts` | `Catalogue` interface and the scanning implementation      | no   |
 | `src/memory/rank.ts`      | visits to frecency, ordering, tiers                        | yes  |
 | `src/memory/block.ts`     | tiers to escaped block text                                | yes  |
-| `src/memory/review.ts`    | review prompt and schema, the `query()`, the merge         | no   |
+| `src/memory/review.ts`    | review prompt, schema and the `query()`                    | no   |
+| `src/memory/service.ts`   | catalogue, block and scheduler for one TUI run; the review flow | no |
 | `src/memory/scheduler.ts` | idle timer, single flight, dirty flag, catch-up queue      | yes  |
 | `src/memory/track.ts`     | the `trackMemory` decorator                                | no   |
 | `src/memory/edit-view.ts` | render and parse the edit template                         | yes  |
 | `src/memory/list.ts`      | format `--list` rows                                       | yes  |
+| `src/memory/commands.ts`  | `--list` and `--memory`: files and the terminal            | no   |
 
 `scheduler.ts` is pure in that time and work are injected. Elsewhere:
 `persona.ts` gains `withMemory` and the persona sentence; `transcript.ts`
@@ -489,7 +517,7 @@ Memory never stops Dorothy from chatting.
 - `catalogue.ts`: visits from fixture transcripts, including resumed ones and
   sessions without user turns.
 - `config.ts`, `index.ts`, `state.ts`: the new table, modes and action.
-- `boundary.test.ts` keeps passing unchanged: nothing in `src/tui/` imports
+- `boundary.test.ts` gains a test that, of `src/tui/`, only `run.tsx` imports
   `src/memory/`.
 - A live probe: two real chats on different subjects, quit, relaunch, and ask
   Dorothy what was discussed before; then edit a title with `--memory` and

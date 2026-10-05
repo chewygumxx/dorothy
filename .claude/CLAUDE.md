@@ -59,6 +59,17 @@ Transcripts (`src/transcript.ts`) are private JSONL under
 in memory, and `--resume` with the transcript's, both via `withHistory`
 (`src/persona.ts`). Design: `docs/specs/`, plans: `docs/plans/`.
 
+Memory (`src/memory/`) keeps Dorothy's notes on each conversation in a JSON
+sidecar beside its transcript (`<phrase>.meta.json`, `sidecar.ts`). At launch
+`run.tsx` scans the catalogue, and a `MemoryService` (`service.ts`) builds the
+memory block each new `Conversation` starts with (`withMemory`), frozen for
+the session, and schedules reviews: one-shot `query()` calls with
+`outputFormat` that never block the chat (`review.ts`, `scheduler.ts`).
+`trackMemory` decorates the `ChatSession`; `App` sees only a `notices`
+source, and `run.tsx` is the one file under `src/tui/` that imports
+`src/memory/`. Ranking, the block, the edit view and the list are pure;
+`--list` and `--memory` live in `commands.ts`.
+
 `query()` spawns the SDK's bundled `claude` binary on every call, so
 `baseOptions` (`src/persona.ts`) keeps that subprocess lean: `tools: []` drops
 roughly 32k input tokens of tool definitions, and `settingSources: []` stops it

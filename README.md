@@ -114,7 +114,7 @@ to be. Both stats lines are set in `~/.config/dorothy/config.toml`
 
 ```toml
 [statusline]
-modules = ["chat-cost", "cost", "in", "out", "ttft", "duration"]
+modules = ["chat-cost", "memory-cost", "cost", "in", "out", "ttft", "duration"]
 max-lines = 1
 
 [reply-stats]
@@ -130,6 +130,33 @@ Modules show left to right as far as the width allows, then on up to
 the right. An empty `modules` hides the line; for the statusline it also
 frees its rows, so the window then needs only 19 lines. A mistake in the
 file shows as a warning, naming its line, and the defaults apply.
+
+### Memory
+
+Dorothy keeps short notes on each chat: a title, a sentence and a paragraph,
+which she writes herself in the background, after her first reply and again
+whenever the chat has been idle for a minute. Each new chat starts with her
+notes on earlier ones, the most frequent and recent in the most detail,
+within a budget. The notes sit beside each transcript as
+`<phrase>.meta.json`.
+
+```sh
+bun run dev -- --list              # what she remembers, ranked
+bun run dev -- --memory <phrase>   # correct, pin or hide a chat's notes
+```
+
+A note you change with `--memory` is yours and she never overwrites it;
+empty it to hand it back. Reviews cost tokens, which the `memory-cost`
+statusline module shows. The `[memory]` table of `config.toml` sets it up:
+
+```toml
+[memory]
+enabled = true       # false: no notes in chats and no reviews
+budget = 2000        # estimated tokens of notes per chat, 200 to 20000
+idle-seconds = 60    # idle time before a review, 10 to 3600
+half-life-days = 30  # how fast a chat fades, 1 to 3650
+catch-up = 5         # unreviewed chats reviewed per launch, 0 to 50
+```
 
 ## CI
 
