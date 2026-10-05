@@ -1,0 +1,132 @@
+// vim:set expandtab shiftwidth=4 filetype=typescript:
+// SPDX-License-Identifier: GPL-3.0-only
+
+//
+//
+// ~chewygumxx/dorothy.git
+// ::: :/src/memory/scheduler.ts
+//
+//
+
+// Injected so the scheduler and the review are tested without real time.
+export type Timers = {
+    set(fn: () => void, ms: number): unknown;
+    clear(handle: unknown): void;
+};
+
+export const REAL_TIMERS: Timers = {
+    set: (fn, ms) => setTimeout(fn, ms),
+    clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
+export type Review = (phrase: string, signal: AbortSignal) => Promise<void>;
+
+// One review at a time. The live conversation's go ahead of catch-up's, and
+// a request for the one under review runs it once more when it finishes.
+export class ReviewScheduler {
+    readonly #review: Review;
+    readonly #idleMs: number;
+    readonly #timers: Timers;
+    #queue: string[] = [];
+    #running: { phrase: string; controller: AbortController } | null = null;
+    #dirty = false;
+    #idle: unknown = null;
+    #stopped = false;
+
+    constructor({
+        review,
+        idleMs,
+        timers = REAL_TIMERS,
+    }: {
+        review: Review;
+        idleMs: number;
+        timers?: Timers;
+    }) {
+        this.#review = review;
+        this.#idleMs = idleMs;
+        this.#timers = timers;
+    }
+
+    // Ahead of everything queued.
+    now(phrase: string): void {
+        if (this.#stopped) {
+            return;
+        }
+        if (this.#running?.phrase === phrase) {
+            this.#dirty = true;
+            return;
+        }
+        this.#queue = [
+            phrase,
+            ...this.#queue.filter((queued) => queued !== phrase),
+        ];
+        this.#next();
+    }
+
+    // Behind everything queued: catch-up.
+    later(phrases: readonly string[]): void {
+        if (this.#stopped) {
+            return;
+        }
+        for (const phrase of phrases) {
+            if (
+                this.#running?.phrase !== phrase &&
+                !this.#queue.includes(phrase)
+            ) {
+                this.#queue.push(phrase);
+            }
+        }
+        this.#next();
+    }
+
+    // (Re)starts the idle timer; when it fires, the review goes ahead.
+    idle(phrase: string): void {
+        this.cancelIdle();
+        if (this.#stopped) {
+            return;
+        }
+        this.#idle = this.#timers.set(() => {
+            this.#idle = null;
+            this.now(phrase);
+        }, this.#idleMs);
+    }
+
+    cancelIdle(): void {
+        if (this.#idle !== null) {
+            this.#timers.clear(this.#idle);
+            this.#idle = null;
+        }
+    }
+
+    // Quitting waits for nothing: the timer and queue go, and the running
+    // review is told to stop.
+    stop(): void {
+        this.#stopped = true;
+        this.cancelIdle();
+        this.#queue = [];
+        this.#running?.controller.abort();
+    }
+
+    #next(): void {
+        if (this.#running !== null || this.#stopped) {
+            return;
+        }
+        const phrase = this.#queue.shift();
+        if (phrase === undefined) {
+            return;
+        }
+        const controller = new AbortController();
+        this.#running = { phrase, controller };
+        this.#dirty = false;
+        void this.#review(phrase, controller.signal)
+            .catch(() => {})
+            .then(() => {
+                this.#running = null;
+                if (this.#dirty) {
+                    this.now(phrase);
+                } else {
+                    this.#next();
+                }
+            });
+    }
+}
