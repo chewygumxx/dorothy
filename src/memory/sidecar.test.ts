@@ -23,13 +23,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
     EMPTY_SIDECAR,
+    type Lock,
+    markFailed,
+    markReviewed,
     mergeEdit,
     mergeReview,
     normalise,
+    ownsAll,
     type Provenance,
     parseSidecar,
     provisionalTitle,
     readSidecar,
+    reviewDue,
     type Sidecar,
     sidecarPath,
     updateSidecar,
@@ -353,5 +358,126 @@ describe("mergeEdit", () => {
         expect(merged.description).toBeNull();
         expect(merged.fields.description).toBeUndefined();
         expect(merged.reviewedThrough).toBe(0);
+    });
+});
+
+describe("appraisals and failures", () => {
+    it("reads appraisals and failures back", () => {
+        const read = parseSidecar(
+            JSON.stringify({
+                ...EMPTY_SIDECAR,
+                appraisals: {
+                    toolu_1: { served: "useful", at: "t", model: "m" },
+                    toolu_2: { served: "great", at: "t", model: "m" },
+                    toolu_3: "useful",
+                },
+                failures: { count: 2, at: "2026-10-05T00:00:00.000Z" },
+            }),
+        );
+        expect(read.kind).toBe("ok");
+        if (read.kind === "ok") {
+            expect(read.sidecar.appraisals).toEqual({
+                toolu_1: { served: "useful", at: "t", model: "m" },
+            });
+            expect(read.sidecar.failures).toEqual({
+                count: 2,
+                at: "2026-10-05T00:00:00.000Z",
+            });
+        }
+    });
+
+    it("reads failures of the wrong shape as none", () => {
+        const read = parseSidecar(
+            JSON.stringify({
+                ...EMPTY_SIDECAR,
+                failures: { count: 0, at: "t" },
+            }),
+        );
+        expect(read.kind === "ok" && read.sidecar.failures).toBeNull();
+    });
+
+    it("merges appraisals once, and a review clears failures", () => {
+        const base: Sidecar = {
+            ...EMPTY_SIDECAR,
+            appraisals: { toolu_1: { served: "none", at: "old", model: "m0" } },
+            failures: { count: 3, at: "t" },
+        };
+        const next = mergeReview(base, notes, {
+            model: "m1",
+            at: "new",
+            throughTurn: 4,
+            costUsd: 0.1,
+            appraisals: { toolu_1: "essential", toolu_2: "slight" },
+        });
+        expect(next.appraisals).toEqual({
+            toolu_1: { served: "none", at: "old", model: "m0" },
+            toolu_2: { served: "slight", at: "new", model: "m1" },
+        });
+        expect(next.failures).toBeNull();
+        expect(base.appraisals).toEqual({
+            toolu_1: { served: "none", at: "old", model: "m0" },
+        });
+    });
+
+    it("counts failures in a row", () => {
+        const once = markFailed(null, "2026-10-05T00:00:00.000Z");
+        expect(once.failures).toEqual({
+            count: 1,
+            at: "2026-10-05T00:00:00.000Z",
+        });
+        expect(markFailed(once, "later").failures).toEqual({
+            count: 2,
+            at: "later",
+        });
+    });
+
+    it("backs off for an hour, doubling, up to a week", () => {
+        const at = Date.parse("2026-10-05T00:00:00.000Z");
+        const after = (count: number) => ({
+            ...EMPTY_SIDECAR,
+            failures: { count, at: "2026-10-05T00:00:00.000Z" },
+        });
+        const HOUR = 3_600_000;
+        expect(reviewDue(null, at)).toBe(true);
+        expect(reviewDue(EMPTY_SIDECAR, at)).toBe(true);
+        expect(reviewDue(after(1), at + HOUR - 1)).toBe(false);
+        expect(reviewDue(after(1), at + HOUR)).toBe(true);
+        expect(reviewDue(after(3), at + 4 * HOUR - 1)).toBe(false);
+        expect(reviewDue(after(3), at + 4 * HOUR)).toBe(true);
+        expect(reviewDue(after(40), at + 168 * HOUR)).toBe(true);
+    });
+
+    it("marks a conversation reviewed without notes", () => {
+        expect(markReviewed(null, 4)).toBeNull();
+        expect(markReviewed(EMPTY_SIDECAR, 4)?.reviewedThrough).toBe(4);
+    });
+
+    it("knows when the user owns every note", () => {
+        const owned = mergeEdit(
+            null,
+            { title: "T", description: "D", abstract: "A" },
+            "t",
+        );
+        expect(ownsAll(owned)).toBe(true);
+        expect(ownsAll(mergeEdit(owned, { abstract: null }, "t"))).toBe(false);
+        expect(ownsAll(EMPTY_SIDECAR)).toBe(false);
+    });
+
+    it("runs a write inside the lock it is given", async () => {
+        const order: string[] = [];
+        const lock: Lock = async (work) => {
+            order.push("lock");
+            const value = await work();
+            order.push("unlock");
+            return value;
+        };
+        const result = await updateSidecar(
+            dir,
+            "amber-otter-quietly-sings",
+            (current) => markReviewed(current ?? EMPTY_SIDECAR, 1),
+            lock,
+        );
+        expect(result.kind).toBe("written");
+        expect(order).toEqual(["lock", "unlock"]);
     });
 });

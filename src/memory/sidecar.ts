@@ -28,6 +28,21 @@ export type Provenance = {
 export type PastTitle = { title: string; at: string; by: Author };
 export type Notes = Record<Field, string>;
 
+// How well a read served the purpose Dorothy opened it for, judged in her
+// next review.
+export type Served = "none" | "slight" | "useful" | "essential";
+export const SERVED: readonly Served[] = [
+    "none",
+    "slight",
+    "useful",
+    "essential",
+];
+export type Appraisal = { served: Served; at: string; model: string };
+// Reviews that failed in a row, and when the last one did.
+export type Failures = { count: number; at: string };
+// Holds a write against writers in other processes; the index provides it.
+export type Lock = <T>(work: () => Promise<T>) => Promise<T>;
+
 export type Sidecar = {
     v: 1;
     rev: number;
@@ -42,6 +57,9 @@ export type Sidecar = {
     // The turn count Dorothy's last review covered; 0 for never.
     reviewedThrough: number;
     reviewCostUsd: number;
+    // Dorothy's appraisals of what she read, by tool call id; final once made.
+    appraisals: Record<string, Appraisal>;
+    failures: Failures | null;
 };
 
 export type SidecarRead =
@@ -73,6 +91,8 @@ export const EMPTY_SIDECAR: Sidecar = {
     fields: {},
     reviewedThrough: 0,
     reviewCostUsd: 0,
+    appraisals: {},
+    failures: null,
 };
 
 const AUTHORS: readonly string[] = ["prompt", "dorothy", "user"];
@@ -154,7 +174,12 @@ export function parseSidecar(
             reason: `unknown version ${JSON.stringify(data.v)}`,
         };
     }
-    const sidecar: Sidecar = { ...EMPTY_SIDECAR, titles: [], fields: {} };
+    const sidecar: Sidecar = {
+        ...EMPTY_SIDECAR,
+        titles: [],
+        fields: {},
+        appraisals: {},
+    };
     sidecar.rev = isCount(data.rev) ? data.rev : 0;
     for (const field of FIELDS) {
         const note = readNote(field, data[field]);
@@ -197,6 +222,31 @@ export function parseSidecar(
         typeof cost === "number" && Number.isFinite(cost) && cost >= 0
             ? cost
             : 0;
+    if (isRecord(data.appraisals)) {
+        for (const [id, value] of Object.entries(data.appraisals)) {
+            if (
+                isRecord(value) &&
+                SERVED.includes(value.served as Served) &&
+                typeof value.at === "string" &&
+                typeof value.model === "string"
+            ) {
+                sidecar.appraisals[id] = {
+                    served: value.served as Served,
+                    at: value.at,
+                    model: value.model,
+                };
+            }
+        }
+    }
+    const failures = data.failures;
+    if (
+        isRecord(failures) &&
+        isCount(failures.count) &&
+        failures.count > 0 &&
+        typeof failures.at === "string"
+    ) {
+        sidecar.failures = { count: failures.count, at: failures.at };
+    }
     return { kind: "ok", sidecar };
 }
 
@@ -241,9 +291,10 @@ export function updateSidecar(
     dir: string,
     phrase: string,
     change: (current: Sidecar | null) => Sidecar | null,
+    lock?: Lock,
 ): Promise<UpdateResult> {
     const path = sidecarPath(dir, phrase);
-    const run = async (): Promise<UpdateResult> => {
+    const write = async (): Promise<UpdateResult> => {
         const read = await readSidecar(dir, phrase);
         if (read.kind === "unparseable") {
             return read;
@@ -257,6 +308,7 @@ export function updateSidecar(
         await writeAtomic(path, `${JSON.stringify(sidecar, null, 2)}\n`);
         return { kind: "written", sidecar };
     };
+    const run = lock === undefined ? write : () => lock(write);
     const result = (queues.get(path) ?? Promise.resolve()).then(run).catch(
         (error: unknown): UpdateResult => ({
             kind: "failed",
@@ -330,7 +382,13 @@ function retitle(
 export function mergeReview(
     current: Sidecar | null,
     notes: Notes,
-    review: { model: string; at: string; throughTurn: number; costUsd: number },
+    review: {
+        model: string;
+        at: string;
+        throughTurn: number;
+        costUsd: number;
+        appraisals?: Record<string, Served>;
+    },
 ): Sidecar {
     const base = current ?? EMPTY_SIDECAR;
     const next: Sidecar = {
@@ -338,7 +396,13 @@ export function mergeReview(
         fields: { ...base.fields },
         reviewedThrough: review.throughTurn,
         reviewCostUsd: base.reviewCostUsd + review.costUsd,
+        appraisals: { ...base.appraisals },
+        failures: null,
     };
+    // An appraisal, once made, is final.
+    for (const [id, served] of Object.entries(review.appraisals ?? {})) {
+        next.appraisals[id] ??= { served, at: review.at, model: review.model };
+    }
     for (const field of FIELDS) {
         if (base.fields[field]?.by === "user") {
             continue;
@@ -389,4 +453,49 @@ export function mergeEdit(
         next.hidden = changes.hidden;
     }
     return next;
+}
+
+const HOUR_MS = 3_600_000;
+const MAX_BACKOFF_MS = 7 * 24 * HOUR_MS;
+
+// A review that failed: the count grows until one succeeds.
+export function markFailed(current: Sidecar | null, at: string): Sidecar {
+    const base = current ?? EMPTY_SIDECAR;
+    return {
+        ...base,
+        failures: { count: (base.failures?.count ?? 0) + 1, at },
+    };
+}
+
+// A review that had nothing to do: the turns count as covered.
+export function markReviewed(
+    current: Sidecar | null,
+    throughTurn: number,
+): Sidecar | null {
+    return current === null
+        ? null
+        : { ...current, reviewedThrough: throughTurn };
+}
+
+// After n failures in a row, no review until min(2^(n-1) hours, 7 days)
+// after the last.
+export function reviewDue(sidecar: Sidecar | null, now: number): boolean {
+    const failures = sidecar?.failures;
+    if (failures === null || failures === undefined) {
+        return true;
+    }
+    const at = Date.parse(failures.at);
+    if (!Number.isFinite(at)) {
+        return true;
+    }
+    const wait = Math.min(2 ** (failures.count - 1) * HOUR_MS, MAX_BACKOFF_MS);
+    return now >= at + wait;
+}
+
+// Every note is there and the user's, so a review could change nothing.
+export function ownsAll(sidecar: Sidecar): boolean {
+    return FIELDS.every(
+        (field) =>
+            sidecar[field] !== null && sidecar.fields[field]?.by === "user",
+    );
 }
