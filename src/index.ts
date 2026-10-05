@@ -18,6 +18,7 @@ export type Mode =
     | { kind: "oneshot"; prompt: string }
     | { kind: "tui"; resume: string | null }
     | { kind: "list" }
+    | { kind: "memory"; phrase: string }
     | { kind: "help" }
     | { kind: "usage"; message: string };
 
@@ -26,6 +27,7 @@ export const USAGE = [
     "       dorothy                    chat (needs a terminal)",
     "       dorothy --resume <phrase>  continue a saved chat",
     "       dorothy --list             what Dorothy remembers",
+    "       dorothy --memory <phrase>  correct, pin or hide a chat's notes",
     "       dorothy -- <prompt...>     a prompt that starts with -",
 ].join("\n");
 
@@ -38,6 +40,18 @@ export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
         return rest.length === 0
             ? { kind: "list" }
             : { kind: "usage", message: "--list takes no arguments" };
+    }
+    if (first === "--memory") {
+        const phrase = rest[0];
+        if (rest.length !== 1 || phrase === undefined || !isPhrase(phrase)) {
+            return {
+                kind: "usage",
+                message: "--memory takes one four-word phrase",
+            };
+        }
+        return isTTY
+            ? { kind: "memory", phrase }
+            : { kind: "usage", message: "--memory needs a terminal" };
     }
     if (first === "--resume") {
         const phrase = rest[0];
@@ -105,6 +119,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     } else if (mode.kind === "list") {
         const { runList } = await import("./memory/commands.js");
         process.exitCode = await runList();
+    } else if (mode.kind === "memory") {
+        const { runMemoryEdit } = await import("./memory/commands.js");
+        process.exitCode = await runMemoryEdit(mode.phrase);
     } else {
         // Loaded only for chat, so one-shot replies never pay for React.
         const { runTui } = await import("./tui/run.js");

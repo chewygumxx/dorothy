@@ -46,6 +46,31 @@ describe("parseArgs", () => {
         expect(parseArgs(argv, true).kind).toBe("usage");
     });
 
+    it("edits the notes on a valid phrase in a terminal", () => {
+        expect(parseArgs(["--memory", phrase], true)).toEqual({
+            kind: "memory",
+            phrase,
+        });
+    });
+
+    it.each([
+        [["--memory"]],
+        [["--memory", "../../etc/passwd"]],
+        [["--memory", phrase, "extra"]],
+    ])("rejects %p", (argv) => {
+        expect(parseArgs(argv, true)).toEqual({
+            kind: "usage",
+            message: "--memory takes one four-word phrase",
+        });
+    });
+
+    it("refuses --memory without a terminal", () => {
+        expect(parseArgs(["--memory", phrase], false)).toEqual({
+            kind: "usage",
+            message: "--memory needs a terminal",
+        });
+    });
+
     it.each([[["--help"]], [["-h"]]])("shows help for %p", (argv) => {
         expect(parseArgs(argv, false)).toEqual({ kind: "help" });
     });
