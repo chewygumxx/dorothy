@@ -1,21 +1,23 @@
 ---
-__cgxx: |
-  # vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3:
-  # SPDX-License-Identifier: GPL-3.0-only
-
-  #
-  #
-  # ~chewygumxx/dorothy.git
-  # ::: :/docs/notes/2026-10-04_dorothy-conversation-memory-metadata.md
-  #
-  #
-
 ctime: 2026-10-05
 mtime: 2026-10-05
+spdx: GPL-3.0-only
 title: "Conversation with Dorothy: Memory and Metadata"
-description:
-tags: []
+description: >-
+  A chat with Dorothy that prompted a design for conversation memory:
+  per-conversation metadata, its triggers and tiered decay.
+tags:
+  - dorothy
+  - memory
+  - notes
 ---
+
+<!--
+   -
+   - ~chewygumxx/dorothy.git
+   - ::: :/docs/notes/2026-10-04_dorothy-conversation-memory-metadata.md
+   -
+   -->
 
 # Conversation with Dorothy: Memory and Metadata
 
@@ -214,3 +216,5 @@ decay from constant context relative to conversation growth requires further
 refinement. Memory aside, the manner in which the previous content of a
 conversation should be automatically compacted into summary while still being
 accessible for lookup remains unresolved.
+
+<!-- vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3: -->
