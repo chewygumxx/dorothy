@@ -226,6 +226,30 @@ describe("syncIndex", () => {
         expect(await Bun.file(fresh).exists()).toBe(true);
     });
 
+    it("lists transcripts only once it holds the lock", async () => {
+        await writeFile(transcript(B), user(1, "b"));
+        await syncIndex(index, dir);
+        // Another process indexes a new transcript while this sync waits
+        // for the lock; the sync must list the directory only after that.
+        const pending = index.exclusive(async () => {
+            await Bun.sleep(50);
+            await writeFile(transcript(A), user(2, "a"));
+            const { ino, size } = await stat(transcript(A));
+            index.db.run(
+                "INSERT INTO conversations (phrase, t_size, t_ino, turns, first_at, last_at) VALUES (?, ?, ?, 1, 1, 1)",
+                [A, size, ino],
+            );
+            index.db.run(
+                "INSERT INTO turns (phrase, n, role, at, text) VALUES (?, 1, 'user', 1, 'a')",
+                [A],
+            );
+        });
+        const syncing = syncIndex(index, dir);
+        await Promise.all([pending, syncing]);
+        expect(turns(A)).toEqual([{ n: 1, role: "user", text: "a" }]);
+        expect(turns(B)).toEqual([{ n: 1, role: "user", text: "b" }]);
+    });
+
     it("ignores files that are not transcripts, and a missing directory", async () => {
         await writeFile(join(dir, "notes.jsonl"), user(1, "x"));
         await syncIndex(index, dir);

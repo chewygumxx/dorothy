@@ -48,21 +48,14 @@ export async function syncIndex(
     dir: string,
     now: number = Date.now(),
 ): Promise<void> {
-    let names: string[];
-    try {
-        names = await readdir(dir);
-    } catch (error) {
-        if (codeOf(error) !== "ENOENT") {
-            throw error;
-        }
-        names = [];
-    }
-    await removeLeftovers(dir, names, now);
-    const phrases = names
-        .filter((name) => name.endsWith(".jsonl"))
-        .map((name) => name.slice(0, -".jsonl".length))
-        .filter(isPhrase);
-    await index.exclusive(async () => {
+    // Listed under the lock: another process may have indexed a new
+    // transcript while this one waited, and a stale list would forget it.
+    const names = await index.exclusive(async () => {
+        const listing = await list(dir);
+        const phrases = listing
+            .filter((name) => name.endsWith(".jsonl"))
+            .map((name) => name.slice(0, -".jsonl".length))
+            .filter(isPhrase);
         const rows = new Map(
             (
                 index.db
@@ -83,7 +76,20 @@ export async function syncIndex(
                 await syncSidecar(index, dir, phrase);
             }
         }
+        return listing;
     });
+    await removeLeftovers(dir, names, now);
+}
+
+async function list(dir: string): Promise<string[]> {
+    try {
+        return await readdir(dir);
+    } catch (error) {
+        if (codeOf(error) !== "ENOENT") {
+            throw error;
+        }
+        return [];
+    }
 }
 
 function forget(index: RecallIndex, phrase: string): void {
