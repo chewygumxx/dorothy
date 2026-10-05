@@ -110,6 +110,7 @@ describe("scanCatalogue", () => {
             phrase: a,
             sidecar: { kind: "none" },
             visits: [{ userTurns: 1, lastAt: Date.parse(T2) }],
+            reads: [],
             turns: 2,
             lastActive: Date.parse(T2),
         });

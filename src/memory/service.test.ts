@@ -124,6 +124,7 @@ function entry(
                 ? { kind: "none" }
                 : { kind: "ok", sidecar: { ...EMPTY_SIDECAR, ...fields } },
         visits: [{ userTurns: 1, lastAt: lastActive }],
+        reads: [],
         turns,
         lastActive,
     };

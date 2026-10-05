@@ -12,15 +12,24 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isPhrase } from "../session-id.js";
 import { parseTranscript } from "../transcript.js";
-import { readSidecar, type SidecarRead, sidecarPath } from "./sidecar.js";
+import {
+    readSidecar,
+    type Served,
+    type SidecarRead,
+    sidecarPath,
+} from "./sidecar.js";
 
 // One session in which the user said something: how much, and when last.
 export type Visit = { userTurns: number; lastAt: number };
+
+// A read of this conversation from another, as Dorothy appraised it.
+export type Read = { at: number; served: Served };
 
 export type Entry = {
     phrase: string;
     sidecar: SidecarRead;
     visits: Visit[];
+    reads: Read[];
     // As parseTranscript counts them; more than reviewedThrough is stale.
     turns: number;
     lastActive: number;
@@ -128,6 +137,7 @@ export function scanCatalogue(dir: string): Catalogue {
                     phrase,
                     sidecar,
                     visits,
+                    reads: [],
                     turns: parseTranscript(text).turns.length,
                     lastActive: Math.max(
                         ...visits.map((visit) => visit.lastAt),

@@ -10,25 +10,38 @@
 
 import type { MemoryConfig } from "../config.js";
 import { type Note, renderBlock, renderEntry, type Tier } from "./block.js";
-import type { Entry, Visit } from "./catalogue.js";
-import { characters } from "./sidecar.js";
+import type { Entry, Read, Visit } from "./catalogue.js";
+import { characters, type Served } from "./sidecar.js";
 
 const DAY_MS = 86_400_000;
 // Richest first; a tier's index is how far it is from full.
 const TIERS: readonly Tier[] = ["full", "described", "titled"];
 
-// The log stops one long session from outweighing several returns.
-export function frecency(
+// A read weighs what it gave her: nothing, unless it served.
+export const SERVED_WEIGHT: Record<Served, number> = {
+    none: 0,
+    slight: 0.5,
+    useful: 1,
+    essential: 2,
+};
+
+// Accesses weighted by what they were worth, each decaying from when it
+// happened. The log stops one long session from outweighing several
+// returns.
+export function salience(
     visits: readonly Visit[],
+    reads: readonly Read[],
     now: number,
     halfLifeDays: number,
 ): number {
+    const decay = (at: number) =>
+        0.5 ** (Math.max(0, now - at) / DAY_MS / halfLifeDays);
     let score = 0;
     for (const visit of visits) {
-        const ageDays = Math.max(0, now - visit.lastAt) / DAY_MS;
-        score +=
-            (1 + Math.log(1 + visit.userTurns)) *
-            0.5 ** (ageDays / halfLifeDays);
+        score += (1 + Math.log(1 + visit.userTurns)) * decay(visit.lastAt);
+    }
+    for (const read of reads) {
+        score += SERVED_WEIGHT[read.served] * decay(read.at);
     }
     return score;
 }
@@ -66,7 +79,7 @@ export function rank(
                 abstract: sidecar.abstract,
                 pinned: sidecar.pinned,
             },
-            score: frecency(entry.visits, now, halfLifeDays),
+            score: salience(entry.visits, entry.reads, now, halfLifeDays),
             lastActive: entry.lastActive,
         });
     }
