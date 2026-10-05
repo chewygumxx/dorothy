@@ -27,6 +27,8 @@ export type ModuleName = (typeof MODULE_NAMES)[number];
 export type LineConfig = { modules: ModuleName[]; maxLines: number };
 export type MemoryConfig = {
     enabled: boolean;
+    // The recall server and Dorothy's memory tools.
+    recall: boolean;
     // Estimated tokens of notes in a new session's prompt.
     budget: number;
     idleSeconds: number;
@@ -72,6 +74,7 @@ export const DEFAULT_CONFIG: Config = {
     },
     memory: {
         enabled: true,
+        recall: true,
         budget: 2000,
         idleSeconds: 60,
         halfLifeDays: 30,
@@ -146,6 +149,9 @@ function parseLine(
     return line;
 }
 
+// The boolean keys of [memory].
+const MEMORY_SWITCHES = ["enabled", "recall"] as const;
+
 // The whole-number keys of [memory]: the key, the field, the range.
 const MEMORY_NUMBERS = [
     ["budget", "budget", 200, 20000],
@@ -161,13 +167,14 @@ function parseMemory(value: unknown, warnings: string[]): MemoryConfig {
     }
     const memory = { ...DEFAULT_CONFIG.memory };
     for (const [key, field] of Object.entries(value)) {
+        const toggle = MEMORY_SWITCHES.find((name) => name === key);
         const number = MEMORY_NUMBERS.find(([name]) => name === key);
-        if (key === "enabled") {
+        if (toggle !== undefined) {
             if (typeof field === "boolean") {
-                memory.enabled = field;
+                memory[toggle] = field;
             } else {
                 warnings.push(
-                    "config.toml: memory.enabled must be true or false",
+                    `config.toml: memory.${key} must be true or false`,
                 );
             }
         } else if (number !== undefined) {

@@ -12,6 +12,7 @@ import { describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
 import {
     baseOptions,
+    personaPrompt,
     promptSha256,
     systemPrompt,
     withHistory,
@@ -94,5 +95,25 @@ describe("promptSha256", () => {
             .update(systemPrompt)
             .digest("hex");
         expect(promptSha256()).toBe(expected);
+    });
+});
+
+describe("personaPrompt", () => {
+    it("is the plain persona without recall", () => {
+        expect(personaPrompt({ recall: false })).toBe(systemPrompt);
+        expect(systemPrompt).toContain("you have no tools: do not offer");
+        expect(systemPrompt).toContain(
+            "cover, say you do not remember it rather than invent detail.",
+        );
+    });
+
+    it("gives her memory tools, and has her look before she forgets", () => {
+        const prompt = personaPrompt({ recall: true });
+        expect(prompt).toContain(
+            "you have no tools except your memory tools: do not offer",
+        );
+        expect(prompt).toContain(
+            "cover, look it up; if you cannot find it, say you do not remember it rather than invent detail.",
+        );
     });
 });
