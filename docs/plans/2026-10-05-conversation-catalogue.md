@@ -125,6 +125,24 @@ Agent SDK (`outputFormat`, `structured_output`), Ink 7, React 19,
   template carries one `# error:` line, not a stack of them.
 - **Writes to one sidecar within a process take turns**, so a review and the
   provisional title never interleave their read and write.
+- **Notes are normalised as they are read**, titles in the history too, so a
+  stray space typed into the JSON costs no note and its owner.
+- **Without a saved transcript** (`TranscriptWriter.open` failed) the live
+  conversation gets no provisional title and no reviews; the block and
+  catch-up still work.
+- **Catch-up skips the live conversation**, which its own turns review; a
+  failed first review is retried after the idle timer, as the spec's
+  failure text says, not at once.
+- **A review may start during the close grace period** (up to 2 seconds
+  after quitting) and is then cancelled unsaved: a wasted subprocess, not a
+  wrong result.
+- **The edit view's parser is a little more forgiving than the spec**: text
+  may follow `Description:` on its line, `yes` and `no` take any case, a
+  field-like line inside a paragraph is text, and a line under no field is
+  its own error. A word starting with `#` or a field name never starts a
+  wrapped line, so an untouched template always parses unchanged.
+- **Tokens are estimated over code points**, as the limits count, not
+  UTF-16 units.
 
 ## Review Focus
 
@@ -314,7 +332,7 @@ git commit -m "feat(sdk): Parse transcript text and await flushes"
 **Files:**
 
 - Modify: `src/config.ts`
-- Test: `src/config.test.ts`
+- Test: `src/config.test.ts`, `src/tui/App.test.tsx`
 
 **Interfaces:**
 
@@ -323,6 +341,18 @@ git commit -m "feat(sdk): Parse transcript text and await flushes"
   gains `memory: MemoryConfig`; `DEFAULT_CONFIG.memory`.
 
 - [ ] **Step 1: Write the failing tests**
+
+In `src/tui/App.test.tsx`, "draws reply stats as configured" builds the
+repository's one `Config` literal without `DEFAULT_CONFIG`; once `memory` is
+required it no longer type-checks, so spread the defaults into it:
+
+```tsx
+            config: {
+                ...DEFAULT_CONFIG,
+                statusline: { modules: [], maxLines: 1 },
+                replyStats: { modules: ["out"], maxLines: 1 },
+            },
+```
 
 In `src/config.test.ts`, in "reads both tables", add the memory defaults to
 the expected config:
@@ -498,7 +528,7 @@ Expected: PASS.
 
 ```bash
 bun run format && bun run lint
-git add src/config.ts src/config.test.ts
+git add src/config.ts src/config.test.ts src/tui/App.test.tsx
 git commit -m "feat(sdk): Read the [memory] table"
 ```
 
@@ -951,6 +981,7 @@ import {
     mergeReview,
     parseSidecar,
     provisionalTitle,
+    type Provenance,
     readSidecar,
     type Sidecar,
     sidecarPath,
@@ -1012,12 +1043,16 @@ describe("parseSidecar", () => {
         });
     });
 
-    it("reads a note over its limit, or of the wrong shape, as null", () => {
+    it("normalises notes, and reads one over its limit or of the wrong shape as null", () => {
         const text = JSON.stringify({
             ...reviewed,
             title: "x".repeat(61),
             description: 7,
-            abstract: "two\nlines",
+            abstract: " two\n  lines ",
+            titles: [
+                { title: "Hey\nthere", at: AT, by: "prompt" },
+                { title: " ", at: AT, by: "dorothy" },
+            ],
         });
         expect(parseSidecar(text)).toEqual({
             kind: "ok",
@@ -1025,8 +1060,9 @@ describe("parseSidecar", () => {
                 ...reviewed,
                 title: null,
                 description: null,
-                abstract: null,
-                fields: {},
+                abstract: "two lines",
+                titles: [{ title: "Hey there", at: AT, by: "prompt" }],
+                fields: { abstract: reviewed.fields.abstract },
             },
         });
     });
@@ -1102,7 +1138,8 @@ describe("updateSidecar", () => {
         });
     });
 
-    it("reports a write that failed", async () => {
+    // Root ignores directory modes, so there the write cannot fail.
+    it.skipIf(process.getuid?.() === 0)("reports a write that failed", async () => {
         await chmod(dir, 0o500);
         try {
             expect((await updateSidecar(dir, PHRASE, () => reviewed)).kind).toBe(
@@ -1153,7 +1190,12 @@ describe("withProvisional", () => {
 
 describe("mergeReview", () => {
     it("writes every note Dorothy owns, stamped, keeping the old title", () => {
-        const stamp = { by: "dorothy", model: "m2", at: LATER, throughTurn: 8 };
+        const stamp: Provenance = {
+            by: "dorothy",
+            model: "m2",
+            at: LATER,
+            throughTurn: 8,
+        };
         expect(mergeReview(reviewed, notes, review)).toEqual({
             ...reviewed,
             ...notes,
@@ -1329,13 +1371,14 @@ export function overLimit(field: Field, text: string): string | null {
         : null;
 }
 
+// A note is normalised as it is read, so a stray space typed into the JSON
+// costs nothing; an empty note, or one over its limit, reads as absent.
 function readNote(field: Field, value: unknown): string | null {
-    return typeof value === "string" &&
-        value !== "" &&
-        value === normalise(value) &&
-        overLimit(field, value) === null
-        ? value
-        : null;
+    if (typeof value !== "string") {
+        return null;
+    }
+    const note = normalise(value);
+    return note !== "" && overLimit(field, note) === null ? note : null;
 }
 
 function readProvenance(value: unknown): Provenance | null {
@@ -1389,14 +1432,18 @@ export function parseSidecar(
     sidecar.hidden = data.hidden === true;
     if (Array.isArray(data.titles)) {
         for (const entry of data.titles) {
+            const title =
+                isRecord(entry) && typeof entry.title === "string"
+                    ? normalise(entry.title)
+                    : "";
             if (
                 isRecord(entry) &&
-                typeof entry.title === "string" &&
+                title !== "" &&
                 typeof entry.at === "string" &&
                 isAuthor(entry.by)
             ) {
                 sidecar.titles.push({
-                    title: entry.title,
+                    title,
                     at: entry.at,
                     by: entry.by,
                 });
@@ -1608,9 +1655,8 @@ export function mergeEdit(
 - [ ] **Step 4: Run the tests to see them pass**
 
 Run: `bun test src/memory/sidecar.test.ts && bun run typecheck`
-Expected: PASS. If "reports a write that failed" fails because the tests run
-as root (root ignores directory modes), stop and report rather than delete
-the test.
+Expected: PASS ("reports a write that failed" is skipped when the tests run
+as root, as act's CI containers do).
 
 - [ ] **Step 5: Commit**
 
@@ -2122,7 +2168,7 @@ git commit -m "feat(sdk): Render the memory block"
 **Interfaces:**
 
 - Consumes: `Entry`, `Visit` (Task 6); `Note`, `Tier`, `renderEntry`,
-  `renderBlock` (Task 7); `MemoryConfig` (Task 2).
+  `renderBlock` (Task 7); `characters` (Task 5); `MemoryConfig` (Task 2).
 - Produces: `frecency(visits, now: number, halfLifeDays): number`; `type
   Candidate = { phrase; note: Note; score: number; lastActive: number }`;
   `rank(entries, { now, halfLifeDays, exclude?: string | null }):
@@ -2348,6 +2394,7 @@ import {
     type Tier,
 } from "./block.js";
 import type { Entry, Visit } from "./catalogue.js";
+import { characters } from "./sidecar.js";
 
 const DAY_MS = 86_400_000;
 // Richest first; a tier's index is how far it is from full.
@@ -2414,7 +2461,8 @@ export function rank(
     );
 }
 
-export const tokens = (text: string) => Math.ceil(text.length / 4);
+// Characters as the note limits count them.
+export const tokens = (text: string) => Math.ceil(characters(text) / 4);
 
 // The richest tier a note's own fields can fill.
 export function richest(note: Note): Tier {
@@ -3039,6 +3087,19 @@ describe("runReview", () => {
         });
     });
 
+    it("fails when the query cannot start", async () => {
+        const throwing: ReviewQueryFn = () => {
+            throw new Error("bad options");
+        };
+        expect(
+            await runReview({
+                queryFn: throwing,
+                systemPrompt: "SYSTEM",
+                prompt: "PROMPT",
+            }),
+        ).toEqual({ ok: false, reason: "bad options", costUsd: 0 });
+    });
+
     it("fails when the query throws or ends without a result", async () => {
         expect(await run(fakeQuery(new Error("spawn failed")))).toEqual({
             ok: false,
@@ -3291,15 +3352,20 @@ export async function runReview({
     if (signal?.aborted) {
         return { ok: false, reason: "cancelled", costUsd: 0 };
     }
-    const handle = queryFn({
-        prompt,
-        options: {
-            ...baseOptions,
-            systemPrompt,
-            includePartialMessages: false,
-            outputFormat: { type: "json_schema", schema: REVIEW_SCHEMA },
-        },
-    });
+    let handle: ReviewHandle;
+    try {
+        handle = queryFn({
+            prompt,
+            options: {
+                ...baseOptions,
+                systemPrompt,
+                includePartialMessages: false,
+                outputFormat: { type: "json_schema", schema: REVIEW_SCHEMA },
+            },
+        });
+    } catch (error) {
+        return { ok: false, reason: describeError(error), costUsd: 0 };
+    }
     // A timeout or quitting ends the review even if the query never yields
     // again.
     let stopped: string | null = null;
@@ -3372,10 +3438,8 @@ export async function runReview({
 }
 ```
 
-`result` and `thrown` are assigned inside closures, so TypeScript narrows
-them to `null` after the race; `final` and the `thrown` check read them
-through fresh annotations. If `tsc` still narrows `thrown` to `never`, read
-it as `const failure = thrown as string | null;` the same way.
+`result` is assigned inside a closure, so TypeScript narrows it to `null`
+after the race; `final` reads it through a fresh annotation.
 
 - [ ] **Step 5: Run the tests to see them pass**
 
@@ -3584,8 +3648,9 @@ git commit -m "feat(sdk): Let memory observe a chat session"
   (Task 4); `query` from the Agent SDK.
 - Produces: `type Notice` (as `App.tsx`'s); `type MemoryServiceOptions = {
   dir; phrase; history: readonly Turn[]; config: MemoryConfig; entries:
-  readonly Entry[]; flushed(): Promise<void>; queryFn?: ReviewQueryFn; now?:
-  () => Date; timers?: Timers }`; `class MemoryService implements MemoryHooks`
+  readonly Entry[]; flushed: (() => Promise<void>) | null; queryFn?:
+  ReviewQueryFn; now?: () => Date; timers?: Timers }`, `flushed` being null
+  when the transcript is not saved; `class MemoryService implements MemoryHooks`
   with `block(): string`, `warnings(): string[]`, `subscribe(listener):
   () => void`, `sent`, `ready`, `turnEnded`, `stop()`.
 
@@ -3766,15 +3831,17 @@ describe("MemoryService", () => {
     it("writes a provisional title on the first send only", async () => {
         const { memory } = setup({ queryFn: reviews().fn });
         memory.sent("Hey there o/\nsecond line");
-        memory.sent("Another message");
         await until(async () => (await sidecarOf(LIVE)) !== null);
-        await settle();
         expect(await sidecarOf(LIVE)).toEqual({
             ...EMPTY_SIDECAR,
             rev: 1,
             title: "Hey there o/",
             fields: { title: { by: "prompt", at: NOW.toISOString() } },
         });
+        await rm(sidecarPath(dir, LIVE));
+        memory.sent("Another message");
+        await settle();
+        expect(await readSidecar(dir, LIVE)).toEqual({ kind: "none" });
     });
 
     it("titles a resumed conversation from its first message", async () => {
@@ -3902,8 +3969,10 @@ describe("MemoryService", () => {
             ],
         });
         memory.ready();
-        memory.ready();
         await until(async () => (await sidecarOf(older)) !== null);
+        await settle();
+        // Again, once that is done: nothing more is caught up.
+        memory.ready();
         await settle();
         expect(query.calls).toHaveLength(2);
         expect(query.calls[0]?.prompt).toContain(`from ${newer}`);
@@ -3941,6 +4010,41 @@ describe("MemoryService", () => {
         expect(system).toContain("<title>Other</title>");
         expect(system).not.toContain("Stale one");
         expect(system.endsWith(REVIEW_INSTRUCTIONS)).toBe(true);
+    });
+
+    it("leaves the live conversation alone when its transcript is not saved", async () => {
+        await transcript(LIVE, [user("Hi"), reply("Hello")]);
+        const query = reviews(NOTES);
+        const { memory } = setup({ queryFn: query.fn, flushed: null });
+        memory.sent("Hi");
+        memory.turnEnded();
+        await settle();
+        expect(query.calls).toHaveLength(0);
+        expect(await readSidecar(dir, LIVE)).toEqual({ kind: "none" });
+    });
+
+    it("warns of pins over the budget once, not after every review", async () => {
+        const [pinned, stale] = [phrase(1), phrase(2)];
+        await transcript(stale, [user("Hi"), reply("Hello")]);
+        const { memory, notices } = setup({
+            queryFn: reviews(NOTES).fn,
+            config: { ...DEFAULT_CONFIG.memory, budget: 200 },
+            entries: [
+                entry(pinned, {
+                    title: "Pinned",
+                    description: "A pin.",
+                    abstract: "x".repeat(1000),
+                    pinned: true,
+                    reviewedThrough: 2,
+                }),
+                entry(stale, { title: "Stale" }),
+            ],
+        });
+        expect(memory.warnings()).toHaveLength(1);
+        memory.ready();
+        await until(async () => (await sidecarOf(stale))?.title === "Remembering");
+        await settle();
+        expect(notices).toEqual([{ type: "memory-cost", usd: 0.25 }]);
     });
 
     it("on stop, cancels the review without a word", async () => {
@@ -4005,8 +4109,10 @@ export type MemoryServiceOptions = {
     config: MemoryConfig;
     // The catalogue as loaded at launch.
     entries: readonly Entry[];
-    // Resolves once the live transcript's queued appends have landed.
-    flushed(): Promise<void>;
+    // Resolves once the live transcript's queued appends have landed; null
+    // when the transcript is not being saved, and the live conversation is
+    // then left alone.
+    flushed: (() => Promise<void>) | null;
     queryFn?: ReviewQueryFn;
     now?: () => Date;
     timers?: Timers;
@@ -4034,7 +4140,7 @@ export class MemoryService implements MemoryHooks {
     readonly #phrase: string;
     readonly #history: readonly Turn[];
     readonly #config: MemoryConfig;
-    readonly #flushed: () => Promise<void>;
+    readonly #flushed: (() => Promise<void>) | null;
     readonly #queryFn: ReviewQueryFn;
     readonly #now: () => Date;
     readonly #timers: Timers;
@@ -4042,6 +4148,8 @@ export class MemoryService implements MemoryHooks {
     readonly #listeners = new Set<(notice: Notice) => void>();
     readonly #scheduler: ReviewScheduler;
     readonly #initialWarnings: string[];
+    // The warnings already shown, so a rebuild repeats none of them.
+    #shown: Set<string>;
     #block: string;
     #titled = false;
     #caughtUp = false;
@@ -4075,6 +4183,7 @@ export class MemoryService implements MemoryHooks {
         const built = this.#build(options.phrase);
         this.#block = built.block;
         this.#initialWarnings = built.warnings;
+        this.#shown = new Set(built.warnings);
     }
 
     // The block a new session starts with, as of the latest review.
@@ -4096,7 +4205,7 @@ export class MemoryService implements MemoryHooks {
 
     sent(text: string): void {
         this.#scheduler.cancelIdle();
-        if (this.#titled) {
+        if (this.#titled || this.#flushed === null) {
             return;
         }
         this.#titled = true;
@@ -4130,6 +4239,9 @@ export class MemoryService implements MemoryHooks {
     }
 
     turnEnded(): void {
+        if (this.#flushed === null) {
+            return;
+        }
         if (this.#reviewedOnce) {
             this.#scheduler.idle(this.#phrase);
             return;
@@ -4167,7 +4279,7 @@ export class MemoryService implements MemoryHooks {
 
     async #review(phrase: string, signal: AbortSignal): Promise<void> {
         if (phrase === this.#phrase) {
-            await this.#flushed();
+            await this.#flushed?.();
         }
         const read = await readSidecar(this.#dir, phrase);
         // Unparseable: warned of at launch and never written. Hidden:
@@ -4211,8 +4323,9 @@ export class MemoryService implements MemoryHooks {
             return;
         }
         const at = this.#now().toISOString();
+        // Quitting may land while the write waits its turn.
         const result = await updateSidecar(this.#dir, phrase, (latest) =>
-            latest?.hidden
+            signal.aborted || latest?.hidden
                 ? null
                 : mergeReview(latest, outcome.notes, {
                       model: outcome.model,
@@ -4241,8 +4354,11 @@ export class MemoryService implements MemoryHooks {
             const built = this.#build(this.#phrase);
             this.#block = built.block;
             for (const warning of built.warnings) {
-                this.#warn(warning);
+                if (!this.#shown.has(warning)) {
+                    this.#warn(warning);
+                }
             }
+            this.#shown = new Set(built.warnings);
         }
     }
 }
@@ -4326,7 +4442,9 @@ and `transcriptDir` to the import from `../transcript.js`. After the
             history,
             config: config.memory,
             entries: loaded.entries,
-            flushed: () => transcript?.flushed() ?? Promise.resolve(),
+            // Without a transcript the live chat is left alone.
+            flushed:
+                transcript === null ? null : () => transcript.flushed(),
         });
         warnings.push(...memory.warnings());
     }
@@ -4348,11 +4466,19 @@ Replace the `createSession` prop and add `notices`:
             notices={memory ?? undefined}
 ```
 
-and after `await app.waitUntilExit();`:
+and replace the end of `runTui`, from `await app.waitUntilExit();` to
+`return 0;`, so memory stops however Ink exits; an idle timer or a running
+review would otherwise keep the process alive:
 
 ```tsx
-    // Quitting waits for no review: the running one is closed unsaved.
-    memory?.stop();
+    try {
+        await app.waitUntilExit();
+    } finally {
+        // Quitting waits for no review: the running one is closed unsaved.
+        memory?.stop();
+        await writer?.close();
+    }
+    return 0;
 ```
 
 - [ ] **Step 4: Run the tests to see them pass**
@@ -4554,6 +4680,24 @@ describe("runList", () => {
         expect(out.text).toMatch(new RegExp(`omitted +${b} +\\(untitled\\)\\n`));
         expect(err.text).toContain(sidecarPath(transcripts, b));
     });
+
+    it("lists what Dorothy remembers even with memory switched off", async () => {
+        const a = phrase(1);
+        await writeFile(join(transcripts, `${a}.jsonl`), chat);
+        await writeFile(
+            sidecarPath(transcripts, a),
+            JSON.stringify({ v: 1, title: "Memory" }),
+        );
+        await writeFile(
+            join(dir, "dorothy", "config.toml"),
+            "[memory]\nenabled = false\n",
+        );
+        const out = capture();
+        expect(
+            await runList({ env, out, err: capture(), now: NOW.getTime() }),
+        ).toBe(0);
+        expect(out.text).toContain("Memory");
+    });
 });
 ```
 
@@ -4595,17 +4739,19 @@ export type ListRow = {
 };
 
 function titleOf(entry: Entry): string {
-    if (entry.sidecar.kind !== "ok" || entry.sidecar.sidecar.title === null) {
+    if (entry.sidecar.kind !== "ok") {
         return "(untitled)";
     }
     const { sidecar } = entry.sidecar;
+    const { title } = sidecar;
+    if (title === null) {
+        return "(untitled)";
+    }
     // A provisional title is always awaiting review, so it says only that.
     if (sidecar.fields.title?.by === "prompt") {
-        return `${sidecar.title} (provisional)`;
+        return `${title} (provisional)`;
     }
-    return entry.turns > sidecar.reviewedThrough
-        ? `${sidecar.title} (stale)`
-        : sidecar.title;
+    return entry.turns > sidecar.reviewedThrough ? `${title} (stale)` : title;
 }
 
 // Those a new session would rank, in its order, then the rest by when they
@@ -4899,6 +5045,20 @@ describe("parseEditView", () => {
         ).toEqual({ kind: "edit", changes: { title: "Mine" } });
     });
 
+    it("gives back unchanged a note that wraps at a # or a field name", () => {
+        const tricky: Sidecar = {
+            ...sidecar,
+            description: "Title: a note that starts like a field.",
+            abstract: `${"word ".repeat(14)}xx #42 is fixed.`,
+        };
+        expect(
+            wrap(tricky.abstract ?? "").some((line) => line.startsWith("#")),
+        ).toBe(false);
+        expect(parseEditView(renderEditView(PHRASE, tricky), tricky)).toEqual({
+            kind: "unchanged",
+        });
+    });
+
     it.each([
         [
             "an unknown field",
@@ -4920,6 +5080,24 @@ describe("parseEditView", () => {
             "a line under no field",
             view.replace("Hidden: no\n", "Hidden: no\nstray words\n"),
             '"stray words" is under no field',
+        ],
+        [
+            "a hide that is neither yes nor no",
+            view.replace("Hidden: no", "Hidden: perhaps"),
+            'Hidden takes yes or no, not "perhaps"',
+        ],
+        [
+            "a repeated paragraph field",
+            `${view}Description: again\n`,
+            "Description appears twice",
+        ],
+        [
+            "an abstract over its limit",
+            renderEditView(PHRASE, null).replace(
+                "Abstract:",
+                `Abstract: ${"y".repeat(1001)}`,
+            ),
+            "abstract is 1001 characters, over 1000",
         ],
     ])("refuses %s", (_, text, reason) => {
         expect(parseEditView(text, sidecar)).toEqual({ kind: "error", reason });
@@ -4970,8 +5148,12 @@ export type EditParse =
     | { kind: "error"; reason: string }
     | { kind: "edit"; changes: EditChanges };
 
-// Greedy, at spaces. A word that would start a line and reads as a field
-// name stays on the line before, however long that makes it.
+// A line starting with # is a comment and one starting with a field name is
+// a field, so neither may start a wrapped line: such a word stays on the
+// line before, however long, and opening a paragraph it is indented.
+const startsBadly = (word: string) => word.startsWith("#") || HEADER.test(word);
+
+// Greedy, at spaces.
 export function wrap(text: string, width = WIDTH): string[] {
     const lines: string[] = [];
     let line = "";
@@ -4980,8 +5162,8 @@ export function wrap(text: string, width = WIDTH): string[] {
             continue;
         }
         if (line === "") {
-            line = word;
-        } else if (line.length + 1 + word.length <= width || HEADER.test(word)) {
+            line = startsBadly(word) ? ` ${word}` : word;
+        } else if (line.length + 1 + word.length <= width || startsBadly(word)) {
             line += ` ${word}`;
         } else {
             lines.push(line);
@@ -5464,8 +5646,8 @@ catch-up = 5         # unreviewed chats reviewed per launch, 0 to 50
 
 - [ ] **Step 2: Describe the units in `.claude/CLAUDE.md`**
 
-In `.claude/CLAUDE.md`'s Architecture section, after the sentence ending
-"both via `withHistory` (`src/persona.ts`).", add:
+In `.claude/CLAUDE.md`'s Architecture section, after the paragraph ending
+"Design: `docs/specs/`, plans: `docs/plans/`.", add a new paragraph:
 
 ```markdown
 Memory (`src/memory/`) keeps Dorothy's notes on each conversation in a JSON
@@ -5482,19 +5664,45 @@ source, and `run.tsx` is the one file under `src/tui/` that imports
 
 - [ ] **Step 3: Bring the spec up to date**
 
-In `docs/specs/2026-10-05-conversation-catalogue-design.md`:
+Fold every ruling of this plan into the section of
+`docs/specs/2026-10-05-conversation-catalogue-design.md` it amends, so the
+spec describes what ships:
 
-- In the Units table, add rows for `src/memory/service.ts` ("catalogue,
-  block and scheduler for one TUI run; the review flow", not pure) and
+- Units: add rows for `src/memory/service.ts` ("catalogue, block and
+  scheduler for one TUI run; the review flow", not pure) and
   `src/memory/commands.ts` ("`--list` and `--memory`: files and the
-  terminal", not pure).
-- In Wiring, replace "`src/tui/` learns nothing about memory." with
-  "`src/tui/` learns nothing about memory beyond `run.tsx`, which wires it
-  in."
-- In Testing, replace the `boundary.test.ts` bullet with "`boundary.test.ts`
+  terminal", not pure); `review.ts` does the prompt, schema and query, and
+  `sidecar.ts` also the merges.
+- Wiring: "`src/tui/` learns nothing about memory beyond `run.tsx`, which
+  wires it in"; `trackMemory(session, hooks)`, the service being the hooks;
+  without a saved transcript the live conversation gets no title or
+  reviews.
+- Events: "review now" is decided from the launch catalogue (not yet
+  reviewed, and none asked for this run); a failed first review is retried
+  after the idle timer. Catch-up skips the live conversation, which its own
+  turns review. A review may still start in the close grace period, and is
+  then cancelled.
+- Lifecycle: a resumed conversation without a sidecar takes its provisional
+  title from its transcript's first user turn.
+- Sidecar: notes are normalised as they are read; only bad JSON, a
+  non-object or an unknown `v` make a sidecar unparseable, and a field of
+  the wrong shape reads as absent. `reviewCostUsd` counts successful reviews;
+  `memory-cost` counts every review's cost.
+- Catalogue: a user turn before the first `session` event belongs to the
+  first visit; a visit with no readable time is dropped.
+- Tiers: the budget counts entries only; the cap drops where the budget,
+  not an entry's fields, limited the entry before.
+- `--list`: `h` wins over `*`; unparseable and untitled rows read
+  `(untitled)` and `omitted`; `(provisional)` stands in for `(stale)`; dates
+  are local; no conversations prints the header alone.
+- `--memory`: text may follow `Description:` or `Abstract:` on its line;
+  `Pinned` and `Hidden` take yes or no in any case; a line that looks like a
+  field inside a paragraph is text; a line under no field is an error; a
+  field line deleted outright keeps its value; comment dates are the UTC
+  day; a reopened template carries one `# error:` line; a word starting
+  with `#` or a field name never starts a wrapped line.
+- Testing: replace the `boundary.test.ts` bullet with "`boundary.test.ts`
   gains a test that, of `src/tui/`, only `run.tsx` imports `src/memory/`."
-- In Tiers, step 2, after "no richer than the previous unpinned entry's"
-  add "where the budget, not its fields, limited that entry".
 
 - [ ] **Step 4: Check everything**
 
@@ -5514,19 +5722,21 @@ In a terminal (this costs a few cents):
 
 1. `bun run dev`, and talk about one subject (a pet's name, say) for two or
    three turns; after the first reply, confirm the statusline shows
-   `memory $…`. Quit.
+   `memory $…`. Leave it idle for a minute, so the last turns are reviewed
+   too, then quit.
 2. `bun run dev -- --list`: the chat is listed with a title Dorothy wrote,
-   tier `full`.
-3. `bun run dev`, talk about a second subject, quit; `--list` shows both.
+   tier `full`, and neither `(provisional)` nor `(stale)`.
+3. `bun run dev`, talk about a second subject, idle a minute, quit; `--list`
+   shows both, neither stale.
 4. `bun run dev`, ask "What have we talked about before?": she names both
    subjects, in gist, and says so if asked for a detail her notes lack.
    Quit.
-5. `bun run dev -- --memory <first phrase>`: change the title, save; `--list`
-   shows the new title without `(stale)` or `(provisional)`.
+5. `bun run dev -- --memory <first phrase>`: change the title, save;
+   `--list` shows the new title.
 6. `bun run dev -- --resume <first phrase>`, send one more message, wait a
-   minute idle, quit; `--memory <first phrase>` still shows your title,
-   marked `(yours, ...)` in the description comment if you changed that,
-   and the title unchanged.
+   minute idle, quit. Then `--list` shows the first chat without `(stale)`,
+   so a review ran after the edit, still with your title; and
+   `--memory <first phrase>` shows no new line under "Earlier titles".
 
 Report each step's result. Anything that fails is a bug to fix before this
 is done, with a regression test where one can catch it.
