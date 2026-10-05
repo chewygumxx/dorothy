@@ -21,7 +21,7 @@ export type Entry = {
     phrase: string;
     sidecar: SidecarRead;
     visits: Visit[];
-    // As readTranscript counts them; more than reviewedThrough is stale.
+    // As parseTranscript counts them; more than reviewedThrough is stale.
     turns: number;
     lastActive: number;
 };
