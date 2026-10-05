@@ -602,6 +602,45 @@ describe("MemoryService with the index", () => {
         expect(format?.schema.required).toContain("appraisals");
     });
 
+    // Another process, opening the index once this one has closed.
+    async function claimable(): Promise<boolean> {
+        const other = RecallIndex.open(join(dir, "index", "recall.sqlite"));
+        try {
+            return await other.claim(LIVE, "them", NOW.getTime(), 60_000);
+        } finally {
+            other.close();
+        }
+    }
+
+    it("lets go of the claim of a review cut short by quitting", async () => {
+        await transcript(LIVE, [user("a"), reply("b")]);
+        const own = RecallIndex.open(join(dir, "index", "recall.sqlite"));
+        const fake = reviews("hang");
+        const { memory } = setup({ queryFn: fake.fn, index: own });
+        try {
+            memory.turnEnded();
+            await until(() => fake.calls.length > 0);
+            await memory.stop();
+        } finally {
+            own.close();
+        }
+        expect(await claimable()).toBe(true);
+    });
+
+    it("lets go of the claim of a review that finishes", async () => {
+        await transcript(LIVE, [user("a"), reply("b")]);
+        const own = RecallIndex.open(join(dir, "index", "recall.sqlite"));
+        const { memory } = setup({ queryFn: reviews(NOTES).fn, index: own });
+        try {
+            memory.turnEnded();
+            await until(async () => (await sidecarOf(LIVE)) !== null);
+            await memory.stop();
+        } finally {
+            own.close();
+        }
+        expect(await claimable()).toBe(true);
+    });
+
     it("leaves a conversation another process has claimed", async () => {
         await transcript(LIVE, [user("a"), reply("b")]);
         const other = RecallIndex.open(join(dir, "index", "recall.sqlite"));

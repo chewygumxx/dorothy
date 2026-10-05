@@ -123,8 +123,9 @@ export async function runTui(resume: string | null): Promise<number> {
     try {
         await app.waitUntilExit();
     } finally {
-        // Quitting waits for no review: the running one is closed unsaved.
-        memory?.stop();
+        // The running review is closed unsaved, and lets go of its claim
+        // before the index it is held in closes.
+        await memory?.stop();
         index?.close();
         await writer?.close();
     }

@@ -218,10 +218,12 @@ export class MemoryService implements MemoryHooks {
         this.#scheduler.now(this.#phrase);
     }
 
-    // Quitting waits for nothing, and says nothing more.
-    stop(): void {
+    // Quitting says nothing more and saves nothing. The running review is
+    // cancelled, not waited on for its answer; the promise settles once it
+    // has let go of its claim, so the index may then be closed.
+    stop(): Promise<void> {
         this.#stopped = true;
-        this.#scheduler.stop();
+        return this.#scheduler.stop();
     }
 
     #emit(notice: Notice): void {
