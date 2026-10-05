@@ -261,8 +261,11 @@ false`, and:
 On success the review merges (skipping fields owned by the user, appending to
 `titles` when the title changed), stamps `fields` with the model from the
 review's `init` message, sets `reviewedThrough` to the turn count it read,
-adds the result's `total_cost_usd` to `reviewCostUsd`, writes, and emits a
-`memory-cost` notice.
+adds the result's `total_cost_usd` to `reviewCostUsd` and writes.
+
+Whatever the outcome, a review whose `total_cost_usd` is above zero emits a
+`memory-cost` notice, so failed reviews are counted too; only successful ones
+add to `reviewCostUsd`.
 
 A review reads the transcript from disk. For the live conversation it first
 awaits a new `TranscriptWriter.flushed()`, which resolves once every append
