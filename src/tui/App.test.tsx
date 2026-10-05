@@ -318,6 +318,7 @@ describe("App", () => {
         const { app, session, type } = setup({
             // No statusline, whose defaults would show "1 in" too.
             config: {
+                ...DEFAULT_CONFIG,
                 statusline: { modules: [], maxLines: 1 },
                 replyStats: { modules: ["out"], maxLines: 1 },
             },

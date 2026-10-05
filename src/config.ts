@@ -24,7 +24,20 @@ export const MODULE_NAMES = [
 ] as const;
 export type ModuleName = (typeof MODULE_NAMES)[number];
 export type LineConfig = { modules: ModuleName[]; maxLines: number };
-export type Config = { statusline: LineConfig; replyStats: LineConfig };
+export type MemoryConfig = {
+    enabled: boolean;
+    // Estimated tokens of notes in a new session's prompt.
+    budget: number;
+    idleSeconds: number;
+    halfLifeDays: number;
+    // Stale conversations reviewed per launch.
+    catchUp: number;
+};
+export type Config = {
+    statusline: LineConfig;
+    replyStats: LineConfig;
+    memory: MemoryConfig;
+};
 
 // More would let a statusline crowd out the reply; five keeps the smallest
 // window at 24 lines.
@@ -47,6 +60,13 @@ export const DEFAULT_CONFIG: Config = {
             "chat-cost",
         ],
         maxLines: 1,
+    },
+    memory: {
+        enabled: true,
+        budget: 2000,
+        idleSeconds: 60,
+        halfLifeDays: 30,
+        catchUp: 5,
     },
 };
 
@@ -117,6 +137,51 @@ function parseLine(
     return line;
 }
 
+// The whole-number keys of [memory]: the key, the field, the range.
+const MEMORY_NUMBERS = [
+    ["budget", "budget", 200, 20000],
+    ["idle-seconds", "idleSeconds", 10, 3600],
+    ["half-life-days", "halfLifeDays", 1, 3650],
+    ["catch-up", "catchUp", 0, 50],
+] as const;
+
+function parseMemory(value: unknown, warnings: string[]): MemoryConfig {
+    if (!isRecord(value)) {
+        warnings.push("config.toml: memory is not a table");
+        return DEFAULT_CONFIG.memory;
+    }
+    const memory = { ...DEFAULT_CONFIG.memory };
+    for (const [key, field] of Object.entries(value)) {
+        const number = MEMORY_NUMBERS.find(([name]) => name === key);
+        if (key === "enabled") {
+            if (typeof field === "boolean") {
+                memory.enabled = field;
+            } else {
+                warnings.push(
+                    "config.toml: memory.enabled must be true or false",
+                );
+            }
+        } else if (number !== undefined) {
+            const [, name, min, max] = number;
+            if (
+                typeof field === "number" &&
+                Number.isInteger(field) &&
+                field >= min &&
+                field <= max
+            ) {
+                memory[name] = field;
+            } else {
+                warnings.push(
+                    `config.toml: memory.${key} must be a whole number from ${min} to ${max}`,
+                );
+            }
+        } else {
+            warnings.push(`config.toml: unknown key memory.${key}`);
+        }
+    }
+    return memory;
+}
+
 // Bun's TOML errors carry no position. The mistake is on the line after the
 // longest run of whole lines that parses: a shorter run can fail only
 // because it cuts a list or string that spans lines.
@@ -160,6 +225,8 @@ export function parseConfig(text: string): {
                 DEFAULT_CONFIG[field],
                 warnings,
             );
+        } else if (key === "memory") {
+            config.memory = parseMemory(value, warnings);
         } else {
             warnings.push(`config.toml: unknown key ${key}`);
         }
