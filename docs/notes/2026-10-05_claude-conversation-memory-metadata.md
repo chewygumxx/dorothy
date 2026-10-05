@@ -3,8 +3,14 @@ ctime: 2026-10-05
 mtime: 2026-10-05
 spdx: GPL-3.0-only
 title: "Conversation with Claude: Memory and Metadata"
-description:
+description: >-
+  Claude's survey of TypeScript modules close to Dorothy's conversation memory
+  design, such as @mastra/memory, claude-mem and Letta, and what is left to
+  build.
 tags:
+  - dorothy
+  - memory
+  - notes
 ---
 
 <!--

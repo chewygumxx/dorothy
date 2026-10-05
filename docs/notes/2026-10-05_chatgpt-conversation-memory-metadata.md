@@ -4,8 +4,13 @@ mtime: 2026-10-05
 spdx: GPL-3.0-only
 source: "https://chatgpt.com/c/6ac2d929-00b0-83ec-ba42-8bb670e33a6f"
 title: "Conversation with ChatGPT: Memory and Metadata"
-description:
+description: >-
+  ChatGPT's survey of TypeScript modules close to Dorothy's conversation memory
+  design, such as claude-mem, agent-memory, sqlite-memory and frecency.
 tags:
+  - dorothy
+  - memory
+  - notes
 ---
 
 <!--
