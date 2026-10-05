@@ -1,5 +1,12 @@
-// ::: :/home/chewygumxx/dev/dorothy/src/memory/block.test.ts
-// Dorothy · Conversation Catalogue
+// vim:set expandtab shiftwidth=4 filetype=typescript:
+// SPDX-License-Identifier: GPL-3.0-only
+
+//
+//
+// ~chewygumxx/dorothy.git
+// ::: :/src/memory/block.test.ts
+//
+//
 
 import { describe, expect, it } from "bun:test";
 import { MEMORY_PREAMBLE, type Note, renderBlock } from "./block.js";

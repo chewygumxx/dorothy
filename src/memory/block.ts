@@ -1,5 +1,12 @@
-// ::: :/home/chewygumxx/dev/dorothy/src/memory/block.ts
-// Dorothy · Conversation Catalogue
+// vim:set expandtab shiftwidth=4 filetype=typescript:
+// SPDX-License-Identifier: GPL-3.0-only
+
+//
+//
+// ~chewygumxx/dorothy.git
+// ::: :/src/memory/block.ts
+//
+//
 
 // Richest first.
 export type Tier = "full" | "described" | "titled";
