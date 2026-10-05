@@ -589,6 +589,28 @@ describe("App", () => {
         expect(app.lastFrame()).toContain("› from the editor▏");
     });
 
+    it("opens the editor on a Ctrl+G typed with text", async () => {
+        const seen: string[] = [];
+        const { type } = setup({
+            editDraft: async (text) => {
+                seen.push(text);
+                return { ok: true, text };
+            },
+        });
+        await tick();
+        await type("abc\u0007");
+        await tick();
+        expect(seen).toEqual(["abc"]);
+    });
+
+    it("clears rather than quits on a Ctrl+C typed with text", async () => {
+        const { app, session, type } = setup();
+        await tick();
+        await type("abc\u0003");
+        expect(session().closed).toBe(false);
+        expect(app.lastFrame()).toContain("enter send");
+    });
+
     it("keeps the draft and warns when the editor fails", async () => {
         const { app, type } = setup({
             editDraft: async () => ({
@@ -665,7 +687,7 @@ describe("App", () => {
 
     it("cleans the editor's text as a paste is cleaned", async () => {
         const { app, type } = setup({
-            editDraft: async () => ({ ok: true, text: "x\r\na\u001Bb\tcd" }),
+            editDraft: async () => ({ ok: true, text: "x\r\na\u0007b\tcd" }),
         });
         await tick();
         await type("\u0007");
@@ -710,6 +732,21 @@ describe("App", () => {
         expect(app.lastFrame()).toContain("closing");
         expect(entries.filter((entry) => entry.kind === "user")).toEqual([]);
         expect(session().closes).toBe(1);
+    });
+
+    it("opens no editor while closing", async () => {
+        let calls = 0;
+        const { session, type } = setup({
+            editDraft: async (text) => {
+                calls++;
+                return { ok: true, text };
+            },
+        });
+        await tick();
+        session().closing = new Promise(() => {});
+        await type("\u0004");
+        await type("\u0007");
+        expect(calls).toBe(0);
     });
 
     it("quits on /exit", async () => {

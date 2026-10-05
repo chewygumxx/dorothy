@@ -134,20 +134,24 @@ draft's first row, `↑ ` on the top visible row when rows are hidden above,
 cursor is drawn as an inverse cell (or `▏` at a row's end). The key hints show,
 padded and truncated, only while the draft is empty.
 
-A paste inserts at the cursor as one edit, with `\r\n` and `\r` turned into
-`\n`, each tab into 4 spaces, and other control characters dropped. A `\r`
-or `\n` inside a typed chunk (fast typing, or keys sent before raw mode is
-on) is an Enter typed ahead, not a newline: it sends at each one, when
-sending is allowed, and the rest of the chunk becomes the draft.
+A paste inserts at the cursor as one edit, with escape sequences dropped
+whole, `\r\n` and `\r` turned into `\n`, each tab into 4 spaces, and other
+C0 and C1 control characters dropped. Keys inside a typed chunk (fast
+typing, or keys sent before raw mode is on) act as if typed alone: Ctrl
+keys included, and a `\r` or `\n` is an Enter typed ahead, not a newline.
+Only the chunk's first Enter sends, since App cannot stop sending until it
+renders again; later ones, and one that cannot send, start new lines.
+Input does Ctrl+C's clear and Ctrl+D's delete itself and passes the other
+Ctrl keys to App's `onCtrl`, as only it sees those typed with text.
 
 ### `src/tui/App.tsx`, `layout.ts`, `run.tsx`
 
 - `App` takes `editDraft(text: string): Promise<EditResult>`, where
   `EditResult` is `{ ok: true; text }` or `{ ok: false; message }`. A
   failure keeps the old draft and shows `message` as a warning. Ctrl+G does
-  nothing while an editor is open. App reports the draft's row count from
-  `layoutDraft` to `fitLayout`, which caps it at `INPUT_MAX_ROWS` and
-  subtracts it from the reply's rows.
+  nothing while an editor is open, or while Dorothy is closing. App reports
+  the draft's row count from `layoutDraft` to `fitLayout`, which caps it at
+  `INPUT_MAX_ROWS` and subtracts it from the reply's rows.
 - While `editDraft` runs, `History` is passed the lines it had when the editor
   opened, so `<Static>` writes nothing during the suspension (Ink discards
   renders then) and prints the lines that arrived meanwhile after resume.
