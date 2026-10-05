@@ -88,6 +88,7 @@ export async function runTui(resume: string | null): Promise<number> {
             history,
             config: config.memory,
             entries: loaded.entries,
+            index,
             // Without a transcript the live chat is left alone.
             flushed: transcript === null ? null : () => transcript.flushed(),
         });

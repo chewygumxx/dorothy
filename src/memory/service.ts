@@ -8,24 +8,35 @@
 //
 //
 
+import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { MemoryConfig } from "../config.js";
 import { systemPrompt, type Turn, withMemory } from "../persona.js";
-import { readTranscript } from "../transcript.js";
+import type { RecallIndex } from "../recall/store.js";
+import { type ResumedTurn, readTranscript } from "../transcript.js";
 import type { Entry } from "./catalogue.js";
 import { buildMemory } from "./rank.js";
 import {
+    pendingReads,
+    READS_INSTRUCTION,
     REVIEW_INSTRUCTIONS,
+    REVIEW_TIMEOUT_MS,
     type ReviewQueryFn,
     reviewPrompt,
+    reviewSchema,
     runReview,
 } from "./review.js";
 import { REAL_TIMERS, ReviewScheduler, type Timers } from "./scheduler.js";
 import {
+    markFailed,
+    markReviewed,
     mergeReview,
+    ownsAll,
     provisionalTitle,
     readSidecar,
+    reviewDue,
+    type Sidecar,
     updateSidecar,
     withProvisional,
 } from "./sidecar.js";
@@ -49,6 +60,8 @@ export type MemoryServiceOptions = {
     // when the transcript is not being saved, and the live conversation is
     // then left alone.
     flushed: (() => Promise<void>) | null;
+    // The recall index, for the write lock and review claims; null without.
+    index?: RecallIndex | null;
     queryFn?: ReviewQueryFn;
     now?: () => Date;
     timers?: Timers;
@@ -57,8 +70,12 @@ export type MemoryServiceOptions = {
 const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
 
-// It has turns no review has covered, and Dorothy may review it.
-function isStale(entry: Entry): boolean {
+// A claim outlives the longest review by this much.
+const CLAIM_MARGIN_MS = 30_000;
+
+// It has turns no review has covered, Dorothy may review it, and its
+// back-off is over.
+function isStale(entry: Entry, now: number): boolean {
     if (entry.sidecar.kind === "none") {
         return entry.turns > 0;
     }
@@ -66,7 +83,11 @@ function isStale(entry: Entry): boolean {
         return false;
     }
     const { sidecar } = entry.sidecar;
-    return !sidecar.hidden && entry.turns > sidecar.reviewedThrough;
+    return (
+        !sidecar.hidden &&
+        entry.turns > sidecar.reviewedThrough &&
+        reviewDue(sidecar, now)
+    );
 }
 
 // One TUI run's memory: the catalogue, the block new sessions start with,
@@ -77,6 +98,9 @@ export class MemoryService implements MemoryHooks {
     readonly #history: readonly Turn[];
     readonly #config: MemoryConfig;
     readonly #flushed: (() => Promise<void>) | null;
+    readonly #index: RecallIndex | null;
+    // Who this run's claims belong to.
+    readonly #owner = `${process.pid}-${randomBytes(4).toString("hex")}`;
     readonly #queryFn: ReviewQueryFn;
     readonly #now: () => Date;
     readonly #timers: Timers;
@@ -100,6 +124,7 @@ export class MemoryService implements MemoryHooks {
         this.#history = options.history;
         this.#config = options.config;
         this.#flushed = options.flushed;
+        this.#index = options.index ?? null;
         this.#queryFn = options.queryFn ?? query;
         this.#now = options.now ?? (() => new Date());
         this.#timers = options.timers ?? REAL_TIMERS;
@@ -153,8 +178,11 @@ export class MemoryService implements MemoryHooks {
             return;
         }
         const at = this.#now().toISOString();
-        void updateSidecar(this.#dir, this.#phrase, (current) =>
-            withProvisional(current, title, at),
+        void updateSidecar(
+            this.#dir,
+            this.#phrase,
+            (current) => withProvisional(current, title, at),
+            this.#index?.lock,
         ).then((result) => {
             if (result.kind === "failed") {
                 this.#warn(`memory: couldn't save a title: ${result.reason}`);
@@ -167,8 +195,11 @@ export class MemoryService implements MemoryHooks {
             return;
         }
         this.#caughtUp = true;
+        const now = this.#now().getTime();
         const stale = [...this.#entries.values()]
-            .filter((entry) => entry.phrase !== this.#phrase && isStale(entry))
+            .filter(
+                (entry) => entry.phrase !== this.#phrase && isStale(entry, now),
+            )
             .sort((a, b) => b.lastActive - a.lastActive)
             .slice(0, this.#config.catchUp)
             .map((entry) => entry.phrase);
@@ -215,6 +246,45 @@ export class MemoryService implements MemoryHooks {
     }
 
     async #review(phrase: string, signal: AbortSignal): Promise<void> {
+        const index = this.#index;
+        if (
+            index !== null &&
+            !(await index.claim(
+                phrase,
+                this.#owner,
+                this.#now().getTime(),
+                REVIEW_TIMEOUT_MS + CLAIM_MARGIN_MS,
+            ))
+        ) {
+            return;
+        }
+        try {
+            await this.#reviewClaimed(phrase, signal);
+        } finally {
+            await index?.release(phrase, this.#owner);
+        }
+    }
+
+    #nameOf(phrase: string): string {
+        const sidecar = this.#entries.get(phrase)?.sidecar;
+        return (
+            (sidecar?.kind === "ok" ? sidecar.sidecar.title : null) ?? phrase
+        );
+    }
+
+    // A written sidecar replaces the one held for the block and catch-up.
+    #remember(phrase: string, sidecar: Sidecar, turns: number | null): void {
+        const entry = this.#entries.get(phrase);
+        if (entry !== undefined) {
+            this.#entries.set(phrase, {
+                ...entry,
+                sidecar: { kind: "ok", sidecar },
+                turns: turns ?? entry.turns,
+            });
+        }
+    }
+
+    async #reviewClaimed(phrase: string, signal: AbortSignal): Promise<void> {
         if (phrase === this.#phrase) {
             await this.#flushed?.();
         }
@@ -228,10 +298,13 @@ export class MemoryService implements MemoryHooks {
             return;
         }
         const current = read.kind === "ok" ? read.sidecar : null;
+        if (!reviewDue(current, this.#now().getTime())) {
+            return;
+        }
         const name = current?.title ?? phrase;
         const fail = (reason: string) =>
             this.#warn(`memory: couldn't review "${name}": ${reason}`);
-        let turns: Turn[];
+        let turns: ResumedTurn[];
         try {
             turns = (await readTranscript(join(this.#dir, `${phrase}.jsonl`)))
                 .turns;
@@ -239,13 +312,46 @@ export class MemoryService implements MemoryHooks {
             fail(describeError(error));
             return;
         }
-        if (turns.length <= (current?.reviewedThrough ?? 0) || signal.aborted) {
+        const reads = pendingReads(turns, current?.appraisals ?? {}, (of) =>
+            this.#nameOf(of),
+        );
+        if (
+            (turns.length <= (current?.reviewedThrough ?? 0) &&
+                reads.length === 0) ||
+            signal.aborted
+        ) {
             return;
         }
+        const lock = this.#index?.lock;
+        // Every note is the user's and nothing awaits appraisal: a review
+        // could change nothing, so none is paid for.
+        if (current !== null && ownsAll(current) && reads.length === 0) {
+            const skipped = await updateSidecar(
+                this.#dir,
+                phrase,
+                (latest) =>
+                    latest === null || latest.hidden
+                        ? null
+                        : markReviewed(latest, turns.length),
+                lock,
+            );
+            if (skipped.kind === "written") {
+                this.#remember(phrase, skipped.sidecar, turns.length);
+            }
+            return;
+        }
+        const readIds = reads.map((read) => read.id);
         const outcome = await runReview({
             queryFn: this.#queryFn,
-            systemPrompt: `${withMemory(systemPrompt, this.#build(phrase).block)}\n\n${REVIEW_INSTRUCTIONS}`,
-            prompt: reviewPrompt(turns, current),
+            systemPrompt: [
+                withMemory(systemPrompt, this.#build(phrase).block),
+                reads.length > 0
+                    ? `${REVIEW_INSTRUCTIONS} ${READS_INSTRUCTION}`
+                    : REVIEW_INSTRUCTIONS,
+            ].join("\n\n"),
+            prompt: reviewPrompt(turns, current, reads),
+            schema: reviewSchema(readIds),
+            readIds,
             signal,
             timers: this.#timers,
         });
@@ -255,21 +361,35 @@ export class MemoryService implements MemoryHooks {
         if (outcome.costUsd > 0) {
             this.#emit({ type: "memory-cost", usd: outcome.costUsd });
         }
+        const at = this.#now().toISOString();
         if (!outcome.ok) {
             fail(outcome.reason);
+            const failed = await updateSidecar(
+                this.#dir,
+                phrase,
+                (latest) => (latest?.hidden ? null : markFailed(latest, at)),
+                lock,
+            );
+            if (failed.kind === "written") {
+                this.#remember(phrase, failed.sidecar, null);
+            }
             return;
         }
-        const at = this.#now().toISOString();
         // Quitting may land while the write waits its turn.
-        const result = await updateSidecar(this.#dir, phrase, (latest) =>
-            signal.aborted || latest?.hidden
-                ? null
-                : mergeReview(latest, outcome.notes, {
-                      model: outcome.model,
-                      at,
-                      throughTurn: turns.length,
-                      costUsd: outcome.costUsd,
-                  }),
+        const result = await updateSidecar(
+            this.#dir,
+            phrase,
+            (latest) =>
+                signal.aborted || latest?.hidden
+                    ? null
+                    : mergeReview(latest, outcome.notes, {
+                          model: outcome.model,
+                          at,
+                          throughTurn: turns.length,
+                          costUsd: outcome.costUsd,
+                          appraisals: outcome.appraisals,
+                      }),
+            lock,
         );
         if (result.kind === "failed") {
             this.#warn(
@@ -280,14 +400,7 @@ export class MemoryService implements MemoryHooks {
         if (result.kind !== "written") {
             return;
         }
-        const entry = this.#entries.get(phrase);
-        if (entry !== undefined) {
-            this.#entries.set(phrase, {
-                ...entry,
-                sidecar: { kind: "ok", sidecar: result.sidecar },
-                turns: turns.length,
-            });
-        }
+        this.#remember(phrase, result.sidecar, turns.length);
         // The live conversation is left out of its own sessions' block.
         if (phrase !== this.#phrase) {
             const built = this.#build(this.#phrase);
