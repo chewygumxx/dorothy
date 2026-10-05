@@ -1,16 +1,7 @@
 ---
-__cgxx: |
-  # vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3:
-  # SPDX-License-Identifier: GPL-3.0-only
-
-  #
-  #
-  # ~chewygumxx/dorothy.git
-  # ::: :/docs/plans/2026-10-05-statusline-and-minimum-size.md
-  #
-  #
-
 ctime: 2026-10-05
+mtime: 2026-10-05
+spdx: GPL-3.0-only
 title: Statusline and minimum size plan
 description: "Implementation plan for the statusline and a minimum window"
 tags:
@@ -18,6 +9,13 @@ tags:
   - tui
   - plan
 ---
+
+<!--
+   -
+   - ~chewygumxx/dorothy.git
+   - ::: :/docs/plans/2026-10-05-statusline-and-minimum-size.md
+   -
+   -->
 
 # Statusline and Minimum Size Implementation Plan
 
@@ -2223,3 +2221,5 @@ Expected: exit 0 for both.
 git add README.md docs/plans/2026-10-03-input-editor.md docs/plans/2026-10-03-markdown-replies.md
 git commit -m "docs: Describe the statusline and minimum window"
 ```
+
+<!-- vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3: -->

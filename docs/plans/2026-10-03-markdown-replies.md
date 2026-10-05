@@ -1,16 +1,7 @@
 ---
-__cgxx: |
-  # vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3:
-  # SPDX-License-Identifier: GPL-3.0-only
-
-  #
-  #
-  # ~chewygumxx/dorothy.git
-  # ::: :/docs/plans/2026-10-03-markdown-replies.md
-  #
-  #
-
 ctime: 2026-10-03
+mtime: 2026-10-05
+spdx: GPL-3.0-only
 title: Markdown replies plan
 description: "Implementation plan for rendering Dorothy's Markdown replies"
 tags:
@@ -19,6 +10,13 @@ tags:
   - markdown
   - plan
 ---
+
+<!--
+   -
+   - ~chewygumxx/dorothy.git
+   - ::: :/docs/plans/2026-10-03-markdown-replies.md
+   -
+   -->
 
 # Markdown Replies Implementation Plan
 
@@ -1548,3 +1546,5 @@ git commit -m "feat(tui): Render finished replies as Markdown"
 git add README.md
 git commit -m "docs: Mention Markdown replies"
 ```
+
+<!-- vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3: -->

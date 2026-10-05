@@ -1,16 +1,7 @@
 ---
-__cgxx: |
-  # vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3:
-  # SPDX-License-Identifier: GPL-3.0-only
-
-  #
-  #
-  # ~chewygumxx/dorothy.git
-  # ::: :/docs/plans/2026-10-05-conversation-catalogue.md
-  #
-  #
-
 ctime: 2026-10-05
+mtime: 2026-10-05
+spdx: GPL-3.0-only
 title: Conversation catalogue plan
 description: "Implementation plan for Dorothy's first memory: per-conversation notes"
 tags:
@@ -18,6 +9,13 @@ tags:
   - memory
   - plan
 ---
+
+<!--
+   -
+   - ~chewygumxx/dorothy.git
+   - ::: :/docs/plans/2026-10-05-conversation-catalogue.md
+   -
+   -->
 
 # Conversation Catalogue Implementation Plan
 
@@ -5740,3 +5738,5 @@ In a terminal (this costs a few cents):
 
 Report each step's result. Anything that fails is a bug to fix before this
 is done, with a regression test where one can catch it.
+
+<!-- vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3: -->

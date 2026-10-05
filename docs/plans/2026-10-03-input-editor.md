@@ -1,16 +1,7 @@
 ---
-__cgxx: |
-  # vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3:
-  # SPDX-License-Identifier: GPL-3.0-only
-
-  #
-  #
-  # ~chewygumxx/dorothy.git
-  # ::: :/docs/plans/2026-10-03-input-editor.md
-  #
-  #
-
 ctime: 2026-10-03
+mtime: 2026-10-05
+spdx: GPL-3.0-only
 title: Input editor plan
 description: "Implementation plan for the chat TUI's multi-line input editor"
 tags:
@@ -18,6 +9,13 @@ tags:
   - tui
   - plan
 ---
+
+<!--
+   -
+   - ~chewygumxx/dorothy.git
+   - ::: :/docs/plans/2026-10-03-input-editor.md
+   -
+   -->
 
 # Input Editor Implementation Plan
 
@@ -1898,3 +1896,5 @@ git commit -m "feat(tui): Edit the draft in \$EDITOR with Ctrl+G"
 git add README.md
 git commit -m "docs: Document the input editor keys"
 ```
+
+<!-- vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3: -->
