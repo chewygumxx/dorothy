@@ -25,6 +25,7 @@ import {
     EMPTY_SIDECAR,
     mergeEdit,
     mergeReview,
+    normalise,
     type Provenance,
     parseSidecar,
     provisionalTitle,
@@ -121,7 +122,37 @@ describe("parseSidecar", () => {
     });
 });
 
+describe("normalise", () => {
+    it("turns control characters into spaces", () => {
+        expect(normalise("a\x07b")).toBe("a b");
+        expect(normalise("\x1b]0;x\x07 \x1b[31m")).toBe("]0;x [31m");
+        expect(normalise("a\x7fb")).toBe("a b");
+        expect(normalise("a\u009bb\u0085c")).toBe("a b c");
+        expect(normalise("\x00a\x1f")).toBe("a");
+    });
+
+    it("still collapses tabs and newlines to single spaces", () => {
+        expect(normalise("  a\t\tb\n\nc  ")).toBe("a b c");
+    });
+});
+
 describe("readSidecar", () => {
+    it("reads back a note holding an escape sequence clean", async () => {
+        await writeFile(
+            sidecarPath(dir, PHRASE),
+            JSON.stringify({
+                v: 1,
+                title: "Hi\x1b[31m red\x07",
+                titles: [{ title: "Old\x1b[2Jone", at: AT, by: "dorothy" }],
+            }),
+        );
+        const read = await readSidecar(dir, PHRASE);
+        expect(read.kind === "ok" && read.sidecar.title).toBe("Hi [31m red");
+        expect(read.kind === "ok" && read.sidecar.titles[0]?.title).toBe(
+            "Old [2Jone",
+        );
+    });
+
     it("tells no sidecar from one that cannot be read", async () => {
         expect(await readSidecar(dir, PHRASE)).toEqual({ kind: "none" });
         await mkdir(sidecarPath(dir, PHRASE));
@@ -214,6 +245,13 @@ describe("provisionalTitle", () => {
         expect([...title]).toHaveLength(60);
         const read = parseSidecar(JSON.stringify({ v: 1, title }));
         expect(read.kind === "ok" && read.sidecar.title).toBe(title);
+    });
+
+    it("cleans an escape sequence out of the title", () => {
+        expect(provisionalTitle("\x1b]0;x\x07 hello\x1b[31m")).toBe(
+            "]0;x hello [31m",
+        );
+        expect(provisionalTitle("\x07\n\x1b\nreal")).toBe("real");
     });
 
     it("gives nothing for a blank message", () => {

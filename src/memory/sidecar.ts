@@ -90,8 +90,13 @@ export function sidecarPath(dir: string, phrase: string): string {
     return join(dir, `${phrase}.meta.json`);
 }
 
-// Notes are kept as one line with single spaces.
-export const normalise = (text: string) => text.replace(/\s+/g, " ").trim();
+// Notes are kept as one line with single spaces. Control characters (C0, DEL
+// and C1) become spaces, so a note can never carry a terminal escape.
+export const normalise = (text: string) =>
+    text
+        .replace(/\p{Cc}/gu, " ")
+        .replace(/\s+/g, " ")
+        .trim();
 export const characters = (text: string) => [...text].length;
 
 export function overLimit(field: Field, text: string): string | null {
