@@ -1,16 +1,7 @@
 ---
-__cgxx: |
-  # vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3:
-  # SPDX-License-Identifier: GPL-3.0-only
-
-  #
-  #
-  # ~chewygumxx/dorothy.git
-  # ::: :/README.md
-  #
-  #
-
 ctime: 2026-09-29
+mtime: 2026-10-05
+spdx: GPL-3.0-only
 title: "dorothy"
 description: "Conversational LLM interface"
 tags:
@@ -18,6 +9,13 @@ tags:
   - chatbot
   - dorothy
 ---
+
+<!--
+   -
+   - ~chewygumxx/dorothy.git
+   - ::: :/README.md
+   -
+   -->
 
 # dorothy
 
@@ -180,3 +178,5 @@ sync pushed.
 The pre-commit hook runs the same checks on staged files, and rejects em dashes
 and plaintext values in any env file.
 The commit-msg hook runs commitlint.
+
+<!-- vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3: -->
