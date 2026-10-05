@@ -514,10 +514,22 @@ spaces**.
 An embedding turns some object (text, an image, a document, etc.) into a
 vector:
 
+$$
+x = (x_1,x_2,\ldots,x_n)
+$$
+
 Two objects can then be compared geometrically. One very simple similarity
 measure is the **dot product**:
 
+$$
+x\cdot y = \sum_i x_i y_i
+$$
+
 For normalized embeddings, this is equivalent to **cosine similarity**:
+
+$$
+\cos(\theta)=\frac{x\cdot y}{\|x\|\|y\|}
+$$
 
 So, yes: _"the strength of their similarity as a function of their dot
 product"_ is a perfectly legitimate recollection.
