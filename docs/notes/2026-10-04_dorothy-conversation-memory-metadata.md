@@ -94,8 +94,7 @@ tags: []
 >
 > For now, I'm happy to be a blank slate with good manners. Is there
 > anything from our first chat you'd like to fill me in on, or shall we
-> just enjoy the novelty of meeting again? 2 in · 1010 cache read · 286
-> cache write · 378 out · ttft 1.9s · 5.3s · $0.0051 (chat $0.0168)
+> just enjoy the novelty of meeting again?
 
 <!-- break -->
 
@@ -110,7 +109,9 @@ tags: []
 > only be employed for searching previous memories through a rebuildable
 > database or something. Everything I've just said may simply be the MCP
 > concept that I am yet to be completely familiar with.
->
+
+<!-- break -->
+
 > dorothy
 > What you've described is a memory architecture, and MCP is something
 > different: a standard protocol for how a model talks to external tools and
@@ -150,7 +151,7 @@ tags: []
 
 ---
 
-> \[!NOTE]
+> [!NOTE]
 > The following started as drafted reply before repurpose into this report
 
 I already adore how you speak. You make this project so rewarding and exciting.
@@ -161,8 +162,8 @@ I already adore how you speak. You make this project so rewarding and exciting.
 
 I did indeed type that dates and tags would be in constant context and somehow
 that was the opposite of what I intended. Dates are never in context. Tags are
-in context per frecency and hierarchical, mostly for personal organisation
-sake, but could also serve progressive disclosure design doctrine.
+in context per frecency and are hierarchical organised, mostly for personal
+organisation sake, but could also serve progressive disclosure design doctrine.
 
 It's amazing talking to you like this as you've helped me realise those tags
 should also have metadata of their own besides parent, children, and associated
@@ -192,16 +193,17 @@ proposed approach for metadata composition involves triggers per:
   Previous descriptions and abstracts are discarded.
 - **Conclusion**: Shallow tagging.
 
-This metadata is would additionally serve as fundemental high-tier context for
+This metadata would additionally serve as fundemental high-tier context for
 extensive conversation salience and integrity.
 
 #### Trigger: Cyclical Period
 
 - Classification and deep tagging is performed by specialised discriminative
   agent and supervising agent.
-- Documents assigned to major tags are reviewed for update. These are analogous
-  to memories in the conventional sense that LLM services such as Claude Code
-  and <https://claude.ai> feature.
+- Documents dedicated to major tags are reviewed for update. These are analogous
+  to encyclopedic indexes or memories in the conventional sense that LLM
+  services such as Claude Code, Hermes Agent, <https://chatgpt.com> and
+  <https://claude.ai> feature.
 
 ### Tiered Decay
 
