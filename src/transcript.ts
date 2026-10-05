@@ -12,6 +12,7 @@ import { type FileHandle, mkdir, open, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { TurnStats } from "./conversation.js";
 import type { Turn } from "./persona.js";
+import type { Lookup } from "./recall/types.js";
 import { type Env, xdgDir } from "./xdg.js";
 
 export type SessionEvent = {
@@ -45,11 +46,23 @@ export type StatsEvent = {
     costUsd: number;
     sessionCostUsd: number;
 };
+// A lookup Dorothy made mid-reply. offset is where in the reply's text it
+// happened, in UTF-16 code units, so a resumed chat can place it.
+type RecallBase = {
+    v: 1;
+    kind: "recall";
+    at: string;
+    id: string;
+    ok: boolean;
+    offset: number;
+};
+export type RecallEvent = RecallBase & Lookup;
 export type TranscriptEvent =
     | SessionEvent
     | UserEvent
     | AssistantEvent
-    | StatsEvent;
+    | StatsEvent
+    | RecallEvent;
 
 // An event as callers write it; the writer stamps `v` and `at`.
 type Unstamped<E> = E extends unknown ? Omit<E, "v" | "at"> : never;
@@ -67,7 +80,7 @@ export function transcriptPath(phrase: string, env: Env = process.env): string {
     return join(transcriptDir(env), `${phrase}.jsonl`);
 }
 
-function toTurn(event: unknown): Turn | "ignore" | "malformed" {
+export function toTurn(event: unknown): Turn | "ignore" | "malformed" {
     if (typeof event !== "object" || event === null) {
         return "malformed";
     }
@@ -78,9 +91,73 @@ function toTurn(event: unknown): Turn | "ignore" | "malformed" {
     return kind === "session" || kind === "stats" ? "ignore" : "malformed";
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+const isTurnRange = (value: unknown): value is [number, number] =>
+    Array.isArray(value) &&
+    value.length === 2 &&
+    value.every((turn) => Number.isInteger(turn) && turn >= 1);
+
+// A recall event as written, or null for one that cannot be read.
+export function toRecall(event: unknown): RecallEvent | null {
+    if (!isRecord(event) || event.kind !== "recall") {
+        return null;
+    }
+    const { at, id, ok, offset } = event;
+    if (
+        typeof at !== "string" ||
+        typeof id !== "string" ||
+        typeof ok !== "boolean" ||
+        typeof offset !== "number" ||
+        !Number.isInteger(offset) ||
+        offset < 0
+    ) {
+        return null;
+    }
+    const base = { v: 1, kind: "recall", at, id, ok, offset } as const;
+    if (
+        event.tool === "search" &&
+        typeof event.query === "string" &&
+        typeof event.hits === "number" &&
+        Number.isInteger(event.hits)
+    ) {
+        return {
+            ...base,
+            tool: "search",
+            query: event.query,
+            hits: event.hits,
+            ...(typeof event.after === "string" ? { after: event.after } : {}),
+            ...(typeof event.before === "string"
+                ? { before: event.before }
+                : {}),
+        };
+    }
+    if (
+        event.tool === "open" &&
+        typeof event.conversation === "string" &&
+        typeof event.name === "string" &&
+        typeof event.purpose === "string" &&
+        (event.turns === null || isTurnRange(event.turns))
+    ) {
+        return {
+            ...base,
+            tool: "open",
+            conversation: event.conversation,
+            name: event.name,
+            purpose: event.purpose,
+            turns: event.turns,
+        };
+    }
+    return null;
+}
+
 // A turn read back from a transcript: a reply keeps the stats recorded after
-// it and what the chat had cost by then.
-export type ResumedTurn = Turn & { stats?: TurnStats; chatCostUsd?: number };
+// it, what the chat had cost by then, and the lookups made while writing it.
+export type ResumedTurn = Turn & {
+    stats?: TurnStats;
+    chatCostUsd?: number;
+    lookups?: RecallEvent[];
+};
 
 const finite = (value: unknown): value is number =>
     typeof value === "number" && Number.isFinite(value);
@@ -119,6 +196,7 @@ export function parseTranscript(text: string): TranscriptRead {
     const turns: ResumedTurn[] = [];
     // The reply a stats line would belong to.
     let reply: ResumedTurn | null = null;
+    let lookups: RecallEvent[] = [];
     let skipped = 0;
     let costUsd = 0;
     for (const line of text.split("\n")) {
@@ -146,12 +224,28 @@ export function parseTranscript(text: string): TranscriptRead {
             reply = null;
             continue;
         }
+        if ((event as { kind?: unknown } | null)?.kind === "recall") {
+            const recall = toRecall(event);
+            if (recall === null) {
+                skipped++;
+            } else {
+                lookups.push(recall);
+            }
+            continue;
+        }
         const turn = toTurn(event);
         if (turn === "malformed") {
             skipped++;
         } else if (turn !== "ignore") {
-            turns.push(turn);
-            reply = turn.role === "assistant" ? turn : null;
+            // Lookups belong to the reply after them; a user message means
+            // the reply they began never came.
+            const resumed: ResumedTurn = turn;
+            if (turn.role === "assistant" && lookups.length > 0) {
+                resumed.lookups = lookups;
+            }
+            lookups = [];
+            turns.push(resumed);
+            reply = turn.role === "assistant" ? resumed : null;
         }
     }
     return { turns, skipped, costUsd };
