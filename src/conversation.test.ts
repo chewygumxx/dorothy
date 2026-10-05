@@ -15,7 +15,13 @@ import {
     type ConversationEvent,
     type QueryFn,
 } from "./conversation.js";
-import { systemPrompt, type Turn, withHistory, withMemory } from "./persona.js";
+import {
+    personaPrompt,
+    systemPrompt,
+    type Turn,
+    withHistory,
+    withMemory,
+} from "./persona.js";
 
 const WAIT_FOR_INTERRUPT = "wait-for-interrupt";
 type Step = SDKMessage | typeof WAIT_FOR_INTERRUPT;
@@ -344,5 +350,219 @@ describe("Conversation", () => {
             message: "boom",
             partial: "Par",
         });
+    });
+});
+
+const toolUse = (id: string, name: string, input: object) =>
+    ({
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id, name, input }] },
+    }) as unknown as SDKMessage;
+const toolResult = (id: string, text: string, isError = false) =>
+    ({
+        type: "user",
+        message: {
+            role: "user",
+            content: [
+                {
+                    type: "tool_result",
+                    tool_use_id: id,
+                    content: [{ type: "text", text }],
+                    is_error: isError,
+                },
+            ],
+        },
+        parent_tool_use_id: null,
+    }) as unknown as SDKMessage;
+const servers = (status: string) =>
+    ({
+        type: "system",
+        subtype: "init",
+        model: "test-model",
+        session_id: "sdk-1",
+        mcp_servers: [{ name: "memory", status }],
+    }) as unknown as SDKMessage;
+const RECALL = { command: "/bin/bun", args: ["index.ts", "--recall-server"] };
+const SEARCHED = JSON.stringify({
+    results: [
+        {
+            "@type": "Conversation",
+            identifier: "a",
+            dateCreated: "2026-10-04",
+            dateModified: "2026-10-04",
+            matches: [],
+        },
+    ],
+    more: 1,
+});
+
+function startedWithRecall(fake: Fake) {
+    const conversation = new Conversation({ queryFn: fake.fn, recall: RECALL });
+    const events: ConversationEvent[] = [];
+    conversation.subscribe((event) => events.push(event));
+    conversation.start();
+    return { conversation, events };
+}
+
+describe("Conversation with recall", () => {
+    it("launches the recall server and allows only its tools", () => {
+        const fake = fakeQuery([]);
+        startedWithRecall(fake);
+        expect(fake.options?.mcpServers).toEqual({
+            memory: { type: "stdio", ...RECALL },
+        });
+        expect(fake.options?.allowedTools).toEqual([
+            "mcp__memory__search",
+            "mcp__memory__open",
+        ]);
+        expect(fake.options?.systemPrompt).toBe(
+            withHistory(withMemory(personaPrompt({ recall: true }), ""), []),
+        );
+    });
+
+    it("launches nothing without recall", () => {
+        const fake = fakeQuery([]);
+        started(fake);
+        expect(fake.options?.mcpServers).toBeUndefined();
+        expect(fake.options?.allowedTools).toBeUndefined();
+    });
+
+    it("emits each lookup where it happened, and joins the reply's steps", async () => {
+        const fake = fakeQuery([
+            [
+                delta("Let me check."),
+                toolUse("toolu_1", "mcp__memory__search", { query: "render" }),
+                toolResult("toolu_1", SEARCHED),
+                delta("We were keeping"),
+                delta(" artefacts down."),
+                result(0.01),
+            ],
+        ]);
+        const { conversation, events } = startedWithRecall(fake);
+        conversation.send("what did we say?");
+        await until(() => of(events, "turn-end").length === 1);
+        expect(of(events, "lookup")).toEqual([
+            {
+                type: "lookup",
+                id: "toolu_1",
+                ok: true,
+                offset: 13,
+                lookup: { tool: "search", query: "render", hits: 2 },
+            },
+        ]);
+        expect(of(events, "turn-end")[0]?.reply).toBe(
+            "Let me check.\n\nWe were keeping artefacts down.",
+        );
+        expect(
+            events.findIndex((event) => event.type === "lookup"),
+        ).toBeLessThan(
+            events.findIndex(
+                (event) =>
+                    event.type === "delta" && event.text.includes("We were"),
+            ),
+        );
+    });
+
+    it("adds no blank line when nothing came before the lookup", async () => {
+        const fake = fakeQuery([
+            [
+                toolUse("toolu_1", "mcp__memory__search", { query: "x" }),
+                toolResult("toolu_1", SEARCHED),
+                delta("Found it."),
+                result(0.01),
+            ],
+        ]);
+        const { conversation, events } = startedWithRecall(fake);
+        conversation.send("?");
+        await until(() => of(events, "turn-end").length === 1);
+        expect(of(events, "turn-end")[0]?.reply).toBe("Found it.");
+        expect(of(events, "lookup")[0]?.offset).toBe(0);
+    });
+
+    it("reports a failed lookup, and ignores other tools", async () => {
+        const fake = fakeQuery([
+            [
+                toolUse("toolu_1", "mcp__memory__open", {
+                    conversation: "x",
+                    purpose: "p",
+                }),
+                toolUse("toolu_2", "mcp__other__thing", {}),
+                toolResult("toolu_1", "No conversation by that name.", true),
+                toolResult("toolu_2", "whatever"),
+                result(0.01),
+            ],
+        ]);
+        const { conversation, events } = startedWithRecall(fake);
+        conversation.send("?");
+        await until(() => of(events, "turn-end").length === 1);
+        expect(of(events, "lookup")).toEqual([
+            {
+                type: "lookup",
+                id: "toolu_1",
+                ok: false,
+                offset: 0,
+                lookup: {
+                    tool: "open",
+                    conversation: "x",
+                    name: "x",
+                    purpose: "p",
+                    turns: null,
+                },
+            },
+        ]);
+    });
+
+    it("reports a lookup cut short by an interruption", async () => {
+        const fake = fakeQuery([
+            [
+                delta("Checking."),
+                toolUse("toolu_1", "mcp__memory__search", { query: "x" }),
+                WAIT_FOR_INTERRUPT,
+                result(0.01),
+            ],
+        ]);
+        const { conversation, events } = startedWithRecall(fake);
+        conversation.send("?");
+        await until(() => of(events, "delta").length === 1);
+        await conversation.interrupt();
+        await until(() => of(events, "turn-end").length === 1);
+        expect(of(events, "lookup")).toEqual([
+            {
+                type: "lookup",
+                id: "toolu_1",
+                ok: false,
+                offset: 9,
+                lookup: { tool: "search", query: "x", hits: 0 },
+            },
+        ]);
+        expect(
+            events.findIndex((event) => event.type === "lookup"),
+        ).toBeLessThan(events.findIndex((event) => event.type === "turn-end"));
+    });
+
+    it("warns once when the recall server failed", async () => {
+        const fake = fakeQuery([
+            [servers("failed"), result(0.01)],
+            [servers("failed"), result(0.02)],
+        ]);
+        const { conversation, events } = startedWithRecall(fake);
+        conversation.send("one");
+        await until(() => of(events, "turn-end").length === 1);
+        conversation.send("two");
+        await until(() => of(events, "turn-end").length === 2);
+        expect(of(events, "warning")).toEqual([
+            {
+                type: "warning",
+                message: "memory: recall is unavailable (failed)",
+            },
+        ]);
+    });
+
+    it("does not warn of a server still starting", async () => {
+        const fake = fakeQuery([[servers("pending"), result(0.01)]]);
+        const { conversation, events } = startedWithRecall(fake);
+        conversation.send("one");
+        await until(() => of(events, "turn-end").length === 1);
+        expect(of(events, "warning")).toEqual([]);
     });
 });

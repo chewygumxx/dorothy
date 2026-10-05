@@ -14,7 +14,21 @@ import {
     type SDKMessage,
     type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import { baseOptions, type Turn, withHistory, withMemory } from "./persona.js";
+import {
+    baseOptions,
+    personaPrompt,
+    type Turn,
+    withHistory,
+    withMemory,
+} from "./persona.js";
+import {
+    ALLOWED_TOOLS,
+    describeLookup,
+    type Lookup,
+    SERVER_NAME,
+    type Tool,
+    toolOf,
+} from "./recall/types.js";
 
 export type TurnStats = {
     // Input the cache did not serve; cached input is counted apart.
@@ -46,8 +60,20 @@ export type ConversationEvent =
           stats: TurnStats;
       }
     | { type: "sdk"; message: RawMessage }
+    // A lookup Dorothy made; offset is where in the reply it happened.
+    | {
+          type: "lookup";
+          id: string;
+          ok: boolean;
+          offset: number;
+          lookup: Lookup;
+      }
+    | { type: "warning"; message: string }
     // partial: the reply streamed so far, when the turn died mid-reply.
     | { type: "error"; message: string; partial?: string };
+
+// How the CLI starts the recall server: dorothy --recall-server.
+export type RecallLaunch = { command: string; args: string[] };
 
 export type QueryHandle = AsyncIterable<SDKMessage> & {
     interrupt(): Promise<unknown>;
@@ -66,6 +92,8 @@ export interface ChatSession {
 }
 
 type ResultMessage = Extract<SDKMessage, { type: "result" }>;
+
+type PendingCall = { tool: Tool; input: unknown; offset: number };
 
 // How long close() waits for the subprocess to exit on its own before
 // terminating it.
@@ -109,6 +137,20 @@ class MessageQueue implements AsyncIterable<SDKUserMessage> {
     }
 }
 
+// A tool result's text: a string, or text blocks.
+function textOf(content: unknown): string {
+    if (typeof content === "string") {
+        return content;
+    }
+    return Array.isArray(content)
+        ? content
+              .map((block) =>
+                  typeof block?.text === "string" ? block.text : "",
+              )
+              .join("")
+        : "";
+}
+
 async function settleWithin(work: Promise<void>, ms: number): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([
@@ -125,6 +167,12 @@ export class Conversation implements ChatSession {
     readonly #listeners = new Set<(event: ConversationEvent) => void>();
     readonly #queryFn: QueryFn;
     readonly #options: Options;
+    readonly #recall: boolean;
+    #recallWarned = false;
+    // Tool calls awaiting their results, by id.
+    readonly #calls = new Map<string, PendingCall>();
+    // The next text starts a new step of the reply.
+    #afterLookup = false;
     #handle: QueryHandle | null = null;
     #done: Promise<void> = Promise.resolve();
     #closed: Promise<void> | null = null;
@@ -138,19 +186,31 @@ export class Conversation implements ChatSession {
         history = [],
         memory = "",
         queryFn = query,
+        recall = null,
     }: {
         history?: readonly Turn[];
         // The memory block, frozen for the session.
         memory?: string;
         queryFn?: QueryFn;
+        // How to launch the recall server; null leaves recall off.
+        recall?: RecallLaunch | null;
     } = {}) {
         this.#queryFn = queryFn;
+        this.#recall = recall !== null;
         this.#options = {
             ...baseOptions,
             systemPrompt: withHistory(
-                withMemory(baseOptions.systemPrompt, memory),
+                withMemory(personaPrompt({ recall: recall !== null }), memory),
                 history,
             ),
+            ...(recall === null
+                ? {}
+                : {
+                      mcpServers: {
+                          [SERVER_NAME]: { type: "stdio", ...recall },
+                      },
+                      allowedTools: ALLOWED_TOOLS,
+                  }),
         };
     }
 
@@ -225,6 +285,9 @@ export class Conversation implements ChatSession {
 
     #handleMessage(message: SDKMessage): void {
         this.#emit({ type: "sdk", message });
+        if (message.type === "system" && message.subtype === "init") {
+            this.#checkRecall(message);
+        }
         // The CLI sends init at the start of every turn; only the first one
         // means the session is ready.
         if (
@@ -243,8 +306,48 @@ export class Conversation implements ChatSession {
             message.event.type === "content_block_delta" &&
             message.event.delta.type === "text_delta"
         ) {
-            this.#reply += message.event.delta.text;
-            this.#emit({ type: "delta", text: message.event.delta.text });
+            const text =
+                this.#afterLookup && this.#reply !== ""
+                    ? `\n\n${message.event.delta.text}`
+                    : message.event.delta.text;
+            this.#afterLookup = false;
+            this.#reply += text;
+            this.#emit({ type: "delta", text });
+        } else if (message.type === "assistant") {
+            for (const block of message.message.content) {
+                const tool =
+                    block.type === "tool_use" ? toolOf(block.name) : null;
+                if (
+                    block.type === "tool_use" &&
+                    tool !== null &&
+                    !this.#calls.has(block.id)
+                ) {
+                    this.#calls.set(block.id, {
+                        tool,
+                        input: block.input,
+                        offset: this.#reply.length,
+                    });
+                }
+            }
+        } else if (message.type === "user") {
+            const { content } = message.message;
+            for (const block of Array.isArray(content) ? content : []) {
+                if (block.type !== "tool_result") {
+                    continue;
+                }
+                const call = this.#calls.get(block.tool_use_id);
+                if (call === undefined) {
+                    continue;
+                }
+                this.#calls.delete(block.tool_use_id);
+                const ok = block.is_error !== true;
+                this.#lookup(
+                    block.tool_use_id,
+                    call,
+                    ok,
+                    ok ? textOf(block.content) : null,
+                );
+            }
         } else if (
             message.type === "result" &&
             message.is_error &&
@@ -252,6 +355,7 @@ export class Conversation implements ChatSession {
         ) {
             // API failures (auth, rate limit, overload) do not throw: the turn
             // ends with an error result carrying the text instead of a reply.
+            this.#settleCalls();
             const text =
                 message.subtype === "success"
                     ? message.result
@@ -259,6 +363,7 @@ export class Conversation implements ChatSession {
             this.#fail(text || message.subtype);
             this.#streaming = false;
         } else if (message.type === "result") {
+            this.#settleCalls();
             this.#emit({
                 type: "turn-end",
                 reply: this.#reply,
@@ -271,7 +376,52 @@ export class Conversation implements ChatSession {
         }
     }
 
+    #lookup(
+        id: string,
+        call: PendingCall,
+        ok: boolean,
+        result: string | null,
+    ): void {
+        this.#afterLookup = true;
+        this.#emit({
+            type: "lookup",
+            id,
+            ok,
+            offset: call.offset,
+            lookup: describeLookup(call.tool, call.input, result),
+        });
+    }
+
+    // Calls the turn ended without answering, as when it was interrupted.
+    #settleCalls(): void {
+        for (const [id, call] of this.#calls) {
+            this.#lookup(id, call, false, null);
+        }
+        this.#calls.clear();
+        this.#afterLookup = false;
+    }
+
+    // The init message lists the MCP servers; a server still starting is
+    // not a failure, and init repeats every turn, so this warns once.
+    #checkRecall(message: {
+        mcp_servers?: { name: string; status: string }[];
+    }): void {
+        const servers = message.mcp_servers;
+        if (!this.#recall || this.#recallWarned || !Array.isArray(servers)) {
+            return;
+        }
+        const server = servers.find((entry) => entry.name === SERVER_NAME);
+        if (server === undefined || server.status === "failed") {
+            this.#recallWarned = true;
+            this.#emit({
+                type: "warning",
+                message: `memory: recall is unavailable (${server?.status ?? "not started"})`,
+            });
+        }
+    }
+
     #fail(message: string): void {
+        this.#settleCalls();
         const partial = this.#reply;
         this.#reply = "";
         this.#interrupted = false;

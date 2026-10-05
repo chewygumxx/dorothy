@@ -130,6 +130,10 @@ function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
                 ].slice(-RAW_LIMIT),
                 rawCount: state.rawCount + 1,
             };
+        case "warning":
+            return reduce(state, { type: "warning", message: event.message });
+        case "lookup":
+            return state;
         case "error": {
             const lines = state.live
                 ? append(state.lines, {
