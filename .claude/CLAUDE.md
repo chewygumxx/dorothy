@@ -61,14 +61,27 @@ in memory, and `--resume` with the transcript's, both via `withHistory`
 
 Memory (`src/memory/`) keeps Dorothy's notes on each conversation in a JSON
 sidecar beside its transcript (`<phrase>.meta.json`, `sidecar.ts`). At launch
-`run.tsx` scans the catalogue, and a `MemoryService` (`service.ts`) builds the
-memory block each new `Conversation` starts with (`withMemory`), frozen for
-the session, and schedules reviews: one-shot `query()` calls with
-`outputFormat` that never block the chat (`review.ts`, `scheduler.ts`).
-`trackMemory` decorates the `ChatSession`; `App` sees only a `notices`
-source, and `run.tsx` is the one file under `src/tui/` that imports
+`run.tsx` loads the catalogue from the recall index, and a `MemoryService`
+(`service.ts`) builds the memory block each new `Conversation` starts with
+(`withMemory`), frozen for the session, and schedules reviews: one-shot
+`query()` calls with `outputFormat` that never block the chat (`review.ts`,
+`scheduler.ts`). `trackMemory` decorates the `ChatSession`; `App` sees only a
+`notices` source, and `run.tsx` is the one file under `src/tui/` that imports
 `src/memory/`. Ranking, the block, the edit view and the list are pure;
 `--list` and `--memory` live in `commands.ts`.
+
+Recall (`src/recall/`) is Dorothy's search over past conversations: a
+derived SQLite FTS5 index in the XDG cache (`store.ts`), synced from the
+transcripts and sidecars before every query (`sync.ts`), with `search` and
+`open` (`query.ts`). `server.ts` serves them over MCP on stdio as
+`dorothy --recall-server`, which the Agent SDK launches through
+`mcpServers`; it is the only file importing `@modelcontextprotocol/sdk`, and
+nothing in `src/recall/` imports the Agent SDK (`boundary.test.ts`).
+`Conversation` turns the tool calls into `lookup` events, which the TUI shows
+as dim lines and records as `recall` transcript events; reviews appraise
+each read into the sidecar, and `salience()` (`rank.ts`) weighs appraised
+reads with visits. The index doubles as the sidecar write lock and holds
+review claims, so two TUIs never review one conversation at once.
 
 `query()` spawns the SDK's bundled `claude` binary on every call, so
 `baseOptions` (`src/persona.ts`) keeps that subprocess lean: `tools: []` drops

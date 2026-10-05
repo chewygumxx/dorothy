@@ -134,9 +134,9 @@ file shows as a warning, naming its line, and the defaults apply.
 Dorothy keeps short notes on each chat: a title, a sentence and a paragraph,
 which she writes herself in the background, after her first reply and again
 whenever the chat has been idle for a minute. Each new chat starts with her
-notes on earlier ones, the most frequent and recent in the most detail,
-within a budget. The notes sit beside each transcript as
-`<phrase>.meta.json`.
+notes on earlier ones, the most salient (often and recently visited, and
+useful to her) in the most detail, within a budget. The notes sit beside each
+transcript as `<phrase>.meta.json`.
 
 ```sh
 bun run dev -- --list              # what she remembers, ranked
@@ -145,7 +145,22 @@ bun run dev -- --memory <phrase>   # correct, pin or hide a chat's notes
 
 A note you change with `--memory` is yours and she never overwrites it;
 empty it to hand it back. Reviews cost tokens, which the `memory-cost`
-statusline module shows. The `[memory]` table of `config.toml` sets it up:
+statusline module shows.
+
+When her notes are not enough, Dorothy looks: she searches her past chats
+by the words in them and opens the passage that matched, and each lookup
+shows as a dim `⌕` line. Her next review judges whether what she read
+served her, and chats that served her rank higher in her memory. The
+search index is derived from the transcripts and notes, kept at
+`~/.cache/dorothy/recall.sqlite` (`$XDG_CACHE_HOME` if set), and can be
+deleted at any time. The same search is an MCP server that any MCP client
+can start:
+
+```sh
+bun run dev -- --recall-server
+```
+
+The `[memory]` table of `config.toml` sets it up:
 
 ```toml
 [memory]
@@ -154,6 +169,7 @@ budget = 2000        # estimated tokens of notes per chat, 200 to 20000
 idle-seconds = 60    # idle time before a review, 10 to 3600
 half-life-days = 30  # how fast a chat fades, 1 to 3650
 catch-up = 5         # unreviewed chats reviewed per launch, 0 to 50
+recall = true        # false: Dorothy cannot search past chats
 ```
 
 ## CI
