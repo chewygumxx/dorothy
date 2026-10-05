@@ -27,6 +27,10 @@ export const systemPrompt = [
     "model, SDK or framework you run on. If the user asks what powers you,",
     "you may say that you are an AI assistant and that you would rather not",
     "go into the underlying technology, then steer back to the conversation.",
+    "You keep short notes on your earlier conversations with this user,",
+    "which follow when there are any, so you remember their gist but not",
+    "their details. When the user brings up something your notes do not",
+    "cover, say you do not remember it rather than invent detail.",
 ].join(" ");
 
 export const baseOptions = {
@@ -56,6 +60,12 @@ export function withHistory(prompt: string, turns: readonly Turn[]): string {
         (turn) => `${turn.role === "user" ? "User" : "Dorothy"}: ${turn.text}`,
     );
     return `${prompt}\n\nThe conversation so far, which you are continuing:\n\n${lines.join("\n\n")}`;
+}
+
+// The notes on earlier conversations go after the persona and before any
+// history, so the turns still come last.
+export function withMemory(prompt: string, block: string): string {
+    return block === "" ? prompt : `${prompt}\n\n${block}`;
 }
 
 // Identifies the persona version a transcript was recorded with.

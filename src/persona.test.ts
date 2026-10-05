@@ -15,11 +15,19 @@ import {
     promptSha256,
     systemPrompt,
     withHistory,
+    withMemory,
 } from "./persona.js";
 
 describe("systemPrompt", () => {
     it("identifies the assistant as Dorothy", () => {
         expect(systemPrompt).toContain("Dorothy");
+    });
+});
+
+describe("the persona", () => {
+    it("tells Dorothy she keeps short notes, not details", () => {
+        expect(systemPrompt).toContain("short notes");
+        expect(systemPrompt).toContain("rather than invent");
     });
 });
 
@@ -60,6 +68,22 @@ describe("withHistory", () => {
         expect(result).toContain("Dorothy: Hello, Miso!");
         expect(result.indexOf("User:")).toBeLessThan(
             result.indexOf("Dorothy:"),
+        );
+    });
+});
+
+describe("withMemory", () => {
+    it("returns the prompt unchanged for an empty block", () => {
+        expect(withMemory("Base.", "")).toBe("Base.");
+    });
+
+    it("puts the block after the prompt, before any history", () => {
+        const prompt = withHistory(withMemory("Base.", "<memory/>"), [
+            { role: "user", text: "Hi" },
+        ]);
+        expect(prompt.startsWith("Base.\n\n<memory/>\n\n")).toBe(true);
+        expect(prompt.indexOf("<memory/>")).toBeLessThan(
+            prompt.indexOf("User: Hi"),
         );
     });
 });

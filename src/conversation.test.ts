@@ -15,7 +15,7 @@ import {
     type ConversationEvent,
     type QueryFn,
 } from "./conversation.js";
-import { systemPrompt, type Turn } from "./persona.js";
+import { systemPrompt, type Turn, withHistory, withMemory } from "./persona.js";
 
 const WAIT_FOR_INTERRUPT = "wait-for-interrupt";
 type Step = SDKMessage | typeof WAIT_FOR_INTERRUPT;
@@ -289,6 +289,19 @@ describe("Conversation", () => {
         const prompt = String(fake.options?.systemPrompt);
         expect(prompt.startsWith(systemPrompt)).toBe(true);
         expect(prompt).toContain("User: My cat is Miso.");
+    });
+
+    it("starts with the memory block between the persona and the history", () => {
+        const fake = fakeQuery([]);
+        const history: Turn[] = [{ role: "user", text: "Earlier" }];
+        new Conversation({
+            history,
+            memory: "<memory/>",
+            queryFn: fake.fn,
+        }).start();
+        expect(fake.options?.systemPrompt).toBe(
+            withHistory(withMemory(systemPrompt, "<memory/>"), history),
+        );
     });
 
     it("emits ready once, though the CLI sends init every turn", async () => {
