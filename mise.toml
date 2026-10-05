@@ -48,3 +48,17 @@ bun = "1.4"
 #
 "aqua:astral-sh/uv" = "0.12.19"
 "pypi:yamllint"     = "1.38.0"
+
+[settings]
+#
+# Refetch remote tasks each time one runs, so `act` follows `v1` as it
+# moves; mise otherwise keeps its first copy for good.
+#
+task.remote_no_cache = true
+
+[tasks.act]
+#
+# Runs CI locally in Docker; see the `chewygumxx/.github` README.
+#
+description = "Run CI locally with act"
+file        = "git::https://github.com/chewygumxx/.github.git//tasks/act?ref=v1"
