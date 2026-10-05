@@ -90,6 +90,12 @@ describe("parseEditView", () => {
         expect(parseEditView(view, sidecar)).toEqual({ kind: "unchanged" });
     });
 
+    it("ignores a byte order mark an editor saved at the start", () => {
+        expect(parseEditView(`\uFEFF${view}`, sidecar)).toEqual({
+            kind: "unchanged",
+        });
+    });
+
     it("finds nothing changed in an emptied file", () => {
         expect(parseEditView("", sidecar)).toEqual({ kind: "unchanged" });
         expect(parseEditView("# a comment\n\n", sidecar)).toEqual({

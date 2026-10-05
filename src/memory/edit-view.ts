@@ -127,7 +127,11 @@ export function renderEditView(
 // shown: the sidecar the template was rendered from. Only what differs from
 // it, whitespace aside, is an edit.
 export function parseEditView(text: string, shown: Sidecar | null): EditParse {
-    const lines = text.split(/\r?\n/).filter((line) => !line.startsWith("#"));
+    // Some editors save a byte order mark at the start of the file.
+    const lines = text
+        .replace(/^\uFEFF/, "")
+        .split(/\r?\n/)
+        .filter((line) => !line.startsWith("#"));
     if (lines.every((line) => line.trim() === "")) {
         return { kind: "unchanged" };
     }
