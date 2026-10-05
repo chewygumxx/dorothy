@@ -1,0 +1,392 @@
+// vim:set expandtab shiftwidth=4 filetype=typescript:
+// SPDX-License-Identifier: GPL-3.0-only
+
+//
+//
+// ~chewygumxx/dorothy.git
+// ::: :/src/memory/sidecar.ts
+//
+//
+
+import { randomBytes } from "node:crypto";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+
+// In code points, as JSON Schema's maxLength counts them.
+export const LIMITS = { title: 60, description: 160, abstract: 1000 } as const;
+export type Field = keyof typeof LIMITS;
+export const FIELDS: readonly Field[] = ["title", "description", "abstract"];
+
+export type Author = "prompt" | "dorothy" | "user";
+export type Provenance = {
+    by: Author;
+    at: string;
+    model?: string;
+    // How many transcript turns Dorothy had seen.
+    throughTurn?: number;
+};
+export type PastTitle = { title: string; at: string; by: Author };
+export type Notes = Record<Field, string>;
+
+export type Sidecar = {
+    v: 1;
+    rev: number;
+    title: string | null;
+    description: string | null;
+    abstract: string | null;
+    pinned: boolean;
+    hidden: boolean;
+    // Oldest first.
+    titles: PastTitle[];
+    fields: Partial<Record<Field, Provenance>>;
+    // The turn count Dorothy's last review covered; 0 for never.
+    reviewedThrough: number;
+    reviewCostUsd: number;
+};
+
+export type SidecarRead =
+    | { kind: "none" }
+    | { kind: "ok"; sidecar: Sidecar }
+    | { kind: "unparseable"; reason: string };
+
+export type UpdateResult =
+    | { kind: "written"; sidecar: Sidecar }
+    | { kind: "unchanged"; sidecar: Sidecar | null }
+    | { kind: "unparseable"; reason: string }
+    | { kind: "failed"; reason: string };
+
+// A note set to null is emptied, handing it back to Dorothy.
+export type EditChanges = Partial<Record<Field, string | null>> & {
+    pinned?: boolean;
+    hidden?: boolean;
+};
+
+export const EMPTY_SIDECAR: Sidecar = {
+    v: 1,
+    rev: 0,
+    title: null,
+    description: null,
+    abstract: null,
+    pinned: false,
+    hidden: false,
+    titles: [],
+    fields: {},
+    reviewedThrough: 0,
+    reviewCostUsd: 0,
+};
+
+const AUTHORS: readonly string[] = ["prompt", "dorothy", "user"];
+
+const describeError = (error: unknown) =>
+    error instanceof Error ? error.message : String(error);
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+const isAuthor = (value: unknown): value is Author =>
+    typeof value === "string" && AUTHORS.includes(value);
+const isCount = (value: unknown): value is number =>
+    typeof value === "number" && Number.isInteger(value) && value >= 0;
+
+export function sidecarPath(dir: string, phrase: string): string {
+    return join(dir, `${phrase}.meta.json`);
+}
+
+// Notes are kept as one line with single spaces. Control characters (C0, DEL
+// and C1) become spaces, so a note can never carry a terminal escape.
+export const normalise = (text: string) =>
+    text
+        .replace(/\p{Cc}/gu, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+export const characters = (text: string) => [...text].length;
+
+export function overLimit(field: Field, text: string): string | null {
+    const count = characters(text);
+    return count > LIMITS[field]
+        ? `${field} is ${count} characters, over ${LIMITS[field]}`
+        : null;
+}
+
+// A note is normalised as it is read, so a stray space typed into the JSON
+// costs nothing; an empty note, or one over its limit, reads as absent.
+function readNote(field: Field, value: unknown): string | null {
+    if (typeof value !== "string") {
+        return null;
+    }
+    const note = normalise(value);
+    return note !== "" && overLimit(field, note) === null ? note : null;
+}
+
+function readProvenance(value: unknown): Provenance | null {
+    if (
+        !isRecord(value) ||
+        !isAuthor(value.by) ||
+        typeof value.at !== "string"
+    ) {
+        return null;
+    }
+    const provenance: Provenance = { by: value.by, at: value.at };
+    if (typeof value.model === "string") {
+        provenance.model = value.model;
+    }
+    if (isCount(value.throughTurn)) {
+        provenance.throughTurn = value.throughTurn;
+    }
+    return provenance;
+}
+
+// Only bad JSON, a non-object or an unknown version make a sidecar
+// unparseable; a field of the wrong shape reads as absent.
+export function parseSidecar(
+    text: string,
+): Exclude<SidecarRead, { kind: "none" }> {
+    let data: unknown;
+    try {
+        data = JSON.parse(text);
+    } catch (error) {
+        return { kind: "unparseable", reason: describeError(error) };
+    }
+    if (!isRecord(data)) {
+        return { kind: "unparseable", reason: "not a JSON object" };
+    }
+    if (data.v !== 1) {
+        return {
+            kind: "unparseable",
+            reason: `unknown version ${JSON.stringify(data.v)}`,
+        };
+    }
+    const sidecar: Sidecar = { ...EMPTY_SIDECAR, titles: [], fields: {} };
+    sidecar.rev = isCount(data.rev) ? data.rev : 0;
+    for (const field of FIELDS) {
+        const note = readNote(field, data[field]);
+        sidecar[field] = note;
+        const provenance = isRecord(data.fields)
+            ? readProvenance(data.fields[field])
+            : null;
+        // A note that is not there has no owner.
+        if (note !== null && provenance !== null) {
+            sidecar.fields[field] = provenance;
+        }
+    }
+    sidecar.pinned = data.pinned === true;
+    sidecar.hidden = data.hidden === true;
+    if (Array.isArray(data.titles)) {
+        for (const entry of data.titles) {
+            const title =
+                isRecord(entry) && typeof entry.title === "string"
+                    ? normalise(entry.title)
+                    : "";
+            if (
+                isRecord(entry) &&
+                title !== "" &&
+                typeof entry.at === "string" &&
+                isAuthor(entry.by)
+            ) {
+                sidecar.titles.push({
+                    title,
+                    at: entry.at,
+                    by: entry.by,
+                });
+            }
+        }
+    }
+    sidecar.reviewedThrough = isCount(data.reviewedThrough)
+        ? data.reviewedThrough
+        : 0;
+    const cost = data.reviewCostUsd;
+    sidecar.reviewCostUsd =
+        typeof cost === "number" && Number.isFinite(cost) && cost >= 0
+            ? cost
+            : 0;
+    return { kind: "ok", sidecar };
+}
+
+// A sidecar that cannot be read is treated as unparseable, so it is never
+// written either.
+export async function readSidecar(
+    dir: string,
+    phrase: string,
+): Promise<SidecarRead> {
+    let text: string;
+    try {
+        text = await readFile(sidecarPath(dir, phrase), "utf8");
+    } catch (error) {
+        if ((error as { code?: unknown }).code === "ENOENT") {
+            return { kind: "none" };
+        }
+        return { kind: "unparseable", reason: describeError(error) };
+    }
+    return parseSidecar(text);
+}
+
+// No reader ever sees half a file: the text lands under a temporary name in
+// the same directory, then replaces the sidecar in one rename.
+async function writeAtomic(path: string, text: string): Promise<void> {
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+    const temporary = `${path}.${randomBytes(4).toString("hex")}.tmp`;
+    try {
+        await writeFile(temporary, text, { mode: 0o600, flag: "wx" });
+        await rename(temporary, path);
+    } catch (error) {
+        await rm(temporary, { force: true });
+        throw error;
+    }
+}
+
+// Writers of one sidecar in this process take turns.
+const queues = new Map<string, Promise<UpdateResult>>();
+
+// Every writer re-reads the sidecar and applies only its own changes to
+// what it finds, so a review landing during an edit merges with it.
+export function updateSidecar(
+    dir: string,
+    phrase: string,
+    change: (current: Sidecar | null) => Sidecar | null,
+): Promise<UpdateResult> {
+    const path = sidecarPath(dir, phrase);
+    const run = async (): Promise<UpdateResult> => {
+        const read = await readSidecar(dir, phrase);
+        if (read.kind === "unparseable") {
+            return read;
+        }
+        const current = read.kind === "ok" ? read.sidecar : null;
+        const next = change(current);
+        if (next === null) {
+            return { kind: "unchanged", sidecar: current };
+        }
+        const sidecar = { ...next, rev: (current?.rev ?? 0) + 1 };
+        await writeAtomic(path, `${JSON.stringify(sidecar, null, 2)}\n`);
+        return { kind: "written", sidecar };
+    };
+    const result = (queues.get(path) ?? Promise.resolve()).then(run).catch(
+        (error: unknown): UpdateResult => ({
+            kind: "failed",
+            reason: describeError(error),
+        }),
+    );
+    queues.set(path, result);
+    void result.then(() => {
+        if (queues.get(path) === result) {
+            queues.delete(path);
+        }
+    });
+    return result;
+}
+
+// The first non-blank line of the first message, cut to the title limit.
+export function provisionalTitle(message: string): string | null {
+    const line = message
+        .split("\n")
+        .map(normalise)
+        .find((text) => text !== "");
+    if (line === undefined) {
+        return null;
+    }
+    const points = [...line];
+    return points.length <= LIMITS.title
+        ? line
+        : `${points
+              .slice(0, LIMITS.title - 1)
+              .join("")
+              .trimEnd()}…`;
+}
+
+// Only a conversation with no sidecar gets one.
+export function withProvisional(
+    current: Sidecar | null,
+    title: string,
+    at: string,
+): Sidecar | null {
+    if (current !== null) {
+        return null;
+    }
+    return {
+        ...EMPTY_SIDECAR,
+        title,
+        titles: [],
+        fields: { title: { by: "prompt", at } },
+    };
+}
+
+// Whoever changes the title, the old one joins the history with its own
+// stamp.
+function retitle(
+    sidecar: Sidecar,
+    title: string | null,
+    at: string,
+): PastTitle[] {
+    const old = sidecar.title;
+    if (old === null || old === title) {
+        return sidecar.titles;
+    }
+    const source = sidecar.fields.title;
+    return [
+        ...sidecar.titles,
+        { title: old, at: source?.at ?? at, by: source?.by ?? "user" },
+    ];
+}
+
+// Dorothy's review: every note she owns is replaced and stamped; the user's
+// are left alone.
+export function mergeReview(
+    current: Sidecar | null,
+    notes: Notes,
+    review: { model: string; at: string; throughTurn: number; costUsd: number },
+): Sidecar {
+    const base = current ?? EMPTY_SIDECAR;
+    const next: Sidecar = {
+        ...base,
+        fields: { ...base.fields },
+        reviewedThrough: review.throughTurn,
+        reviewCostUsd: base.reviewCostUsd + review.costUsd,
+    };
+    for (const field of FIELDS) {
+        if (base.fields[field]?.by === "user") {
+            continue;
+        }
+        if (field === "title") {
+            next.titles = retitle(base, notes.title, review.at);
+        }
+        next[field] = notes[field];
+        next.fields[field] = {
+            by: "dorothy",
+            model: review.model,
+            at: review.at,
+            throughTurn: review.throughTurn,
+        };
+    }
+    return next;
+}
+
+// The user's edit: a changed note becomes theirs; an emptied one goes back
+// to Dorothy, and the next review rewrites it.
+export function mergeEdit(
+    current: Sidecar | null,
+    changes: EditChanges,
+    at: string,
+): Sidecar {
+    const base = current ?? EMPTY_SIDECAR;
+    const next: Sidecar = { ...base, fields: { ...base.fields } };
+    for (const field of FIELDS) {
+        const value = changes[field];
+        if (value === undefined) {
+            continue;
+        }
+        if (field === "title") {
+            next.titles = retitle(base, value, at);
+        }
+        next[field] = value;
+        if (value === null) {
+            delete next.fields[field];
+            next.reviewedThrough = 0;
+        } else {
+            next.fields[field] = { by: "user", at };
+        }
+    }
+    if (changes.pinned !== undefined) {
+        next.pinned = changes.pinned;
+    }
+    if (changes.hidden !== undefined) {
+        next.hidden = changes.hidden;
+    }
+    return next;
+}

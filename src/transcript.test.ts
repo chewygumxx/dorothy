@@ -13,6 +13,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+    parseTranscript,
     readTranscript,
     TranscriptWriter,
     transcriptDir,
@@ -261,5 +262,69 @@ describe("readTranscript", () => {
         await expect(
             readTranscript(join(dir, "missing.jsonl")),
         ).rejects.toThrow();
+    });
+});
+
+describe("parseTranscript", () => {
+    it("reads text as readTranscript reads a file", async () => {
+        const text = [
+            JSON.stringify({
+                v: 1,
+                kind: "session",
+                at: "2026-10-03T00:00:00.000Z",
+                phrase: "p",
+                sdkSessionId: "s",
+                model: "m",
+                promptSha256: "h",
+                resumed: false,
+            }),
+            JSON.stringify({
+                v: 1,
+                kind: "user",
+                at: "2026-10-03T00:00:01.000Z",
+                text: "Hi",
+            }),
+            "not json",
+            JSON.stringify({
+                v: 1,
+                kind: "assistant",
+                at: "2026-10-03T00:00:02.000Z",
+                text: "Hello",
+                interrupted: false,
+            }),
+        ].join("\n");
+        const path = join(dir, "chat.jsonl");
+        await writeFile(path, text);
+        const parsed = parseTranscript(text);
+        expect(parsed.turns).toEqual([
+            { role: "user", text: "Hi" },
+            { role: "assistant", text: "Hello" },
+        ]);
+        expect(parsed.skipped).toBe(1);
+        expect(await readTranscript(path)).toEqual(parsed);
+    });
+});
+
+describe("TranscriptWriter.flushed", () => {
+    it("resolves once every append queued so far is in the file", async () => {
+        const path = join(dir, "chat.jsonl");
+        const writer = await TranscriptWriter.open(path, clock);
+        void writer.append({ kind: "user", text: "one" });
+        void writer.append({ kind: "user", text: "two" });
+        await writer.flushed();
+        expect(await lines(path)).toHaveLength(2);
+        await writer.close();
+    });
+
+    it("resolves even when an append failed", async () => {
+        const writer = await TranscriptWriter.open(
+            join(dir, "chat.jsonl"),
+            clock,
+        );
+        await writer.close();
+        await expect(
+            writer.append({ kind: "user", text: "late" }),
+        ).rejects.toThrow();
+        await expect(writer.flushed()).resolves.toBeUndefined();
     });
 });

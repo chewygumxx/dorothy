@@ -104,10 +104,18 @@ function toStats(event: Record<string, unknown>): TurnStats | null {
         : null;
 }
 
-export async function readTranscript(
-    path: string,
-): Promise<{ turns: ResumedTurn[]; skipped: number; costUsd: number }> {
-    const text = await readFile(path, "utf8");
+export type TranscriptRead = {
+    turns: ResumedTurn[];
+    skipped: number;
+    costUsd: number;
+};
+
+export async function readTranscript(path: string): Promise<TranscriptRead> {
+    return parseTranscript(await readFile(path, "utf8"));
+}
+
+// The memory catalogue counts turns from text it has already read.
+export function parseTranscript(text: string): TranscriptRead {
     const turns: ResumedTurn[] = [];
     // The reply a stats line would belong to.
     let reply: ResumedTurn | null = null;
@@ -180,6 +188,12 @@ export class TranscriptWriter {
         );
         this.#pending = write.catch(() => {});
         return write;
+    }
+
+    // Resolves once every append queued so far has landed or failed, so a
+    // reader of the file sees them.
+    async flushed(): Promise<void> {
+        await this.#pending;
     }
 
     async close(): Promise<void> {

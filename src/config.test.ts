@@ -40,8 +40,65 @@ describe("parseConfig", () => {
             config: {
                 statusline: { modules: ["cost", "in"], maxLines: 2 },
                 replyStats: { modules: [], maxLines: 1 },
+                memory: DEFAULT_CONFIG.memory,
             },
             warnings: [],
+        });
+    });
+
+    it("reads the memory table", () => {
+        const text = [
+            "[memory]",
+            "enabled = false",
+            "budget = 500",
+            "idle-seconds = 30",
+            "half-life-days = 7",
+            "catch-up = 0",
+        ].join("\n");
+        expect(parseConfig(text)).toEqual({
+            config: {
+                ...DEFAULT_CONFIG,
+                memory: {
+                    enabled: false,
+                    budget: 500,
+                    idleSeconds: 30,
+                    halfLifeDays: 7,
+                    catchUp: 0,
+                },
+            },
+            warnings: [],
+        });
+    });
+
+    it("warns of each bad memory value and keeps its default", () => {
+        const text = [
+            "[memory]",
+            'enabled = "yes"',
+            "budget = 100",
+            "idle-seconds = 1.5",
+            "catch-up = 51",
+            "half-life-days = 14",
+            "mood = 1",
+        ].join("\n");
+        expect(parseConfig(text)).toEqual({
+            config: {
+                ...DEFAULT_CONFIG,
+                memory: { ...DEFAULT_CONFIG.memory, halfLifeDays: 14 },
+            },
+            warnings: [
+                "config.toml: memory.enabled must be true or false",
+                "config.toml: memory.budget must be a whole number from 200 to 20000",
+                "config.toml: memory.idle-seconds must be a whole number from 10 to 3600",
+                "config.toml: memory.catch-up must be a whole number from 0 to 50",
+                "config.toml: unknown key memory.mood",
+            ],
+        });
+    });
+
+    it("warns when memory is not a table", () => {
+        expect(parseConfig("memory = 3")).toEqual({
+            config: DEFAULT_CONFIG,
+            warnings: ["config.toml: memory is not a table"],
         });
     });
 

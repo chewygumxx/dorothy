@@ -11,12 +11,16 @@
 import { render } from "ink";
 import { readConfig } from "../config.js";
 import { Conversation } from "../conversation.js";
+import { scanCatalogue } from "../memory/catalogue.js";
+import { MemoryService } from "../memory/service.js";
+import { trackMemory } from "../memory/track.js";
 import { promptSha256 } from "../persona.js";
 import { newPhrase } from "../session-id.js";
 import {
     type ResumedTurn,
     readTranscript,
     TranscriptWriter,
+    transcriptDir,
     transcriptPath,
 } from "../transcript.js";
 import { App } from "./App.js";
@@ -59,6 +63,25 @@ export async function runTui(resume: string | null): Promise<number> {
         warnings.push(`transcript not saved: ${describeError(error)}`);
     }
 
+    // Loaded before the first session, whose prompt carries the block.
+    let memory: MemoryService | null = null;
+    if (config.memory.enabled) {
+        const dir = transcriptDir();
+        const loaded = await scanCatalogue(dir).load();
+        warnings.push(...loaded.warnings);
+        const transcript = writer;
+        memory = new MemoryService({
+            dir,
+            phrase,
+            history,
+            config: config.memory,
+            entries: loaded.entries,
+            // Without a transcript the live chat is left alone.
+            flushed: transcript === null ? null : () => transcript.flushed(),
+        });
+        warnings.push(...memory.warnings());
+    }
+
     const app = render(
         <App
             phrase={phrase}
@@ -66,10 +89,16 @@ export async function runTui(resume: string | null): Promise<number> {
             history={history}
             editDraft={(text) => editInEditor(text)}
             createSession={(turns) => {
-                const conversation = new Conversation({ history: turns });
+                const conversation = new Conversation({
+                    history: turns,
+                    memory: memory?.block() ?? "",
+                });
                 conversation.start();
-                return conversation;
+                return memory === null
+                    ? conversation
+                    : trackMemory(conversation, memory);
             }}
+            notices={memory ?? undefined}
             transcript={writer}
             initialWarnings={warnings}
             initialCostUsd={costUsd}
@@ -78,7 +107,12 @@ export async function runTui(resume: string | null): Promise<number> {
         // Kitty-protocol terminals report Shift+Enter apart from Enter.
         { exitOnCtrlC: false, kittyKeyboard: { mode: "auto" } },
     );
-    await app.waitUntilExit();
-    await writer?.close();
+    try {
+        await app.waitUntilExit();
+    } finally {
+        // Quitting waits for no review: the running one is closed unsaved.
+        memory?.stop();
+        await writer?.close();
+    }
     return 0;
 }

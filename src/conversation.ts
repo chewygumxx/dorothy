@@ -14,7 +14,7 @@ import {
     type SDKMessage,
     type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import { baseOptions, type Turn, withHistory } from "./persona.js";
+import { baseOptions, type Turn, withHistory, withMemory } from "./persona.js";
 
 export type TurnStats = {
     // Input the cache did not serve; cached input is counted apart.
@@ -136,12 +136,21 @@ export class Conversation implements ChatSession {
 
     constructor({
         history = [],
+        memory = "",
         queryFn = query,
-    }: { history?: readonly Turn[]; queryFn?: QueryFn } = {}) {
+    }: {
+        history?: readonly Turn[];
+        // The memory block, frozen for the session.
+        memory?: string;
+        queryFn?: QueryFn;
+    } = {}) {
         this.#queryFn = queryFn;
         this.#options = {
             ...baseOptions,
-            systemPrompt: withHistory(baseOptions.systemPrompt, history),
+            systemPrompt: withHistory(
+                withMemory(baseOptions.systemPrompt, memory),
+                history,
+            ),
         };
     }
 
