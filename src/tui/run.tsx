@@ -11,10 +11,11 @@
 import { render } from "ink";
 import { readConfig } from "../config.js";
 import { Conversation } from "../conversation.js";
-import { scanCatalogue } from "../memory/catalogue.js";
+import { indexCatalogue } from "../memory/catalogue.js";
 import { MemoryService } from "../memory/service.js";
 import { trackMemory } from "../memory/track.js";
 import { promptSha256 } from "../persona.js";
+import { indexPath, RecallIndex } from "../recall/store.js";
 import { newPhrase } from "../session-id.js";
 import {
     type ResumedTurn,
@@ -63,11 +64,22 @@ export async function runTui(resume: string | null): Promise<number> {
         warnings.push(`transcript not saved: ${describeError(error)}`);
     }
 
-    // Loaded before the first session, whose prompt carries the block.
-    let memory: MemoryService | null = null;
+    // The index is opened before the first session, whose prompt carries
+    // the block; without it, the chat starts without memory.
+    let index: RecallIndex | null = null;
     if (config.memory.enabled) {
+        try {
+            index = RecallIndex.open(indexPath());
+        } catch (error) {
+            warnings.push(
+                `memory: the index can't be opened (${describeError(error)}); starting without memory`,
+            );
+        }
+    }
+    let memory: MemoryService | null = null;
+    if (config.memory.enabled && index !== null) {
         const dir = transcriptDir();
-        const loaded = await scanCatalogue(dir).load();
+        const loaded = await indexCatalogue(index, dir).load();
         warnings.push(...loaded.warnings);
         const transcript = writer;
         memory = new MemoryService({
@@ -112,6 +124,7 @@ export async function runTui(resume: string | null): Promise<number> {
     } finally {
         // Quitting waits for no review: the running one is closed unsaved.
         memory?.stop();
+        index?.close();
         await writer?.close();
     }
     return 0;
