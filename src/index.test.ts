@@ -50,6 +50,17 @@ describe("parseArgs", () => {
         expect(parseArgs(argv, false)).toEqual({ kind: "help" });
     });
 
+    it("lists the catalogue, terminal or not", () => {
+        expect(parseArgs(["--list"], false)).toEqual({ kind: "list" });
+    });
+
+    it("takes nothing after --list", () => {
+        expect(parseArgs(["--list", "x"], true)).toEqual({
+            kind: "usage",
+            message: "--list takes no arguments",
+        });
+    });
+
     it.each([[["--resme", phrase]], [["-v"]], [["--model", "x", "hi"]]])(
         "takes no unknown option, so %p costs nothing",
         (argv) => {

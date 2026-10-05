@@ -17,6 +17,7 @@ import { isPhrase } from "./session-id.js";
 export type Mode =
     | { kind: "oneshot"; prompt: string }
     | { kind: "tui"; resume: string | null }
+    | { kind: "list" }
     | { kind: "help" }
     | { kind: "usage"; message: string };
 
@@ -24,6 +25,7 @@ export const USAGE = [
     "usage: dorothy <prompt...>        one reply, then exit",
     "       dorothy                    chat (needs a terminal)",
     "       dorothy --resume <phrase>  continue a saved chat",
+    "       dorothy --list             what Dorothy remembers",
     "       dorothy -- <prompt...>     a prompt that starts with -",
 ].join("\n");
 
@@ -31,6 +33,11 @@ export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
     const [first, ...rest] = argv;
     if (first === "--help" || first === "-h") {
         return { kind: "help" };
+    }
+    if (first === "--list") {
+        return rest.length === 0
+            ? { kind: "list" }
+            : { kind: "usage", message: "--list takes no arguments" };
     }
     if (first === "--resume") {
         const phrase = rest[0];
@@ -95,6 +102,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
         process.exitCode = 2;
     } else if (mode.kind === "oneshot") {
         await oneShot(mode.prompt);
+    } else if (mode.kind === "list") {
+        const { runList } = await import("./memory/commands.js");
+        process.exitCode = await runList();
     } else {
         // Loaded only for chat, so one-shot replies never pay for React.
         const { runTui } = await import("./tui/run.js");
