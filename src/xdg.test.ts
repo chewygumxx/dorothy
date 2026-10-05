@@ -53,6 +53,15 @@ describe("xdgDir", () => {
         ).toBe("/home/u/.config");
     });
 
+    it("finds the cache directory", () => {
+        expect(
+            xdgDir({ XDG_CACHE_HOME: "/c" }, "XDG_CACHE_HOME", ".cache"),
+        ).toBe("/c");
+        expect(xdgDir({ HOME: "/h" }, "XDG_CACHE_HOME", ".cache")).toBe(
+            "/h/.cache",
+        );
+    });
+
     it("uses the user's home directory when HOME is empty", () => {
         expect(xdgDir({ HOME: "" }, "XDG_CONFIG_HOME", ".config")).toBe(
             join(homedir(), ".config"),
