@@ -143,10 +143,16 @@ the transcripts directory (already `0700`).
 - `title`, `description` and `abstract` are strings or `null`. Limits, enforced
   by the review schema, the edit view and on read: title at most 60
   characters, description one sentence of at most 160, abstract one paragraph
-  of at most 1,000. A field breaking a limit on read is treated as `null`.
-- Notes are normalised as they are read. Only bad JSON, a non-object or an
-  unknown `v` make a sidecar unparseable; a field of the wrong shape reads as
-  absent.
+  of at most 1,000. Characters are counted as code points, so an emoji is one,
+  and a cut never splits one. A field breaking a limit on read is treated as
+  `null`.
+- A note is stored normalised: control characters (C0, DEL and C1) become
+  spaces, runs of whitespace become one space, and the ends are trimmed, so a
+  note is a single line that cannot carry a terminal escape sequence. Notes,
+  earlier titles included, are normalised as they are read, so a note typed
+  into the JSON by hand is cleaned rather than lost. Only bad JSON, a
+  non-object or an unknown `v` make a sidecar unparseable; a field of the wrong
+  shape reads as absent.
 - `fields` holds provenance per field. `by` is `prompt` (the provisional
   title), `dorothy` or `user`. Dorothy's entries add `model` and
   `throughTurn`, the number of transcript turns she had seen.
@@ -179,7 +185,11 @@ Emptying a field in the edit view sets it to `null` and hands it back.
   provisional title) re-reads the sidecar immediately before writing and
   applies only its own field changes. A review landing while the user edits
   therefore merges with the edit; where both touched a field, the user wins
-  under the precedence rule.
+  under the precedence rule. Within one process, writes to a sidecar take
+  turns, so their reads and writes never interleave. Across processes (a
+  `--memory` save while a TUI reviews the same conversation) there is no
+  lock: a write landing between the other's read and its `rename` is lost.
+  The window is a few milliseconds, not the time spent in the editor.
 - **An unparseable sidecar is never written.** It is reported as a warning,
   its conversation is treated as having no metadata, and reviews and the
   provisional title skip it until the user fixes or deletes it.
@@ -218,7 +228,7 @@ run. A failed first review is retried after the idle timer, not at once. A
 review may still start in the close grace period; it is then cancelled.
 
 The provisional title is the first non-blank line of the first message,
-trimmed, cut to 60 characters with a trailing `…` when longer, with
+normalised, cut to 60 code points with a trailing `…` when longer, with
 `by: "prompt"`. A resumed conversation without a sidecar takes its provisional
 title from its transcript's first user turn.
 
@@ -252,9 +262,14 @@ false`, and:
 - **Prompt**: the conversation, rendered from the transcript as `User:` and
   `Dorothy:` turns inside an escaped `<conversation>` element; the current
   metadata, with fields owned by the user marked as fixed; the earlier titles.
+  Everything in the prompt has `&`, `<` and `>` escaped, and the instructions
+  tell her so and ask for her notes in plain text.
 - **`outputFormat`**: a JSON schema of `{ title, description, abstract }`
   carrying the sidecar limits. The result's `structured_output` is validated
-  again before use.
+  again before use: each note has `&lt;`, `&gt;` and then `&amp;` decoded
+  once, is normalised, and must be non-empty and within its limit. Decoding
+  `&amp;` last turns `&amp;lt;` into `&lt;`, never `<`, so a note that echoes
+  the escaping cannot grow with each review.
 - **Timeout**: 120 seconds, after which the query is closed and the review
   fails.
 
@@ -263,9 +278,11 @@ On success the review merges (skipping fields owned by the user, appending to
 review's `init` message, sets `reviewedThrough` to the turn count it read,
 adds the result's `total_cost_usd` to `reviewCostUsd` and writes.
 
-Whatever the outcome, a review whose `total_cost_usd` is above zero emits a
-`memory-cost` notice, so failed reviews are counted too; only successful ones
-add to `reviewCostUsd`.
+Whether it succeeds or fails, a review whose `total_cost_usd` is above zero
+emits a `memory-cost` notice, so failed reviews are counted too; only
+successful ones add to `reviewCostUsd`. A review cancelled by quitting emits
+nothing, and a timed-out one has no result to read a cost from, so it counts
+as zero.
 
 A review reads the transcript from disk. For the live conversation it first
 awaits a new `TranscriptWriter.flushed()`, which resolves once every append
@@ -308,7 +325,7 @@ long session from outweighing several returns.
 ### Tiers
 
 `full` (title, description, abstract), `described` (title, description),
-`titled` (title). Size is estimated as `ceil(chars / 4)` tokens over the
+`titled` (title). Size is estimated as `ceil(codePoints / 4)` tokens over the
 entry's rendered text. The budget counts entries only.
 
 1. Pins always get the richest tier their fields allow, and are charged to
@@ -442,6 +459,7 @@ Parsing, in `edit-view.ts`:
   `# error:` line.
 - Comment dates are the UTC day. When wrapping a paragraph, a word starting
   with `#` or a field name never starts a line.
+- A byte-order mark the editor adds at the start is ignored.
 - Saving the template unchanged, or emptying the file, exits without writing.
 - With no sidecar yet, the template has empty fields and saving creates one.
 
@@ -476,7 +494,7 @@ conversation's own turns only.
 | `src/memory/rank.ts`      | visits to frecency, ordering, tiers                        | yes  |
 | `src/memory/block.ts`     | tiers to escaped block text                                | yes  |
 | `src/memory/review.ts`    | review prompt, schema and the `query()`                    | no   |
-| `src/memory/service.ts`   | catalogue, block and scheduler for one TUI run; the review flow | no |
+| `src/memory/service.ts`   | catalogue, block, scheduler for one TUI run; review flow   | no   |
 | `src/memory/scheduler.ts` | idle timer, single flight, dirty flag, catch-up queue      | yes  |
 | `src/memory/track.ts`     | the `trackMemory` decorator                                | no   |
 | `src/memory/edit-view.ts` | render and parse the edit template                         | yes  |
@@ -525,6 +543,37 @@ Memory never stops Dorothy from chatting.
 - A live probe: two real chats on different subjects, quit, relaunch, and ask
   Dorothy what was discussed before; then edit a title with `--memory` and
   confirm a later review leaves it alone.
+
+## Known limitations
+
+Found in review and left as they are; each is a candidate for a later
+sub-project rather than a defect against this spec.
+
+- **Reviews the user has made pointless.** A conversation whose three notes
+  the user owns is still reviewed, and paid for, whenever it is stale, though
+  only `reviewedThrough` changes.
+- **Reviews that always fail.** A conversation Dorothy cannot review (one too
+  long for the model, say) fails, and is paid for, at every idle and every
+  launch, taking a catch-up slot each time. There is no back-off.
+- **Cost against chatting.** A review reads the whole transcript, so it can
+  cost more than the turn it follows; with the default 60 seconds, a user who
+  pauses between messages pays for a review after most exchanges. The cost is
+  shown in `memory-cost`.
+- **Two TUIs at once.** Catch-up in one may review the conversation live in
+  the other: wasted cost, not lost data.
+- **Hiding is per conversation.** A hidden conversation leaves the block, but
+  other conversations' notes may still mention it, for instance one where
+  Dorothy recited her memory.
+- **Cross-process writes** are not locked (see Writes).
+- **Leftover temporary files** from a crash mid-write are never removed; the
+  catalogue ignores them.
+- **Layering.** `src/memory/commands.ts` imports the `$EDITOR` runner from
+  `src/tui/external-editor.ts`, which has no React or SDK imports.
+- **The edit view's paragraphs.** Deleting only the `Abstract:` line joins the
+  abstract's text to the description; when the two fit in 160 characters
+  together this silently makes the description the user's. Moving a
+  `# error:` line out of the top of the file lets error lines accumulate on
+  later reopens; they are comments, so the result is untidy, not wrong.
 
 ## Out of scope
 
