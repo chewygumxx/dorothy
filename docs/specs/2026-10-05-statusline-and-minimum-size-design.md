@@ -1,16 +1,7 @@
 ---
-__cgxx: |
-  # vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3:
-  # SPDX-License-Identifier: GPL-3.0-only
-
-  #
-  #
-  # ~chewygumxx/dorothy.git
-  # ::: :/docs/specs/2026-10-05-statusline-and-minimum-size-design.md
-  #
-  #
-
 ctime: 2026-10-05
+mtime: 2026-10-05
+spdx: GPL-3.0-only
 title: Statusline and minimum size design
 description: "Design spec for a configurable statusline and a minimum window"
 tags:
@@ -18,6 +9,13 @@ tags:
   - tui
   - spec
 ---
+
+<!--
+   -
+   - ~chewygumxx/dorothy.git
+   - ::: :/docs/specs/2026-10-05-statusline-and-minimum-size-design.md
+   -
+   -->
 
 # Statusline and minimum size design
 
@@ -302,3 +300,5 @@ also changes how resumed turns display.
 - Modules beyond the turn stats (model, session, status stay in the header).
 - Configuring the header, colours, the separator or the input cap.
 - A setting for the minimum size.
+
+<!-- vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3: -->

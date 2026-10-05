@@ -1,16 +1,7 @@
 ---
-__cgxx: |
-  # vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3:
-  # SPDX-License-Identifier: GPL-3.0-only
-
-  #
-  #
-  # ~chewygumxx/dorothy.git
-  # ::: :/docs/specs/2026-10-05-conversation-catalogue-design.md
-  #
-  #
-
 ctime: 2026-10-05
+mtime: 2026-10-05
+spdx: GPL-3.0-only
 title: Conversation catalogue design
 description: "Design spec for Dorothy's first memory: per-conversation notes"
 tags:
@@ -18,6 +9,13 @@ tags:
   - memory
   - spec
 ---
+
+<!--
+   -
+   - ~chewygumxx/dorothy.git
+   - ::: :/docs/specs/2026-10-05-conversation-catalogue-design.md
+   -
+   -->
 
 # Conversation catalogue design
 
@@ -584,3 +582,5 @@ sub-project rather than a defect against this spec.
 - A provisional title from a cheap model.
 - Editing memory from inside the TUI.
 - Memory in one-shot mode.
+
+<!-- vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3: -->

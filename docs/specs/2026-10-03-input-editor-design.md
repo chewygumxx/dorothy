@@ -1,16 +1,7 @@
 ---
-__cgxx: |
-  # vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3:
-  # SPDX-License-Identifier: GPL-3.0-only
-
-  #
-  #
-  # ~chewygumxx/dorothy.git
-  # ::: :/docs/specs/2026-10-03-input-editor-design.md
-  #
-  #
-
 ctime: 2026-10-03
+mtime: 2026-10-05
+spdx: GPL-3.0-only
 title: Input editor design
 description: "Design spec for the chat TUI's multi-line input editor"
 tags:
@@ -18,6 +9,13 @@ tags:
   - tui
   - spec
 ---
+
+<!--
+   -
+   - ~chewygumxx/dorothy.git
+   - ::: :/docs/specs/2026-10-03-input-editor-design.md
+   -
+   -->
 
 # Input editor design
 
@@ -217,3 +215,5 @@ truncated where the terminal is narrower.
 - Undo, a kill ring beyond the last kill, mouse input, search through recall.
 - Alt+Enter, Ctrl+J or backslash-Enter as newline keys.
 - Syntax highlighting or Markdown rendering of the draft.
+
+<!-- vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3: -->

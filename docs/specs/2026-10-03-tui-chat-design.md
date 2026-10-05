@@ -1,16 +1,7 @@
 ---
-__cgxx: |
-  # vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3:
-  # SPDX-License-Identifier: GPL-3.0-only
-
-  #
-  #
-  # ~chewygumxx/dorothy.git
-  # ::: :/docs/specs/2026-10-03-tui-chat-design.md
-  #
-  #
-
 ctime: 2026-10-03
+mtime: 2026-10-05
+spdx: GPL-3.0-only
 title: TUI chat design
 description: "Design spec for Dorothy's terminal chat interface"
 tags:
@@ -18,6 +9,13 @@ tags:
   - tui
   - spec
 ---
+
+<!--
+   -
+   - ~chewygumxx/dorothy.git
+   - ::: :/docs/specs/2026-10-03-tui-chat-design.md
+   -
+   -->
 
 # TUI chat design
 
@@ -232,3 +230,5 @@ produces a working `dist/index.js` with the `.tsx` files compiled.
   Ink's `useInput` (it must own Esc and Ctrl+R anyway), so `ink-text-input` is
   not added.
 - `.commitlintrc.mts`: a `tui` scope for `src/tui/`.
+
+<!-- vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3: -->

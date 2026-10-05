@@ -1,16 +1,7 @@
 ---
-__cgxx: |
-  # vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3:
-  # SPDX-License-Identifier: GPL-3.0-only
-
-  #
-  #
-  # ~chewygumxx/dorothy.git
-  # ::: :/docs/specs/2026-10-03-markdown-replies-design.md
-  #
-  #
-
 ctime: 2026-10-03
+mtime: 2026-10-05
+spdx: GPL-3.0-only
 title: Markdown replies design
 description: "Design spec for rendering Dorothy's Markdown replies in the TUI"
 tags:
@@ -19,6 +10,13 @@ tags:
   - markdown
   - spec
 ---
+
+<!--
+   -
+   - ~chewygumxx/dorothy.git
+   - ::: :/docs/specs/2026-10-03-markdown-replies-design.md
+   -
+   -->
 
 # Markdown replies design
 
@@ -187,3 +185,5 @@ long column with room to spare.
 - Clickable links (OSC 8), images, Mermaid or maths.
 - A theme setting.
 - Changing the system prompt.
+
+<!-- vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3: -->
