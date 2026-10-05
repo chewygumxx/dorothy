@@ -18,7 +18,7 @@ import type {
 } from "../conversation.js";
 import type { Turn } from "../persona.js";
 import type { ResumedTurn, TranscriptEntry } from "../transcript.js";
-import { App } from "./App.js";
+import { App, type Notice, type NoticeSource } from "./App.js";
 import type { EditResult } from "./external-editor.js";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
@@ -90,6 +90,7 @@ function setup({
     history = [],
     failWrites = false,
     config = DEFAULT_CONFIG,
+    notices,
     editDraft = async (text: string): Promise<EditResult> => ({
         ok: true,
         text,
@@ -98,6 +99,7 @@ function setup({
     history?: ResumedTurn[];
     failWrites?: boolean;
     config?: Config;
+    notices?: NoticeSource;
     editDraft?: (text: string) => Promise<EditResult>;
 } = {}) {
     const sessions: FakeSession[] = [];
@@ -106,6 +108,7 @@ function setup({
     const app = render(
         <App
             config={config}
+            notices={notices}
             editDraft={editDraft}
             phrase="tumble-orchid-vapor-lantern"
             promptSha256="abc"
@@ -142,6 +145,26 @@ function setup({
 describe("App", () => {
     // The message wraps at narrow widths; joining its rows restores it.
     const flat = (frame = "") => frame.split("\n").join(" ");
+
+    it("shows memory's warnings and what its reviews cost", async () => {
+        const listeners = new Set<(notice: Notice) => void>();
+        const { app } = setup({
+            notices: {
+                subscribe(listener) {
+                    listeners.add(listener);
+                    return () => listeners.delete(listener);
+                },
+            },
+        });
+        await tick();
+        for (const listener of listeners) {
+            listener({ type: "warning", message: "memory: couldn't review" });
+            listener({ type: "memory-cost", usd: 0.0123 });
+        }
+        await tick();
+        expect(app.lastFrame()).toContain("! memory: couldn't review");
+        expect(app.lastFrame()).toContain("memory $0.0123");
+    });
 
     it("asks for a larger window below either minimum, and not at it", async () => {
         const { app, resize } = setup();

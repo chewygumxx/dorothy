@@ -21,6 +21,7 @@ export const MODULE_NAMES = [
     "duration",
     "cost",
     "chat-cost",
+    "memory-cost",
 ] as const;
 export type ModuleName = (typeof MODULE_NAMES)[number];
 export type LineConfig = { modules: ModuleName[]; maxLines: number };
@@ -45,7 +46,15 @@ export const MAX_LINES = 5;
 
 export const DEFAULT_CONFIG: Config = {
     statusline: {
-        modules: ["chat-cost", "cost", "in", "out", "ttft", "duration"],
+        modules: [
+            "chat-cost",
+            "memory-cost",
+            "cost",
+            "in",
+            "out",
+            "ttft",
+            "duration",
+        ],
         maxLines: 1,
     },
     replyStats: {

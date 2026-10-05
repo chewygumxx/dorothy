@@ -35,6 +35,15 @@ export type TranscriptSink = {
     append(entry: TranscriptEntry): Promise<void>;
 };
 
+// What the memory service tells the chat. The shapes are reducer actions, so
+// a notice is dispatched as it comes.
+export type Notice =
+    | { type: "warning"; message: string }
+    | { type: "memory-cost"; usd: number };
+export type NoticeSource = {
+    subscribe(listener: (notice: Notice) => void): () => void;
+};
+
 export type AppProps = {
     phrase: string;
     promptSha256: string;
@@ -46,6 +55,8 @@ export type AppProps = {
     initialCostUsd?: number;
     // The statusline and reply stats; the defaults when not given.
     config?: Config;
+    // Memory's warnings and review costs; run.tsx supplies them.
+    notices?: NoticeSource;
     // Opens the draft in $EDITOR; run.tsx supplies the real one.
     editDraft(text: string): Promise<EditResult>;
 };
@@ -62,6 +73,7 @@ export function App({
     initialWarnings = [],
     initialCostUsd = 0,
     config = DEFAULT_CONFIG,
+    notices,
     editDraft,
 }: AppProps) {
     const { exit, suspendTerminal } = useApp();
@@ -175,6 +187,8 @@ export function App({
             void session.current?.close();
         };
     }, []);
+
+    useEffect(() => notices?.subscribe(dispatch), [notices]);
 
     const submit = (value: string) => {
         const text = value.trim();
@@ -297,6 +311,7 @@ export function App({
         state.lastStats,
         state.costUsd,
         columns,
+        state.memoryCostUsd,
     );
     const layout = fitLayout(rows, {
         showRaw: state.showRaw,

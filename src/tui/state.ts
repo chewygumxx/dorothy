@@ -43,6 +43,8 @@ export type ChatState = {
     showRaw: boolean;
     warnings: string[];
     costUsd: number;
+    // What this run's memory reviews have cost.
+    memoryCostUsd: number;
     // The latest finished turn's, for the statusline.
     lastStats: TurnStats | null;
 };
@@ -53,7 +55,8 @@ export type Action =
     | { type: "toggle-raw" }
     | { type: "reconnecting" }
     | { type: "closing" }
-    | { type: "warning"; message: string };
+    | { type: "warning"; message: string }
+    | { type: "memory-cost"; usd: number };
 
 export function initialState(
     history: readonly ResumedTurn[],
@@ -78,6 +81,7 @@ export function initialState(
         showRaw: false,
         warnings: [...new Set(warnings)].slice(-WARNING_LIMIT),
         costUsd,
+        memoryCostUsd: 0,
         lastStats:
             history.findLast((turn) => turn.stats !== undefined)?.stats ?? null,
     };
@@ -175,6 +179,11 @@ export function reduce(state: ChatState, action: Action): ChatState {
                           -WARNING_LIMIT,
                       ),
                   };
+        case "memory-cost":
+            return {
+                ...state,
+                memoryCostUsd: state.memoryCostUsd + action.usd,
+            };
         case "event":
             return reduceEvent(state, action.event);
     }

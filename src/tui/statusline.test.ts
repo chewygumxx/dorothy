@@ -28,7 +28,9 @@ const stats: TurnStats = {
 describe("renderModule", () => {
     it("renders each module of a turn", () => {
         expect(
-            MODULE_NAMES.map((name) => renderModule(name, stats, 0.005)),
+            MODULE_NAMES.map((name) =>
+                renderModule(name, stats, 0.005, 0.0841),
+            ),
         ).toEqual([
             "12 in",
             "3000 cache read",
@@ -38,7 +40,15 @@ describe("renderModule", () => {
             "2.1s",
             "$0.0012",
             "chat $0.0050",
+            "memory $0.0841",
         ]);
+    });
+
+    it("renders the memory's cost only once a review has cost something", () => {
+        expect(renderModule("memory-cost", null, 0, 0)).toBeNull();
+        expect(renderModule("memory-cost", null, 0, 0.0123)).toBe(
+            "memory $0.0123",
+        );
     });
 
     it("renders nothing for cache use or a first token there was none of", () => {
@@ -58,7 +68,17 @@ describe("renderModule", () => {
     it("renders only the chat's cost before the first turn", () => {
         expect(
             MODULE_NAMES.map((name) => renderModule(name, null, 0.25)),
-        ).toEqual([null, null, null, null, null, null, null, "chat $0.2500"]);
+        ).toEqual([
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "chat $0.2500",
+            null,
+        ]);
     });
 });
 

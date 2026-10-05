@@ -220,3 +220,13 @@ describe("reduce", () => {
         expect(state.warnings).toEqual(["second", "third", "fourth"]);
     });
 });
+
+describe("memory-cost", () => {
+    it("adds up what this run's reviews cost", () => {
+        let state = initialState([]);
+        expect(state.memoryCostUsd).toBe(0);
+        state = reduce(state, { type: "memory-cost", usd: 0.25 });
+        state = reduce(state, { type: "memory-cost", usd: 0.5 });
+        expect(state.memoryCostUsd).toBe(0.75);
+    });
+});

@@ -23,9 +23,15 @@ export function renderModule(
     name: ModuleName,
     stats: TurnStats | null,
     chatCostUsd: number,
+    memoryCostUsd = 0,
 ): string | null {
     if (name === "chat-cost") {
         return `chat ${dollars(chatCostUsd)}`;
+    }
+    // Nothing until a review has cost something, so memory switched off
+    // takes no room.
+    if (name === "memory-cost") {
+        return memoryCostUsd > 0 ? `memory ${dollars(memoryCostUsd)}` : null;
     }
     if (stats === null) {
         return null;
@@ -83,9 +89,10 @@ export function moduleRows(
     stats: TurnStats | null,
     chatCostUsd: number,
     width: number,
+    memoryCostUsd = 0,
 ): string[] {
     const pieces = line.modules
-        .map((name) => renderModule(name, stats, chatCostUsd))
+        .map((name) => renderModule(name, stats, chatCostUsd, memoryCostUsd))
         .filter((piece): piece is string => piece !== null);
     return fitModules(pieces, width, line.maxLines);
 }
