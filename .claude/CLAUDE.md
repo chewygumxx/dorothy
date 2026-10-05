@@ -1,22 +1,22 @@
 ---
-__cgxx: |
-  # vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3:
-  # SPDX-License-Identifier: GPL-3.0-only
-
-  #
-  #
-  # ~chewygumxx/dorothy.git
-  # ::: :/.claude/CLAUDE.md
-  #
-  #
-
 ctime: 2026-09-29
+mtime: 2026-10-05
+spdx: GPL-3.0-only
 title: CLAUDE.md
-description: "Repository instructions"
+description: >-
+  Claude Code's guide to Dorothy: how to commit, and its architecture: the Agent
+  SDK entry point, the Ink TUI, memory, auth and the build.
 tags:
   - claude
   - llm
 ---
+
+<!--
+   -
+   - ~chewygumxx/dorothy.git
+   - ::: :/.claude/CLAUDE.md
+   -
+   -->
 
 # CLAUDE.md
 
@@ -94,3 +94,5 @@ files; `tsconfig.build.json` extends it to emit `src/` to the gitignored `dist/`
 (`bun run build`), excluding the colocated `src/**/*.test.ts`. Never edit
 `dist/` directly. `bun run check` ends with `bun run test`, which is how CI's
 shared `lint.yaml` runs the tests.
+
+<!-- vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3: -->
