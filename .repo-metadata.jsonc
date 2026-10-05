@@ -17,7 +17,7 @@
     "description": "Conversational LLM interface",
     "category": "dorothy",
     "topics": ["llm", "chatbot", "dorothy"],
-    "visibility": "private",
+    "visibility": "public",
     "license": {
         "filepath": "./LICENSE",
         "spdx_id": "GPL-3.0-only",
