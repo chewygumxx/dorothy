@@ -121,6 +121,14 @@ export function App({
                 resumed: resumed.current,
             });
             resumed.current = true;
+        } else if (event.type === "lookup") {
+            record({
+                kind: "recall",
+                id: event.id,
+                ok: event.ok,
+                offset: event.offset,
+                ...event.lookup,
+            });
         } else if (event.type === "turn-end") {
             turns.current.push({ role: "assistant", text: event.reply });
             record({

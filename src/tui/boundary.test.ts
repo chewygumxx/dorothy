@@ -36,4 +36,21 @@ describe("the TUI", () => {
         }
         expect(importers.sort()).toEqual(["run.tsx"]);
     });
+
+    it("leaves recall to run.tsx, but for its types", async () => {
+        const importers: string[] = [];
+        for await (const path of new Glob("*.{ts,tsx}").scan(import.meta.dir)) {
+            const text = await Bun.file(`${import.meta.dir}/${path}`).text();
+            const modules = [
+                ...text.matchAll(/from "\.\.\/recall\/([^"]+)"/g),
+            ].map(([, module]) => module);
+            if (
+                path !== import.meta.file &&
+                modules.some((module) => module !== "types.js")
+            ) {
+                importers.push(path);
+            }
+        }
+        expect(importers.sort()).toEqual(["run.tsx"]);
+    });
 });

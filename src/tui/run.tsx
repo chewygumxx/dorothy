@@ -8,13 +8,14 @@
 //
 //
 
+import { resolve } from "node:path";
 import { render } from "ink";
 import { readConfig } from "../config.js";
-import { Conversation } from "../conversation.js";
+import { Conversation, type RecallLaunch } from "../conversation.js";
 import { indexCatalogue } from "../memory/catalogue.js";
 import { MemoryService } from "../memory/service.js";
 import { trackMemory } from "../memory/track.js";
-import { promptSha256 } from "../persona.js";
+import { personaPrompt, promptSha256 } from "../persona.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { newPhrase } from "../session-id.js";
 import {
@@ -67,7 +68,7 @@ export async function runTui(resume: string | null): Promise<number> {
     // The index is opened before the first session, whose prompt carries
     // the block; without it, the chat starts without memory.
     let index: RecallIndex | null = null;
-    if (config.memory.enabled) {
+    if (config.memory.enabled || config.memory.recall) {
         try {
             index = RecallIndex.open(indexPath());
         } catch (error) {
@@ -95,16 +96,33 @@ export async function runTui(resume: string | null): Promise<number> {
         warnings.push(...memory.warnings());
     }
 
+    // Dorothy's memory tools: this program again, as an MCP server.
+    const recall: RecallLaunch | null =
+        config.memory.recall && index !== null
+            ? {
+                  command: process.execPath,
+                  args: [
+                      resolve(process.argv[1] ?? ""),
+                      "--recall-server",
+                      "--exclude",
+                      phrase,
+                  ],
+              }
+            : null;
+
     const app = render(
         <App
             phrase={phrase}
-            promptSha256={promptSha256()}
+            promptSha256={promptSha256(
+                personaPrompt({ recall: recall !== null }),
+            )}
             history={history}
             editDraft={(text) => editInEditor(text)}
             createSession={(turns) => {
                 const conversation = new Conversation({
                     history: turns,
                     memory: memory?.block() ?? "",
+                    recall,
                 });
                 conversation.start();
                 return memory === null

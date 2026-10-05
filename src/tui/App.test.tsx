@@ -384,6 +384,28 @@ describe("App", () => {
         ]);
     });
 
+    it("records each lookup in the transcript", async () => {
+        const { sessions, entries } = setup();
+        await tick();
+        sessions[0]?.emit({
+            type: "lookup",
+            id: "toolu_1",
+            ok: true,
+            offset: 4,
+            lookup: { tool: "search", query: "render", hits: 2 },
+        });
+        await tick();
+        expect(entries).toContainEqual({
+            kind: "recall",
+            id: "toolu_1",
+            ok: true,
+            offset: 4,
+            tool: "search",
+            query: "render",
+            hits: 2,
+        });
+    });
+
     it("sends a message, streams the reply and records the turn", async () => {
         const { app, session, entries, type } = setup();
         await tick();

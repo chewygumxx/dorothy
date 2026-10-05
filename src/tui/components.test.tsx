@@ -14,7 +14,7 @@ import { render } from "ink-testing-library";
 import { DEFAULT_CONFIG } from "../config.js";
 import type { TurnStats } from "../conversation.js";
 import { Header, Statusline, shortId, Warnings } from "./Header.js";
-import { History } from "./History.js";
+import { cutToWidth, History, LineView } from "./History.js";
 import { LiveReply, wrapRows } from "./LiveReply.js";
 import { describeRaw, RawPane } from "./RawPane.js";
 
@@ -312,5 +312,46 @@ describe("RawPane", () => {
             "";
         expect(frame).toContain("raw (ctrl+r)");
         expect(frame).toContain("system init");
+    });
+});
+
+describe("lookup lines", () => {
+    it("cuts to the width without splitting a character", () => {
+        expect(cutToWidth("⌕ searched", 20)).toBe("⌕ searched");
+        expect(cutToWidth('⌕ searched "render"', 10)).toBe("⌕ searche…");
+        expect(cutToWidth("⌕ 日本語のテキスト", 8)).toBe("⌕ 日本…");
+    });
+
+    it("shows a lookup dim, unlabelled, with its purpose below", () => {
+        const { lastFrame } = render(
+            <LineView
+                line={{
+                    id: 0,
+                    role: "lookup",
+                    text: "⌕ opened Terminal rendering chaos",
+                    detail: "for: the render bug",
+                }}
+                replyStats={DEFAULT_CONFIG.replyStats}
+            />,
+        );
+        const frame = lastFrame() ?? "";
+        expect(frame).toContain("⌕ opened Terminal rendering chaos");
+        expect(frame).toContain("  for: the render bug");
+        expect(frame).not.toContain("dorothy");
+    });
+
+    it("leaves a continued reply unlabelled", () => {
+        const { lastFrame } = render(
+            <LineView
+                line={{
+                    id: 0,
+                    role: "dorothy",
+                    text: "More.",
+                    continued: true,
+                }}
+                replyStats={DEFAULT_CONFIG.replyStats}
+            />,
+        );
+        expect(lastFrame()).not.toContain("dorothy");
     });
 });

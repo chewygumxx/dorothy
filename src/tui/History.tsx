@@ -9,11 +9,13 @@
 //
 
 import { Box, Static, Text, useWindowSize } from "ink";
+import stringWidth from "string-width";
 import type { LineConfig } from "../config.js";
 import { LABEL_WIDTH } from "./LiveReply.js";
 import { RowsView } from "./Markdown.js";
 import { renderMarkdown } from "./markdown/render.js";
 import {
+    graphemes,
     PLAIN,
     type Row,
     rowWidth,
@@ -26,6 +28,7 @@ import { moduleRows } from "./statusline.js";
 const LABELS: Record<Line["role"], { text: string; color: string }> = {
     you: { text: "you", color: "cyan" },
     dorothy: { text: "dorothy", color: "magenta" },
+    lookup: { text: "", color: "gray" },
     error: { text: "error", color: "red" },
 };
 
@@ -33,7 +36,27 @@ const RED = { color: "red" };
 const DIM = { dim: true };
 const INTERRUPTED: Span = { text: " [interrupted]", style: DIM };
 
+// Cut with an ellipsis to fit width cells, whole characters only.
+export function cutToWidth(text: string, width: number): string {
+    if (stringWidth(text) <= width) {
+        return text;
+    }
+    let kept = "";
+    for (const grapheme of graphemes(text)) {
+        if (stringWidth(`${kept}${grapheme}…`) > width) {
+            break;
+        }
+        kept += grapheme;
+    }
+    return `${kept}…`;
+}
+
 function rowsOf(line: Line, width: number): Row[] {
+    if (line.role === "lookup") {
+        return [line.text, ...(line.detail ? [`  ${line.detail}`] : [])].map(
+            (text) => [{ text: cutToWidth(text, width), style: DIM }],
+        );
+    }
     const rows =
         line.role === "dorothy"
             ? renderMarkdown(line.text, width)
@@ -64,16 +87,19 @@ export function LineView({
     line: Line;
     replyStats: LineConfig;
 }) {
-    const label = LABELS[line.role];
+    const label =
+        line.role === "lookup" || line.continued ? null : LABELS[line.role];
     const { columns } = useWindowSize();
     const rows = rowsOf(line, columns - LABEL_WIDTH);
     return (
         <Box flexDirection="column">
             <Box>
                 <Box width={LABEL_WIDTH} flexShrink={0}>
-                    <Text color={label.color} bold>
-                        {label.text}
-                    </Text>
+                    {label ? (
+                        <Text color={label.color} bold>
+                            {label.text}
+                        </Text>
+                    ) : null}
                 </Box>
                 <RowsView rows={rows} />
             </Box>
