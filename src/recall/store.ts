@@ -9,7 +9,7 @@
 //
 
 import { Database } from "bun:sqlite";
-import { chmodSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, closeSync, mkdirSync, openSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Lock } from "../memory/sidecar.js";
 import { type Env, xdgDir } from "../xdg.js";
@@ -106,12 +106,43 @@ export function indexPath(env: Env = process.env): string {
     );
 }
 
+// SQLite names an unusable file by these codes; any other failure (a lock
+// held too long, a full disk) says nothing about the file.
+function unusable(error: unknown): boolean {
+    const code = (error as { code?: unknown } | null)?.code;
+    return code === "SQLITE_NOTADB" || code === "SQLITE_CORRUPT";
+}
+
+// Clears whatever schema is there, whichever version made it, so every
+// process keeps sharing the one file.
+function dropSchema(db: Database): void {
+    const objects = (where: string) =>
+        db
+            .query(
+                `SELECT name FROM sqlite_master WHERE ${where} AND name NOT LIKE 'sqlite_%'`,
+            )
+            .all() as { name: string }[];
+    const drop = (kind: string, where: string) => {
+        for (const { name } of objects(where)) {
+            db.run(`DROP ${kind} IF EXISTS "${name.replaceAll('"', '""')}"`);
+        }
+    };
+    drop("TRIGGER", "type = 'trigger'");
+    drop("VIEW", "type = 'view'");
+    // A virtual table takes its shadow tables with it.
+    drop("TABLE", "type = 'table' AND sql LIKE 'CREATE VIRTUAL%'");
+    drop("TABLE", "type = 'table'");
+}
+
 // Two processes may open a new index at once: the schema is made under the
-// write lock, and whoever comes second finds it made.
-function prepare(path: string): Database {
+// write lock, and whoever comes second finds it made. The file is private
+// before SQLite writes to it, and SQLite gives -wal and -shm its mode.
+function prepare(path: string, busyMs: number): Database {
+    closeSync(openSync(path, "a", 0o600));
+    chmodSync(path, 0o600);
     const db = new Database(path, { create: true, strict: true });
     try {
-        db.run("PRAGMA busy_timeout = 5000");
+        db.run(`PRAGMA busy_timeout = ${busyMs}`);
         db.run("PRAGMA journal_mode = WAL");
         db.transaction(() => {
             const { user_version: version } = db
@@ -121,7 +152,7 @@ function prepare(path: string): Database {
                 return;
             }
             if (version !== 0) {
-                throw new Error(`unknown index version ${version}`);
+                dropSchema(db);
             }
             for (const statement of SCHEMA) {
                 db.run(statement);
@@ -130,7 +161,6 @@ function prepare(path: string): Database {
         }).immediate();
         // A file that is not SQLite fails here rather than mid-query.
         db.query("SELECT count(*) FROM conversations").get();
-        chmodSync(path, 0o600);
         return db;
     } catch (error) {
         db.close();
@@ -147,17 +177,24 @@ export class RecallIndex {
         this.db = db;
     }
 
-    // A file SQLite cannot read, or of another version, is deleted and made
-    // again; it holds nothing that cannot be rebuilt.
-    static open(path: string): RecallIndex {
-        mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+    // A file SQLite says is not a database is deleted and made again; it
+    // holds nothing that cannot be rebuilt. Any other failure, such as the
+    // write lock staying held, leaves the file alone: another process may
+    // be using it.
+    static open(path: string, busyMs = 5000): RecallIndex {
+        const dir = dirname(path);
+        mkdirSync(dir, { recursive: true, mode: 0o700 });
+        chmodSync(dir, 0o700);
         try {
-            return new RecallIndex(prepare(path));
-        } catch {
+            return new RecallIndex(prepare(path, busyMs));
+        } catch (error) {
+            if (!unusable(error)) {
+                throw error;
+            }
             for (const suffix of ["", "-wal", "-shm"]) {
                 rmSync(`${path}${suffix}`, { force: true });
             }
-            return new RecallIndex(prepare(path));
+            return new RecallIndex(prepare(path, busyMs));
         }
     }
 

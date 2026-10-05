@@ -9,7 +9,7 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { indexPath, RecallIndex, SCHEMA_VERSION } from "./store.js";
@@ -76,15 +76,70 @@ describe("RecallIndex", () => {
         index.close();
     });
 
-    it("rebuilds an index of another version", () => {
+    it("rebuilds an index of another version in place", async () => {
         const old = RecallIndex.open(path);
         insert(old, "a");
+        old.db.run("CREATE TABLE extra (x)");
         old.db.run("PRAGMA user_version = 7");
         old.close();
+        const before = (await stat(path)).ino;
         const index = RecallIndex.open(path);
+        expect((await stat(path)).ino).toBe(before);
         expect(version(index)).toBe(SCHEMA_VERSION);
         expect(count(index)).toBe(0);
+        expect(
+            index.db
+                .query("SELECT name FROM sqlite_master WHERE name = 'extra'")
+                .all(),
+        ).toEqual([]);
+        expect(await index.claim("a", "me", 1000, 500)).toBe(true);
         index.close();
+    });
+
+    it("leaves the file alone when the lock stays held", async () => {
+        const first = RecallIndex.open(path);
+        insert(first, "a");
+        first.close();
+        const before = (await stat(path)).ino;
+        const child = Bun.spawn(
+            [
+                process.execPath,
+                "-e",
+                `const { Database } = require("bun:sqlite");
+                 const db = new Database(${JSON.stringify(path)});
+                 db.run("PRAGMA busy_timeout = 5000");
+                 db.run("BEGIN IMMEDIATE");
+                 console.log("locked");
+                 Bun.sleepSync(600);
+                 db.run("COMMIT");`,
+            ],
+            { stdout: "pipe" },
+        );
+        await child.stdout.getReader().read();
+        expect(() => RecallIndex.open(path, 100)).toThrow();
+        await child.exited;
+        expect((await stat(path)).ino).toBe(before);
+        const index = RecallIndex.open(path);
+        expect(count(index)).toBe(1);
+        index.close();
+    });
+
+    it("keeps the index and its journal files private", async () => {
+        const umask = process.umask(0o022);
+        try {
+            await mkdir(join(dir, "dorothy"), { mode: 0o755 });
+            const index = RecallIndex.open(path);
+            await index.exclusive(() => insert(index, "a"));
+            expect((await stat(join(dir, "dorothy"))).mode & 0o777).toBe(0o700);
+            for (const suffix of ["", "-wal", "-shm"]) {
+                expect((await stat(`${path}${suffix}`)).mode & 0o777).toBe(
+                    0o600,
+                );
+            }
+            index.close();
+        } finally {
+            process.umask(umask);
+        }
     });
 
     it("commits exclusive work, and rolls back work that throws", async () => {
