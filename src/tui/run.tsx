@@ -8,15 +8,33 @@
 //
 //
 
+import { randomBytes } from "node:crypto";
 import { render } from "ink";
+import { COMPACTION_TIMEOUT_MS } from "../compaction/compact.js";
+import { clusterTokens, seedTurns } from "../compaction/plan.js";
+import { Compaction, type Seed } from "../compaction/session.js";
 import { readConfig } from "../config.js";
-import { Conversation, recallLaunch } from "../conversation.js";
+import {
+    type ChatSession,
+    Conversation,
+    conversationOptions,
+    recallLaunch,
+    type SessionSetup,
+} from "../conversation.js";
 import { indexCatalogue } from "../memory/catalogue.js";
+import { tokens } from "../memory/rank.js";
 import { MemoryService } from "../memory/service.js";
+import {
+    appendClusters,
+    type Cluster,
+    readSidecar,
+    updateSidecar,
+} from "../memory/sidecar.js";
 import { trackMemory } from "../memory/track.js";
 import { type PersonaMode, personaPrompt, promptHash } from "../persona.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { newPhrase } from "../session-id.js";
+import { structuredCall } from "../structured.js";
 import {
     type ResumedTurn,
     readTranscript,
@@ -30,18 +48,26 @@ import { editInEditor } from "./external-editor.js";
 const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
 
+// A claim outlives the longest compaction by this much, as reviews' do.
+const CLAIM_MARGIN_MS = 30_000;
+
 export async function runTui(
     resume: string | null,
     persona: PersonaMode = "chat",
 ): Promise<number> {
     const phrase = resume ?? newPhrase();
     const path = transcriptPath(phrase);
+    const dir = transcriptDir();
     let history: ResumedTurn[] = [];
     let costUsd = 0;
     const warnings: string[] = [];
     const { config, warnings: configWarnings } = await readConfig();
     warnings.push(...configWarnings);
 
+    // A resumed conversation starts from its clusters. Notes that cannot be
+    // read are never written, so compaction stays off for this chat.
+    let clusters: Cluster[] = [];
+    let compactable = config.compaction.enabled;
     if (resume !== null) {
         try {
             const read = await readTranscript(path);
@@ -58,6 +84,15 @@ export async function runTui(
             );
             return 1;
         }
+        const notes = await readSidecar(dir, phrase);
+        if (notes.kind === "ok") {
+            clusters = notes.sidecar.clusters;
+        } else if (notes.kind === "unparseable" && compactable) {
+            compactable = false;
+            warnings.push(
+                `compaction: off for this chat; its notes can't be read (${notes.reason})`,
+            );
+        }
     }
 
     let writer: TranscriptWriter | null = null;
@@ -66,6 +101,7 @@ export async function runTui(
     } catch (error) {
         warnings.push(`transcript not saved: ${describeError(error)}`);
     }
+    const transcript = writer;
 
     // The index is opened before the first session, whose prompt carries
     // the block; without it, the chat starts without memory or recall.
@@ -85,10 +121,8 @@ export async function runTui(
     }
     let memory: MemoryService | null = null;
     if (config.memory.enabled && index !== null) {
-        const dir = transcriptDir();
         const loaded = await indexCatalogue(index, dir).load();
         warnings.push(...loaded.warnings);
-        const transcript = writer;
         memory = new MemoryService({
             dir,
             phrase,
@@ -105,6 +139,76 @@ export async function runTui(
     const recall =
         config.memory.recall && index !== null ? recallLaunch(phrase) : null;
 
+    // Every session, first, resumed, reconnected or compacted, starts the
+    // same way: the clusters, the notes on other conversations with the
+    // clusters' tokens charged first, then the turns after the clusters.
+    const setup = (seed: Seed): SessionSetup => ({
+        history: seed.turns,
+        clusters: seed.clusters,
+        memory:
+            memory?.block(clusterTokens(seed.clusters, recall !== null)) ?? "",
+        recall,
+        persona,
+    });
+    const connect = (seed: Seed): ChatSession => {
+        const conversation = new Conversation(setup(seed));
+        conversation.start();
+        return memory === null
+            ? conversation
+            : trackMemory(conversation, memory);
+    };
+
+    const claims = index;
+    const owner = `${process.pid}-${randomBytes(4).toString("hex")}`;
+    const compaction = compactable
+        ? new Compaction({
+              config: config.compaction,
+              idleMs: config.memory.idleSeconds * 1000,
+              clusters,
+              persona: personaPrompt({ recall: false, mode: persona }),
+              call: structuredCall(),
+              // Without a transcript there is no conversation for notes to
+              // describe; the clusters live in this run only.
+              save: async (added) => {
+                  if (transcript === null) {
+                      return { ok: true };
+                  }
+                  const result = await updateSidecar(
+                      dir,
+                      phrase,
+                      (current) => appendClusters(current, added),
+                      claims?.lock,
+                  );
+                  return result.kind === "written"
+                      ? { ok: true }
+                      : result.kind === "unchanged"
+                        ? {
+                              ok: false,
+                              reason: "the notes already cover those turns",
+                          }
+                        : { ok: false, reason: result.reason };
+              },
+              record: async (entry) => {
+                  await transcript?.append({ kind: "compaction", ...entry });
+              },
+              estimate: (seed) =>
+                  tokens(String(conversationOptions(setup(seed)).systemPrompt)),
+              claim:
+                  claims === null
+                      ? null
+                      : {
+                            take: () =>
+                                claims.claim(
+                                    phrase,
+                                    owner,
+                                    Date.now(),
+                                    COMPACTION_TIMEOUT_MS + CLAIM_MARGIN_MS,
+                                ),
+                            release: () => claims.release(phrase, owner),
+                        },
+          })
+        : null;
+
     const app = render(
         <App
             phrase={phrase}
@@ -113,18 +217,11 @@ export async function runTui(
             )}
             history={history}
             editDraft={(text) => editInEditor(text)}
-            createSession={(turns) => {
-                const conversation = new Conversation({
-                    history: turns,
-                    memory: memory?.block() ?? "",
-                    recall,
-                    persona,
-                });
-                conversation.start();
-                return memory === null
-                    ? conversation
-                    : trackMemory(conversation, memory);
-            }}
+            createSession={(turns) =>
+                compaction === null
+                    ? connect({ turns: seedTurns(turns, clusters), clusters })
+                    : compaction.session(turns, connect)
+            }
             notices={memory ?? undefined}
             transcript={writer}
             initialWarnings={warnings}
@@ -137,8 +234,9 @@ export async function runTui(
     try {
         await app.waitUntilExit();
     } finally {
-        // The running review is closed unsaved, and lets go of its claim
-        // before the index it is held in closes.
+        // Running reviews and compactions are closed unsaved, and let go
+        // of their claims before the index they are held in closes.
+        await compaction?.stop();
         await memory?.stop();
         index?.close();
         await writer?.close();
