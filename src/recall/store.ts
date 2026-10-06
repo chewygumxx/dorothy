@@ -108,9 +108,12 @@ export function indexPath(env: Env = process.env): string {
 
 // SQLite names an unusable file by these codes; any other failure (a lock
 // held too long, a full disk) says nothing about the file.
-function unusable(error: unknown): boolean {
+export function unusable(error: unknown): boolean {
     const code = (error as { code?: unknown } | null)?.code;
-    return code === "SQLITE_NOTADB" || code === "SQLITE_CORRUPT";
+    return (
+        typeof code === "string" &&
+        (code === "SQLITE_NOTADB" || code.startsWith("SQLITE_CORRUPT"))
+    );
 }
 
 // Clears whatever schema is there, whichever version made it, so every

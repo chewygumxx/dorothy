@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { indexPath, RecallIndex, SCHEMA_VERSION } from "./store.js";
+import { indexPath, RecallIndex, SCHEMA_VERSION, unusable } from "./store.js";
 
 let dir = "";
 let path = "";
@@ -47,6 +47,31 @@ describe("indexPath", () => {
         expect(indexPath({ HOME: "/h" })).toBe(
             "/h/.cache/dorothy/recall.sqlite",
         );
+    });
+});
+
+describe("unusable", () => {
+    it("names a file that is not a database or is corrupt, however extended", () => {
+        for (const code of [
+            "SQLITE_NOTADB",
+            "SQLITE_CORRUPT",
+            "SQLITE_CORRUPT_VTAB",
+            "SQLITE_CORRUPT_INDEX",
+        ]) {
+            expect(unusable({ code })).toBe(true);
+        }
+    });
+
+    it("says nothing of other failures", () => {
+        for (const error of [
+            { code: "SQLITE_BUSY" },
+            { code: "SQLITE_FULL" },
+            { code: 11 },
+            new Error("corrupt"),
+            null,
+        ]) {
+            expect(unusable(error)).toBe(false);
+        }
     });
 });
 
