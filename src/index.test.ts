@@ -169,6 +169,45 @@ describe("parseArgs", () => {
         });
     });
 
+    it("dumps the context, terminal or not, with a message or without", () => {
+        expect(parseArgs(["--dump-context"], false)).toEqual({
+            kind: "dump",
+            resume: null,
+            message: "hi",
+            persona: "chat",
+        });
+        expect(
+            parseArgs(
+                ["--dump-context", "--resume", phrase, "what", "now?"],
+                false,
+            ),
+        ).toEqual({
+            kind: "dump",
+            resume: phrase,
+            message: "what now?",
+            persona: "chat",
+        });
+        expect(
+            parseArgs(["--dev", "--dump-context", "--", "-v?"], false),
+        ).toEqual({
+            kind: "dump",
+            resume: null,
+            message: "-v?",
+            persona: "development",
+        });
+    });
+
+    it.each([
+        [["--dump-context", "--resume"]],
+        [["--dump-context", "--resume", "nope"]],
+        [["--dump-context", "--verbose"]],
+    ])("rejects %p", (argv) => {
+        expect(parseArgs(argv, false)).toEqual({
+            kind: "usage",
+            message: "--dump-context takes [--resume <phrase>] [message...]",
+        });
+    });
+
     it("refuses anything else after --recall-server", () => {
         for (const rest of [["x"], ["--exclude"], ["--exclude", "nope"]]) {
             expect(parseArgs(["--recall-server", ...rest], false)).toEqual({

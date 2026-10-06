@@ -23,6 +23,12 @@ import { isPhrase } from "./session-id.js";
 export type Mode =
     | { kind: "oneshot"; prompt: string; persona: PersonaMode }
     | { kind: "tui"; resume: string | null; persona: PersonaMode }
+    | {
+          kind: "dump";
+          resume: string | null;
+          message: string;
+          persona: PersonaMode;
+      }
     | { kind: "list" }
     | { kind: "memory"; phrase: string }
     | { kind: "recall-server"; exclude: string | null }
@@ -37,15 +43,47 @@ export const USAGE = [
     "       dorothy --memory <phrase>  correct, pin or hide a chat's notes",
     "       dorothy --recall-server    memory search for MCP clients (stdio)",
     "       dorothy -- <prompt...>     a prompt that starts with -",
-    "       dorothy --dev ...          development mode, before any of the",
-    "                                  first three or a prompt",
+    "       dorothy --dump-context [--resume <phrase>] [message...]",
+    "                                  print the request a chat would send",
+    "       dorothy --dev ...          development mode, before a chat, a",
+    "                                  prompt or --dump-context",
 ].join("\n");
+
+const DUMP_USAGE = "--dump-context takes [--resume <phrase>] [message...]";
+
+function parseDump(argv: readonly string[]): Mode {
+    let words = argv;
+    let resume: string | null = null;
+    if (words[0] === "--resume") {
+        const phrase = words[1];
+        if (phrase === undefined || !isPhrase(phrase)) {
+            return { kind: "usage", message: DUMP_USAGE };
+        }
+        resume = phrase;
+        words = words.slice(2);
+    }
+    if (words[0] === "--") {
+        words = words.slice(1);
+    } else if (words[0] !== undefined && /^-./.test(words[0])) {
+        return { kind: "usage", message: DUMP_USAGE };
+    }
+    return {
+        kind: "dump",
+        resume,
+        message: words.length > 0 ? words.join(" ") : "hi",
+        persona: "chat",
+    };
+}
 
 export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
     const [first, ...rest] = argv;
     if (first === "--dev") {
         const mode = rest[0] === "--dev" ? null : parseArgs(rest, isTTY);
-        if (mode?.kind === "oneshot" || mode?.kind === "tui") {
+        if (
+            mode?.kind === "oneshot" ||
+            mode?.kind === "tui" ||
+            mode?.kind === "dump"
+        ) {
             return { ...mode, persona: "development" };
         }
         return mode?.kind === "usage"
@@ -55,6 +93,9 @@ export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
                   message:
                       "--dev applies only to chat, a prompt or --dump-context",
               };
+    }
+    if (first === "--dump-context") {
+        return parseDump(rest);
     }
     if (first === "--help" || first === "-h") {
         return { kind: "help" };
@@ -151,7 +192,11 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     );
     // Credentials are decrypted only for the modes that talk to the model.
     // quiet: dotenvx would otherwise log to stdout, over the TUI.
-    if (mode.kind === "oneshot" || mode.kind === "tui") {
+    if (
+        mode.kind === "oneshot" ||
+        mode.kind === "tui" ||
+        mode.kind === "dump"
+    ) {
         config({ quiet: true });
         prepareCliHome();
     }
@@ -160,6 +205,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     } else if (mode.kind === "usage") {
         process.stderr.write(`dorothy: ${mode.message}\n${USAGE}\n`);
         process.exitCode = 2;
+    } else if (mode.kind === "dump") {
+        const { runDump } = await import("./dump.js");
+        process.exitCode = await runDump(mode);
     } else if (mode.kind === "oneshot") {
         await oneShot(mode.prompt, mode.persona);
     } else if (mode.kind === "list") {
