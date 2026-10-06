@@ -11,7 +11,7 @@
 import { pathToFileURL } from "node:url";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { config } from "@dotenvx/dotenvx";
-import { baseOptions } from "./persona.js";
+import { baseOptions, cliOptions, prepareCliHome } from "./persona.js";
 import { isPhrase } from "./session-id.js";
 
 export type Mode =
@@ -97,7 +97,10 @@ export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
 
 async function oneShot(prompt: string): Promise<void> {
     try {
-        for await (const message of query({ prompt, options: baseOptions })) {
+        for await (const message of query({
+            prompt,
+            options: { ...baseOptions, ...cliOptions() },
+        })) {
             if (
                 message.type === "stream_event" &&
                 message.event.type === "content_block_delta" &&
@@ -125,6 +128,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     // quiet: dotenvx would otherwise log to stdout, over the TUI.
     if (mode.kind === "oneshot" || mode.kind === "tui") {
         config({ quiet: true });
+        prepareCliHome();
     }
     if (mode.kind === "help") {
         process.stdout.write(`${USAGE}\n`);

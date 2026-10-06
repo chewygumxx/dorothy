@@ -16,6 +16,7 @@ import {
     type QueryFn,
 } from "./conversation.js";
 import {
+    cliOptions,
     personaPrompt,
     systemPrompt,
     type Turn,
@@ -284,6 +285,12 @@ describe("Conversation", () => {
         started(fake);
         expect(fake.options?.systemPrompt).toBe(systemPrompt);
         expect(fake.options?.tools).toEqual([]);
+    });
+
+    it("keeps the CLI out of the user's Claude Code setup", () => {
+        const fake = fakeQuery([]);
+        started(fake);
+        expect(fake.options).toMatchObject(cliOptions());
     });
 
     it("appends history to the system prompt", () => {

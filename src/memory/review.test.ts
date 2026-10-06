@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "bun:test";
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { Turn } from "../persona.js";
+import { cliOptions, type Turn } from "../persona.js";
 import type { ResumedTurn } from "../transcript.js";
 import {
     pendingReads,
@@ -139,6 +139,7 @@ describe("runReview", () => {
             includePartialMessages: false,
             outputFormat: { type: "json_schema", schema: REVIEW_SCHEMA },
         });
+        expect(fake.options).toMatchObject(cliOptions());
     });
 
     it("asks with the schema given and returns the appraisals", async () => {

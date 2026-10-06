@@ -16,6 +16,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import {
     baseOptions,
+    cliOptions,
     personaPrompt,
     type Turn,
     withHistory,
@@ -199,6 +200,7 @@ export class Conversation implements ChatSession {
         this.#recall = recall !== null;
         this.#options = {
             ...baseOptions,
+            ...cliOptions(),
             systemPrompt: withHistory(
                 withMemory(personaPrompt({ recall: recall !== null }), memory),
                 history,
