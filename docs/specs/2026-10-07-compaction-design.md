@@ -106,6 +106,12 @@ spec lists them.
 - **A wrapper, not a change to `App`.** `compacting(session)` wraps the
   `ChatSession` as `trackMemory` does, so `App`, the reducer and the TUI
   boundary are unchanged apart from notices and a lookup line.
+- **Compaction is Dorothy's alone, and independent of the SDK.** Nothing in
+  `src/compaction/` imports the Agent SDK. Her call goes through a
+  structured-call function the module defines and the entry point injects,
+  so after the move to the Messages API only that adapter changes. The
+  CLI's own compaction, automatic and manual, is switched off on every call
+  with `DISABLE_COMPACT=1`.
 
 ## State
 
@@ -216,9 +222,22 @@ another exchange has been added.
 
 ### Dorothy's call
 
-A one-shot `query()` built as reviews are (`src/compaction/compact.ts`):
-Dorothy's persona in the session's mode, `baseOptions`, `cliOptions()`, no
-tools, and `outputFormat` with the schema below. The prompt holds:
+`src/compaction/compact.ts` builds the request and validates the answer;
+the call itself goes through a function the module defines and is given:
+
+```ts
+export type StructuredCall = (request: {
+    system: string;
+    prompt: string;
+    schema: Record<string, unknown>;
+    signal: AbortSignal;
+}) => Promise<{ output: unknown; costUsd: number; model: string }>;
+```
+
+Its only implementation for now, `src/structured.ts`, is a one-shot
+`query()` built as reviews are: `baseOptions`, `cliOptions()`, no tools,
+the request's `system` as `systemPrompt` and its schema as `outputFormat`.
+`system` is Dorothy's persona in the session's mode. The prompt holds:
 
 1. Her existing abstracts, numbered, as context she must not repeat.
 2. The outgoing turns, each numbered, escaped as reviews escape them.
@@ -267,10 +286,14 @@ background call runs at a time per conversation.
 
 ### The CLI's own compaction
 
-A probe through the capture server settles whether the CLI honours
-`DISABLE_AUTO_COMPACT=1`. If it does, `cliOptions()` sets it. Either way,
-`hard` defaults below the point where the CLI would compact, so Dorothy's
-compaction always runs first.
+Compaction belongs to this module only. `cliOptions()` sets
+`DISABLE_COMPACT=1` on every call, whatever the configuration. The CLI
+documents it as switching compaction off entirely, `/compact` included,
+where `DISABLE_AUTO_COMPACT` stops only the automatic kind; a probe
+confirms it before anything relies on it. The SDK's `compact_boundary`
+messages are then never expected; if one arrives, `Conversation` reports
+it as an error event, so a broken switch is seen rather than silently
+summarised over.
 
 ## The memory block
 
@@ -357,7 +380,7 @@ A new `[compaction]` table in `config.toml`, parsed in the existing style:
 
 ```toml
 [compaction]
-enabled = true  # false: no compaction; the CLI's own is the only safeguard
+enabled = true  # false: no compaction at all
 soft = 64000    # context tokens before compacting at idle, 2000 to 900000
 hard = 128000   # context tokens before compacting at once, 4000 to 950000
 tail = 16000    # newest turns kept verbatim, in tokens, 500 to 200000
@@ -367,7 +390,8 @@ Each value is checked against its range, then the three together: unless
 `tail < soft < hard`, all three take their defaults and the warning names
 the rule. `[memory] enabled = false` does not turn compaction off, since it
 protects the live chat; there is then no block. With `enabled = false`
-here, `DISABLE_AUTO_COMPACT` is not set.
+here the CLI's compaction stays off too, so a long enough chat ends in the
+API refusing a request as too long, shown as the usual error.
 
 ## Units
 
@@ -375,7 +399,9 @@ here, `DISABLE_AUTO_COMPACT` is not set.
 | --------------------------------- | ------------------------------------------------------------- | ---- |
 | `src/compaction/plan.ts`          | context size, outgoing turns, seed estimate, the seed's turns | yes  |
 | `src/compaction/clusters.ts`      | the prompt, the schema, validating Dorothy's clusters         | yes  |
-| `src/compaction/compact.ts`       | the one-shot `query()`                                        | no   |
+| `src/compaction/compact.ts`       | one compaction: request, `StructuredCall`, validation         | no   |
+| `src/structured.ts`               | `StructuredCall` over a one-shot `query()`                    | no   |
+| `src/persona.ts` (`cliOptions`)   | `DISABLE_COMPACT=1`                                           | yes  |
 | `src/compaction/session.ts`       | `compacting(session)`: trigger, holding, handover, back-off   | no   |
 | `src/persona.ts`                  | `withClusters`                                                | yes  |
 | `src/memory/sidecar.ts`           | `clusters`: parse, validate, append                           | no   |
@@ -392,8 +418,9 @@ here, `DISABLE_AUTO_COMPACT` is not set.
 | `src/tui/state.ts`, `History.tsx` | the notices and the `⌕` line                                  | yes  |
 | `src/config.ts`                   | `[compaction]`                                                | yes  |
 
-`src/compaction/` imports the Agent SDK only in `compact.ts`, and
-`src/tui/` imports none; boundary tests enforce both.
+Neither `src/compaction/` nor `src/tui/` imports the Agent SDK; boundary
+tests enforce both. `src/structured.ts` and `src/tui/run.tsx`'s factory
+are where the SDK meets compaction.
 
 ## Errors
 
@@ -407,6 +434,7 @@ here, `DISABLE_AUTO_COMPACT` is not set.
 | Another TUI holds the claim                    | skipped; tried again at the next idle                                                                            |
 | The latest exchange alone is past `hard`       | warning; the chat continues as it is                                                                             |
 | `[memory] recall = false`                      | no `recollect`; the abstracts are still seeded                                                                   |
+| The CLI compacts despite `DISABLE_COMPACT`     | its `compact_boundary` becomes an error event, shown as any other                                                |
 
 ## Testing
 
@@ -419,8 +447,11 @@ here, `DISABLE_AUTO_COMPACT` is not set.
   `soft`; a held message past `hard`; a reply streaming during the handover;
   a message sent during the call landing in the tail; failure, back-off and
   giving up; the claim held elsewhere; compacting before connecting.
-- **Dorothy's call**, with a fake `QueryFn`: the prompt, the schema, valid
-  and invalid output, the timeout.
+- **Dorothy's call**, with a fake `StructuredCall`: the prompt, the schema,
+  valid and invalid output, the timeout. `src/structured.ts` with a fake
+  `QueryFn`: the options it builds, the structured output, an error result.
+- **The CLI's switch**: `cliOptions()` sets `DISABLE_COMPACT=1`; a
+  `compact_boundary` message becomes an error event.
 - **Recall**: syncing `clusters`; `recollect` through the MCP SDK's
   in-memory transport, with and without words, a match at the cluster's
   edges, a turn outside it, an unknown cluster; registration only with a
@@ -428,8 +459,10 @@ here, `DISABLE_AUTO_COMPACT` is not set.
 - **Round trips**: sidecar `clusters`, including invalid trailing ones; the
   `compaction` event; the `recollect` lookup.
 - **Probes**, with temporary XDG directories and hand-written transcripts,
-  touching no real data: whether the CLI honours `DISABLE_AUTO_COMPACT`,
-  through the capture server; then live in tmux with tiny thresholds, where
+  touching no real data: that the CLI honours `DISABLE_COMPACT`, by
+  shrinking its compaction window with `CLAUDE_CODE_AUTO_COMPACT_WINDOW`
+  and seeing no compaction through the capture server, where without the
+  switch one is sent; then live in tmux with tiny thresholds, where
   compaction runs, the line shows, `recollect` opens a cluster, and
   `--dump-context --resume` shows abstracts and tail.
 
