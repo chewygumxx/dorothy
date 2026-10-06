@@ -4,3 +4,5 @@
   specs in docs/specs/, plans in docs/plans/, not docs/superpowers/
 - [SDK-independent modules](./sdk-independent-modules.md)
   new subsystems avoid Agent SDK conveniences; Messages API move is valued
+- [No worktrees](./no-worktrees.md)
+  plain branches in the main checkout; the worktree guard blocks the user
