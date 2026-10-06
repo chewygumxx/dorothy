@@ -58,6 +58,15 @@ Transcripts (`src/transcript.ts`) are private JSONL under
 `$XDG_DATA_HOME/dorothy/`. Reconnecting seeds a new session with the turns held
 in memory, and `--resume` with the transcript's, both via `withHistory`
 (`src/persona.ts`). Design: `docs/specs/`, plans: `docs/plans/`.
+The persona is composed from components by purpose (`personaComponents`:
+identity, voice, capabilities, plumbing, provenance, memory), in chat mode or
+in development mode (`--dev`), which adds a mode component, drops provenance
+and has Dorothy describe her context; the chat prompt is pinned byte for byte
+in `persona.test.ts`. Transcripts record the prompt as `promptHash`
+(`xxh3:<hex>`), which nothing reads back. `conversationOptions()` builds what
+a session starts with, for `Conversation` and for `--dump-context`
+(`src/dump.ts`), which sends a chat's first request to a loopback stand-in for
+the API and prints the body.
 
 Memory (`src/memory/`) keeps Dorothy's notes on each conversation in a JSON
 sidecar beside its transcript (`<phrase>.meta.json`, `sidecar.ts`). At launch
