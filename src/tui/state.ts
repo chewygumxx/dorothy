@@ -92,6 +92,18 @@ export function lookupLine(
                   : `${lookup.hits} conversations`;
         return { text: `⌕ searched ${query} · ${found}` };
     }
+    if (lookup.tool === "recollect") {
+        const cluster = `cluster ${lookup.cluster}`;
+        if (!ok) {
+            return { text: `⌕ couldn't recollect ${cluster}` };
+        }
+        return {
+            text:
+                lookup.turns === null
+                    ? `⌕ recollected ${cluster}`
+                    : `⌕ recollected ${cluster}, turns ${lookup.turns[0]}-${lookup.turns[1]}`,
+        };
+    }
     const name = oneRow(lookup.name);
     return ok
         ? {

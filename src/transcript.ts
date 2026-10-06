@@ -160,6 +160,21 @@ export function toRecall(event: unknown): RecallEvent | null {
             turns: event.turns,
         };
     }
+    if (
+        event.tool === "recollect" &&
+        Number.isInteger(event.cluster) &&
+        (event.cluster as number) >= 1 &&
+        (event.words === undefined || typeof event.words === "string") &&
+        (event.turns === null || isTurnRange(event.turns))
+    ) {
+        return {
+            ...base,
+            tool: "recollect",
+            cluster: event.cluster as number,
+            ...(typeof event.words === "string" ? { words: event.words } : {}),
+            turns: event.turns,
+        };
+    }
     return null;
 }
 

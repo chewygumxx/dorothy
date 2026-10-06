@@ -461,3 +461,34 @@ describe("compaction events", () => {
         expect(read.skipped).toBe(0);
     });
 });
+
+describe("recollect events", () => {
+    const event = {
+        v: 1,
+        kind: "recall",
+        at: "2026-10-07T08:00:00.000Z",
+        id: "toolu_9",
+        ok: true,
+        offset: 4,
+        tool: "recollect",
+        cluster: 2,
+        words: "render",
+        turns: [18, 24],
+    };
+
+    it("read back as written", () => {
+        expect<unknown>(toRecall(event)).toEqual(event);
+        const { words: _, ...plain } = event;
+        expect<unknown>(toRecall({ ...plain, turns: null })).toEqual({
+            ...plain,
+            turns: null,
+        });
+    });
+
+    it("are refused with no cluster, or a bad range", () => {
+        expect(toRecall({ ...event, cluster: 0 })).toBeNull();
+        expect(toRecall({ ...event, cluster: "2" })).toBeNull();
+        expect(toRecall({ ...event, turns: [18] })).toBeNull();
+        expect(toRecall({ ...event, words: 3 })).toBeNull();
+    });
+});

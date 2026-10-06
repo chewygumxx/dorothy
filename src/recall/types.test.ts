@@ -13,6 +13,8 @@ import {
     ALLOWED_TOOLS,
     describeLookup,
     type OpenResult,
+    RECOLLECT_TOOL,
+    type RecollectResult,
     type SearchHit,
     type SearchResult,
     toolOf,
@@ -132,6 +134,52 @@ describe("describeLookup", () => {
             tool: "search",
             query: "",
             hits: 0,
+        });
+    });
+});
+
+describe("recollect's vocabulary", () => {
+    it("names recollect, but keeps it out of the external pair", () => {
+        expect(toolOf("mcp__memory__recollect")).toBe("recollect");
+        expect(RECOLLECT_TOOL).toBe("mcp__memory__recollect");
+        expect(ALLOWED_TOOLS).not.toContain(RECOLLECT_TOOL);
+    });
+
+    it("describes a recollection by its cluster, words and turns", () => {
+        const result: RecollectResult = {
+            cluster: 2,
+            turns: [15, 31],
+            total: 40,
+            matched: true,
+            window: [
+                { turn: 18, role: "user", at: "x", text: "a" },
+                { turn: 24, role: "assistant", at: "y", text: "b" },
+            ],
+        };
+        expect(
+            describeLookup(
+                "recollect",
+                { cluster: 2, words: "render" },
+                JSON.stringify(result),
+            ),
+        ).toEqual({
+            tool: "recollect",
+            cluster: 2,
+            words: "render",
+            turns: [18, 24],
+        });
+    });
+
+    it("describes a failed recollection with no turns", () => {
+        expect(describeLookup("recollect", { cluster: 7 }, null)).toEqual({
+            tool: "recollect",
+            cluster: 7,
+            turns: null,
+        });
+        expect(describeLookup("recollect", {}, null)).toEqual({
+            tool: "recollect",
+            cluster: 0,
+            turns: null,
         });
     });
 });

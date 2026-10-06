@@ -267,6 +267,23 @@ const run = (state: ChatState, ...actions: Parameters<typeof reduce>[1][]) =>
     actions.reduce(reduce, state);
 
 describe("lookupLine", () => {
+    it("names the cluster and the turns recollected", () => {
+        const recollected = {
+            tool: "recollect" as const,
+            cluster: 2,
+            turns: [18, 24] as [number, number],
+        };
+        expect(lookupLine(true, recollected)).toEqual({
+            text: "⌕ recollected cluster 2, turns 18-24",
+        });
+        expect(lookupLine(true, { ...recollected, turns: null })).toEqual({
+            text: "⌕ recollected cluster 2",
+        });
+        expect(lookupLine(false, recollected)).toEqual({
+            text: "⌕ couldn't recollect cluster 2",
+        });
+    });
+
     it("says what was searched and found", () => {
         expect(lookupLine(true, searched)).toEqual({
             text: '⌕ searched "render" · 2 conversations',
