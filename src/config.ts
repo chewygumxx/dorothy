@@ -36,10 +36,20 @@ export type MemoryConfig = {
     // Stale conversations reviewed per launch.
     catchUp: number;
 };
+export type CompactionConfig = {
+    enabled: boolean;
+    // Context tokens past which compaction runs at the next idle.
+    soft: number;
+    // Context tokens past which the next message waits for it.
+    hard: number;
+    // Estimated tokens of the newest turns kept word for word.
+    tail: number;
+};
 export type Config = {
     statusline: LineConfig;
     replyStats: LineConfig;
     memory: MemoryConfig;
+    compaction: CompactionConfig;
 };
 
 // More would let a statusline crowd out the reply; five keeps the smallest
@@ -75,10 +85,16 @@ export const DEFAULT_CONFIG: Config = {
     memory: {
         enabled: true,
         recall: true,
-        budget: 2000,
+        budget: 4000,
         idleSeconds: 60,
         halfLifeDays: 30,
         catchUp: 5,
+    },
+    compaction: {
+        enabled: true,
+        soft: 64000,
+        hard: 128000,
+        tail: 16000,
     },
 };
 
@@ -149,32 +165,37 @@ function parseLine(
     return line;
 }
 
-// The boolean keys of [memory].
-const MEMORY_SWITCHES = ["enabled", "recall"] as const;
+type NumberKey<T> = readonly [
+    key: string,
+    field: keyof T,
+    min: number,
+    max: number,
+];
 
-// The whole-number keys of [memory]: the key, the field, the range.
-const MEMORY_NUMBERS = [
-    ["budget", "budget", 200, 20000],
-    ["idle-seconds", "idleSeconds", 10, 3600],
-    ["half-life-days", "halfLifeDays", 1, 3650],
-    ["catch-up", "catchUp", 0, 50],
-] as const;
-
-function parseMemory(value: unknown, warnings: string[]): MemoryConfig {
+// A table of switches and whole numbers: each bad value warns and keeps its
+// default.
+function parseTable<T extends Record<string, boolean | number>>(
+    table: string,
+    value: unknown,
+    defaults: T,
+    switches: readonly (keyof T & string)[],
+    numbers: readonly NumberKey<T>[],
+    warnings: string[],
+): T {
     if (!isRecord(value)) {
-        warnings.push("config.toml: memory is not a table");
-        return DEFAULT_CONFIG.memory;
+        warnings.push(`config.toml: ${table} is not a table`);
+        return defaults;
     }
-    const memory = { ...DEFAULT_CONFIG.memory };
+    const parsed: Record<string, boolean | number> = { ...defaults };
     for (const [key, field] of Object.entries(value)) {
-        const toggle = MEMORY_SWITCHES.find((name) => name === key);
-        const number = MEMORY_NUMBERS.find(([name]) => name === key);
+        const toggle = switches.find((name) => name === key);
+        const number = numbers.find(([name]) => name === key);
         if (toggle !== undefined) {
             if (typeof field === "boolean") {
-                memory[toggle] = field;
+                parsed[toggle] = field;
             } else {
                 warnings.push(
-                    `config.toml: memory.${key} must be true or false`,
+                    `config.toml: ${table}.${key} must be true or false`,
                 );
             }
         } else if (number !== undefined) {
@@ -185,17 +206,57 @@ function parseMemory(value: unknown, warnings: string[]): MemoryConfig {
                 field >= min &&
                 field <= max
             ) {
-                memory[name] = field;
+                parsed[name as string] = field;
             } else {
                 warnings.push(
-                    `config.toml: memory.${key} must be a whole number from ${min} to ${max}`,
+                    `config.toml: ${table}.${key} must be a whole number from ${min} to ${max}`,
                 );
             }
         } else {
-            warnings.push(`config.toml: unknown key memory.${key}`);
+            warnings.push(`config.toml: unknown key ${table}.${key}`);
         }
     }
-    return memory;
+    return parsed as T;
+}
+
+const parseMemory = (value: unknown, warnings: string[]): MemoryConfig =>
+    parseTable(
+        "memory",
+        value,
+        DEFAULT_CONFIG.memory,
+        ["enabled", "recall"],
+        [
+            ["budget", "budget", 200, 20000],
+            ["idle-seconds", "idleSeconds", 10, 3600],
+            ["half-life-days", "halfLifeDays", 1, 3650],
+            ["catch-up", "catchUp", 0, 50],
+        ],
+        warnings,
+    );
+
+// The thresholds only make sense together: compacting must leave a tail
+// smaller than what set it off, below the point that holds a message.
+function parseCompaction(value: unknown, warnings: string[]): CompactionConfig {
+    const parsed = parseTable(
+        "compaction",
+        value,
+        DEFAULT_CONFIG.compaction,
+        ["enabled"],
+        [
+            ["soft", "soft", 2000, 900000],
+            ["hard", "hard", 4000, 950000],
+            ["tail", "tail", 500, 200000],
+        ],
+        warnings,
+    );
+    if (parsed.tail < parsed.soft && parsed.soft < parsed.hard) {
+        return parsed;
+    }
+    warnings.push(
+        "config.toml: compaction needs tail < soft < hard; using the defaults for all three",
+    );
+    const { soft, hard, tail } = DEFAULT_CONFIG.compaction;
+    return { ...parsed, soft, hard, tail };
 }
 
 // Bun's TOML errors carry no position. The mistake is on the line after the
@@ -243,6 +304,8 @@ export function parseConfig(text: string): {
             );
         } else if (key === "memory") {
             config.memory = parseMemory(value, warnings);
+        } else if (key === "compaction") {
+            config.compaction = parseCompaction(value, warnings);
         } else {
             warnings.push(`config.toml: unknown key ${key}`);
         }
