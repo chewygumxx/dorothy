@@ -17,6 +17,7 @@ import {
     readTranscript,
     TranscriptWriter,
     toRecall,
+    toTurn,
     transcriptDir,
     transcriptPath,
 } from "./transcript.js";
@@ -423,5 +424,40 @@ describe("recall events", () => {
                 turns: null,
             },
         ]);
+    });
+});
+
+describe("compaction events", () => {
+    it("are not turns, and are not malformed", () => {
+        expect(
+            toTurn({
+                v: 1,
+                kind: "compaction",
+                at: "x",
+                through: 4,
+                clusters: 1,
+            }),
+        ).toBe("ignore");
+        const read = parseTranscript(
+            [
+                JSON.stringify({ v: 1, kind: "user", at: "a", text: "Hi." }),
+                JSON.stringify({
+                    v: 1,
+                    kind: "compaction",
+                    at: "b",
+                    through: 1,
+                    clusters: 1,
+                }),
+                JSON.stringify({
+                    v: 1,
+                    kind: "assistant",
+                    at: "c",
+                    text: "Hello.",
+                    interrupted: false,
+                }),
+            ].join("\n"),
+        );
+        expect(read.turns.map((turn) => turn.text)).toEqual(["Hi.", "Hello."]);
+        expect(read.skipped).toBe(0);
     });
 });

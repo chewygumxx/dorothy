@@ -46,6 +46,15 @@ export type StatsEvent = {
     costUsd: number;
     sessionCostUsd: number;
 };
+// The moment a new session took over from a compacted one: through is the
+// last turn compacted, clusters how many clusters this compaction added.
+export type CompactionEvent = {
+    v: 1;
+    kind: "compaction";
+    at: string;
+    through: number;
+    clusters: number;
+};
 // A lookup Dorothy made mid-reply. offset is where in the reply's text it
 // happened, in UTF-16 code units, so a resumed chat can place it.
 type RecallBase = {
@@ -62,6 +71,7 @@ export type TranscriptEvent =
     | UserEvent
     | AssistantEvent
     | StatsEvent
+    | CompactionEvent
     | RecallEvent;
 
 // An event as callers write it; the writer stamps `v` and `at`.
@@ -88,7 +98,9 @@ export function toTurn(event: unknown): Turn | "ignore" | "malformed" {
     if ((kind === "user" || kind === "assistant") && typeof text === "string") {
         return { role: kind, text };
     }
-    return kind === "session" || kind === "stats" ? "ignore" : "malformed";
+    return kind === "session" || kind === "stats" || kind === "compaction"
+        ? "ignore"
+        : "malformed";
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

@@ -40,6 +40,17 @@ export const SERVED: readonly Served[] = [
 export type Appraisal = { served: Served; at: string; model: string };
 // Reviews that failed in a row, and when the last one did.
 export type Failures = { count: number; at: string };
+
+// A run of a conversation's turns that compaction took out of Dorothy's
+// context, and her abstract of it. Turns count from 1, both ends included;
+// each cluster starts on the turn after the one before it ends.
+export type Cluster = {
+    from: number;
+    through: number;
+    abstract: string;
+    at: string;
+    model: string;
+};
 // Holds a write against writers in other processes; the index provides it.
 export type Lock = <T>(work: () => Promise<T>) => Promise<T>;
 
@@ -60,6 +71,8 @@ export type Sidecar = {
     // Dorothy's appraisals of what she read, by tool call id; final once made.
     appraisals: Record<string, Appraisal>;
     failures: Failures | null;
+    // Oldest first; written once, never revised.
+    clusters: Cluster[];
 };
 
 export type SidecarRead =
@@ -93,6 +106,7 @@ export const EMPTY_SIDECAR: Sidecar = {
     reviewCostUsd: 0,
     appraisals: {},
     failures: null,
+    clusters: [],
 };
 
 const AUTHORS: readonly string[] = ["prompt", "dorothy", "user"];
@@ -134,6 +148,41 @@ function readNote(field: Field, value: unknown): string | null {
     }
     const note = normalise(value);
     return note !== "" && overLimit(field, note) === null ? note : null;
+}
+
+const isTurn = (value: unknown): value is number =>
+    typeof value === "number" && Number.isInteger(value) && value >= 1;
+
+// The clusters that follow on from turn 1, up to the first that does not.
+function readClusters(value: unknown): Cluster[] {
+    const clusters: Cluster[] = [];
+    for (const entry of Array.isArray(value) ? value : []) {
+        const from = (clusters.at(-1)?.through ?? 0) + 1;
+        const abstract =
+            isRecord(entry) && typeof entry.abstract === "string"
+                ? normalise(entry.abstract)
+                : "";
+        if (
+            !isRecord(entry) ||
+            entry.from !== from ||
+            !isTurn(entry.through) ||
+            entry.through < from ||
+            abstract === "" ||
+            overLimit("abstract", abstract) !== null ||
+            typeof entry.at !== "string" ||
+            typeof entry.model !== "string"
+        ) {
+            break;
+        }
+        clusters.push({
+            from,
+            through: entry.through,
+            abstract,
+            at: entry.at,
+            model: entry.model,
+        });
+    }
+    return clusters;
 }
 
 function readProvenance(value: unknown): Provenance | null {
@@ -179,6 +228,7 @@ export function parseSidecar(
         titles: [],
         fields: {},
         appraisals: {},
+        clusters: readClusters(data.clusters),
     };
     sidecar.rev = isCount(data.rev) ? data.rev : 0;
     for (const field of FIELDS) {
@@ -475,6 +525,20 @@ export function markReviewed(
     return current === null
         ? null
         : { ...current, reviewedThrough: throughTurn };
+}
+
+// New clusters go on the end, and only if they start where the last one
+// ended; anything else would cover turns twice or leave a gap.
+export function appendClusters(
+    current: Sidecar | null,
+    clusters: readonly Cluster[],
+): Sidecar | null {
+    const base = current ?? EMPTY_SIDECAR;
+    const next = (base.clusters.at(-1)?.through ?? 0) + 1;
+    if (clusters[0]?.from !== next) {
+        return null;
+    }
+    return { ...base, clusters: [...base.clusters, ...clusters] };
 }
 
 // After n failures in a row, no review until min(2^(n-1) hours, 7 days)

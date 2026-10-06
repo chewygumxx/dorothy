@@ -22,6 +22,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+    appendClusters,
+    type Cluster,
     EMPTY_SIDECAR,
     type Lock,
     markFailed,
@@ -479,5 +481,71 @@ describe("appraisals and failures", () => {
         );
         expect(result.kind).toBe("written");
         expect(order).toEqual(["lock", "unlock"]);
+    });
+});
+
+const cluster = (from: number, through: number, abstract = "About it.") =>
+    ({
+        from,
+        through,
+        abstract,
+        at: "2026-10-07T08:00:00.000Z",
+        model: "claude-test",
+    }) satisfies Cluster;
+
+describe("clusters", () => {
+    it("are empty in a new sidecar and in one written before them", () => {
+        expect(EMPTY_SIDECAR.clusters).toEqual([]);
+        const read = parseSidecar(JSON.stringify({ v: 1, title: "T" }));
+        expect(read.kind === "ok" && read.sidecar.clusters).toEqual([]);
+    });
+
+    it("read back as written, normalised", () => {
+        const read = parseSidecar(
+            JSON.stringify({
+                ...EMPTY_SIDECAR,
+                clusters: [cluster(1, 4, "  Cats\nand  dogs. "), cluster(5, 9)],
+            }),
+        );
+        expect(read.kind === "ok" && read.sidecar.clusters).toEqual([
+            cluster(1, 4, "Cats and dogs."),
+            cluster(5, 9),
+        ]);
+    });
+
+    it("stop at the first that does not follow on", () => {
+        const bad = [
+            [cluster(2, 4)],
+            [cluster(1, 4), cluster(6, 9)],
+            [cluster(1, 4), cluster(5, 4)],
+            [cluster(1, 4), cluster(5, 9, "   ")],
+            [cluster(1, 4), cluster(5, 9, "x".repeat(1001))],
+            [cluster(1, 4), { ...cluster(5, 9), at: 3 }],
+            [cluster(1, 4), { ...cluster(5, 9), model: null }],
+            [cluster(1, 4), { ...cluster(5, 9), from: 5.5 }],
+        ];
+        for (const clusters of bad) {
+            const read = parseSidecar(
+                JSON.stringify({ ...EMPTY_SIDECAR, clusters }),
+            );
+            expect(
+                read.kind === "ok" &&
+                    read.sidecar.clusters.map((kept) => kept.through),
+            ).toEqual(clusters[0]?.from === 1 ? [4] : []);
+        }
+    });
+
+    it("are appended when they follow on", () => {
+        const first = appendClusters(null, [cluster(1, 4), cluster(5, 9)]);
+        expect(first?.clusters.map((kept) => kept.through)).toEqual([4, 9]);
+        const next = appendClusters(first, [cluster(10, 12)]);
+        expect(next?.clusters.map((kept) => kept.from)).toEqual([1, 5, 10]);
+    });
+
+    it("are not appended over turns already covered, or past a gap", () => {
+        const first = appendClusters(null, [cluster(1, 4)]);
+        expect(appendClusters(first, [cluster(3, 6)])).toBeNull();
+        expect(appendClusters(first, [cluster(6, 8)])).toBeNull();
+        expect(appendClusters(first, [])).toBeNull();
     });
 });
