@@ -19,11 +19,16 @@ describe("parseArgs", () => {
         expect(parseArgs(["What", "is", "your", "name?"], false)).toEqual({
             kind: "oneshot",
             prompt: "What is your name?",
+            persona: "chat",
         });
     });
 
     it("opens the TUI with no argv in a terminal", () => {
-        expect(parseArgs([], true)).toEqual({ kind: "tui", resume: null });
+        expect(parseArgs([], true)).toEqual({
+            kind: "tui",
+            resume: null,
+            persona: "chat",
+        });
     });
 
     it("refuses the TUI without a terminal", () => {
@@ -34,6 +39,7 @@ describe("parseArgs", () => {
         expect(parseArgs(["--resume", phrase], true)).toEqual({
             kind: "tui",
             resume: phrase,
+            persona: "chat",
         });
     });
 
@@ -100,14 +106,20 @@ describe("parseArgs", () => {
         expect(parseArgs(["--", "-v", "means?"], false)).toEqual({
             kind: "oneshot",
             prompt: "-v means?",
+            persona: "chat",
         });
-        expect(parseArgs(["--"], true)).toEqual({ kind: "tui", resume: null });
+        expect(parseArgs(["--"], true)).toEqual({
+            kind: "tui",
+            resume: null,
+            persona: "chat",
+        });
     });
 
     it("leaves options after the first word in the prompt", () => {
         expect(parseArgs(["what", "does", "--force", "do?"], false)).toEqual({
             kind: "oneshot",
             prompt: "what does --force do?",
+            persona: "chat",
         });
     });
 
@@ -125,6 +137,74 @@ describe("parseArgs", () => {
         ).toEqual({
             kind: "recall-server",
             exclude: phrase,
+        });
+    });
+
+    it("puts chat, a resumed chat or one reply in development mode", () => {
+        expect(parseArgs(["--dev"], true)).toEqual({
+            kind: "tui",
+            resume: null,
+            persona: "development",
+        });
+        expect(parseArgs(["--dev", "--resume", phrase], true)).toEqual({
+            kind: "tui",
+            resume: phrase,
+            persona: "development",
+        });
+        expect(parseArgs(["--dev", "who", "are", "you?"], false)).toEqual({
+            kind: "oneshot",
+            prompt: "who are you?",
+            persona: "development",
+        });
+    });
+
+    it.each([
+        [["--dev", "--list"]],
+        [["--dev", "--memory", phrase]],
+        [["--dev", "--dev"]],
+    ])("refuses --dev before anything but chat or a prompt: %p", (argv) => {
+        expect(parseArgs(argv, true)).toEqual({
+            kind: "usage",
+            message: "--dev applies only to chat, a prompt or --dump-context",
+        });
+    });
+
+    it("dumps the context, terminal or not, with a message or without", () => {
+        expect(parseArgs(["--dump-context"], false)).toEqual({
+            kind: "dump",
+            resume: null,
+            message: "hi",
+            persona: "chat",
+        });
+        expect(
+            parseArgs(
+                ["--dump-context", "--resume", phrase, "what", "now?"],
+                false,
+            ),
+        ).toEqual({
+            kind: "dump",
+            resume: phrase,
+            message: "what now?",
+            persona: "chat",
+        });
+        expect(
+            parseArgs(["--dev", "--dump-context", "--", "-v?"], false),
+        ).toEqual({
+            kind: "dump",
+            resume: null,
+            message: "-v?",
+            persona: "development",
+        });
+    });
+
+    it.each([
+        [["--dump-context", "--resume"]],
+        [["--dump-context", "--resume", "nope"]],
+        [["--dump-context", "--verbose"]],
+    ])("rejects %p", (argv) => {
+        expect(parseArgs(argv, false)).toEqual({
+            kind: "usage",
+            message: "--dump-context takes [--resume <phrase>] [message...]",
         });
     });
 

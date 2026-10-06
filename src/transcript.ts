@@ -22,7 +22,7 @@ export type SessionEvent = {
     phrase: string;
     sdkSessionId: string;
     model: string;
-    promptSha256: string;
+    promptHash: string;
     resumed: boolean;
 };
 export type UserEvent = { v: 1; kind: "user"; at: string; text: string };

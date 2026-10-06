@@ -46,7 +46,7 @@ export type NoticeSource = {
 
 export type AppProps = {
     phrase: string;
-    promptSha256: string;
+    promptHash: string;
     history: ResumedTurn[];
     createSession(history: Turn[]): ChatSession;
     transcript: TranscriptSink | null;
@@ -66,7 +66,7 @@ const describeError = (error: unknown) =>
 
 export function App({
     phrase,
-    promptSha256,
+    promptHash,
     history,
     createSession,
     transcript,
@@ -117,7 +117,7 @@ export function App({
                 phrase,
                 sdkSessionId: event.sdkSessionId,
                 model: event.model,
-                promptSha256,
+                promptHash,
                 resumed: resumed.current,
             });
             resumed.current = true;

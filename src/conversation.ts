@@ -8,6 +8,7 @@
 //
 //
 
+import { resolve } from "node:path";
 import {
     type Options,
     query,
@@ -17,6 +18,7 @@ import {
 import {
     baseOptions,
     cliOptions,
+    type PersonaMode,
     personaPrompt,
     type Turn,
     withHistory,
@@ -75,6 +77,20 @@ export type ConversationEvent =
 
 // How the CLI starts the recall server: dorothy --recall-server.
 export type RecallLaunch = { command: string; args: string[] };
+
+// Dorothy's memory tools: this program again, as an MCP server, leaving out
+// the conversation it serves.
+export function recallLaunch(phrase: string): RecallLaunch {
+    return {
+        command: process.execPath,
+        args: [
+            resolve(process.argv[1] ?? ""),
+            "--recall-server",
+            "--exclude",
+            phrase,
+        ],
+    };
+}
 
 export type QueryHandle = AsyncIterable<SDKMessage> & {
     interrupt(): Promise<unknown>;
@@ -163,6 +179,44 @@ async function settleWithin(work: Promise<void>, ms: number): Promise<void> {
     clearTimeout(timer);
 }
 
+export type SessionSetup = {
+    history?: readonly Turn[];
+    // The memory block, frozen for the session.
+    memory?: string;
+    // How to launch the recall server; null leaves recall off.
+    recall?: RecallLaunch | null;
+    persona?: PersonaMode;
+};
+
+// What a session starts with, shared with --dump-context so that the dump
+// shows exactly what a chat would send.
+export function conversationOptions({
+    history = [],
+    memory = "",
+    recall = null,
+    persona = "chat",
+}: SessionSetup = {}): Options {
+    return {
+        ...baseOptions,
+        ...cliOptions(),
+        systemPrompt: withHistory(
+            withMemory(
+                personaPrompt({ recall: recall !== null, mode: persona }),
+                memory,
+            ),
+            history,
+        ),
+        ...(recall === null
+            ? {}
+            : {
+                  mcpServers: {
+                      [SERVER_NAME]: { type: "stdio", ...recall },
+                  },
+                  allowedTools: ALLOWED_TOOLS,
+              }),
+    };
+}
+
 export class Conversation implements ChatSession {
     readonly #queue = new MessageQueue();
     readonly #listeners = new Set<(event: ConversationEvent) => void>();
@@ -184,36 +238,12 @@ export class Conversation implements ChatSession {
     #ready = false;
 
     constructor({
-        history = [],
-        memory = "",
         queryFn = query,
-        recall = null,
-    }: {
-        history?: readonly Turn[];
-        // The memory block, frozen for the session.
-        memory?: string;
-        queryFn?: QueryFn;
-        // How to launch the recall server; null leaves recall off.
-        recall?: RecallLaunch | null;
-    } = {}) {
+        ...setup
+    }: SessionSetup & { queryFn?: QueryFn } = {}) {
         this.#queryFn = queryFn;
-        this.#recall = recall !== null;
-        this.#options = {
-            ...baseOptions,
-            ...cliOptions(),
-            systemPrompt: withHistory(
-                withMemory(personaPrompt({ recall: recall !== null }), memory),
-                history,
-            ),
-            ...(recall === null
-                ? {}
-                : {
-                      mcpServers: {
-                          [SERVER_NAME]: { type: "stdio", ...recall },
-                      },
-                      allowedTools: ALLOWED_TOOLS,
-                  }),
-        };
+        this.#recall = (setup.recall ?? null) !== null;
+        this.#options = conversationOptions(setup);
     }
 
     start(): void {

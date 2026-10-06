@@ -40,7 +40,7 @@ const session = (minute: number) =>
         phrase: "p",
         sdkSessionId: "s",
         model: "m",
-        promptSha256: "h",
+        promptHash: "h",
         resumed: false,
     });
 const user = (minute: number, text: string) => event("user", minute, { text });

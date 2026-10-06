@@ -172,6 +172,23 @@ catch-up = 5         # unreviewed chats reviewed per launch, 0 to 50
 recall = true        # false: Dorothy cannot search past chats
 ```
 
+### Development mode
+
+For the people building her, `--dev` goes before a chat, a `--resume` or a
+prompt. Dorothy then says she is in development mode, so her notes on the
+chat record it, and describes her context and what she runs on when asked,
+rather than keeping quiet about it.
+
+```sh
+bun run dev -- --dev "What is in your context?"
+bun run dev -- --dump-context [--resume <phrase>] [message...]
+```
+
+`--dump-context` prints, as JSON, the exact request a chat would send first:
+the same notes, history and memory tools, and whatever the SDK adds. It goes
+to a stand-in on a local port, so nothing reaches the API and no tokens are
+spent. `--dev --dump-context` dumps development mode.
+
 ## CI
 
 `.github/workflows/ci.yaml` calls the shared

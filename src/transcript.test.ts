@@ -223,7 +223,7 @@ describe("readTranscript", () => {
         await writeFile(
             path,
             [
-                '{"v":1,"kind":"session","at":"x","phrase":"a-b-c-d","sdkSessionId":"s","model":"m","promptSha256":"h","resumed":false}',
+                '{"v":1,"kind":"session","at":"x","phrase":"a-b-c-d","sdkSessionId":"s","model":"m","promptHash":"h","resumed":false}',
                 '{"v":1,"kind":"user","at":"x","text":"hello"}',
                 "not json",
                 '{"v":1,"kind":"assistant","at":"x","text":"hi there","interrupted":false}',
@@ -276,7 +276,7 @@ describe("parseTranscript", () => {
                 phrase: "p",
                 sdkSessionId: "s",
                 model: "m",
-                promptSha256: "h",
+                promptHash: "h",
                 resumed: false,
             }),
             JSON.stringify({

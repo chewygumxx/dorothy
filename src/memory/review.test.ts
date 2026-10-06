@@ -306,6 +306,12 @@ describe("reviewPrompt", () => {
 });
 
 describe("REVIEW_INSTRUCTIONS", () => {
+    it("has the notes record a conversation held in development mode", () => {
+        expect(REVIEW_INSTRUCTIONS).toContain(
+            "If you said you were in development mode, say so in the description.",
+        );
+    });
+
     it("asks for the three notes within their limits", () => {
         for (const limit of ["60", "160", "1,000"]) {
             expect(REVIEW_INSTRUCTIONS).toContain(limit);

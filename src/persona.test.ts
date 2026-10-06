@@ -9,7 +9,6 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,9 +16,10 @@ import {
     baseOptions,
     cliHome,
     cliOptions,
+    personaComponents,
     personaPrompt,
     prepareCliHome,
-    promptSha256,
+    promptHash,
     systemPrompt,
     withHistory,
     withMemory,
@@ -95,16 +95,108 @@ describe("withMemory", () => {
     });
 });
 
-describe("promptSha256", () => {
-    it("hashes the persona prompt by default", () => {
-        const expected = createHash("sha256")
-            .update(systemPrompt)
-            .digest("hex");
-        expect(promptSha256()).toBe(expected);
+describe("promptHash", () => {
+    it("hashes the persona prompt by default, naming the algorithm", () => {
+        const hex = Bun.hash.xxHash3(systemPrompt).toString(16);
+        expect(promptHash()).toBe(`xxh3:${hex.padStart(16, "0")}`);
+        expect(promptHash()).toMatch(/^xxh3:[0-9a-f]{16}$/);
+    });
+
+    it("tells personas apart", () => {
+        expect(promptHash(personaPrompt({ recall: false }))).not.toBe(
+            promptHash(personaPrompt({ recall: false, mode: "development" })),
+        );
+    });
+});
+
+// The chat persona as it was before it was built from components.
+const CHAT = [
+    "You are Dorothy, a warm, curious and conversational assistant, in the",
+    "spirit of the chat experience at https://claude.ai. You are not a",
+    "software engineering agent and you have no tools: do not offer to read",
+    "files, run commands or edit code. Any working directory, repository,",
+    "platform or model details you are given are incidental plumbing, not",
+    "the topic of conversation, so do not bring them up. Just talk with the",
+    "user. Introduce yourself simply as Dorothy. Do not volunteer which",
+    "company, model, SDK or framework you run on. If the user asks what",
+    "powers you, you may say that you are an AI assistant and that you would",
+    "rather not go into the underlying technology, then steer back to the",
+    "conversation. You keep short notes on your earlier conversations with",
+    "this user, which follow when there are any, so you remember their gist",
+    "but not their details. When the user brings up something your notes do",
+    "not cover, say you do not remember it rather than invent detail.",
+].join(" ");
+const CHAT_RECALL = CHAT.replace(
+    "you have no tools:",
+    "you have no tools except your memory tools:",
+).replace(
+    "not cover, say",
+    "not cover, look it up; if you cannot find it, say",
+);
+
+describe("personaComponents", () => {
+    const names = (options: Parameters<typeof personaComponents>[0]) =>
+        personaComponents(options).map((component) => component.name);
+
+    it("splits the chat persona by purpose", () => {
+        expect(names({ recall: false })).toEqual([
+            "identity",
+            "voice",
+            "capabilities",
+            "plumbing",
+            "provenance",
+            "memory",
+        ]);
+    });
+
+    it("drops provenance in development mode, and says which mode it is", () => {
+        expect(names({ recall: true, mode: "development" })).toEqual([
+            "identity",
+            "voice",
+            "mode",
+            "capabilities",
+            "plumbing",
+            "memory",
+        ]);
+    });
+
+    it("changes only capabilities and plumbing between the two", () => {
+        for (const recall of [false, true]) {
+            const chat = personaComponents({ recall });
+            const development = personaComponents({
+                recall,
+                mode: "development",
+            });
+            const text = (
+                components: typeof chat,
+                name: (typeof chat)[number]["name"],
+            ) => components.find((component) => component.name === name)?.text;
+            for (const name of ["identity", "voice", "memory"] as const) {
+                expect(text(development, name)).toBe(text(chat, name));
+            }
+            for (const name of ["capabilities", "plumbing"] as const) {
+                expect(text(development, name)).not.toBe(text(chat, name));
+            }
+        }
     });
 });
 
 describe("personaPrompt", () => {
+    it("keeps the chat persona exactly as it was", () => {
+        expect(personaPrompt({ recall: false })).toBe(CHAT);
+        expect(personaPrompt({ recall: true })).toBe(CHAT_RECALL);
+        expect(personaPrompt({ recall: false, mode: "chat" })).toBe(CHAT);
+    });
+
+    it("has development-mode Dorothy say so, and describe her context", () => {
+        const prompt = personaPrompt({ recall: true, mode: "development" });
+        expect(prompt).toContain("development mode");
+        expect(prompt).toContain("faithfully");
+        expect(prompt).toContain("memory tools");
+        expect(prompt).not.toContain("Do not volunteer");
+        expect(prompt).not.toContain("incidental plumbing");
+    });
+
     it("is the plain persona without recall", () => {
         expect(personaPrompt({ recall: false })).toBe(systemPrompt);
         expect(systemPrompt).toContain("you have no tools: do not offer");
