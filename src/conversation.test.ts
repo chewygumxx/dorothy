@@ -13,6 +13,7 @@ import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import {
     Conversation,
     type ConversationEvent,
+    conversationOptions,
     type QueryFn,
 } from "./conversation.js";
 import {
@@ -285,6 +286,31 @@ describe("Conversation", () => {
         started(fake);
         expect(fake.options?.systemPrompt).toBe(systemPrompt);
         expect(fake.options?.tools).toEqual([]);
+    });
+
+    it("puts the persona in development mode when asked", () => {
+        const fake = fakeQuery([]);
+        const conversation = new Conversation({
+            queryFn: fake.fn,
+            persona: "development",
+        });
+        conversation.start();
+        expect(fake.options?.systemPrompt).toBe(
+            personaPrompt({ recall: false, mode: "development" }),
+        );
+    });
+
+    it("starts with exactly the options conversationOptions gives", () => {
+        const fake = fakeQuery([]);
+        const setup = {
+            history: [{ role: "user" as const, text: "Hi." }],
+            memory: "<memory/>",
+            recall: RECALL,
+            persona: "development" as const,
+        };
+        const conversation = new Conversation({ ...setup, queryFn: fake.fn });
+        conversation.start();
+        expect(fake.options).toEqual(conversationOptions(setup));
     });
 
     it("keeps the CLI out of the user's Claude Code setup", () => {

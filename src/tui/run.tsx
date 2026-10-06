@@ -8,14 +8,13 @@
 //
 //
 
-import { resolve } from "node:path";
 import { render } from "ink";
 import { readConfig } from "../config.js";
-import { Conversation, type RecallLaunch } from "../conversation.js";
+import { Conversation, recallLaunch } from "../conversation.js";
 import { indexCatalogue } from "../memory/catalogue.js";
 import { MemoryService } from "../memory/service.js";
 import { trackMemory } from "../memory/track.js";
-import { personaPrompt, promptHash } from "../persona.js";
+import { type PersonaMode, personaPrompt, promptHash } from "../persona.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { newPhrase } from "../session-id.js";
 import {
@@ -31,7 +30,10 @@ import { editInEditor } from "./external-editor.js";
 const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
 
-export async function runTui(resume: string | null): Promise<number> {
+export async function runTui(
+    resume: string | null,
+    persona: PersonaMode = "chat",
+): Promise<number> {
     const phrase = resume ?? newPhrase();
     const path = transcriptPath(phrase);
     let history: ResumedTurn[] = [];
@@ -100,24 +102,15 @@ export async function runTui(resume: string | null): Promise<number> {
         warnings.push(...memory.warnings());
     }
 
-    // Dorothy's memory tools: this program again, as an MCP server.
-    const recall: RecallLaunch | null =
-        config.memory.recall && index !== null
-            ? {
-                  command: process.execPath,
-                  args: [
-                      resolve(process.argv[1] ?? ""),
-                      "--recall-server",
-                      "--exclude",
-                      phrase,
-                  ],
-              }
-            : null;
+    const recall =
+        config.memory.recall && index !== null ? recallLaunch(phrase) : null;
 
     const app = render(
         <App
             phrase={phrase}
-            promptHash={promptHash(personaPrompt({ recall: recall !== null }))}
+            promptHash={promptHash(
+                personaPrompt({ recall: recall !== null, mode: persona }),
+            )}
             history={history}
             editDraft={(text) => editInEditor(text)}
             createSession={(turns) => {
@@ -125,6 +118,7 @@ export async function runTui(resume: string | null): Promise<number> {
                     history: turns,
                     memory: memory?.block() ?? "",
                     recall,
+                    persona,
                 });
                 conversation.start();
                 return memory === null

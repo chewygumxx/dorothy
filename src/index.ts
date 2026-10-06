@@ -11,12 +11,18 @@
 import { pathToFileURL } from "node:url";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { config } from "@dotenvx/dotenvx";
-import { baseOptions, cliOptions, prepareCliHome } from "./persona.js";
+import {
+    baseOptions,
+    cliOptions,
+    type PersonaMode,
+    personaPrompt,
+    prepareCliHome,
+} from "./persona.js";
 import { isPhrase } from "./session-id.js";
 
 export type Mode =
-    | { kind: "oneshot"; prompt: string }
-    | { kind: "tui"; resume: string | null }
+    | { kind: "oneshot"; prompt: string; persona: PersonaMode }
+    | { kind: "tui"; resume: string | null; persona: PersonaMode }
     | { kind: "list" }
     | { kind: "memory"; phrase: string }
     | { kind: "recall-server"; exclude: string | null }
@@ -31,10 +37,25 @@ export const USAGE = [
     "       dorothy --memory <phrase>  correct, pin or hide a chat's notes",
     "       dorothy --recall-server    memory search for MCP clients (stdio)",
     "       dorothy -- <prompt...>     a prompt that starts with -",
+    "       dorothy --dev ...          development mode, before any of the",
+    "                                  first three or a prompt",
 ].join("\n");
 
 export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
     const [first, ...rest] = argv;
+    if (first === "--dev") {
+        const mode = rest[0] === "--dev" ? null : parseArgs(rest, isTTY);
+        if (mode?.kind === "oneshot" || mode?.kind === "tui") {
+            return { ...mode, persona: "development" };
+        }
+        return mode?.kind === "usage"
+            ? mode
+            : {
+                  kind: "usage",
+                  message:
+                      "--dev applies only to chat, a prompt or --dump-context",
+              };
+    }
     if (first === "--help" || first === "-h") {
         return { kind: "help" };
     }
@@ -79,7 +100,7 @@ export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
             };
         }
         return isTTY
-            ? { kind: "tui", resume: phrase }
+            ? { kind: "tui", resume: phrase, persona: "chat" }
             : { kind: "usage", message: "--resume needs a terminal" };
     }
     // A mistyped option would otherwise be sent, and paid for, as a prompt.
@@ -88,18 +109,22 @@ export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
     }
     const words = first === "--" ? rest : argv;
     if (words.length > 0) {
-        return { kind: "oneshot", prompt: words.join(" ") };
+        return { kind: "oneshot", prompt: words.join(" "), persona: "chat" };
     }
     return isTTY
-        ? { kind: "tui", resume: null }
+        ? { kind: "tui", resume: null, persona: "chat" }
         : { kind: "usage", message: "chat needs a terminal" };
 }
 
-async function oneShot(prompt: string): Promise<void> {
+async function oneShot(prompt: string, persona: PersonaMode): Promise<void> {
     try {
         for await (const message of query({
             prompt,
-            options: { ...baseOptions, ...cliOptions() },
+            options: {
+                ...baseOptions,
+                ...cliOptions(),
+                systemPrompt: personaPrompt({ recall: false, mode: persona }),
+            },
         })) {
             if (
                 message.type === "stream_event" &&
@@ -136,7 +161,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
         process.stderr.write(`dorothy: ${mode.message}\n${USAGE}\n`);
         process.exitCode = 2;
     } else if (mode.kind === "oneshot") {
-        await oneShot(mode.prompt);
+        await oneShot(mode.prompt, mode.persona);
     } else if (mode.kind === "list") {
         const { runList } = await import("./memory/commands.js");
         process.exitCode = await runList();
@@ -149,6 +174,6 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     } else {
         // Loaded only for chat, so one-shot replies never pay for React.
         const { runTui } = await import("./tui/run.js");
-        process.exitCode = await runTui(mode.resume);
+        process.exitCode = await runTui(mode.resume, mode.persona);
     }
 }
