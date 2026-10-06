@@ -8,8 +8,11 @@
 //
 //
 
-import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import { baseOptions, cliOptions } from "../persona.js";
+import {
+    type StructuredHandle,
+    type StructuredQueryFn,
+    structuredCall,
+} from "../structured.js";
 import type { ResumedTurn } from "../transcript.js";
 import { escapeXml, renderClusters, unescapeXml } from "./block.js";
 import { REAL_TIMERS, type Timers } from "./scheduler.js";
@@ -24,12 +27,9 @@ import {
     type Sidecar,
 } from "./sidecar.js";
 
-export type ReviewHandle = AsyncIterable<SDKMessage> & { close(): void };
 // The SDK's query() fits this; tests pass a fake.
-export type ReviewQueryFn = (params: {
-    prompt: string;
-    options: Options;
-}) => ReviewHandle;
+export type ReviewHandle = StructuredHandle;
+export type ReviewQueryFn = StructuredQueryFn;
 
 export const REVIEW_TIMEOUT_MS = 120_000;
 
@@ -133,11 +133,6 @@ export type ReviewOutcome =
           costUsd: number;
       }
     | { ok: false; reason: string; costUsd: number };
-
-type ResultMessage = Extract<SDKMessage, { type: "result" }>;
-
-const describeError = (error: unknown) =>
-    error instanceof Error ? error.message : String(error);
 
 // The conversation, then the notes as they stand, then the earlier titles.
 export function reviewPrompt(
@@ -331,101 +326,25 @@ export async function runReview({
     schema?: Record<string, unknown>;
     readIds?: readonly string[];
 }): Promise<ReviewOutcome> {
-    if (signal?.aborted) {
-        return { ok: false, reason: "cancelled", costUsd: 0 };
-    }
-    let handle: ReviewHandle;
-    try {
-        handle = queryFn({
-            prompt,
-            options: {
-                ...baseOptions,
-                ...cliOptions(),
-                systemPrompt,
-                includePartialMessages: false,
-                outputFormat: { type: "json_schema", schema },
-            },
-        });
-    } catch (error) {
-        return { ok: false, reason: describeError(error), costUsd: 0 };
-    }
-    // A timeout or quitting ends the review even if the query never yields
-    // again.
-    let stopped: string | null = null;
-    let wake = () => {};
-    const halted = new Promise<void>((resolve) => {
-        wake = resolve;
-    });
-    const stop = (reason: string) => {
-        stopped ??= reason;
-        wake();
-    };
-    const timer = timers.set(
-        () => stop(`timed out after ${timeoutMs / 1000}s`),
+    const outcome = await structuredCall({ queryFn, timers })({
+        what: "review",
+        system: systemPrompt,
+        prompt,
+        schema,
         timeoutMs,
-    );
-    const onAbort = () => stop("cancelled");
-    signal?.addEventListener("abort", onAbort);
-
-    let model = "unknown";
-    let result: ResultMessage | null = null;
-    let thrown: string | null = null;
-    const consume = async () => {
-        for await (const message of handle) {
-            if (message.type === "system" && message.subtype === "init") {
-                model = message.model;
-            } else if (message.type === "result") {
-                result = message;
-                return;
-            }
-        }
-    };
-    try {
-        await Promise.race([
-            consume().catch((error: unknown) => {
-                thrown = describeError(error);
-            }),
-            halted,
-        ]);
-    } finally {
-        timers.clear(timer);
-        signal?.removeEventListener("abort", onAbort);
-        handle.close();
+        ...(signal === undefined ? {} : { signal }),
+    });
+    if (!outcome.ok) {
+        return outcome;
     }
-
-    if (stopped !== null) {
-        return { ok: false, reason: stopped, costUsd: 0 };
-    }
-    if (thrown !== null) {
-        return { ok: false, reason: thrown, costUsd: 0 };
-    }
-    const final = result as ResultMessage | null;
-    if (final === null) {
-        return {
-            ok: false,
-            reason: "the review ended without a result",
-            costUsd: 0,
-        };
-    }
-    const costUsd = final.total_cost_usd;
-    if (final.subtype !== "success") {
-        return {
-            ok: false,
-            reason: final.errors.join("; ") || final.subtype,
-            costUsd,
-        };
-    }
-    if (final.is_error) {
-        return { ok: false, reason: final.result || "error", costUsd };
-    }
-    const checked = validateReview(final.structured_output, readIds);
+    const checked = validateReview(outcome.output, readIds);
     return checked.ok
         ? {
               ok: true,
               notes: checked.notes,
               appraisals: checked.appraisals,
-              model,
-              costUsd,
+              model: outcome.model,
+              costUsd: outcome.costUsd,
           }
-        : { ok: false, reason: checked.reason, costUsd };
+        : { ok: false, reason: checked.reason, costUsd: outcome.costUsd };
 }
