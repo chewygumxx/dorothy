@@ -162,6 +162,9 @@ class CompactingSession implements ChatSession {
     #closed = false;
     // How many turns there were when compaction last found nothing to do.
     #nothingAt = -1;
+    // Saving the clusters for the handover: a message waits for the new
+    // session rather than going to the old one, which is about to close.
+    #handing = false;
 
     constructor(
         compaction: Compaction,
@@ -201,6 +204,7 @@ class CompactingSession implements ChatSession {
         }
         if (
             this.#inner === null ||
+            this.#handing ||
             (this.#urgent && !this.#compaction.exhausted)
         ) {
             this.#announce();
@@ -387,6 +391,7 @@ class CompactingSession implements ChatSession {
         if (signal.aborted) {
             return;
         }
+        this.#handing = true;
         const saved = await compaction.options.save(outcome.clusters);
         if (!saved.ok) {
             this.#fail(saved.reason);
@@ -397,8 +402,15 @@ class CompactingSession implements ChatSession {
             through: outcome.range.through,
             clusters: outcome.clusters.length,
         });
+        // Closed or quitting meanwhile: the clusters are kept, but no new
+        // session is wanted.
+        if (signal.aborted || this.#closed) {
+            return;
+        }
         const old = this.#inner;
         this.#urgent = false;
+        // The old session's last reply may have started an idle wait.
+        this.#cancelIdle();
         this.#attach(this.#connect(compaction.seed(this.#turns)));
         void old?.close();
         this.#emit({
@@ -435,6 +447,7 @@ class CompactingSession implements ChatSession {
         }
         this.#urgent = false;
         this.#announced = false;
+        this.#handing = false;
         for (const text of held) {
             this.#forward(text);
         }

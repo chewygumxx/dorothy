@@ -125,11 +125,14 @@ function harness({
     claim = null,
     clusters = [],
     save = { ok: true },
+    saving = Promise.resolve(),
 }: {
     estimate?: number;
     claim?: Claim | null;
     clusters?: Cluster[];
     save?: SaveResult;
+    // Settles when the save may finish.
+    saving?: Promise<void>;
 } = {}) {
     const timers = new FakeTimers();
     const sessions: FakeSession[] = [];
@@ -150,6 +153,7 @@ function harness({
             }),
         save: async (added) => {
             saved.push([...added]);
+            await saving;
             return save;
         },
         record: async (entry) => {
@@ -274,11 +278,39 @@ describe("Compaction", () => {
         await settle();
         // The handover waits for the reply to the message sent meanwhile.
         expect(h.sessions).toHaveLength(1);
-        h.sessions[0]?.reply(50, "done");
+        // The old session replies past soft; its idle wait dies with it.
+        h.sessions[0]?.reply(150, "done");
         await until(() => h.sessions.length === 2);
         const tail = h.sessions[1]?.seed.turns.map((t) => t.text) ?? [];
         expect(tail.slice(-2)).toEqual(["during", "done"]);
         expect(h.saved[0]?.at(-1)?.through).toBe(2);
+        h.timers.advance(100_000);
+        await settle();
+        expect(h.calls).toHaveLength(1);
+    });
+
+    it("holds a message sent while the clusters are saved, for the new session", async () => {
+        let saveDone = () => {};
+        const saving = new Promise<void>((resolve) => {
+            saveDone = resolve;
+        });
+        const h = harness({ saving });
+        const session = h.open();
+        session.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.saved.length === 1);
+        session.send("racing");
+        expect(h.sessions[0]?.sent).toEqual(["abcd"]);
+        saveDone();
+        await until(() => h.sessions.length === 2);
+        await until(() => h.sessions[1]?.sent.length === 1);
+        expect(h.sessions[1]?.sent).toEqual(["racing"]);
+        expect(h.sessions[1]?.seed.turns.map((t) => t.text)).not.toContain(
+            "racing",
+        );
     });
 
     it("seeds a reconnection from the clusters, not the whole conversation", async () => {
@@ -384,6 +416,28 @@ describe("Compaction", () => {
         expect(h.recorded).toEqual([]);
         expect(h.sessions[0]?.closed).toBe(true);
         expect(h.sessions).toHaveLength(1);
+    });
+
+    it("connects nothing when closed while the clusters are saved", async () => {
+        let saveDone = () => {};
+        const saving = new Promise<void>((resolve) => {
+            saveDone = resolve;
+        });
+        const h = harness({ saving });
+        const session = h.open();
+        session.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.saved.length === 1);
+        await session.close();
+        saveDone();
+        await h.compaction.stop();
+        // Saved clusters are recorded, so the sidecar and transcript agree.
+        expect(h.recorded).toEqual([{ through: 2, clusters: 1 }]);
+        expect(h.sessions).toHaveLength(1);
+        expect(h.sessions[0]?.closed).toBe(true);
     });
 
     it("leaves an idle compaction to whoever holds the claim", async () => {
