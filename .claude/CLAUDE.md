@@ -88,10 +88,19 @@ review claims, so two TUIs never review one conversation at once.
 roughly 32k input tokens of tool definitions, and `settingSources: []` stops it
 loading `~/.claude` and `.claude/` settings, which would otherwise run this
 repository's `SessionStart` hook and every enabled plugin before the first
-token. The CLI
-still prepends its own identity line and environment context (working
-directory, model, date) regardless of `systemPrompt`; the persona prompt tells
-the model to treat those as incidental and not to volunteer its provenance.
+token. Settings files are not all it reads, though: from its config directory
+it takes the signed-in account and tells the model the user's email, and from
+the working directory's repository its auto-memory, git status and worktree
+instructions. So every call also spreads `cliOptions()`, which runs the CLI in
+a private home (`$XDG_CACHE_HOME/dorothy/claude`, created 0700 by the entry
+guard) as both `CLAUDE_CONFIG_DIR` and `cwd`, with
+`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`; it is a function because dotenvx loads the
+credentials after import. The CLI still prepends its own identity line, and
+appends a system message after each user turn with the working directory,
+platform, shell, OS version, model, a token budget and the date, regardless of
+`systemPrompt`; the persona prompt tells the model to treat those as incidental
+and not to volunteer its provenance. Findings:
+`docs/reports/2026-10-07-context-leak.md`.
 
 Auth comes from `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` in `.env`,
 which is committed encrypted by dotenvx; set values only with `dotenvx set`.
