@@ -8,6 +8,7 @@
 //
 //
 
+import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -121,12 +122,8 @@ describe("RecallIndex", () => {
         index.close();
     });
 
-    it("leaves the file alone when the lock stays held", async () => {
-        const first = RecallIndex.open(path);
-        insert(first, "a");
-        first.close();
-        const before = (await stat(path)).ino;
-        const child = Bun.spawn(
+    const holdLock = (seconds: number) =>
+        Bun.spawn(
             [
                 process.execPath,
                 "-e",
@@ -135,18 +132,43 @@ describe("RecallIndex", () => {
                  db.run("PRAGMA busy_timeout = 5000");
                  db.run("BEGIN IMMEDIATE");
                  console.log("locked");
-                 Bun.sleepSync(600);
+                 Bun.sleepSync(${seconds * 1000});
                  db.run("COMMIT");`,
             ],
             { stdout: "pipe" },
         );
+
+    it("opens a current index while another process holds the lock", async () => {
+        const first = RecallIndex.open(path);
+        insert(first, "a");
+        first.close();
+        const child = holdLock(0.6);
+        await child.stdout.getReader().read();
+        const start = performance.now();
+        const index = RecallIndex.open(path, 100);
+        expect(performance.now() - start).toBeLessThan(100);
+        expect(count(index)).toBe(1);
+        index.close();
+        await child.exited;
+    });
+
+    it("leaves a file that needs migrating alone when the lock stays held", async () => {
+        const first = RecallIndex.open(path);
+        insert(first, "a");
+        first.db.run("PRAGMA user_version = 7");
+        first.close();
+        const before = (await stat(path)).ino;
+        const child = holdLock(0.6);
         await child.stdout.getReader().read();
         expect(() => RecallIndex.open(path, 100)).toThrow();
         await child.exited;
         expect((await stat(path)).ino).toBe(before);
-        const index = RecallIndex.open(path);
-        expect(count(index)).toBe(1);
-        index.close();
+        // Looked at without migrating it: the rows are still there.
+        const raw = new Database(path, { readonly: true });
+        expect(
+            raw.query("SELECT count(*) AS n FROM conversations").get(),
+        ).toEqual({ n: 1 });
+        raw.close();
     });
 
     it("keeps the index and its journal files private", async () => {

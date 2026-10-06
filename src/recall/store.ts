@@ -137,9 +137,15 @@ function dropSchema(db: Database): void {
     drop("TABLE", "type = 'table'");
 }
 
+const versionOf = (db: Database) =>
+    (db.query("PRAGMA user_version").get() as { user_version: number })
+        .user_version;
+
 // Two processes may open a new index at once: the schema is made under the
-// write lock, and whoever comes second finds it made. The file is private
-// before SQLite writes to it, and SQLite gives -wal and -shm its mode.
+// write lock, and whoever comes second finds it made. A current index is
+// opened without the lock, so another process holding it for long does not
+// keep this one out. The file is private before SQLite writes to it, and
+// SQLite gives -wal and -shm its mode.
 function prepare(path: string, busyMs: number): Database {
     closeSync(openSync(path, "a", 0o600));
     chmodSync(path, 0o600);
@@ -147,21 +153,22 @@ function prepare(path: string, busyMs: number): Database {
     try {
         db.run(`PRAGMA busy_timeout = ${busyMs}`);
         db.run("PRAGMA journal_mode = WAL");
-        db.transaction(() => {
-            const { user_version: version } = db
-                .query("PRAGMA user_version")
-                .get() as { user_version: number };
-            if (version === SCHEMA_VERSION) {
-                return;
-            }
-            if (version !== 0) {
-                dropSchema(db);
-            }
-            for (const statement of SCHEMA) {
-                db.run(statement);
-            }
-            db.run(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-        }).immediate();
+        if (versionOf(db) !== SCHEMA_VERSION) {
+            db.transaction(() => {
+                // Looked at again: another process may have got here first.
+                const version = versionOf(db);
+                if (version === SCHEMA_VERSION) {
+                    return;
+                }
+                if (version !== 0) {
+                    dropSchema(db);
+                }
+                for (const statement of SCHEMA) {
+                    db.run(statement);
+                }
+                db.run(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+            }).immediate();
+        }
         // A file that is not SQLite fails here rather than mid-query.
         db.query("SELECT count(*) FROM conversations").get();
         return db;
