@@ -354,4 +354,39 @@ describe("lookup lines", () => {
         );
         expect(lastFrame()).not.toContain("dorothy");
     });
+
+    it("draws no blank row for a continued reply with no text left", () => {
+        const { lastFrame } = render(
+            <LineView
+                line={{
+                    id: 0,
+                    role: "dorothy",
+                    text: "",
+                    continued: true,
+                    stats,
+                }}
+                replyStats={DEFAULT_CONFIG.replyStats}
+            />,
+        );
+        const frame = lastFrame() ?? "";
+        expect(frame).toContain("12 in · 3000 cache read");
+        expect(frame.split("\n")[0]).toContain("12 in");
+    });
+
+    it("still marks an interrupted reply with no text left", () => {
+        const { lastFrame } = render(
+            <LineView
+                line={{
+                    id: 0,
+                    role: "dorothy",
+                    text: "",
+                    continued: true,
+                    interrupted: true,
+                }}
+                replyStats={DEFAULT_CONFIG.replyStats}
+            />,
+        );
+        expect(lastFrame()).toContain("[interrupted]");
+        expect(lastFrame()).not.toContain("dorothy");
+    });
 });

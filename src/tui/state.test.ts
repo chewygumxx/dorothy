@@ -326,6 +326,45 @@ describe("lookups in a live reply", () => {
         expect(state.replyOffset).toBe(0);
     });
 
+    it("labels the first text of a reply that opens with a lookup", () => {
+        const state = run(
+            streaming(),
+            lookupAt(0),
+            deltaOf("Found it."),
+            endOf("Found it."),
+        );
+        expect(state.lines.slice(1).map((line) => line.role)).toEqual([
+            "lookup",
+            "dorothy",
+        ]);
+        expect(state.lines.at(-1)).toMatchObject({
+            text: "Found it.",
+            continued: false,
+        });
+    });
+
+    it("labels only the first of several texts around lookups", () => {
+        const state = run(
+            streaming(),
+            lookupAt(0),
+            deltaOf("One."),
+            lookupAt(4),
+            deltaOf("\n\nTwo."),
+            lookupAt(10),
+            deltaOf("\n\nThree."),
+            endOf("One.\n\nTwo.\n\nThree."),
+        );
+        expect(
+            state.lines
+                .filter((line) => line.role === "dorothy")
+                .map((line) => [line.text, line.continued]),
+        ).toEqual([
+            ["One.", false],
+            ["Two.", true],
+            ["Three.", true],
+        ]);
+    });
+
     it("adds no empty line for a lookup with no text before it", () => {
         const state = run(streaming(), lookupAt(0), lookupAt(0, opened));
         expect(state.lines.slice(1).map((line) => line.role)).toEqual([
@@ -401,6 +440,31 @@ describe("lookups in a resumed reply", () => {
                 continued: true,
             },
         ]);
+    });
+
+    it("labels the first text of a resumed reply that opens with a lookup", () => {
+        const lines = initialState([
+            {
+                role: "assistant",
+                text: "Found it.",
+                lookups: [
+                    {
+                        v: 1,
+                        kind: "recall",
+                        at: "t",
+                        id: "toolu_1",
+                        ok: true,
+                        offset: 0,
+                        ...searched,
+                    },
+                ],
+            },
+        ]).lines;
+        expect(lines.map((line) => [line.role, line.continued])).toEqual([
+            ["lookup", undefined],
+            ["dorothy", false],
+        ]);
+        expect(lines[1]?.text).toBe("Found it.");
     });
 
     it("clamps offsets past the end of a cut-short reply", () => {

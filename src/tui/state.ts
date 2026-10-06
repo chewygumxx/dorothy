@@ -25,7 +25,8 @@ export type Line = {
     text: string;
     // A lookup's second line: what Dorothy opened a conversation for.
     detail?: string;
-    // A later part of a reply a lookup interrupted; it has no label.
+    // A later part of a reply whose earlier part was already shown under the
+    // label; it has none of its own.
     continued?: boolean;
     stats?: TurnStats;
     // What the whole chat has cost by the end of this reply, across
@@ -55,6 +56,8 @@ export type ChatState = {
     // Where in the live reply the latest lookup happened, and whether the
     // reply has been split around one.
     replyOffset: number;
+    split: boolean;
+    // Whether the live reply has shown a labelled dorothy line yet.
     continued: boolean;
 };
 
@@ -106,15 +109,14 @@ function replyLines(turn: ResumedTurn): Omit<Line, "id">[] {
     }
     const lines: Omit<Line, "id">[] = [];
     let from = 0;
+    // Whether a dorothy line, which carries the label, is already out.
+    let shown = false;
     for (const lookup of lookups) {
         const at = Math.min(Math.max(lookup.offset, from), turn.text.length);
         const segment = turn.text.slice(from, at).trim();
         if (segment !== "") {
-            lines.push({
-                role: "dorothy",
-                text: segment,
-                continued: lines.length > 0,
-            });
+            lines.push({ role: "dorothy", text: segment, continued: shown });
+            shown = true;
         }
         lines.push({ role: "lookup", ...lookupLine(lookup.ok, lookup) });
         from = at;
@@ -124,7 +126,7 @@ function replyLines(turn: ResumedTurn): Omit<Line, "id">[] {
         text: turn.text.slice(from).trim(),
         stats: turn.stats,
         chatCostUsd: turn.chatCostUsd,
-        continued: true,
+        continued: shown,
     });
     return lines;
 }
@@ -156,6 +158,7 @@ export function initialState(
         lastStats:
             history.findLast((turn) => turn.stats !== undefined)?.stats ?? null,
         replyOffset: 0,
+        split: false,
         continued: false,
     };
 }
@@ -179,7 +182,7 @@ function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
             return { ...state, live: state.live + event.text };
         case "turn-end": {
             const costUsd = state.costUsd + event.stats.costUsd;
-            const text = state.continued
+            const text = state.split
                 ? event.reply.slice(state.replyOffset).trim()
                 : event.reply;
             return {
@@ -196,6 +199,7 @@ function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
                 lastStats: event.stats,
                 live: "",
                 streaming: false,
+                split: false,
                 continued: false,
                 replyOffset: 0,
             };
@@ -228,7 +232,8 @@ function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
                     ...lookupLine(event.ok, event.lookup),
                 }),
                 live: "",
-                continued: true,
+                split: true,
+                continued: state.continued || segment !== "",
                 replyOffset: event.offset,
             };
         }
@@ -246,6 +251,7 @@ function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
                 lines: append(lines, { role: "error", text: event.message }),
                 live: "",
                 streaming: false,
+                split: false,
                 continued: false,
                 replyOffset: 0,
                 status: "disconnected",
@@ -262,6 +268,7 @@ export function reduce(state: ChatState, action: Action): ChatState {
                 lines: append(state.lines, { role: "you", text: action.text }),
                 live: "",
                 streaming: true,
+                split: false,
                 continued: false,
                 replyOffset: 0,
             };

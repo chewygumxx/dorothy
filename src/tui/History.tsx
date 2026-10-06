@@ -93,16 +93,18 @@ export function LineView({
     const rows = rowsOf(line, columns - LABEL_WIDTH);
     return (
         <Box flexDirection="column">
-            <Box>
-                <Box width={LABEL_WIDTH} flexShrink={0}>
-                    {label ? (
-                        <Text color={label.color} bold>
-                            {label.text}
-                        </Text>
-                    ) : null}
+            {rows.length > 0 ? (
+                <Box>
+                    <Box width={LABEL_WIDTH} flexShrink={0}>
+                        {label ? (
+                            <Text color={label.color} bold>
+                                {label.text}
+                            </Text>
+                        ) : null}
+                    </Box>
+                    <RowsView rows={rows} />
                 </Box>
-                <RowsView rows={rows} />
-            </Box>
+            ) : null}
             {line.stats ? (
                 <Box marginLeft={LABEL_WIDTH} flexDirection="column">
                     {moduleRows(
