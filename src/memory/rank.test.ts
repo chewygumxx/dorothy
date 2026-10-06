@@ -209,6 +209,41 @@ describe("tier", () => {
 });
 
 describe("buildMemory", () => {
+    it("charges the abstracts first, leaving the rest less room", () => {
+        const entries = [entry("a", full("Kept")), entry("b", full("Next"))];
+        const config = { ...DEFAULT_CONFIG.memory, budget: 200 };
+        const room = buildMemory(entries, { now: NOW, config, exclude: null });
+        expect(room.block).toContain("<title>Next</title>");
+        const crowded = buildMemory(entries, {
+            now: NOW,
+            config,
+            exclude: null,
+            reserved: 190,
+        });
+        expect(crowded.block).not.toContain("<title>Next</title>");
+        expect(crowded.warnings).toEqual([]);
+    });
+
+    it("still shows pins past abstracts that fill the budget, and says so", () => {
+        const pinned = entry("a", full("Pinned", { pinned: true }));
+        const { block, warnings } = buildMemory(
+            [pinned, entry("b", full("Other"))],
+            {
+                now: NOW,
+                config: { ...DEFAULT_CONFIG.memory, budget: 200 },
+                exclude: null,
+                reserved: 250,
+            },
+        );
+        expect(block).toContain("<title>Pinned</title>");
+        expect(block).not.toContain("Other");
+        expect(warnings).toEqual([
+            expect.stringMatching(
+                /^memory: this conversation's summaries take ~250 tokens and pinned notes ~\d+, over the budget of 200$/,
+            ),
+        ]);
+    });
+
     it("renders the ranked notes, without the current conversation", () => {
         const { block, warnings } = buildMemory(
             [entry("a", full("Kept")), entry("b", full("Current"))],

@@ -10,10 +10,12 @@
 
 import { describe, expect, it } from "bun:test";
 import {
+    escapeXml,
     MEMORY_PREAMBLE,
     type Note,
     renderBlock,
     renderClusters,
+    unescapeXml,
 } from "./block.js";
 
 const pinned: Note = {
@@ -141,4 +143,8 @@ describe("renderClusters", () => {
             "</earlier>",
         ]);
     });
+});
+
+it("unescapes what escapeXml escaped, once", () => {
+    expect(unescapeXml(escapeXml("a & <b> &lt;"))).toBe("a & <b> &lt;");
 });

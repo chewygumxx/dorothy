@@ -13,6 +13,7 @@ import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { cliOptions, type Turn } from "../persona.js";
 import type { ResumedTurn } from "../transcript.js";
 import {
+    CLUSTERS_INSTRUCTION,
     pendingReads,
     REVIEW_INSTRUCTIONS,
     REVIEW_SCHEMA,
@@ -495,5 +496,48 @@ describe("validateReview", () => {
             notes: NOTES,
             appraisals: {},
         });
+    });
+});
+
+describe("reviewing a compacted conversation", () => {
+    const turns: ResumedTurn[] = [
+        { role: "user", text: "Old one." },
+        { role: "assistant", text: "Old two." },
+        { role: "user", text: "New <one>." },
+        { role: "assistant", text: "New two." },
+    ];
+    const current = {
+        ...EMPTY_SIDECAR,
+        clusters: [
+            {
+                from: 1,
+                through: 2,
+                abstract: "Old & settled.",
+                at: AT,
+                model: "m",
+            },
+        ],
+    };
+
+    it("gives the abstracts, then only the turns after them", () => {
+        const prompt = reviewPrompt(turns, current);
+        expect(prompt).toContain(
+            [
+                "<conversation>",
+                "<earlier>",
+                '<cluster n="1" turns="1-2">Old &amp; settled.</cluster>',
+                "</earlier>",
+                "",
+                "User: New &lt;one&gt;.",
+                "",
+                "Dorothy: New two.",
+                "</conversation>",
+            ].join("\n"),
+        );
+        expect(prompt).not.toContain("Old one.");
+    });
+
+    it("says how to read them", () => {
+        expect(CLUSTERS_INSTRUCTION).toContain("<earlier>");
     });
 });

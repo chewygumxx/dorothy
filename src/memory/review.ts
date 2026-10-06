@@ -11,7 +11,7 @@
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { baseOptions, cliOptions } from "../persona.js";
 import type { ResumedTurn } from "../transcript.js";
-import { escapeXml } from "./block.js";
+import { escapeXml, renderClusters, unescapeXml } from "./block.js";
 import { REAL_TIMERS, type Timers } from "./scheduler.js";
 import {
     FIELDS,
@@ -68,6 +68,12 @@ export const READS_INSTRUCTION = [
     "For each read listed in <reads>, marked [read id] where it happened,",
     "judge how well what you found served its purpose, by what happened",
     "afterwards: none, slight, useful or essential.",
+].join(" ");
+
+export const CLUSTERS_INSTRUCTION = [
+    "Its earlier turns are given as your own summaries in <earlier>, as",
+    "they were in your context; write your notes on the whole",
+    "conversation.",
 ].join(" ");
 
 // A read awaiting Dorothy's appraisal: an open that succeeded.
@@ -140,12 +146,20 @@ export function reviewPrompt(
     reads: readonly PendingRead[] = [],
 ): string {
     const ids = new Set(reads.map((read) => read.id));
-    const conversation = turns
-        .map(
-            (turn) =>
-                `${turn.role === "user" ? "User" : "Dorothy"}: ${escapeXml(marked(turn, ids))}`,
-        )
-        .join("\n\n");
+    const clusters = current?.clusters ?? [];
+    const covered = clusters.at(-1)?.through ?? 0;
+    const earlier =
+        clusters.length === 0 ? [] : [...renderClusters(clusters), ""];
+    const conversation = [
+        ...earlier,
+        turns
+            .slice(covered)
+            .map(
+                (turn) =>
+                    `${turn.role === "user" ? "User" : "Dorothy"}: ${escapeXml(marked(turn, ids))}`,
+            )
+            .join("\n\n"),
+    ].join("\n");
     const notes = FIELDS.map((field) => {
         const value = current?.[field] ?? null;
         if (value === null) {
@@ -199,14 +213,6 @@ export function reviewPrompt(
             : []),
     ].join("\n");
 }
-
-// The prompt escapes &, < and >; a note that echoes them is read as text.
-// &amp; goes last, so &amp;lt; decodes once, to &lt;.
-const unescapeXml = (text: string) =>
-    text
-        .replaceAll("&lt;", "<")
-        .replaceAll("&gt;", ">")
-        .replaceAll("&amp;", "&");
 
 // The schema already asked for this; the model's output is checked again.
 export function validateNotes(

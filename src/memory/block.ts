@@ -36,6 +36,14 @@ export const escapeXml = (text: string) =>
         .replaceAll("<", "&lt;")
         .replaceAll(">", "&gt;");
 
+// What a model echoes of escaped text is read as text. &amp; goes last, so
+// &amp;lt; decodes once, to &lt;.
+export const unescapeXml = (text: string) =>
+    text
+        .replaceAll("&lt;", "<")
+        .replaceAll("&gt;", ">")
+        .replaceAll("&amp;", "&");
+
 // The lines of <earlier>, one cluster each, numbered from 1 as recollect
 // counts them.
 export function renderClusters(clusters: readonly Cluster[]): string[] {

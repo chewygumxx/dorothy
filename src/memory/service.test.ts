@@ -19,6 +19,7 @@ import { RecallIndex } from "../recall/store.js";
 import { newPhrase } from "../session-id.js";
 import type { Entry } from "./catalogue.js";
 import {
+    CLUSTERS_INSTRUCTION,
     READS_INSTRUCTION,
     REVIEW_INSTRUCTIONS,
     REVIEW_TIMEOUT_MS,
@@ -651,5 +652,57 @@ describe("MemoryService with the index", () => {
         await settle();
         expect(fake.calls).toHaveLength(0);
         other.close();
+    });
+});
+
+describe("the block for a compacted session", () => {
+    it("leaves the abstracts' tokens out of the budget", () => {
+        const { memory } = setup({
+            queryFn: reviews().fn,
+            config: { ...DEFAULT_CONFIG.memory, budget: 200 },
+            entries: [
+                entry(phrase(1), { ...NOTES, title: "First" }),
+                entry(phrase(2), { ...NOTES, title: "Second" }),
+            ],
+        });
+        expect(memory.block()).toContain("Second");
+        expect(memory.block(190)).not.toContain("Second");
+    });
+
+    it("tells a review of a compacted conversation how to read it", async () => {
+        await transcript(LIVE, [
+            user("Old"),
+            reply("Older"),
+            user("New"),
+            reply("Newer"),
+        ]);
+        await writeFile(
+            sidecarPath(dir, LIVE),
+            JSON.stringify({
+                ...EMPTY_SIDECAR,
+                ...NOTES,
+                clusters: [
+                    {
+                        from: 1,
+                        through: 2,
+                        abstract: "Old.",
+                        at: NOW.toISOString(),
+                        model: "claude-test",
+                    },
+                ],
+            }),
+        );
+        const query = reviews(NOTES);
+        const { memory } = setup({ queryFn: query.fn });
+        memory.turnEnded();
+        await until(() => query.calls.length > 0);
+        const call = query.calls[0];
+        expect(String(call?.options.systemPrompt)).toEndWith(
+            CLUSTERS_INSTRUCTION,
+        );
+        expect(call?.prompt).toContain(
+            '<cluster n="1" turns="1-2">Old.</cluster>',
+        );
+        expect(call?.prompt).not.toContain("Older");
     });
 });

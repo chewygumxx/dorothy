@@ -18,6 +18,7 @@ import { type ResumedTurn, readTranscript } from "../transcript.js";
 import type { Entry } from "./catalogue.js";
 import { buildMemory } from "./rank.js";
 import {
+    CLUSTERS_INSTRUCTION,
     pendingReads,
     READS_INSTRUCTION,
     REVIEW_INSTRUCTIONS,
@@ -148,9 +149,20 @@ export class MemoryService implements MemoryHooks {
         this.#pinWarned = built.warnings.length > 0;
     }
 
-    // The block a new session starts with, as of the latest review.
-    block(): string {
-        return this.#block;
+    // The block a new session starts with, as of the latest review, with
+    // reserved tokens of the live conversation's own abstracts charged
+    // first. A pin overrun is told once a run.
+    block(reserved = 0): string {
+        if (reserved === 0) {
+            return this.#block;
+        }
+        const built = this.#build(this.#phrase, reserved);
+        const [warning] = built.warnings;
+        if (warning !== undefined && !this.#pinWarned) {
+            this.#pinWarned = true;
+            this.#warn(warning);
+        }
+        return built.block;
     }
 
     // What building the first block found wrong, for the startup warnings.
@@ -239,11 +251,15 @@ export class MemoryService implements MemoryHooks {
         this.#emit({ type: "warning", message });
     }
 
-    #build(exclude: string): { block: string; warnings: string[] } {
+    #build(
+        exclude: string,
+        reserved = 0,
+    ): { block: string; warnings: string[] } {
         return buildMemory([...this.#entries.values()], {
             now: this.#now().getTime(),
             config: this.#config,
             exclude,
+            reserved,
         });
     }
 
@@ -343,13 +359,18 @@ export class MemoryService implements MemoryHooks {
             return;
         }
         const readIds = reads.map((read) => read.id);
+        const instructions = [
+            REVIEW_INSTRUCTIONS,
+            ...(reads.length > 0 ? [READS_INSTRUCTION] : []),
+            ...((current?.clusters.length ?? 0) > 0
+                ? [CLUSTERS_INSTRUCTION]
+                : []),
+        ].join(" ");
         const outcome = await runReview({
             queryFn: this.#queryFn,
             systemPrompt: [
                 withMemory(systemPrompt, this.#build(phrase).block),
-                reads.length > 0
-                    ? `${REVIEW_INSTRUCTIONS} ${READS_INSTRUCTION}`
-                    : REVIEW_INSTRUCTIONS,
+                instructions,
             ].join("\n\n"),
             prompt: reviewPrompt(turns, current, reads),
             schema: reviewSchema(readIds),
