@@ -169,6 +169,8 @@ export function cliHome(env: Env = process.env): string {
 // and tells Dorothy the user's email address; from the working directory's
 // repository, its auto-memory, git status and worktree instructions. Applied
 // at each call, after dotenvx has loaded the credentials into process.env.
+// Compaction is Dorothy's own (src/compaction/): DISABLE_COMPACT switches
+// the CLI's off, automatic and /compact alike.
 export function cliOptions(
     env: Env = process.env,
 ): Pick<Options, "cwd" | "env"> {
@@ -179,6 +181,7 @@ export function cliOptions(
             ...env,
             CLAUDE_CONFIG_DIR: home,
             CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
+            DISABLE_COMPACT: "1",
         },
     };
 }

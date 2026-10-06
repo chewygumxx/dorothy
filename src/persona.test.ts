@@ -247,6 +247,10 @@ describe("cliOptions", () => {
         });
     });
 
+    it("switches off the CLI's own compaction, automatic and manual", () => {
+        expect(cliOptions(env).env).toMatchObject({ DISABLE_COMPACT: "1" });
+    });
+
     it("passes the rest of the environment through, untouched", () => {
         expect(cliOptions(env).env).toMatchObject({
             HOME: "/home/u",

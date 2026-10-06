@@ -11,6 +11,7 @@
 import { describe, expect, it } from "bun:test";
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import {
+    COMPACTED_BY_CLI,
     Conversation,
     type ConversationEvent,
     conversationOptions,
@@ -71,6 +72,28 @@ const executionError = (errors: string[]) =>
         ...(result(0, "error_during_execution") as object),
         is_error: true,
         errors,
+    }) as unknown as SDKMessage;
+// What the CLI says each time a request's response arrives: the usage of
+// that one request, not the turn's.
+const usage = (input: number, cacheRead: number, cacheWrite: number) =>
+    ({
+        type: "assistant",
+        message: {
+            content: [],
+            usage: {
+                input_tokens: input,
+                cache_read_input_tokens: cacheRead,
+                cache_creation_input_tokens: cacheWrite,
+                output_tokens: 1,
+            },
+        },
+        parent_tool_use_id: null,
+    }) as unknown as SDKMessage;
+const compactBoundary = () =>
+    ({
+        type: "system",
+        subtype: "compact_boundary",
+        compact_metadata: { trigger: "auto", pre_tokens: 100 },
     }) as unknown as SDKMessage;
 
 type Fake = {
@@ -180,6 +203,7 @@ describe("Conversation", () => {
             type: "turn-end",
             reply: "Hello",
             interrupted: false,
+            contextTokens: 3412,
             stats: {
                 inputTokens: 10,
                 cacheReadTokens: 3000,
@@ -371,6 +395,54 @@ describe("Conversation", () => {
         conversation.send("hi");
         await until(() => of(events, "error").length === 1);
         expect(of(events, "error")[0]?.message).toBe("one; two");
+    });
+
+    it("measures the context from the last request, plus the reply", async () => {
+        const fake = fakeQuery([
+            [
+                usage(5, 1000, 100),
+                usage(7, 2000, 300),
+                delta("12345678"),
+                result(0.001),
+            ],
+        ]);
+        const { conversation, events } = started(fake);
+        conversation.send("hi");
+        await until(() => of(events, "turn-end").length === 1);
+        // 7 + 2000 + 300, and 8 characters of reply at 4 a token.
+        expect(of(events, "turn-end")[0]?.contextTokens).toBe(2309);
+    });
+
+    it("falls back on the turn's usage when no request reported any", async () => {
+        const fake = fakeQuery([[delta("Hello"), result(0.001)]]);
+        const { conversation, events } = started(fake);
+        conversation.send("hi");
+        await until(() => of(events, "turn-end").length === 1);
+        // 10 + 3000 + 400 from the result, and 5 characters of reply.
+        expect(of(events, "turn-end")[0]?.contextTokens).toBe(3412);
+    });
+
+    it("measures each turn afresh", async () => {
+        const fake = fakeQuery([
+            [usage(1, 100, 0), result(0.001)],
+            [result(0.002)],
+        ]);
+        const { conversation, events } = started(fake);
+        conversation.send("one");
+        await until(() => of(events, "turn-end").length === 1);
+        conversation.send("two");
+        await until(() => of(events, "turn-end").length === 2);
+        expect(of(events, "turn-end").map((e) => e.contextTokens)).toEqual([
+            101, 3410,
+        ]);
+    });
+
+    it("reports the CLI compacting on its own as an error", async () => {
+        const fake = fakeQuery([[compactBoundary()]]);
+        const { conversation, events } = started(fake);
+        conversation.send("hi");
+        await until(() => of(events, "error").length === 1);
+        expect(of(events, "error")[0]?.message).toBe(COMPACTED_BY_CLI);
     });
 
     it("hands the partial reply to the error when the session dies", async () => {

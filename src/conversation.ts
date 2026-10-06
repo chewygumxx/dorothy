@@ -61,6 +61,10 @@ export type ConversationEvent =
           reply: string;
           interrupted: boolean;
           stats: TurnStats;
+          // Estimated tokens the next request starts from: what the last
+          // request read, plus the reply it added. Conversation always sets
+          // it.
+          contextTokens?: number;
       }
     | { type: "sdk"; message: RawMessage }
     // A lookup Dorothy made; offset is where in the reply it happened.
@@ -115,6 +119,16 @@ type PendingCall = { tool: Tool; input: unknown; offset: number };
 // How long close() waits for the subprocess to exit on its own before
 // terminating it.
 const CLOSE_GRACE_MS = 2000;
+
+// DISABLE_COMPACT keeps the CLI from compacting. If it ever does, the
+// conversation it summarised is no longer the one Dorothy's compaction
+// planned, so the event is reported as an error; the turn otherwise
+// continues as usual.
+export const COMPACTED_BY_CLI =
+    "the CLI compacted this session itself, despite DISABLE_COMPACT";
+
+// Characters as the note limits count them, four to a token.
+const estimate = (text: string) => Math.ceil([...text].length / 4);
 
 // The prompt stream for streaming input mode: one consumer (the SDK), fed by
 // send(), finished by end().
@@ -236,6 +250,8 @@ export class Conversation implements ChatSession {
     #interrupted = false;
     #sessionCost = 0;
     #ready = false;
+    // What the latest request of this turn read, from its usage.
+    #lastInput: number | null = null;
 
     constructor({
         queryFn = query,
@@ -317,6 +333,13 @@ export class Conversation implements ChatSession {
 
     #handleMessage(message: SDKMessage): void {
         this.#emit({ type: "sdk", message });
+        if (
+            message.type === "system" &&
+            message.subtype === "compact_boundary"
+        ) {
+            this.#fail(COMPACTED_BY_CLI);
+            return;
+        }
         if (message.type === "system" && message.subtype === "init") {
             this.#checkRecall(message);
         }
@@ -346,6 +369,13 @@ export class Conversation implements ChatSession {
             this.#reply += text;
             this.#emit({ type: "delta", text });
         } else if (message.type === "assistant") {
+            const usage = message.message.usage;
+            if (usage !== undefined && usage !== null) {
+                this.#lastInput =
+                    usage.input_tokens +
+                    (usage.cache_read_input_tokens ?? 0) +
+                    (usage.cache_creation_input_tokens ?? 0);
+            }
             for (const block of message.message.content) {
                 const tool =
                     block.type === "tool_use" ? toolOf(block.name) : null;
@@ -394,17 +424,26 @@ export class Conversation implements ChatSession {
                     : message.errors.join("; ");
             this.#fail(text || message.subtype);
             this.#streaming = false;
+            this.#lastInput = null;
         } else if (message.type === "result") {
             this.#settleCalls();
+            const stats = this.#stats(message);
+            const read =
+                this.#lastInput ??
+                stats.inputTokens +
+                    stats.cacheReadTokens +
+                    stats.cacheWriteTokens;
             this.#emit({
                 type: "turn-end",
                 reply: this.#reply,
                 interrupted: this.#interrupted,
-                stats: this.#stats(message),
+                stats,
+                contextTokens: read + estimate(this.#reply),
             });
             this.#reply = "";
             this.#interrupted = false;
             this.#streaming = false;
+            this.#lastInput = null;
         }
     }
 
