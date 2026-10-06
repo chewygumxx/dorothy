@@ -9,7 +9,10 @@
 //
 
 import { createHash } from "node:crypto";
+import { chmodSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import type { Options } from "@anthropic-ai/claude-agent-sdk";
+import { type Env, xdgDir } from "./xdg.js";
 
 // The CLI always prepends its own identity line ("You are a Claude agent,
 // built on Anthropic's Claude Agent SDK.") and injects environment context
@@ -56,6 +59,39 @@ export const baseOptions = {
     // arriving as one block at the end of the turn.
     includePartialMessages: true,
 } satisfies Options;
+
+// The CLI's own home, used as both its config directory and its working
+// directory, so that it holds nothing of the user's.
+export function cliHome(env: Env = process.env): string {
+    return join(xdgDir(env, "XDG_CACHE_HOME", ".cache"), "dorothy", "claude");
+}
+
+// settingSources does not cover what the CLI reads outside its settings
+// files. From the user's config directory it takes the signed-in account,
+// and tells Dorothy the user's email address; from the working directory's
+// repository, its auto-memory, git status and worktree instructions. Applied
+// at each call, after dotenvx has loaded the credentials into process.env.
+export function cliOptions(
+    env: Env = process.env,
+): Pick<Options, "cwd" | "env"> {
+    const home = cliHome(env);
+    return {
+        cwd: home,
+        env: {
+            ...env,
+            CLAUDE_CONFIG_DIR: home,
+            CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
+        },
+    };
+}
+
+// The CLI cannot start in a missing working directory. Private like the
+// recall index beside it.
+export function prepareCliHome(env: Env = process.env): void {
+    const home = cliHome(env);
+    mkdirSync(home, { recursive: true, mode: 0o700 });
+    chmodSync(home, 0o700);
+}
 
 export type Turn = { role: "user" | "assistant"; text: string };
 

@@ -9,7 +9,7 @@
 //
 
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import { baseOptions } from "../persona.js";
+import { baseOptions, cliOptions } from "../persona.js";
 import type { ResumedTurn } from "../transcript.js";
 import { escapeXml } from "./block.js";
 import { REAL_TIMERS, type Timers } from "./scheduler.js";
@@ -333,6 +333,7 @@ export async function runReview({
             prompt,
             options: {
                 ...baseOptions,
+                ...cliOptions(),
                 systemPrompt,
                 includePartialMessages: false,
                 outputFormat: { type: "json_schema", schema },
