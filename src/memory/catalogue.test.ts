@@ -8,12 +8,13 @@
 //
 //
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { RecallIndex } from "../recall/store.js";
 import { newPhrase } from "../session-id.js";
-import { scanCatalogue, visitsOf } from "./catalogue.js";
+import { indexCatalogue } from "./catalogue.js";
 import { EMPTY_SIDECAR, sidecarPath } from "./sidecar.js";
 
 const phrase = (seed: number) =>
@@ -37,106 +38,170 @@ const T2 = "2026-10-01T00:01:00.000Z";
 const T3 = "2026-10-01T00:01:05.000Z";
 const T4 = "2026-10-02T00:00:00.000Z";
 
-describe("visitsOf", () => {
-    it("counts a visit per session the user spoke in", () => {
-        const text = [
+let dir = "";
+let index: RecallIndex;
+beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "dorothy-catalogue-"));
+    index = RecallIndex.open(join(dir, "index", "recall.sqlite"));
+});
+afterEach(async () => {
+    index.close();
+    await rm(dir, { recursive: true, force: true });
+});
+
+const transcript = (of: string, lines: string[]) =>
+    writeFile(join(dir, `${of}.jsonl`), `${lines.join("\n")}\n`);
+const opened = (at: string, id: string, target: string) =>
+    event("recall", at, {
+        id,
+        ok: true,
+        offset: 0,
+        tool: "open",
+        conversation: target,
+        name: target,
+        purpose: "p",
+        turns: [1, 1],
+    });
+
+describe("indexCatalogue", () => {
+    it("lists each transcript the user spoke in, with its sidecar", async () => {
+        const a = phrase(1);
+        const silent = phrase(2);
+        await transcript(a, [
             session(T1),
             user(T2),
             reply(T3),
-            user("2026-10-01T00:02:00.000Z"),
             session(T4),
-            session("2026-10-03T00:00:00.000Z"),
-            user("2026-10-03T00:05:00.000Z"),
-        ].join("\n");
-        expect(visitsOf(text)).toEqual([
-            { userTurns: 2, lastAt: Date.parse("2026-10-01T00:02:00.000Z") },
-            { userTurns: 1, lastAt: Date.parse("2026-10-03T00:05:00.000Z") },
+            user(T4),
         ]);
-    });
-
-    it("counts a message sent before the session was ready in its first visit", () => {
-        const text = [user(T1), session(T2), user(T3)].join("\n");
-        expect(visitsOf(text)).toEqual([
-            { userTurns: 2, lastAt: Date.parse(T3) },
-        ]);
-    });
-
-    it("skips malformed lines, and a visit with no time it can read", () => {
-        const text = [
-            "not json",
-            session(T1),
-            event("user", "yesterday", { text: "hi" }),
-        ].join("\n");
-        expect(visitsOf(text)).toEqual([]);
-    });
-});
-
-describe("scanCatalogue", () => {
-    let dir = "";
-    beforeEach(async () => {
-        dir = await mkdtemp(join(tmpdir(), "dorothy-catalogue-"));
-    });
-    afterEach(async () => {
-        await rm(dir, { recursive: true, force: true });
-    });
-
-    it("lists each transcript the user spoke in, with its sidecar", async () => {
-        const [a, b, c, d] = [phrase(1), phrase(2), phrase(3), phrase(4)];
+        await transcript(silent, [session(T1)]);
         await writeFile(
-            join(dir, `${a}.jsonl`),
-            [session(T1), user(T2), reply(T3)].join("\n"),
+            sidecarPath(dir, a),
+            JSON.stringify({ ...EMPTY_SIDECAR, title: "Hello" }),
         );
-        await writeFile(join(dir, `${b}.jsonl`), session(T1));
-        await writeFile(
-            join(dir, `${c}.jsonl`),
-            [session(T1), user(T2)].join("\n"),
-        );
-        await writeFile(sidecarPath(dir, c), "{ broken");
-        await writeFile(
-            join(dir, `${d}.jsonl`),
-            [session(T1), user(T4)].join("\n"),
-        );
-        await writeFile(
-            sidecarPath(dir, d),
-            JSON.stringify({ v: 1, title: "Hi" }),
-        );
-        await writeFile(join(dir, "notes.txt"), "");
-        await writeFile(join(dir, "not-a-phrase.jsonl"), user(T2));
-
-        const { entries, warnings } = await scanCatalogue(dir).load();
-        const byPhrase = new Map(entries.map((entry) => [entry.phrase, entry]));
-        expect([...byPhrase.keys()].sort()).toEqual([a, c, d].sort());
-        expect(byPhrase.get(a)).toEqual({
+        const { entries, warnings } = await indexCatalogue(index, dir).load();
+        expect(warnings).toEqual([]);
+        expect(entries).toHaveLength(1);
+        expect(entries[0]).toMatchObject({
             phrase: a,
-            sidecar: { kind: "none" },
-            visits: [{ userTurns: 1, lastAt: Date.parse(T2) }],
-            turns: 2,
-            lastActive: Date.parse(T2),
+            visits: [
+                { userTurns: 1, lastAt: Date.parse(T2) },
+                { userTurns: 1, lastAt: Date.parse(T4) },
+            ],
+            reads: [],
+            turns: 3,
+            lastActive: Date.parse(T4),
         });
-        expect(byPhrase.get(c)?.sidecar.kind).toBe("unparseable");
-        expect(byPhrase.get(d)?.sidecar).toEqual({
+        expect(entries[0]?.sidecar).toMatchObject({
             kind: "ok",
-            sidecar: { ...EMPTY_SIDECAR, title: "Hi" },
+            sidecar: { title: "Hello" },
         });
+    });
+
+    it("warns of a sidecar it cannot parse", async () => {
+        const a = phrase(1);
+        await transcript(a, [session(T1), user(T2)]);
+        await writeFile(sidecarPath(dir, a), "{");
+        const { entries, warnings } = await indexCatalogue(index, dir).load();
+        expect(entries[0]?.sidecar.kind).toBe("unparseable");
         expect(warnings).toEqual([
-            expect.stringContaining(sidecarPath(dir, c)),
+            expect.stringContaining(`memory: ${sidecarPath(dir, a)}: `),
+        ]);
+    });
+
+    // Root ignores file modes, so there is nothing to make unreadable.
+    const unreadable = process.getuid?.() === 0 ? it.skip : it;
+
+    unreadable(
+        "lists the readable conversations and warns of one it cannot read",
+        async () => {
+            const a = phrase(1);
+            const b = phrase(2);
+            const c = phrase(3);
+            await transcript(a, [session(T1), user(T2)]);
+            await transcript(b, [session(T1), user(T2)]);
+            await transcript(c, [session(T1), user(T2)]);
+            await chmod(join(dir, `${b}.jsonl`), 0o000);
+            const { entries, warnings } = await indexCatalogue(
+                index,
+                dir,
+            ).load();
+            expect(entries.map((entry) => entry.phrase)).toEqual([a, c]);
+            expect(warnings).toEqual([
+                expect.stringContaining(`memory: ${join(dir, `${b}.jsonl`)}: `),
+            ]);
+        },
+    );
+
+    it("gives each conversation its appraised reads by others", async () => {
+        const a = phrase(1);
+        const b = phrase(2);
+        await transcript(b, [session(T1), user(T1)]);
+        await transcript(a, [
+            session(T2),
+            user(T2),
+            opened(T3, "toolu_1", b),
+            reply(T3),
+        ]);
+        await writeFile(
+            sidecarPath(dir, a),
+            JSON.stringify({
+                ...EMPTY_SIDECAR,
+                appraisals: {
+                    toolu_1: { served: "essential", at: T4, model: "m" },
+                },
+            }),
+        );
+        const { entries } = await indexCatalogue(index, dir).load();
+        expect(entries.find((entry) => entry.phrase === b)?.reads).toEqual([
+            { at: Date.parse(T3), served: "essential" },
         ]);
     });
 
     it("is empty, quietly, before the first chat", async () => {
-        expect(await scanCatalogue(join(dir, "none")).load()).toEqual({
-            entries: [],
-            warnings: [],
-        });
+        expect(
+            await indexCatalogue(index, join(dir, "missing")).load(),
+        ).toEqual({ entries: [], warnings: [] });
     });
 
-    it("warns of a transcript it cannot read and carries on", async () => {
+    it("warns when the index cannot be brought up to date", async () => {
+        const file = join(dir, "not-a-directory");
+        await writeFile(file, "");
+        const { entries, warnings } = await indexCatalogue(index, file).load();
+        expect(entries).toEqual([]);
+        expect(warnings).toEqual([expect.stringMatching(/^memory: /)]);
+    });
+
+    it("reads the index through its queue, in a transaction", async () => {
         const a = phrase(1);
-        await mkdir(join(dir, `${a}.jsonl`));
-        const loaded = await scanCatalogue(dir).load();
-        expect(loaded.entries).toEqual([]);
-        expect(loaded.warnings).toEqual([
-            expect.stringContaining(`${a}.jsonl`),
-        ]);
+        await transcript(a, [session(T1), user(T2)]);
+        const inTransaction: boolean[] = [];
+        const query = index.db.query.bind(index.db);
+        spyOn(index.db, "query").mockImplementation(((sql: string) => {
+            if (sql.includes("SELECT phrase, sidecar, turns")) {
+                inTransaction.push(index.db.inTransaction);
+            }
+            return query(sql);
+        }) as typeof index.db.query);
+        const { entries } = await indexCatalogue(index, dir).load();
+        expect(entries).toHaveLength(1);
+        expect(inTransaction).toEqual([true]);
+    });
+
+    it("warns when the index cannot be read", async () => {
+        const a = phrase(1);
+        await transcript(a, [session(T1), user(T2)]);
+        const query = index.db.query.bind(index.db);
+        spyOn(index.db, "query").mockImplementation(((sql: string) => {
+            if (sql.includes("SELECT phrase, sidecar, turns")) {
+                throw new Error("disk image is malformed");
+            }
+            return query(sql);
+        }) as typeof index.db.query);
+        const { entries, warnings } = await indexCatalogue(index, dir).load();
+        expect(entries).toEqual([]);
+        expect(warnings).toEqual(["memory: disk image is malformed"]);
+        // The failed read left no transaction open behind it.
+        expect(index.db.inTransaction).toBe(false);
     });
 });

@@ -16,6 +16,7 @@ import {
     parseTranscript,
     readTranscript,
     TranscriptWriter,
+    toRecall,
     transcriptDir,
     transcriptPath,
 } from "./transcript.js";
@@ -326,5 +327,101 @@ describe("TranscriptWriter.flushed", () => {
             writer.append({ kind: "user", text: "late" }),
         ).rejects.toThrow();
         await expect(writer.flushed()).resolves.toBeUndefined();
+    });
+});
+
+describe("recall events", () => {
+    const line = (fields: object) =>
+        JSON.stringify({ v: 1, at: "2026-10-03T00:00:00.000Z", ...fields });
+    const user = line({ kind: "user", text: "what did we say?" });
+    const reply = line({
+        kind: "assistant",
+        text: "Let me check.\n\nWe said a lot.",
+        interrupted: false,
+    });
+    const search = line({
+        kind: "recall",
+        id: "toolu_1",
+        ok: true,
+        offset: 13,
+        tool: "search",
+        query: "render",
+        hits: 2,
+    });
+    const open = line({
+        kind: "recall",
+        id: "toolu_2",
+        ok: true,
+        offset: 13,
+        tool: "open",
+        conversation: "amber-otter-quietly-sings",
+        name: "Terminal rendering chaos",
+        purpose: "the render bug",
+        turns: [3, 5],
+    });
+
+    it("gives the reply that follows them its lookups", () => {
+        const read = parseTranscript([user, search, open, reply].join("\n"));
+        expect(read.skipped).toBe(0);
+        expect(read.turns.map((turn) => turn.role)).toEqual([
+            "user",
+            "assistant",
+        ]);
+        expect(read.turns[1]?.lookups?.map((event) => event.id)).toEqual([
+            "toolu_1",
+            "toolu_2",
+        ]);
+        expect(read.turns[0]?.lookups).toBeUndefined();
+    });
+
+    it("drops lookups whose reply never came", () => {
+        const read = parseTranscript([user, search, user, reply].join("\n"));
+        expect(read.turns[2]?.lookups).toBeUndefined();
+    });
+
+    it("skips a recall event it cannot read", () => {
+        const broken = line({ kind: "recall", ok: true, tool: "search" });
+        const read = parseTranscript([user, broken, reply].join("\n"));
+        expect(read.skipped).toBe(1);
+        expect(read.turns[1]?.lookups).toBeUndefined();
+    });
+
+    it("reads both kinds of lookup", () => {
+        expect(toRecall(JSON.parse(search))).toEqual(JSON.parse(search));
+        expect(toRecall(JSON.parse(open))).toEqual(JSON.parse(open));
+        expect(toRecall({ ...JSON.parse(open), turns: [0, 2] })).toBeNull();
+        expect(toRecall({ ...JSON.parse(search), offset: -1 })).toBeNull();
+    });
+
+    it("writes a lookup like any other event", async () => {
+        const path = join(dir, "t.jsonl");
+        const writer = await TranscriptWriter.open(path, clock);
+        await writer.append({
+            kind: "recall",
+            id: "toolu_1",
+            ok: false,
+            offset: 0,
+            tool: "open",
+            conversation: "x",
+            name: "x",
+            purpose: "p",
+            turns: null,
+        });
+        await writer.close();
+        expect(await lines(path)).toEqual([
+            {
+                v: 1,
+                kind: "recall",
+                at: AT.toISOString(),
+                id: "toolu_1",
+                ok: false,
+                offset: 0,
+                tool: "open",
+                conversation: "x",
+                name: "x",
+                purpose: "p",
+                turns: null,
+            },
+        ]);
     });
 });

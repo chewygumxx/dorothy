@@ -11,13 +11,17 @@
 import { describe, expect, it } from "bun:test";
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Turn } from "../persona.js";
+import type { ResumedTurn } from "../transcript.js";
 import {
+    pendingReads,
     REVIEW_INSTRUCTIONS,
     REVIEW_SCHEMA,
     type ReviewQueryFn,
     reviewPrompt,
+    reviewSchema,
     runReview,
     validateNotes,
+    validateReview,
 } from "./review.js";
 import type { Timers } from "./scheduler.js";
 import { EMPTY_SIDECAR, mergeEdit, withProvisional } from "./sidecar.js";
@@ -123,6 +127,7 @@ describe("runReview", () => {
         expect(await run(fake)).toEqual({
             ok: true,
             notes: NOTES,
+            appraisals: {},
             model: "claude-test",
             costUsd: 0.25,
         });
@@ -133,6 +138,28 @@ describe("runReview", () => {
             settingSources: [],
             includePartialMessages: false,
             outputFormat: { type: "json_schema", schema: REVIEW_SCHEMA },
+        });
+    });
+
+    it("asks with the schema given and returns the appraisals", async () => {
+        const fake = fakeQuery([
+            init(),
+            success({
+                ...NOTES,
+                appraisals: [{ id: "toolu_1", served: "slight" }],
+            }),
+        ]);
+        const outcome = await run(fake, {
+            schema: reviewSchema(["toolu_1"]),
+            readIds: ["toolu_1"],
+        });
+        expect(outcome).toMatchObject({
+            ok: true,
+            appraisals: { toolu_1: "slight" },
+        });
+        expect(fake.options?.outputFormat).toEqual({
+            type: "json_schema",
+            schema: reviewSchema(["toolu_1"]),
         });
     });
 
@@ -313,5 +340,153 @@ describe("escaped notes", () => {
             title: "&lt;".repeat(60),
         });
         expect(checked.ok && checked.notes.title).toBe("<".repeat(60));
+    });
+});
+
+const lookup = (id: string, offset: number, ok = true) => ({
+    v: 1 as const,
+    kind: "recall" as const,
+    at: AT,
+    id,
+    ok,
+    offset,
+    tool: "open" as const,
+    conversation: "amber-otter-quietly-sings",
+    name: "amber-otter-quietly-sings",
+    purpose: `why ${id}`,
+    turns: [3, 5] as [number, number],
+});
+const READ_TURNS: ResumedTurn[] = [
+    { role: "user", text: "what did we say?" },
+    {
+        role: "assistant",
+        text: "Let me check.\n\nWe said <a lot>.",
+        lookups: [
+            lookup("toolu_1", 13),
+            lookup("toolu_2", 13, false),
+            {
+                v: 1,
+                kind: "recall",
+                at: AT,
+                id: "toolu_3",
+                ok: true,
+                offset: 0,
+                tool: "search",
+                query: "q",
+                hits: 1,
+            },
+        ],
+    },
+];
+
+describe("pendingReads", () => {
+    it("lists successful opens not yet appraised, named", () => {
+        expect(
+            pendingReads(READ_TURNS, {}, () => "Terminal rendering chaos"),
+        ).toEqual([
+            {
+                id: "toolu_1",
+                name: "Terminal rendering chaos",
+                purpose: "why toolu_1",
+                turns: [3, 5],
+            },
+        ]);
+        expect(pendingReads(READ_TURNS, { toolu_1: {} }, String)).toEqual([]);
+    });
+});
+
+describe("reviewPrompt with reads", () => {
+    it("marks each read where it happened and lists them, escaped", () => {
+        const prompt = reviewPrompt(READ_TURNS, null, [
+            {
+                id: "toolu_1",
+                name: 'The "<render>" bug',
+                purpose: "a & b",
+                turns: [3, 5],
+            },
+        ]);
+        expect(prompt).toContain(
+            "Dorothy: Let me check.[read toolu_1]\n\nWe said &lt;a lot&gt;.",
+        );
+        expect(prompt).toContain(
+            '<read id="toolu_1" conversation="The &quot;&lt;render&gt;&quot; bug" turns="3-5">a &amp; b</read>',
+        );
+    });
+
+    it("leaves a reply unmarked without reads", () => {
+        expect(reviewPrompt(READ_TURNS, null)).not.toContain("[read");
+        expect(reviewPrompt(READ_TURNS, null)).not.toContain("<reads>");
+    });
+});
+
+describe("reviewSchema", () => {
+    it("is the notes schema without reads", () => {
+        expect(reviewSchema([])).toBe(REVIEW_SCHEMA);
+    });
+
+    it("asks for exactly one appraisal per read", () => {
+        const schema = reviewSchema(["toolu_1", "toolu_2"]) as {
+            required: string[];
+            properties: Record<string, unknown>;
+        };
+        expect(schema.required).toContain("appraisals");
+        expect(schema.properties.appraisals).toEqual({
+            type: "array",
+            minItems: 2,
+            maxItems: 2,
+            items: {
+                type: "object",
+                properties: {
+                    id: { type: "string", enum: ["toolu_1", "toolu_2"] },
+                    served: {
+                        type: "string",
+                        enum: ["none", "slight", "useful", "essential"],
+                    },
+                },
+                required: ["id", "served"],
+                additionalProperties: false,
+            },
+        });
+    });
+});
+
+describe("validateReview", () => {
+    const ids = ["toolu_1", "toolu_2"];
+    const appraise = (...pairs: [string, string][]) => ({
+        ...NOTES,
+        appraisals: pairs.map(([id, served]) => ({ id, served })),
+    });
+
+    it("takes an appraisal of every read", () => {
+        expect(
+            validateReview(
+                appraise(["toolu_2", "none"], ["toolu_1", "useful"]),
+                ids,
+            ),
+        ).toEqual({
+            ok: true,
+            notes: NOTES,
+            appraisals: { toolu_1: "useful", toolu_2: "none" },
+        });
+    });
+
+    it("refuses missing, repeated, unknown and unrated reads", () => {
+        for (const output of [
+            NOTES,
+            appraise(["toolu_1", "useful"]),
+            appraise(["toolu_1", "useful"], ["toolu_1", "none"]),
+            appraise(["toolu_1", "useful"], ["toolu_9", "none"]),
+            appraise(["toolu_1", "useful"], ["toolu_2", "great"]),
+        ]) {
+            expect(validateReview(output, ids).ok).toBe(false);
+        }
+    });
+
+    it("ignores appraisals when none were asked for", () => {
+        expect(validateReview(appraise(["x", "y"]), [])).toEqual({
+            ok: true,
+            notes: NOTES,
+            appraisals: {},
+        });
     });
 });

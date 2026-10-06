@@ -15,9 +15,15 @@ import { join } from "node:path";
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { DEFAULT_CONFIG } from "../config.js";
 import { systemPrompt } from "../persona.js";
+import { RecallIndex } from "../recall/store.js";
 import { newPhrase } from "../session-id.js";
 import type { Entry } from "./catalogue.js";
-import { REVIEW_INSTRUCTIONS, type ReviewQueryFn } from "./review.js";
+import {
+    READS_INSTRUCTION,
+    REVIEW_INSTRUCTIONS,
+    REVIEW_TIMEOUT_MS,
+    type ReviewQueryFn,
+} from "./review.js";
 import type { Timers } from "./scheduler.js";
 import {
     MemoryService,
@@ -74,7 +80,7 @@ class FakeTimers implements Timers {
 }
 
 // Answers each review in turn: notes, an error, or "hang" (never answers).
-function reviews(...answers: (Notes | Error | "hang")[]) {
+function reviews(...answers: (object | Error | "hang")[]) {
     const calls: { prompt: string; options: Options }[] = [];
     let closed = 0;
     const fn: ReviewQueryFn = ({ prompt, options }) => {
@@ -124,6 +130,7 @@ function entry(
                 ? { kind: "none" }
                 : { kind: "ok", sidecar: { ...EMPTY_SIDECAR, ...fields } },
         visits: [{ userTurns: 1, lastAt: lastActive }],
+        reads: [],
         turns,
         lastActive,
     };
@@ -269,7 +276,12 @@ describe("MemoryService", () => {
                 message: `memory: couldn't review "${LIVE}": overloaded`,
             },
         ]);
-        expect(await readSidecar(dir, LIVE)).toEqual({ kind: "none" });
+        await until(async () => (await sidecarOf(LIVE)) !== null);
+        expect(await sidecarOf(LIVE)).toEqual({
+            ...EMPTY_SIDECAR,
+            rev: 1,
+            failures: { count: 1, at: NOW.toISOString() },
+        });
     });
 
     it("leaves the user's notes alone", async () => {
@@ -448,5 +460,196 @@ describe("MemoryService", () => {
         expect(query.closed()).toBe(1);
         expect(notices).toEqual([]);
         expect(await readSidecar(dir, LIVE)).toEqual({ kind: "none" });
+    });
+});
+
+describe("MemoryService with the index", () => {
+    let index: RecallIndex;
+    beforeEach(() => {
+        index = RecallIndex.open(join(dir, "index", "recall.sqlite"));
+    });
+    afterEach(() => {
+        index.close();
+    });
+
+    const OTHER = phrase(1);
+    const ago = (ms: number) => new Date(NOW.getTime() - ms).toISOString();
+    const HOUR = 3_600_000;
+    const saved = (of: string, fields: Partial<Sidecar>) =>
+        writeFile(
+            sidecarPath(dir, of),
+            JSON.stringify({ ...EMPTY_SIDECAR, ...fields }),
+        );
+
+    it("waits out the back-off before reviewing again", async () => {
+        await transcript(OTHER, [user("a"), reply("b")]);
+        const failures = { count: 1, at: ago(HOUR / 2) };
+        await saved(OTHER, { failures });
+        const fake = reviews(NOTES);
+        const { memory } = setup({
+            queryFn: fake.fn,
+            index,
+            entries: [entry(OTHER, { failures })],
+        });
+        memory.ready();
+        await settle();
+        expect(fake.calls).toHaveLength(0);
+    });
+
+    it("counts a failed review on top of earlier ones", async () => {
+        await transcript(OTHER, [user("a"), reply("b")]);
+        await saved(OTHER, { failures: { count: 2, at: ago(3 * HOUR) } });
+        const fake = reviews(new Error("boom"), NOTES);
+        const { memory } = setup({
+            queryFn: fake.fn,
+            index,
+            entries: [entry(OTHER, {})],
+        });
+        memory.ready();
+        await until(
+            async () => (await sidecarOf(OTHER))?.failures?.count === 3,
+        );
+        expect((await sidecarOf(OTHER))?.failures?.at).toBe(NOW.toISOString());
+    });
+
+    it("counts a timeout, not a review cancelled by quitting", async () => {
+        await transcript(OTHER, [user("a"), reply("b")]);
+        const timed = setup({
+            queryFn: reviews("hang").fn,
+            index,
+            entries: [entry(OTHER, null)],
+        });
+        timed.memory.ready();
+        await settle();
+        timed.timers.advance(REVIEW_TIMEOUT_MS);
+        await until(
+            async () => (await sidecarOf(OTHER))?.failures?.count === 1,
+        );
+        timed.memory.stop();
+
+        const LATER = phrase(2);
+        await transcript(LATER, [user("a"), reply("b")]);
+        const quit = setup({
+            queryFn: reviews("hang").fn,
+            index,
+            entries: [entry(LATER, null)],
+        });
+        quit.memory.ready();
+        await settle();
+        quit.memory.stop();
+        await settle();
+        expect(await sidecarOf(LATER)).toBeNull();
+    });
+
+    it("skips a review the user has made pointless", async () => {
+        await transcript(OTHER, [user("a"), reply("b")]);
+        const owned = mergeEdit(
+            null,
+            { title: "T", description: "D", abstract: "A" },
+            NOW.toISOString(),
+        );
+        await saved(OTHER, owned);
+        const fake = reviews(NOTES);
+        const { memory } = setup({
+            queryFn: fake.fn,
+            index,
+            entries: [entry(OTHER, owned)],
+        });
+        memory.ready();
+        await until(
+            async () => (await sidecarOf(OTHER))?.reviewedThrough === 2,
+        );
+        expect(fake.calls).toHaveLength(0);
+    });
+
+    it("appraises the reads the conversation made", async () => {
+        await transcript(LIVE, [
+            user("what did we say?"),
+            line("recall", {
+                id: "toolu_1",
+                ok: true,
+                offset: 13,
+                tool: "open",
+                conversation: OTHER,
+                name: OTHER,
+                purpose: "the render bug",
+                turns: [1, 2],
+            }),
+            reply("Let me check.\n\nWe said a lot."),
+        ]);
+        const fake = reviews({
+            ...NOTES,
+            appraisals: [{ id: "toolu_1", served: "useful" }],
+        });
+        const { memory } = setup({
+            queryFn: fake.fn,
+            index,
+            entries: [entry(OTHER, { title: "Rendering" })],
+        });
+        memory.turnEnded();
+        await until(
+            async () =>
+                (await sidecarOf(LIVE))?.appraisals.toolu_1?.served ===
+                "useful",
+        );
+        const call = fake.calls[0];
+        expect(call?.prompt).toContain("Let me check.[read toolu_1]");
+        expect(call?.prompt).toContain('conversation="Rendering"');
+        expect(call?.options.systemPrompt).toEndWith(READS_INSTRUCTION);
+        const format = call?.options.outputFormat as
+            | { schema: { required: string[] } }
+            | undefined;
+        expect(format?.schema.required).toContain("appraisals");
+    });
+
+    // Another process, opening the index once this one has closed.
+    async function claimable(): Promise<boolean> {
+        const other = RecallIndex.open(join(dir, "index", "recall.sqlite"));
+        try {
+            return await other.claim(LIVE, "them", NOW.getTime(), 60_000);
+        } finally {
+            other.close();
+        }
+    }
+
+    it("lets go of the claim of a review cut short by quitting", async () => {
+        await transcript(LIVE, [user("a"), reply("b")]);
+        const own = RecallIndex.open(join(dir, "index", "recall.sqlite"));
+        const fake = reviews("hang");
+        const { memory } = setup({ queryFn: fake.fn, index: own });
+        try {
+            memory.turnEnded();
+            await until(() => fake.calls.length > 0);
+            await memory.stop();
+        } finally {
+            own.close();
+        }
+        expect(await claimable()).toBe(true);
+    });
+
+    it("lets go of the claim of a review that finishes", async () => {
+        await transcript(LIVE, [user("a"), reply("b")]);
+        const own = RecallIndex.open(join(dir, "index", "recall.sqlite"));
+        const { memory } = setup({ queryFn: reviews(NOTES).fn, index: own });
+        try {
+            memory.turnEnded();
+            await until(async () => (await sidecarOf(LIVE)) !== null);
+            await memory.stop();
+        } finally {
+            own.close();
+        }
+        expect(await claimable()).toBe(true);
+    });
+
+    it("leaves a conversation another process has claimed", async () => {
+        await transcript(LIVE, [user("a"), reply("b")]);
+        const other = RecallIndex.open(join(dir, "index", "recall.sqlite"));
+        await other.claim(LIVE, "them", NOW.getTime(), 60_000);
+        const fake = reviews(NOTES);
+        const { memory } = setup({ queryFn: fake.fn, index });
+        memory.turnEnded();
+        await settle();
+        expect(fake.calls).toHaveLength(0);
+        other.close();
     });
 });

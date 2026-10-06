@@ -11,10 +11,11 @@
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { readConfig } from "../config.js";
+import { indexPath, RecallIndex } from "../recall/store.js";
 import { transcriptDir } from "../transcript.js";
 import { type EditResult, editInEditor } from "../tui/external-editor.js";
 import type { Env } from "../xdg.js";
-import { scanCatalogue } from "./catalogue.js";
+import { indexCatalogue } from "./catalogue.js";
 import { parseEditView, renderEditView } from "./edit-view.js";
 import { formatList, listRows } from "./list.js";
 import { rank, tier } from "./rank.js";
@@ -26,6 +27,9 @@ import {
 } from "./sidecar.js";
 
 export type Output = { write(text: string): unknown };
+
+const describeError = (error: unknown) =>
+    error instanceof Error ? error.message : String(error);
 
 // What Dorothy remembers, as a new session would see it. It works whether
 // memory is on or not: it is the user's view, not hers.
@@ -41,20 +45,33 @@ export async function runList({
     now?: number;
 } = {}): Promise<number> {
     const { config, warnings } = await readConfig(env);
-    const loaded = await scanCatalogue(transcriptDir(env)).load();
-    for (const warning of [...warnings, ...loaded.warnings]) {
-        err.write(`dorothy: ${warning}\n`);
+    let index: RecallIndex;
+    try {
+        index = RecallIndex.open(indexPath(env));
+    } catch (error) {
+        err.write(
+            `dorothy: the memory index can't be opened: ${describeError(error)}\n`,
+        );
+        return 1;
     }
-    const tiered = tier(
-        rank(loaded.entries, { now, halfLifeDays: config.memory.halfLifeDays }),
-        config.memory.budget,
-    );
-    out.write(`${formatList(listRows(loaded.entries, tiered))}\n`);
-    return 0;
+    try {
+        const loaded = await indexCatalogue(index, transcriptDir(env)).load();
+        for (const warning of [...warnings, ...loaded.warnings]) {
+            err.write(`dorothy: ${warning}\n`);
+        }
+        const tiered = tier(
+            rank(loaded.entries, {
+                now,
+                halfLifeDays: config.memory.halfLifeDays,
+            }),
+            config.memory.budget,
+        );
+        out.write(`${formatList(listRows(loaded.entries, tiered))}\n`);
+        return 0;
+    } finally {
+        index.close();
+    }
 }
-
-const describeError = (error: unknown) =>
-    error instanceof Error ? error.message : String(error);
 
 // The error line a reopened template starts with, never more than one.
 const ERROR_LINES = /^(# error: .*\n)+/;
@@ -90,30 +107,43 @@ export async function runMemoryEdit(
     }
     const shown = read.kind === "ok" ? read.sidecar : null;
     let text = renderEditView(phrase, shown);
-    for (;;) {
-        const result = await edit(text);
-        if (!result.ok) {
-            err.write(`dorothy: ${result.message}\n`);
-            return 1;
-        }
-        const parsed = parseEditView(result.text, shown);
-        if (parsed.kind === "unchanged") {
+    let index: RecallIndex | null = null;
+    try {
+        index = RecallIndex.open(indexPath(env));
+    } catch {
+        // Without the index the edit goes unlocked, as before recall.
+    }
+    try {
+        for (;;) {
+            const result = await edit(text);
+            if (!result.ok) {
+                err.write(`dorothy: ${result.message}\n`);
+                return 1;
+            }
+            const parsed = parseEditView(result.text, shown);
+            if (parsed.kind === "unchanged") {
+                return 0;
+            }
+            if (parsed.kind === "error") {
+                text = `# error: ${parsed.reason}\n${result.text.replace(ERROR_LINES, "")}`;
+                continue;
+            }
+            const at = now().toISOString();
+            const update = await updateSidecar(
+                dir,
+                phrase,
+                (current) => mergeEdit(current, parsed.changes, at),
+                index?.lock,
+            );
+            if (update.kind === "unparseable" || update.kind === "failed") {
+                err.write(
+                    `dorothy: ${sidecarPath(dir, phrase)}: ${update.reason}\n`,
+                );
+                return 1;
+            }
             return 0;
         }
-        if (parsed.kind === "error") {
-            text = `# error: ${parsed.reason}\n${result.text.replace(ERROR_LINES, "")}`;
-            continue;
-        }
-        const at = now().toISOString();
-        const update = await updateSidecar(dir, phrase, (current) =>
-            mergeEdit(current, parsed.changes, at),
-        );
-        if (update.kind === "unparseable" || update.kind === "failed") {
-            err.write(
-                `dorothy: ${sidecarPath(dir, phrase)}: ${update.reason}\n`,
-            );
-            return 1;
-        }
-        return 0;
+    } finally {
+        index?.close();
     }
 }

@@ -28,7 +28,11 @@ export class ReviewScheduler {
     readonly #idleMs: number;
     readonly #timers: Timers;
     #queue: string[] = [];
-    #running: { phrase: string; controller: AbortController } | null = null;
+    #running: {
+        phrase: string;
+        controller: AbortController;
+        done: Promise<void>;
+    } | null = null;
     #dirty = false;
     #idle: unknown = null;
     #stopped = false;
@@ -98,13 +102,15 @@ export class ReviewScheduler {
         }
     }
 
-    // Quitting waits for nothing: the timer and queue go, and the running
-    // review is told to stop.
-    stop(): void {
+    // The timer and queue go, and the running review is told to stop. The
+    // promise settles once that review has finished (never rejecting), for
+    // whatever it holds to be let go.
+    stop(): Promise<void> {
         this.#stopped = true;
         this.cancelIdle();
         this.#queue = [];
         this.#running?.controller.abort();
+        return this.#running?.done ?? Promise.resolve();
     }
 
     #next(): void {
@@ -116,9 +122,7 @@ export class ReviewScheduler {
             return;
         }
         const controller = new AbortController();
-        this.#running = { phrase, controller };
-        this.#dirty = false;
-        void this.#review(phrase, controller.signal)
+        const done = this.#review(phrase, controller.signal)
             .catch(() => {})
             .then(() => {
                 this.#running = null;
@@ -128,5 +132,7 @@ export class ReviewScheduler {
                     this.#next();
                 }
             });
+        this.#running = { phrase, controller, done };
+        this.#dirty = false;
     }
 }

@@ -25,6 +25,7 @@ describe("parseConfig", () => {
             config: DEFAULT_CONFIG,
             warnings: [],
         });
+        expect(DEFAULT_CONFIG.memory.recall).toBe(true);
     });
 
     it("reads both tables", () => {
@@ -60,6 +61,7 @@ describe("parseConfig", () => {
                 ...DEFAULT_CONFIG,
                 memory: {
                     enabled: false,
+                    recall: true,
                     budget: 500,
                     idleSeconds: 30,
                     halfLifeDays: 7,
@@ -93,6 +95,21 @@ describe("parseConfig", () => {
                 "config.toml: unknown key memory.mood",
             ],
         });
+    });
+
+    it("turns recall off", () => {
+        const { config, warnings } = parseConfig("[memory]\nrecall = false\n");
+        expect(config.memory.recall).toBe(false);
+        expect(config.memory.enabled).toBe(true);
+        expect(warnings).toEqual([]);
+    });
+
+    it("warns of a recall that is not true or false", () => {
+        const { config, warnings } = parseConfig('[memory]\nrecall = "no"\n');
+        expect(config.memory.recall).toBe(true);
+        expect(warnings).toEqual([
+            "config.toml: memory.recall must be true or false",
+        ]);
     });
 
     it("warns when memory is not a table", () => {

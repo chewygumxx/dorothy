@@ -114,4 +114,26 @@ describe("parseArgs", () => {
     it("refuses --resume without a terminal", () => {
         expect(parseArgs(["--resume", phrase], false).kind).toBe("usage");
     });
+
+    it("serves recall, terminal or not, with or without an exclusion", () => {
+        expect(parseArgs(["--recall-server"], false)).toEqual({
+            kind: "recall-server",
+            exclude: null,
+        });
+        expect(
+            parseArgs(["--recall-server", "--exclude", phrase], true),
+        ).toEqual({
+            kind: "recall-server",
+            exclude: phrase,
+        });
+    });
+
+    it("refuses anything else after --recall-server", () => {
+        for (const rest of [["x"], ["--exclude"], ["--exclude", "nope"]]) {
+            expect(parseArgs(["--recall-server", ...rest], false)).toEqual({
+                kind: "usage",
+                message: "--recall-server takes only --exclude <phrase>",
+            });
+        }
+    });
 });

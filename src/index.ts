@@ -19,6 +19,7 @@ export type Mode =
     | { kind: "tui"; resume: string | null }
     | { kind: "list" }
     | { kind: "memory"; phrase: string }
+    | { kind: "recall-server"; exclude: string | null }
     | { kind: "help" }
     | { kind: "usage"; message: string };
 
@@ -28,6 +29,7 @@ export const USAGE = [
     "       dorothy --resume <phrase>  continue a saved chat",
     "       dorothy --list             what Dorothy remembers",
     "       dorothy --memory <phrase>  correct, pin or hide a chat's notes",
+    "       dorothy --recall-server    memory search for MCP clients (stdio)",
     "       dorothy -- <prompt...>     a prompt that starts with -",
 ].join("\n");
 
@@ -40,6 +42,21 @@ export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
         return rest.length === 0
             ? { kind: "list" }
             : { kind: "usage", message: "--list takes no arguments" };
+    }
+    if (first === "--recall-server") {
+        if (rest.length === 0) {
+            return { kind: "recall-server", exclude: null };
+        }
+        const [flag, phrase] = rest;
+        return rest.length === 2 &&
+            flag === "--exclude" &&
+            phrase !== undefined &&
+            isPhrase(phrase)
+            ? { kind: "recall-server", exclude: phrase }
+            : {
+                  kind: "usage",
+                  message: "--recall-server takes only --exclude <phrase>",
+              };
     }
     if (first === "--memory") {
         const phrase = rest[0];
@@ -122,6 +139,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     } else if (mode.kind === "memory") {
         const { runMemoryEdit } = await import("./memory/commands.js");
         process.exitCode = await runMemoryEdit(mode.phrase);
+    } else if (mode.kind === "recall-server") {
+        const { runRecallServer } = await import("./recall/server.js");
+        process.exitCode = await runRecallServer(mode.exclude);
     } else {
         // Loaded only for chat, so one-shot replies never pay for React.
         const { runTui } = await import("./tui/run.js");

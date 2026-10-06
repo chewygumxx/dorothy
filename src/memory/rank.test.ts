@@ -15,8 +15,8 @@ import type { Entry, Visit } from "./catalogue.js";
 import {
     buildMemory,
     type Candidate,
-    frecency,
     rank,
+    salience,
     tier,
     tokens,
 } from "./rank.js";
@@ -35,6 +35,7 @@ function entry(
         phrase,
         sidecar: { kind: "ok", sidecar: { ...EMPTY_SIDECAR, ...fields } },
         visits,
+        reads: [],
         turns: 2,
         lastActive: Math.max(...visits.map((visit) => visit.lastAt)),
     };
@@ -61,12 +62,13 @@ function candidate(title: string, extra: Partial<Note> = {}): Candidate {
 }
 const cost = (note: Note, at: Tier) => tokens(renderEntry({ note, tier: at }));
 
-describe("frecency", () => {
+describe("salience", () => {
     it("weighs a visit by the log of its user turns", () => {
-        expect(frecency(once(), NOW, 30)).toBeCloseTo(1 + Math.log(2));
-        const long = frecency([{ userTurns: 99, lastAt: NOW }], NOW, 30);
-        const returns = frecency(
+        expect(salience(once(), [], NOW, 30)).toBeCloseTo(1 + Math.log(2));
+        const long = salience([{ userTurns: 99, lastAt: NOW }], [], NOW, 30);
+        const returns = salience(
             Array.from({ length: 4 }, () => ({ userTurns: 1, lastAt: NOW })),
+            [],
             NOW,
             30,
         );
@@ -74,15 +76,36 @@ describe("frecency", () => {
     });
 
     it("halves a visit's weight every half-life", () => {
-        const fresh = frecency(once(), NOW, 30);
-        expect(frecency(once(NOW - 30 * DAY), NOW, 30)).toBeCloseTo(fresh / 2);
-        expect(frecency(once(NOW - 60 * DAY), NOW, 30)).toBeCloseTo(fresh / 4);
+        const fresh = salience(once(), [], NOW, 30);
+        expect(salience(once(NOW - 30 * DAY), [], NOW, 30)).toBeCloseTo(
+            fresh / 2,
+        );
+        expect(salience(once(NOW - 60 * DAY), [], NOW, 30)).toBeCloseTo(
+            fresh / 4,
+        );
     });
 
     it("treats a visit from the future as from now", () => {
-        expect(frecency(once(NOW + 5 * DAY), NOW, 30)).toBeCloseTo(
+        expect(salience(once(NOW + 5 * DAY), [], NOW, 30)).toBeCloseTo(
             1 + Math.log(2),
         );
+    });
+
+    it("adds what each read gave her", () => {
+        const read = (served: "none" | "slight" | "useful" | "essential") => ({
+            at: NOW,
+            served,
+        });
+        expect(salience([], [read("none")], NOW, 30)).toBe(0);
+        expect(salience([], [read("slight")], NOW, 30)).toBe(0.5);
+        expect(salience([], [read("useful")], NOW, 30)).toBe(1);
+        expect(salience([], [read("essential")], NOW, 30)).toBe(2);
+    });
+
+    it("decays a read from when it happened", () => {
+        const now = Date.parse("2026-10-05T00:00:00.000Z");
+        const at = now - 30 * 86_400_000;
+        expect(salience([], [{ at, served: "essential" }], now, 30)).toBe(1);
     });
 });
 
@@ -98,6 +121,19 @@ describe("rank", () => {
                 (found) => found.note.title,
             ),
         ).toEqual(["Pinned", "New", "Old"]);
+    });
+
+    it("ranks a conversation that served her above an equal one", () => {
+        const served = {
+            ...entry("b", full("Served")),
+            reads: [{ at: NOW, served: "useful" as const }],
+        };
+        expect(
+            rank([entry("a", full("Unserved")), served], {
+                now: NOW,
+                halfLifeDays: 30,
+            }).map((candidate) => candidate.phrase),
+        ).toEqual(["b", "a"]);
     });
 
     it("leaves out the current, hidden, untitled and unreadable conversations", () => {
