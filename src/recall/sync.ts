@@ -41,13 +41,19 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
 const codeOf = (error: unknown) => (error as { code?: unknown }).code;
 
+const describeError = (error: unknown) =>
+    error instanceof Error ? error.message : String(error);
+
 // Brings the index up to date with the transcripts directory: what was
-// appended, replaced or deleted, and every sidecar that changed.
+// appended, replaced or deleted, and every sidecar that changed. A
+// transcript that cannot be synced keeps the rows it had and is reported in
+// the warnings, so one bad file does not take the rest of the index with it.
 export async function syncIndex(
     index: RecallIndex,
     dir: string,
     now: number = Date.now(),
-): Promise<void> {
+): Promise<string[]> {
+    const warnings: string[] = [];
     // Listed under the lock: another process may have indexed a new
     // transcript while this one waited, and a stale list would forget it.
     const names = await index.exclusive(async () => {
@@ -72,13 +78,25 @@ export async function syncIndex(
             }
         }
         for (const phrase of phrases) {
-            if (await syncTranscript(index, dir, phrase, rows.get(phrase))) {
-                await syncSidecar(index, dir, phrase);
+            index.db.run("SAVEPOINT transcript");
+            try {
+                if (
+                    await syncTranscript(index, dir, phrase, rows.get(phrase))
+                ) {
+                    await syncSidecar(index, dir, phrase);
+                }
+            } catch (error) {
+                index.db.run("ROLLBACK TO transcript");
+                warnings.push(
+                    `${join(dir, `${phrase}.jsonl`)}: ${describeError(error)}`,
+                );
             }
+            index.db.run("RELEASE transcript");
         }
         return listing;
     });
     await removeLeftovers(dir, names, now);
+    return warnings;
 }
 
 async function list(dir: string): Promise<string[]> {
@@ -153,7 +171,17 @@ async function syncTranscript(
         return true;
     }
     const bytes = Buffer.alloc(info.size - row.t_size);
-    const handle = await open(path, "r");
+    let handle: Awaited<ReturnType<typeof open>>;
+    try {
+        handle = await open(path, "r");
+    } catch (error) {
+        if (codeOf(error) !== "ENOENT") {
+            throw error;
+        }
+        // Gone between the stat and the open.
+        forget(index, phrase);
+        return false;
+    }
     try {
         await handle.read(bytes, 0, bytes.length, row.t_size);
     } finally {

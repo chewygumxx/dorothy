@@ -9,7 +9,7 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RecallIndex } from "../recall/store.js";
@@ -108,6 +108,30 @@ describe("indexCatalogue", () => {
             expect.stringContaining(`memory: ${sidecarPath(dir, a)}: `),
         ]);
     });
+
+    // Root ignores file modes, so there is nothing to make unreadable.
+    const unreadable = process.getuid?.() === 0 ? it.skip : it;
+
+    unreadable(
+        "lists the readable conversations and warns of one it cannot read",
+        async () => {
+            const a = phrase(1);
+            const b = phrase(2);
+            const c = phrase(3);
+            await transcript(a, [session(T1), user(T2)]);
+            await transcript(b, [session(T1), user(T2)]);
+            await transcript(c, [session(T1), user(T2)]);
+            await chmod(join(dir, `${b}.jsonl`), 0o000);
+            const { entries, warnings } = await indexCatalogue(
+                index,
+                dir,
+            ).load();
+            expect(entries.map((entry) => entry.phrase)).toEqual([a, c]);
+            expect(warnings).toEqual([
+                expect.stringContaining(`memory: ${join(dir, `${b}.jsonl`)}: `),
+            ]);
+        },
+    );
 
     it("gives each conversation its appraised reads by others", async () => {
         const a = phrase(1);

@@ -11,6 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
     appendFile,
+    chmod,
     mkdtemp,
     rename,
     rm,
@@ -257,5 +258,39 @@ describe("syncIndex", () => {
             index.db.query("SELECT count(*) AS n FROM conversations").get(),
         ).toEqual({ n: 0 });
         await syncIndex(index, join(dir, "missing"));
+    });
+
+    // Root ignores file modes, so there is nothing to make unreadable.
+    const unreadable = process.getuid?.() === 0 ? it.skip : it;
+
+    unreadable(
+        "syncs the other transcripts past one it cannot read",
+        async () => {
+            const C = phrase(3);
+            await writeFile(transcript(A), user(1, "a"));
+            await writeFile(transcript(B), user(1, "b"));
+            await writeFile(transcript(C), user(1, "c"));
+            await chmod(transcript(B), 0o000);
+            const warnings = await syncIndex(index, dir);
+            expect(warnings).toEqual([expect.stringContaining(transcript(B))]);
+            expect(warnings[0]).toContain("EACCES");
+            expect(turns(A)).toEqual([{ n: 1, role: "user", text: "a" }]);
+            expect(turns(B)).toEqual([]);
+            expect(turns(C)).toEqual([{ n: 1, role: "user", text: "c" }]);
+            expect(index.db.inTransaction).toBe(false);
+        },
+    );
+
+    unreadable("keeps the rows of a transcript that fails later", async () => {
+        await writeFile(transcript(A), user(1, "old"));
+        expect(await syncIndex(index, dir)).toEqual([]);
+        // Replaced by a file that cannot be read: the old rows are forgotten
+        // inside the savepoint, which the failure rolls back.
+        await rm(transcript(A));
+        await writeFile(transcript(A), user(1, "new") + user(2, "newer"));
+        await chmod(transcript(A), 0o000);
+        const warnings = await syncIndex(index, dir);
+        expect(warnings).toHaveLength(1);
+        expect(turns(A)).toEqual([{ n: 1, role: "user", text: "old" }]);
     });
 });

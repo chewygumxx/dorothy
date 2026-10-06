@@ -41,8 +41,9 @@ const describeError = (error: unknown) =>
 export function indexCatalogue(index: RecallIndex, dir: string): Catalogue {
     return {
         async load() {
+            let synced: string[];
             try {
-                await syncIndex(index, dir);
+                synced = await syncIndex(index, dir);
             } catch (error) {
                 return {
                     entries: [],
@@ -65,7 +66,9 @@ export function indexCatalogue(index: RecallIndex, dir: string): Catalogue {
                         turns: number;
                     }[];
                     const entries: Entry[] = [];
-                    const warnings: string[] = [];
+                    const warnings = synced.map(
+                        (warning) => `memory: ${warning}`,
+                    );
                     for (const row of rows) {
                         const own = visits.get(row.phrase) ?? [];
                         if (own.length === 0) {
