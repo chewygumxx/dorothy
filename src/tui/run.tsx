@@ -66,14 +66,18 @@ export async function runTui(resume: string | null): Promise<number> {
     }
 
     // The index is opened before the first session, whose prompt carries
-    // the block; without it, the chat starts without memory.
+    // the block; without it, the chat starts without memory or recall.
     let index: RecallIndex | null = null;
     if (config.memory.enabled || config.memory.recall) {
         try {
             index = RecallIndex.open(indexPath());
         } catch (error) {
+            const lost = [
+                ...(config.memory.enabled ? ["memory"] : []),
+                ...(config.memory.recall ? ["recall"] : []),
+            ].join(" and ");
             warnings.push(
-                `memory: the index can't be opened (${describeError(error)}); starting without memory`,
+                `memory: the index can't be opened (${describeError(error)}); starting without ${lost}`,
             );
         }
     }
