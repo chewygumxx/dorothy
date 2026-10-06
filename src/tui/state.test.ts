@@ -418,6 +418,41 @@ describe("lookups in a live reply", () => {
     });
 });
 
+describe("a lookup pending when the turn fails", () => {
+    it("leaves the reply's last text marked interrupted", () => {
+        const state = run(
+            streaming(),
+            deltaOf("Checking."),
+            lookupAt(9),
+            deltaOf("\n\nHalf"),
+            lookupAt(15, opened, false),
+            event({ type: "error", message: "gone" }),
+        );
+        expect(
+            state.lines.slice(1).map((line) => [line.role, line.interrupted]),
+        ).toEqual([
+            ["dorothy", undefined],
+            ["lookup", undefined],
+            ["dorothy", true],
+            ["lookup", undefined],
+            ["error", undefined],
+        ]);
+        expect(state.lines[3]?.text).toBe("Half");
+    });
+
+    it("marks nothing in an earlier reply when this one had no text", () => {
+        const state = run(
+            streaming(),
+            deltaOf("Earlier."),
+            endOf("Earlier."),
+            { type: "sent", text: "again" },
+            lookupAt(0),
+            event({ type: "error", message: "gone" }),
+        );
+        expect(state.lines.some((line) => line.interrupted)).toBe(false);
+    });
+});
+
 describe("lookups in a resumed reply", () => {
     it("places each lookup where it happened", () => {
         const recall = (offset: number, ok = true) => ({
