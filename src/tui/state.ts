@@ -70,12 +70,17 @@ export type Action =
     | { type: "warning"; message: string }
     | { type: "memory-cost"; usd: number };
 
+// What the model chose to search for or open may hold newlines and control
+// characters; neither may break the lookup's single dim row.
+const oneRow = (text: string) =>
+    text.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\s]+/gu, " ").trim();
+
 export function lookupLine(
     ok: boolean,
     lookup: Lookup,
 ): { text: string; detail?: string } {
     if (lookup.tool === "search") {
-        const query = `"${lookup.query}"`;
+        const query = `"${oneRow(lookup.query)}"`;
         if (!ok) {
             return { text: `⌕ couldn't search ${query}` };
         }
@@ -87,9 +92,13 @@ export function lookupLine(
                   : `${lookup.hits} conversations`;
         return { text: `⌕ searched ${query} · ${found}` };
     }
+    const name = oneRow(lookup.name);
     return ok
-        ? { text: `⌕ opened ${lookup.name}`, detail: `for: ${lookup.purpose}` }
-        : { text: `⌕ couldn't open ${lookup.name}` };
+        ? {
+              text: `⌕ opened ${name}`,
+              detail: `for: ${oneRow(lookup.purpose)}`,
+          }
+        : { text: `⌕ couldn't open ${name}` };
 }
 
 // A resumed reply, split where its lookups happened, as it was shown live.

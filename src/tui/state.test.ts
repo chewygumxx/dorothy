@@ -282,6 +282,23 @@ describe("lookupLine", () => {
         );
     });
 
+    it("keeps what the model wrote to one row of printable text", () => {
+        expect(
+            lookupLine(true, { ...searched, query: "a\nb\x1b[31m\tc \u202e" })
+                .text,
+        ).toBe('⌕ searched "a b [31m c" · 2 conversations');
+        expect(
+            lookupLine(true, {
+                ...opened,
+                name: "x\ny",
+                purpose: "p\r\nq\x07",
+            }),
+        ).toEqual({ text: "⌕ opened x y", detail: "for: p q" });
+        expect(lookupLine(false, { ...opened, name: "x\ny" }).text).toBe(
+            "⌕ couldn't open x y",
+        );
+    });
+
     it("says what was opened, and why", () => {
         expect(lookupLine(true, opened)).toEqual({
             text: "⌕ opened Terminal rendering chaos",
