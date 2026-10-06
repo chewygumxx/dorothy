@@ -85,6 +85,22 @@ describe("RecallIndex", () => {
         index.close();
     });
 
+    it("is at schema version 2, with a clusters table", () => {
+        const index = RecallIndex.open(path);
+        try {
+            expect(SCHEMA_VERSION).toBe(2);
+            expect(
+                index.db
+                    .query(
+                        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'clusters'",
+                    )
+                    .get(),
+            ).toEqual({ name: "clusters" });
+        } finally {
+            index.close();
+        }
+    });
+
     it("keeps what it holds across opens", () => {
         const first = RecallIndex.open(path);
         insert(first, "a");

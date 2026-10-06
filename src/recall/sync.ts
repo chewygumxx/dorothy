@@ -116,6 +116,7 @@ function forget(index: RecallIndex, phrase: string): void {
         "DELETE FROM visits WHERE phrase = ?",
         "DELETE FROM reads WHERE reader = ?",
         "DELETE FROM appraisals WHERE reader = ?",
+        "DELETE FROM clusters WHERE phrase = ?",
         "DELETE FROM conversations WHERE phrase = ?",
     ]) {
         index.db.run(sql, [phrase]);
@@ -309,6 +310,13 @@ async function syncSidecar(
         index.db.run(
             "INSERT INTO appraisals (reader, id, served) VALUES (?, ?, ?)",
             [phrase, id, appraisal.served],
+        );
+    }
+    index.db.run("DELETE FROM clusters WHERE phrase = ?", [phrase]);
+    for (const [at, cluster] of (sidecar?.clusters ?? []).entries()) {
+        index.db.run(
+            "INSERT INTO clusters (phrase, n, first_turn, last_turn) VALUES (?, ?, ?, ?)",
+            [phrase, at + 1, cluster.from, cluster.through],
         );
     }
 }

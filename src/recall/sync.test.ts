@@ -294,3 +294,44 @@ describe("syncIndex", () => {
         expect(turns(A)).toEqual([{ n: 1, role: "user", text: "old" }]);
     });
 });
+
+describe("clusters", () => {
+    const cluster = (from: number, through: number) => ({
+        from,
+        through,
+        abstract: `Turns ${from} to ${through}.`,
+        at: "2026-10-07T08:00:00.000Z",
+        model: "claude-test",
+    });
+    const rows = () =>
+        index.db
+            .query(
+                "SELECT phrase, n, first_turn AS first, last_turn AS last FROM clusters ORDER BY phrase, n",
+            )
+            .all();
+
+    it("are synced from the sidecar, numbered from 1", async () => {
+        await writeFile(transcript(A), user(1, "hello"));
+        await sidecar(A, { clusters: [cluster(1, 4), cluster(5, 9)] });
+        await syncIndex(index, dir);
+        expect(rows()).toEqual([
+            { phrase: A, n: 1, first: 1, last: 4 },
+            { phrase: A, n: 2, first: 5, last: 9 },
+        ]);
+    });
+
+    it("follow the sidecar as it changes, and go with the transcript", async () => {
+        await writeFile(transcript(A), user(1, "hello"));
+        await sidecar(A, { clusters: [cluster(1, 4)] });
+        await syncIndex(index, dir);
+        await sidecar(A, { clusters: [cluster(1, 4), cluster(5, 6)] });
+        // A new mtime, as a rename by updateSidecar would give it.
+        const later = new Date(Date.now() + 5000);
+        await utimes(sidecarPath(dir, A), later, later);
+        await syncIndex(index, dir);
+        expect(rows()).toHaveLength(2);
+        await rm(transcript(A));
+        await syncIndex(index, dir);
+        expect(rows()).toEqual([]);
+    });
+});
