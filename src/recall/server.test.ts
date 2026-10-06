@@ -8,7 +8,7 @@
 //
 //
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -105,7 +105,25 @@ describe("the recall server", () => {
     });
 
     it("answers calls made at the same time", async () => {
-        const client = await connect();
+        // Each call syncs under the lock and reads under it again, so a read
+        // never sees rows another call's sync has half written.
+        let locked = 0;
+        const client = await connect({
+            openIndex: () => {
+                const index = RecallIndex.open(
+                    join(dir, "index", "recall.sqlite"),
+                );
+                indexes.push(index);
+                const exclusive = index.exclusive.bind(index);
+                spyOn(index, "exclusive").mockImplementation(((
+                    work: () => unknown,
+                ) => {
+                    locked++;
+                    return exclusive(work);
+                }) as typeof index.exclusive);
+                return index;
+            },
+        });
         const [searched, opened] = await Promise.all([
             client.callTool({ name: "search", arguments: { query: "render" } }),
             client.callTool({
@@ -120,6 +138,7 @@ describe("the recall server", () => {
         const read = JSON.parse(textOf(opened)) as OpenResult;
         expect(read.identifier).toBe(A);
         expect(read.window).toHaveLength(1);
+        expect(locked).toBe(4);
     });
 
     it("answers a mistake with an error she can relay", async () => {
