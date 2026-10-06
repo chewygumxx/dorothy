@@ -42,7 +42,7 @@ const session = (at: string) =>
         phrase: "p",
         sdkSessionId: "s",
         model: "m",
-        promptSha256: "h",
+        promptHash: "h",
         resumed: false,
     });
 const user = (at: string, text: string) => line("user", at, { text });

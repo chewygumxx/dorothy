@@ -15,7 +15,7 @@ import { Conversation, type RecallLaunch } from "../conversation.js";
 import { indexCatalogue } from "../memory/catalogue.js";
 import { MemoryService } from "../memory/service.js";
 import { trackMemory } from "../memory/track.js";
-import { personaPrompt, promptSha256 } from "../persona.js";
+import { personaPrompt, promptHash } from "../persona.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { newPhrase } from "../session-id.js";
 import {
@@ -117,9 +117,7 @@ export async function runTui(resume: string | null): Promise<number> {
     const app = render(
         <App
             phrase={phrase}
-            promptSha256={promptSha256(
-                personaPrompt({ recall: recall !== null }),
-            )}
+            promptHash={promptHash(personaPrompt({ recall: recall !== null }))}
             history={history}
             editDraft={(text) => editInEditor(text)}
             createSession={(turns) => {

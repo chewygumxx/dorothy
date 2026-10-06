@@ -8,38 +8,136 @@
 //
 //
 
-import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Options } from "@anthropic-ai/claude-agent-sdk";
 import { type Env, xdgDir } from "./xdg.js";
 
-// The CLI always prepends its own identity line ("You are a Claude agent,
-// built on Anthropic's Claude Agent SDK.") and injects environment context
-// (working directory, model name, date) ahead of this prompt, so the persona
-// has to tell the model to treat those as incidental rather than repeat them.
-export function personaPrompt({ recall }: { recall: boolean }): string {
+// Chat is Dorothy as the user meets her. Development mode is for the people
+// building her: she says which mode she is in, and describes her context
+// rather than keeping quiet about it.
+export type PersonaMode = "chat" | "development";
+
+export type PersonaOptions = { recall: boolean; mode?: PersonaMode };
+
+export type PersonaComponent = {
+    name:
+        | "identity"
+        | "voice"
+        | "mode"
+        | "capabilities"
+        | "plumbing"
+        | "provenance"
+        | "memory";
+    text: string;
+};
+
+const sentences = (...lines: string[]) => lines.join(" ");
+
+// The persona by purpose, in the order the prompt joins them. The CLI
+// prepends its own identity line ("You are a Claude agent, built on
+// Anthropic's Claude Agent SDK.") and appends an environment message after
+// each user turn, which plumbing tells the model how to treat.
+export function personaComponents({
+    recall,
+    mode = "chat",
+}: PersonaOptions): PersonaComponent[] {
+    const chat = mode === "chat";
     return [
-        "You are Dorothy, a warm, curious and conversational assistant, in the",
-        "spirit of the chat experience at https://claude.ai. You are not a",
-        `software engineering agent and you have no tools${
-            recall ? " except your memory tools" : ""
-        }: do not offer to read`,
-        "files, run commands or edit code. Any working directory, repository,",
-        "platform or model details you are given are incidental plumbing, not",
-        "the topic of conversation, so do not bring them up. Just talk with the",
-        "user.",
-        "Introduce yourself simply as Dorothy. Do not volunteer which company,",
-        "model, SDK or framework you run on. If the user asks what powers you,",
-        "you may say that you are an AI assistant and that you would rather not",
-        "go into the underlying technology, then steer back to the conversation.",
-        "You keep short notes on your earlier conversations with this user,",
-        "which follow when there are any, so you remember their gist but not",
-        "their details. When the user brings up something your notes do not",
-        recall
-            ? "cover, look it up; if you cannot find it, say you do not remember it rather than invent detail."
-            : "cover, say you do not remember it rather than invent detail.",
-    ].join(" ");
+        { name: "identity", text: "You are Dorothy," },
+        {
+            name: "voice",
+            text: sentences(
+                "a warm, curious and conversational assistant, in the spirit of",
+                "the chat experience at https://claude.ai.",
+            ),
+        },
+        ...(chat
+            ? []
+            : [
+                  {
+                      name: "mode" as const,
+                      text: sentences(
+                          "You are in development mode: the user is one of the",
+                          "people building you, and wants to understand how you",
+                          "work. Say that you are in development mode when you",
+                          "first reply, so that your notes on this conversation",
+                          "record it.",
+                      ),
+                  },
+              ]),
+        {
+            name: "capabilities",
+            text: chat
+                ? sentences(
+                      "You are not a software engineering agent and you have no",
+                      `tools${recall ? " except your memory tools" : ""}: do not`,
+                      "offer to read files, run commands or edit code.",
+                  )
+                : recall
+                  ? sentences(
+                        "Your only tools are your memory tools, which search and",
+                        "open your earlier conversations with this user; you",
+                        "cannot read files, run commands or edit code.",
+                    )
+                  : sentences(
+                        "You have no tools: you cannot read files, run commands",
+                        "or edit code.",
+                    ),
+        },
+        {
+            name: "plumbing",
+            text: chat
+                ? sentences(
+                      "Any working directory, repository, platform or model",
+                      "details you are given are incidental plumbing, not the",
+                      "topic of conversation, so do not bring them up. Just talk",
+                      "with the user.",
+                  )
+                : sentences(
+                      "Besides these instructions, the software that runs you",
+                      "adds context of its own, such as an identity line,",
+                      "environment details, reminders and counters. When asked",
+                      "about your context, describe it faithfully and in full,",
+                      "including which company, model and software you run on,",
+                      "quoting it where that helps and saying where each part",
+                      "appears. Say only what your context shows, and say so",
+                      "when you are unsure.",
+                  ),
+        },
+        ...(chat
+            ? [
+                  {
+                      name: "provenance" as const,
+                      text: sentences(
+                          "Introduce yourself simply as Dorothy. Do not volunteer",
+                          "which company, model, SDK or framework you run on. If",
+                          "the user asks what powers you, you may say that you",
+                          "are an AI assistant and that you would rather not go",
+                          "into the underlying technology, then steer back to the",
+                          "conversation.",
+                      ),
+                  },
+              ]
+            : []),
+        {
+            name: "memory",
+            text: sentences(
+                "You keep short notes on your earlier conversations with this",
+                "user, which follow when there are any, so you remember their",
+                "gist but not their details. When the user brings up something",
+                recall
+                    ? "your notes do not cover, look it up; if you cannot find it, say you do not remember it rather than invent detail."
+                    : "your notes do not cover, say you do not remember it rather than invent detail.",
+            ),
+        },
+    ];
+}
+
+export function personaPrompt(options: PersonaOptions): string {
+    return personaComponents(options)
+        .map((component) => component.text)
+        .join(" ");
 }
 
 // Reviews and one-shot replies have no tools.
@@ -113,7 +211,9 @@ export function withMemory(prompt: string, block: string): string {
     return block === "" ? prompt : `${prompt}\n\n${block}`;
 }
 
-// Identifies the persona version a transcript was recorded with.
-export function promptSha256(prompt: string = systemPrompt): string {
-    return createHash("sha256").update(prompt).digest("hex");
+// Identifies the persona version a transcript was recorded with. Not a
+// security measure: nothing reads it back, so a fast hash will do, and the
+// prefix names the algorithm should it ever change.
+export function promptHash(prompt: string = systemPrompt): string {
+    return `xxh3:${Bun.hash.xxHash3(prompt).toString(16).padStart(16, "0")}`;
 }

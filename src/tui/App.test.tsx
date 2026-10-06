@@ -111,7 +111,7 @@ function setup({
             notices={notices}
             editDraft={editDraft}
             phrase="tumble-orchid-vapor-lantern"
-            promptSha256="abc"
+            promptHash="abc"
             history={history}
             createSession={(turns) => {
                 histories.push([...turns]);
@@ -378,7 +378,7 @@ describe("App", () => {
                 phrase: "tumble-orchid-vapor-lantern",
                 sdkSessionId: "sdk-1",
                 model: "test-model",
-                promptSha256: "abc",
+                promptHash: "abc",
                 resumed: false,
             },
         ]);
