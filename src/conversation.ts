@@ -15,12 +15,14 @@ import {
     type SDKMessage,
     type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import type { Cluster } from "./memory/sidecar.js";
 import {
     baseOptions,
     cliOptions,
     type PersonaMode,
     personaPrompt,
     type Turn,
+    withClusters,
     withHistory,
     withMemory,
 } from "./persona.js";
@@ -28,6 +30,7 @@ import {
     ALLOWED_TOOLS,
     describeLookup,
     type Lookup,
+    RECOLLECT_TOOL,
     SERVER_NAME,
     type Tool,
     toolOf,
@@ -76,6 +79,12 @@ export type ConversationEvent =
           lookup: Lookup;
       }
     | { type: "warning"; message: string }
+    // Compaction is under way and the next message waits for it.
+    | { type: "compacting" }
+    // Turns from to through now live in clusters of a new session.
+    | { type: "compacted"; from: number; through: number; clusters: number }
+    // What a background call for memory cost, such as compaction's.
+    | { type: "memory-cost"; usd: number }
     // partial: the reply streamed so far, when the turn died mid-reply.
     | { type: "error"; message: string; partial?: string };
 
@@ -200,6 +209,9 @@ export type SessionSetup = {
     // How to launch the recall server; null leaves recall off.
     recall?: RecallLaunch | null;
     persona?: PersonaMode;
+    // The abstracts of the turns compaction took out; history then holds
+    // only the turns after them.
+    clusters?: readonly Cluster[];
 };
 
 // What a session starts with, shared with --dump-context so that the dump
@@ -209,14 +221,20 @@ export function conversationOptions({
     memory = "",
     recall = null,
     persona = "chat",
+    clusters = [],
 }: SessionSetup = {}): Options {
+    const recollect = recall !== null && clusters.length > 0;
     return {
         ...baseOptions,
         ...cliOptions(),
         systemPrompt: withHistory(
-            withMemory(
-                personaPrompt({ recall: recall !== null, mode: persona }),
-                memory,
+            withClusters(
+                withMemory(
+                    personaPrompt({ recall: recall !== null, mode: persona }),
+                    memory,
+                ),
+                clusters,
+                recollect,
             ),
             history,
         ),
@@ -224,9 +242,17 @@ export function conversationOptions({
             ? {}
             : {
                   mcpServers: {
-                      [SERVER_NAME]: { type: "stdio", ...recall },
+                      [SERVER_NAME]: {
+                          type: "stdio",
+                          command: recall.command,
+                          args: recollect
+                              ? [...recall.args, "--recollect"]
+                              : recall.args,
+                      },
                   },
-                  allowedTools: ALLOWED_TOOLS,
+                  allowedTools: recollect
+                      ? [...ALLOWED_TOOLS, RECOLLECT_TOOL]
+                      : ALLOWED_TOOLS,
               }),
     };
 }

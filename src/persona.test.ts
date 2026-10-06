@@ -21,6 +21,7 @@ import {
     prepareCliHome,
     promptHash,
     systemPrompt,
+    withClusters,
     withHistory,
     withMemory,
 } from "./persona.js";
@@ -284,5 +285,49 @@ describe("prepareCliHome", () => {
         chmodSync(home, 0o755);
         prepareCliHome({ XDG_CACHE_HOME: dir });
         expect(statSync(home).mode & 0o777).toBe(0o700);
+    });
+});
+
+describe("withClusters", () => {
+    const clusters = [
+        {
+            from: 1,
+            through: 14,
+            abstract: "Cats & <dogs>.",
+            at: "x",
+            model: "m",
+        },
+        {
+            from: 15,
+            through: 31,
+            abstract: "Render bugs.",
+            at: "y",
+            model: "m",
+        },
+    ];
+
+    it("adds nothing without clusters", () => {
+        expect(withClusters("P", [], true)).toBe("P");
+    });
+
+    it("lists each cluster's turns and abstract, escaped", () => {
+        expect(withClusters("P", clusters, true)).toBe(
+            [
+                "P",
+                "",
+                "Earlier in this conversation, in your own summaries; recollect opens a cluster's turns word for word:",
+                "",
+                "<earlier>",
+                '<cluster n="1" turns="1-14">Cats &amp; &lt;dogs&gt;.</cluster>',
+                '<cluster n="2" turns="15-31">Render bugs.</cluster>',
+                "</earlier>",
+            ].join("\n"),
+        );
+    });
+
+    it("leaves recollect out of the preamble when it is not offered", () => {
+        expect(withClusters("P", clusters, false)).toContain(
+            "Earlier in this conversation, in your own summaries:\n",
+        );
     });
 });

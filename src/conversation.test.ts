@@ -22,6 +22,7 @@ import {
     personaPrompt,
     systemPrompt,
     type Turn,
+    withClusters,
     withHistory,
     withMemory,
 } from "./persona.js";
@@ -510,6 +511,53 @@ function startedWithRecall(fake: Fake) {
 }
 
 describe("Conversation with recall", () => {
+    const CLUSTERS = [
+        { from: 1, through: 2, abstract: "Cats.", at: "x", model: "m" },
+    ];
+
+    it("seeds clusters between the memory and the tail, and offers recollect", () => {
+        const fake = fakeQuery([]);
+        const history: Turn[] = [{ role: "user", text: "Later" }];
+        new Conversation({
+            queryFn: fake.fn,
+            recall: RECALL,
+            memory: "<memory/>",
+            clusters: CLUSTERS,
+            history,
+        }).start();
+        expect(fake.options?.systemPrompt).toBe(
+            withHistory(
+                withClusters(
+                    withMemory(personaPrompt({ recall: true }), "<memory/>"),
+                    CLUSTERS,
+                    true,
+                ),
+                history,
+            ),
+        );
+        expect(fake.options?.mcpServers).toEqual({
+            memory: {
+                type: "stdio",
+                command: RECALL.command,
+                args: [...RECALL.args, "--recollect"],
+            },
+        });
+        expect(fake.options?.allowedTools).toEqual([
+            "mcp__memory__search",
+            "mcp__memory__open",
+            "mcp__memory__recollect",
+        ]);
+    });
+
+    it("seeds clusters without recall, offering no tool", () => {
+        const fake = fakeQuery([]);
+        new Conversation({ queryFn: fake.fn, clusters: CLUSTERS }).start();
+        expect(fake.options?.systemPrompt).toBe(
+            withHistory(withClusters(systemPrompt, CLUSTERS, false), []),
+        );
+        expect(fake.options?.mcpServers).toBeUndefined();
+    });
+
     it("launches the recall server and allows only its tools", () => {
         const fake = fakeQuery([]);
         startedWithRecall(fake);

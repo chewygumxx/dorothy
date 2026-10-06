@@ -21,6 +21,7 @@ export const WARNING_LIMIT = 3;
 
 export type Line = {
     id: number;
+    // lookup: a dim memory line, a lookup or a compaction.
     role: "you" | "dorothy" | "lookup" | "error";
     text: string;
     // A lookup's second line: what Dorothy opened a conversation for.
@@ -236,6 +237,24 @@ function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
             };
         case "warning":
             return reduce(state, { type: "warning", message: event.message });
+        case "compacting":
+            return {
+                ...state,
+                lines: append(state.lines, {
+                    role: "lookup",
+                    text: "compacting…",
+                }),
+            };
+        case "compacted":
+            return {
+                ...state,
+                lines: append(state.lines, {
+                    role: "lookup",
+                    text: `compacted turns ${event.from}-${event.through} into ${event.clusters} cluster${event.clusters === 1 ? "" : "s"}`,
+                }),
+            };
+        case "memory-cost":
+            return reduce(state, { type: "memory-cost", usd: event.usd });
         case "lookup": {
             const segment = state.live.trim();
             const lines =

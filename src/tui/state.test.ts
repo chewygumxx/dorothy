@@ -561,3 +561,33 @@ describe("lookups in a resumed reply", () => {
         ]);
     });
 });
+
+describe("compaction events", () => {
+    const after = (...events: ConversationEvent[]) =>
+        events.reduce(
+            (state, event) => reduce(state, { type: "event", event }),
+            initialState([]),
+        );
+
+    it("show compacting, then what was compacted, as dim lines", () => {
+        const state = after(
+            { type: "compacting" },
+            { type: "compacted", from: 1, through: 31, clusters: 2 },
+            { type: "compacted", from: 32, through: 40, clusters: 1 },
+        );
+        expect(state.lines.map((line) => [line.role, line.text])).toEqual([
+            ["lookup", "compacting…"],
+            ["lookup", "compacted turns 1-31 into 2 clusters"],
+            ["lookup", "compacted turns 32-40 into 1 cluster"],
+        ]);
+    });
+
+    it("counts compaction's cost as memory's", () => {
+        expect(
+            after(
+                { type: "memory-cost", usd: 0.25 },
+                { type: "memory-cost", usd: 0.5 },
+            ).memoryCostUsd,
+        ).toBe(0.75);
+    });
+});

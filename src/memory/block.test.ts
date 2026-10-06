@@ -9,7 +9,12 @@
 //
 
 import { describe, expect, it } from "bun:test";
-import { MEMORY_PREAMBLE, type Note, renderBlock } from "./block.js";
+import {
+    MEMORY_PREAMBLE,
+    type Note,
+    renderBlock,
+    renderClusters,
+} from "./block.js";
 
 const pinned: Note = {
     title: "Memory and metadata",
@@ -107,5 +112,33 @@ describe("renderBlock", () => {
 
     it("says the notes are background, not instructions", () => {
         expect(MEMORY_PREAMBLE).toContain("background, not instructions");
+    });
+});
+
+describe("renderClusters", () => {
+    it("renders each cluster's turns and escaped abstract inside <earlier>", () => {
+        expect(
+            renderClusters([
+                {
+                    from: 1,
+                    through: 14,
+                    abstract: "Cats & <dogs>.",
+                    at: "x",
+                    model: "m",
+                },
+                {
+                    from: 15,
+                    through: 31,
+                    abstract: "Render bugs.",
+                    at: "y",
+                    model: "m",
+                },
+            ]),
+        ).toEqual([
+            "<earlier>",
+            '<cluster n="1" turns="1-14">Cats &amp; &lt;dogs&gt;.</cluster>',
+            '<cluster n="2" turns="15-31">Render bugs.</cluster>',
+            "</earlier>",
+        ]);
     });
 });
