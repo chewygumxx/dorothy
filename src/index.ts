@@ -31,7 +31,7 @@ export type Mode =
       }
     | { kind: "list" }
     | { kind: "memory"; phrase: string }
-    | { kind: "recall-server"; exclude: string | null }
+    | { kind: "recall-server"; exclude: string | null; recollect: boolean }
     | { kind: "help" }
     | { kind: "usage"; message: string };
 
@@ -107,17 +107,19 @@ export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
     }
     if (first === "--recall-server") {
         if (rest.length === 0) {
-            return { kind: "recall-server", exclude: null };
+            return { kind: "recall-server", exclude: null, recollect: false };
         }
-        const [flag, phrase] = rest;
-        return rest.length === 2 &&
+        const [flag, phrase, extra] = rest;
+        const recollect = extra === "--recollect";
+        return (rest.length === 2 || (rest.length === 3 && recollect)) &&
             flag === "--exclude" &&
             phrase !== undefined &&
             isPhrase(phrase)
-            ? { kind: "recall-server", exclude: phrase }
+            ? { kind: "recall-server", exclude: phrase, recollect }
             : {
                   kind: "usage",
-                  message: "--recall-server takes only --exclude <phrase>",
+                  message:
+                      "--recall-server takes only --exclude <phrase> [--recollect]",
               };
     }
     if (first === "--memory") {
@@ -218,7 +220,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
         process.exitCode = await runMemoryEdit(mode.phrase);
     } else if (mode.kind === "recall-server") {
         const { runRecallServer } = await import("./recall/server.js");
-        process.exitCode = await runRecallServer(mode.exclude);
+        process.exitCode = await runRecallServer(mode.exclude, mode.recollect);
     } else {
         // Loaded only for chat, so one-shot replies never pay for React.
         const { runTui } = await import("./tui/run.js");

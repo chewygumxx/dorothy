@@ -14,7 +14,7 @@ import { z } from "zod";
 import { readConfig } from "../config.js";
 import { transcriptDir } from "../transcript.js";
 import type { Env } from "../xdg.js";
-import { openConversation, RecallError, search } from "./query.js";
+import { openConversation, RecallError, recollect, search } from "./query.js";
 import { indexPath, RecallIndex } from "./store.js";
 import { syncIndex } from "./sync.js";
 import { SERVER_NAME } from "./types.js";
@@ -38,12 +38,22 @@ export const OPEN_DESCRIPTION = [
     "further.",
 ].join(" ");
 
+export const RECOLLECT_DESCRIPTION = [
+    "Open one cluster of this conversation, from your summaries of its",
+    "earlier turns, to read what was said word for word. Give words to start",
+    "at the first turn in the cluster that contains them, or a turn number;",
+    "call again with a later turn to read further.",
+].join(" ");
+
 export type RecallServerOptions = {
     openIndex: () => RecallIndex;
     // The transcripts directory.
     dir: string;
     // The live conversation, never among the results.
     exclude: string | null;
+    // Serve recollect over the live conversation's clusters; the session
+    // was seeded with them.
+    recollect?: boolean;
     halfLifeDays: number;
     now?: () => number;
 };
@@ -117,6 +127,22 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
                 openConversation(index, input, { exclude: options.exclude }),
             ),
     );
+    const live = options.exclude;
+    if (options.recollect === true && live !== null) {
+        server.registerTool(
+            "recollect",
+            {
+                description: RECOLLECT_DESCRIPTION,
+                inputSchema: {
+                    cluster: z.number(),
+                    words: z.string().optional(),
+                    turn: z.number().optional(),
+                },
+            },
+            (input) =>
+                answer((index) => recollect(index, input, { phrase: live })),
+        );
+    }
     return server;
 }
 
@@ -124,6 +150,7 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
 // closes. It talks to no model, so it needs no credentials.
 export async function runRecallServer(
     exclude: string | null,
+    recollect: boolean,
     env: Env = process.env,
 ): Promise<number> {
     const { config } = await readConfig(env);
@@ -131,6 +158,7 @@ export async function runRecallServer(
         openIndex: () => RecallIndex.open(indexPath(env)),
         dir: transcriptDir(env),
         exclude,
+        recollect,
         halfLifeDays: config.memory.halfLifeDays,
     });
     const closed = new Promise<void>((resolve) => {

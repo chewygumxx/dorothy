@@ -14,10 +14,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { EMPTY_SIDECAR, sidecarPath } from "../memory/sidecar.js";
 import { newPhrase } from "../session-id.js";
 import { createRecallServer, type RecallServerOptions } from "./server.js";
 import { RecallIndex } from "./store.js";
-import type { OpenResult, SearchResult } from "./types.js";
+import type { OpenResult, RecollectResult, SearchResult } from "./types.js";
 
 const A = newPhrase(() => Uint8Array.from([1, 1, 2, 3, 4, 5, 6, 7]));
 const LIVE = newPhrase(() => Uint8Array.from([9, 1, 2, 3, 4, 5, 6, 7]));
@@ -168,5 +169,56 @@ describe("the recall server", () => {
         });
         expect(result.isError).toBe(true);
         expect(textOf(result)).toBe("The memory index failed: disk full");
+    });
+});
+
+describe("recollect on the server", () => {
+    it("is offered only when asked for, and only with a phrase", async () => {
+        const names = async (options: Partial<RecallServerOptions>) =>
+            (await (await connect(options)).listTools()).tools
+                .map((tool) => tool.name)
+                .sort();
+        expect(await names({})).toEqual(["open", "search"]);
+        expect(await names({ recollect: true })).toEqual([
+            "open",
+            "recollect",
+            "search",
+        ]);
+        expect(await names({ recollect: true, exclude: null })).toEqual([
+            "open",
+            "search",
+        ]);
+    });
+
+    it("opens a cluster of the live conversation", async () => {
+        await writeFile(
+            sidecarPath(dir, LIVE),
+            JSON.stringify({
+                ...EMPTY_SIDECAR,
+                clusters: [
+                    {
+                        from: 1,
+                        through: 1,
+                        abstract: "Rendering.",
+                        at: "2026-10-04T12:00:00.000Z",
+                        model: "m",
+                    },
+                ],
+            }),
+        );
+        const client = await connect({ recollect: true });
+        const opened = await client.callTool({
+            name: "recollect",
+            arguments: { cluster: 1 },
+        });
+        expect(opened.isError).toBeFalsy();
+        const result = JSON.parse(textOf(opened)) as RecollectResult;
+        expect(result.window.map((turn) => turn.text)).toEqual(["render now"]);
+        const missing = await client.callTool({
+            name: "recollect",
+            arguments: { cluster: 2 },
+        });
+        expect(missing.isError).toBe(true);
+        expect(textOf(missing)).toBe("No cluster by that number.");
     });
 });
