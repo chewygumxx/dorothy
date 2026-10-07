@@ -221,4 +221,40 @@ describe("recollect on the server", () => {
         expect(missing.isError).toBe(true);
         expect(textOf(missing)).toBe("No cluster by that number.");
     });
+
+    it("refuses a cluster number that is not a whole number from 1", async () => {
+        await writeFile(
+            join(dir, `${LIVE}.jsonl`),
+            user("render now") + user("render later"),
+        );
+        const cluster = (turn: number) => ({
+            from: turn,
+            through: turn,
+            abstract: `Turn ${turn}.`,
+            at: "2026-10-04T12:00:00.000Z",
+            model: "m",
+        });
+        await writeFile(
+            sidecarPath(dir, LIVE),
+            JSON.stringify({
+                ...EMPTY_SIDECAR,
+                clusters: [cluster(1), cluster(2)],
+            }),
+        );
+        const client = await connect({ recollect: true });
+        for (const value of [1.5, 0, -1]) {
+            const refused = await client.callTool({
+                name: "recollect",
+                arguments: { cluster: value },
+            });
+            expect(refused.isError).toBe(true);
+            expect(textOf(refused)).not.toContain("render");
+            expect(textOf(refused)).not.toBe("No cluster by that number.");
+        }
+        const opened = await client.callTool({
+            name: "recollect",
+            arguments: { cluster: 2 },
+        });
+        expect(opened.isError).toBeFalsy();
+    });
 });

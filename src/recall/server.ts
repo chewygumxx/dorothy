@@ -134,7 +134,7 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
             {
                 description: RECOLLECT_DESCRIPTION,
                 inputSchema: {
-                    cluster: z.number(),
+                    cluster: z.number().int().min(1),
                     words: z.string().optional(),
                     turn: z.number().optional(),
                 },

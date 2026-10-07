@@ -334,7 +334,9 @@ export function recollect(
     options: { phrase: string | null },
 ): RecollectResult {
     const phrase = options.phrase;
-    const n = Number.isFinite(input.cluster) ? Math.round(input.cluster) : 0;
+    // A cluster is a whole number or nothing: no rounding, so what the
+    // transcript records is what was asked for.
+    const n = Number.isInteger(input.cluster) ? input.cluster : 0;
     const range =
         phrase === null
             ? null

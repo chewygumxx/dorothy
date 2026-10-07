@@ -442,6 +442,17 @@ describe("recollect", () => {
         ).toThrow(NO_CLUSTER);
     });
 
+    it("refuses a cluster number that is not a whole number", () => {
+        for (const cluster of [
+            1.5,
+            0.5,
+            Number.NaN,
+            Number.POSITIVE_INFINITY,
+        ]) {
+            expect(() => opened({ cluster })).toThrow(NO_CLUSTER);
+        }
+    });
+
     it("never opens another conversation's clusters", async () => {
         await conversation(A, [user(day(2), "elsewhere")], {
             clusters: [cluster(1, 1)],
