@@ -14,9 +14,9 @@ import type {
     ConversationEvent,
     TurnStats,
 } from "../conversation.js";
-import type { Timers } from "../memory/scheduler.js";
 import type { Cluster } from "../memory/sidecar.js";
 import type { Turn } from "../persona.js";
+import type { Timers } from "../timers.js";
 import { clusterInstructions } from "./clusters.js";
 import {
     CLAIM_RETRY_MS,

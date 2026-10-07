@@ -17,6 +17,7 @@ import { DEFAULT_CONFIG } from "../config.js";
 import { systemPrompt } from "../persona.js";
 import { RecallIndex } from "../recall/store.js";
 import { newPhrase } from "../session-id.js";
+import type { Timers } from "../timers.js";
 import type { Entry } from "./catalogue.js";
 import {
     CLUSTERS_INSTRUCTION,
@@ -25,7 +26,6 @@ import {
     REVIEW_TIMEOUT_MS,
     type ReviewQueryFn,
 } from "./review.js";
-import type { Timers } from "./scheduler.js";
 import {
     MemoryService,
     type MemoryServiceOptions,

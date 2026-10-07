@@ -11,6 +11,7 @@
 import { describe, expect, it } from "bun:test";
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { cliOptions, type Turn } from "../persona.js";
+import type { Timers } from "../timers.js";
 import type { ResumedTurn } from "../transcript.js";
 import {
     CLUSTERS_INSTRUCTION,
@@ -24,7 +25,6 @@ import {
     validateNotes,
     validateReview,
 } from "./review.js";
-import type { Timers } from "./scheduler.js";
 import { EMPTY_SIDECAR, mergeEdit, withProvisional } from "./sidecar.js";
 
 const AT = "2026-10-05T05:40:12.000Z";

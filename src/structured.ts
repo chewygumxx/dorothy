@@ -18,8 +18,8 @@ import type {
     StructuredOutcome,
     StructuredRequest,
 } from "./compaction/types.js";
-import { REAL_TIMERS, type Timers } from "./memory/scheduler.js";
 import { baseOptions, cliOptions } from "./persona.js";
+import { REAL_TIMERS, type Timers } from "./timers.js";
 
 export type StructuredHandle = AsyncIterable<SDKMessage> & { close(): void };
 // The SDK's query() fits this; tests pass a fake.

@@ -13,9 +13,9 @@ import {
     type StructuredQueryFn,
     structuredCall,
 } from "../structured.js";
+import { REAL_TIMERS, type Timers } from "../timers.js";
 import type { ResumedTurn } from "../transcript.js";
 import { escapeXml, renderClusters, unescapeXml } from "./block.js";
-import { REAL_TIMERS, type Timers } from "./scheduler.js";
 import {
     FIELDS,
     LIMITS,

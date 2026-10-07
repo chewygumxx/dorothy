@@ -8,16 +8,7 @@
 //
 //
 
-// Injected so the scheduler and the review are tested without real time.
-export type Timers = {
-    set(fn: () => void, ms: number): unknown;
-    clear(handle: unknown): void;
-};
-
-export const REAL_TIMERS: Timers = {
-    set: (fn, ms) => setTimeout(fn, ms),
-    clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
-};
+import { REAL_TIMERS, type Timers } from "../timers.js";
 
 export type Review = (phrase: string, signal: AbortSignal) => Promise<void>;
 

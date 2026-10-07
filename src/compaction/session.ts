@@ -10,9 +10,9 @@
 
 import type { CompactionConfig } from "../config.js";
 import type { ChatSession, ConversationEvent } from "../conversation.js";
-import { REAL_TIMERS, type Timers } from "../memory/scheduler.js";
 import type { Cluster } from "../memory/sidecar.js";
 import type { Turn } from "../persona.js";
+import { REAL_TIMERS, type Timers } from "../timers.js";
 import { type CompactOutcome, compact } from "./compact.js";
 import { pressure, seedTurns } from "./plan.js";
 import type { StructuredCall } from "./types.js";

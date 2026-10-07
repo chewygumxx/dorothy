@@ -14,6 +14,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { MemoryConfig } from "../config.js";
 import { systemPrompt, type Turn, withMemory } from "../persona.js";
 import type { RecallIndex } from "../recall/store.js";
+import { REAL_TIMERS, type Timers } from "../timers.js";
 import { type ResumedTurn, readTranscript } from "../transcript.js";
 import type { Entry } from "./catalogue.js";
 import { buildMemory } from "./rank.js";
@@ -28,7 +29,7 @@ import {
     reviewSchema,
     runReview,
 } from "./review.js";
-import { REAL_TIMERS, ReviewScheduler, type Timers } from "./scheduler.js";
+import { ReviewScheduler } from "./scheduler.js";
 import {
     markFailed,
     markReviewed,

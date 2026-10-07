@@ -9,7 +9,8 @@
 //
 
 import { describe, expect, it } from "bun:test";
-import { ReviewScheduler, type Timers } from "./scheduler.js";
+import type { Timers } from "../timers.js";
+import { ReviewScheduler } from "./scheduler.js";
 
 class FakeTimers implements Timers {
     #next = 1;
