@@ -12,8 +12,11 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { configPath } from "../config.js";
 import type { ChatSession } from "../conversation.js";
 import { newPhrase } from "../session-id.js";
+import { transcriptDir } from "../transcript.js";
+import { xdgDir } from "../xdg.js";
 import {
     clusterSaver,
     indexClaims,
@@ -22,23 +25,40 @@ import {
     sessionMaker,
 } from "./run.js";
 
+// runTui reads the config and opens the transcript and the index from
+// these, so every one points into the test's directory.
+const XDG = ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"] as const;
 let dir = "";
-let saved: string | undefined;
+let saved: Partial<Record<(typeof XDG)[number], string>> = {};
 beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), "dorothy-run-"));
-    saved = process.env.XDG_DATA_HOME;
-    process.env.XDG_DATA_HOME = dir;
+    saved = {};
+    for (const variable of XDG) {
+        saved[variable] = process.env[variable];
+        process.env[variable] = dir;
+    }
 });
 afterEach(async () => {
-    if (saved === undefined) {
-        delete process.env.XDG_DATA_HOME;
-    } else {
-        process.env.XDG_DATA_HOME = saved;
+    for (const variable of XDG) {
+        const value = saved[variable];
+        if (value === undefined) {
+            delete process.env[variable];
+        } else {
+            process.env[variable] = value;
+        }
     }
     await rm(dir, { recursive: true, force: true });
 });
 
 describe("runTui", () => {
+    it("reads and writes only under the test's directory", () => {
+        // The cache holds the index and the CLI's home.
+        const cache = xdgDir(process.env, "XDG_CACHE_HOME", ".cache");
+        for (const path of [configPath(), transcriptDir(), cache]) {
+            expect(path).toStartWith(dir);
+        }
+    });
+
     it("exits 1 before rendering when the transcript to resume is missing", async () => {
         const phrase = newPhrase();
         const written: string[] = [];
