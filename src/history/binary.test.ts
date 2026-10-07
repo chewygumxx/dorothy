@@ -11,7 +11,12 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { chmodSync, existsSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { binaryRepo, credentialHelpers, isolatedEnv } from "./binary.js";
+import {
+    binaryRepo,
+    credentialHelpers,
+    isolatedEnv,
+    sshBatch,
+} from "./binary.js";
 import { bareRepo, put, removeRoots, TEST_ENV, tempRoot } from "./testing.js";
 
 afterAll(removeRoots);
@@ -228,5 +233,15 @@ describe("credentialHelpers", () => {
                 GIT_CONFIG_GLOBAL: "/dev/null",
             }),
         ).toEqual([]);
+    });
+});
+
+describe("sshBatch", () => {
+    it("makes ssh fail rather than prompt, unless the user chose a command", () => {
+        expect(sshBatch({})).toEqual({
+            GIT_SSH_COMMAND: "ssh -o BatchMode=yes",
+        });
+        expect(sshBatch({ GIT_SSH_COMMAND: "ssh -i key" })).toEqual({});
+        expect(sshBatch({ GIT_SSH: "/usr/bin/myssh" })).toEqual({});
     });
 });

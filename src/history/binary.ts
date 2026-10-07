@@ -104,6 +104,14 @@ export async function credentialHelpers(
     }
 }
 
+// A push or fetch over ssh must fail rather than prompt on the terminal,
+// which GIT_TERMINAL_PROMPT does not stop; a user's own ssh command stands.
+export function sshBatch(env: Env): Record<string, string> {
+    return env.GIT_SSH_COMMAND === undefined && env.GIT_SSH === undefined
+        ? { GIT_SSH_COMMAND: "ssh -o BatchMode=yes" }
+        : {};
+}
+
 type Ran = { code: number; stdout: Uint8Array; stderr: string };
 
 const decoder = new TextDecoder();
@@ -166,12 +174,14 @@ export function binaryRepo(
         ]);
         return ran.code === 0 ? text(ran).trim() : null;
     };
-    // The helpers as configuration in the environment, where a command's
+    // The helpers (and ssh's batch mode) as configuration in the
+    // environment, where a command's
     // own -c would not reach them past ISOLATION's.
     const credentials = async (): Promise<Record<string, string>> => {
         helpers ??= credentialHelpers(env);
         const found = await helpers;
         const extra: Record<string, string> = {
+            ...sshBatch(env),
             GIT_CONFIG_COUNT: String(found.length),
         };
         found.forEach((helper, index) => {
