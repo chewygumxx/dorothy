@@ -10,6 +10,7 @@
 
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
+import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { set } from "@dotenvx/dotenvx";
 import { readConfig } from "../config.js";
@@ -45,6 +46,8 @@ export type CommandOptions = {
     engine?: Engine;
     hook?: HookCommand | null;
     now?: () => Date;
+    // Where a relative local mirror path is resolved from.
+    cwd?: string;
 };
 
 const describeError = (error: unknown) =>
@@ -517,6 +520,31 @@ export async function runCheck(
 // A mirror on this machine, as against one on a host.
 export const isLocal = (url: string) => /^(\/|\.{1,2}\/|~|file:\/\/)/.test(url);
 
+// A mirror as git is to be given it: a local path made absolute from the
+// user's directory (git runs in the data directory), with ~ expanded. Null,
+// said on err, for what git would read as an option.
+function mirrorUrl(
+    url: string,
+    {
+        env = process.env,
+        err = process.stderr,
+        cwd = process.cwd(),
+    }: CommandOptions,
+): string | null {
+    if (url.startsWith("-")) {
+        err.write(`dorothy: ${url} is not a url or path\n`);
+        return null;
+    }
+    if (!isLocal(url) || url.startsWith("file://") || isAbsolute(url)) {
+        return url;
+    }
+    const home = env.HOME ?? homedir();
+    if (url === "~") {
+        return home;
+    }
+    return resolve(cwd, url.startsWith("~/") ? join(home, url.slice(2)) : url);
+}
+
 // dotenvx's set, which encrypts the value into .env.
 async function saveSecret(name: string, value: string): Promise<void> {
     const result = await set(name, value);
@@ -539,6 +567,10 @@ export async function runMirror(
         err = process.stderr,
         setSecret = saveSecret,
     } = options;
+    const target = url === null ? null : mirrorUrl(url, options);
+    if (url !== null && target === null) {
+        return 1;
+    }
     const opened = await session(options, false);
     if (opened === null) {
         return 1;
@@ -546,7 +578,7 @@ export async function runMirror(
     const { history } = opened;
     const repo = history.repo;
     try {
-        if (url === null) {
+        if (target === null) {
             const current = await repo.remote(MIRROR);
             if (current === null) {
                 out.write(
@@ -570,7 +602,7 @@ export async function runMirror(
             );
             return 1;
         }
-        await repo.setRemote(MIRROR, url);
+        await repo.setRemote(MIRROR, target);
         if (key === null) {
             const made = newKey();
             await setSecret("DOROTHY_MIRROR_KEY", made);
@@ -579,9 +611,9 @@ export async function runMirror(
                 "Made DOROTHY_MIRROR_KEY and saved it with dotenvx. Keep a copy somewhere else (dotenvx get DOROTHY_MIRROR_KEY): without it the mirror can't be read.\n",
             );
         }
-        if (!isLocal(url)) {
+        if (!isLocal(target)) {
             out.write(
-                `Your conversations will be stored at ${url}, encrypted.\n`,
+                `Your conversations will be stored at ${target}, encrypted.\n`,
             );
         }
         const sealing = key;
@@ -596,7 +628,7 @@ export async function runMirror(
         if (outcome.kind !== "pushed") {
             return 1;
         }
-        out.write(`Pushed to ${url}\n`);
+        out.write(`Pushed to ${target}\n`);
         return 0;
     } finally {
         opened.close();
@@ -612,6 +644,10 @@ export async function runRecover(
         out = process.stdout,
         err = process.stderr,
     } = options;
+    const target = mirrorUrl(url, options);
+    if (target === null) {
+        return 1;
+    }
     const root = historyRoot(env);
     if (existsSync(root) && readdirSync(root).length > 0) {
         err.write(
@@ -632,7 +668,7 @@ export async function runRecover(
     );
     const recovered = await recover({
         repo,
-        url,
+        url: target,
         key,
         token: env.DOROTHY_MIRROR_TOKEN ?? null,
     });

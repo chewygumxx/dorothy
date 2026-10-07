@@ -85,6 +85,10 @@ const options = () => ({
     engine: "git" as const,
     hook: null,
     now: () => NOW,
+    // Tests never reach dotenvx's set, which would write the real .env.
+    setSecret: async () => {
+        throw new Error("tests never save secrets");
+    },
 });
 const repo = () => binaryRepo(data(), { env: TEST_ENV });
 const messages = async () =>
@@ -347,6 +351,44 @@ describe("runMirror", () => {
             new RegExp(
                 `^Mirror: ${bare}\\nSealed through: [0-9a-f]{7}\\nWaiting: no\\n$`,
             ),
+        );
+    });
+
+    it("resolves a relative or home mirror from the cwd, not the data directory", async () => {
+        write("tags.json", vocabulary(1));
+        const elsewhere = tempRoot();
+        const bare = await bareRepo();
+        const wanted = join(elsewhere, "backup.git");
+        Bun.spawnSync(["git", "clone", "--bare", "-q", bare, wanted], {
+            env: TEST_ENV,
+        });
+        const keyed = {
+            ...options(),
+            env: { ...env, DOROTHY_MIRROR_KEY: newKey() },
+            cwd: elsewhere,
+        };
+        expect(await runMirror("./backup.git", keyed)).toBe(0);
+        expect(await repo().remote("mirror")).toBe(wanted);
+        expect(out.text).toContain(`Pushed to ${wanted}\n`);
+        expect(existsSync(data("backup.git"))).toBe(false);
+        expect(await runMirror("~/home.git", keyed)).toBe(1);
+        expect(await repo().remote("mirror")).toBe(join(home, "home.git"));
+    });
+
+    it("refuses a url that git would read as an option", async () => {
+        expect(await runMirror("-x", options())).toBe(1);
+        expect(err.text).toBe("dorothy: -x is not a url or path\n");
+        expect(existsSync(data(".git"))).toBe(false);
+        err = capture();
+        expect(
+            await runRecover("--upload-pack=x", {
+                ...options(),
+                err,
+                env: { ...env, DOROTHY_MIRROR_KEY: newKey() },
+            }),
+        ).toBe(1);
+        expect(err.text).toBe(
+            "dorothy: --upload-pack=x is not a url or path\n",
         );
     });
 
