@@ -1232,6 +1232,37 @@ describe("Compaction", () => {
         }
     });
 
+    it("fails a save whose other writer's clusters leave a gap before the run", async () => {
+        const cluster = (from: number, through: number): Cluster => ({
+            from,
+            through,
+            abstract: "a",
+            at: "x",
+            model: "m",
+        });
+        // This TUI's clusters reach turn 2, so the run starts at turn 3;
+        // the notes' end at turn 1, leaving turn 2 in no cluster.
+        const ours = [cluster(1, 2)];
+        const h = harness({
+            clusters: ours,
+            save: { ok: true, clusters: [cluster(1, 1)] },
+        });
+        const session = h.open([...HISTORY, ...HISTORY]);
+        session.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        expect(h.calls[0]?.request.prompt).toContain('<turn n="3">');
+        expect(h.calls[0]?.request.prompt).not.toContain('<turn n="2">');
+        h.calls[0]?.answer(through(6));
+        await until(() => warnings(h.events).length === 1);
+        expect(warnings(h.events)).toEqual([
+            "compaction failed: the notes' clusters end at turn 1, before turn 3",
+        ]);
+        expect(h.compaction.clusters()).toEqual(ours);
+        expect(h.sessions).toHaveLength(1);
+    });
+
     it("hands over when recording fails after the save, rather than compacting again at every idle", async () => {
         const h = harness({ record: new Error("transcript gone") });
         const session = h.open();
