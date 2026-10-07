@@ -313,11 +313,10 @@ Each label is unescaped and normalised. Then, in order:
    ignored and nothing below applies.
 2. **Coined concepts.** One whose preferred label already belongs to a live
    concept, as its preferred or an alternative label, becomes that concept:
-   a reuse, not a coin. One whose label
-   (preferred or alternative) belongs to a tombstone, or contains `;`, or
-   breaks a limit, is dropped. An alternative label that names another
-   concept is dropped from it. Two coined concepts with the same label
-   become one, the first.
+   a reuse, not a coin. One whose preferred label belongs to a tombstone,
+   or contains `;`, or breaks a limit, is dropped. An alternative label
+   that does so, or names another concept, is dropped from the coin, which
+   is kept. Two coined concepts with the same label become one, the first.
 3. **Broader.** A `broader` label that resolves neither to a live concept
    nor to one she coined is dropped. Edges among her coined concepts are
    added in order, and one that would close a cycle is dropped.
