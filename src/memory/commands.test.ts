@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { newPhrase } from "../session-id.js";
 import type { EditResult } from "../tui/external-editor.js";
-import { runList, runMemoryEdit, runTags } from "./commands.js";
+import { runList, runMemoryEdit, runTags, runTagsEdit } from "./commands.js";
 import { readSidecar, sidecarPath } from "./sidecar.js";
 
 const NOW = new Date("2026-10-05T00:00:00.000Z");
@@ -265,6 +265,71 @@ describe("runTags", () => {
         await writeFile(tagsFile(), "{ broken");
         const err = capture();
         expect(await runTags({ env, out: capture(), err })).toBe(1);
+        expect(err.text).toStartWith(`dorothy: ${tagsFile()}: `);
+    });
+});
+
+describe("runTagsEdit", () => {
+    const tagsFile = () => join(dir, "dorothy", "tags.json");
+    const vocabulary = {
+        v: 1,
+        rev: 1,
+        concepts: {
+            k00000001: {
+                prefLabel: "memory",
+                scopeNote: "Remembering.",
+                by: "dorothy",
+                at: NOW.toISOString(),
+            },
+        },
+    };
+
+    it("reopens with the error until the edit holds, then saves it", async () => {
+        await writeFile(tagsFile(), JSON.stringify(vocabulary));
+        const seen: string[] = [];
+        const answers = [
+            (text: string) => text.replace("Tag: memory", "Tag: a;b"),
+            (text: string) =>
+                text
+                    .replace(/^# error: .*\n/, "")
+                    .replace("Tag: a;b", "Tag: remembering"),
+        ];
+        const err = capture();
+        const code = await runTagsEdit({
+            env,
+            err,
+            edit: async (text: string): Promise<EditResult> => {
+                seen.push(text);
+                return {
+                    ok: true,
+                    text: (answers.shift() as (t: string) => string)(text),
+                };
+            },
+            now: () => NOW,
+        });
+        expect(err.text).toBe("");
+        expect(code).toBe(0);
+        expect(seen[1]).toStartWith('# error: "a;b" contains ;\n');
+        const saved = JSON.parse(await readFile(tagsFile(), "utf8"));
+        expect(saved.rev).toBe(2);
+        expect(saved.concepts.k00000001.prefLabel).toBe("remembering");
+        expect(saved.concepts.k00000001.edited).toBe(NOW.toISOString());
+    });
+
+    it("refuses a broken vocabulary before opening the editor", async () => {
+        await writeFile(tagsFile(), "{ broken");
+        const err = capture();
+        let opened = false;
+        const code = await runTagsEdit({
+            env,
+            err,
+            edit: async () => {
+                opened = true;
+                return { ok: true, text: "" };
+            },
+        });
+        expect(code).toBe(1);
+        expect(opened).toBe(false);
         expect(err.text).toStartWith(`dorothy: ${tagsFile()}: `);
     });
 });

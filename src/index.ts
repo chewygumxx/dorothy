@@ -32,6 +32,7 @@ export type Mode =
     | { kind: "list" }
     | { kind: "memory"; phrase: string }
     | { kind: "tags" }
+    | { kind: "tags-edit" }
     | { kind: "recall-server"; exclude: string | null; recollect: boolean }
     | { kind: "help" }
     | { kind: "usage"; message: string };
@@ -43,6 +44,7 @@ export const USAGE = [
     "       dorothy --list             what Dorothy remembers",
     "       dorothy --memory <phrase>  correct, pin or hide a chat's notes",
     "       dorothy --tags             Dorothy's tags, as a tree",
+    "       dorothy --edit-tags        correct, merge or delete her tags",
     "       dorothy --recall-server    memory search for MCP clients (stdio)",
     "       dorothy -- <prompt...>     a prompt that starts with -",
     "       dorothy --dump-context [--resume <phrase>] [message...]",
@@ -111,6 +113,17 @@ export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
         return rest.length === 0
             ? { kind: "tags" }
             : { kind: "usage", message: "--tags takes no arguments" };
+    }
+    if (first === "--edit-tags") {
+        if (rest.length !== 0) {
+            return {
+                kind: "usage",
+                message: "--edit-tags takes no arguments",
+            };
+        }
+        return isTTY
+            ? { kind: "tags-edit" }
+            : { kind: "usage", message: "--edit-tags needs a terminal" };
     }
     if (first === "--recall-server") {
         if (rest.length === 0) {
@@ -228,6 +241,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     } else if (mode.kind === "tags") {
         const { runTags } = await import("./memory/commands.js");
         process.exitCode = await runTags();
+    } else if (mode.kind === "tags-edit") {
+        const { runTagsEdit } = await import("./memory/commands.js");
+        process.exitCode = await runTagsEdit();
     } else if (mode.kind === "recall-server") {
         const { runRecallServer } = await import("./recall/server.js");
         process.exitCode = await runRecallServer(mode.exclude, mode.recollect);

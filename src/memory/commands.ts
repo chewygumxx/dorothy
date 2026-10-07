@@ -31,11 +31,17 @@ import {
     sidecarPath,
     updateSidecar,
 } from "./sidecar.js";
-import { renderTagsTree } from "./tags-view.js";
+import {
+    applyTagsEdit,
+    parseTagsView,
+    renderTagsTree,
+    renderTagsView,
+} from "./tags-view.js";
 import {
     EMPTY_VOCABULARY,
     readVocabulary,
     resolveTags,
+    updateVocabulary,
     vocabularyPath,
 } from "./vocabulary.js";
 
@@ -227,6 +233,85 @@ export async function runMemoryEdit(
                 err.write(
                     `dorothy: ${sidecarPath(dir, phrase)}: ${update.reason}\n`,
                 );
+                return 1;
+            }
+            return 0;
+        }
+    } finally {
+        index?.close();
+    }
+}
+
+// Opens the vocabulary in $EDITOR until the edit parses and applies, then
+// writes it over what the file holds by then, so concepts Dorothy coined
+// meanwhile are kept.
+export async function runTagsEdit({
+    env = process.env,
+    err = process.stderr,
+    edit = (text: string) => editInEditor(text),
+    now = () => new Date(),
+}: {
+    env?: Env;
+    err?: Output;
+    edit?: (text: string) => Promise<EditResult>;
+    now?: () => Date;
+} = {}): Promise<number> {
+    const path = vocabularyPath(env);
+    const read = await readVocabulary(path);
+    if (read.kind === "unparseable") {
+        err.write(`dorothy: ${path}: ${read.reason}\n`);
+        return 1;
+    }
+    const shown = read.kind === "ok" ? read.vocabulary : EMPTY_VOCABULARY;
+    let index: RecallIndex | null = null;
+    let counts = new Map<string, number>();
+    try {
+        const opened = RecallIndex.open(indexPath(env));
+        index = opened;
+        await syncIndex(opened, transcriptDir(env), now().getTime(), path);
+        counts = await opened.exclusive(() => carrierCounts(opened));
+    } catch {
+        // Without the index the view has no counts and the save goes
+        // unlocked, as --memory's does.
+    }
+    let text = renderTagsView(shown, counts);
+    try {
+        for (;;) {
+            const result = await edit(text);
+            if (!result.ok) {
+                err.write(`dorothy: ${result.message}\n`);
+                return 1;
+            }
+            const reopen = (reason: string) =>
+                `# error: ${reason}\n${result.text.replace(ERROR_LINES, "")}`;
+            const parsed = parseTagsView(result.text, shown);
+            if (parsed.kind === "unchanged") {
+                return 0;
+            }
+            if (parsed.kind === "error") {
+                text = reopen(parsed.reason);
+                continue;
+            }
+            const at = now().toISOString();
+            const refused: { reason: string | null } = { reason: null };
+            const update = await updateVocabulary(
+                path,
+                (current) => {
+                    const applied = applyTagsEdit(current, parsed.edit, at);
+                    if (!applied.ok) {
+                        refused.reason = applied.reason;
+                        return null;
+                    }
+                    return applied.vocabulary;
+                },
+                index?.lock,
+            );
+            if (refused.reason !== null) {
+                text = reopen(refused.reason);
+                continue;
+            }
+            if (update.kind === "unparseable" || update.kind === "failed") {
+                err.write(`dorothy: ${path}: ${update.reason}\n`);
                 return 1;
             }
             return 0;
