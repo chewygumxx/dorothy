@@ -228,6 +228,9 @@ export function isoRepo(location: string): MemoryRepo {
         async setRef(name, sha) {
             await git.writeRef({ fs, dir, ref: name, value: sha, force: true });
         },
+        async deleteRef(name) {
+            await git.deleteRef({ fs, dir, ref: name });
+        },
         async bundle(since) {
             const tip = await resolve(MAIN);
             if (tip === null || tip === since) {

@@ -40,6 +40,8 @@ export type MemoryRepo = {
     // A revision's commit, or null.
     resolve(rev: string): Promise<string | null>;
     setRef(name: string, sha: string): Promise<void>;
+    // Removes a ref; nothing happens when there is none.
+    deleteRef(name: string): Promise<void>;
     // The commits on main after since (all of them for null) as a git
     // bundle; null when there are none.
     bundle(since: string | null): Promise<Uint8Array | null>;

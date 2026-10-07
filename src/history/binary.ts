@@ -270,6 +270,9 @@ export function binaryRepo(
         async setRef(name, sha) {
             await must(["update-ref", name, sha]);
         },
+        async deleteRef(name) {
+            await must(["update-ref", "-d", name]);
+        },
         async bundle(since) {
             const tip = await resolve(MAIN);
             if (tip === null || tip === since) {

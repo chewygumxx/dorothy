@@ -247,6 +247,17 @@ function contract(make: (root: string) => MemoryRepo): void {
         expect(await repo.resolve("refs/dorothy/sealed-through")).toBe(sha);
     });
 
+    it("deletes a ref, and a missing one quietly", async () => {
+        const repo = await fresh();
+        put(repo.root, "a.txt", "1\n");
+        const sha = (await repo.commit(["a.txt"], "one")) as string;
+        await repo.setRef("refs/dorothy/sealed-through", sha);
+        await repo.deleteRef("refs/dorothy/sealed-through");
+        expect(await repo.resolve("refs/dorothy/sealed-through")).toBeNull();
+        await repo.deleteRef("refs/dorothy/sealed-through");
+        expect(await repo.resolve(MAIN)).toBe(sha);
+    });
+
     it("maintains itself without complaint", async () => {
         const repo = await fresh();
         put(repo.root, "a.txt", "1\n");
