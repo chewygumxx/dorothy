@@ -43,9 +43,29 @@ describe("parseConfig", () => {
                 replyStats: { modules: [], maxLines: 1 },
                 memory: DEFAULT_CONFIG.memory,
                 compaction: DEFAULT_CONFIG.compaction,
+                history: DEFAULT_CONFIG.history,
             },
             warnings: [],
         });
+    });
+
+    it("reads [history]", () => {
+        expect(DEFAULT_CONFIG.history).toEqual({
+            enabled: true,
+            pushSeconds: 60,
+        });
+        expect(
+            parseConfig("[history]\nenabled = false\npush-seconds = 300\n"),
+        ).toEqual({
+            config: {
+                ...DEFAULT_CONFIG,
+                history: { enabled: false, pushSeconds: 300 },
+            },
+            warnings: [],
+        });
+        expect(parseConfig("[history]\npush-seconds = 5\n").warnings).toEqual([
+            "config.toml: history.push-seconds must be a whole number from 10 to 86400",
+        ]);
     });
 
     it("reads the memory table", () => {

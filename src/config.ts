@@ -45,11 +45,17 @@ export type CompactionConfig = {
     // Estimated tokens of the newest turns kept word for word.
     tail: number;
 };
+export type HistoryConfig = {
+    enabled: boolean;
+    // Seconds between pushes to the mirror, at most.
+    pushSeconds: number;
+};
 export type Config = {
     statusline: LineConfig;
     replyStats: LineConfig;
     memory: MemoryConfig;
     compaction: CompactionConfig;
+    history: HistoryConfig;
 };
 
 // More would let a statusline crowd out the reply; five keeps the smallest
@@ -95,6 +101,10 @@ export const DEFAULT_CONFIG: Config = {
         soft: 64000,
         hard: 128000,
         tail: 16000,
+    },
+    history: {
+        enabled: true,
+        pushSeconds: 60,
     },
 };
 
@@ -245,6 +255,18 @@ const parseMemory = (value: unknown, warnings: string[]): MemoryConfig =>
         warnings,
     );
 
+const parseHistory = (value: unknown, warnings: string[]): HistoryConfig =>
+    parseTable(
+        "history",
+        value,
+        DEFAULT_CONFIG.history,
+        {
+            enabled: toggle("enabled"),
+            pushSeconds: whole("push-seconds", 10, 86400),
+        },
+        warnings,
+    );
+
 // The thresholds only make sense together: compacting must leave a tail
 // smaller than what set it off, below the point that holds a message.
 function parseCompaction(value: unknown, warnings: string[]): CompactionConfig {
@@ -317,6 +339,8 @@ export function parseConfig(text: string): {
             config.memory = parseMemory(value, warnings);
         } else if (key === "compaction") {
             config.compaction = parseCompaction(value, warnings);
+        } else if (key === "history") {
+            config.history = parseHistory(value, warnings);
         } else {
             warnings.push(`config.toml: unknown key ${key}`);
         }
