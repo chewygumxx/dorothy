@@ -8,7 +8,7 @@
 //
 //
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -40,7 +40,22 @@ afterEach(async () => {
 
 describe("runTui", () => {
     it("exits 1 before rendering when the transcript to resume is missing", async () => {
-        expect(await runTui(newPhrase())).toBe(1);
+        const phrase = newPhrase();
+        const written: string[] = [];
+        const write = spyOn(process.stderr, "write").mockImplementation(
+            (chunk) => {
+                written.push(String(chunk));
+                return true;
+            },
+        );
+        try {
+            expect(await runTui(phrase)).toBe(1);
+        } finally {
+            write.mockRestore();
+        }
+        expect(written.join("")).toStartWith(
+            `dorothy: cannot resume ${phrase}: `,
+        );
     });
 });
 
