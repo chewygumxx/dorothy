@@ -109,6 +109,31 @@ describe("compact", () => {
         expect(requests).toEqual([]);
     });
 
+    it("sends one call only the oldest turns that fit its cap", async () => {
+        const { call, requests } = answering({
+            ok: true,
+            output: { clusters: [{ through: 1, abstract: "The start." }] },
+            model: "claude-test",
+            costUsd: 0.1,
+        });
+        const outcome = await compact({
+            turns,
+            clusters: [],
+            tail: 2,
+            cap: 1,
+            persona: "P",
+            recollect: true,
+            call,
+            now: () => NOW,
+        });
+        expect(outcome.kind === "compacted" && outcome.range).toEqual({
+            from: 1,
+            through: 1,
+        });
+        expect(requests[0]?.prompt).toContain('<turn n="1">');
+        expect(requests[0]?.prompt).not.toContain('<turn n="2">');
+    });
+
     it("fails with the call's reason, or the output's, keeping the cost", async () => {
         expect(
             await run(

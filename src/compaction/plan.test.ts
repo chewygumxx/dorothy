@@ -12,6 +12,7 @@ import { describe, expect, it } from "bun:test";
 import type { Cluster } from "../memory/sidecar.js";
 import { type Turn, withClusters } from "../persona.js";
 import {
+    callCap,
     clusterTokens,
     covered,
     outgoing,
@@ -69,6 +70,32 @@ describe("outgoing", () => {
     it("keeps a reply still to come with its message", () => {
         const waiting = [user(), reply(), user(), reply(), user()];
         expect(outgoing(waiting, [], 1)).toEqual({ from: 1, through: 4 });
+    });
+});
+
+describe("callCap", () => {
+    it("is what a live compaction sends: soft less tail", () => {
+        expect(callCap({ soft: 64_000, tail: 16_000 })).toBe(48_000);
+    });
+});
+
+describe("outgoing with a cap", () => {
+    it("ends at the last whole turn that fits, oldest first", () => {
+        expect(outgoing(SIX, [], 1, 2)).toEqual({ from: 1, through: 2 });
+        expect(outgoing(SIX, [cluster(1, 2)], 1, 1)).toEqual({
+            from: 3,
+            through: 3,
+        });
+    });
+
+    it("always takes one turn, even one past the cap", () => {
+        const turns = [user("x".repeat(400)), reply(), ...SIX];
+        expect(outgoing(turns, [], 1, 4)).toEqual({ from: 1, through: 1 });
+        expect(outgoing(SIX, [], 1, 0)).toEqual({ from: 1, through: 1 });
+    });
+
+    it("changes nothing when the range fits", () => {
+        expect(outgoing(SIX, [], 1, 100)).toEqual(outgoing(SIX, [], 1));
     });
 });
 

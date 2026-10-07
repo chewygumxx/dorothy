@@ -210,6 +210,11 @@ output tokens.
   tokens, as the budget estimates notes. An estimate past `hard` compacts
   before connecting, behind the same notice. This covers resuming a long
   conversation recorded before this feature, or one quit mid-compaction.
+- While a message is held, or before the first session connects, a call
+  that leaves the new seed's estimate still past `hard` is followed at once
+  by another, with no session between, until the estimate falls to `hard`
+  or a call fails. A failure sends the held message to a session seeded
+  from the clusters saved so far.
 
 ### The outgoing turns
 
@@ -219,6 +224,12 @@ Dorothy's reply to it, is always kept, even past `tail`. The outgoing turns
 are those after the last cluster and before the kept ones. If there are
 none, compaction is skipped with a warning and is not tried again until
 another exchange has been added.
+
+One call takes at most `soft - tail` tokens of them, what a live compaction
+sends at `soft`: the oldest outgoing turns, up to the last whole turn that
+fits, and always at least one, even a turn larger than that. The rest go at
+the next idle, or at once while a message is held. `callCap` in
+`src/compaction/plan.ts` is the one place this is computed.
 
 ### Dorothy's call
 
@@ -425,17 +436,17 @@ are where the SDK meets compaction.
 
 ## Errors
 
-| Case                                           | Behaviour                                                                                                        |
-| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Dorothy's call fails or returns invalid output | nothing written; warning; retried at later idles, each wait doubled; after three failures, not until next launch |
-| It fails while a message is held               | the message goes to the old session, with a warning that the context is nearly full                              |
-| The API rejects a request as too long          | the usual error and reconnect, which seeds from clusters                                                         |
-| The user quits mid-compaction                  | the call is aborted and nothing is written                                                                       |
-| The sidecar is unparseable                     | compaction is skipped with a warning; the file is not touched                                                    |
-| Another TUI holds the claim                    | skipped; tried again at the next idle                                                                            |
-| The latest exchange alone is past `hard`       | warning; the chat continues as it is                                                                             |
-| `[memory] recall = false`                      | no `recollect`; the abstracts are still seeded                                                                   |
-| The CLI compacts despite `DISABLE_COMPACT`     | its `compact_boundary` becomes a warning; the turn carries on                                                    |
+| Case                                           | Behaviour                                                                                                                            |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Dorothy's call fails or returns invalid output | nothing written; warning; retried at later idles, each wait doubled; after three failures, not until next launch                     |
+| It fails while a message is held               | the message goes to the old session, or to one seeded from the clusters saved so far, with a warning that the context is nearly full |
+| The API rejects a request as too long          | the usual error and reconnect, which seeds from clusters                                                                             |
+| The user quits mid-compaction                  | the call is aborted and nothing is written                                                                                           |
+| The sidecar is unparseable                     | compaction is skipped with a warning; the file is not touched                                                                        |
+| Another TUI holds the claim                    | skipped; tried again at the next idle                                                                                                |
+| The latest exchange alone is past `hard`       | warning; the chat continues as it is                                                                                                 |
+| `[memory] recall = false`                      | no `recollect`; the abstracts are still seeded                                                                                       |
+| The CLI compacts despite `DISABLE_COMPACT`     | its `compact_boundary` becomes a warning; the turn carries on                                                                        |
 
 ## Testing
 

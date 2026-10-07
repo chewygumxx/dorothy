@@ -33,6 +33,7 @@ export async function compact({
     turns,
     clusters,
     tail,
+    cap,
     persona,
     recollect,
     call,
@@ -42,6 +43,8 @@ export async function compact({
     turns: readonly Turn[];
     clusters: readonly Cluster[];
     tail: number;
+    // The most tokens of turns the call is sent; see callCap.
+    cap?: number;
     persona: string;
     // Whether her sessions will offer recollect on the clusters.
     recollect: boolean;
@@ -49,7 +52,7 @@ export async function compact({
     now: () => Date;
     signal?: AbortSignal;
 }): Promise<CompactOutcome> {
-    const range = outgoing(turns, clusters, tail);
+    const range = outgoing(turns, clusters, tail, cap);
     if (range === null) {
         return { kind: "nothing" };
     }

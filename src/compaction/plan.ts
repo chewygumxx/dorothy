@@ -27,13 +27,22 @@ export function seedTurns<T>(
     return turns.slice(covered(clusters));
 }
 
+// The most tokens of turns one compaction call is sent: what a live
+// compaction sends at soft, so a long history recorded before compaction
+// goes in several calls rather than one nearly as large as the window.
+export const callCap = ({ soft, tail }: { soft: number; tail: number }) =>
+    soft - tail;
+
 // The turns that leave the context: after the clusters, before the newest
 // turns that fit in tail. The latest exchange, from the user's last message
-// on, always stays, however large. Null when nothing would leave.
+// on, always stays, however large. Of these, one call takes the oldest that
+// fit in cap, and at least one, however large. Null when nothing would
+// leave.
 export function outgoing(
     turns: readonly Turn[],
     clusters: readonly Cluster[],
     tail: number,
+    cap = Number.POSITIVE_INFINITY,
 ): Range | null {
     const done = covered(clusters);
     const lastUser = turns.findLastIndex((turn) => turn.role === "user");
@@ -50,7 +59,20 @@ export function outgoing(
         used += size;
         keep--;
     }
-    return keep > done ? { from: done + 1, through: keep } : null;
+    if (keep === done) {
+        return null;
+    }
+    let through = done + 1;
+    let sent = tokens((turns[done] as Turn).text);
+    while (through < keep) {
+        const size = tokens((turns[through] as Turn).text);
+        if (sent + size > cap) {
+            break;
+        }
+        sent += size;
+        through++;
+    }
+    return { from: done + 1, through };
 }
 
 // What the abstracts cost in a session's prompt, charged to the memory

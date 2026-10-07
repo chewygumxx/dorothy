@@ -138,7 +138,8 @@ function harness({
     ready,
     recollect = true,
 }: {
-    estimate?: number;
+    // Tokens for every seed, or by the seed.
+    estimate?: number | ((seed: Seed) => number);
     // One claim for every run, unless claims makes each run its own.
     claim?: Claim | null;
     claims?: () => Claim;
@@ -196,11 +197,11 @@ function harness({
                 throw record;
             }
         },
-        estimate: () => {
+        estimate: (seed) => {
             if (faults.estimate !== null) {
                 throw faults.estimate;
             }
-            return estimate;
+            return typeof estimate === "number" ? estimate : estimate(seed);
         },
         ...(ready === undefined ? {} : { ready: async () => ready }),
         claims: claims ?? (claim === null ? null : () => claim),
@@ -248,6 +249,21 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
 const warnings = (events: ConversationEvent[]) =>
     events.flatMap((event) =>
         event.type === "warning" ? [event.message] : [],
+    );
+// A turn of n tokens, and a seed's tokens counted as the budget counts.
+const sized = (role: Turn["role"], n: number): Turn => ({
+    role,
+    text: "x".repeat(4 * n),
+});
+const seedSize = (seed: Seed) =>
+    seed.turns.reduce((sum, t) => sum + Math.ceil(t.text.length / 4), 0);
+const through = (n: number): StructuredOutcome => ({
+    ...CLUSTERED,
+    output: { clusters: [{ through: n, abstract: "Some turns." }] },
+});
+const compactedRanges = (events: ConversationEvent[]) =>
+    events.flatMap((event) =>
+        event.type === "compacted" ? [[event.from, event.through]] : [],
     );
 
 describe("Compaction", () => {
@@ -534,6 +550,97 @@ describe("Compaction", () => {
         expect(h.sessions[0]?.seed.clusters).toHaveLength(1);
         await until(() => h.sessions[0]?.sent.length === 1);
         expect(h.sessions[0]?.sent).toEqual(["early"]);
+    });
+
+    it("compacts a long history in calls of at most soft less tail, oldest first, before connecting", async () => {
+        // Ten turns of 40 tokens; soft 100 less tail 4 takes two a call.
+        const history = Array.from({ length: 10 }, (_, i) =>
+            sized(i % 2 === 0 ? "user" : "assistant", 40),
+        );
+        const h = harness({ estimate: seedSize });
+        const session = h.open(history);
+        session.send("early");
+        for (const [n, last] of [2, 4, 6].entries()) {
+            await until(() => h.calls.length === n + 1);
+            const prompt = h.calls[n]?.request.prompt ?? "";
+            expect(prompt).toContain(`<turn n="${last}">`);
+            expect(prompt).not.toContain(`<turn n="${last + 1}">`);
+            expect(h.sessions).toHaveLength(0);
+            h.calls[n]?.answer(through(last));
+        }
+        await until(() => h.sessions.length === 1);
+        expect(h.calls).toHaveLength(3);
+        expect(compactedRanges(h.events)).toEqual([
+            [1, 2],
+            [3, 4],
+            [5, 6],
+        ]);
+        expect(h.recorded.map((r) => r.through)).toEqual([2, 4, 6]);
+        expect(h.sessions[0]?.seed.clusters.map((c) => c.through)).toEqual([
+            2, 4, 6,
+        ]);
+        expect(h.sessions[0]?.seed.turns).toEqual(history.slice(6));
+        await until(() => h.sessions[0]?.sent.length === 1);
+        expect(h.sessions[0]?.sent).toEqual(["early"]);
+        expect(h.events.filter((e) => e.type === "compacting")).toHaveLength(1);
+        expect(warnings(h.events)).toEqual([]);
+    });
+
+    it("holds a message past hard through as many calls as bring the seed under hard, then hands over once", async () => {
+        const history = Array.from({ length: 6 }, (_, i) =>
+            sized(i % 2 === 0 ? "user" : "assistant", 30),
+        );
+        const h = harness({ estimate: seedSize });
+        const session = h.open(history);
+        session.send("y".repeat(240));
+        h.sessions[0]?.reply(250, "z".repeat(240));
+        session.send("next");
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(through(3));
+        // Turns 4 to 8 still estimate past hard: another call at once,
+        // with no session between.
+        await until(() => h.calls.length === 2);
+        expect(h.sessions).toHaveLength(1);
+        expect(h.calls[1]?.request.prompt).toContain('<turn n="4">');
+        h.calls[1]?.answer(through(6));
+        await until(() => h.sessions.length === 2);
+        await until(() => h.sessions[1]?.sent.length === 1);
+        expect(h.sessions[1]?.sent).toEqual(["next"]);
+        expect(h.sessions[1]?.seed.clusters.map((c) => c.through)).toEqual([
+            3, 6,
+        ]);
+        expect(h.sessions[0]?.sent).toHaveLength(1);
+        expect(h.sessions[0]?.closed).toBe(true);
+        expect(compactedRanges(h.events)).toEqual([
+            [1, 3],
+            [4, 6],
+        ]);
+        expect(warnings(h.events)).toEqual([]);
+    });
+
+    it("sends a held message on, from the clusters saved so far, when a later call fails", async () => {
+        const history = Array.from({ length: 6 }, (_, i) =>
+            sized(i % 2 === 0 ? "user" : "assistant", 30),
+        );
+        const h = harness({ estimate: seedSize });
+        const session = h.open(history);
+        session.send("y".repeat(240));
+        h.sessions[0]?.reply(250, "z".repeat(240));
+        session.send("next");
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(through(3));
+        await until(() => h.calls.length === 2);
+        h.calls[1]?.answer({ ok: false, reason: "offline", costUsd: 0 });
+        await until(() => h.sessions[1]?.sent.length === 1);
+        expect(h.sessions).toHaveLength(2);
+        expect(h.sessions[1]?.sent).toEqual(["next"]);
+        expect(h.sessions[1]?.seed.clusters.map((c) => c.through)).toEqual([3]);
+        expect(h.sessions[0]?.sent).toHaveLength(1);
+        expect(h.sessions[0]?.closed).toBe(true);
+        expect(warnings(h.events)).toEqual([
+            "compaction failed: offline",
+            "compaction: the context is nearly full; sending anyway",
+        ]);
     });
 
     it("on failure, warns and sends the held message to the old session", async () => {

@@ -14,7 +14,7 @@ import type { Cluster } from "../memory/sidecar.js";
 import type { Turn } from "../persona.js";
 import { REAL_TIMERS, type Timers } from "../timers.js";
 import { type CompactOutcome, compact } from "./compact.js";
-import { pressure, seedTurns } from "./plan.js";
+import { callCap, pressure, seedTurns } from "./plan.js";
 import type { StructuredCall } from "./types.js";
 
 // How often a compaction holding a message asks again for a claim that
@@ -241,6 +241,12 @@ class CompactingSession implements ChatSession {
     // The run's new session has taken over: a throw from here on, such as
     // a listener's, is not a failed compaction.
     #landed = false;
+    // The run's clusters left the seed past hard while a message waits:
+    // another run follows at once.
+    #again = false;
+    // The inner session's seed predates clusters saved since, by runs that
+    // followed one another without a session between.
+    #behind = false;
 
     constructor(
         shared: Shared,
@@ -491,6 +497,7 @@ class CompactingSession implements ChatSession {
                 turns: [...this.#turns],
                 clusters: shared.clusters,
                 tail: shared.options.config.tail,
+                cap: callCap(shared.options.config),
                 persona: shared.options.persona,
                 recollect: shared.options.recollect,
                 call: shared.options.call,
@@ -565,15 +572,28 @@ class CompactingSession implements ChatSession {
             }
             return;
         }
-        const old = this.#inner;
-        this.#urgent = false;
-        // The old session's last reply may have started an idle wait.
-        this.#cancelIdle();
-        this.#attach(this.#connect(shared.seed(this.#turns)));
-        this.#landed = true;
-        if (old !== null) {
-            this.#shared.retire(old, this);
+        // One run compacts at most a call's worth of turns. While a
+        // message waits, or before the first session, a seed still past
+        // hard is compacted again at once, with no session between.
+        const seed = shared.seed(this.#turns);
+        if (
+            (this.#held.length > 0 || this.#inner === null) &&
+            shared.options.estimate(seed) > shared.options.config.hard
+        ) {
+            this.#again = true;
+            this.#behind = this.#inner !== null;
+        } else {
+            const old = this.#inner;
+            this.#urgent = false;
+            // The old session's last reply may have started an idle wait.
+            this.#cancelIdle();
+            this.#attach(this.#connect(seed));
+            this.#behind = false;
+            if (old !== null) {
+                this.#shared.retire(old, this);
+            }
         }
+        this.#landed = true;
         // Warned even when a listener throws on the event.
         try {
             this.#emit({
@@ -620,18 +640,29 @@ class CompactingSession implements ChatSession {
         });
     }
 
-    // Whatever happened, a session exists afterwards and held messages go
-    // to it: after a failure, to the session that is nearly full.
+    // Unless another run follows, a session exists afterwards and held
+    // messages go to it: after a failure, to the session that is nearly
+    // full, seeded from the clusters saved so far.
     #afterRun(): void {
         if (this.#closed) {
             return;
         }
-        if (this.#inner === null) {
+        if (this.#again) {
+            this.#again = false;
+            this.#start();
+            return;
+        }
+        if (this.#inner === null || this.#behind) {
+            const old = this.#inner;
             try {
                 this.#attach(this.#connect(this.#shared.seed(this.#turns)));
             } catch (error) {
                 this.#die(error);
                 return;
+            }
+            this.#behind = false;
+            if (old !== null) {
+                this.#shared.retire(old, this);
             }
         }
         const held = this.#held.splice(0);
