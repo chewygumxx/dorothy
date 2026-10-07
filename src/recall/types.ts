@@ -162,8 +162,9 @@ export function describeLookup(
             tool,
             cluster:
                 typeof fields.cluster === "number" &&
-                Number.isFinite(fields.cluster)
-                    ? Math.round(fields.cluster)
+                Number.isInteger(fields.cluster) &&
+                fields.cluster >= 1
+                    ? fields.cluster
                     : 0,
             turns: null,
         };

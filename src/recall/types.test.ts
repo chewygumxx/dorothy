@@ -182,4 +182,14 @@ describe("recollect's vocabulary", () => {
             turns: null,
         });
     });
+
+    it("records 0 for a cluster that was never a whole number from 1", () => {
+        for (const cluster of [0, -1, 1.5, Number.NaN, "2", null]) {
+            expect(describeLookup("recollect", { cluster }, null)).toEqual({
+                tool: "recollect",
+                cluster: 0,
+                turns: null,
+            });
+        }
+    });
 });

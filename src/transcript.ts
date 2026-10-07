@@ -163,7 +163,7 @@ export function toRecall(event: unknown): RecallEvent | null {
     if (
         event.tool === "recollect" &&
         Number.isInteger(event.cluster) &&
-        (event.cluster as number) >= 1 &&
+        (event.cluster as number) >= 0 &&
         (event.words === undefined || typeof event.words === "string") &&
         (event.turns === null || isTurnRange(event.turns))
     ) {

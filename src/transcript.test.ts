@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { describeLookup } from "./recall/types.js";
 import {
     parseTranscript,
     readTranscript,
@@ -485,10 +486,41 @@ describe("recollect events", () => {
         });
     });
 
-    it("are refused with no cluster, or a bad range", () => {
-        expect(toRecall({ ...event, cluster: 0 })).toBeNull();
+    it("are refused with a bad cluster or range", () => {
+        expect(toRecall({ ...event, cluster: -1 })).toBeNull();
+        expect(toRecall({ ...event, cluster: 1.5 })).toBeNull();
         expect(toRecall({ ...event, cluster: "2" })).toBeNull();
         expect(toRecall({ ...event, turns: [18] })).toBeNull();
         expect(toRecall({ ...event, words: 3 })).toBeNull();
+    });
+
+    it("read back whatever input the lookup was made with", () => {
+        const cases: [unknown, number][] = [
+            [{ cluster: 0 }, 0],
+            [{ cluster: -1 }, 0],
+            [{ cluster: 1.5 }, 0],
+            [{ cluster: "2" }, 0],
+            [{}, 0],
+            [{ cluster: 2 }, 2],
+        ];
+        for (const [input, cluster] of cases) {
+            const lookup = describeLookup("recollect", input, null);
+            const written = JSON.stringify({
+                v: 1,
+                kind: "recall",
+                at: "2026-10-07T08:00:00.000Z",
+                id: "toolu_9",
+                ok: false,
+                offset: 0,
+                ...lookup,
+            });
+            const read = parseTranscript(written);
+            expect(read.skipped).toBe(0);
+            expect(toRecall(JSON.parse(written))).toMatchObject({
+                tool: "recollect",
+                cluster,
+                turns: null,
+            });
+        }
     });
 });
