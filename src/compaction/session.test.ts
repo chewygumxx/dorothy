@@ -1002,6 +1002,35 @@ describe("Compaction", () => {
         expect(h.sessions).toHaveLength(1);
     });
 
+    it("connects no session when quitting cancels a run before the first", async () => {
+        const h = harness({ estimate: 500 });
+        const session = h.open([...HISTORY, turn("user"), turn("assistant")]);
+        session.send("early");
+        await until(() => h.calls.length === 1);
+        await h.compaction.stop();
+        await settle();
+        expect(h.sessions).toHaveLength(0);
+    });
+
+    it("connects no session when quitting comes while a run before the first saves", async () => {
+        let saveDone = () => {};
+        const saving = new Promise<void>((resolve) => {
+            saveDone = resolve;
+        });
+        const h = harness({ estimate: 500, saving });
+        const session = h.open([...HISTORY, turn("user"), turn("assistant")]);
+        session.send("early");
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.saved.length === 1);
+        const stopped = h.compaction.stop();
+        saveDone();
+        await stopped;
+        await settle();
+        expect(h.recorded).toEqual([{ through: 2, clusters: 1 }]);
+        expect(h.sessions).toHaveLength(0);
+    });
+
     it("lets Compaction.stop settle while a record never does", async () => {
         const h = harness({ recording: new Promise<void>(() => {}) });
         const session = h.open();

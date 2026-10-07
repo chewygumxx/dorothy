@@ -618,6 +618,11 @@ class CompactingSession implements ChatSession {
             this.#inner === null ||
             (this.#phase.kind === "handing" && this.#phase.stale)
         ) {
+            // Cancelled, which only quitting does to a wrapper still open:
+            // no session is wanted, as for a reconnect waiting on a save.
+            if (run.controller.signal.aborted) {
+                return;
+            }
             const old = this.#inner;
             try {
                 this.#attach(this.#connect(this.#shared.seed(this.#turns)));
