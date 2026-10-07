@@ -69,14 +69,10 @@ reading or by an indirect test) but has no test of its own.
   abstract of exactly 1000 code points, or with astral characters; every
   `compact` test passes `clusters: []`, so the hand-off of `outgoing` past
   earlier clusters into `clusterPrompt` is never exercised end to end.
-- **Task 12** (`src/compaction/session.test.ts`): the quit tests don't
-  exercise the abort guard after Dorothy's call in `run.ts`: the harness's
-  fake call answers `cancelled` on abort, so removing the guard still
-  passes (checked by removing it). Add `expect(warnings(h.events)).toEqual([])`
-  and a variant where the call returns clustered output after the abort.
-  And the composition of a real `Compaction` inside `trackMemory`
-  (turn-ends, `ready`, flushes) is tested only with a structural fake,
-  because `src/tui/` may not import `src/compaction/` outside `run.tsx`.
+- **Task 12** (`src/compaction/session.test.ts`): the composition of a real
+  `Compaction` inside `trackMemory` (turn-ends, `ready`, flushes) is tested
+  only with a structural fake, because `src/tui/` may not import
+  `src/compaction/` outside `run.tsx`.
 - **Task 14** (`src/dump.test.ts`): no test pins `reserved` (the abstracts'
   tokens charged first in the dumped memory block), nor the fallback to the
   full history when the sidecar is unparseable or missing.
