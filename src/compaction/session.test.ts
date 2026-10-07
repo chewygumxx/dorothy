@@ -357,6 +357,34 @@ describe("Compaction", () => {
         expect(h.sessions[2]?.seed.clusters).toHaveLength(1);
     });
 
+    it("seeds a reconnection made while the clusters are saved from those clusters", async () => {
+        let saveDone = () => {};
+        const saving = new Promise<void>((resolve) => {
+            saveDone = resolve;
+        });
+        const h = harness({ saving });
+        const first = h.open();
+        first.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.saved.length === 1);
+        // App reconnects: it closes the old session without waiting and
+        // opens the next at once.
+        void first.close();
+        const all = [...HISTORY, turn("user"), turn("assistant")];
+        const next = h.open(all);
+        next.send("waiting");
+        expect(h.sessions).toHaveLength(1);
+        saveDone();
+        await until(() => h.sessions.length === 2);
+        expect(h.sessions[1]?.seed.turns).toEqual(all.slice(2));
+        expect(h.sessions[1]?.seed.clusters).toHaveLength(1);
+        expect(h.sessions[1]?.sent).toEqual(["waiting"]);
+        expect(h.events).not.toContainEqual({ type: "compacting" });
+    });
+
     it("compacts before connecting a seed already past hard", async () => {
         const h = harness({ estimate: 500 });
         const session = h.open([...HISTORY, turn("user"), turn("assistant")]);

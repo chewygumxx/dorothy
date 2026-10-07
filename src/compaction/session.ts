@@ -82,6 +82,8 @@ class Shared {
     readonly #runs = new Map<AbortController, Promise<void>>();
     // Sessions a handover replaced, still closing.
     readonly #closing = new Set<Promise<void>>();
+    // Saves under way, each settling once its clusters are added.
+    readonly #saving = new Set<Promise<void>>();
 
     constructor(options: CompactionOptions) {
         this.options = options;
@@ -109,8 +111,28 @@ class Shared {
         this.#failures++;
     }
 
-    added(clusters: readonly Cluster[]): void {
-        this.clusters = [...this.clusters, ...clusters];
+    // Appends the clusters to the sidecar and, once saved, to these.
+    save(clusters: readonly Cluster[]): Promise<SaveResult> {
+        const saving = this.options.save(clusters).then((saved) => {
+            if (saved.ok) {
+                this.clusters = [...this.clusters, ...clusters];
+            }
+            return saved;
+        });
+        const settled = saving.then(
+            () => {},
+            () => {},
+        );
+        this.#saving.add(settled);
+        void settled.then(() => this.#saving.delete(settled));
+        return saving;
+    }
+
+    // Settles once every save under way has; null when none is.
+    saved(): Promise<void> | null {
+        return this.#saving.size === 0
+            ? null
+            : Promise.all(this.#saving).then(() => {});
     }
 
     track(controller: AbortController, done: Promise<void>): void {
@@ -191,6 +213,8 @@ class CompactingSession implements ChatSession {
     // Saving the clusters for the handover: a message waits for the new
     // session rather than going to the old one, which is about to close.
     #handing = false;
+    // Connecting waits for a save under way; messages wait with it.
+    #waiting = false;
     // This wrapper's replaced sessions, still closing.
     readonly #retiring = new Set<Promise<void>>();
 
@@ -202,6 +226,25 @@ class CompactingSession implements ChatSession {
         this.#shared = shared;
         this.#connect = connect;
         this.#turns = [...turns];
+        const saving = shared.saved();
+        if (saving === null) {
+            this.#begin();
+        } else {
+            // App reconnecting during a handover: the seed waits for the
+            // clusters being saved, so their turns don't go in whole.
+            this.#waiting = true;
+            void saving.then(() => {
+                this.#waiting = false;
+                this.#begin();
+            });
+        }
+    }
+
+    #begin(): void {
+        if (this.#closed) {
+            return;
+        }
+        const shared = this.#shared;
         const seed = shared.seed(this.#turns);
         if (
             !shared.exhausted &&
@@ -213,8 +256,11 @@ class CompactingSession implements ChatSession {
                 this.#announce();
                 this.#start();
             });
-        } else {
-            this.#attach(connect(seed));
+            return;
+        }
+        this.#attach(this.#connect(seed));
+        for (const text of this.#held.splice(0)) {
+            this.#forward(text);
         }
     }
 
@@ -228,6 +274,10 @@ class CompactingSession implements ChatSession {
     send(text: string): void {
         this.#cancelIdle();
         if (this.#closed) {
+            return;
+        }
+        if (this.#waiting) {
+            this.#held.push(text);
             return;
         }
         if (
@@ -439,12 +489,11 @@ class CompactingSession implements ChatSession {
             return;
         }
         this.#handing = true;
-        const saved = await shared.options.save(outcome.clusters);
+        const saved = await shared.save(outcome.clusters);
         if (!saved.ok) {
             this.#fail(saved.reason);
             return;
         }
-        shared.added(outcome.clusters);
         // The event only tells; the sidecar holds the clusters.
         try {
             await shared.options.record({
