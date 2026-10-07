@@ -142,6 +142,7 @@ function harness({
     closing = Promise.resolve(),
     ready,
     recollect = true,
+    cancels = true,
 }: {
     // Tokens for every seed, or by the seed.
     estimate?: number | ((seed: Seed) => number);
@@ -163,6 +164,9 @@ function harness({
     ready?: SaveResult;
     // Whether the sessions offer recollect.
     recollect?: boolean;
+    // Whether a call answers "cancelled" when aborted, as a real one does;
+    // without, it answers only when the test says, even after an abort.
+    cancels?: boolean;
 } = {}) {
     const timers = new FakeTimers();
     const sessions: FakeSession[] = [];
@@ -191,9 +195,11 @@ function harness({
         call: (request) =>
             new Promise((answer) => {
                 calls.push({ request, answer });
-                request.signal?.addEventListener("abort", () =>
-                    answer({ ok: false, reason: "cancelled", costUsd: 0 }),
-                );
+                if (cancels) {
+                    request.signal?.addEventListener("abort", () =>
+                        answer({ ok: false, reason: "cancelled", costUsd: 0 }),
+                    );
+                }
             }),
         save: async (added, costUsd) => {
             saved.push([...added]);
@@ -946,6 +952,33 @@ describe("Compaction", () => {
         expect(h.recorded).toEqual([]);
         expect(h.sessions[0]?.closed).toBe(true);
         expect(h.sessions).toHaveLength(1);
+    });
+
+    it("drops what Dorothy's call answers after quitting, whether clusters or a failure", async () => {
+        const answers: [string, StructuredOutcome][] = [
+            ["clusters", CLUSTERED],
+            ["a failure", { ok: false, reason: "offline", costUsd: 0.2 }],
+        ];
+        for (const [what, answer] of answers) {
+            const h = harness({ cancels: false });
+            const session = h.open();
+            session.send("abcd");
+            h.sessions[0]?.reply(150);
+            h.timers.advance(1000);
+            await until(() => h.calls.length === 1);
+            const stopped = h.compaction.stop();
+            h.calls[0]?.answer(answer);
+            await stopped;
+            await settle();
+            expect(h.saved, what).toEqual([]);
+            expect(h.recorded, what).toEqual([]);
+            expect(warnings(h.events), what).toEqual([]);
+            expect(
+                h.events.filter((event) => event.type === "memory-cost"),
+                what,
+            ).toEqual([]);
+            expect(h.sessions, what).toHaveLength(1);
+        }
     });
 
     it("connects nothing when closed while the clusters are saved", async () => {
