@@ -517,20 +517,23 @@ class CompactingSession implements ChatSession {
             this.#fail(saved.reason);
             return;
         }
-        // The event only tells; the sidecar holds the clusters.
+        // The event only tells; the sidecar holds the clusters. Its warning
+        // follows the compacted event, which clears compaction's warnings.
+        let unrecorded: string | null = null;
         try {
             await shared.options.record({
                 through: outcome.range.through,
                 clusters: outcome.clusters.length,
             });
         } catch (error) {
-            this.#warn(
-                `compaction: couldn't record the compaction in the transcript: ${describeError(error)}`,
-            );
+            unrecorded = `compaction: couldn't record the compaction in the transcript: ${describeError(error)}`;
         }
         // Closed or quitting meanwhile: the clusters are kept, but no new
         // session is wanted.
         if (signal.aborted || this.#closed) {
+            if (unrecorded !== null) {
+                this.#warn(unrecorded);
+            }
             return;
         }
         const old = this.#inner;
@@ -549,6 +552,9 @@ class CompactingSession implements ChatSession {
             through: outcome.range.through,
             clusters: outcome.clusters.length,
         });
+        if (unrecorded !== null) {
+            this.#warn(unrecorded);
+        }
     }
 
     #fail(reason: string): void {

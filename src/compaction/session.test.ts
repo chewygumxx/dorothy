@@ -629,6 +629,13 @@ describe("Compaction", () => {
         ]);
         expect(h.compaction.clusters()).toHaveLength(1);
         expect(h.sessions[0]?.closed).toBe(true);
+        // After the compacted event, which clears compaction's warnings
+        // from the screen; this one is news of the compaction itself.
+        expect(
+            h.events
+                .filter((e) => e.type === "compacted" || e.type === "warning")
+                .map((e) => e.type),
+        ).toEqual(["compacted", "warning"]);
         expect(h.events).toContainEqual({
             type: "compacted",
             from: 1,

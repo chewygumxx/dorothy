@@ -582,6 +582,32 @@ describe("compaction events", () => {
         ]);
     });
 
+    it("clear compaction's warnings once a compaction succeeds", () => {
+        let state = initialState([], ["transcript not saved: gone"]);
+        for (const message of [
+            "compaction failed: offline",
+            "compaction: the context is nearly full; sending anyway",
+        ]) {
+            state = reduce(state, { type: "warning", message });
+        }
+        state = reduce(state, {
+            type: "event",
+            event: { type: "compacted", from: 1, through: 4, clusters: 1 },
+        });
+        expect(state.warnings).toEqual(["transcript not saved: gone"]);
+        state = reduce(state, {
+            type: "warning",
+            message:
+                "compaction: nothing to compact; the latest exchange alone fills the tail",
+        });
+        expect(
+            reduce(state, {
+                type: "event",
+                event: { type: "compacted", from: 5, through: 8, clusters: 1 },
+            }).warnings,
+        ).toEqual(["transcript not saved: gone"]);
+    });
+
     it("counts compaction's cost as memory's", () => {
         expect(
             after(

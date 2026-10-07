@@ -245,9 +245,14 @@ function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
                     text: "compacting…",
                 }),
             };
+        // Compaction's warnings tell of failures and a full context, which
+        // a compaction that succeeds has ended.
         case "compacted":
             return {
                 ...state,
+                warnings: state.warnings.filter(
+                    (warning) => !warning.startsWith("compaction"),
+                ),
                 lines: append(state.lines, {
                     role: "lookup",
                     text: `compacted turns ${event.from}-${event.through} into ${event.clusters} cluster${event.clusters === 1 ? "" : "s"}`,
