@@ -375,6 +375,27 @@ describe("runMirror", () => {
         expect(await repo().remote("mirror")).toBe(join(home, "home.git"));
     });
 
+    it("reads . and a bare name as paths from the cwd, never the data directory", async () => {
+        write("tags.json", vocabulary(1));
+        const elsewhere = tempRoot();
+        const keyed = {
+            ...options(),
+            env: { ...env, DOROTHY_MIRROR_KEY: newKey() },
+            cwd: elsewhere,
+        };
+        // The cwd is no repository, so the push fails; it is not made into
+        // the data repository, which would succeed.
+        expect(await runMirror(".", keyed)).toBe(1);
+        expect(await repo().remote("mirror")).toBe(elsewhere);
+        expect(out.text).not.toContain("stored at");
+        expect(out.text).not.toContain("Pushed");
+        await runMirror("backup.git", keyed);
+        expect(await repo().remote("mirror")).toBe(
+            join(elsewhere, "backup.git"),
+        );
+        expect(existsSync(data("backup.git"))).toBe(false);
+    });
+
     it("refuses a url that git would read as an option", async () => {
         expect(await runMirror("-x", options())).toBe(1);
         expect(err.text).toBe("dorothy: -x is not a url or path\n");
@@ -415,6 +436,9 @@ describe("runMirror", () => {
         expect(isLocal("./memory.git")).toBe(true);
         expect(isLocal("~/memory.git")).toBe(true);
         expect(isLocal("file:///mnt/memory.git")).toBe(true);
+        expect(isLocal(".")).toBe(true);
+        expect(isLocal("..")).toBe(true);
+        expect(isLocal("backup.git")).toBe(true);
         expect(isLocal("https://example.com/memory.git")).toBe(false);
         expect(isLocal("git@example.com:me/memory.git")).toBe(false);
     });

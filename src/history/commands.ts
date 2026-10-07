@@ -517,8 +517,11 @@ export async function runCheck(
     }
 }
 
-// A mirror on this machine, as against one on a host.
-export const isLocal = (url: string) => /^(\/|\.{1,2}\/|~|file:\/\/)/.test(url);
+// A mirror on this machine, as against one on a host: a host's is a url
+// (other than file://) or scp-like, a colon before the first slash, as in
+// git@host:repo.git; anything else is a path.
+export const isLocal = (url: string) =>
+    url.startsWith("file://") || !(url.includes("://") || /^[^/]*:/.test(url));
 
 // A mirror as git is to be given it: a local path made absolute from the
 // user's directory (git runs in the data directory), with ~ expanded. Null,
