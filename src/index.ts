@@ -31,6 +31,7 @@ export type Mode =
       }
     | { kind: "list" }
     | { kind: "memory"; phrase: string }
+    | { kind: "tags" }
     | { kind: "recall-server"; exclude: string | null; recollect: boolean }
     | { kind: "help" }
     | { kind: "usage"; message: string };
@@ -41,6 +42,7 @@ export const USAGE = [
     "       dorothy --resume <phrase>  continue a saved chat",
     "       dorothy --list             what Dorothy remembers",
     "       dorothy --memory <phrase>  correct, pin or hide a chat's notes",
+    "       dorothy --tags             Dorothy's tags, as a tree",
     "       dorothy --recall-server    memory search for MCP clients (stdio)",
     "       dorothy -- <prompt...>     a prompt that starts with -",
     "       dorothy --dump-context [--resume <phrase>] [message...]",
@@ -104,6 +106,11 @@ export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
         return rest.length === 0
             ? { kind: "list" }
             : { kind: "usage", message: "--list takes no arguments" };
+    }
+    if (first === "--tags") {
+        return rest.length === 0
+            ? { kind: "tags" }
+            : { kind: "usage", message: "--tags takes no arguments" };
     }
     if (first === "--recall-server") {
         if (rest.length === 0) {
@@ -218,6 +225,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     } else if (mode.kind === "memory") {
         const { runMemoryEdit } = await import("./memory/commands.js");
         process.exitCode = await runMemoryEdit(mode.phrase);
+    } else if (mode.kind === "tags") {
+        const { runTags } = await import("./memory/commands.js");
+        process.exitCode = await runTags();
     } else if (mode.kind === "recall-server") {
         const { runRecallServer } = await import("./recall/server.js");
         process.exitCode = await runRecallServer(mode.exclude, mode.recollect);

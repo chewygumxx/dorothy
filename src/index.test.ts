@@ -92,6 +92,14 @@ describe("parseArgs", () => {
         });
     });
 
+    it("lists the tags", () => {
+        expect(parseArgs(["--tags"], false)).toEqual({ kind: "tags" });
+        expect(parseArgs(["--tags", "x"], true)).toEqual({
+            kind: "usage",
+            message: "--tags takes no arguments",
+        });
+    });
+
     it.each([[["--resme", phrase]], [["-v"]], [["--model", "x", "hi"]]])(
         "takes no unknown option, so %p costs nothing",
         (argv) => {

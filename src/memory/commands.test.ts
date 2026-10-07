@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { newPhrase } from "../session-id.js";
 import type { EditResult } from "../tui/external-editor.js";
-import { runList, runMemoryEdit } from "./commands.js";
+import { runList, runMemoryEdit, runTags } from "./commands.js";
 import { readSidecar, sidecarPath } from "./sidecar.js";
 
 const NOW = new Date("2026-10-05T00:00:00.000Z");
@@ -221,5 +221,50 @@ describe("runMemoryEdit", () => {
         const read = await readSidecar(transcripts, a);
         expect(read.kind === "ok" && read.sidecar.tags).toEqual(["k00000001"]);
         expect(read.kind === "ok" && read.sidecar.fields.tags?.by).toBe("user");
+    });
+});
+
+describe("runTags", () => {
+    const tagsFile = () => join(dir, "dorothy", "tags.json");
+
+    it("prints the tree, counting hidden chats too", async () => {
+        const [a, b] = [phrase(1), phrase(2)];
+        await writeFile(
+            tagsFile(),
+            JSON.stringify({
+                v: 1,
+                rev: 1,
+                concepts: {
+                    k00000001: {
+                        prefLabel: "memory",
+                        scopeNote: "Remembering.",
+                        by: "dorothy",
+                        at: NOW.toISOString(),
+                    },
+                },
+            }),
+        );
+        for (const [of, hidden] of [
+            [a, false],
+            [b, true],
+        ] as const) {
+            await writeFile(join(transcripts, `${of}.jsonl`), chat);
+            await writeFile(
+                sidecarPath(transcripts, of),
+                JSON.stringify({ v: 1, hidden, tags: ["k00000001"] }),
+            );
+        }
+        const out = capture();
+        const err = capture();
+        expect(await runTags({ env, out, err })).toBe(0);
+        expect(out.text).toBe("memory (2)\n");
+        expect(err.text).toBe("");
+    });
+
+    it("names a broken vocabulary and fails", async () => {
+        await writeFile(tagsFile(), "{ broken");
+        const err = capture();
+        expect(await runTags({ env, out: capture(), err })).toBe(1);
+        expect(err.text).toStartWith(`dorothy: ${tagsFile()}: `);
     });
 });

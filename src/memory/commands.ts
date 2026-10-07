@@ -12,6 +12,8 @@ import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { readConfig } from "../config.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
+import { syncIndex } from "../recall/sync.js";
+import { carrierCounts } from "../recall/tags.js";
 import { transcriptDir } from "../transcript.js";
 import { type EditResult, editInEditor } from "../tui/external-editor.js";
 import type { Env } from "../xdg.js";
@@ -29,6 +31,7 @@ import {
     sidecarPath,
     updateSidecar,
 } from "./sidecar.js";
+import { renderTagsTree } from "./tags-view.js";
 import {
     EMPTY_VOCABULARY,
     readVocabulary,
@@ -78,6 +81,62 @@ export async function runList({
         );
         out.write(`${formatList(listRows(loaded.entries, tiered))}\n`);
         return 0;
+    } finally {
+        index.close();
+    }
+}
+
+// The vocabulary as a tree, each concept with how many chats carry it,
+// hidden ones too: the user's view, not hers.
+export async function runTags({
+    env = process.env,
+    out = process.stdout,
+    err = process.stderr,
+    now = Date.now(),
+}: {
+    env?: Env;
+    out?: Output;
+    err?: Output;
+    now?: number;
+} = {}): Promise<number> {
+    const path = vocabularyPath(env);
+    const read = await readVocabulary(path);
+    if (read.kind === "unparseable") {
+        err.write(`dorothy: ${path}: ${read.reason}\n`);
+        return 1;
+    }
+    let index: RecallIndex;
+    try {
+        index = RecallIndex.open(indexPath(env));
+    } catch (error) {
+        err.write(
+            `dorothy: the memory index can't be opened: ${describeError(error)}\n`,
+        );
+        return 1;
+    }
+    try {
+        for (const warning of await syncIndex(
+            index,
+            transcriptDir(env),
+            now,
+            path,
+        )) {
+            err.write(`dorothy: ${warning}\n`);
+        }
+        const counts = await index.exclusive(() => carrierCounts(index));
+        const tree = renderTagsTree(
+            read.kind === "ok" ? read.vocabulary : EMPTY_VOCABULARY,
+            counts,
+        );
+        if (tree !== "") {
+            out.write(`${tree}\n`);
+        }
+        return 0;
+    } catch (error) {
+        err.write(
+            `dorothy: the memory index failed: ${describeError(error)}\n`,
+        );
+        return 1;
     } finally {
         index.close();
     }
