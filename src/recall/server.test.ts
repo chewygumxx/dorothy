@@ -18,7 +18,12 @@ import { EMPTY_SIDECAR, sidecarPath } from "../memory/sidecar.js";
 import { newPhrase } from "../session-id.js";
 import { createRecallServer, type RecallServerOptions } from "./server.js";
 import { RecallIndex } from "./store.js";
-import type { OpenResult, RecollectResult, SearchResult } from "./types.js";
+import type {
+    OpenResult,
+    RecollectResult,
+    SearchResult,
+    TagsResult,
+} from "./types.js";
 
 const A = newPhrase(() => Uint8Array.from([1, 1, 2, 3, 4, 5, 6, 7]));
 const LIVE = newPhrase(() => Uint8Array.from([9, 1, 2, 3, 4, 5, 6, 7]));
@@ -68,10 +73,62 @@ describe("the recall server", () => {
         expect(tools.map((tool) => tool.name).sort()).toEqual([
             "open",
             "search",
+            "tags",
         ]);
         expect(tools.every((tool) => (tool.description ?? "").length > 0)).toBe(
             true,
         );
+    });
+
+    it("lists tags and searches by them", async () => {
+        const vocabulary = join(dir, "tags.json");
+        await writeFile(
+            vocabulary,
+            JSON.stringify({
+                v: 1,
+                rev: 1,
+                concepts: {
+                    k00000001: {
+                        prefLabel: "rendering",
+                        scopeNote: "Drawing the screen.",
+                        by: "dorothy",
+                        at: "2026-10-04T12:00:00.000Z",
+                    },
+                },
+            }),
+        );
+        await writeFile(
+            sidecarPath(dir, A),
+            JSON.stringify({ ...EMPTY_SIDECAR, tags: ["k00000001"] }),
+        );
+        const client = await connect({ vocabulary });
+        const listed = JSON.parse(
+            textOf(await client.callTool({ name: "tags", arguments: {} })),
+        ) as TagsResult;
+        expect(
+            listed.results.map((tag) => [tag.name, tag.conversations]),
+        ).toEqual([["rendering", 1]]);
+        const found = JSON.parse(
+            textOf(
+                await client.callTool({
+                    name: "search",
+                    arguments: { tags: ["Rendering"] },
+                }),
+            ),
+        ) as SearchResult;
+        expect(
+            found.results.map((hit) => [hit.identifier, hit.keywords]),
+        ).toEqual([[A, ["rendering"]]]);
+    });
+
+    it("relays a tag it does not know as a tool error", async () => {
+        const client = await connect({ vocabulary: join(dir, "tags.json") });
+        const result = await client.callTool({
+            name: "tags",
+            arguments: { under: "nothing" },
+        });
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toBe("No tag by that name: nothing.");
     });
 
     it("searches what was written since it started", async () => {
@@ -178,15 +235,17 @@ describe("recollect on the server", () => {
             (await (await connect(options)).listTools()).tools
                 .map((tool) => tool.name)
                 .sort();
-        expect(await names({})).toEqual(["open", "search"]);
+        expect(await names({})).toEqual(["open", "search", "tags"]);
         expect(await names({ recollect: true })).toEqual([
             "open",
             "recollect",
             "search",
+            "tags",
         ]);
         expect(await names({ recollect: true, exclude: null })).toEqual([
             "open",
             "search",
+            "tags",
         ]);
     });
 
