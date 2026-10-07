@@ -112,6 +112,77 @@ describe("parseArgs", () => {
         });
     });
 
+    it("parses history's commands", () => {
+        expect(parseArgs(["--history"], false)).toEqual({
+            kind: "history",
+            path: null,
+            count: 20,
+        });
+        expect(parseArgs(["--history", "tags.json", "-n", "5"], false)).toEqual(
+            {
+                kind: "history",
+                path: "tags.json",
+                count: 5,
+            },
+        );
+        expect(parseArgs(["--history", "-n", "0"], false)).toEqual({
+            kind: "usage",
+            message: "--history takes [<path>] [-n <count>]",
+        });
+        expect(parseArgs(["--restore", "tags.json"], false)).toEqual({
+            kind: "restore",
+            path: "tags.json",
+            rev: null,
+        });
+        expect(parseArgs(["--restore", "tags.json", "3f9a2c1"], false)).toEqual(
+            {
+                kind: "restore",
+                path: "tags.json",
+                rev: "3f9a2c1",
+            },
+        );
+        expect(parseArgs(["--restore"], false)).toEqual({
+            kind: "usage",
+            message: "--restore takes <path> [<rev>]",
+        });
+        expect(parseArgs(["--rollback", "3f9a2c1"], false)).toEqual({
+            kind: "rollback",
+            rev: "3f9a2c1",
+        });
+        expect(parseArgs(["--rollback"], false)).toEqual({
+            kind: "usage",
+            message: "--rollback takes one revision",
+        });
+        expect(parseArgs(["--check"], false)).toEqual({
+            kind: "check",
+            staged: false,
+        });
+        expect(parseArgs(["--check", "--staged"], false)).toEqual({
+            kind: "check",
+            staged: true,
+        });
+        expect(parseArgs(["--check", "x"], false)).toEqual({
+            kind: "usage",
+            message: "--check takes only --staged",
+        });
+        expect(parseArgs(["--mirror"], false)).toEqual({
+            kind: "mirror",
+            url: null,
+        });
+        expect(parseArgs(["--mirror", "/mnt/m.git"], false)).toEqual({
+            kind: "mirror",
+            url: "/mnt/m.git",
+        });
+        expect(parseArgs(["--recover", "/mnt/m.git"], false)).toEqual({
+            kind: "recover",
+            url: "/mnt/m.git",
+        });
+        expect(parseArgs(["--recover"], false)).toEqual({
+            kind: "usage",
+            message: "--recover takes one url or path",
+        });
+    });
+
     it.each([[["--resme", phrase]], [["-v"]], [["--model", "x", "hi"]]])(
         "takes no unknown option, so %p costs nothing",
         (argv) => {
