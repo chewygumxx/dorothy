@@ -508,40 +508,78 @@ describe("Compaction", () => {
         await next.close();
     });
 
+    it("connects, with a warning, a first seed that can't be estimated", () => {
+        const h = harness();
+        h.faults.estimate = new Error("guess failed");
+        h.open();
+        expect(h.sessions).toHaveLength(1);
+        return until(
+            () =>
+                warnings(h.events).join() ===
+                "compaction: couldn't estimate the new session: guess failed",
+        );
+    });
+
+    it("connects, with a warning, a seed after a save that can't be estimated", async () => {
+        let saveDone = () => {};
+        const saving = new Promise<void>((resolve) => {
+            saveDone = resolve;
+        });
+        const h = harness({ saving });
+        const first = h.open();
+        first.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.saved.length === 1);
+        void first.close();
+        const next = h.open([...HISTORY, turn("user"), turn("assistant")]);
+        next.send("waiting");
+        h.faults.estimate = new Error("guess failed");
+        saveDone();
+        await until(() => h.sessions.length === 2);
+        expect(h.sessions[1]?.sent).toEqual(["waiting"]);
+        await settle();
+        expect(h.events.filter((e) => e.type === "error")).toEqual([]);
+        expect(warnings(h.events)).toContain(
+            "compaction: couldn't estimate the new session: guess failed",
+        );
+        await next.close();
+    });
+
     it("fails as a session does when the seed after a save can't connect", async () => {
-        for (const fault of ["connect", "estimate"] as const) {
-            let saveDone = () => {};
-            const saving = new Promise<void>((resolve) => {
-                saveDone = resolve;
-            });
-            const h = harness({ saving });
-            const first = h.open();
-            first.send("abcd");
-            h.sessions[0]?.reply(150);
-            h.timers.advance(1000);
-            await until(() => h.calls.length === 1);
-            h.calls[0]?.answer(CLUSTERED);
-            await until(() => h.saved.length === 1);
-            void first.close();
-            const next = h.open([...HISTORY, turn("user"), turn("assistant")]);
-            next.send("waiting");
-            h.faults[fault] = new Error("spawn failed");
-            saveDone();
-            await until(() => h.events.some((e) => e.type === "error"));
-            expect(h.events.filter((e) => e.type === "error")).toEqual([
-                {
-                    type: "error",
-                    message: "couldn't start Dorothy's session: spawn failed",
-                },
-            ]);
-            // Dead, as a session that failed: App reconnects at the next
-            // message, and nothing is paid for meanwhile.
-            next.send("again");
-            await settle();
-            expect(h.calls).toHaveLength(1);
-            expect(h.sessions).toHaveLength(1);
-            await next.close();
-        }
+        let saveDone = () => {};
+        const saving = new Promise<void>((resolve) => {
+            saveDone = resolve;
+        });
+        const h = harness({ saving });
+        const first = h.open();
+        first.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.saved.length === 1);
+        void first.close();
+        const next = h.open([...HISTORY, turn("user"), turn("assistant")]);
+        next.send("waiting");
+        h.faults.connect = new Error("spawn failed");
+        saveDone();
+        await until(() => h.events.some((e) => e.type === "error"));
+        expect(h.events.filter((e) => e.type === "error")).toEqual([
+            {
+                type: "error",
+                message: "couldn't start Dorothy's session: spawn failed",
+            },
+        ]);
+        // Dead, as a session that failed: App reconnects at the next
+        // message, and nothing is paid for meanwhile.
+        next.send("again");
+        await settle();
+        expect(h.calls).toHaveLength(1);
+        expect(h.sessions).toHaveLength(1);
+        await next.close();
     });
 
     it("leaves no unhandled rejection when a listener throws on the error after a save", async () => {

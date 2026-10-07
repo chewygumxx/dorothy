@@ -337,10 +337,10 @@ class CompactingSession implements ChatSession {
         }
         const shared = this.#shared;
         const seed = shared.seed(this.#turns);
-        if (
-            !shared.exhausted &&
-            shared.options.estimate(seed) > shared.options.config.hard
-        ) {
+        // A seed that can't be estimated is taken as under hard, as after
+        // a save: a sizing error doesn't keep the session from starting.
+        const after: string[] = [];
+        if (!shared.exhausted && this.#pastHard(seed, after)) {
             this.#urgent = true;
             // After the caller has subscribed.
             queueMicrotask(() => {
@@ -352,6 +352,16 @@ class CompactingSession implements ChatSession {
         this.#attach(this.#connect(seed));
         for (const held of this.#held.splice(0)) {
             this.#forward(held);
+        }
+        if (after.length > 0) {
+            // After the caller has subscribed; no caller hears a throw.
+            queueMicrotask(() => {
+                for (const message of after) {
+                    try {
+                        this.#warn(message);
+                    } catch {}
+                }
+            });
         }
     }
 

@@ -228,7 +228,8 @@ output tokens.
 - Before a session connects, its seed is estimated at `ceil(codePoints / 4)`
   tokens, as the budget estimates notes. An estimate past `hard` compacts
   before connecting, behind the same notice. This covers resuming a long
-  conversation recorded before this feature, or one quit mid-compaction.
+  conversation recorded before this feature, or one quit mid-compaction. A
+  seed that can't be estimated is taken as under `hard`, with a warning.
 - While a message is held, or before the first session connects, a call
   that leaves the new seed's estimate still past `hard` is followed at once
   by another, with no session between. The chain ends when the estimate
