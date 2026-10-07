@@ -34,6 +34,28 @@ type Run = {
     landed: "chained" | "handed" | null;
 };
 
+// What a session is doing about compaction, which decides where a message
+// sent goes:
+// - waiting: App reconnected while another session's run saves; the seed
+//   waits for the save and its record. Messages are held; no run starts.
+// - open: messages go on to the inner session, or, past hard or before
+//   the first session, are held while a run compacts.
+// - handing: a run is saving its clusters, or runs follow one another
+//   with no session between; messages are held for the session that takes
+//   over. stale: the inner session's seed predates clusters saved since.
+// - closed: closed, or failed to connect; final.
+// Moves: a session starts open, or waiting when a save is under way;
+// waiting becomes open once the save settles (and stays waiting when
+// quitting comes first); a run's save moves open to handing; a run that
+// chains marks handing stale when an inner session exists; a handover, or
+// the reconnect after a chain, makes it fresh; the end of the last run
+// makes it open; close() or a failed connect makes any phase closed.
+type Phase =
+    | { kind: "waiting" }
+    | { kind: "open" }
+    | { kind: "handing"; stale: boolean }
+    | { kind: "closed" };
+
 // The reply to a message sent has started: its text, a lookup, or the
 // API's stream.
 const streams = (event: ConversationEvent) =>
@@ -96,18 +118,7 @@ class CompactingSession implements ChatSession {
     #urgent = false;
     #idle: unknown = null;
     #run: Run | null = null;
-    #closed = false;
-    // Saving the clusters for the handover: a message waits for the new
-    // session rather than going to the old one, which is about to close.
-    #handing = false;
-    // Connecting waits for a save under way; messages wait with it.
-    #waiting = false;
-    // The inner session's seed predates clusters saved since, by runs that
-    // followed one another without a session between.
-    #behind = false;
-    // Esc on a held message: no run follows the current one, which hands
-    // over even to a seed still past hard.
-    #cutShort = false;
+    #phase: Phase = { kind: "open" };
     // The claim of the runs under way, one after another with no gap: let
     // go once no run follows, so a review waiting for it runs after them.
     #claim: Chained | null = null;
@@ -126,14 +137,14 @@ class CompactingSession implements ChatSession {
         } else {
             // App reconnecting during a handover: the seed waits for the
             // clusters being saved, so their turns don't go in whole.
-            this.#waiting = true;
+            this.#enter({ kind: "waiting" });
             void saving
                 .then((done) => {
                     // Quitting: no session is wanted.
                     if (!done) {
                         return;
                     }
-                    this.#waiting = false;
+                    this.#enter({ kind: "open" });
                     try {
                         this.#begin();
                     } catch (error) {
@@ -143,6 +154,30 @@ class CompactingSession implements ChatSession {
                 // Only a listener's throw on the error #die emitted gets
                 // here; the error was told, and no caller hears this.
                 .catch(() => {});
+        }
+    }
+
+    // Every move between phases; none leaves closed.
+    #enter(next: Phase): void {
+        if (this.#phase.kind !== "closed") {
+            this.#phase = next;
+        }
+    }
+
+    get #closed(): boolean {
+        return this.#phase.kind === "closed";
+    }
+
+    // Esc on a held message: no run follows the current one, which hands
+    // over even to a seed still past hard.
+    get #cutShort(): boolean {
+        return this.#held.some((held) => held.interrupted);
+    }
+
+    // The inner session, once a chain ends, is seeded afresh.
+    #fresh(): void {
+        if (this.#phase.kind === "handing") {
+            this.#enter({ kind: "handing", stale: false });
         }
     }
 
@@ -167,8 +202,7 @@ class CompactingSession implements ChatSession {
             return;
         }
         this.#attach(this.#connect(seed));
-        // Esc on these, held for a save, ends no chain to come.
-        this.#cutShort = false;
+        // Esc on these, held for a save, ends no chain to come: they go.
         this.#sendHeld(this.#held.splice(0));
         if (after.length > 0) {
             // After the caller has subscribed; no caller hears a throw.
@@ -194,13 +228,13 @@ class CompactingSession implements ChatSession {
         if (this.#closed) {
             return;
         }
-        if (this.#waiting) {
+        if (this.#phase.kind === "waiting") {
             this.#held.push({ text, interrupted: false });
             return;
         }
         if (
             this.#inner === null ||
-            this.#handing ||
+            this.#phase.kind === "handing" ||
             (this.#urgent && !this.#shared.exhausted)
         ) {
             this.#announce();
@@ -218,14 +252,13 @@ class CompactingSession implements ChatSession {
             for (const held of this.#held) {
                 held.interrupted = true;
             }
-            this.#cutShort = true;
             return Promise.resolve();
         }
         return this.#inner?.interrupt() ?? Promise.resolve();
     }
 
     async close(): Promise<void> {
-        this.#closed = true;
+        this.#enter({ kind: "closed" });
         this.#cancelIdle();
         this.#run?.controller.abort();
         await Promise.all([
@@ -396,7 +429,9 @@ class CompactingSession implements ChatSession {
             cost: (usd) => this.#emit({ type: "memory-cost", usd }),
             settled: (signal) => this.#whenSettled(signal),
             saving: () => {
-                this.#handing = true;
+                if (this.#phase.kind === "open") {
+                    this.#enter({ kind: "handing", stale: false });
+                }
             },
         });
         switch (landing.kind) {
@@ -465,7 +500,7 @@ class CompactingSession implements ChatSession {
             (this.#held.length > 0 || this.#inner === null) &&
             this.#pastHard(seed, after);
         if (past && !this.#cutShort) {
-            this.#behind = this.#inner !== null;
+            this.#enter({ kind: "handing", stale: this.#inner !== null });
             run.landed = "chained";
         } else {
             const old = this.#inner;
@@ -481,7 +516,7 @@ class CompactingSession implements ChatSession {
             // The old session's last reply may have started an idle wait.
             this.#cancelIdle();
             this.#attach(next);
-            this.#behind = false;
+            this.#fresh();
             if (old !== null) {
                 this.#shared.retire(old, this);
             }
@@ -548,7 +583,7 @@ class CompactingSession implements ChatSession {
     // as a session that failed does, with an error event, so App
     // reconnects at the next message. Held messages are in App's turns.
     #die(error: unknown): void {
-        this.#closed = true;
+        this.#enter({ kind: "closed" });
         this.#cancelIdle();
         this.#held = [];
         this.#emit({
@@ -576,7 +611,10 @@ class CompactingSession implements ChatSession {
             // Esc came after the run chose to go on: its seed is past hard.
             this.#urgent = true;
         }
-        if (this.#inner === null || this.#behind) {
+        if (
+            this.#inner === null ||
+            (this.#phase.kind === "handing" && this.#phase.stale)
+        ) {
             const old = this.#inner;
             try {
                 this.#attach(this.#connect(this.#shared.seed(this.#turns)));
@@ -584,7 +622,7 @@ class CompactingSession implements ChatSession {
                 this.#die(error);
                 return;
             }
-            this.#behind = false;
+            this.#fresh();
             if (old !== null) {
                 this.#shared.retire(old, this);
             }
@@ -600,8 +638,7 @@ class CompactingSession implements ChatSession {
         } finally {
             this.#urgent = false;
             this.#announced = false;
-            this.#handing = false;
-            this.#cutShort = false;
+            this.#enter({ kind: "open" });
             this.#sendHeld(held);
         }
     }
