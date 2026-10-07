@@ -17,6 +17,9 @@ export const LIMITS = { title: 60, description: 160, abstract: 1000 } as const;
 export type Field = keyof typeof LIMITS;
 export const FIELDS: readonly Field[] = ["title", "description", "abstract"];
 
+// A concept's id in the vocabulary: k and 8 hexadecimal digits.
+export const CONCEPT_ID = /^k[0-9a-f]{8}$/;
+
 export type Author = "prompt" | "dorothy" | "user";
 export type Provenance = {
     by: Author;
@@ -333,7 +336,7 @@ export async function readSidecar(
 
 // No reader ever sees half a file: the text lands under a temporary name in
 // the same directory, then replaces the sidecar in one rename.
-async function writeAtomic(path: string, text: string): Promise<void> {
+export async function writeAtomic(path: string, text: string): Promise<void> {
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
     const temporary = `${path}.${randomBytes(4).toString("hex")}.tmp`;
     try {
