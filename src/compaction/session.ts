@@ -273,8 +273,9 @@ class CompactingSession implements ChatSession {
     #handing = false;
     // Connecting waits for a save under way; messages wait with it.
     #waiting = false;
-    // The run's new session has taken over: a throw from here on, such as
-    // a listener's, is not a failed compaction.
+    // The run's clusters are saved and its new session, if any, has taken
+    // over: a throw from here on, such as a listener's, is not a failed
+    // compaction.
     #landed = false;
     // The run's clusters left the seed past hard while a message waits:
     // another run follows at once.
@@ -505,7 +506,7 @@ class CompactingSession implements ChatSession {
             .catch((error: unknown) => {
                 if (this.#landed) {
                     this.#warn(
-                        `compaction: after handing over: ${describeError(error)}`,
+                        `compaction: after ${this.#again ? "saving" : "handing over"}: ${describeError(error)}`,
                     );
                 } else {
                     this.#fail(describeError(error));
@@ -620,9 +621,10 @@ class CompactingSession implements ChatSession {
                           (cluster) => cluster.from >= outcome.range.from,
                       ),
                   };
-        // The event only tells; the sidecar holds the clusters. Its warning
-        // follows the compacted event, which clears compaction's warnings.
-        let unrecorded: string | null = null;
+        // The event only tells; the sidecar holds the clusters. Warnings of
+        // the landing follow the compacted event, which clears compaction's
+        // warnings.
+        const after: string[] = [];
         try {
             if (saved.clusters === undefined) {
                 await shared.options.record({
@@ -631,23 +633,27 @@ class CompactingSession implements ChatSession {
                 });
             }
         } catch (error) {
-            unrecorded = `compaction: couldn't record the compaction in the transcript: ${describeError(error)}`;
+            after.push(
+                `compaction: couldn't record the compaction in the transcript: ${describeError(error)}`,
+            );
         }
         // Closed or quitting meanwhile: the clusters are kept, but no new
         // session is wanted.
         if (signal.aborted || this.#closed) {
-            if (unrecorded !== null) {
-                this.#warn(unrecorded);
+            for (const message of after) {
+                this.#warn(message);
             }
             return;
         }
         // One run compacts at most a call's worth of turns. While a
         // message waits, or before the first session, a seed still past
-        // hard is compacted again at once, with no session between.
+        // hard is compacted again at once, with no session between. A seed
+        // that can't be estimated is taken as under hard: the clusters are
+        // saved, so the handover goes ahead.
         const seed = shared.seed(this.#turns);
         if (
             (this.#held.length > 0 || this.#inner === null) &&
-            shared.options.estimate(seed) > shared.options.config.hard
+            this.#pastHard(seed, after)
         ) {
             this.#again = true;
             this.#behind = this.#inner !== null;
@@ -672,9 +678,23 @@ class CompactingSession implements ChatSession {
                 clusters: landed.clusters.length,
             });
         } finally {
-            if (unrecorded !== null) {
-                this.#warn(unrecorded);
+            for (const message of after) {
+                this.#warn(message);
             }
+        }
+    }
+
+    #pastHard(seed: Seed, warnings: string[]): boolean {
+        try {
+            return (
+                this.#shared.options.estimate(seed) >
+                this.#shared.options.config.hard
+            );
+        } catch (error) {
+            warnings.push(
+                `compaction: couldn't estimate the new session: ${describeError(error)}`,
+            );
+            return false;
         }
     }
 

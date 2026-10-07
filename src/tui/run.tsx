@@ -18,7 +18,7 @@ import {
     type SaveResult,
     type Seed,
 } from "../compaction/session.js";
-import { readConfig } from "../config.js";
+import { type Config, readConfig } from "../config.js";
 import {
     type ChatSession,
     Conversation,
@@ -161,6 +161,19 @@ export function indexClaims(
     };
 }
 
+// What the index serves in this chat: compaction when the chat compacts,
+// which its unreadable notes can rule out whatever the config says.
+export function indexUses(
+    config: Pick<Config, "memory">,
+    compactable: boolean,
+): { memory: boolean; recall: boolean; compaction: boolean } {
+    return {
+        memory: config.memory.enabled,
+        recall: config.memory.recall,
+        compaction: compactable,
+    };
+}
+
 // The index serves memory, recall, and compaction's claim and the sidecar's
 // lock; it is opened when any of them is on, and serves only those. Without
 // it, memory and recall are off and compaction runs unlocked.
@@ -244,13 +257,8 @@ export async function runTui(
 
     // The index is opened before the first session, whose prompt carries
     // the block.
-    const opened = openIndex(
-        {
-            memory: config.memory.enabled,
-            recall: config.memory.recall,
-            compaction: compactable,
-        },
-        () => RecallIndex.open(indexPath()),
+    const opened = openIndex(indexUses(config, compactable), () =>
+        RecallIndex.open(indexPath()),
     );
     const index = opened.index;
     if (opened.warning !== null) {

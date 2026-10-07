@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { configPath } from "../config.js";
+import { configPath, DEFAULT_CONFIG } from "../config.js";
 import type { ChatSession } from "../conversation.js";
 import { newPhrase } from "../session-id.js";
 import { transcriptDir } from "../transcript.js";
@@ -20,6 +20,7 @@ import { xdgDir } from "../xdg.js";
 import {
     clusterSaver,
     indexClaims,
+    indexUses,
     notesReady,
     openIndex,
     runTui,
@@ -127,6 +128,27 @@ describe("notesReady", () => {
         expect(ready.ok ? "" : ready.reason).toStartWith(
             "its notes can't be read (",
         );
+    });
+});
+
+describe("indexUses", () => {
+    it("asks for the index for compaction when this chat compacts, whatever memory says", () => {
+        const memoryOff = {
+            ...DEFAULT_CONFIG,
+            memory: { ...DEFAULT_CONFIG.memory, enabled: false, recall: false },
+        };
+        expect(indexUses(memoryOff, true)).toEqual({
+            memory: false,
+            recall: false,
+            compaction: true,
+        });
+        // Compaction on in the config, but off for this chat: its notes
+        // can't be read.
+        expect(indexUses(DEFAULT_CONFIG, false)).toEqual({
+            memory: DEFAULT_CONFIG.memory.enabled,
+            recall: DEFAULT_CONFIG.memory.recall,
+            compaction: false,
+        });
     });
 });
 

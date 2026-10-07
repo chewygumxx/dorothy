@@ -618,6 +618,58 @@ describe("Compaction", () => {
         expect(warnings(h.events)).toEqual([]);
     });
 
+    it("says a listener's throw came after saving, not handing over, in a run that doesn't hand over", async () => {
+        const history = Array.from({ length: 6 }, (_, i) =>
+            sized(i % 2 === 0 ? "user" : "assistant", 30),
+        );
+        const h = harness({ estimate: seedSize });
+        const session = h.open(history);
+        let thrown = false;
+        session.subscribe((event) => {
+            if (event.type === "compacted" && !thrown) {
+                thrown = true;
+                throw new Error("listener broke");
+            }
+        });
+        session.send("y".repeat(240));
+        h.sessions[0]?.reply(250, "z".repeat(240));
+        session.send("next");
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(through(3));
+        await until(() => h.calls.length === 2);
+        expect(warnings(h.events)).toEqual([
+            "compaction: after saving: listener broke",
+        ]);
+        h.calls[1]?.answer(through(6));
+        await until(() => h.sessions[1]?.sent.length === 1);
+        expect(h.sessions[1]?.sent).toEqual(["next"]);
+    });
+
+    it("hands over as usual, with a warning, when the new seed can't be estimated after a save", async () => {
+        const history = Array.from({ length: 6 }, (_, i) =>
+            sized(i % 2 === 0 ? "user" : "assistant", 30),
+        );
+        const h = harness({ estimate: seedSize });
+        const session = h.open(history);
+        session.send("y".repeat(240));
+        h.sessions[0]?.reply(250, "z".repeat(240));
+        session.send("next");
+        await until(() => h.calls.length === 1);
+        h.faults.estimate = new Error("guess failed");
+        h.calls[0]?.answer(through(3));
+        await until(() => h.sessions[1]?.sent.length === 1);
+        expect(h.sessions[1]?.sent).toEqual(["next"]);
+        expect(h.calls).toHaveLength(1);
+        expect(
+            h.events
+                .filter((e) => e.type === "compacted" || e.type === "warning")
+                .map((e) => (e.type === "warning" ? e.message : e.type)),
+        ).toEqual([
+            "compacted",
+            "compaction: couldn't estimate the new session: guess failed",
+        ]);
+    });
+
     it("sends a held message on, from the clusters saved so far, when a later call fails", async () => {
         const history = Array.from({ length: 6 }, (_, i) =>
             sized(i % 2 === 0 ? "user" : "assistant", 30),
