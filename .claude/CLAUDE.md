@@ -1,6 +1,6 @@
 ---
 ctime: 2026-09-29
-mtime: 2026-10-05
+mtime: 2026-10-07
 spdx: GPL-3.0-only
 title: CLAUDE.md
 description: >-
@@ -91,6 +91,24 @@ as dim lines and records as `recall` transcript events; reviews appraise
 each read into the sidecar, and `salience()` (`rank.ts`) weighs appraised
 reads with visits. The index doubles as the sidecar write lock and holds
 review claims, so two TUIs never review one conversation at once.
+
+Compaction (`src/compaction/`) keeps a long chat within Dorothy's context.
+Past `[compaction] soft` tokens, at the next idle (past `hard`, before the
+next message), `compact()` asks her through an injected `StructuredCall`
+to split the turns leaving the verbatim tail into topical clusters with an
+abstract each (`clusters.ts`, `plan.ts`). `Compaction` (`session.ts`)
+wraps the `ChatSession`, appends the clusters to the sidecar, writes a
+`compaction` transcript event, and swaps in a new `Conversation` seeded by
+`withClusters` with the abstracts and the turns after them; every session
+in `run.tsx` is seeded that way, and the memory block charges the abstracts
+to its budget first. `recollect` on the recall server opens a cluster word
+for word; the server registers it only with `--recollect`, which
+`conversationOptions` adds when there are clusters. Nothing in
+`src/compaction/` imports the Agent SDK (`boundary.test.ts`);
+`src/structured.ts` is the SDK side, and reviews use it too. The CLI's own
+compaction is off: `cliOptions()` sets `DISABLE_COMPACT=1`, and a
+`compact_boundary` message is reported as an error. Probes:
+`docs/reports/2026-10-07-compaction.md`.
 
 `query()` spawns the SDK's bundled `claude` binary on every call, so
 `baseOptions` (`src/persona.ts`) keeps that subprocess lean: `tools: []` drops
