@@ -44,6 +44,7 @@ describe("toolOf", () => {
         expect(ALLOWED_TOOLS).toEqual([
             "mcp__memory__search",
             "mcp__memory__open",
+            "mcp__memory__tags",
         ]);
     });
 });
@@ -133,6 +134,38 @@ describe("describeLookup", () => {
         expect(describeLookup("search", 7, null)).toEqual({
             tool: "search",
             query: "",
+            hits: 0,
+        });
+    });
+
+    it("records the tags a search was narrowed by", () => {
+        expect(
+            describeLookup(
+                "search",
+                { tags: ["memory", 3, "tui"] },
+                JSON.stringify({ results: [], more: 2 }),
+            ),
+        ).toEqual({
+            tool: "search",
+            query: "",
+            tags: ["memory", "tui"],
+            hits: 2,
+        });
+    });
+
+    it("records a listing of tags and how many there were", () => {
+        expect(
+            describeLookup(
+                "tags",
+                { under: "memory" },
+                JSON.stringify({
+                    results: [{ "@type": "DefinedTerm", name: "a" }],
+                    more: 4,
+                }),
+            ),
+        ).toEqual({ tool: "tags", under: "memory", hits: 5 });
+        expect(describeLookup("tags", {}, null)).toEqual({
+            tool: "tags",
             hits: 0,
         });
     });

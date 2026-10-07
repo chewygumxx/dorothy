@@ -9,8 +9,14 @@
 //
 
 import { describe, expect, it } from "bun:test";
-import { parseEditView, renderEditView, wrap } from "./edit-view.js";
+import {
+    parseEditView,
+    renderEditView,
+    type TagsContext,
+    wrap,
+} from "./edit-view.js";
 import { EMPTY_SIDECAR, type Sidecar } from "./sidecar.js";
+import type { Vocabulary } from "./vocabulary.js";
 
 const PHRASE = "bingo-overabundance-mazer-kasha";
 const AT = "2026-10-05T05:40:12.000Z";
@@ -221,5 +227,157 @@ describe("parseEditView", () => {
         ],
     ])("refuses %s", (_, text, reason) => {
         expect(parseEditView(text, sidecar)).toEqual({ kind: "error", reason });
+    });
+});
+
+describe("the Tags line", () => {
+    const vocabulary: Vocabulary = {
+        v: 1,
+        rev: 1,
+        concepts: {
+            k00000001: {
+                prefLabel: "memory",
+                altLabel: ["recall"],
+                broader: [],
+                scopeNote: "Remembering.",
+                by: "dorothy",
+                at: AT,
+                edited: null,
+            },
+            k00000002: {
+                prefLabel: "tui",
+                altLabel: [],
+                broader: [],
+                scopeNote: "The terminal.",
+                by: "dorothy",
+                at: AT,
+                edited: null,
+            },
+            k00000003: { mergedInto: "k00000002", at: AT },
+        },
+    };
+    const ok: TagsContext = { kind: "ok", vocabulary };
+    const tagged: Sidecar = {
+        ...sidecar,
+        tags: ["k00000001", "k00000003"],
+        fields: {
+            ...sidecar.fields,
+            tags: {
+                by: "dorothy",
+                model: "claude-opus-5-5",
+                at: AT,
+                throughTurn: 12,
+            },
+        },
+    };
+    const shown = renderEditView(PHRASE, tagged, ok);
+    const edited = (line: string) =>
+        parseEditView(shown.replace("Tags: memory; tui", line), tagged, ok);
+
+    it("shows the tags by label after Hidden, merges followed", () => {
+        expect(shown).toContain(
+            [
+                "Hidden: no",
+                "",
+                "# Tags (Dorothy, claude-opus-5-5, 2026-10-05)",
+                "Tags: memory; tui",
+                "",
+            ].join("\n"),
+        );
+        expect(renderEditView(PHRASE, sidecar)).not.toContain("Tags");
+    });
+
+    it("says when the vocabulary cannot be read", () => {
+        const view = renderEditView(PHRASE, tagged, {
+            kind: "broken",
+            reason: "bad JSON",
+        });
+        expect(view).toContain(
+            "# Tags can't be shown: the vocabulary can't be read (bad JSON).",
+        );
+        expect(view).not.toContain("Tags: ");
+    });
+
+    it("reads labels, any of a concept's, into ids", () => {
+        expect(edited("Tags: TUI;  Recall ; tui")).toEqual({
+            kind: "edit",
+            changes: { tags: ["k00000002", "k00000001"] },
+        });
+        expect(edited("Tags: memory;tui")).toEqual({ kind: "unchanged" });
+    });
+
+    it("hands an emptied line back to Dorothy", () => {
+        expect(edited("Tags:")).toEqual({
+            kind: "edit",
+            changes: { tags: null },
+        });
+    });
+
+    it("hands back a fixed set whose concepts are all gone", () => {
+        const gone: Sidecar = {
+            ...sidecar,
+            tags: ["k00000009"],
+            fields: { ...sidecar.fields, tags: { by: "user", at: AT } },
+        };
+        const view = renderEditView(PHRASE, gone, ok);
+        expect(view).toContain("# Tags (empty)\nTags:\n");
+        expect(parseEditView(view, gone, ok)).toEqual({
+            kind: "edit",
+            changes: { tags: null },
+        });
+        const hers: Sidecar = {
+            ...gone,
+            fields: { ...gone.fields, tags: { by: "dorothy", at: AT } },
+        };
+        expect(
+            parseEditView(renderEditView(PHRASE, hers, ok), hers, ok),
+        ).toEqual({ kind: "unchanged" });
+    });
+
+    it("refuses an unknown label, too many, or tags it cannot read", () => {
+        expect(edited("Tags: memory; nothing")).toEqual({
+            kind: "error",
+            reason: "No tag by that name: nothing",
+        });
+        const many: TagsContext = {
+            kind: "ok",
+            vocabulary: {
+                ...vocabulary,
+                concepts: Object.fromEntries(
+                    [1, 2, 3, 4, 5, 6].map((n) => [
+                        `k0000001${n}`,
+                        {
+                            prefLabel: `t${n}`,
+                            altLabel: [],
+                            broader: [],
+                            scopeNote: "T.",
+                            by: "user" as const,
+                            at: AT,
+                            edited: null,
+                        },
+                    ]),
+                ),
+            },
+        };
+        expect(
+            parseEditView(
+                `${renderEditView(PHRASE, sidecar, many)}`.replace(
+                    "Tags:",
+                    "Tags: t1; t2; t3; t4; t5; t6",
+                ),
+                sidecar,
+                many,
+            ),
+        ).toEqual({ kind: "error", reason: "Tags takes at most 5 tags" });
+        expect(
+            parseEditView(shown, tagged, { kind: "broken", reason: "x" }),
+        ).toEqual({
+            kind: "error",
+            reason: "Tags can't be set while the vocabulary can't be read",
+        });
+        expect(parseEditView(shown, tagged)).toEqual({
+            kind: "error",
+            reason: "there is no field Tags",
+        });
     });
 });

@@ -39,6 +39,7 @@ import {
     reviewDue,
     type Sidecar,
     sidecarPath,
+    untagged,
     updateSidecar,
     withProvisional,
 } from "./sidecar.js";
@@ -232,6 +233,17 @@ describe("updateSidecar", () => {
         });
     });
 
+    it("waits for a change that needs to read something first", async () => {
+        const result = await updateSidecar(dir, PHRASE, async () => {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            return reviewed;
+        });
+        expect(result).toEqual({
+            kind: "written",
+            sidecar: { ...reviewed, rev: 1 },
+        });
+    });
+
     // Root ignores directory modes, so there the write cannot fail.
     it.skipIf(process.getuid?.() === 0)(
         "reports a write that failed",
@@ -296,6 +308,7 @@ describe("withProvisional", () => {
         expect(sidecar?.clusters).not.toBe(EMPTY_SIDECAR.clusters);
         expect(sidecar?.titles).not.toBe(EMPTY_SIDECAR.titles);
         expect(sidecar?.appraisals).not.toBe(EMPTY_SIDECAR.appraisals);
+        expect(sidecar?.tags).not.toBe(EMPTY_SIDECAR.tags);
     });
 });
 
@@ -520,6 +533,7 @@ describe("EMPTY_SIDECAR", () => {
             EMPTY_SIDECAR.fields,
             EMPTY_SIDECAR.appraisals,
             EMPTY_SIDECAR.clusters,
+            EMPTY_SIDECAR.tags,
         ]) {
             expect(Object.isFrozen(held)).toBe(true);
         }
@@ -589,5 +603,121 @@ describe("clusters", () => {
         expect(appendClusters(first, [cluster(3, 6)], 0)).toBeNull();
         expect(appendClusters(first, [cluster(6, 8)], 0)).toBeNull();
         expect(appendClusters(first, [], 0)).toBeNull();
+    });
+});
+
+describe("tags", () => {
+    const AT = "2026-10-07T12:00:00.000Z";
+    const NOTES = { title: "T", description: "D.", abstract: "A." };
+    const REVIEW = {
+        model: "claude-test",
+        at: AT,
+        throughTurn: 4,
+        costUsd: 0,
+    };
+    const read = (value: object) => {
+        const result = parseSidecar(JSON.stringify({ v: 1, ...value }));
+        return result.kind === "ok" ? result.sidecar : null;
+    };
+
+    it("reads ids, once each, at most 5, and drops anything else", () => {
+        expect(
+            read({
+                tags: [
+                    "k00000001",
+                    "k00000001",
+                    "memory",
+                    7,
+                    "k00000002",
+                    "k00000003",
+                    "k00000004",
+                    "k00000005",
+                    "k00000006",
+                ],
+            })?.tags,
+        ).toEqual([
+            "k00000001",
+            "k00000002",
+            "k00000003",
+            "k00000004",
+            "k00000005",
+        ]);
+        expect(read({})?.tags).toEqual([]);
+        expect(read({ tags: "k00000001" })?.tags).toEqual([]);
+    });
+
+    it("keeps who tagged it, even when she gave no tags", () => {
+        const by = {
+            by: "dorothy" as const,
+            at: AT,
+            model: "m",
+            throughTurn: 3,
+        };
+        expect(read({ tags: [], fields: { tags: by } })?.fields.tags).toEqual(
+            by,
+        );
+    });
+
+    it("stamps her tags, and leaves the user's set theirs", () => {
+        const hers = mergeReview(null, NOTES, {
+            ...REVIEW,
+            tags: ["k00000001"],
+        });
+        expect(hers.tags).toEqual(["k00000001"]);
+        expect(hers.fields.tags).toEqual({
+            by: "dorothy",
+            model: "claude-test",
+            at: AT,
+            throughTurn: 4,
+        });
+        const theirs = mergeEdit(null, { tags: ["k00000002"] }, AT);
+        const pruned = mergeReview(theirs, NOTES, { ...REVIEW, tags: [] });
+        expect(pruned.tags).toEqual([]);
+        expect(pruned.fields.tags).toEqual({ by: "user", at: AT });
+    });
+
+    it("leaves the tags alone when a review brings none", () => {
+        const tagged = mergeReview(null, NOTES, {
+            ...REVIEW,
+            tags: ["k00000001"],
+        });
+        const again = mergeReview(tagged, NOTES, REVIEW);
+        expect(again.tags).toEqual(["k00000001"]);
+        expect(again.fields.tags).toEqual(tagged.fields.tags);
+    });
+
+    it("makes an edited set the user's, and an emptied one hers again", () => {
+        const reviewed = mergeReview(null, NOTES, {
+            ...REVIEW,
+            tags: ["k00000001"],
+        });
+        const theirs = mergeEdit(reviewed, { tags: ["k00000002"] }, AT);
+        expect(theirs.tags).toEqual(["k00000002"]);
+        expect(theirs.fields.tags).toEqual({ by: "user", at: AT });
+        const back = mergeEdit(theirs, { tags: null }, AT);
+        expect(back.tags).toEqual([]);
+        expect(back.fields.tags).toBeUndefined();
+        expect(back.reviewedThrough).toBe(0);
+    });
+
+    it("counts tags as the user's to own while tagging is on", () => {
+        const owned = mergeEdit(
+            null,
+            { title: "T", description: "D", abstract: "A" },
+            AT,
+        );
+        expect(ownsAll(owned)).toBe(true);
+        expect(ownsAll(owned, true)).toBe(false);
+        expect(ownsAll(mergeEdit(owned, { tags: [] }, AT), true)).toBe(true);
+    });
+
+    it("knows a conversation reviewed before tags existed", () => {
+        const old = { ...EMPTY_SIDECAR, reviewedThrough: 3 };
+        expect(untagged(old)).toBe(true);
+        expect(untagged({ ...old, reviewedThrough: 0 })).toBe(false);
+        expect(untagged(mergeReview(old, NOTES, { ...REVIEW, tags: [] }))).toBe(
+            false,
+        );
+        expect(untagged(null)).toBe(false);
     });
 });

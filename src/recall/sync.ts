@@ -16,6 +16,14 @@ import {
     type SidecarRead,
     sidecarPath,
 } from "../memory/sidecar.js";
+import {
+    isConcept,
+    isMerged,
+    labelKey,
+    labelsOf,
+    readVocabulary,
+    type VocabularyRead,
+} from "../memory/vocabulary.js";
 import { isPhrase } from "../session-id.js";
 import { toRecall, toTurn } from "../transcript.js";
 import type { RecallIndex } from "./store.js";
@@ -48,10 +56,13 @@ const describeError = (error: unknown) =>
 // appended, replaced or deleted, and every sidecar that changed. A
 // transcript that cannot be synced keeps the rows it had and is reported in
 // the warnings, so one bad file does not take the rest of the index with it.
+// With a vocabulary path, tags.json is synced too; without, its tables
+// are left as they are.
 export async function syncIndex(
     index: RecallIndex,
     dir: string,
     now: number = Date.now(),
+    vocabulary: string | null = null,
 ): Promise<string[]> {
     const warnings: string[] = [];
     // Listed under the lock: another process may have indexed a new
@@ -93,6 +104,16 @@ export async function syncIndex(
             }
             index.db.run("RELEASE transcript");
         }
+        if (vocabulary !== null) {
+            index.db.run("SAVEPOINT vocabulary");
+            try {
+                await syncVocabulary(index, vocabulary);
+            } catch (error) {
+                index.db.run("ROLLBACK TO vocabulary");
+                warnings.push(`${vocabulary}: ${describeError(error)}`);
+            }
+            index.db.run("RELEASE vocabulary");
+        }
         return listing;
     });
     await removeLeftovers(dir, names, now);
@@ -117,6 +138,7 @@ function forget(index: RecallIndex, phrase: string): void {
         "DELETE FROM reads WHERE reader = ?",
         "DELETE FROM appraisals WHERE reader = ?",
         "DELETE FROM clusters WHERE phrase = ?",
+        "DELETE FROM tagged WHERE phrase = ?",
         "DELETE FROM conversations WHERE phrase = ?",
     ]) {
         index.db.run(sql, [phrase]);
@@ -318,6 +340,72 @@ async function syncSidecar(
             "INSERT INTO clusters (phrase, n, first_turn, last_turn) VALUES (?, ?, ?, ?)",
             [phrase, at + 1, cluster.from, cluster.through],
         );
+    }
+    index.db.run("DELETE FROM tagged WHERE phrase = ?", [phrase]);
+    for (const [n, id] of (sidecar?.tags ?? []).entries()) {
+        index.db.run(
+            "INSERT OR IGNORE INTO tagged (phrase, n, id) VALUES (?, ?, ?)",
+            [phrase, n, id],
+        );
+    }
+}
+
+// tags.json, when its mtime differs from the one recorded. Every table
+// is replaced: the vocabulary is small, and sidecars' ids are resolved
+// through merged at query time, so no sidecar is read again.
+async function syncVocabulary(index: RecallIndex, path: string): Promise<void> {
+    let mtime: number | null = null;
+    try {
+        mtime = (await stat(path)).mtimeMs;
+    } catch (error) {
+        if (codeOf(error) !== "ENOENT") {
+            throw error;
+        }
+    }
+    const known = index.db
+        .query("SELECT mtime FROM vocabulary WHERE id = 1")
+        .get() as { mtime: number | null };
+    if (known.mtime === mtime) {
+        return;
+    }
+    const read: VocabularyRead =
+        mtime === null ? { kind: "none" } : await readVocabulary(path);
+    for (const table of ["concepts", "labels", "broader", "merged"]) {
+        index.db.run(`DELETE FROM ${table}`);
+    }
+    index.db.run("UPDATE vocabulary SET mtime = ?, broken = ? WHERE id = 1", [
+        mtime,
+        read.kind === "unparseable" ? read.reason : null,
+    ]);
+    if (read.kind !== "ok") {
+        return;
+    }
+    for (const [id, term] of Object.entries(read.vocabulary.concepts)) {
+        if (isMerged(term)) {
+            index.db.run("INSERT INTO merged (id, into_id) VALUES (?, ?)", [
+                id,
+                term.mergedInto,
+            ]);
+        }
+        if (!isConcept(term)) {
+            continue;
+        }
+        index.db.run(
+            "INSERT INTO concepts (id, label, alt, scope_note) VALUES (?, ?, ?, ?)",
+            [id, term.prefLabel, JSON.stringify(term.altLabel), term.scopeNote],
+        );
+        for (const label of labelsOf(term)) {
+            index.db.run("INSERT INTO labels (norm, id) VALUES (?, ?)", [
+                labelKey(label),
+                id,
+            ]);
+        }
+        for (const parent of term.broader) {
+            index.db.run("INSERT INTO broader (id, parent) VALUES (?, ?)", [
+                id,
+                parent,
+            ]);
+        }
     }
 }
 

@@ -28,6 +28,7 @@ import {
     reviewPrompt,
     reviewSchema,
     runReview,
+    TAGS_INSTRUCTION,
 } from "./review.js";
 import { ReviewScheduler } from "./scheduler.js";
 import {
@@ -39,10 +40,20 @@ import {
     readSidecar,
     reviewDue,
     type Sidecar,
+    untagged,
     updateSidecar,
     withProvisional,
 } from "./sidecar.js";
+import { applyTagging, reviewConcepts, type TagOutput } from "./tagging.js";
 import type { MemoryHooks } from "./track.js";
+import {
+    EMPTY_VOCABULARY,
+    readVocabulary,
+    resolveTags,
+    type Vocabulary,
+    vocabularyProblem,
+    writeVocabulary,
+} from "./vocabulary.js";
 
 // The same shapes as App's notices.
 export type Notice =
@@ -64,6 +75,9 @@ export type MemoryServiceOptions = {
     flushed: (() => Promise<void>) | null;
     // The recall index, for the write lock and review claims; null without.
     index?: RecallIndex | null;
+    // tags.json; null leaves tags alone, as when memory runs without a
+    // data directory to keep them in.
+    vocabulary?: string | null;
     queryFn?: ReviewQueryFn;
     now?: () => Date;
     timers?: Timers;
@@ -79,9 +93,9 @@ const CLAIM_MARGIN_MS = 30_000;
 // retry is its own, in src/compaction/, which memory does not import.
 export const REVIEW_CLAIM_RETRY_MS = 2000;
 
-// It has turns no review has covered, Dorothy may review it, and its
-// back-off is over.
-function isStale(entry: Entry, now: number): boolean {
+// It has turns no review has covered, or was reviewed before tags while
+// Dorothy tags; she may review it, and its back-off is over.
+function isStale(entry: Entry, now: number, tagging: boolean): boolean {
     if (entry.sidecar.kind === "none") {
         return entry.turns > 0;
     }
@@ -91,7 +105,8 @@ function isStale(entry: Entry, now: number): boolean {
     const { sidecar } = entry.sidecar;
     return (
         !sidecar.hidden &&
-        entry.turns > sidecar.reviewedThrough &&
+        (entry.turns > sidecar.reviewedThrough ||
+            (tagging && untagged(sidecar))) &&
         reviewDue(sidecar, now)
     );
 }
@@ -105,6 +120,9 @@ export class MemoryService implements MemoryHooks {
     readonly #config: MemoryConfig;
     readonly #flushed: (() => Promise<void>) | null;
     readonly #index: RecallIndex | null;
+    readonly #vocabulary: string | null;
+    // A broken vocabulary is told once a run.
+    #vocabularyWarned = false;
     // Who this run's claims belong to.
     readonly #owner = `${process.pid}-${randomBytes(4).toString("hex")}`;
     readonly #queryFn: ReviewQueryFn;
@@ -134,6 +152,7 @@ export class MemoryService implements MemoryHooks {
         this.#config = options.config;
         this.#flushed = options.flushed;
         this.#index = options.index ?? null;
+        this.#vocabulary = options.vocabulary ?? null;
         this.#queryFn = options.queryFn ?? query;
         this.#now = options.now ?? (() => new Date());
         this.#timers = options.timers ?? REAL_TIMERS;
@@ -216,10 +235,27 @@ export class MemoryService implements MemoryHooks {
             return;
         }
         this.#caughtUp = true;
+        if (this.#vocabulary === null) {
+            this.#catchUp(false);
+            return;
+        }
+        void this.#readVocabulary().then((vocabulary) => {
+            this.#catchUp(vocabulary !== null);
+        });
+    }
+
+    // While the vocabulary is broken, conversations owed only their tags
+    // wait, or a broken file would cost a review at every launch.
+    #catchUp(tagging: boolean): void {
+        if (this.#stopped) {
+            return;
+        }
         const now = this.#now().getTime();
         const stale = [...this.#entries.values()]
             .filter(
-                (entry) => entry.phrase !== this.#phrase && isStale(entry, now),
+                (entry) =>
+                    entry.phrase !== this.#phrase &&
+                    isStale(entry, now, tagging),
             )
             .sort((a, b) => b.lastActive - a.lastActive)
             .slice(0, this.#config.catchUp)
@@ -258,6 +294,77 @@ export class MemoryService implements MemoryHooks {
 
     #warn(message: string): void {
         this.#emit({ type: "warning", message });
+    }
+
+    // The vocabulary as the file holds it, empty when there is none; null
+    // when tags are off or the file is broken.
+    async #readVocabulary(): Promise<Vocabulary | null> {
+        const path = this.#vocabulary;
+        if (path === null) {
+            return null;
+        }
+        const read = await readVocabulary(path);
+        if (read.kind === "unparseable") {
+            if (!this.#vocabularyWarned) {
+                this.#vocabularyWarned = true;
+                this.#warn(`memory: tags are paused: ${path}: ${read.reason}`);
+            }
+            return null;
+        }
+        return read.kind === "ok" ? read.vocabulary : EMPTY_VOCABULARY;
+    }
+
+    // Each conversation's tags and whether it is hidden, as last seen.
+    #carriers(): { tags: readonly string[]; hidden: boolean }[] {
+        return [...this.#entries.values()].flatMap((entry) =>
+            entry.sidecar.kind === "ok"
+                ? [
+                      {
+                          tags: entry.sidecar.sidecar.tags,
+                          hidden: entry.sidecar.sidecar.hidden,
+                      },
+                  ]
+                : [],
+        );
+    }
+
+    // Under the sidecar's lock: the vocabulary is read again, so a concept
+    // another run coined since the review began is reused, not coined
+    // twice. The user's set is kept, merges followed. Undefined leaves the
+    // sidecar's tags as they are, as when the file has broken meanwhile.
+    // The read, rev + 1 and write repeat updateVocabulary's, which would
+    // take the lock again: RecallIndex.exclusive is not re-entrant.
+    async #tag(
+        latest: Sidecar | null,
+        output: TagOutput,
+        stamp: { at: string; model: string },
+    ): Promise<string[] | undefined> {
+        const path = this.#vocabulary;
+        if (path === null) {
+            return undefined;
+        }
+        const read = await readVocabulary(path);
+        if (read.kind === "unparseable") {
+            return undefined;
+        }
+        const vocabulary =
+            read.kind === "ok" ? read.vocabulary : EMPTY_VOCABULARY;
+        if (latest?.fields.tags?.by === "user") {
+            return resolveTags(vocabulary, latest.tags);
+        }
+        const tagged = applyTagging(vocabulary, output, stamp);
+        if (tagged.coined > 0) {
+            // One breaking the rules would pause tags everywhere: it is
+            // never written, nor tags taken from it.
+            if (vocabularyProblem(tagged.vocabulary) !== null) {
+                return undefined;
+            }
+            await writeVocabulary(path, {
+                ...tagged.vocabulary,
+                rev: vocabulary.rev + 1,
+            });
+        }
+        return tagged.tags;
     }
 
     #build(
@@ -374,6 +481,8 @@ export class MemoryService implements MemoryHooks {
         if (!reviewDue(current, this.#now().getTime())) {
             return;
         }
+        const vocabulary = await this.#readVocabulary();
+        const tagging = vocabulary !== null;
         const name = current?.title ?? phrase;
         const fail = (reason: string) =>
             this.#warn(`memory: couldn't review "${name}": ${reason}`);
@@ -390,15 +499,20 @@ export class MemoryService implements MemoryHooks {
         );
         if (
             (turns.length <= (current?.reviewedThrough ?? 0) &&
-                reads.length === 0) ||
+                reads.length === 0 &&
+                !(tagging && untagged(current))) ||
             signal.aborted
         ) {
             return;
         }
         const lock = this.#index?.lock;
-        // Every note is the user's and nothing awaits appraisal: a review
-        // could change nothing, so none is paid for.
-        if (current !== null && ownsAll(current) && reads.length === 0) {
+        // Every note and tag is the user's and nothing awaits appraisal: a
+        // review could change nothing, so none is paid for.
+        if (
+            current !== null &&
+            ownsAll(current, tagging) &&
+            reads.length === 0
+        ) {
             const skipped = await updateSidecar(
                 this.#dir,
                 phrase,
@@ -420,6 +534,7 @@ export class MemoryService implements MemoryHooks {
             ...((current?.clusters.length ?? 0) > 0
                 ? [CLUSTERS_INSTRUCTION]
                 : []),
+            ...(tagging ? [TAGS_INSTRUCTION] : []),
         ].join(" ");
         const outcome = await runReview({
             queryFn: this.#queryFn,
@@ -427,9 +542,23 @@ export class MemoryService implements MemoryHooks {
                 withMemory(systemPrompt, this.#build(phrase).block),
                 instructions,
             ].join("\n\n"),
-            prompt: reviewPrompt(turns, current, reads),
-            schema: reviewSchema(readIds),
+            prompt: reviewPrompt(
+                turns,
+                current,
+                reads,
+                vocabulary === null
+                    ? undefined
+                    : {
+                          vocabulary,
+                          concepts: reviewConcepts(
+                              vocabulary,
+                              this.#carriers(),
+                          ),
+                      },
+            ),
+            schema: reviewSchema(readIds, tagging),
             readIds,
+            tagging,
             signal,
             timers: this.#timers,
         });
@@ -453,20 +582,32 @@ export class MemoryService implements MemoryHooks {
             }
             return;
         }
-        // Quitting may land while the write waits its turn.
+        // Quitting may land while the write waits its turn. Tags are
+        // applied inside the same lock as the notes.
+        const tagOutput = outcome.tags;
         const result = await updateSidecar(
             this.#dir,
             phrase,
-            (latest) =>
-                signal.aborted || latest?.hidden
-                    ? null
-                    : mergeReview(latest, outcome.notes, {
-                          model: outcome.model,
-                          at,
-                          throughTurn: turns.length,
-                          costUsd: outcome.costUsd,
-                          appraisals: outcome.appraisals,
-                      }),
+            async (latest) => {
+                if (signal.aborted || latest?.hidden) {
+                    return null;
+                }
+                const tags =
+                    tagOutput === undefined
+                        ? undefined
+                        : await this.#tag(latest, tagOutput, {
+                              at,
+                              model: outcome.model,
+                          });
+                return mergeReview(latest, outcome.notes, {
+                    model: outcome.model,
+                    at,
+                    throughTurn: turns.length,
+                    costUsd: outcome.costUsd,
+                    appraisals: outcome.appraisals,
+                    ...(tags === undefined ? {} : { tags }),
+                });
+            },
             lock,
         );
         if (result.kind === "failed") {

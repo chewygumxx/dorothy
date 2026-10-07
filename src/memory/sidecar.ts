@@ -17,6 +17,11 @@ export const LIMITS = { title: 60, description: 160, abstract: 1000 } as const;
 export type Field = keyof typeof LIMITS;
 export const FIELDS: readonly Field[] = ["title", "description", "abstract"];
 
+// A concept's id in the vocabulary: k and 8 hexadecimal digits.
+export const CONCEPT_ID = /^k[0-9a-f]{8}$/;
+// TAG_LIMITS.tags in vocabulary.ts, which imports this file.
+const MAX_TAGS = 5;
+
 export type Author = "prompt" | "dorothy" | "user";
 export type Provenance = {
     by: Author;
@@ -27,6 +32,8 @@ export type Provenance = {
 };
 export type PastTitle = { title: string; at: string; by: Author };
 export type Notes = Record<Field, string>;
+// What has an owner: the notes, and the conversation's tags as a set.
+export type Owned = Field | "tags";
 
 // How well a read served the purpose Dorothy opened it for, judged in her
 // next review.
@@ -62,9 +69,11 @@ export type Sidecar = {
     abstract: string | null;
     pinned: boolean;
     hidden: boolean;
+    // Concept ids from the vocabulary, most important first; at most 5.
+    tags: string[];
     // Oldest first.
     titles: PastTitle[];
-    fields: Partial<Record<Field, Provenance>>;
+    fields: Partial<Record<Owned, Provenance>>;
     // The turn count Dorothy's last review covered; 0 for never.
     reviewedThrough: number;
     // What successful reviews and compactions cost, each.
@@ -92,6 +101,8 @@ export type UpdateResult =
 export type EditChanges = Partial<Record<Field, string | null>> & {
     pinned?: boolean;
     hidden?: boolean;
+    // A set of tags given becomes the user's; null hands it back.
+    tags?: string[] | null;
 };
 
 // Frozen through, so that a change made through a sidecar built on it
@@ -104,6 +115,7 @@ export const EMPTY_SIDECAR: Sidecar = frozen({
     abstract: null,
     pinned: false,
     hidden: false,
+    tags: [],
     titles: [],
     fields: {},
     reviewedThrough: 0,
@@ -116,6 +128,7 @@ export const EMPTY_SIDECAR: Sidecar = frozen({
 
 function frozen(sidecar: Sidecar): Sidecar {
     Object.freeze(sidecar.titles);
+    Object.freeze(sidecar.tags);
     Object.freeze(sidecar.fields);
     Object.freeze(sidecar.appraisals);
     Object.freeze(sidecar.clusters);
@@ -219,6 +232,22 @@ function readProvenance(value: unknown): Provenance | null {
     return provenance;
 }
 
+// Ids only, each once; anything else reads as absent.
+function readTags(value: unknown): string[] {
+    const tags: string[] = [];
+    for (const id of Array.isArray(value) ? value : []) {
+        if (
+            typeof id === "string" &&
+            CONCEPT_ID.test(id) &&
+            !tags.includes(id) &&
+            tags.length < MAX_TAGS
+        ) {
+            tags.push(id);
+        }
+    }
+    return tags;
+}
+
 // Only bad JSON, a non-object or an unknown version make a sidecar
 // unparseable; a field of the wrong shape reads as absent.
 export function parseSidecar(
@@ -245,6 +274,7 @@ export function parseSidecar(
         fields: {},
         appraisals: {},
         clusters: readClusters(data.clusters),
+        tags: readTags(data.tags),
     };
     sidecar.rev = isCount(data.rev) ? data.rev : 0;
     for (const field of FIELDS) {
@@ -257,6 +287,14 @@ export function parseSidecar(
         if (note !== null && provenance !== null) {
             sidecar.fields[field] = provenance;
         }
+    }
+    // Unlike a note's, the tags' owner stays when the set is empty: she
+    // may have found nothing to tag.
+    const tagsBy = isRecord(data.fields)
+        ? readProvenance(data.fields.tags)
+        : null;
+    if (tagsBy !== null) {
+        sidecar.fields.tags = tagsBy;
     }
     sidecar.pinned = data.pinned === true;
     sidecar.hidden = data.hidden === true;
@@ -333,7 +371,7 @@ export async function readSidecar(
 
 // No reader ever sees half a file: the text lands under a temporary name in
 // the same directory, then replaces the sidecar in one rename.
-async function writeAtomic(path: string, text: string): Promise<void> {
+export async function writeAtomic(path: string, text: string): Promise<void> {
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
     const temporary = `${path}.${randomBytes(4).toString("hex")}.tmp`;
     try {
@@ -349,11 +387,14 @@ async function writeAtomic(path: string, text: string): Promise<void> {
 const queues = new Map<string, Promise<UpdateResult>>();
 
 // Every writer re-reads the sidecar and applies only its own changes to
-// what it finds, so a review landing during an edit merges with it.
+// what it finds, so a review landing during an edit merges with it. A
+// change may read or write other files first, under the same lock.
 export function updateSidecar(
     dir: string,
     phrase: string,
-    change: (current: Sidecar | null) => Sidecar | null,
+    change: (
+        current: Sidecar | null,
+    ) => Sidecar | null | Promise<Sidecar | null>,
     lock?: Lock,
 ): Promise<UpdateResult> {
     const path = sidecarPath(dir, phrase);
@@ -363,7 +404,7 @@ export function updateSidecar(
             return read;
         }
         const current = read.kind === "ok" ? read.sidecar : null;
-        const next = change(current);
+        const next = await change(current);
         if (next === null) {
             return { kind: "unchanged", sidecar: current };
         }
@@ -419,6 +460,7 @@ export function withProvisional(
         title,
         titles: [],
         fields: { title: { by: "prompt", at } },
+        tags: [],
         appraisals: {},
         clusters: [],
     };
@@ -453,6 +495,7 @@ export function mergeReview(
         throughTurn: number;
         costUsd: number;
         appraisals?: Record<string, Served>;
+        tags?: readonly string[];
     },
 ): Sidecar {
     const base = current ?? EMPTY_SIDECAR;
@@ -483,6 +526,19 @@ export function mergeReview(
             throughTurn: review.throughTurn,
         };
     }
+    // Tags given are the conversation's from now on: hers are stamped,
+    // and the user's set, pruned against the vocabulary, stays theirs.
+    if (review.tags !== undefined) {
+        next.tags = [...review.tags];
+        if (base.fields.tags?.by !== "user") {
+            next.fields.tags = {
+                by: "dorothy",
+                model: review.model,
+                at: review.at,
+                throughTurn: review.throughTurn,
+            };
+        }
+    }
     return next;
 }
 
@@ -510,6 +566,14 @@ export function mergeEdit(
         } else {
             next.fields[field] = { by: "user", at };
         }
+    }
+    if (changes.tags === null) {
+        next.tags = [];
+        delete next.fields.tags;
+        next.reviewedThrough = 0;
+    } else if (changes.tags !== undefined) {
+        next.tags = [...changes.tags];
+        next.fields.tags = { by: "user", at };
     }
     if (changes.pinned !== undefined) {
         next.pinned = changes.pinned;
@@ -577,10 +641,23 @@ export function reviewDue(sidecar: Sidecar | null, now: number): boolean {
     return now >= at + wait;
 }
 
-// Every note is there and the user's, so a review could change nothing.
-export function ownsAll(sidecar: Sidecar): boolean {
-    return FIELDS.every(
-        (field) =>
-            sidecar[field] !== null && sidecar.fields[field]?.by === "user",
+// Every note is there and the user's, and while Dorothy tags, so is the
+// set of tags: a review could change nothing.
+export function ownsAll(sidecar: Sidecar, tagging = false): boolean {
+    return (
+        FIELDS.every(
+            (field) =>
+                sidecar[field] !== null && sidecar.fields[field]?.by === "user",
+        ) &&
+        (!tagging || sidecar.fields.tags?.by === "user")
+    );
+}
+
+// Reviewed before tags existed: a review is owed for the tags alone.
+export function untagged(sidecar: Sidecar | null): boolean {
+    return (
+        sidecar !== null &&
+        sidecar.reviewedThrough > 0 &&
+        sidecar.fields.tags === undefined
     );
 }

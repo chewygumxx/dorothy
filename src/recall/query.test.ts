@@ -202,7 +202,7 @@ describe("search", () => {
 
     it("refuses an empty query", () => {
         expect(() => search(index, { query: " \n " }, OPTIONS)).toThrow(
-            "Give some words to search for.",
+            "Give some words or tags to search for.",
         );
     });
 

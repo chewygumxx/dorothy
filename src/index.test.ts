@@ -92,6 +92,26 @@ describe("parseArgs", () => {
         });
     });
 
+    it("lists the tags", () => {
+        expect(parseArgs(["--tags"], false)).toEqual({ kind: "tags" });
+        expect(parseArgs(["--tags", "x"], true)).toEqual({
+            kind: "usage",
+            message: "--tags takes no arguments",
+        });
+    });
+
+    it("edits the tags in a terminal only", () => {
+        expect(parseArgs(["--edit-tags"], true)).toEqual({ kind: "tags-edit" });
+        expect(parseArgs(["--edit-tags"], false)).toEqual({
+            kind: "usage",
+            message: "--edit-tags needs a terminal",
+        });
+        expect(parseArgs(["--edit-tags", "x"], true)).toEqual({
+            kind: "usage",
+            message: "--edit-tags takes no arguments",
+        });
+    });
+
     it.each([[["--resme", phrase]], [["-v"]], [["--model", "x", "hi"]]])(
         "takes no unknown option, so %p costs nothing",
         (argv) => {

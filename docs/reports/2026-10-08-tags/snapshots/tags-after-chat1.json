@@ -1,0 +1,36 @@
+{
+    "v": 1,
+    "rev": 1,
+    "concepts": {
+        "k968b3535": {
+            "prefLabel": "sourdough starter",
+            "altLabel": [],
+            "broader": ["k9a718830"],
+            "scopeNote": "Maintaining, reviving and troubleshooting sourdough starters, including feeding schedules, ratios, smells and signs of spoilage.",
+            "by": "dorothy",
+            "at": "2026-10-07T17:49:42.880Z",
+            "model": "claude-sonnet-5-5",
+            "edited": null
+        },
+        "k9a718830": {
+            "prefLabel": "sourdough baking",
+            "altLabel": [],
+            "broader": [],
+            "scopeNote": "Baking bread with wild-yeast sourdough cultures, including starter care and readiness for baking.",
+            "by": "dorothy",
+            "at": "2026-10-07T17:49:42.880Z",
+            "model": "claude-sonnet-5-5",
+            "edited": null
+        },
+        "k7dc0289a": {
+            "prefLabel": "fermentation troubleshooting",
+            "altLabel": [],
+            "broader": [],
+            "scopeNote": "Diagnosing problems in fermented foods and cultures, such as odd smells, sluggish activity, hooch or mold.",
+            "by": "dorothy",
+            "at": "2026-10-07T17:49:42.880Z",
+            "model": "claude-sonnet-5-5",
+            "edited": null
+        }
+    }
+}

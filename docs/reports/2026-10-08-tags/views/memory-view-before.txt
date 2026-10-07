@@ -1,0 +1,38 @@
+# Dorothy's notes on anabolic-gat-sangh-autodidact.
+# Lines starting with # are ignored. Change a field to make it yours;
+# empty it to hand it back to Dorothy. Pinned and Hidden take yes or no.
+
+Title: Sourdough starter peak, dense loaf and shorter bulk
+Pinned: no
+Hidden: no
+
+# Tags (Dorothy, claude-sonnet-5-5, 2026-10-07)
+Tags: levain; sourdough baking; fermentation troubleshooting
+
+# Description (Dorothy, claude-sonnet-5-5, 2026-10-07)
+Description:
+User's starter now peaks in five hours at 26°C; Dorothy explained
+spotting peak, blamed the dense loaf on underproofing, and advised a
+shorter, dough-led bulk.
+
+# Abstract (Dorothy, claude-sonnet-5-5, 2026-10-07)
+Abstract:
+The user's sourdough starter is now doubling reliably, first in six
+hours and by the end in five hours at 26°C, so the revival is working.
+They asked briefly how to spot peak. Dorothy listed a domed top just
+starting to dimple (concave means past peak), many bubbles, a sweet
+tangy smell, a light jiggly stringy texture, and the float test (not
+foolproof), and suggested a rubber band at the starting level. The last
+loaf was dense and gummy; Dorothy said it was most likely underproofed,
+probably because the starter was still weak. She advised using it at
+peak and judging bulk by the dough (up 50-75%, domed, jiggly, bubbly),
+at 24-27°C. Asked whether to shorten bulk, she said probably yes: at
+26°C with about 20% starter, bulk often takes 4-6 hours, so start
+checking at 3.5-4 hours. Less starter (10%) means longer. The user keeps
+asking for brief answers. Open: whether the next loaf improves, and
+whether the acetone smell faded.
+
+# Earlier titles:
+#   My sourdough starter is finally doubling in six hours. How… (provisional, 2026-10-07)
+#   Spotting peak sourdough starter before mixing dough (Dorothy, 2026-10-07)
+#   Sourdough starter peak and a dense, gummy loaf (Dorothy, 2026-10-07)

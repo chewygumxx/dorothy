@@ -1,0 +1,49 @@
+{
+    "v": 1,
+    "rev": 4,
+    "title": "Reviving a sluggish sourdough starter",
+    "description": "User is reviving a sluggish sourdough starter; Dorothy covered feeding ratios, the hungry acetone smell, and fridge storage between weekend bakes.",
+    "abstract": "The user is reviving a sluggish sourdough starter and prefers brief answers. Dorothy recommended feeding every 12 hours at 1:2:2 by weight (e.g. 20g starter, 40g flour, 40g water), discarding first, keeping it at about 24-27°C, adding 20-50% whole wheat or rye, and using non-chlorinated water. It's ready when it reliably doubles in 4-8 hours. The user reported a nail polish remover smell; Dorothy said it means hunger, not spoilage, and suggested more frequent feeding or 1:3:3 or 1:5:5, whole grain, and slightly cooler temperatures. Discard it if it has pink or orange streaks or fuzzy mold; grayish hooch is fine. The user then asked about fridge storage, since they only bake on weekends. Dorothy advised chilling only once it's healthy, feeding weekly at 1:2:2 or 1:5:5, and giving one or two warm feedings 12-24 hours before baking. Left open: whether the smell faded, and the starter's age and flour.",
+    "pinned": false,
+    "hidden": false,
+    "tags": ["k968b3535", "k9a718830", "k7dc0289a"],
+    "titles": [
+        {
+            "title": "I'm reviving a sourdough starter that's gone sluggish. How…",
+            "at": "2026-10-07T17:47:14.031Z",
+            "by": "prompt"
+        }
+    ],
+    "fields": {
+        "title": {
+            "by": "dorothy",
+            "model": "claude-sonnet-5-5",
+            "at": "2026-10-07T17:51:46.929Z",
+            "throughTurn": 6
+        },
+        "description": {
+            "by": "dorothy",
+            "model": "claude-sonnet-5-5",
+            "at": "2026-10-07T17:51:46.929Z",
+            "throughTurn": 6
+        },
+        "abstract": {
+            "by": "dorothy",
+            "model": "claude-sonnet-5-5",
+            "at": "2026-10-07T17:51:46.929Z",
+            "throughTurn": 6
+        },
+        "tags": {
+            "by": "dorothy",
+            "model": "claude-sonnet-5-5",
+            "at": "2026-10-07T17:51:46.929Z",
+            "throughTurn": 6
+        }
+    },
+    "reviewedThrough": 6,
+    "reviewCostUsd": 0.04188360000000001,
+    "compactionCostUsd": 0,
+    "appraisals": {},
+    "failures": null,
+    "clusters": []
+}

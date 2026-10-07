@@ -284,6 +284,40 @@ describe("lookupLine", () => {
         });
     });
 
+    it("says what tags a search was narrowed by", () => {
+        const tagged = {
+            tool: "search" as const,
+            query: "",
+            tags: ["memory", "tui"],
+            hits: 1,
+        };
+        expect(lookupLine(true, tagged)).toEqual({
+            text: "⌕ searched tagged memory, tui · 1 conversation",
+        });
+        expect(lookupLine(true, { ...tagged, query: "render" })).toEqual({
+            text: '⌕ searched "render" tagged memory, tui · 1 conversation',
+        });
+        expect(lookupLine(false, tagged)).toEqual({
+            text: "⌕ couldn't search tagged memory, tui",
+        });
+    });
+
+    it("says what tags were listed", () => {
+        const listed = { tool: "tags" as const, hits: 12 };
+        expect(lookupLine(true, listed)).toEqual({
+            text: "⌕ listed tags · 12 tags",
+        });
+        expect(
+            lookupLine(true, { ...listed, under: "memory", hits: 1 }),
+        ).toEqual({ text: "⌕ listed tags under memory · 1 tag" });
+        expect(lookupLine(true, { ...listed, hits: 0 })).toEqual({
+            text: "⌕ listed tags · no tags",
+        });
+        expect(lookupLine(false, listed)).toEqual({
+            text: "⌕ couldn't list tags",
+        });
+    });
+
     it("says what was searched and found", () => {
         expect(lookupLine(true, searched)).toEqual({
             text: '⌕ searched "render" · 2 conversations',

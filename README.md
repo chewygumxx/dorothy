@@ -141,11 +141,21 @@ transcript as `<phrase>.meta.json`.
 ```sh
 bun run dev -- --list              # what she remembers, ranked
 bun run dev -- --memory <phrase>   # correct, pin or hide a chat's notes
+bun run dev -- --tags              # her tags, as a tree
+bun run dev -- --edit-tags         # correct, merge or delete her tags
 ```
 
 A note you change with `--memory` is yours and she never overwrites it;
 empty it to hand it back. Reviews cost tokens, which the `memory-cost`
 statusline module shows.
+
+She also tags each chat with up to five topics from a vocabulary she grows
+herself, reusing a tag where one fits. Tags never sit in her context: she
+lists them, and searches by them, when she looks something up. The
+vocabulary is `~/.local/share/dorothy/tags.json` (`$XDG_DATA_HOME` if set).
+With `--edit-tags` you rename, describe, re-parent, merge or delete any tag,
+and a tag you delete stays deleted; a `Tags:` line in `--memory` sets a
+chat's tags, which she then keeps.
 
 When her notes are not enough, Dorothy looks: she searches her past chats
 by the words in them and opens the passage that matched, and each lookup

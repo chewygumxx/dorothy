@@ -12,9 +12,16 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { readConfig } from "../config.js";
+import { vocabularyPath } from "../memory/vocabulary.js";
 import { transcriptDir } from "../transcript.js";
 import type { Env } from "../xdg.js";
-import { openConversation, RecallError, recollect, search } from "./query.js";
+import {
+    listTags,
+    openConversation,
+    RecallError,
+    recollect,
+    search,
+} from "./query.js";
 import { indexPath, RecallIndex } from "./store.js";
 import { syncIndex } from "./sync.js";
 import { SERVER_NAME } from "./types.js";
@@ -23,11 +30,14 @@ import { SERVER_NAME } from "./types.js";
 // model with the tools.
 export const SEARCH_DESCRIPTION = [
     "Search your past conversations with this user by the words they",
-    "contain. Your notes on earlier conversations give their gist; when the",
-    "notes or the user point at detail you lack, search, then open what",
-    "matched. Each result names a conversation, with its description, dates",
-    "and up to three snippets, matched words marked with « and ». after and",
-    "before are dates like 2026-10-05; limit is 1 to 10, 5 by default.",
+    "contain, by tags, or both. Your notes on earlier conversations give",
+    "their gist; when the notes or the user point at detail you lack,",
+    "search, then open what matched. tags are labels from the tags tool;",
+    "a result carries every one of them, or a narrower tag. Each result",
+    "names a conversation, with its description, its tags as keywords,",
+    "dates and up to three snippets, matched words marked with « and ».",
+    "after and before are dates like 2026-10-05; limit is 1 to 10, 5 by",
+    "default.",
 ].join(" ");
 
 export const OPEN_DESCRIPTION = [
@@ -45,10 +55,22 @@ export const RECOLLECT_DESCRIPTION = [
     "call again with a later turn to read further.",
 ].join(" ");
 
+export const TAGS_DESCRIPTION = [
+    "List the tags you have given your past conversations with this",
+    "user, most relevant first, each with what it covers, its broader and",
+    "narrower tags, and how many conversations carry it. Use it to see",
+    "what topics your conversations cover when your notes and the user",
+    "point somewhere search words do not reach, then search by tag. under",
+    "lists only the tags beneath one; limit is 1 to 50, 20 by default.",
+].join(" ");
+
 export type RecallServerOptions = {
     openIndex: () => RecallIndex;
     // The transcripts directory.
     dir: string;
+    // tags.json, synced with the transcripts; null leaves tags as the
+    // index last saw them.
+    vocabulary?: string | null;
     // The live conversation, never among the results.
     exclude: string | null;
     // Serve recollect over the live conversation's clusters; the session
@@ -74,7 +96,12 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
         try {
             index ??= options.openIndex();
             const ready = index;
-            await syncIndex(ready, options.dir, now());
+            await syncIndex(
+                ready,
+                options.dir,
+                now(),
+                options.vocabulary ?? null,
+            );
             const result = await ready.exclusive(() => work(ready));
             return {
                 content: [
@@ -97,7 +124,8 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
         {
             description: SEARCH_DESCRIPTION,
             inputSchema: {
-                query: z.string(),
+                query: z.string().optional(),
+                tags: z.array(z.string()).optional(),
                 after: z.string().optional(),
                 before: z.string().optional(),
                 limit: z.number().optional(),
@@ -125,6 +153,24 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
         (input) =>
             answer((index) =>
                 openConversation(index, input, { exclude: options.exclude }),
+            ),
+    );
+    server.registerTool(
+        "tags",
+        {
+            description: TAGS_DESCRIPTION,
+            inputSchema: {
+                under: z.string().optional(),
+                limit: z.number().optional(),
+            },
+        },
+        (input) =>
+            answer((index) =>
+                listTags(index, input, {
+                    exclude: options.exclude,
+                    now: now(),
+                    halfLifeDays: options.halfLifeDays,
+                }),
             ),
     );
     const live = options.exclude;
@@ -157,6 +203,7 @@ export async function runRecallServer(
     const server = createRecallServer({
         openIndex: () => RecallIndex.open(indexPath(env)),
         dir: transcriptDir(env),
+        vocabulary: vocabularyPath(env),
         exclude,
         recollect: serveRecollect,
         halfLifeDays: config.memory.halfLifeDays,

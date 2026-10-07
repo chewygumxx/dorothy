@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { newPhrase } from "../session-id.js";
 import type { EditResult } from "../tui/external-editor.js";
-import { runList, runMemoryEdit } from "./commands.js";
+import { runList, runMemoryEdit, runTags, runTagsEdit } from "./commands.js";
 import { readSidecar, sidecarPath } from "./sidecar.js";
 
 const NOW = new Date("2026-10-05T00:00:00.000Z");
@@ -189,5 +189,274 @@ describe("runMemoryEdit", () => {
         }));
         expect(await run(edit, err)).toBe(1);
         expect(err.text).toContain("editor exited with 1");
+    });
+
+    it("sets a chat's tags by label", async () => {
+        await writeFile(join(transcripts, `${a}.jsonl`), chat);
+        await writeFile(
+            join(dir, "dorothy", "tags.json"),
+            JSON.stringify({
+                v: 1,
+                rev: 1,
+                concepts: {
+                    k00000001: {
+                        prefLabel: "memory",
+                        scopeNote: "Remembering.",
+                        by: "dorothy",
+                        at: NOW.toISOString(),
+                    },
+                },
+            }),
+        );
+        const err = capture();
+        const code = await run(
+            async (text: string): Promise<EditResult> => ({
+                ok: true,
+                text: text.replace(/^Tags:.*$/m, "Tags: Memory"),
+            }),
+            err,
+        );
+        expect(err.text).toBe("");
+        expect(code).toBe(0);
+        const read = await readSidecar(transcripts, a);
+        expect(read.kind === "ok" && read.sidecar.tags).toEqual(["k00000001"]);
+        expect(read.kind === "ok" && read.sidecar.fields.tags?.by).toBe("user");
+    });
+
+    describe("with a review landing while the editor is open", () => {
+        const tagsFile = () => join(dir, "dorothy", "tags.json");
+        const concept = (prefLabel: string) => ({
+            prefLabel,
+            scopeNote: `About ${prefLabel}.`,
+            by: "dorothy",
+            at: NOW.toISOString(),
+        });
+        const theirs = {
+            by: "dorothy",
+            at: NOW.toISOString(),
+            model: "claude-test",
+            throughTurn: 1,
+        };
+        // What a review does meanwhile: coins memory and tags the chat.
+        const review = async () => {
+            await writeFile(
+                tagsFile(),
+                JSON.stringify({
+                    v: 1,
+                    rev: 2,
+                    concepts: {
+                        k00000001: concept("memory"),
+                        k00000002: concept("tui"),
+                    },
+                }),
+            );
+            await writeFile(
+                sidecarPath(transcripts, a),
+                JSON.stringify({
+                    v: 1,
+                    rev: 1,
+                    tags: ["k00000001"],
+                    reviewedThrough: 1,
+                    fields: { tags: theirs },
+                }),
+            );
+        };
+
+        it.each([
+            ["missing", null],
+            [
+                "older",
+                { v: 1, rev: 1, concepts: { k00000002: concept("tui") } },
+            ],
+        ])("keeps her tags when tags.json was %s at open", async (_, at) => {
+            await writeFile(join(transcripts, `${a}.jsonl`), chat);
+            if (at !== null) {
+                await writeFile(tagsFile(), JSON.stringify(at));
+            }
+            const { edit } = editor((text) => ({
+                ok: true,
+                text: text.replace("Pinned: no", "Pinned: yes"),
+            }));
+            const err = capture();
+            const code = await run(async (text) => {
+                await review();
+                return edit(text);
+            }, err);
+            expect(err.text).toBe("");
+            expect(code).toBe(0);
+            expect(await sidecar()).toMatchObject({
+                pinned: true,
+                tags: ["k00000001"],
+                fields: { tags: theirs },
+            });
+        });
+
+        it("takes a label coined after it opened", async () => {
+            await writeFile(join(transcripts, `${a}.jsonl`), chat);
+            const { edit } = editor((text) => ({
+                ok: true,
+                text: text.replace(/^Tags:.*$/m, "Tags: tui; memory"),
+            }));
+            const err = capture();
+            const code = await run(async (text) => {
+                await review();
+                return edit(text);
+            }, err);
+            expect(err.text).toBe("");
+            expect(code).toBe(0);
+            expect(await sidecar()).toMatchObject({
+                tags: ["k00000002", "k00000001"],
+                fields: { tags: { by: "user" } },
+            });
+        });
+
+        it("keeps the tags as they are if tags.json broke meanwhile", async () => {
+            await writeFile(join(transcripts, `${a}.jsonl`), chat);
+            await review();
+            await writeFile(
+                sidecarPath(transcripts, a),
+                JSON.stringify({
+                    v: 1,
+                    rev: 1,
+                    tags: ["k00000001", "k00000009"],
+                    fields: { tags: theirs },
+                }),
+            );
+            const { edit, seen } = editor(
+                (text) => ({
+                    ok: true,
+                    text: text
+                        .replace("Pinned: no", "Pinned: yes")
+                        .replace(/^Tags:.*$/m, "Tags: tui"),
+                }),
+                (text) => ({
+                    ok: true,
+                    text: text.replace(/^Tags:.*\n/m, ""),
+                }),
+            );
+            const code = await run(async (text) => {
+                await writeFile(tagsFile(), "{ broken");
+                return edit(text);
+            });
+            expect(code).toBe(0);
+            expect(seen[1]).toStartWith(
+                "# error: Tags can't be set while the vocabulary can't be read\n",
+            );
+            expect(await sidecar()).toMatchObject({
+                pinned: true,
+                tags: ["k00000001", "k00000009"],
+                fields: { tags: theirs },
+            });
+        });
+    });
+});
+
+describe("runTags", () => {
+    const tagsFile = () => join(dir, "dorothy", "tags.json");
+
+    it("prints the tree, counting hidden chats too", async () => {
+        const [a, b] = [phrase(1), phrase(2)];
+        await writeFile(
+            tagsFile(),
+            JSON.stringify({
+                v: 1,
+                rev: 1,
+                concepts: {
+                    k00000001: {
+                        prefLabel: "memory",
+                        scopeNote: "Remembering.",
+                        by: "dorothy",
+                        at: NOW.toISOString(),
+                    },
+                },
+            }),
+        );
+        for (const [of, hidden] of [
+            [a, false],
+            [b, true],
+        ] as const) {
+            await writeFile(join(transcripts, `${of}.jsonl`), chat);
+            await writeFile(
+                sidecarPath(transcripts, of),
+                JSON.stringify({ v: 1, hidden, tags: ["k00000001"] }),
+            );
+        }
+        const out = capture();
+        const err = capture();
+        expect(await runTags({ env, out, err })).toBe(0);
+        expect(out.text).toBe("memory (2)\n");
+        expect(err.text).toBe("");
+    });
+
+    it("names a broken vocabulary and fails", async () => {
+        await writeFile(tagsFile(), "{ broken");
+        const err = capture();
+        expect(await runTags({ env, out: capture(), err })).toBe(1);
+        expect(err.text).toStartWith(`dorothy: ${tagsFile()}: `);
+    });
+});
+
+describe("runTagsEdit", () => {
+    const tagsFile = () => join(dir, "dorothy", "tags.json");
+    const vocabulary = {
+        v: 1,
+        rev: 1,
+        concepts: {
+            k00000001: {
+                prefLabel: "memory",
+                scopeNote: "Remembering.",
+                by: "dorothy",
+                at: NOW.toISOString(),
+            },
+        },
+    };
+
+    it("reopens with the error until the edit holds, then saves it", async () => {
+        await writeFile(tagsFile(), JSON.stringify(vocabulary));
+        const seen: string[] = [];
+        const answers = [
+            (text: string) => text.replace("Tag: memory", "Tag: a;b"),
+            (text: string) =>
+                text
+                    .replace(/^# error: .*\n/, "")
+                    .replace("Tag: a;b", "Tag: remembering"),
+        ];
+        const err = capture();
+        const code = await runTagsEdit({
+            env,
+            err,
+            edit: async (text: string): Promise<EditResult> => {
+                seen.push(text);
+                return {
+                    ok: true,
+                    text: (answers.shift() as (t: string) => string)(text),
+                };
+            },
+            now: () => NOW,
+        });
+        expect(err.text).toBe("");
+        expect(code).toBe(0);
+        expect(seen[1]).toStartWith('# error: "a;b" contains ;\n');
+        const saved = JSON.parse(await readFile(tagsFile(), "utf8"));
+        expect(saved.rev).toBe(2);
+        expect(saved.concepts.k00000001.prefLabel).toBe("remembering");
+        expect(saved.concepts.k00000001.edited).toBe(NOW.toISOString());
+    });
+
+    it("refuses a broken vocabulary before opening the editor", async () => {
+        await writeFile(tagsFile(), "{ broken");
+        const err = capture();
+        let opened = false;
+        const code = await runTagsEdit({
+            env,
+            err,
+            edit: async () => {
+                opened = true;
+                return { ok: true, text: "" };
+            },
+        });
+        expect(code).toBe(1);
+        expect(opened).toBe(false);
+        expect(err.text).toStartWith(`dorothy: ${tagsFile()}: `);
     });
 });

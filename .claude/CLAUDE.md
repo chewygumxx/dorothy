@@ -112,6 +112,22 @@ compaction is off: `cliOptions()` sets `DISABLE_COMPACT=1`, and a
 turn on screen while the CLI's goes on. Probes:
 `docs/reports/2026-10-07-compaction.md`.
 
+Tags give Dorothy a SKOS-style vocabulary. `tags.json` in the data directory
+(`src/memory/vocabulary.ts`) holds concepts (`prefLabel`, `altLabel`,
+`broader`, `scopeNote`) and the tombstones of deleted and merged ones; each
+sidecar holds its conversation's concept ids. The idle review shows her the
+vocabulary and asks for tags; `applyTagging` (`tagging.ts`) checks them
+leniently, a bad tag never failing the notes, and coins concepts inside the
+sidecar's lock, since `updateSidecar`'s change may be async, so two runs
+never coin one label twice. The recall index mirrors both
+(`src/recall/tags.ts`): the `tags` tool lists concepts by their carriers'
+summed salience, `search` takes `tags`, results carry `keywords`, and a
+concept only hidden conversations carry is never shown to her. `--tags`
+prints the hierarchy, `--edit-tags` edits it in `$EDITOR` (`tags-view.ts`),
+and a `Tags:` line in `--memory` sets a chat's tags. The vocabulary path is
+always passed (`vocabularyPath()`), never derived from the transcripts
+directory, so tests keep to their temporary directories.
+
 `query()` spawns the SDK's bundled `claude` binary on every call, so
 `baseOptions` (`src/persona.ts`) keeps that subprocess lean: `tools: []` drops
 roughly 32k input tokens of tool definitions, and `settingSources: []` stops it
