@@ -21,6 +21,7 @@ import {
     clusterSaver,
     indexClaims,
     notesReady,
+    openIndex,
     runTui,
     sessionMaker,
 } from "./run.js";
@@ -125,6 +126,49 @@ describe("notesReady", () => {
         expect(ready.ok).toBe(false);
         expect(ready.ok ? "" : ready.reason).toStartWith(
             "its notes can't be read (",
+        );
+    });
+});
+
+describe("openIndex", () => {
+    const off = { memory: false, recall: false, compaction: false };
+    const failing = () => {
+        throw new Error("disk gone");
+    };
+
+    it("opens the index for compaction alone, for its claim and lock", () => {
+        const index = { name: "index" };
+        expect(openIndex({ ...off, compaction: true }, () => index)).toEqual({
+            index,
+            warning: null,
+        });
+    });
+
+    it("leaves the index shut when nothing uses it", () => {
+        let opened = 0;
+        expect(openIndex(off, () => ++opened)).toEqual({
+            index: null,
+            warning: null,
+        });
+        expect(opened).toBe(0);
+    });
+
+    it("names what starts without the index when it can't be opened", () => {
+        expect(openIndex({ ...off, compaction: true }, failing)).toEqual({
+            index: null,
+            warning:
+                "memory: the index can't be opened (disk gone); starting without compaction's lock",
+        });
+        expect(
+            openIndex({ memory: true, recall: true, compaction: true }, failing)
+                .warning,
+        ).toBe(
+            "memory: the index can't be opened (disk gone); starting without memory, recall and compaction's lock",
+        );
+        expect(
+            openIndex({ ...off, memory: true, recall: true }, failing).warning,
+        ).toBe(
+            "memory: the index can't be opened (disk gone); starting without memory and recall",
         );
     });
 });

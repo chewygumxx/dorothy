@@ -383,6 +383,12 @@ launch rebuilds the index from transcripts and sidecars. Abstracts are not
 added to `notes_fts`: `search` covers other conversations, and these are
 notes Dorothy already has.
 
+The TUI opens the index whenever memory, recall or compaction is on. With
+memory and recall off it serves compaction alone, for the conversation's
+claim and the sidecar's write lock. If it can't be opened, compaction runs
+without them, and the warning that names what starts without the index
+names compaction's lock.
+
 ### Lookups
 
 A `recollect` call is a `recall` transcript event like the others, with a

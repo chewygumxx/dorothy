@@ -168,6 +168,35 @@ export function indexClaims(
     };
 }
 
+// The index serves memory, recall, and compaction's claim and the sidecar's
+// lock; it is opened when any of them is on, and serves only those. Without
+// it, memory and recall are off and compaction runs unlocked.
+export function openIndex<T>(
+    uses: { memory: boolean; recall: boolean; compaction: boolean },
+    open: () => T,
+): { index: T | null; warning: string | null } {
+    if (!uses.memory && !uses.recall && !uses.compaction) {
+        return { index: null, warning: null };
+    }
+    try {
+        return { index: open(), warning: null };
+    } catch (error) {
+        const lost = [
+            ...(uses.memory ? ["memory"] : []),
+            ...(uses.recall ? ["recall"] : []),
+            ...(uses.compaction ? ["compaction's lock"] : []),
+        ];
+        const listed =
+            lost.length === 1
+                ? lost.join("")
+                : `${lost.slice(0, -1).join(", ")} and ${lost.at(-1)}`;
+        return {
+            index: null,
+            warning: `memory: the index can't be opened (${describeError(error)}); starting without ${listed}`,
+        };
+    }
+}
+
 export async function runTui(
     resume: string | null,
     persona: PersonaMode = "chat",
@@ -221,20 +250,18 @@ export async function runTui(
     const transcript = writer;
 
     // The index is opened before the first session, whose prompt carries
-    // the block; without it, the chat starts without memory or recall.
-    let index: RecallIndex | null = null;
-    if (config.memory.enabled || config.memory.recall) {
-        try {
-            index = RecallIndex.open(indexPath());
-        } catch (error) {
-            const lost = [
-                ...(config.memory.enabled ? ["memory"] : []),
-                ...(config.memory.recall ? ["recall"] : []),
-            ].join(" and ");
-            warnings.push(
-                `memory: the index can't be opened (${describeError(error)}); starting without ${lost}`,
-            );
-        }
+    // the block.
+    const opened = openIndex(
+        {
+            memory: config.memory.enabled,
+            recall: config.memory.recall,
+            compaction: compactable,
+        },
+        () => RecallIndex.open(indexPath()),
+    );
+    const index = opened.index;
+    if (opened.warning !== null) {
+        warnings.push(opened.warning);
     }
     let memory: MemoryService | null = null;
     if (config.memory.enabled && index !== null) {
