@@ -97,8 +97,9 @@ Past `[compaction] soft` tokens, at the next idle (past `hard`, before the
 next message), `compact()` asks her through an injected `StructuredCall`
 to split the turns leaving the verbatim tail into topical clusters with an
 abstract each (`clusters.ts`, `plan.ts`). `Compaction` (`session.ts`)
-wraps the `ChatSession`, appends the clusters to the sidecar, writes a
-`compaction` transcript event, and swaps in a new `Conversation` seeded by
+wraps the `ChatSession`; a pass (`run.ts`, on the shared state in `shared.ts`)
+appends the clusters to the sidecar and writes a `compaction` transcript
+event, and `Compaction` swaps in a new `Conversation` seeded by
 `withClusters` with the abstracts and the turns after them; every session
 in `run.tsx` is seeded that way, and the memory block charges the abstracts
 to its budget first. `recollect` on the recall server opens a cluster word
@@ -107,7 +108,8 @@ for word; the server registers it only with `--recollect`, which
 `src/compaction/` imports the Agent SDK (`boundary.test.ts`);
 `src/structured.ts` is the SDK side, and reviews use it too. The CLI's own
 compaction is off: `cliOptions()` sets `DISABLE_COMPACT=1`, and a
-`compact_boundary` message is reported as an error. Probes:
+`compact_boundary` message is reported as a warning, as an error would end the
+turn on screen while the CLI's goes on. Probes:
 `docs/reports/2026-10-07-compaction.md`.
 
 `query()` spawns the SDK's bundled `claude` binary on every call, so
