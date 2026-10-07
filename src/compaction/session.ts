@@ -286,8 +286,11 @@ class CompactingSession implements ChatSession {
             if (event.type === "turn-end") {
                 this.#turns.push({ role: "assistant", text: event.reply });
                 this.#settle();
-                this.#emit(event);
+                // Before the listeners: memory, which hears of the turn-end
+                // among them, arms a review's idle wait of the same length,
+                // and compaction goes first.
                 this.#measure(event.contextTokens ?? 0);
+                this.#emit(event);
                 return;
             }
             if (event.type === "error") {

@@ -716,6 +716,20 @@ describe("Compaction", () => {
         await until(() => settled.length === 2);
     });
 
+    it("arms its idle wait before listeners hear the turn-end, so it fires ahead of a review's armed there", async () => {
+        const h = harness();
+        const session = h.open();
+        const armed: number[] = [];
+        session.subscribe((event) => {
+            if (event.type === "turn-end") {
+                armed.push(h.timers.pending.size);
+            }
+        });
+        session.send("abcd");
+        h.sessions[0]?.reply(150);
+        expect(armed).toEqual([1]);
+    });
+
     it("passes the inner session's events through, and its interrupts", async () => {
         const h = harness();
         const session = h.open();
