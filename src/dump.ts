@@ -9,10 +9,12 @@
 //
 
 import { type Options, query } from "@anthropic-ai/claude-agent-sdk";
+import { clusterTokens, seedTurns } from "./compaction/plan.js";
 import { readConfig } from "./config.js";
 import { conversationOptions, recallLaunch } from "./conversation.js";
 import { indexCatalogue } from "./memory/catalogue.js";
 import { buildMemory } from "./memory/rank.js";
+import { type Cluster, readSidecar } from "./memory/sidecar.js";
 import type { PersonaMode, Turn } from "./persona.js";
 import { indexPath, RecallIndex } from "./recall/store.js";
 import { newPhrase } from "./session-id.js";
@@ -147,6 +149,13 @@ export async function runDump(
         }
     }
     const { config, warnings } = await readConfig(env);
+    let clusters: Cluster[] = [];
+    if (request.resume !== null) {
+        const notes = await readSidecar(transcriptDir(env), phrase);
+        if (notes.kind === "ok") {
+            clusters = notes.sidecar.clusters;
+        }
+    }
     let index: RecallIndex | null = null;
     if (config.memory.enabled || config.memory.recall) {
         try {
@@ -158,6 +167,10 @@ export async function runDump(
         }
     }
     try {
+        const recall =
+            config.memory.recall && index !== null
+                ? recallLaunch(phrase)
+                : null;
         let memory = "";
         if (config.memory.enabled && index !== null) {
             const loaded = await indexCatalogue(
@@ -168,18 +181,16 @@ export async function runDump(
                 now: Date.now(),
                 config: config.memory,
                 exclude: phrase,
+                reserved: clusterTokens(clusters, recall !== null),
             });
             warnings.push(...loaded.warnings, ...built.warnings);
             memory = built.block;
         }
-        const recall =
-            config.memory.recall && index !== null
-                ? recallLaunch(phrase)
-                : null;
         const body = await dumpRequest({
             prompt: request.message,
             options: conversationOptions({
-                history,
+                history: seedTurns(history, clusters),
+                clusters,
                 memory,
                 recall,
                 persona: request.persona,
