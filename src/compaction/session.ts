@@ -342,6 +342,8 @@ class CompactingSession implements ChatSession {
         const after: string[] = [];
         if (!shared.exhausted && this.#pastHard(seed, after)) {
             this.#urgent = true;
+            // Esc on these, held for a save, ends the chain this starts
+            // after its first call, as Esc during it would.
             // After the caller has subscribed.
             queueMicrotask(() => {
                 this.#announce();

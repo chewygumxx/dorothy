@@ -1731,6 +1731,61 @@ describe("Compaction", () => {
         await h.compaction.stop();
     });
 
+    it("lets Esc on a message held for a save end the chain a seed past hard starts, after its first call", async () => {
+        let saveDone = () => {};
+        const saving = new Promise<void>((resolve) => {
+            saveDone = resolve;
+        });
+        let sizing = false;
+        const h = harness({
+            saving,
+            estimate: (seed) => (sizing ? seedSize(seed) : 0),
+        });
+        const first = h.open();
+        first.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.saved.length === 1);
+        void first.close();
+        // Turns 7 to 14, of 40 tokens each, put the seed past hard; three
+        // calls would bring it under.
+        const all = [
+            ...HISTORY,
+            turn("user"),
+            turn("assistant"),
+            ...Array.from({ length: 8 }, (_, i) =>
+                sized(i % 2 === 0 ? "user" : "assistant", 40),
+            ),
+        ];
+        const next = h.open(all);
+        next.send("waiting");
+        await next.interrupt();
+        sizing = true;
+        saveDone();
+        await until(() => h.calls.length === 2);
+        expect(h.sessions).toHaveLength(1);
+        const prompt = h.calls[1]?.request.prompt ?? "";
+        expect(prompt).toContain('<turn n="8">');
+        expect(prompt).not.toContain('<turn n="9">');
+        h.calls[1]?.answer(through(8));
+        await until(() => h.sessions[1]?.sent.length === 1);
+        await settle();
+        expect(h.calls).toHaveLength(2);
+        expect(h.sessions).toHaveLength(2);
+        expect(h.sessions[1]?.seed.clusters.map((c) => c.through)).toEqual([
+            2, 8,
+        ]);
+        expect(h.sessions[1]?.sent).toEqual(["waiting"]);
+        expect(warnings(h.events)).toEqual([
+            "compaction: the context is nearly full; sending anyway",
+        ]);
+        h.sessions[1]?.emit({ type: "delta", text: "Of" });
+        expect(h.sessions[1]?.interrupts).toBe(1);
+        await next.close();
+    });
+
     it("interrupts a held message sent on after a failed compaction", async () => {
         const h = harness();
         const session = h.open();
