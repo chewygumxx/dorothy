@@ -28,7 +28,8 @@ export type Seed = { turns: Turn[]; clusters: readonly Cluster[] };
 // The conversation's claim in the recall index, which reviews take too.
 export type Claim = { take(): Promise<boolean>; release(): Promise<void> };
 // Saved; or, with clusters, not saved because another writer's clusters,
-// these, already cover the turns, and the run takes them up instead.
+// these, already reach the turns, and the run takes them up instead if
+// they fit.
 export type SaveResult =
     | { ok: true; clusters?: readonly Cluster[] }
     | { ok: false; reason: string };
@@ -65,6 +66,24 @@ const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
 
 type Held = { text: string; interrupted: boolean };
+
+// Why another writer's clusters can't replace a run's, or null when they
+// can: they must cover at least the run's first turn, and stop before the
+// latest message, whose exchange the seed always keeps.
+function misfit(
+    theirs: readonly Cluster[],
+    from: number,
+    latest: number,
+): string | null {
+    const end = covered(theirs);
+    if (end < from) {
+        return `the notes' clusters end at turn ${end}, before turn ${from}`;
+    }
+    if (end >= latest) {
+        return `the notes' clusters reach turn ${end}, this chat's latest message`;
+    }
+    return null;
+}
 
 // The reply to a message sent has started: its text, a lookup, or the
 // API's stream.
@@ -122,16 +141,31 @@ class Shared {
     }
 
     // Appends the clusters to the sidecar and, once saved, to these; or
-    // takes up another writer's that already cover their turns.
-    save(clusters: readonly Cluster[], costUsd: number): Promise<SaveResult> {
-        const saving = this.options.save(clusters, costUsd).then((saved) => {
-            if (saved.ok) {
-                this.clusters = [
-                    ...(saved.clusters ?? [...this.clusters, ...clusters]),
-                ];
-            }
-            return saved;
-        });
+    // takes up another writer's that already reach their turns, if they
+    // fit before latest, the turn of the newest message.
+    save(
+        clusters: readonly Cluster[],
+        costUsd: number,
+        latest: number,
+    ): Promise<SaveResult> {
+        const from = clusters[0]?.from ?? covered(this.clusters) + 1;
+        const saving = this.options
+            .save(clusters, costUsd)
+            .then((saved): SaveResult => {
+                if (!saved.ok) {
+                    return saved;
+                }
+                if (saved.clusters === undefined) {
+                    this.clusters = [...this.clusters, ...clusters];
+                    return saved;
+                }
+                const reason = misfit(saved.clusters, from, latest);
+                if (reason !== null) {
+                    return { ok: false, reason };
+                }
+                this.clusters = [...saved.clusters];
+                return saved;
+            });
         const settled = saving.then(
             () => {},
             () => {},
@@ -566,7 +600,11 @@ class CompactingSession implements ChatSession {
             return;
         }
         this.#handing = true;
-        const saved = await shared.save(outcome.clusters, outcome.costUsd);
+        const saved = await shared.save(
+            outcome.clusters,
+            outcome.costUsd,
+            this.#turns.findLastIndex((turn) => turn.role === "user") + 1,
+        );
         if (!saved.ok) {
             this.#fail(saved.reason);
             return;

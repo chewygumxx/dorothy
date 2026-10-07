@@ -240,17 +240,17 @@ describe("clusterSaver", () => {
         expect((await notes(phrase)).compactionCostUsd).toBe(0.25);
     });
 
-    it("fails when the notes' clusters don't lead up to those turns", async () => {
+    it("hands back the notes' clusters however much of those turns they cover, for compaction to judge", async () => {
         const phrase = newPhrase();
         const save = clusterSaver({ dir, phrase, transcript: true });
         expect(await save([cluster(5, 8)], 0.5)).toEqual({
-            ok: false,
-            reason: "the notes' clusters end at turn 0, not 4",
+            ok: true,
+            clusters: [],
         });
         expect(await save([cluster(1, 6)], 0.5)).toEqual({ ok: true });
         expect(await save([cluster(5, 8)], 0.5)).toEqual({
-            ok: false,
-            reason: "the notes' clusters end at turn 6, not 4",
+            ok: true,
+            clusters: [cluster(1, 6)],
         });
     });
 

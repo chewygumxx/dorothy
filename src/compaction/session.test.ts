@@ -144,8 +144,8 @@ function harness({
     claim?: Claim | null;
     claims?: () => Claim;
     clusters?: Cluster[];
-    // An error is thrown rather than returned.
-    save?: SaveResult | Error;
+    // An error is thrown rather than returned; a function answers each.
+    save?: SaveResult | Error | (() => SaveResult);
     // Settles when the save may finish.
     saving?: Promise<void>;
     // Thrown by the transcript's record, when given.
@@ -189,7 +189,7 @@ function harness({
             if (save instanceof Error) {
                 throw save;
             }
-            return save;
+            return typeof save === "function" ? save() : save;
         },
         record: async (entry) => {
             recorded.push(entry);
@@ -904,6 +904,64 @@ describe("Compaction", () => {
         }
         h.timers.advance(1000);
         await until(() => h.calls.length === 2);
+    });
+
+    it("takes up another writer's clusters that cover only part of the run, and continues after them", async () => {
+        const theirs: Cluster[] = [
+            { from: 1, through: 1, abstract: "a", at: "x", model: "m" },
+        ];
+        const answers: SaveResult[] = [{ ok: true, clusters: theirs }];
+        const h = harness({ save: () => answers.shift() ?? { ok: true } });
+        const session = h.open();
+        session.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.sessions.length === 2);
+        expect(h.compaction.clusters()).toEqual(theirs);
+        expect(h.sessions[1]?.seed.turns).toHaveLength(5);
+        expect(h.recorded).toEqual([]);
+        expect(warnings(h.events)).toEqual([]);
+        for (let exchange = 0; exchange < 2; exchange++) {
+            session.send("abcd");
+            h.sessions[1]?.reply(150);
+        }
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 2);
+        expect(h.calls[1]?.request.prompt).toContain('<turn n="2">');
+        expect(h.calls[1]?.request.prompt).not.toContain('<turn n="1">');
+    });
+
+    it("fails a save whose other writer's clusters stop short of the run, or reach its latest message", async () => {
+        const cluster = (through: number): Cluster => ({
+            from: 1,
+            through,
+            abstract: "a",
+            at: "x",
+            model: "m",
+        });
+        for (const [theirs, reason] of [
+            [[], "the notes' clusters end at turn 0, before turn 1"],
+            [
+                [cluster(5)],
+                "the notes' clusters reach turn 5, this chat's latest message",
+            ],
+        ] as const) {
+            const h = harness({ save: { ok: true, clusters: theirs } });
+            const session = h.open();
+            session.send("abcd");
+            h.sessions[0]?.reply(150);
+            h.timers.advance(1000);
+            await until(() => h.calls.length === 1);
+            h.calls[0]?.answer(CLUSTERED);
+            await until(() => warnings(h.events).length === 1);
+            expect(warnings(h.events)).toEqual([
+                `compaction failed: ${reason}`,
+            ]);
+            expect(h.compaction.clusters()).toEqual([]);
+            expect(h.sessions).toHaveLength(1);
+        }
     });
 
     it("hands over when recording fails after the save, rather than compacting again at every idle", async () => {
