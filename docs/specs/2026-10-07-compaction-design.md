@@ -292,8 +292,9 @@ documents it as switching compaction off entirely, `/compact` included,
 where `DISABLE_AUTO_COMPACT` stops only the automatic kind; a probe
 confirms it before anything relies on it. The SDK's `compact_boundary`
 messages are then never expected; if one arrives, `Conversation` reports
-it as an error event, so a broken switch is seen rather than silently
-summarised over.
+it as a warning, so a broken switch is seen rather than silently
+summarised over. Not an error event: that would end the turn on screen and
+reconnect, while the CLI's turn carries on.
 
 ## The memory block
 
@@ -434,7 +435,7 @@ are where the SDK meets compaction.
 | Another TUI holds the claim                    | skipped; tried again at the next idle                                                                            |
 | The latest exchange alone is past `hard`       | warning; the chat continues as it is                                                                             |
 | `[memory] recall = false`                      | no `recollect`; the abstracts are still seeded                                                                   |
-| The CLI compacts despite `DISABLE_COMPACT`     | its `compact_boundary` becomes an error event, shown as any other                                                |
+| The CLI compacts despite `DISABLE_COMPACT`     | its `compact_boundary` becomes a warning; the turn carries on                                                    |
 
 ## Testing
 
@@ -451,7 +452,7 @@ are where the SDK meets compaction.
   valid and invalid output, the timeout. `src/structured.ts` with a fake
   `QueryFn`: the options it builds, the structured output, an error result.
 - **The CLI's switch**: `cliOptions()` sets `DISABLE_COMPACT=1`; a
-  `compact_boundary` message becomes an error event.
+  `compact_boundary` message becomes a warning, and the turn carries on.
 - **Recall**: syncing `clusters`; `recollect` through the MCP SDK's
   in-memory transport, with and without words, a match at the cluster's
   edges, a turn outside it, an unknown cluster; registration only with a
