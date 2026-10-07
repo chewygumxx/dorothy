@@ -14,7 +14,7 @@ import { dirname, join } from "node:path";
 import type { Lock } from "../memory/sidecar.js";
 import { type Env, xdgDir } from "../xdg.js";
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 // Times are milliseconds since the epoch. Both FTS tables take their text
 // from the table beside them, which triggers keep them in step with.
@@ -72,6 +72,36 @@ const SCHEMA = [
         first_turn INTEGER NOT NULL,
         last_turn INTEGER NOT NULL,
         PRIMARY KEY (phrase, n)
+    )`,
+    // tags.json as last read: its mtime (NULL: none), and why it could not
+    // be read (NULL: it could).
+    `CREATE TABLE vocabulary (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        mtime REAL,
+        broken TEXT
+    )`,
+    `INSERT INTO vocabulary (id) VALUES (1)`,
+    // Live concepts only; alt is a JSON array.
+    `CREATE TABLE concepts (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        alt TEXT NOT NULL,
+        scope_note TEXT NOT NULL
+    )`,
+    // Every live label, preferred and alternative, by its labelKey.
+    `CREATE TABLE labels (norm TEXT PRIMARY KEY, id TEXT NOT NULL)`,
+    `CREATE TABLE broader (
+        id TEXT NOT NULL,
+        parent TEXT NOT NULL,
+        PRIMARY KEY (id, parent)
+    )`,
+    `CREATE TABLE merged (id TEXT PRIMARY KEY, into_id TEXT NOT NULL)`,
+    // A sidecar's tags as written, n from 0, most important first.
+    `CREATE TABLE tagged (
+        phrase TEXT NOT NULL,
+        n INTEGER NOT NULL,
+        id TEXT NOT NULL,
+        PRIMARY KEY (phrase, id)
     )`,
     `CREATE VIRTUAL TABLE turns_fts USING fts5(
         text, content=turns,

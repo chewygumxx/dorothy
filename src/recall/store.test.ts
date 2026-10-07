@@ -85,17 +85,26 @@ describe("RecallIndex", () => {
         index.close();
     });
 
-    it("is at schema version 2, with a clusters table", () => {
+    it("is at schema version 3, with clusters and vocabulary tables", () => {
         const index = RecallIndex.open(path);
         try {
-            expect(SCHEMA_VERSION).toBe(2);
-            expect(
+            expect(SCHEMA_VERSION).toBe(3);
+            const tables = (
                 index.db
                     .query(
-                        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'clusters'",
+                        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('clusters', 'vocabulary', 'concepts', 'labels', 'broader', 'merged', 'tagged') ORDER BY name",
                     )
-                    .get(),
-            ).toEqual({ name: "clusters" });
+                    .all() as { name: string }[]
+            ).map((row) => row.name);
+            expect(tables).toEqual([
+                "broader",
+                "clusters",
+                "concepts",
+                "labels",
+                "merged",
+                "tagged",
+                "vocabulary",
+            ]);
         } finally {
             index.close();
         }

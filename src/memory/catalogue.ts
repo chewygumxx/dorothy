@@ -38,12 +38,16 @@ const describeError = (error: unknown) =>
 
 // Brings the index up to date, then reads every conversation the user spoke
 // in from it. Conversations the user never spoke in are left out.
-export function indexCatalogue(index: RecallIndex, dir: string): Catalogue {
+export function indexCatalogue(
+    index: RecallIndex,
+    dir: string,
+    vocabulary: string | null = null,
+): Catalogue {
     return {
         async load() {
             let synced: string[];
             try {
-                synced = await syncIndex(index, dir);
+                synced = await syncIndex(index, dir, Date.now(), vocabulary);
             } catch (error) {
                 return {
                     entries: [],

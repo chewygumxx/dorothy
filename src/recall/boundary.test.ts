@@ -58,7 +58,7 @@ describe("recall", () => {
         }
         expect(
             [...used].every((module) =>
-                ["sidecar.js", "rank.js"].includes(module),
+                ["sidecar.js", "rank.js", "vocabulary.js"].includes(module),
             ),
         ).toBe(true);
     });

@@ -23,6 +23,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EMPTY_SIDECAR, type Sidecar, sidecarPath } from "../memory/sidecar.js";
+import type { Concept } from "../memory/vocabulary.js";
 import { newPhrase } from "../session-id.js";
 import { RecallIndex } from "./store.js";
 import { readsByTarget, syncIndex, visitsByPhrase } from "./sync.js";
@@ -333,5 +334,128 @@ describe("clusters", () => {
         await rm(transcript(A));
         await syncIndex(index, dir);
         expect(rows()).toEqual([]);
+    });
+});
+
+describe("the vocabulary", () => {
+    const AT = "2026-10-07T12:00:00.000Z";
+    const concept = (prefLabel: string, fields: Partial<Concept> = {}) => ({
+        prefLabel,
+        altLabel: [],
+        broader: [],
+        scopeNote: `About ${prefLabel}.`,
+        by: "dorothy",
+        at: AT,
+        edited: null,
+        ...fields,
+    });
+    let path = "";
+    beforeEach(() => {
+        path = join(dir, "tags.json");
+    });
+    const write = (concepts: object) =>
+        writeFile(path, JSON.stringify({ v: 1, rev: 1, concepts }));
+    const rows = (sql: string) => index.db.query(sql).all();
+    const state = () =>
+        index.db.query("SELECT mtime, broken FROM vocabulary").get() as {
+            mtime: number | null;
+            broken: string | null;
+        };
+
+    it("copies concepts, labels, edges and merges", async () => {
+        await write({
+            k00000001: concept("dorothy"),
+            k00000002: concept("Memory", {
+                altLabel: ["Recall"],
+                broader: ["k00000001"],
+            }),
+            k00000003: { mergedInto: "k00000002", at: AT },
+            k00000004: { deleted: AT, labels: ["misc"] },
+        });
+        expect(await syncIndex(index, dir, Date.now(), path)).toEqual([]);
+        expect(
+            rows("SELECT id, label, alt, scope_note FROM concepts ORDER BY id"),
+        ).toEqual([
+            {
+                id: "k00000001",
+                label: "dorothy",
+                alt: "[]",
+                scope_note: "About dorothy.",
+            },
+            {
+                id: "k00000002",
+                label: "Memory",
+                alt: '["Recall"]',
+                scope_note: "About Memory.",
+            },
+        ]);
+        expect(rows("SELECT norm, id FROM labels ORDER BY norm")).toEqual([
+            { norm: "dorothy", id: "k00000001" },
+            { norm: "memory", id: "k00000002" },
+            { norm: "recall", id: "k00000002" },
+        ]);
+        expect(rows("SELECT id, parent FROM broader")).toEqual([
+            { id: "k00000002", parent: "k00000001" },
+        ]);
+        expect(rows("SELECT id, into_id FROM merged")).toEqual([
+            { id: "k00000003", into_id: "k00000002" },
+        ]);
+        expect(state().broken).toBeNull();
+    });
+
+    it("reads the file again only when it changes", async () => {
+        // Whole seconds: utimes cannot restore a fractional mtimeMs.
+        const mtime = new Date(Date.UTC(2026, 9, 7, 12));
+        await write({ k00000001: concept("one") });
+        await utimes(path, mtime, mtime);
+        await syncIndex(index, dir, Date.now(), path);
+        // Same mtime, different text: left as it was.
+        await write({ k00000001: concept("two") });
+        await utimes(path, mtime, mtime);
+        await syncIndex(index, dir, Date.now(), path);
+        expect(rows("SELECT label FROM concepts")).toEqual([{ label: "one" }]);
+        await utimes(path, mtime, new Date(mtime.getTime() + 1000));
+        await syncIndex(index, dir, Date.now(), path);
+        expect(rows("SELECT label FROM concepts")).toEqual([{ label: "two" }]);
+    });
+
+    it("empties the tables for a broken or missing file, saying why", async () => {
+        await write({ k00000001: concept("one") });
+        await syncIndex(index, dir, Date.now(), path);
+        await writeFile(path, "{ broken");
+        await syncIndex(index, dir, Date.now(), path);
+        expect(rows("SELECT * FROM concepts")).toEqual([]);
+        expect(state().broken).not.toBeNull();
+        await rm(path);
+        await syncIndex(index, dir, Date.now(), path);
+        expect(state()).toEqual({ mtime: null, broken: null });
+    });
+
+    it("leaves the tables alone without a path", async () => {
+        await write({ k00000001: concept("one") });
+        await syncIndex(index, dir, Date.now(), path);
+        await syncIndex(index, dir);
+        expect(rows("SELECT label FROM concepts")).toEqual([{ label: "one" }]);
+    });
+
+    it("copies each sidecar's tags, in order, and forgets them with it", async () => {
+        await writeFile(transcript(A), user(1, "hi"));
+        await sidecar(A, { tags: ["k00000002", "k00000001"] });
+        await syncIndex(index, dir);
+        expect(rows("SELECT phrase, n, id FROM tagged ORDER BY n")).toEqual([
+            { phrase: A, n: 0, id: "k00000002" },
+            { phrase: A, n: 1, id: "k00000001" },
+        ]);
+        await sidecar(A, { tags: ["k00000003"] });
+        await utimes(
+            sidecarPath(dir, A),
+            new Date(),
+            new Date(Date.now() + 2000),
+        );
+        await syncIndex(index, dir);
+        expect(rows("SELECT id FROM tagged")).toEqual([{ id: "k00000003" }]);
+        await rm(transcript(A));
+        await syncIndex(index, dir);
+        expect(rows("SELECT id FROM tagged")).toEqual([]);
     });
 });
