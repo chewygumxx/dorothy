@@ -18,20 +18,29 @@ import {
 import type { Turn } from "../persona.js";
 import type { Range } from "./plan.js";
 
-export const CLUSTER_INSTRUCTIONS = [
-    "This time you are not chatting. The message holds the oldest turns of",
-    "your current conversation with the user that are still word for word in",
-    "your context; they are about to leave it. Divide them into consecutive",
-    "clusters, starting a new cluster where the topic changes; one cluster is",
-    "fine when they hold one topic. For each cluster give the number of its",
-    "last turn, and write an abstract of at most 1,000 characters, in your",
-    "own words and from your point of view, of what was said, decided and",
-    "left open, noting what you might want to look up later. Your abstracts",
-    "stay in your context for the rest of the conversation, and you can open",
-    "any cluster's turns word for word. If you said you were in development",
-    "mode, say so in the abstract. The message escapes &, < and > as &amp;,",
-    "&lt; and &gt;; write the abstracts as plain text, not escaped.",
-].join(" ");
+// She is told she can reopen the turns, and asked to note what she might
+// look up, only when her sessions will offer recollect.
+export function clusterInstructions(recollect: boolean): string {
+    return [
+        "This time you are not chatting. The message holds the oldest turns of",
+        "your current conversation with the user that are still word for word in",
+        "your context; they are about to leave it. Divide them into consecutive",
+        "clusters, starting a new cluster where the topic changes; one cluster is",
+        "fine when they hold one topic. For each cluster give the number of its",
+        "last turn, and write an abstract of at most 1,000 characters, in your",
+        "own words and from your point of view, of what was said, decided and",
+        recollect
+            ? "left open, noting what you might want to look up later."
+            : "left open.",
+        "Your abstracts stay in your context for the rest of the",
+        recollect
+            ? "conversation, and you can open any cluster's turns word for word."
+            : "conversation.",
+        "If you said you were in development mode, say so in the abstract. The",
+        "message escapes &, < and > as &amp;, &lt; and &gt;; write the abstracts",
+        "as plain text, not escaped.",
+    ].join(" ");
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);

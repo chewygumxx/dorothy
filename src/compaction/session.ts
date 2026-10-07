@@ -37,6 +37,8 @@ export type CompactionOptions = {
     clusters: readonly Cluster[];
     // Dorothy's persona, for her call.
     persona: string;
+    // Whether the sessions offer recollect, which her call is told.
+    recollect: boolean;
     call: StructuredCall;
     // Appends new clusters to the sidecar.
     save(clusters: readonly Cluster[]): Promise<SaveResult>;
@@ -461,6 +463,7 @@ class CompactingSession implements ChatSession {
                 clusters: shared.clusters,
                 tail: shared.options.config.tail,
                 persona: shared.options.persona,
+                recollect: shared.options.recollect,
                 call: shared.options.call,
                 now: shared.now,
                 signal,

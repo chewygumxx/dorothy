@@ -11,7 +11,7 @@
 import type { Cluster } from "../memory/sidecar.js";
 import type { Turn } from "../persona.js";
 import {
-    CLUSTER_INSTRUCTIONS,
+    clusterInstructions,
     clusterPrompt,
     clusterSchema,
     validateClusters,
@@ -34,6 +34,7 @@ export async function compact({
     clusters,
     tail,
     persona,
+    recollect,
     call,
     now,
     signal,
@@ -42,6 +43,8 @@ export async function compact({
     clusters: readonly Cluster[];
     tail: number;
     persona: string;
+    // Whether her sessions will offer recollect on the clusters.
+    recollect: boolean;
     call: StructuredCall;
     now: () => Date;
     signal?: AbortSignal;
@@ -52,7 +55,7 @@ export async function compact({
     }
     const outcome = await call({
         what: "compaction",
-        system: [persona, CLUSTER_INSTRUCTIONS].join("\n\n"),
+        system: [persona, clusterInstructions(recollect)].join("\n\n"),
         prompt: clusterPrompt(turns, range, clusters),
         schema: clusterSchema(range),
         timeoutMs: COMPACTION_TIMEOUT_MS,

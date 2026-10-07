@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "bun:test";
 import type { Turn } from "../persona.js";
-import { CLUSTER_INSTRUCTIONS } from "./clusters.js";
+import { clusterInstructions } from "./clusters.js";
 import { COMPACTION_TIMEOUT_MS, compact } from "./compact.js";
 import type {
     StructuredCall,
@@ -34,12 +34,13 @@ function answering(outcome: StructuredOutcome) {
     };
     return { call, requests };
 }
-const run = (call: StructuredCall, signal?: AbortSignal) =>
+const run = (call: StructuredCall, signal?: AbortSignal, recollect = true) =>
     compact({
         turns,
         clusters: [],
         tail: 2,
         persona: "You are Dorothy,",
+        recollect,
         call,
         now: () => NOW,
         ...(signal === undefined ? {} : { signal }),
@@ -69,11 +70,23 @@ describe("compact", () => {
         });
         expect(requests[0]?.what).toBe("compaction");
         expect(requests[0]?.system).toBe(
-            `You are Dorothy,\n\n${CLUSTER_INSTRUCTIONS}`,
+            `You are Dorothy,\n\n${clusterInstructions(true)}`,
         );
         expect(requests[0]?.prompt).toContain('<turn n="2">');
         expect(requests[0]?.prompt).not.toContain('<turn n="3">');
         expect(requests[0]?.timeoutMs).toBe(COMPACTION_TIMEOUT_MS);
+    });
+
+    it("leaves reopening out of the instructions without recollect", async () => {
+        const { call, requests } = answering({
+            ok: false,
+            reason: "unused",
+            costUsd: 0,
+        });
+        await run(call, undefined, false);
+        expect(requests[0]?.system).toBe(
+            `You are Dorothy,\n\n${clusterInstructions(false)}`,
+        );
     });
 
     it("asks nothing when nothing would leave", async () => {
@@ -88,6 +101,7 @@ describe("compact", () => {
                 clusters: [],
                 tail: 100,
                 persona: "P",
+                recollect: true,
                 call,
                 now: () => NOW,
             }),

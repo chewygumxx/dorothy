@@ -212,6 +212,8 @@ export async function runTui(
               idleMs: config.memory.idleSeconds * 1000,
               clusters,
               persona: personaPrompt({ recall: false, mode: persona }),
+              // With recall on, a session with clusters offers recollect.
+              recollect: recall !== null,
               call: structuredCall(),
               // Without a transcript there is no conversation for notes to
               // describe; the clusters live in this run only.

@@ -17,6 +17,7 @@ import type {
 import type { Timers } from "../memory/scheduler.js";
 import type { Cluster } from "../memory/sidecar.js";
 import type { Turn } from "../persona.js";
+import { clusterInstructions } from "./clusters.js";
 import {
     CLAIM_RETRY_MS,
     type Claim,
@@ -134,6 +135,7 @@ function harness({
     record = null,
     closing = Promise.resolve(),
     ready,
+    recollect = true,
 }: {
     estimate?: number;
     claim?: Claim | null;
@@ -148,6 +150,8 @@ function harness({
     closing?: Promise<void>;
     // What the check before Dorothy's call answers; no check without.
     ready?: SaveResult;
+    // Whether the sessions offer recollect.
+    recollect?: boolean;
 } = {}) {
     const timers = new FakeTimers();
     const sessions: FakeSession[] = [];
@@ -159,6 +163,7 @@ function harness({
         idleMs: 1000,
         clusters,
         persona: "You are Dorothy,",
+        recollect,
         call: (request) =>
             new Promise((answer) => {
                 calls.push({ request, answer });
@@ -243,6 +248,21 @@ describe("Compaction", () => {
         expect(sessions).toHaveLength(1);
         expect(sessions[0]?.seed.turns).toEqual(HISTORY.slice(2));
         expect(sessions[0]?.seed.clusters).toHaveLength(1);
+    });
+
+    it("tells Dorothy whether she can reopen the turns", async () => {
+        for (const recollect of [true, false]) {
+            const h = harness({ recollect });
+            const session = h.open();
+            session.send("abcd");
+            h.sessions[0]?.reply(150);
+            h.timers.advance(1000);
+            await until(() => h.calls.length === 1);
+            expect(h.calls[0]?.request.system).toBe(
+                `You are Dorothy,\n\n${clusterInstructions(recollect)}`,
+            );
+            await h.compaction.stop();
+        }
     });
 
     it("compacts at the next idle past soft, then hands over", async () => {

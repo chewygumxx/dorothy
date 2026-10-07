@@ -12,7 +12,7 @@ import { describe, expect, it } from "bun:test";
 import type { Cluster } from "../memory/sidecar.js";
 import type { Turn } from "../persona.js";
 import {
-    CLUSTER_INSTRUCTIONS,
+    clusterInstructions,
     clusterPrompt,
     clusterSchema,
     validateClusters,
@@ -67,9 +67,27 @@ describe("clusterPrompt", () => {
 });
 
 describe("the instructions and schema", () => {
+    it("promise reopening the turns only when recollect is offered", () => {
+        const offered = clusterInstructions(true);
+        const not = clusterInstructions(false);
+        expect(offered).toContain("you can open any cluster's turns");
+        expect(offered).toContain("what you might want to look up later");
+        expect(not).not.toContain("open any cluster");
+        expect(not).not.toContain("look up");
+        expect(not).toContain(
+            "of what was said, decided and left open. Your abstracts stay in your context for the rest of the conversation. If you said",
+        );
+    });
+
     it("ask for topical clusters and abstracts within their limit", () => {
-        expect(CLUSTER_INSTRUCTIONS).toContain("where the topic changes");
-        expect(CLUSTER_INSTRUCTIONS).toContain("1,000 characters");
+        for (const recollect of [true, false]) {
+            expect(clusterInstructions(recollect)).toContain(
+                "where the topic changes",
+            );
+            expect(clusterInstructions(recollect)).toContain(
+                "1,000 characters",
+            );
+        }
         expect(clusterSchema(RANGE)).toEqual({
             type: "object",
             properties: {
