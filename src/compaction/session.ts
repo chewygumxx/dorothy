@@ -71,14 +71,13 @@ function sleep(timers: Timers, ms: number, signal: AbortSignal): Promise<void> {
     });
 }
 
-// One run's compaction: the clusters so far, the failures, and the
-// sessions it wraps. It outlives each session, so that reconnecting starts
-// from the clusters too.
-export class Compaction {
+// What one run's compaction keeps across its sessions: the clusters so
+// far, the failures, and the calls under way. Only this module sees it.
+class Shared {
     readonly options: CompactionOptions;
     readonly timers: Timers;
     readonly now: () => Date;
-    #clusters: Cluster[];
+    clusters: Cluster[];
     #failures = 0;
     readonly #runs = new Map<AbortController, Promise<void>>();
 
@@ -86,39 +85,16 @@ export class Compaction {
         this.options = options;
         this.timers = options.timers ?? REAL_TIMERS;
         this.now = options.now ?? (() => new Date());
-        this.#clusters = [...options.clusters];
-    }
-
-    clusters(): readonly Cluster[] {
-        return this.#clusters;
+        this.clusters = [...options.clusters];
     }
 
     seed(turns: readonly Turn[]): Seed {
         return {
-            turns: seedTurns(turns, this.#clusters),
-            clusters: [...this.#clusters],
+            turns: seedTurns(turns, this.clusters),
+            clusters: [...this.clusters],
         };
     }
 
-    // A session over every turn so far; App passes them all, and the
-    // clusters decide which reach the seed.
-    session(
-        turns: readonly Turn[],
-        connect: (seed: Seed) => ChatSession,
-    ): ChatSession {
-        return new CompactingSession(this, turns, connect);
-    }
-
-    // Quitting: every call is cancelled, and the promise settles once each
-    // has let go of its claim.
-    async stop(): Promise<void> {
-        for (const controller of this.#runs.keys()) {
-            controller.abort();
-        }
-        await Promise.all(this.#runs.values());
-    }
-
-    // For CompactingSession.
     get exhausted(): boolean {
         return this.#failures >= MAX_FAILURES;
     }
@@ -132,19 +108,59 @@ export class Compaction {
     }
 
     added(clusters: readonly Cluster[]): void {
-        this.#clusters = [...this.#clusters, ...clusters];
+        this.clusters = [...this.clusters, ...clusters];
     }
 
     track(controller: AbortController, done: Promise<void>): void {
         this.#runs.set(controller, done);
         void done.finally(() => this.#runs.delete(controller));
     }
+
+    async stop(): Promise<void> {
+        for (const controller of this.#runs.keys()) {
+            controller.abort();
+        }
+        await Promise.all(this.#runs.values());
+    }
+}
+
+// One run's compaction. It outlives each session, so that reconnecting
+// starts from the clusters too.
+export class Compaction {
+    readonly #shared: Shared;
+
+    constructor(options: CompactionOptions) {
+        this.#shared = new Shared(options);
+    }
+
+    clusters(): readonly Cluster[] {
+        return this.#shared.clusters;
+    }
+
+    seed(turns: readonly Turn[]): Seed {
+        return this.#shared.seed(turns);
+    }
+
+    // A session over every turn so far; App passes them all, and the
+    // clusters decide which reach the seed.
+    session(
+        turns: readonly Turn[],
+        connect: (seed: Seed) => ChatSession,
+    ): ChatSession {
+        return new CompactingSession(this.#shared, turns, connect);
+    }
+
+    // Quitting: every call is cancelled, and the promise settles once each
+    // has let go of its claim.
+    stop(): Promise<void> {
+        return this.#shared.stop();
+    }
 }
 
 // Passes one inner session through, and between turns replaces it with a
 // new one seeded with the clusters a compaction just made.
 class CompactingSession implements ChatSession {
-    readonly #compaction: Compaction;
+    readonly #shared: Shared;
     readonly #connect: (seed: Seed) => ChatSession;
     readonly #listeners = new Set<(event: ConversationEvent) => void>();
     // Every turn sent on so far, as App and the transcript count them; a
@@ -160,24 +176,22 @@ class CompactingSession implements ChatSession {
     #idle: unknown = null;
     #run: AbortController | null = null;
     #closed = false;
-    // How many turns there were when compaction last found nothing to do.
-    #nothingAt = -1;
     // Saving the clusters for the handover: a message waits for the new
     // session rather than going to the old one, which is about to close.
     #handing = false;
 
     constructor(
-        compaction: Compaction,
+        shared: Shared,
         turns: readonly Turn[],
         connect: (seed: Seed) => ChatSession,
     ) {
-        this.#compaction = compaction;
+        this.#shared = shared;
         this.#connect = connect;
         this.#turns = [...turns];
-        const seed = compaction.seed(this.#turns);
+        const seed = shared.seed(this.#turns);
         if (
-            !compaction.exhausted &&
-            compaction.options.estimate(seed) > compaction.options.config.hard
+            !shared.exhausted &&
+            shared.options.estimate(seed) > shared.options.config.hard
         ) {
             this.#urgent = true;
             // After the caller has subscribed.
@@ -205,7 +219,7 @@ class CompactingSession implements ChatSession {
         if (
             this.#inner === null ||
             this.#handing ||
-            (this.#urgent && !this.#compaction.exhausted)
+            (this.#urgent && !this.#shared.exhausted)
         ) {
             this.#announce();
             this.#held.push(text);
@@ -295,27 +309,23 @@ class CompactingSession implements ChatSession {
     }
 
     #measure(context: number): void {
-        const level = pressure(context, this.#compaction.options.config);
-        if (
-            level === "none" ||
-            this.#compaction.exhausted ||
-            this.#turns.length === this.#nothingAt
-        ) {
+        const level = pressure(context, this.#shared.options.config);
+        if (level === "none" || this.#shared.exhausted) {
             return;
         }
         if (level === "hard") {
             this.#urgent = true;
         }
         this.#cancelIdle();
-        this.#idle = this.#compaction.timers.set(() => {
+        this.#idle = this.#shared.timers.set(() => {
             this.#idle = null;
             this.#start();
-        }, this.#compaction.idleDelay());
+        }, this.#shared.idleDelay());
     }
 
     #cancelIdle(): void {
         if (this.#idle !== null) {
-            this.#compaction.timers.clear(this.#idle);
+            this.#shared.timers.clear(this.#idle);
             this.#idle = null;
         }
     }
@@ -334,19 +344,19 @@ class CompactingSession implements ChatSession {
                 this.#run = null;
                 this.#afterRun();
             });
-        this.#compaction.track(controller, done);
+        this.#shared.track(controller, done);
     }
 
     async #compactOnce(signal: AbortSignal): Promise<void> {
-        const compaction = this.#compaction;
-        const { claim = null } = compaction.options;
+        const shared = this.#shared;
+        const { claim = null } = shared.options;
         const holding = this.#urgent || this.#inner === null;
         if (claim !== null) {
             while (!(await claim.take())) {
                 if (!holding || signal.aborted) {
                     return;
                 }
-                await sleep(compaction.timers, CLAIM_RETRY_MS, signal);
+                await sleep(shared.timers, CLAIM_RETRY_MS, signal);
                 if (signal.aborted) {
                     return;
                 }
@@ -355,11 +365,11 @@ class CompactingSession implements ChatSession {
         try {
             const outcome = await compact({
                 turns: [...this.#turns],
-                clusters: compaction.clusters(),
-                tail: compaction.options.config.tail,
-                persona: compaction.options.persona,
-                call: compaction.options.call,
-                now: compaction.now,
+                clusters: shared.clusters,
+                tail: shared.options.config.tail,
+                persona: shared.options.persona,
+                call: shared.options.call,
+                now: shared.now,
                 signal,
             });
             if (signal.aborted) {
@@ -372,9 +382,10 @@ class CompactingSession implements ChatSession {
     }
 
     async #land(outcome: CompactOutcome, signal: AbortSignal): Promise<void> {
-        const compaction = this.#compaction;
+        const shared = this.#shared;
+        // Compaction is tried again only after a turn-end, which adds an
+        // exchange, so finding nothing is not retried until another.
         if (outcome.kind === "nothing") {
-            this.#nothingAt = this.#turns.length;
             this.#warn(
                 "compaction: nothing to compact; the latest exchange alone fills the tail",
             );
@@ -392,13 +403,13 @@ class CompactingSession implements ChatSession {
             return;
         }
         this.#handing = true;
-        const saved = await compaction.options.save(outcome.clusters);
+        const saved = await shared.options.save(outcome.clusters);
         if (!saved.ok) {
             this.#fail(saved.reason);
             return;
         }
-        compaction.added(outcome.clusters);
-        await compaction.options.record({
+        shared.added(outcome.clusters);
+        await shared.options.record({
             through: outcome.range.through,
             clusters: outcome.clusters.length,
         });
@@ -411,7 +422,7 @@ class CompactingSession implements ChatSession {
         this.#urgent = false;
         // The old session's last reply may have started an idle wait.
         this.#cancelIdle();
-        this.#attach(this.#connect(compaction.seed(this.#turns)));
+        this.#attach(this.#connect(shared.seed(this.#turns)));
         void old?.close();
         this.#emit({
             type: "compacted",
@@ -422,9 +433,9 @@ class CompactingSession implements ChatSession {
     }
 
     #fail(reason: string): void {
-        this.#compaction.failed();
+        this.#shared.failed();
         this.#warn(
-            this.#compaction.exhausted
+            this.#shared.exhausted
                 ? `compaction failed: ${reason}; no more tries until the next launch`
                 : `compaction failed: ${reason}`,
         );
@@ -437,7 +448,7 @@ class CompactingSession implements ChatSession {
             return;
         }
         if (this.#inner === null) {
-            this.#attach(this.#connect(this.#compaction.seed(this.#turns)));
+            this.#attach(this.#connect(this.#shared.seed(this.#turns)));
         }
         const held = this.#held.splice(0);
         if (held.length > 0 && this.#urgent) {

@@ -200,6 +200,14 @@ const warnings = (events: ConversationEvent[]) =>
     );
 
 describe("Compaction", () => {
+    it("shows only its four members", () => {
+        const { compaction } = harness();
+        expect(Object.getOwnPropertyNames(Compaction.prototype).sort()).toEqual(
+            ["clusters", "constructor", "seed", "session", "stop"],
+        );
+        expect(Object.keys(compaction)).toEqual([]);
+    });
+
     it("connects at once, seeded with the clusters and the turns after them", () => {
         const { open, sessions } = harness({
             clusters: [
