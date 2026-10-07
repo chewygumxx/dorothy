@@ -248,7 +248,11 @@ class CompactingSession implements ChatSession {
             this.#waiting = true;
             void saving.then(() => {
                 this.#waiting = false;
-                this.#begin();
+                try {
+                    this.#begin();
+                } catch (error) {
+                    this.#die(error);
+                }
             });
         }
     }
@@ -575,6 +579,19 @@ class CompactingSession implements ChatSession {
         }
     }
 
+    // Connecting failed where no caller hears the throw: the wrapper ends
+    // as a session that failed does, with an error event, so App
+    // reconnects at the next message. Held messages are in App's turns.
+    #die(error: unknown): void {
+        this.#closed = true;
+        this.#cancelIdle();
+        this.#held = [];
+        this.#emit({
+            type: "error",
+            message: `couldn't start Dorothy's session: ${describeError(error)}`,
+        });
+    }
+
     // Whatever happened, a session exists afterwards and held messages go
     // to it: after a failure, to the session that is nearly full.
     #afterRun(): void {
@@ -582,7 +599,12 @@ class CompactingSession implements ChatSession {
             return;
         }
         if (this.#inner === null) {
-            this.#attach(this.#connect(this.#shared.seed(this.#turns)));
+            try {
+                this.#attach(this.#connect(this.#shared.seed(this.#turns)));
+            } catch (error) {
+                this.#die(error);
+                return;
+            }
         }
         const held = this.#held.splice(0);
         if (held.length > 0 && this.#urgent) {

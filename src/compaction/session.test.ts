@@ -158,6 +158,11 @@ function harness({
     const calls: Pending[] = [];
     const saved: Cluster[][] = [];
     const recorded: { through: number; clusters: number }[] = [];
+    // Set to make connecting, or estimating a seed, throw.
+    const faults: { connect: Error | null; estimate: Error | null } = {
+        connect: null,
+        estimate: null,
+    };
     const compaction = new Compaction({
         config: { soft: 100, hard: 200, tail: 4 },
         idleMs: 1000,
@@ -185,13 +190,21 @@ function harness({
                 throw record;
             }
         },
-        estimate: () => estimate,
+        estimate: () => {
+            if (faults.estimate !== null) {
+                throw faults.estimate;
+            }
+            return estimate;
+        },
         ...(ready === undefined ? {} : { ready: async () => ready }),
         claim,
         timers,
         now: () => NOW,
     });
     const connect = (seed: Seed) => {
+        if (faults.connect !== null) {
+            throw faults.connect;
+        }
         const session = new FakeSession(
             seed,
             sessions.length === 0 ? closing : Promise.resolve(),
@@ -214,6 +227,7 @@ function harness({
         saved,
         recorded,
         events,
+        faults,
     };
 }
 
@@ -407,6 +421,62 @@ describe("Compaction", () => {
         expect(h.sessions[1]?.seed.clusters).toHaveLength(1);
         expect(h.sessions[1]?.sent).toEqual(["waiting"]);
         expect(h.events).not.toContainEqual({ type: "compacting" });
+    });
+
+    it("fails as a session does when the seed after a save can't connect", async () => {
+        for (const fault of ["connect", "estimate"] as const) {
+            let saveDone = () => {};
+            const saving = new Promise<void>((resolve) => {
+                saveDone = resolve;
+            });
+            const h = harness({ saving });
+            const first = h.open();
+            first.send("abcd");
+            h.sessions[0]?.reply(150);
+            h.timers.advance(1000);
+            await until(() => h.calls.length === 1);
+            h.calls[0]?.answer(CLUSTERED);
+            await until(() => h.saved.length === 1);
+            void first.close();
+            const next = h.open([...HISTORY, turn("user"), turn("assistant")]);
+            next.send("waiting");
+            h.faults[fault] = new Error("spawn failed");
+            saveDone();
+            await until(() => h.events.some((e) => e.type === "error"));
+            expect(h.events.filter((e) => e.type === "error")).toEqual([
+                {
+                    type: "error",
+                    message: "couldn't start Dorothy's session: spawn failed",
+                },
+            ]);
+            // Dead, as a session that failed: App reconnects at the next
+            // message, and nothing is paid for meanwhile.
+            next.send("again");
+            await settle();
+            expect(h.calls).toHaveLength(1);
+            expect(h.sessions).toHaveLength(1);
+            await next.close();
+        }
+    });
+
+    it("fails as a session does when the session after a run can't connect", async () => {
+        const h = harness({ estimate: 500 });
+        const session = h.open([...HISTORY, turn("user"), turn("assistant")]);
+        session.send("early");
+        await until(() => h.calls.length === 1);
+        h.faults.connect = new Error("spawn failed");
+        h.calls[0]?.answer({ ok: false, reason: "offline", costUsd: 0 });
+        await until(() => h.events.some((e) => e.type === "error"));
+        expect(h.events.filter((e) => e.type === "error")).toEqual([
+            {
+                type: "error",
+                message: "couldn't start Dorothy's session: spawn failed",
+            },
+        ]);
+        session.send("again");
+        await settle();
+        expect(h.calls).toHaveLength(1);
+        expect(h.sessions).toHaveLength(0);
     });
 
     it("compacts before connecting a seed already past hard", async () => {
