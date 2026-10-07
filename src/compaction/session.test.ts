@@ -782,6 +782,30 @@ describe("Compaction", () => {
         await until(() => h.calls.length === 2);
     });
 
+    it("counts no failure for a throw after the handover", async () => {
+        const h = harness();
+        const session = h.open();
+        session.subscribe((event) => {
+            if (event.type === "compacted") {
+                throw new Error("listener broke");
+            }
+        });
+        session.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => warnings(h.events).length === 1);
+        expect(warnings(h.events)).toEqual([
+            "compaction: after handing over: listener broke",
+        ]);
+        expect(h.sessions).toHaveLength(2);
+        // Not doubled: the next idle wait is the first's length.
+        h.sessions[1]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 2);
+    });
+
     it("re-arms an idle wait set while a compaction failed with the doubled delay", async () => {
         const h = harness();
         const session = h.open();

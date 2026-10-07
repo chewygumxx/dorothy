@@ -230,6 +230,9 @@ class CompactingSession implements ChatSession {
     #waiting = false;
     // This wrapper's replaced sessions, still closing.
     readonly #retiring = new Set<Promise<void>>();
+    // The run's new session has taken over: a throw from here on, such as
+    // a listener's, is not a failed compaction.
+    #landed = false;
 
     constructor(
         shared: Shared,
@@ -424,9 +427,16 @@ class CompactingSession implements ChatSession {
         }
         const controller = new AbortController();
         this.#run = controller;
+        this.#landed = false;
         const done = this.#compactOnce(controller.signal)
             .catch((error: unknown) => {
-                this.#fail(describeError(error));
+                if (this.#landed) {
+                    this.#warn(
+                        `compaction: after handing over: ${describeError(error)}`,
+                    );
+                } else {
+                    this.#fail(describeError(error));
+                }
             })
             .finally(() => {
                 this.#run = null;
@@ -545,6 +555,7 @@ class CompactingSession implements ChatSession {
         // The old session's last reply may have started an idle wait.
         this.#cancelIdle();
         this.#attach(this.#connect(shared.seed(this.#turns)));
+        this.#landed = true;
         if (old !== null) {
             const closing = this.#shared.retire(old);
             this.#retiring.add(closing);
