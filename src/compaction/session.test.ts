@@ -606,6 +606,47 @@ describe("Compaction", () => {
         await until(() => h.calls.length === 2);
     });
 
+    it("re-arms an idle wait set while a compaction failed with the doubled delay", async () => {
+        const h = harness();
+        const session = h.open();
+        session.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        // The reply to a message sent meanwhile starts an idle wait at the
+        // delay before the failure.
+        session.send("during");
+        h.sessions[0]?.reply(150);
+        h.calls[0]?.answer({ ok: false, reason: "bad", costUsd: 0 });
+        await until(() => warnings(h.events).length === 1);
+        h.timers.advance(1999);
+        await settle();
+        expect(h.calls).toHaveLength(1);
+        h.timers.advance(1);
+        await until(() => h.calls.length === 2);
+    });
+
+    it("drops an idle wait set while the last allowed compaction failed", async () => {
+        const h = harness();
+        const session = h.open();
+        for (let failure = 0; failure < 3; failure++) {
+            session.send("abcd");
+            h.sessions[0]?.reply(150);
+            h.timers.advance(1000 * 2 ** failure);
+            await until(() => h.calls.length === failure + 1);
+            if (failure === 2) {
+                session.send("during");
+                h.sessions[0]?.reply(150);
+            }
+            h.calls[failure]?.answer({ ok: false, reason: "bad", costUsd: 0 });
+            await settle();
+        }
+        expect(h.timers.pending.size).toBe(0);
+        h.timers.advance(100_000);
+        await settle();
+        expect(h.calls).toHaveLength(3);
+    });
+
     it("passes the inner session's events through, and its interrupts", async () => {
         const h = harness();
         const session = h.open();

@@ -316,6 +316,10 @@ class CompactingSession implements ChatSession {
         if (level === "hard") {
             this.#urgent = true;
         }
+        this.#armIdle();
+    }
+
+    #armIdle(): void {
         this.#cancelIdle();
         this.#idle = this.#shared.timers.set(() => {
             this.#idle = null;
@@ -459,6 +463,15 @@ class CompactingSession implements ChatSession {
                 ? `compaction failed: ${reason}; no more tries until the next launch`
                 : `compaction failed: ${reason}`,
         );
+        // A reply past soft while the call ran started an idle wait timed
+        // before this failure: it waits the doubled delay instead, or not
+        // at all once compaction has given up.
+        if (this.#idle !== null) {
+            this.#cancelIdle();
+            if (!this.#shared.exhausted) {
+                this.#armIdle();
+            }
+        }
     }
 
     // Whatever happened, a session exists afterwards and held messages go
