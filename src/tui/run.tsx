@@ -26,6 +26,17 @@ import {
     recallLaunch,
     type SessionSetup,
 } from "../conversation.js";
+import { entryHook } from "../history/commands.js";
+import {
+    type HookCommand,
+    historyRoot,
+    type MemoryHistory,
+    maintainDaily,
+    openHistory,
+} from "../history/history.js";
+import { Mirror, waiting } from "../history/mirror.js";
+import { MIRROR, NO_MIRROR } from "../history/repo.js";
+import { parseKey } from "../history/seal.js";
 import { indexCatalogue } from "../memory/catalogue.js";
 import { tokens } from "../memory/rank.js";
 import { MemoryService } from "../memory/service.js";
@@ -33,6 +44,7 @@ import {
     appendClusters,
     type Cluster,
     type Lock,
+    type Recorder,
     readSidecar,
     updateSidecar,
 } from "../memory/sidecar.js";
@@ -54,7 +66,8 @@ import {
     transcriptDir,
     transcriptPath,
 } from "../transcript.js";
-import { App } from "./App.js";
+import type { Env } from "../xdg.js";
+import { App, type NoticeSource } from "./App.js";
 import { editInEditor } from "./external-editor.js";
 
 const describeError = (error: unknown) =>
@@ -73,19 +86,155 @@ export function sessionMaker({
     connect,
     clusters,
     memory,
+    turnEnded = null,
 }: {
     compaction: Pick<Compaction, "session"> | null;
     // A new session from its seed, untracked.
     connect: (seed: Seed) => ChatSession;
     clusters: readonly Cluster[];
     memory: MemoryHooks | null;
+    turnEnded?: (() => void) | null;
 }): (turns: Turn[]) => ChatSession {
+    const hooks = withTurnEnd(memory, turnEnded);
     return (turns) => {
         const session =
             compaction === null
                 ? connect({ turns: seedTurns(turns, clusters), clusters })
                 : compaction.session(turns, connect);
-        return memory === null ? session : trackMemory(session, memory);
+        return hooks === null ? session : trackMemory(session, hooks);
+    };
+}
+
+// Memory's hooks, with history told of each turn's end after memory.
+export function withTurnEnd(
+    memory: MemoryHooks | null,
+    turnEnded: (() => void) | null,
+): MemoryHooks | null {
+    if (turnEnded === null) {
+        return memory;
+    }
+    return {
+        sent: (text) => memory?.sent(text),
+        ready: () => memory?.ready(),
+        turnEnded: () => {
+            memory?.turnEnded();
+            turnEnded();
+        },
+    };
+}
+
+// Commits the live transcript at each turn's end, once it is flushed:
+// in order, and never awaited by the chat. settled() is for quitting.
+export function turnCommitter(
+    history: Pick<MemoryHistory, "turn" | "warn">,
+    path: string,
+    flushed: () => Promise<void>,
+    done: number,
+): { ended: () => void; settled: () => Promise<void> } {
+    let count = done;
+    let chain: Promise<void> = Promise.resolve();
+    return {
+        ended: () => {
+            count += 1;
+            const turn = count;
+            chain = chain.then(async () => {
+                try {
+                    await flushed();
+                    await history.turn(path, turn);
+                } catch (error) {
+                    history.warn(
+                        `history: couldn't commit turn ${turn} (${describeError(error)})`,
+                    );
+                }
+            });
+        },
+        settled: () => chain,
+    };
+}
+
+// One source for App: memory's notices and history's.
+export function mergeNotices(
+    ...sources: (NoticeSource | null | undefined)[]
+): NoticeSource | undefined {
+    const present = sources.filter(
+        (source): source is NoticeSource =>
+            source !== null && source !== undefined,
+    );
+    if (present.length <= 1) {
+        return present[0];
+    }
+    return {
+        subscribe(listener) {
+            const stops = present.map((source) => source.subscribe(listener));
+            return () => {
+                for (const stop of stops) {
+                    stop();
+                }
+            };
+        },
+    };
+}
+
+export type LaunchedHistory = {
+    history: MemoryHistory;
+    mirror: Mirror;
+    close(): void;
+};
+
+// History at launch, before anything is read: opened under the index's
+// lock, swept, and the mirror pushed in the background when commits
+// wait. Null when the config turns it off, or when it can't be used,
+// which joins the launch's warnings with its own.
+export async function launchHistory({
+    config,
+    index,
+    warnings,
+    env = process.env,
+    hook = entryHook(),
+}: {
+    config: Pick<Config, "history">;
+    index: { lock: Lock } | null;
+    warnings: string[];
+    env?: Env;
+    hook?: HookCommand | null;
+}): Promise<LaunchedHistory | null> {
+    if (!config.history.enabled) {
+        return null;
+    }
+    const opened = await openHistory({
+        root: historyRoot(env),
+        index,
+        hook,
+    });
+    if (!opened.ok) {
+        warnings.push(opened.reason);
+        return null;
+    }
+    const { history } = opened;
+    await history.sweep();
+    const mirror = new Mirror({
+        repo: history.repo,
+        lock: history.lock,
+        key: () => parseKey(env.DOROTHY_MIRROR_KEY),
+        token: () => env.DOROTHY_MIRROR_TOKEN ?? null,
+        warn: (message) => history.warn(message),
+        pushMs: config.history.pushSeconds * 1000,
+    });
+    history.afterCommit(() => mirror.schedule());
+    if ((await history.repo.remote(MIRROR)) === null) {
+        history.warn(NO_MIRROR);
+    } else if (await waiting(history.repo)) {
+        void mirror.push();
+    }
+    void maintainDaily(history.repo);
+    warnings.push(...history.takeWarnings());
+    return {
+        history,
+        mirror,
+        close: () => {
+            mirror.stop();
+            opened.close();
+        },
     };
 }
 
@@ -111,11 +260,13 @@ export function clusterSaver({
     phrase,
     lock,
     transcript,
+    recorder = null,
 }: {
     dir: string;
     phrase: string;
     lock?: Lock;
     transcript: boolean;
+    recorder?: Recorder | null;
 }): (clusters: readonly Cluster[], costUsd: number) => Promise<SaveResult> {
     return async (added, costUsd) => {
         if (!transcript) {
@@ -126,6 +277,12 @@ export function clusterSaver({
             phrase,
             (current) => appendClusters(current, added, costUsd),
             lock,
+            recorder === null
+                ? undefined
+                : {
+                      recorder,
+                      message: `compaction: ${phrase} (dorothy, ${added[0]?.model ?? "unknown"})`,
+                  },
         );
         if (result.kind === "written") {
             return { ok: true };
@@ -255,6 +412,17 @@ export async function runTui(
     const { config, warnings: configWarnings } = await readConfig();
     warnings.push(...configWarnings);
 
+    // The index and history open before anything is read, so that
+    // history restores a broken file first. The index serves compaction
+    // whenever the config lets it, since this chat's notes are not read
+    // yet.
+    const opened = openChatIndex(config, config.compaction.enabled);
+    const index = opened.index;
+    if (opened.warning !== null) {
+        warnings.push(opened.warning);
+    }
+    const launched = await launchHistory({ config, index, warnings });
+
     // A resumed conversation starts from its clusters. Notes that cannot be
     // read are never written, so compaction stays off for this chat.
     let clusters: Cluster[] = [];
@@ -273,6 +441,7 @@ export async function runTui(
             process.stderr.write(
                 `dorothy: cannot resume ${resume}: ${path}: ${describeError(error)}\n`,
             );
+            await closeInOrder([() => launched?.close(), () => index?.close()]);
             return 1;
         }
         const notes = await readSidecar(dir, phrase);
@@ -294,13 +463,6 @@ export async function runTui(
     }
     const transcript = writer;
 
-    // The index is opened before the first session, whose prompt carries
-    // the block.
-    const opened = openChatIndex(config, compactable);
-    const index = opened.index;
-    if (opened.warning !== null) {
-        warnings.push(opened.warning);
-    }
     let memory: MemoryService | null = null;
     if (config.memory.enabled && index !== null) {
         const vocabulary = vocabularyPath();
@@ -314,6 +476,7 @@ export async function runTui(
             entries: loaded.entries,
             index,
             vocabulary,
+            versions: launched?.history.handle() ?? null,
             // Without a transcript the live chat is left alone.
             flushed: transcript === null ? null : () => transcript.flushed(),
         });
@@ -341,6 +504,18 @@ export async function runTui(
     };
 
     const claims = index;
+    // Writes outside memory's service take the index's lock, or
+    // history's own without it.
+    const writeLock = claims?.lock ?? launched?.history.lock;
+    const turns =
+        launched === null || transcript === null
+            ? null
+            : turnCommitter(
+                  launched.history,
+                  path,
+                  () => transcript.flushed(),
+                  history.filter((turn) => turn.role === "user").length,
+              );
     const compaction = compactable
         ? new Compaction({
               config: config.compaction,
@@ -357,8 +532,9 @@ export async function runTui(
               save: clusterSaver({
                   dir,
                   phrase,
-                  ...(claims === null ? {} : { lock: claims.lock }),
+                  ...(writeLock === undefined ? {} : { lock: writeLock }),
                   transcript: transcript !== null,
+                  recorder: launched?.history.recorder ?? null,
               }),
               ready: () =>
                   transcript === null
@@ -386,8 +562,9 @@ export async function runTui(
                 connect,
                 clusters,
                 memory,
+                turnEnded: turns?.ended ?? null,
             })}
-            notices={memory ?? undefined}
+            notices={mergeNotices(memory, launched?.history)}
             transcript={writer}
             initialWarnings={warnings}
             initialCostUsd={costUsd}
@@ -404,6 +581,8 @@ export async function runTui(
         await closeInOrder([
             () => compaction?.stop(),
             () => memory?.stop(),
+            () => turns?.settled(),
+            () => launched?.close(),
             () => index?.close(),
             () => writer?.close(),
         ]);

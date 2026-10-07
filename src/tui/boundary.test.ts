@@ -48,6 +48,17 @@ describe("the TUI", () => {
         expect(importers.sort()).toEqual(["run.tsx"]);
     });
 
+    it("leaves history to run.tsx, which wires it in", async () => {
+        const importers: string[] = [];
+        for await (const path of new Glob("*.{ts,tsx}").scan(import.meta.dir)) {
+            const text = await Bun.file(`${import.meta.dir}/${path}`).text();
+            if (path !== import.meta.file && text.includes("../history/")) {
+                importers.push(path);
+            }
+        }
+        expect(importers.sort()).toEqual(["run.tsx"]);
+    });
+
     it("leaves recall to run.tsx, but for its types", async () => {
         const importers: string[] = [];
         for await (const path of new Glob("*.{ts,tsx}").scan(import.meta.dir)) {
