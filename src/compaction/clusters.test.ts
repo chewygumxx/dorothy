@@ -169,6 +169,10 @@ describe("validateClusters", () => {
                 "the abstract of cluster 1 is empty",
             ],
             [
+                { clusters: [{ through: 6, abstract: 5 }] },
+                "the abstract of cluster 1 isn't text",
+            ],
+            [
                 { clusters: [{ through: 6, abstract: "x".repeat(1001) }] },
                 "cluster 1: abstract is 1001 characters, over 1000",
             ],

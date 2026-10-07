@@ -134,10 +134,13 @@ export function validateClusters(
                 reason: `cluster ${n} ends at ${String(through)}, outside ${from}-${range.through}`,
             };
         }
-        const abstract =
-            typeof fields.abstract === "string"
-                ? normalise(unescapeXml(fields.abstract))
-                : "";
+        if (typeof fields.abstract !== "string") {
+            return {
+                ok: false,
+                reason: `the abstract of cluster ${n} isn't text`,
+            };
+        }
+        const abstract = normalise(unescapeXml(fields.abstract));
         if (abstract === "") {
             return {
                 ok: false,

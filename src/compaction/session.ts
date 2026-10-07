@@ -90,8 +90,9 @@ class Shared {
     #failures = 0;
     #off = false;
     readonly #runs = new Map<AbortController, Promise<void>>();
-    // Sessions a handover replaced, still closing.
-    readonly #closing = new Set<Promise<void>>();
+    // Sessions a handover replaced, still closing, each by the wrapper
+    // that replaced it.
+    readonly #closing = new Map<Promise<void>, object>();
     // Saves under way, each settling once its clusters are added.
     readonly #saving = new Set<Promise<void>>();
 
@@ -155,13 +156,20 @@ class Shared {
         void done.finally(() => this.#runs.delete(controller));
     }
 
-    // Closes a replaced session; the promise never rejects. Its errors go
-    // unreported, as App's do when it replaces a session.
-    retire(session: ChatSession): Promise<void> {
+    // Closes a session owner replaced. Its errors go unreported, as App's
+    // do when it replaces a session.
+    retire(session: ChatSession, owner: object): void {
         const closing = session.close().catch(() => {});
-        this.#closing.add(closing);
+        this.#closing.set(closing, owner);
         void closing.finally(() => this.#closing.delete(closing));
-        return closing;
+    }
+
+    // The sessions owner replaced that are still closing; these never
+    // reject.
+    retiring(owner: object): Promise<void>[] {
+        return [...this.#closing].flatMap(([closing, by]) =>
+            by === owner ? [closing] : [],
+        );
     }
 
     async stop(): Promise<void> {
@@ -169,7 +177,7 @@ class Shared {
             controller.abort();
         }
         await Promise.all(this.#runs.values());
-        await Promise.all(this.#closing);
+        await Promise.all(this.#closing.keys());
     }
 }
 
@@ -230,8 +238,6 @@ class CompactingSession implements ChatSession {
     #handing = false;
     // Connecting waits for a save under way; messages wait with it.
     #waiting = false;
-    // This wrapper's replaced sessions, still closing.
-    readonly #retiring = new Set<Promise<void>>();
     // The run's new session has taken over: a throw from here on, such as
     // a listener's, is not a failed compaction.
     #landed = false;
@@ -323,7 +329,10 @@ class CompactingSession implements ChatSession {
         this.#closed = true;
         this.#cancelIdle();
         this.#run?.abort();
-        await Promise.all([this.#inner?.close(), ...this.#retiring]);
+        await Promise.all([
+            this.#inner?.close(),
+            ...this.#shared.retiring(this),
+        ]);
     }
 
     #emit(event: ConversationEvent): void {
@@ -559,9 +568,7 @@ class CompactingSession implements ChatSession {
         this.#attach(this.#connect(shared.seed(this.#turns)));
         this.#landed = true;
         if (old !== null) {
-            const closing = this.#shared.retire(old);
-            this.#retiring.add(closing);
-            void closing.finally(() => this.#retiring.delete(closing));
+            this.#shared.retire(old, this);
         }
         this.#emit({
             type: "compacted",
