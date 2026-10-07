@@ -106,7 +106,8 @@ class Shared {
     // Sessions a handover replaced, still closing, each by the wrapper
     // that replaced it.
     readonly #closing = new Map<Promise<void>, object>();
-    // Saves under way, each settling once its clusters are added.
+    // Saves under way, each settling once its clusters are added and the
+    // compaction recorded.
     readonly #saving = new Set<Promise<void>>();
 
     constructor(options: CompactionOptions) {
@@ -149,7 +150,7 @@ class Shared {
         latest: number,
     ): Promise<SaveResult> {
         const from = clusters[0]?.from ?? covered(this.clusters) + 1;
-        const saving = this.options
+        return this.options
             .save(clusters, costUsd)
             .then((saved): SaveResult => {
                 if (!saved.ok) {
@@ -166,16 +167,23 @@ class Shared {
                 this.clusters = [...saved.clusters];
                 return saved;
             });
-        const settled = saving.then(
+    }
+
+    // Saving and recording: a session seeded meanwhile waits for both, so
+    // that its seed has the clusters and the transcript's compaction event
+    // comes before its session event.
+    landing<T>(work: Promise<T>): Promise<T> {
+        const settled = work.then(
             () => {},
             () => {},
         );
         this.#saving.add(settled);
         void settled.then(() => this.#saving.delete(settled));
-        return saving;
+        return work;
     }
 
-    // Settles once every save under way has; null when none is.
+    // Settles once every save under way, and its record, has; null when
+    // none is.
     saved(): Promise<void> | null {
         return this.#saving.size === 0
             ? null
@@ -620,10 +628,16 @@ class CompactingSession implements ChatSession {
             return;
         }
         this.#handing = true;
-        const saved = await shared.save(
-            outcome.clusters,
-            outcome.costUsd,
-            this.#turns.findLastIndex((turn) => turn.role === "user") + 1,
+        // The event only tells; the sidecar holds the clusters. Warnings of
+        // the landing follow the compacted event, which clears compaction's
+        // warnings.
+        const after: string[] = [];
+        const saved = await shared.landing(
+            this.#keep(
+                outcome,
+                this.#turns.findLastIndex((turn) => turn.role === "user") + 1,
+                after,
+            ),
         );
         if (!saved.ok) {
             this.#fail(saved.reason);
@@ -640,22 +654,6 @@ class CompactingSession implements ChatSession {
                           (cluster) => cluster.from >= outcome.range.from,
                       ),
                   };
-        // The event only tells; the sidecar holds the clusters. Warnings of
-        // the landing follow the compacted event, which clears compaction's
-        // warnings.
-        const after: string[] = [];
-        try {
-            if (saved.clusters === undefined) {
-                await shared.options.record({
-                    through: outcome.range.through,
-                    clusters: outcome.clusters.length,
-                });
-            }
-        } catch (error) {
-            after.push(
-                `compaction: couldn't record the compaction in the transcript: ${describeError(error)}`,
-            );
-        }
         // Closed or quitting meanwhile: the clusters are kept, but no new
         // session is wanted.
         if (signal.aborted || this.#closed) {
@@ -709,6 +707,34 @@ class CompactingSession implements ChatSession {
                 this.#warn(message);
             }
         }
+    }
+
+    // Saves the clusters, given latest, the turn of the newest message, and
+    // records the compaction unless another writer's were taken up, which
+    // are theirs to record. A record that fails is warned of after.
+    async #keep(
+        outcome: Extract<CompactOutcome, { kind: "compacted" }>,
+        latest: number,
+        after: string[],
+    ): Promise<SaveResult> {
+        const saved = await this.#shared.save(
+            outcome.clusters,
+            outcome.costUsd,
+            latest,
+        );
+        if (saved.ok && saved.clusters === undefined) {
+            try {
+                await this.#shared.options.record({
+                    through: outcome.range.through,
+                    clusters: outcome.clusters.length,
+                });
+            } catch (error) {
+                after.push(
+                    `compaction: couldn't record the compaction in the transcript: ${describeError(error)}`,
+                );
+            }
+        }
+        return saved;
     }
 
     #pastHard(seed: Seed, warnings: string[]): boolean {

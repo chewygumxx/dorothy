@@ -134,6 +134,7 @@ function harness({
     save = { ok: true },
     saving = Promise.resolve(),
     record = null,
+    recording = Promise.resolve(),
     closing = Promise.resolve(),
     ready,
     recollect = true,
@@ -150,6 +151,8 @@ function harness({
     saving?: Promise<void>;
     // Thrown by the transcript's record, when given.
     record?: Error | null;
+    // Settles when the record may finish.
+    recording?: Promise<void>;
     // Settles when the first session may finish closing.
     closing?: Promise<void>;
     // What the check before Dorothy's call answers; no check without.
@@ -193,6 +196,7 @@ function harness({
         },
         record: async (entry) => {
             recorded.push(entry);
+            await recording;
             if (record !== null) {
                 throw record;
             }
@@ -446,6 +450,30 @@ describe("Compaction", () => {
         expect(h.sessions[1]?.seed.clusters).toHaveLength(1);
         expect(h.sessions[1]?.sent).toEqual(["waiting"]);
         expect(h.events).not.toContainEqual({ type: "compacting" });
+    });
+
+    it("seeds a reconnection made while the compaction is recorded only once it is", async () => {
+        let recordDone = () => {};
+        const recording = new Promise<void>((resolve) => {
+            recordDone = resolve;
+        });
+        const h = harness({ recording });
+        const first = h.open();
+        first.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.recorded.length === 1);
+        void first.close();
+        const next = h.open([...HISTORY, turn("user"), turn("assistant")]);
+        await settle();
+        // The transcript's compaction event comes before the new session's.
+        expect(h.sessions).toHaveLength(1);
+        recordDone();
+        await until(() => h.sessions.length === 2);
+        expect(h.sessions[1]?.seed.clusters).toHaveLength(1);
+        await next.close();
     });
 
     it("fails as a session does when the seed after a save can't connect", async () => {
