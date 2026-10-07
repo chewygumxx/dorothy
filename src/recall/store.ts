@@ -12,6 +12,7 @@ import { Database } from "bun:sqlite";
 import { chmodSync, closeSync, mkdirSync, openSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Lock } from "../memory/sidecar.js";
+import { exclusiveLock } from "../sqlite-lock.js";
 import { type Env, xdgDir } from "../xdg.js";
 
 export const SCHEMA_VERSION = 3;
@@ -218,10 +219,10 @@ function prepare(path: string, busyMs: number): Database {
 // The derived index: deleting it costs a rebuild, never data.
 export class RecallIndex {
     readonly db: Database;
-    #queue: Promise<unknown> = Promise.resolve();
 
     private constructor(db: Database) {
         this.db = db;
+        this.exclusive = exclusiveLock(db);
     }
 
     // A file SQLite says is not a database is deleted and made again; it
@@ -248,26 +249,7 @@ export class RecallIndex {
     // Runs work holding the index's write lock, which other processes wait
     // for (and SQLite releases if this one dies); work in this process takes
     // turns.
-    exclusive<T>(work: () => T | Promise<T>): Promise<T> {
-        const run = async (): Promise<T> => {
-            this.db.run("BEGIN IMMEDIATE");
-            try {
-                const value = await work();
-                this.db.run("COMMIT");
-                return value;
-            } catch (error) {
-                try {
-                    this.db.run("ROLLBACK");
-                } catch {
-                    // A failed statement may have ended the transaction.
-                }
-                throw error;
-            }
-        };
-        const result = this.#queue.then(run, run);
-        this.#queue = result.catch(() => {});
-        return result;
-    }
+    readonly exclusive: <T>(work: () => T | Promise<T>) => Promise<T>;
 
     // For updateSidecar: a sidecar's read, change and rename happen under
     // the lock.
