@@ -165,58 +165,68 @@ function parseLine(
     return line;
 }
 
-type NumberKey<T> = readonly [
-    key: string,
-    field: keyof T,
-    min: number,
-    max: number,
-];
+// How a field of a table is written in the file: its key there, and a
+// reader that gives its value, or undefined with what it must be instead.
+type FieldSpec<V> = {
+    key: string;
+    read: (field: unknown) => V | undefined;
+    expected: string;
+};
 
-// A table of switches and whole numbers: each bad value warns and keeps its
-// default.
-function parseTable<T extends Record<string, boolean | number>>(
+const toggle = (key: string): FieldSpec<boolean> => ({
+    key,
+    read: (field) => (typeof field === "boolean" ? field : undefined),
+    expected: "true or false",
+});
+
+const whole = (key: string, min: number, max: number): FieldSpec<number> => ({
+    key,
+    read: (field) =>
+        typeof field === "number" &&
+        Number.isInteger(field) &&
+        field >= min &&
+        field <= max
+            ? field
+            : undefined,
+    expected: `a whole number from ${min} to ${max}`,
+});
+
+// A table of switches and whole numbers, a spec for each field: each bad
+// value warns and keeps its default.
+function parseTable<T extends object>(
     table: string,
     value: unknown,
     defaults: T,
-    switches: readonly (keyof T & string)[],
-    numbers: readonly NumberKey<T>[],
+    specs: { [K in keyof T]: FieldSpec<T[K]> },
     warnings: string[],
 ): T {
     if (!isRecord(value)) {
         warnings.push(`config.toml: ${table} is not a table`);
         return defaults;
     }
-    const parsed: Record<string, boolean | number> = { ...defaults };
+    const parsed = { ...defaults };
     for (const [key, field] of Object.entries(value)) {
-        const toggle = switches.find((name) => name === key);
-        const number = numbers.find(([name]) => name === key);
-        if (toggle !== undefined) {
-            if (typeof field === "boolean") {
-                parsed[toggle] = field;
-            } else {
-                warnings.push(
-                    `config.toml: ${table}.${key} must be true or false`,
-                );
+        let known = false;
+        for (const name in specs) {
+            const spec = specs[name];
+            if (spec.key !== key) {
+                continue;
             }
-        } else if (number !== undefined) {
-            const [, name, min, max] = number;
-            if (
-                typeof field === "number" &&
-                Number.isInteger(field) &&
-                field >= min &&
-                field <= max
-            ) {
-                parsed[name as string] = field;
-            } else {
+            known = true;
+            const read = spec.read(field);
+            if (read === undefined) {
                 warnings.push(
-                    `config.toml: ${table}.${key} must be a whole number from ${min} to ${max}`,
+                    `config.toml: ${table}.${key} must be ${spec.expected}`,
                 );
+            } else {
+                parsed[name] = read;
             }
-        } else {
+        }
+        if (!known) {
             warnings.push(`config.toml: unknown key ${table}.${key}`);
         }
     }
-    return parsed as T;
+    return parsed;
 }
 
 const parseMemory = (value: unknown, warnings: string[]): MemoryConfig =>
@@ -224,13 +234,14 @@ const parseMemory = (value: unknown, warnings: string[]): MemoryConfig =>
         "memory",
         value,
         DEFAULT_CONFIG.memory,
-        ["enabled", "recall"],
-        [
-            ["budget", "budget", 200, 20000],
-            ["idle-seconds", "idleSeconds", 10, 3600],
-            ["half-life-days", "halfLifeDays", 1, 3650],
-            ["catch-up", "catchUp", 0, 50],
-        ],
+        {
+            enabled: toggle("enabled"),
+            recall: toggle("recall"),
+            budget: whole("budget", 200, 20000),
+            idleSeconds: whole("idle-seconds", 10, 3600),
+            halfLifeDays: whole("half-life-days", 1, 3650),
+            catchUp: whole("catch-up", 0, 50),
+        },
         warnings,
     );
 
@@ -241,12 +252,12 @@ function parseCompaction(value: unknown, warnings: string[]): CompactionConfig {
         "compaction",
         value,
         DEFAULT_CONFIG.compaction,
-        ["enabled"],
-        [
-            ["soft", "soft", 2000, 900000],
-            ["hard", "hard", 4000, 950000],
-            ["tail", "tail", 500, 200000],
-        ],
+        {
+            enabled: toggle("enabled"),
+            soft: whole("soft", 2000, 900000),
+            hard: whole("hard", 4000, 950000),
+            tail: whole("tail", 500, 200000),
+        },
         warnings,
     );
     if (parsed.tail < parsed.soft && parsed.soft < parsed.hard) {

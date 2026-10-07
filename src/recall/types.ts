@@ -13,9 +13,9 @@
 export const SERVER_NAME = "memory";
 export const TOOLS = ["search", "open", "recollect"] as const;
 export type Tool = (typeof TOOLS)[number];
-// The external pair, over other conversations, allowed in every session
-// with recall.
-export const ALLOWED_TOOLS = ["search", "open"].map(
+// The external tools, over other conversations, allowed in every session
+// with recall: every tool but recollect.
+export const ALLOWED_TOOLS = TOOLS.filter((tool) => tool !== "recollect").map(
     (tool) => `mcp__${SERVER_NAME}__${tool}`,
 );
 // The internal tool, over this conversation's clusters, allowed only in a

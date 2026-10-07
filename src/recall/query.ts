@@ -21,6 +21,7 @@ import type {
     RecollectResult,
     SearchInput,
     SearchResult,
+    WindowTurn,
 } from "./types.js";
 
 // A mistake in what Dorothy asked for, worded for her to relay.
@@ -268,6 +269,24 @@ export function windowOf<T extends { text: string }>(
     return turns.slice(low, high + 1);
 }
 
+// A turn as the index holds it, its time in milliseconds.
+type TurnRow = {
+    turn: number;
+    role: "user" | "assistant";
+    at: number;
+    text: string;
+};
+
+// The window around turn, its times as ISO strings.
+const isoWindow = (
+    turns: readonly TurnRow[],
+    turn: number | undefined,
+): WindowTurn[] =>
+    windowOf(turns, turn).map((row) => ({
+        ...row,
+        at: new Date(row.at).toISOString(),
+    }));
+
 export function openConversation(
     index: RecallIndex,
     input: OpenInput,
@@ -301,29 +320,14 @@ export function openConversation(
         .query(
             "SELECT n AS turn, role, at, text FROM turns WHERE phrase = ? ORDER BY n",
         )
-        .all(row.phrase) as {
-        turn: number;
-        role: "user" | "assistant";
-        at: number;
-        text: string;
-    }[];
+        .all(row.phrase) as TurnRow[];
     return {
         ...objectOf(row),
         ...(row.abstract !== null ? { abstract: row.abstract } : {}),
         turns: turns.length,
-        window: windowOf(turns, input.turn).map((turn) => ({
-            ...turn,
-            at: new Date(turn.at).toISOString(),
-        })),
+        window: isoWindow(turns, input.turn),
     };
 }
-
-type TurnRow = {
-    turn: number;
-    role: "user" | "assistant";
-    at: number;
-    text: string;
-};
 
 // A cluster of the live conversation, read from turn (its first by
 // default) and never past its last. With words, the window centres on the
@@ -334,8 +338,9 @@ export function recollect(
     options: { phrase: string | null },
 ): RecollectResult {
     const phrase = options.phrase;
-    // A cluster is a whole number or nothing: no rounding, so what the
-    // transcript records is what was asked for.
+    // A cluster is a whole number or nothing: no rounding, so the cluster
+    // opened is the cluster the transcript records, and a refused call
+    // records nothing opened.
     const n = Number.isInteger(input.cluster) ? input.cluster : 0;
     const range =
         phrase === null
@@ -402,9 +407,6 @@ export function recollect(
         turns: [range.first, range.last],
         total,
         ...(matched === undefined ? {} : { matched }),
-        window: windowOf(turns, at === -1 ? 1 : at + 1).map((turn) => ({
-            ...turn,
-            at: new Date(turn.at).toISOString(),
-        })),
+        window: isoWindow(turns, at === -1 ? 1 : at + 1),
     };
 }

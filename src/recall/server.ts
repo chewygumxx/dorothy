@@ -150,7 +150,7 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
 // closes. It talks to no model, so it needs no credentials.
 export async function runRecallServer(
     exclude: string | null,
-    recollect: boolean,
+    serveRecollect: boolean,
     env: Env = process.env,
 ): Promise<number> {
     const { config } = await readConfig(env);
@@ -158,7 +158,7 @@ export async function runRecallServer(
         openIndex: () => RecallIndex.open(indexPath(env)),
         dir: transcriptDir(env),
         exclude,
-        recollect,
+        recollect: serveRecollect,
         halfLifeDays: config.memory.halfLifeDays,
     });
     const closed = new Promise<void>((resolve) => {
