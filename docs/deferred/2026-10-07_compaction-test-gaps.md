@@ -79,6 +79,12 @@ has no test of its own. File:line references are as of affa0fb.
   `expect(warnings(h.events)).toEqual([])` and a variant where the call
   returns clustered output after the abort. (The
   follow-up fixes to `session.ts` added tests; re-check against them.)
+  Two more from the follow-up review: no test that a wrapper closed while
+  it waits for an in-flight save (before seeding on reconnect) never
+  connects afterwards; and the composition of a real `Compaction` inside
+  `trackMemory` (turn-ends, `ready`, flushes) is tested only with a
+  structural fake, because `src/tui/` may not import `src/compaction/`
+  outside `run.tsx`.
 - **Task 14** (`src/dump.test.ts`): no test pins `reserved` (the abstracts'
   tokens charged first in the dumped memory block), nor the fallback to the
   full history when the sidecar is unparseable or missing.
