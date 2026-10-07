@@ -264,6 +264,23 @@ export class RecallIndex {
         });
     }
 
+    // A claim still held by owner lives ms from now; false when owner no
+    // longer holds it, as after it expired.
+    renew(
+        phrase: string,
+        owner: string,
+        now: number,
+        ms: number,
+    ): Promise<boolean> {
+        return this.exclusive(
+            () =>
+                this.db.run(
+                    "UPDATE claims SET until = ? WHERE phrase = ? AND owner = ? AND until > ?",
+                    [now + ms, phrase, owner, now],
+                ).changes > 0,
+        );
+    }
+
     release(phrase: string, owner: string): Promise<void> {
         return this.exclusive(() => {
             this.db.run("DELETE FROM claims WHERE phrase = ? AND owner = ?", [

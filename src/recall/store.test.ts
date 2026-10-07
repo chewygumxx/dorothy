@@ -272,6 +272,20 @@ describe("RecallIndex", () => {
         other.close();
     });
 
+    it("renews only its owner's claim, and only while it holds", async () => {
+        const index = RecallIndex.open(path);
+        const other = RecallIndex.open(path);
+        expect(await index.claim("a", "me", 1000, 500)).toBe(true);
+        expect(await other.renew("a", "them", 1100, 500)).toBe(false);
+        expect(await index.renew("a", "me", 1400, 500)).toBe(true);
+        expect(await other.claim("a", "them", 1600, 500)).toBe(false);
+        expect(await index.renew("a", "me", 1900, 500)).toBe(false);
+        expect(await other.claim("a", "them", 1900, 500)).toBe(true);
+        expect(await index.renew("b", "me", 1900, 500)).toBe(false);
+        index.close();
+        other.close();
+    });
+
     it("releases only its owner's claim", async () => {
         const index = RecallIndex.open(path);
         await index.claim("a", "me", 1000, 500);
