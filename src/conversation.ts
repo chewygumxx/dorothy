@@ -126,8 +126,9 @@ type ResultMessage = Extract<SDKMessage, { type: "result" }>;
 type PendingCall = { tool: Tool; input: unknown; offset: number };
 
 // How long close() waits for the subprocess to exit on its own before
-// terminating it.
-const CLOSE_GRACE_MS = 2000;
+// terminating it. Compaction's QUIT_GRACE_MS equals it, as
+// conversation.test.ts checks.
+export const CLOSE_GRACE_MS = 2000;
 
 // DISABLE_COMPACT keeps the CLI from compacting. If it ever does, the
 // conversation it summarised is no longer the one Dorothy's compaction

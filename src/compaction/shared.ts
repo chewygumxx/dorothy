@@ -62,7 +62,7 @@ export type CompactionOptions = {
 // How long quitting waits for a save under way, and its record, before
 // it goes on without them. Paired with CLOSE_GRACE_MS in
 // src/conversation.ts, which Conversation.close gives the CLI to exit;
-// keep the two equal.
+// conversation.test.ts fails if the two differ.
 export const QUIT_GRACE_MS = 2000;
 
 export const describeError = (error: unknown) =>

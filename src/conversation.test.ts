@@ -10,7 +10,9 @@
 
 import { describe, expect, it } from "bun:test";
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import { QUIT_GRACE_MS } from "./compaction/shared.js";
 import {
+    CLOSE_GRACE_MS,
     COMPACTED_BY_CLI,
     Conversation,
     type ConversationEvent,
@@ -490,6 +492,14 @@ describe("Conversation", () => {
             message: "boom",
             partial: "Par",
         });
+    });
+});
+
+describe("the grace periods", () => {
+    // Quitting waits for a compaction's save as long as close() waits for
+    // the CLI to exit; src/compaction/ can't import the one to share it.
+    it("give a quit's save as long as the CLI gets to exit", () => {
+        expect(QUIT_GRACE_MS).toBe(CLOSE_GRACE_MS);
     });
 });
 
