@@ -16,7 +16,7 @@ import { REAL_TIMERS, type Timers } from "../timers.js";
 import { covered, seedTurns } from "./plan.js";
 import type { StructuredCall } from "./types.js";
 
-// Failures in a run after which compaction stops until the next launch.
+// Failures in a launch after which compaction stops until the next launch.
 export const MAX_FAILURES = 3;
 
 // What a session starts with: the clusters, and the turns after them.
@@ -97,7 +97,7 @@ function misfit(
     return null;
 }
 
-// What one run's compaction keeps across its sessions: the clusters so
+// What a launch's compaction keeps across its sessions: the clusters so
 // far, the failures, and the calls, saves and closings under way. Only
 // the compaction modules see it.
 export class Shared {

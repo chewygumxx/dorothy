@@ -63,7 +63,7 @@ const streams = (event: ConversationEvent) =>
     event.type === "lookup" ||
     (event.type === "sdk" && event.message.type === "stream_event");
 
-// One run's compaction. It outlives each session, so that reconnecting
+// A launch's compaction. It outlives each session, so that reconnecting
 // starts from the clusters too.
 export class Compaction {
     readonly #shared: Shared;
@@ -197,7 +197,8 @@ class CompactingSession implements ChatSession {
             this.#urgent = true;
             // Esc on these, held for a save, ends the chain this starts
             // after its first call, as Esc during it would.
-            // After the caller has subscribed.
+            //
+            // Announced after the caller has subscribed.
             queueMicrotask(() => {
                 this.#announce();
                 this.#start();
