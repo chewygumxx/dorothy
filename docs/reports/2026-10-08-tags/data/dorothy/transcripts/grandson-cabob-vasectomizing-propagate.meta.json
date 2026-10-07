@@ -1,0 +1,59 @@
+{
+    "v": 1,
+    "rev": 4,
+    "title": "Bike gears skipping: chain, cassette and barrel adjuster",
+    "description": "User wanted brief help with gears skipping on small rear cogs; chain 0.75% worn, Dorothy advised new chain, likely cassette, and barrel adjuster steps.",
+    "abstract": "The user's bike skips under load on the smallest rear cogs, and they asked for brief answers. Dorothy gave a prioritized checklist: barrel adjuster and cable tension, chain wear, shark-fin cog wear, derailleur hanger alignment, and cable condition. The chain measured 0.75% worn, so she advised replacing the chain and probably the cassette, since the small cogs have likely worn to match the chain. She suggested checking for hooked cog and chainring teeth, and a mid-range cassette to save money. The user then asked how to adjust the barrel adjuster after fitting the new chain. Dorothy gave short steps: shift up one cog; counterclockwise adds tension if it hesitates; clockwise reduces it if it overshoots; use half-turns; limit screws if the chain can't reach the end cogs; recheck after the first ride. Left open: drivetrain type, chain mileage, cog condition, whether they replaced the cassette, and whether the fix worked. The user prefers short answers, as in the sourdough chat.",
+    "pinned": false,
+    "hidden": false,
+    "tags": ["k707126e4", "kb658bca3", "k459bcd6a"],
+    "titles": [
+        {
+            "title": "My bike's gears skip under load on the smallest rear cogs.…",
+            "at": "2026-10-07T17:54:34.065Z",
+            "by": "prompt"
+        },
+        {
+            "title": "Bike gears skipping on small rear cogs",
+            "at": "2026-10-07T17:54:45.995Z",
+            "by": "dorothy"
+        },
+        {
+            "title": "Bike gears skipping: chain and cassette replacement",
+            "at": "2026-10-07T17:56:57.871Z",
+            "by": "dorothy"
+        }
+    ],
+    "fields": {
+        "title": {
+            "by": "dorothy",
+            "model": "claude-sonnet-5-5",
+            "at": "2026-10-07T17:59:12.369Z",
+            "throughTurn": 6
+        },
+        "description": {
+            "by": "dorothy",
+            "model": "claude-sonnet-5-5",
+            "at": "2026-10-07T17:59:12.369Z",
+            "throughTurn": 6
+        },
+        "abstract": {
+            "by": "dorothy",
+            "model": "claude-sonnet-5-5",
+            "at": "2026-10-07T17:59:12.369Z",
+            "throughTurn": 6
+        },
+        "tags": {
+            "by": "dorothy",
+            "model": "claude-sonnet-5-5",
+            "at": "2026-10-07T17:59:12.369Z",
+            "throughTurn": 6
+        }
+    },
+    "reviewedThrough": 6,
+    "reviewCostUsd": 0.0566022,
+    "compactionCostUsd": 0,
+    "appraisals": {},
+    "failures": null,
+    "clusters": []
+}

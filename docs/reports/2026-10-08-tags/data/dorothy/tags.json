@@ -1,0 +1,76 @@
+{
+    "v": 1,
+    "rev": 4,
+    "concepts": {
+        "k968b3535": {
+            "prefLabel": "levain",
+            "altLabel": [],
+            "broader": ["k9a718830"],
+            "scopeNote": "Maintaining, reviving and troubleshooting sourdough starters, including feeding schedules, ratios, smells and signs of spoilage.",
+            "by": "dorothy",
+            "at": "2026-10-07T17:49:42.880Z",
+            "model": "claude-sonnet-5-5",
+            "edited": "2026-10-07T18:12:30.270Z"
+        },
+        "k9a718830": {
+            "prefLabel": "sourdough baking",
+            "altLabel": [],
+            "broader": [],
+            "scopeNote": "Baking bread with wild-yeast sourdough cultures, including starter care and readiness for baking.",
+            "by": "dorothy",
+            "at": "2026-10-07T17:49:42.880Z",
+            "model": "claude-sonnet-5-5",
+            "edited": null
+        },
+        "k7dc0289a": {
+            "prefLabel": "fermentation troubleshooting",
+            "altLabel": [],
+            "broader": [],
+            "scopeNote": "Diagnosing problems in fermented foods and cultures, such as odd smells, sluggish activity, hooch or mold.",
+            "by": "dorothy",
+            "at": "2026-10-07T17:49:42.880Z",
+            "model": "claude-sonnet-5-5",
+            "edited": null
+        },
+        "k459bcd6a": {
+            "prefLabel": "bike maintenance",
+            "altLabel": ["bicycle repair"],
+            "broader": [],
+            "scopeNote": "Maintaining and repairing bicycles, including drivetrain, shifting, wear checks and adjustments.",
+            "by": "dorothy",
+            "at": "2026-10-07T17:54:45.995Z",
+            "model": "claude-sonnet-5-5",
+            "edited": null
+        },
+        "k707126e4": {
+            "prefLabel": "drivetrain troubleshooting",
+            "altLabel": [],
+            "broader": ["k459bcd6a"],
+            "scopeNote": "Diagnosing bike drivetrain problems such as skipping gears, worn chains and cogs, and poor shifting.",
+            "by": "dorothy",
+            "at": "2026-10-07T17:54:45.995Z",
+            "model": "claude-sonnet-5-5",
+            "edited": null
+        },
+        "kb658bca3": {
+            "prefLabel": "derailleur adjustment",
+            "altLabel": [],
+            "broader": ["k459bcd6a"],
+            "scopeNote": "Adjusting bike derailleurs, cable tension, barrel adjusters and hanger alignment for crisp indexed shifting.",
+            "by": "dorothy",
+            "at": "2026-10-07T17:54:45.995Z",
+            "model": "claude-sonnet-5-5",
+            "edited": null
+        },
+        "kb25919c9": {
+            "prefLabel": "espresso machine care",
+            "altLabel": ["espresso descaling"],
+            "broader": [],
+            "scopeNote": "Maintaining espresso machines, including descaling frequency, descaler choice, rinsing and water quality.",
+            "by": "dorothy",
+            "at": "2026-10-07T18:16:23.795Z",
+            "model": "claude-sonnet-5-5",
+            "edited": null
+        }
+    }
+}

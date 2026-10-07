@@ -1,0 +1,59 @@
+{
+    "v": 1,
+    "rev": 6,
+    "title": "Sourdough starter peak, dense loaf and shorter bulk",
+    "description": "User's starter peaks in five hours at 26°C; Dorothy covered spotting peak, an underproofed loaf and shorter bulk, plus a quick espresso descaling aside.",
+    "abstract": "The user's sourdough starter now doubles reliably, first in six hours and later peaking in five hours at 26°C, so the revival is working. Dorothy explained peak signs: domed top just dimpling (concave means past peak), many bubbles, sweet tangy smell, jiggly stringy texture, and a not-foolproof float test; she suggested a rubber band at the starting level. The last loaf was dense and gummy; she said it was most likely underproofed, probably from a weak starter, and advised using it at peak and judging bulk by the dough (up 50-75%, domed, bubbly) at 24-27°C. Asked about shortening bulk, she said probably yes: at 26°C with about 20% starter, bulk often takes 4-6 hours, so check from 3.5-4 hours. The user then asked about descaling an espresso machine: every 2-3 months with hard water, 3-6 with soft, citric acid descaler, no vinegar, rinse well. The user keeps asking for brief answers. Open: whether the next loaf improves; espresso machine model and water hardness.",
+    "pinned": true,
+    "hidden": false,
+    "tags": ["k968b3535", "k9a718830", "k7dc0289a", "kb25919c9"],
+    "titles": [
+        {
+            "title": "My sourdough starter is finally doubling in six hours. How…",
+            "at": "2026-10-07T18:01:50.371Z",
+            "by": "prompt"
+        },
+        {
+            "title": "Spotting peak sourdough starter before mixing dough",
+            "at": "2026-10-07T18:02:01.461Z",
+            "by": "dorothy"
+        },
+        {
+            "title": "Sourdough starter peak and a dense, gummy loaf",
+            "at": "2026-10-07T18:04:21.229Z",
+            "by": "dorothy"
+        }
+    ],
+    "fields": {
+        "title": {
+            "by": "dorothy",
+            "at": "2026-10-07T18:16:23.795Z",
+            "model": "claude-sonnet-5-5",
+            "throughTurn": 8
+        },
+        "description": {
+            "by": "dorothy",
+            "at": "2026-10-07T18:16:23.795Z",
+            "model": "claude-sonnet-5-5",
+            "throughTurn": 8
+        },
+        "abstract": {
+            "by": "dorothy",
+            "at": "2026-10-07T18:16:23.795Z",
+            "model": "claude-sonnet-5-5",
+            "throughTurn": 8
+        },
+        "tags": {
+            "by": "dorothy",
+            "at": "2026-10-07T18:16:23.795Z",
+            "model": "claude-sonnet-5-5",
+            "throughTurn": 8
+        }
+    },
+    "reviewedThrough": 8,
+    "reviewCostUsd": 0.08460019999999999,
+    "compactionCostUsd": 0,
+    "appraisals": {},
+    "failures": null,
+    "clusters": []
+}
