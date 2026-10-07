@@ -872,6 +872,40 @@ describe("Compaction", () => {
         expect(h.compaction.clusters()).toEqual([]);
     });
 
+    it("adopts the clusters another writer saved first, and hands over to them without a failure or a record", async () => {
+        const theirs: Cluster[] = [
+            { from: 1, through: 2, abstract: "a", at: "x", model: "m" },
+            { from: 3, through: 4, abstract: "b", at: "x", model: "m" },
+        ];
+        const h = harness({ save: { ok: true, clusters: theirs } });
+        const session = h.open();
+        session.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.sessions.length === 2);
+        expect(h.recorded).toEqual([]);
+        expect(h.compaction.clusters()).toEqual(theirs);
+        expect(h.sessions[1]?.seed.clusters).toEqual(theirs);
+        expect(h.sessions[1]?.seed.turns).toHaveLength(2);
+        expect(h.sessions[0]?.closed).toBe(true);
+        expect(warnings(h.events)).toEqual([]);
+        expect(h.events).toContainEqual({
+            type: "compacted",
+            from: 1,
+            through: 4,
+            clusters: 2,
+        });
+        // No failure counted: the next idle wait is not doubled.
+        for (let exchange = 0; exchange < 2; exchange++) {
+            session.send("abcd");
+            h.sessions[1]?.reply(150);
+        }
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 2);
+    });
+
     it("hands over when recording fails after the save, rather than compacting again at every idle", async () => {
         const h = harness({ record: new Error("transcript gone") });
         const session = h.open();

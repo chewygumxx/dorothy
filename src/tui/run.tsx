@@ -11,7 +11,7 @@
 import { randomBytes } from "node:crypto";
 import { render } from "ink";
 import { COMPACTION_TIMEOUT_MS } from "../compaction/compact.js";
-import { clusterTokens, seedTurns } from "../compaction/plan.js";
+import { clusterTokens, covered, seedTurns } from "../compaction/plan.js";
 import {
     type Claim,
     Compaction,
@@ -101,8 +101,8 @@ export async function notesReady(
         : { ok: true };
 }
 
-// Compaction's save: the clusters and their cost go into the notes.
-// Without a transcript there is no conversation for notes to describe; the
+// Compaction's save: the clusters and their cost go into the notes, unless
+// the notes' clusters already cover their turns. Without a transcript there is no conversation for notes to describe; the
 // clusters live in this run only.
 export function clusterSaver({
     dir,
@@ -125,11 +125,23 @@ export function clusterSaver({
             (current) => appendClusters(current, added, costUsd),
             lock,
         );
-        return result.kind === "written"
-            ? { ok: true }
-            : result.kind === "unchanged"
-              ? { ok: false, reason: "the notes already cover those turns" }
-              : { ok: false, reason: result.reason };
+        if (result.kind === "written") {
+            return { ok: true };
+        }
+        if (result.kind !== "unchanged") {
+            return { ok: false, reason: result.reason };
+        }
+        // Another TUI compacted this conversation first: its clusters are
+        // taken up in place of these.
+        const theirs = result.sidecar?.clusters ?? [];
+        const end = covered(theirs);
+        const through = added.at(-1)?.through ?? 0;
+        return end >= through
+            ? { ok: true, clusters: theirs }
+            : {
+                  ok: false,
+                  reason: `the notes' clusters end at turn ${end}, not ${(added[0]?.from ?? 1) - 1}`,
+              };
     };
 }
 

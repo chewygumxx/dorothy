@@ -14,7 +14,7 @@ import type { Cluster } from "../memory/sidecar.js";
 import type { Turn } from "../persona.js";
 import { REAL_TIMERS, type Timers } from "../timers.js";
 import { type CompactOutcome, compact } from "./compact.js";
-import { callCap, pressure, seedTurns } from "./plan.js";
+import { callCap, covered, pressure, seedTurns } from "./plan.js";
 import type { StructuredCall } from "./types.js";
 
 // How often a compaction holding a message asks again for a claim that
@@ -27,7 +27,11 @@ export const MAX_FAILURES = 3;
 export type Seed = { turns: Turn[]; clusters: readonly Cluster[] };
 // The conversation's claim in the recall index, which reviews take too.
 export type Claim = { take(): Promise<boolean>; release(): Promise<void> };
-export type SaveResult = { ok: true } | { ok: false; reason: string };
+// Saved; or, with clusters, not saved because another writer's clusters,
+// these, already cover the turns, and the run takes them up instead.
+export type SaveResult =
+    | { ok: true; clusters?: readonly Cluster[] }
+    | { ok: false; reason: string };
 
 export type CompactionOptions = {
     config: Pick<CompactionConfig, "soft" | "hard" | "tail">;
@@ -136,11 +140,14 @@ class Shared {
         this.#failures++;
     }
 
-    // Appends the clusters to the sidecar and, once saved, to these.
+    // Appends the clusters to the sidecar and, once saved, to these; or
+    // takes up another writer's that already cover their turns.
     save(clusters: readonly Cluster[], costUsd: number): Promise<SaveResult> {
         const saving = this.options.save(clusters, costUsd).then((saved) => {
             if (saved.ok) {
-                this.clusters = [...this.clusters, ...clusters];
+                this.clusters = [
+                    ...(saved.clusters ?? [...this.clusters, ...clusters]),
+                ];
             }
             return saved;
         });
@@ -583,14 +590,27 @@ class CompactingSession implements ChatSession {
             this.#fail(saved.reason);
             return;
         }
+        // Another writer's clusters, taken up, are theirs to record; the
+        // screen tells of the turns they cover past this run's start.
+        const landed =
+            saved.clusters === undefined
+                ? { through: outcome.range.through, clusters: outcome.clusters }
+                : {
+                      through: covered(saved.clusters),
+                      clusters: saved.clusters.filter(
+                          (cluster) => cluster.from >= outcome.range.from,
+                      ),
+                  };
         // The event only tells; the sidecar holds the clusters. Its warning
         // follows the compacted event, which clears compaction's warnings.
         let unrecorded: string | null = null;
         try {
-            await shared.options.record({
-                through: outcome.range.through,
-                clusters: outcome.clusters.length,
-            });
+            if (saved.clusters === undefined) {
+                await shared.options.record({
+                    through: outcome.range.through,
+                    clusters: outcome.clusters.length,
+                });
+            }
         } catch (error) {
             unrecorded = `compaction: couldn't record the compaction in the transcript: ${describeError(error)}`;
         }
@@ -629,8 +649,8 @@ class CompactingSession implements ChatSession {
             this.#emit({
                 type: "compacted",
                 from: outcome.range.from,
-                through: outcome.range.through,
-                clusters: outcome.clusters.length,
+                through: landed.through,
+                clusters: landed.clusters.length,
             });
         } finally {
             if (unrecorded !== null) {

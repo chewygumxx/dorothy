@@ -181,6 +181,35 @@ describe("clusterSaver", () => {
         expect(written.compactionCostUsd).toBe(0.75);
     });
 
+    it("hands back the notes' clusters when another writer covered those turns first", async () => {
+        const phrase = newPhrase();
+        const other = clusterSaver({ dir, phrase, transcript: true });
+        expect(await other([cluster(1, 4), cluster(5, 8)], 0.25)).toEqual({
+            ok: true,
+        });
+        const save = clusterSaver({ dir, phrase, transcript: true });
+        expect(await save([cluster(1, 4)], 0.5)).toEqual({
+            ok: true,
+            clusters: [cluster(1, 4), cluster(5, 8)],
+        });
+        // Nothing written: the cost is the other writer's alone.
+        expect((await notes(phrase)).compactionCostUsd).toBe(0.25);
+    });
+
+    it("fails when the notes' clusters don't lead up to those turns", async () => {
+        const phrase = newPhrase();
+        const save = clusterSaver({ dir, phrase, transcript: true });
+        expect(await save([cluster(5, 8)], 0.5)).toEqual({
+            ok: false,
+            reason: "the notes' clusters end at turn 0, not 4",
+        });
+        expect(await save([cluster(1, 6)], 0.5)).toEqual({ ok: true });
+        expect(await save([cluster(5, 8)], 0.5)).toEqual({
+            ok: false,
+            reason: "the notes' clusters end at turn 6, not 4",
+        });
+    });
+
     it("saves nothing without a transcript", async () => {
         const phrase = newPhrase();
         const save = clusterSaver({ dir, phrase, transcript: false });

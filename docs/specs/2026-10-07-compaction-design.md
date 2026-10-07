@@ -290,6 +290,11 @@ When the call succeeds, the wrapper:
 6. Closes the old session and sends any held message to the new one.
 7. Shows a dim `compacted turns 1-31 into 2 clusters` line.
 
+If the sidecar's clusters already cover the turns, another TUI compacted
+them first. The wrapper then takes up the sidecar's clusters in place of its
+own and hands over to a session seeded from them, counting no failure and
+writing and recording nothing; the line tells of the turns they cover.
+
 A message sent while the call runs goes to the old session. Its turns come
 after the compacted range, so they are part of the new session's tail.
 Everything already on screen stays.
@@ -448,6 +453,7 @@ are where the SDK meets compaction.
 | The user quits mid-compaction                  | the call is aborted and nothing is written                                                                                           |
 | The sidecar is unparseable                     | compaction is skipped with a warning; the file is not touched                                                                        |
 | Another TUI holds the claim                    | skipped; tried again at the next idle                                                                                                |
+| Another TUI compacted those turns first        | its clusters are taken up and handed over to; nothing is written                                                                     |
 | The latest exchange alone is past `hard`       | warning; the chat continues as it is                                                                                                 |
 | `[memory] recall = false`                      | no `recollect`; the abstracts are still seeded                                                                                       |
 | The CLI compacts despite `DISABLE_COMPACT`     | its `compact_boundary` becomes a warning; the turn carries on                                                                        |
