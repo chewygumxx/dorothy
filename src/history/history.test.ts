@@ -24,13 +24,14 @@ import {
     writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { EMPTY_SIDECAR } from "../memory/sidecar.js";
+import { EMPTY_SIDECAR, type Lock } from "../memory/sidecar.js";
 import {
     HOOK_MARK,
     hookScript,
-    type MemoryHistory,
+    MemoryHistory,
     openHistory,
 } from "./history.js";
+import { openRepo } from "./open.js";
 import { put, removeRoots, tempRoot } from "./testing.js";
 
 afterAll(removeRoots);
@@ -121,6 +122,23 @@ describe("adopting", () => {
         expect(warnings).toHaveLength(1);
         expect(warnings[0]).toMatch(
             /^history: tags\.json was broken \(.+\); it is kept in broken\/tags\.json\.2026-10-08T00-00-00-000Z$/,
+        );
+    });
+
+    it("adopts a transcript with a damaged middle line in place", async () => {
+        const text = `${event("one")}{"torn\n${event("two")}`;
+        put(root, TRANSCRIPT, text);
+        const history = await open();
+        expect(readFileSync(join(root, TRANSCRIPT), "utf8")).toBe(text);
+        expect(existsSync(join(root, "broken"))).toBe(false);
+        expect(await history.repo.files("HEAD")).toEqual([
+            ".gitignore",
+            TRANSCRIPT,
+        ]);
+        expect(await messages(history)).toEqual(["adopt: 2 files"]);
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toMatch(
+            /^history: transcripts\/a-b-c-d\.jsonl has a damaged line \(.+\); adopted as it is$/,
         );
     });
 
@@ -325,5 +343,29 @@ describe("warnings", () => {
         history.warn("one");
         history.warn("one");
         expect(history.takeWarnings()).toEqual(["one"]);
+    });
+});
+
+describe("a lock that fails", () => {
+    it("is a warning, never a rejection", async () => {
+        let busy = false;
+        const lock: Lock = (work) =>
+            busy ? Promise.reject(new Error("busy")) : work();
+        const history = await MemoryHistory.open({
+            repo: await openRepo(root, { engine: "git" }),
+            lock,
+            warn: (message) => warnings.push(message),
+        });
+        put(root, TRANSCRIPT, event("one"));
+        put(root, "tags.json", "{");
+        busy = true;
+        await history.sweep();
+        await history.turn(join(root, TRANSCRIPT), 1);
+        expect(await history.heal(join(root, "tags.json"))).toBe(false);
+        expect(warnings).toEqual([
+            "history: couldn't look for changes (busy)",
+            "history: couldn't commit (busy); it will be committed with the next change",
+            "history: couldn't restore tags.json (busy)",
+        ]);
     });
 });

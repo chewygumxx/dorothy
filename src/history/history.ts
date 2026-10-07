@@ -154,6 +154,10 @@ export class MemoryHistory {
                     `history: couldn't look for changes (${describeError(error)})`,
                 );
             }
+        }).catch((error) => {
+            this.warn(
+                `history: couldn't look for changes (${describeError(error)})`,
+            );
         });
     }
 
@@ -161,7 +165,11 @@ export class MemoryHistory {
     turn(path: string, count: number): Promise<void> {
         return this.lock(() =>
             this.record([path], `turn: ${basename(path, ".jsonl")} #${count}`),
-        );
+        ).catch((error) => {
+            this.warn(
+                `history: couldn't commit (${describeError(error)}); it will be committed with the next change`,
+            );
+        });
     }
 
     // A file found broken mid-run, outside the lock; true when it was
@@ -183,6 +191,11 @@ export class MemoryHistory {
                 );
                 return false;
             }
+        }).catch((error) => {
+            this.warn(
+                `history: couldn't restore ${named} (${describeError(error)})`,
+            );
+            return false;
         });
     }
 
@@ -331,6 +344,16 @@ export class MemoryHistory {
             const problem = lint(path, await readFile(full), null);
             if (problem === null) {
                 kept.push(path);
+                continue;
+            }
+            // A transcript is the only copy of its conversation, and a
+            // crash-torn line in its middle is one the reader skips: it is
+            // adopted as it stands, never moved out of the catalogue.
+            if (fileKind(path) === "transcript") {
+                kept.push(path);
+                this.warn(
+                    `history: ${path} has a damaged line (${problem}); adopted as it is`,
+                );
                 continue;
             }
             const copy = `broken/${path}.${stamp(this.#now())}`;
