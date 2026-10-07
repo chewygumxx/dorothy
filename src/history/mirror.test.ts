@@ -16,7 +16,7 @@ import type { Timers } from "../timers.js";
 import { binaryRepo } from "./binary.js";
 import { isoRepo } from "./iso.js";
 import { Mirror, recover, sealPending, waiting } from "./mirror.js";
-import { MAIN, type MemoryRepo, SEALED_THROUGH } from "./repo.js";
+import { MAIN, type MemoryRepo, SEALED, SEALED_THROUGH } from "./repo.js";
 import { bareRepo, put, removeRoots, TEST_ENV, tempRoot } from "./testing.js";
 
 afterAll(removeRoots);
@@ -136,7 +136,7 @@ describe("Mirror", () => {
         const keyless = mirrorOf(repo, { key: null });
         expect(await keyless.mirror.push()).toEqual({ kind: "no-key" });
         expect(keyless.warnings).toEqual([
-            "history: the mirror needs DOROTHY_MIRROR_KEY; set it with dorothy --mirror",
+            "history: the mirror needs DOROTHY_MIRROR_KEY (32 bytes, base64) in .env; set it with dotenvx set",
         ]);
         expect(await repo.sealedNames()).toEqual([]);
     });
@@ -227,6 +227,39 @@ describe("recover", () => {
             stopped:
                 "bundles/000001.enc: it does not open with this key, or it was changed",
         });
+        expect(await fresh.remote("mirror")).toBeNull();
+        expect(await fresh.resolve(SEALED)).toBeNull();
+    });
+
+    it("leaves no mirror and no sealed branch after a part-way stop", async () => {
+        const bare = await bareRepo();
+        const repo = await repoWith({ "tags.json": "{}\n" });
+        await repo.setRemote("mirror", bare);
+        await mirrorOf(repo).mirror.push();
+        const first = await repo.resolve(MAIN);
+        await commit(repo, { "tags.json": "{ }\n" }, "two");
+        // The second bundle is sealed under another key.
+        await mirrorOf(repo, { key: OTHER }).mirror.push();
+
+        const fresh = binaryRepo(join(tempRoot(), "data"), { env: TEST_ENV });
+        expect(
+            await recover({ repo: fresh, url: bare, key: KEY, token: null }),
+        ).toEqual({
+            applied: 1,
+            of: 2,
+            tip: first,
+            stopped:
+                "bundles/000002.enc: it does not open with this key, or it was changed",
+        });
+        expect(await fresh.resolve(MAIN)).toBe(first);
+        expect(await fresh.remote("mirror")).toBeNull();
+        expect(await fresh.resolve(SEALED)).toBeNull();
+
+        // Whatever comes next never extends the broken chain.
+        await commit(fresh, { "tags.json": "{  }\n" }, "three");
+        await fresh.setRemote("mirror", bare);
+        const { mirror } = mirrorOf(fresh);
+        expect((await mirror.push()).kind).toBe("failed");
     });
 
     it("says why when the mirror can't be reached", async () => {

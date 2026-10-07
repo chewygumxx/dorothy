@@ -122,7 +122,7 @@ export class Mirror {
             const key = this.#options.key();
             if (key === null) {
                 warn(
-                    "history: the mirror needs DOROTHY_MIRROR_KEY; set it with dorothy --mirror",
+                    "history: the mirror needs DOROTHY_MIRROR_KEY (32 bytes, base64) in .env; set it with dotenvx set",
                 );
                 return { kind: "no-key" };
             }
@@ -150,7 +150,10 @@ export type Recovered = {
 
 // Rebuilds an empty repository from a mirror: each sealed bundle opened
 // and applied in order. It stops at the first that fails, keeping what
-// came before it.
+// came before it. After a full recovery the mirror becomes the repository's
+// remote; after a stop there is neither a remote nor a local sealed branch,
+// so the next mirror starts a chain of its own, whose push fails loudly
+// rather than extending the broken one.
 export async function recover({
     repo,
     url,
@@ -163,24 +166,24 @@ export async function recover({
     token: string | null;
 }): Promise<Recovered> {
     await repo.init();
-    await repo.setRemote(MIRROR, url);
     let names: string[];
     try {
         await repo.fetch(url, "sealed", token);
         names = await repo.sealedNames();
     } catch (error) {
+        await repo.deleteRef(SEALED);
         return { applied: 0, of: 0, tip: null, stopped: describeError(error) };
     }
     let applied = 0;
     let tip: string | null = null;
     let stopped: string | null = null;
     for (const name of names) {
-        const opened = await unseal(await repo.sealedFile(name), key);
-        if (!opened.ok) {
-            stopped = `${name}: ${opened.reason}`;
-            break;
-        }
         try {
+            const opened = await unseal(await repo.sealedFile(name), key);
+            if (!opened.ok) {
+                stopped = `${name}: ${opened.reason}`;
+                break;
+            }
             tip = await repo.unbundle(opened.bundle);
         } catch (error) {
             stopped = `${name}: ${describeError(error)}`;
@@ -190,7 +193,14 @@ export async function recover({
     }
     if (tip !== null) {
         await repo.checkout();
-        await repo.setRef(SEALED_THROUGH, tip);
+    }
+    if (stopped !== null) {
+        await repo.deleteRef(SEALED);
+    } else {
+        if (tip !== null) {
+            await repo.setRef(SEALED_THROUGH, tip);
+        }
+        await repo.setRemote(MIRROR, url);
     }
     return { applied, of: names.length, tip, stopped };
 }
