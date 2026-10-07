@@ -371,7 +371,10 @@ export async function readSidecar(
 
 // No reader ever sees half a file: the text lands under a temporary name in
 // the same directory, then replaces the sidecar in one rename.
-export async function writeAtomic(path: string, text: string): Promise<void> {
+export async function writeAtomic(
+    path: string,
+    text: string | Uint8Array,
+): Promise<void> {
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
     const temporary = `${path}.${randomBytes(4).toString("hex")}.tmp`;
     try {
