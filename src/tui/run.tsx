@@ -32,6 +32,7 @@ import { MemoryService } from "../memory/service.js";
 import {
     appendClusters,
     type Cluster,
+    type Lock,
     readSidecar,
     updateSidecar,
 } from "../memory/sidecar.js";
@@ -98,6 +99,38 @@ export async function notesReady(
     return notes.kind === "unparseable"
         ? { ok: false, reason: `its notes can't be read (${notes.reason})` }
         : { ok: true };
+}
+
+// Compaction's save: the clusters and their cost go into the notes.
+// Without a transcript there is no conversation for notes to describe; the
+// clusters live in this run only.
+export function clusterSaver({
+    dir,
+    phrase,
+    lock,
+    transcript,
+}: {
+    dir: string;
+    phrase: string;
+    lock?: Lock;
+    transcript: boolean;
+}): (clusters: readonly Cluster[], costUsd: number) => Promise<SaveResult> {
+    return async (added, costUsd) => {
+        if (!transcript) {
+            return { ok: true };
+        }
+        const result = await updateSidecar(
+            dir,
+            phrase,
+            (current) => appendClusters(current, added, costUsd),
+            lock,
+        );
+        return result.kind === "written"
+            ? { ok: true }
+            : result.kind === "unchanged"
+              ? { ok: false, reason: "the notes already cover those turns" }
+              : { ok: false, reason: result.reason };
+    };
 }
 
 // Compaction's claims on the conversation in the index, which reviews take
@@ -238,27 +271,12 @@ export async function runTui(
               // With recall on, a session with clusters offers recollect.
               recollect: recall !== null,
               call: structuredCall(),
-              // Without a transcript there is no conversation for notes to
-              // describe; the clusters live in this run only.
-              save: async (added) => {
-                  if (transcript === null) {
-                      return { ok: true };
-                  }
-                  const result = await updateSidecar(
-                      dir,
-                      phrase,
-                      (current) => appendClusters(current, added),
-                      claims?.lock,
-                  );
-                  return result.kind === "written"
-                      ? { ok: true }
-                      : result.kind === "unchanged"
-                        ? {
-                              ok: false,
-                              reason: "the notes already cover those turns",
-                          }
-                        : { ok: false, reason: result.reason };
-              },
+              save: clusterSaver({
+                  dir,
+                  phrase,
+                  ...(claims === null ? {} : { lock: claims.lock }),
+                  transcript: transcript !== null,
+              }),
               ready: () =>
                   transcript === null
                       ? Promise.resolve({ ok: true })

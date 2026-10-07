@@ -69,6 +69,7 @@ const reviewed: Sidecar = {
     },
     reviewedThrough: 4,
     reviewCostUsd: 0.25,
+    compactionCostUsd: 0.125,
 };
 const notes = {
     title: "Remembering",
@@ -119,6 +120,17 @@ describe("parseSidecar", () => {
                 fields: { abstract: reviewed.fields.abstract },
             },
         });
+    });
+
+    it("reads a compaction cost absent, invalid or negative as 0", () => {
+        for (const cost of [undefined, "0.5", -1, null, {}]) {
+            const read = parseSidecar(
+                JSON.stringify({ ...reviewed, compactionCostUsd: cost }),
+            );
+            expect(read.kind === "ok" && read.sidecar.compactionCostUsd).toBe(
+                0,
+            );
+        }
     });
 
     it("fills in whatever is missing", () => {
@@ -558,16 +570,24 @@ describe("clusters", () => {
     });
 
     it("are appended when they follow on", () => {
-        const first = appendClusters(null, [cluster(1, 4), cluster(5, 9)]);
+        const first = appendClusters(null, [cluster(1, 4), cluster(5, 9)], 0);
         expect(first?.clusters.map((kept) => kept.through)).toEqual([4, 9]);
-        const next = appendClusters(first, [cluster(10, 12)]);
+        const next = appendClusters(first, [cluster(10, 12)], 0);
         expect(next?.clusters.map((kept) => kept.from)).toEqual([1, 5, 10]);
     });
 
+    it("add their compaction's cost when appended", () => {
+        const first = appendClusters(null, [cluster(1, 4)], 0.25);
+        expect(first?.compactionCostUsd).toBe(0.25);
+        const next = appendClusters(first, [cluster(5, 9)], 0.5);
+        expect(next?.compactionCostUsd).toBe(0.75);
+        expect(appendClusters(next, [cluster(3, 6)], 1)).toBeNull();
+    });
+
     it("are not appended over turns already covered, or past a gap", () => {
-        const first = appendClusters(null, [cluster(1, 4)]);
-        expect(appendClusters(first, [cluster(3, 6)])).toBeNull();
-        expect(appendClusters(first, [cluster(6, 8)])).toBeNull();
-        expect(appendClusters(first, [])).toBeNull();
+        const first = appendClusters(null, [cluster(1, 4)], 0);
+        expect(appendClusters(first, [cluster(3, 6)], 0)).toBeNull();
+        expect(appendClusters(first, [cluster(6, 8)], 0)).toBeNull();
+        expect(appendClusters(first, [], 0)).toBeNull();
     });
 });

@@ -40,8 +40,8 @@ export type CompactionOptions = {
     // Whether the sessions offer recollect, which her call is told.
     recollect: boolean;
     call: StructuredCall;
-    // Appends new clusters to the sidecar.
-    save(clusters: readonly Cluster[]): Promise<SaveResult>;
+    // Appends new clusters to the sidecar, with what their compaction cost.
+    save(clusters: readonly Cluster[], costUsd: number): Promise<SaveResult>;
     // Writes the transcript's compaction event.
     record(entry: { through: number; clusters: number }): Promise<void>;
     // Estimated tokens of the prompt a session with this seed starts with.
@@ -127,8 +127,8 @@ class Shared {
     }
 
     // Appends the clusters to the sidecar and, once saved, to these.
-    save(clusters: readonly Cluster[]): Promise<SaveResult> {
-        const saving = this.options.save(clusters).then((saved) => {
+    save(clusters: readonly Cluster[], costUsd: number): Promise<SaveResult> {
+        const saving = this.options.save(clusters, costUsd).then((saved) => {
             if (saved.ok) {
                 this.clusters = [...this.clusters, ...clusters];
             }
@@ -528,7 +528,7 @@ class CompactingSession implements ChatSession {
             return;
         }
         this.#handing = true;
-        const saved = await shared.save(outcome.clusters);
+        const saved = await shared.save(outcome.clusters, outcome.costUsd);
         if (!saved.ok) {
             this.#fail(saved.reason);
             return;

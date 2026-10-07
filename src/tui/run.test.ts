@@ -9,12 +9,18 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChatSession } from "../conversation.js";
 import { newPhrase } from "../session-id.js";
-import { indexClaims, notesReady, runTui, sessionMaker } from "./run.js";
+import {
+    clusterSaver,
+    indexClaims,
+    notesReady,
+    runTui,
+    sessionMaker,
+} from "./run.js";
 
 let dir = "";
 let saved: string | undefined;
@@ -116,5 +122,34 @@ describe("indexClaims", () => {
         // A late release by the old run leaves the new run's claim alone.
         await old.release();
         expect(await claim().take()).toBe(false);
+    });
+});
+
+describe("clusterSaver", () => {
+    const cluster = (from: number, through: number) => ({
+        from,
+        through,
+        abstract: "Turns.",
+        at: "2026-10-07T08:00:00.000Z",
+        model: "claude-test",
+    });
+    const notes = async (phrase: string) =>
+        JSON.parse(await readFile(join(dir, `${phrase}.meta.json`), "utf8"));
+
+    it("saves the clusters and adds the compaction's cost", async () => {
+        const phrase = newPhrase();
+        const save = clusterSaver({ dir, phrase, transcript: true });
+        expect(await save([cluster(1, 4)], 0.25)).toEqual({ ok: true });
+        expect(await save([cluster(5, 8)], 0.5)).toEqual({ ok: true });
+        const written = await notes(phrase);
+        expect(written.clusters).toHaveLength(2);
+        expect(written.compactionCostUsd).toBe(0.75);
+    });
+
+    it("saves nothing without a transcript", async () => {
+        const phrase = newPhrase();
+        const save = clusterSaver({ dir, phrase, transcript: false });
+        expect(await save([cluster(1, 4)], 0.25)).toEqual({ ok: true });
+        await expect(notes(phrase)).rejects.toThrow();
     });
 });

@@ -67,7 +67,9 @@ export type Sidecar = {
     fields: Partial<Record<Field, Provenance>>;
     // The turn count Dorothy's last review covered; 0 for never.
     reviewedThrough: number;
+    // What successful reviews and compactions cost, each.
     reviewCostUsd: number;
+    compactionCostUsd: number;
     // Dorothy's appraisals of what she read, by tool call id; final once made.
     appraisals: Record<string, Appraisal>;
     failures: Failures | null;
@@ -106,6 +108,7 @@ export const EMPTY_SIDECAR: Sidecar = frozen({
     fields: {},
     reviewedThrough: 0,
     reviewCostUsd: 0,
+    compactionCostUsd: 0,
     appraisals: {},
     failures: null,
     clusters: [],
@@ -195,6 +198,9 @@ function readClusters(value: unknown): Cluster[] {
     return clusters;
 }
 
+const readCost = (cost: unknown): number =>
+    typeof cost === "number" && Number.isFinite(cost) && cost >= 0 ? cost : 0;
+
 function readProvenance(value: unknown): Provenance | null {
     if (
         !isRecord(value) ||
@@ -277,11 +283,8 @@ export function parseSidecar(
     sidecar.reviewedThrough = isCount(data.reviewedThrough)
         ? data.reviewedThrough
         : 0;
-    const cost = data.reviewCostUsd;
-    sidecar.reviewCostUsd =
-        typeof cost === "number" && Number.isFinite(cost) && cost >= 0
-            ? cost
-            : 0;
+    sidecar.reviewCostUsd = readCost(data.reviewCostUsd);
+    sidecar.compactionCostUsd = readCost(data.compactionCostUsd);
     if (isRecord(data.appraisals)) {
         for (const [id, value] of Object.entries(data.appraisals)) {
             if (
@@ -540,17 +543,23 @@ export function markReviewed(
 }
 
 // New clusters go on the end, and only if they start where the last one
-// ended; anything else would cover turns twice or leave a gap.
+// ended; anything else would cover turns twice or leave a gap. The
+// compaction that made them adds its cost.
 export function appendClusters(
     current: Sidecar | null,
     clusters: readonly Cluster[],
+    costUsd: number,
 ): Sidecar | null {
     const base = current ?? EMPTY_SIDECAR;
     const next = (base.clusters.at(-1)?.through ?? 0) + 1;
     if (clusters[0]?.from !== next) {
         return null;
     }
-    return { ...base, clusters: [...base.clusters, ...clusters] };
+    return {
+        ...base,
+        clusters: [...base.clusters, ...clusters],
+        compactionCostUsd: base.compactionCostUsd + costUsd,
+    };
 }
 
 // After n failures in a row, no review until min(2^(n-1) hours, 7 days)

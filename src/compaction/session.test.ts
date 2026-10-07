@@ -160,6 +160,8 @@ function harness({
     const sessions: FakeSession[] = [];
     const calls: Pending[] = [];
     const saved: Cluster[][] = [];
+    // What each save was given as the compaction's cost.
+    const costs: number[] = [];
     const recorded: { through: number; clusters: number }[] = [];
     // Set to make connecting, or estimating a seed, throw.
     const faults: { connect: Error | null; estimate: Error | null } = {
@@ -179,8 +181,9 @@ function harness({
                     answer({ ok: false, reason: "cancelled", costUsd: 0 }),
                 );
             }),
-        save: async (added) => {
+        save: async (added, costUsd) => {
             saved.push([...added]);
+            costs.push(costUsd);
             await saving;
             if (save instanceof Error) {
                 throw save;
@@ -228,6 +231,7 @@ function harness({
         sessions,
         calls,
         saved,
+        costs,
         recorded,
         events,
         faults,
@@ -303,6 +307,8 @@ describe("Compaction", () => {
                 },
             ],
         ]);
+        // The compaction's cost is saved with its clusters.
+        expect(h.costs).toEqual([0.1]);
         expect(h.recorded).toEqual([{ through: 2, clusters: 1 }]);
         expect(h.sessions[0]?.closed).toBe(true);
         expect(h.sessions[1]?.seed.turns).toHaveLength(4);
