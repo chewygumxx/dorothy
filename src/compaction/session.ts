@@ -76,7 +76,8 @@ function sleep(timers: Timers, ms: number, signal: AbortSignal): Promise<void> {
 }
 
 // What one run's compaction keeps across its sessions: the clusters so
-// far, the failures, and the calls under way. Only this module sees it.
+// far, the failures, and the calls, saves and closings under way. Only
+// this module sees it.
 class Shared {
     readonly options: CompactionOptions;
     readonly timers: Timers;
