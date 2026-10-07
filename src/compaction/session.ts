@@ -514,9 +514,24 @@ class CompactingSession implements ChatSession {
             })
             .finally(() => {
                 this.#run = null;
-                this.#afterRun();
-            });
+                try {
+                    this.#afterRun();
+                } catch (error) {
+                    this.#escaped(error);
+                }
+            })
+            // The catch above can throw too, on a listener's: the run's
+            // promise is awaited by Compaction.stop, which must settle.
+            .catch((error: unknown) => this.#escaped(error));
         this.#shared.track(controller, done);
+    }
+
+    // A throw nothing above can take, such as a listener's: it is told as a
+    // warning, and if that throws too, no one hears it.
+    #escaped(error: unknown): void {
+        try {
+            this.#warn(`compaction: ${describeError(error)}`);
+        } catch {}
     }
 
     async #compactOnce(signal: AbortSignal): Promise<void> {
@@ -659,10 +674,17 @@ class CompactingSession implements ChatSession {
             this.#behind = this.#inner !== null;
         } else {
             const old = this.#inner;
+            // A connect that throws here, after the save, still counts as a
+            // failed compaction: no session took over and the context is
+            // as full as before, so the wait before the next try doubles
+            // as it does for any failure. The clusters stay saved. Urgency
+            // stands until the session connects, so that a held message
+            // sent on to the old session is warned of.
+            const next = this.#connect(seed);
             this.#urgent = false;
             // The old session's last reply may have started an idle wait.
             this.#cancelIdle();
-            this.#attach(this.#connect(seed));
+            this.#attach(next);
             this.#behind = false;
             if (old !== null) {
                 this.#shared.retire(old, this);
@@ -755,16 +777,20 @@ class CompactingSession implements ChatSession {
             }
         }
         const held = this.#held.splice(0);
-        if (held.length > 0 && this.#urgent) {
-            this.#warn(
-                "compaction: the context is nearly full; sending anyway",
-            );
-        }
-        this.#urgent = false;
-        this.#announced = false;
-        this.#handing = false;
-        for (const message of held) {
-            this.#forward(message);
+        // Held messages go on even when a listener throws on the warning.
+        try {
+            if (held.length > 0 && this.#urgent) {
+                this.#warn(
+                    "compaction: the context is nearly full; sending anyway",
+                );
+            }
+        } finally {
+            this.#urgent = false;
+            this.#announced = false;
+            this.#handing = false;
+            for (const message of held) {
+                this.#forward(message);
+            }
         }
     }
 }

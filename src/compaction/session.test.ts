@@ -713,6 +713,55 @@ describe("Compaction", () => {
         expect(h.events).toContainEqual({ type: "memory-cost", usd: 0.2 });
     });
 
+    it("warns that the context is nearly full when the new session can't connect after a save, and the held message goes to the old one", async () => {
+        const h = harness();
+        const session = h.open();
+        session.send("abcd");
+        h.sessions[0]?.reply(250);
+        session.send("next");
+        await until(() => h.calls.length === 1);
+        h.faults.connect = new Error("spawn failed");
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.sessions[0]?.sent.includes("next") === true);
+        // Saved and kept, but counted as a failed compaction: no session
+        // took over, so the wait before the next try doubles.
+        expect(h.saved).toHaveLength(1);
+        expect(warnings(h.events)).toEqual([
+            "compaction failed: spawn failed",
+            "compaction: the context is nearly full; sending anyway",
+        ]);
+        expect(h.sessions).toHaveLength(1);
+    });
+
+    it("lets Compaction.stop settle when a listener throws on the warning that follows a run", async () => {
+        const unhandled: unknown[] = [];
+        const onUnhandled = (reason: unknown) => unhandled.push(reason);
+        process.on("unhandledRejection", onUnhandled);
+        try {
+            const h = harness();
+            const session = h.open();
+            session.subscribe((event) => {
+                if (
+                    event.type === "warning" &&
+                    event.message.includes("nearly full")
+                ) {
+                    throw new Error("listener broke");
+                }
+            });
+            session.send("abcd");
+            h.sessions[0]?.reply(250);
+            session.send("next");
+            await until(() => h.calls.length === 1);
+            await expect(h.compaction.stop()).resolves.toBeUndefined();
+            await settle();
+            expect(unhandled).toEqual([]);
+            // The held message still went on.
+            expect(h.sessions[0]?.sent).toContain("next");
+        } finally {
+            process.off("unhandledRejection", onUnhandled);
+        }
+    });
+
     it("waits twice as long after a failure, and gives up after three", async () => {
         const h = harness();
         const session = h.open();
