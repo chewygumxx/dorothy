@@ -221,9 +221,11 @@ output tokens.
   conversation recorded before this feature, or one quit mid-compaction.
 - While a message is held, or before the first session connects, a call
   that leaves the new seed's estimate still past `hard` is followed at once
-  by another, with no session between, until the estimate falls to `hard`
-  or a call fails. A failure sends the held message to a session seeded
-  from the clusters saved so far.
+  by another, with no session between. The chain ends when the estimate
+  falls to `hard`, or when a run ends without saving: a failed call, nothing
+  to compact, notes no longer readable, or the claim held elsewhere. The
+  held message then goes to a session seeded from the clusters saved so
+  far, with the warning that the context is nearly full.
 
 ### The outgoing turns
 
@@ -432,28 +434,29 @@ API refusing a request as too long, shown as the usual error.
 
 ## Units
 
-| File                              | Role                                                          | Pure |
-| --------------------------------- | ------------------------------------------------------------- | ---- |
-| `src/compaction/plan.ts`          | context size, outgoing turns, seed estimate, the seed's turns | yes  |
-| `src/compaction/clusters.ts`      | the prompt, the schema, validating Dorothy's clusters         | yes  |
-| `src/compaction/compact.ts`       | one compaction: request, `StructuredCall`, validation         | no   |
-| `src/structured.ts`               | `StructuredCall` over a one-shot `query()`                    | no   |
-| `src/persona.ts` (`cliOptions`)   | `DISABLE_COMPACT=1`                                           | yes  |
-| `src/compaction/session.ts`       | `compacting(session)`: trigger, holding, handover, back-off   | no   |
-| `src/persona.ts`                  | `withClusters`                                                | yes  |
-| `src/memory/sidecar.ts`           | `clusters`: parse, validate, append                           | no   |
-| `src/memory/rank.ts`              | the tier walk charging abstracts first                        | yes  |
-| `src/memory/service.ts`           | rebuilding the block on demand                                | no   |
-| `src/memory/review.ts`            | the review prompt over abstracts and tail                     | yes  |
-| `src/transcript.ts`               | the `compaction` event                                        | no   |
-| `src/recall/store.ts`, `sync.ts`  | the `clusters` table                                          | no   |
-| `src/recall/query.ts`             | `recollect`                                                   | no   |
-| `src/recall/server.ts`            | registering `recollect`                                       | no   |
-| `src/conversation.ts`             | the seed in `conversationOptions`, the tool list              | no   |
-| `src/dump.ts`                     | `--dump-context --resume` shows the compacted seed            | no   |
-| `src/tui/run.tsx`                 | `createSession` seeding from clusters, wiring the wrapper     | no   |
-| `src/tui/state.ts`, `History.tsx` | the notices and the `⌕` line                                  | yes  |
-| `src/config.ts`                   | `[compaction]`                                                | yes  |
+| File                              | Role                                                                                                                              | Pure |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| `src/compaction/plan.ts`          | context size, outgoing turns, seed estimate, the seed's turns                                                                     | yes  |
+| `src/compaction/clusters.ts`      | the prompt, the schema, validating Dorothy's clusters                                                                             | yes  |
+| `src/compaction/compact.ts`       | one compaction: request, `StructuredCall`, validation                                                                             | no   |
+| `src/structured.ts`               | `StructuredCall` over a one-shot `query()`                                                                                        | no   |
+| `src/persona.ts` (`cliOptions`)   | `DISABLE_COMPACT=1`                                                                                                               | yes  |
+| `src/compaction/session.ts`       | `compacting(session)`: trigger, holding, handover, back-off, taking up another TUI's clusters                                     | no   |
+| `src/persona.ts`                  | `withClusters`                                                                                                                    | yes  |
+| `src/memory/sidecar.ts`           | `clusters`: parse, validate, append                                                                                               | no   |
+| `src/memory/rank.ts`              | the tier walk charging abstracts first                                                                                            | yes  |
+| `src/memory/service.ts`           | rebuilding the block on demand; the live review waits for the claim                                                               | no   |
+| `src/memory/review.ts`            | the review prompt over abstracts and tail                                                                                         | yes  |
+| `src/transcript.ts`               | the `compaction` event                                                                                                            | no   |
+| `src/recall/store.ts`, `sync.ts`  | the `clusters` table                                                                                                              | no   |
+| `src/recall/query.ts`             | `recollect`                                                                                                                       | no   |
+| `src/recall/server.ts`            | registering `recollect`                                                                                                           | no   |
+| `src/conversation.ts`             | the seed in `conversationOptions`, the tool list                                                                                  | no   |
+| `src/dump.ts`                     | `--dump-context --resume` shows the compacted seed                                                                                | no   |
+| `src/tui/run.tsx`                 | `createSession` seeding from clusters, wiring the wrapper, the save handing back another TUI's clusters, the index for compaction | no   |
+| `src/timers.ts`                   | the injected timers and `sleep`, shared by compaction and memory                                                                  | no   |
+| `src/tui/state.ts`, `History.tsx` | the notices and the `⌕` line                                                                                                      | yes  |
+| `src/config.ts`                   | `[compaction]`                                                                                                                    | yes  |
 
 Neither `src/compaction/` nor `src/tui/` imports the Agent SDK; boundary
 tests enforce both. `src/structured.ts` and `src/tui/run.tsx`'s factory
