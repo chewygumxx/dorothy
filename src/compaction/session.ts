@@ -289,9 +289,20 @@ class CompactingSession implements ChatSession {
 
     #forward({ text, interrupted }: Held): void {
         this.#turns.push({ role: "user", text });
+        const streaming = this.#streaming;
+        const interrupting = this.#interrupting;
         this.#streaming = true;
         this.#interrupting = interrupted;
-        this.#inner?.send(text);
+        try {
+            this.#inner?.send(text);
+        } catch (error) {
+            // No reply will come for a message that wasn't sent: nothing
+            // waits for it, and Esc on it interrupts nothing. The turn
+            // stays, as App counts the message.
+            this.#streaming = streaming;
+            this.#interrupting = interrupting;
+            throw error;
+        }
     }
 
     #attach(inner: ChatSession): void {

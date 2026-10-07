@@ -1978,6 +1978,28 @@ describe("Compaction", () => {
         expect(h.sessions[0]?.interrupts).toBe(1);
     });
 
+    it("interrupts nothing after a held message that couldn't be sent", async () => {
+        const h = harness();
+        const session = h.open();
+        session.send("abcd");
+        h.sessions[0]?.reply(250);
+        session.send("next");
+        await until(() => h.calls.length === 1);
+        await session.interrupt();
+        h.faults.send = "next";
+        h.calls[0]?.answer({ ok: false, reason: "offline", costUsd: 0 });
+        await until(() =>
+            warnings(h.events).includes(
+                "compaction: couldn't send a held message: pipe closed",
+            ),
+        );
+        h.sessions[0]?.emit({
+            type: "sdk",
+            message: { type: "stream_event", event: { type: "message_start" } },
+        });
+        expect(h.sessions[0]?.interrupts).toBe(0);
+    });
+
     it("passes the inner session's events through, and its interrupts", async () => {
         const h = harness();
         const session = h.open();
