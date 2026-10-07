@@ -9,7 +9,7 @@
 //
 
 import fs, { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve as resolvePath } from "node:path";
 import * as git from "isomorphic-git";
 import http from "isomorphic-git/http/node";
@@ -57,22 +57,6 @@ export function isoRepo(location: string): MemoryRepo {
             ? {}
             : { onAuth: () => ({ username: "dorothy", password: token }) };
 
-    const resolve = async (rev: string): Promise<string | null> => {
-        try {
-            return await git.resolveRef({ fs, dir, ref: rev });
-        } catch {}
-        try {
-            return await git.expandOid({ fs, dir, oid: rev });
-        } catch {
-            return null;
-        }
-    };
-
-    const remote = async (name: string): Promise<string | null> => {
-        const remotes = await git.listRemotes({ fs, dir });
-        return remotes.find((entry) => entry.remote === name)?.url ?? null;
-    };
-
     const hasCommit = async (oid: string): Promise<boolean> => {
         try {
             await git.readCommit({ fs, dir, oid });
@@ -80,6 +64,43 @@ export function isoRepo(location: string): MemoryRepo {
         } catch {
             return false;
         }
+    };
+
+    // resolveRef takes any 40 hex digits on trust: read the commit.
+    const resolve = async (rev: string): Promise<string | null> => {
+        let oid: string;
+        try {
+            oid = await git.resolveRef({ fs, dir, ref: rev });
+        } catch {
+            try {
+                oid = await git.expandOid({ fs, dir, oid: rev });
+            } catch {
+                return null;
+            }
+        }
+        return (await hasCommit(oid)) ? oid : null;
+    };
+
+    // History moves only forward: a ref takes a tip that descends from
+    // what it holds, as the binary's fetch without a + does.
+    const advance = async (ref: string, tip: string): Promise<void> => {
+        if (!(await hasCommit(tip))) {
+            throw new Error(`the pack left ${tip} missing`);
+        }
+        const current = await resolve(ref);
+        if (
+            current !== null &&
+            current !== tip &&
+            !(await git.isDescendent({ fs, dir, oid: tip, ancestor: current }))
+        ) {
+            throw new Error(`${ref} would not move forward to ${tip}`);
+        }
+        await git.writeRef({ fs, dir, ref, value: tip, force: true });
+    };
+
+    const remote = async (name: string): Promise<string | null> => {
+        const remotes = await git.listRemotes({ fs, dir });
+        return remotes.find((entry) => entry.remote === name)?.url ?? null;
     };
 
     // Every tree and blob under a tree, less those already known.
@@ -134,11 +155,9 @@ export function isoRepo(location: string): MemoryRepo {
                     await git.remove({ fs, dir, filepath });
                 }
             }
-            const rows = (await git.statusMatrix({
-                fs,
-                dir,
-                filepaths: [...paths],
-            })) as StatusRow[];
+            // The whole index, as the binary decides: a change the user
+            // staged by hand rides along.
+            const rows = (await git.statusMatrix({ fs, dir })) as StatusRow[];
             if (!rows.some(staged)) {
                 return null;
             }
@@ -262,7 +281,6 @@ export function isoRepo(location: string): MemoryRepo {
             if (lines[0] !== "# v2 git bundle") {
                 throw new Error("not a v2 git bundle");
             }
-            // resolveRef takes any 40 hex digits on trust: read the commit.
             for (const line of lines.slice(1)) {
                 const oid = line.slice(1, 41);
                 if (line.startsWith("-") && !(await hasCommit(oid))) {
@@ -287,8 +305,13 @@ export function isoRepo(location: string): MemoryRepo {
                 recursive: true,
             });
             await writeFile(join(dir, filepath), bundle.subarray(end + 2));
-            await git.indexPack({ fs, dir, filepath });
-            await git.writeRef({ fs, dir, ref: MAIN, value: tip, force: true });
+            try {
+                await git.indexPack({ fs, dir, filepath });
+            } catch (error) {
+                await rm(join(dir, filepath), { force: true });
+                throw error;
+            }
+            await advance(MAIN, tip);
             return tip;
         },
         async appendSealed(name, bytes, readme, message) {
@@ -386,13 +409,7 @@ export function isoRepo(location: string): MemoryRepo {
             if (result.fetchHead === null) {
                 throw new Error(`the mirror has no ${branch}`);
             }
-            await git.writeRef({
-                fs,
-                dir,
-                ref: `refs/heads/${branch}`,
-                value: result.fetchHead,
-                force: true,
-            });
+            await advance(`refs/heads/${branch}`, result.fetchHead);
         },
         async checkout() {
             await git.checkout({ fs, dir, ref: "main", force: true });

@@ -9,6 +9,7 @@
 //
 
 import { afterAll, describe, expect, it } from "bun:test";
+import { execFileSync } from "node:child_process";
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { binaryRepo } from "./binary.js";
@@ -29,6 +30,29 @@ function contract(make: (root: string) => MemoryRepo): void {
         await repo.init();
         return repo;
     };
+
+    it("resolves only commits it holds", async () => {
+        const repo = await fresh();
+        put(repo.root, "a.txt", "1\n");
+        const sha = (await repo.commit(["a.txt"], "one")) as string;
+        expect(await repo.resolve(sha)).toBe(sha);
+        expect(await repo.resolve("0".repeat(40))).toBeNull();
+        expect(await repo.resolve("refs/heads/nothing")).toBeNull();
+    });
+
+    it("commits what the user staged by hand, with the named paths", async () => {
+        const repo = await fresh();
+        put(repo.root, "f.txt", "1\n");
+        await repo.commit(["f.txt"], "one");
+        put(repo.root, "h.txt", "by hand\n");
+        execFileSync("git", ["add", "h.txt"], {
+            cwd: repo.root,
+            env: TEST_ENV,
+        });
+        // f.txt is unchanged, but the index is not.
+        expect(await repo.commit(["f.txt"], "two")).toMatch(/^[0-9a-f]{40}$/);
+        expect(await repo.files("HEAD")).toEqual(["f.txt", "h.txt"]);
+    });
 
     it("starts empty", async () => {
         const repo = await fresh();
@@ -141,6 +165,23 @@ function contract(make: (root: string) => MemoryRepo): void {
         await b.checkout();
         expect(readFileSync(join(b.root, "a.txt"), "utf8")).toBe("1\n2\n");
         expect(await messages(b)).toEqual(["two", "one"]);
+    });
+
+    it("refuses a bundle that does not descend from main", async () => {
+        const a = await fresh();
+        put(a.root, "a.txt", "1\n");
+        const base = (await a.commit(["a.txt"], "base")) as string;
+        const b = await fresh();
+        await b.unbundle((await a.bundle(null)) as Uint8Array);
+        put(a.root, "a.txt", "1\n2\n");
+        await a.commit(["a.txt"], "theirs");
+        put(b.root, "a.txt", "1\n3\n");
+        const mine = (await b.commit(["a.txt"], "mine")) as string;
+        await expect(
+            b.unbundle((await a.bundle(base)) as Uint8Array),
+        ).rejects.toThrow();
+        expect(await b.resolve(MAIN)).toBe(mine);
+        expect(await messages(b)).toEqual(["mine", "base"]);
     });
 
     it("refuses a bundle whose prerequisite it lacks", async () => {
