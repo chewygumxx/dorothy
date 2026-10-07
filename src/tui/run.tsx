@@ -30,8 +30,13 @@ import {
     readSidecar,
     updateSidecar,
 } from "../memory/sidecar.js";
-import { trackMemory } from "../memory/track.js";
-import { type PersonaMode, personaPrompt, promptHash } from "../persona.js";
+import { type MemoryHooks, trackMemory } from "../memory/track.js";
+import {
+    type PersonaMode,
+    personaPrompt,
+    promptHash,
+    type Turn,
+} from "../persona.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { newPhrase } from "../session-id.js";
 import { structuredCall } from "../structured.js";
@@ -50,6 +55,32 @@ const describeError = (error: unknown) =>
 
 // A claim outlives the longest compaction by this much, as reviews' do.
 const CLAIM_MARGIN_MS = 30_000;
+
+// App's createSession: a session over every turn so far, compacting when
+// compaction is on. Memory tracks the session App sees, not each inner
+// one: it hears of a message when the user sends it, even one compaction
+// holds back, so a review's idle wait ends then rather than starting a
+// review that takes the claim while the message waits.
+export function sessionMaker({
+    compaction,
+    connect,
+    clusters,
+    memory,
+}: {
+    compaction: Pick<Compaction, "session"> | null;
+    // A new session from its seed, untracked.
+    connect: (seed: Seed) => ChatSession;
+    clusters: readonly Cluster[];
+    memory: MemoryHooks | null;
+}): (turns: Turn[]) => ChatSession {
+    return (turns) => {
+        const session =
+            compaction === null
+                ? connect({ turns: seedTurns(turns, clusters), clusters })
+                : compaction.session(turns, connect);
+        return memory === null ? session : trackMemory(session, memory);
+    };
+}
 
 export async function runTui(
     resume: string | null,
@@ -153,9 +184,7 @@ export async function runTui(
     const connect = (seed: Seed): ChatSession => {
         const conversation = new Conversation(setup(seed));
         conversation.start();
-        return memory === null
-            ? conversation
-            : trackMemory(conversation, memory);
+        return conversation;
     };
 
     const claims = index;
@@ -217,11 +246,12 @@ export async function runTui(
             )}
             history={history}
             editDraft={(text) => editInEditor(text)}
-            createSession={(turns) =>
-                compaction === null
-                    ? connect({ turns: seedTurns(turns, clusters), clusters })
-                    : compaction.session(turns, connect)
-            }
+            createSession={sessionMaker({
+                compaction,
+                connect,
+                clusters,
+                memory,
+            })}
             notices={memory ?? undefined}
             transcript={writer}
             initialWarnings={warnings}

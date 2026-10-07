@@ -12,8 +12,9 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ChatSession } from "../conversation.js";
 import { newPhrase } from "../session-id.js";
-import { runTui } from "./run.js";
+import { runTui, sessionMaker } from "./run.js";
 
 let dir = "";
 let saved: string | undefined;
@@ -34,5 +35,42 @@ afterEach(async () => {
 describe("runTui", () => {
     it("exits 1 before rendering when the transcript to resume is missing", async () => {
         expect(await runTui(newPhrase())).toBe(1);
+    });
+});
+
+describe("sessionMaker", () => {
+    it("tells memory of a message as it is sent, so a review can't take the claim while compaction holds it", () => {
+        const log: string[] = [];
+        const inner: ChatSession = {
+            subscribe: () => () => {},
+            send: (text) => log.push(`inner ${text}`),
+            interrupt: async () => {},
+            close: async () => {},
+        };
+        // Past hard: every message is held for the compaction under way.
+        const compaction = {
+            session: (
+                _turns: unknown,
+                connect: (seed: {
+                    turns: never[];
+                    clusters: never[];
+                }) => ChatSession,
+            ): ChatSession => ({
+                ...connect({ turns: [], clusters: [] }),
+                send: (text) => log.push(`held ${text}`),
+            }),
+        };
+        const create = sessionMaker({
+            compaction,
+            connect: () => inner,
+            clusters: [],
+            memory: {
+                sent: (text) => log.push(`memory ${text}`),
+                ready: () => {},
+                turnEnded: () => {},
+            },
+        });
+        create([]).send("next");
+        expect(log).toEqual(["memory next", "held next"]);
     });
 });
