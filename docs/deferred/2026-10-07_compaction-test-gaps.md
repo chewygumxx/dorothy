@@ -21,10 +21,10 @@ tags:
 
 # Compaction test gaps
 
-Branch `feat/compaction` (as of affa0fb). Collected from the per-task reviews,
-the final whole-branch review and the follow-up review. None blocks merge;
-each is a behaviour that holds today (by reading or by an indirect test) but
-has no test of its own. File:line references are as of affa0fb.
+Branch `feat/compaction` (as of 07419db). Collected from the per-task reviews,
+the whole-branch reviews and the follow-up reviews; entries later tests
+covered are gone. None blocks merge; each is a behaviour that holds today (by
+reading or by an indirect test) but has no test of its own.
 
 ## Highest value
 
@@ -40,10 +40,6 @@ has no test of its own. File:line references are as of affa0fb.
 
 ## By task
 
-- **Task 1** (`src/conversation.test.ts`): the `compact_boundary` test
-  doesn't check that the turn continues to a normal `turn-end` after the
-  error. (A pending fix to
-  this path adds such a test; re-check once it lands.)
 - **Task 3** (`src/memory/sidecar.test.ts`): the "stop at the first
   invalid" test derives its expected value from the input
   (`clusters[0]?.from === 1 ? [4] : []`) and loops without a per-case
@@ -73,29 +69,17 @@ has no test of its own. File:line references are as of affa0fb.
   abstract of exactly 1000 code points, or with astral characters; every
   `compact` test passes `clusters: []`, so the hand-off of `outgoing` past
   earlier clusters into `clusterPrompt` is never exercised end to end.
-- **Task 12** (`src/compaction/session.test.ts`): the quit test (Review
-  Focus 5) doesn't exercise session.ts's own abort guard: its fake call
-  answers `cancelled` on abort, so removing the guard still passes. Add
-  `expect(warnings(h.events)).toEqual([])` and a variant where the call
-  returns clustered output after the abort. (The
-  follow-up fixes to `session.ts` added tests; re-check against them.)
-  Two more from the follow-up review: no test that a wrapper closed while
-  it waits for an in-flight save (before seeding on reconnect) never
-  connects afterwards; and the composition of a real `Compaction` inside
-  `trackMemory` (turn-ends, `ready`, flushes) is tested only with a
-  structural fake, because `src/tui/` may not import `src/compaction/`
-  outside `run.tsx`.
+- **Task 12** (`src/compaction/session.test.ts`): the quit tests don't
+  exercise the abort guard after Dorothy's call in `run.ts`: the harness's
+  fake call answers `cancelled` on abort, so removing the guard still
+  passes (checked by removing it). Add `expect(warnings(h.events)).toEqual([])`
+  and a variant where the call returns clustered output after the abort.
+  And the composition of a real `Compaction` inside `trackMemory`
+  (turn-ends, `ready`, flushes) is tested only with a structural fake,
+  because `src/tui/` may not import `src/compaction/` outside `run.tsx`.
 - **Task 14** (`src/dump.test.ts`): no test pins `reserved` (the abstracts'
   tokens charged first in the dumped memory block), nor the fallback to the
   full history when the sidecar is unparseable or missing.
-- **Follow-up 1** (`src/recall/server.test.ts`): the loop over refused
-  clusters (1.5, 0, -1) doesn't say which value failed.
-
-## Test-output hygiene
-
-- A stray `dorothy: cannot resume ...: ENOENT` line on stderr during
-  `bun run check`, from an existing test (a pending hygiene
-  fix addresses it; re-check once it lands).
 
 ## Live checks
 
