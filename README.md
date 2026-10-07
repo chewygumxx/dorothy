@@ -199,6 +199,36 @@ catch-up = 5         # unreviewed chats reviewed per launch, 0 to 50
 recall = true        # false: Dorothy cannot search past chats
 ```
 
+Her memory keeps its own history. The data directory is a git repository:
+each review, edit, compaction and turn is a commit, checked before it is
+made, and a file found broken is put back as it last was, with the broken
+copy kept under `broken/` and a warning. Git is used when it is installed,
+and a built-in implementation when it is not.
+
+```sh
+bun run dev -- --history [<path>] [-n 20]  # what changed, newest first
+bun run dev -- --restore <path> [<rev>]    # put a file back as it was
+bun run dev -- --rollback <rev>            # notes and tags as they were
+bun run dev -- --check                     # lint every file
+bun run dev -- --mirror <url-or-path>      # set the sealed mirror
+bun run dev -- --recover <url-or-path>     # rebuild an empty data dir
+```
+
+The history is pushed to a mirror off this machine, encrypted: set one
+with `--mirror`, which makes `DOROTHY_MIRROR_KEY` and stores it with
+dotenvx. A mirror path is taken from where you run the command, and the
+key goes in the `.env` of the directory `--mirror` runs from, so run it
+from this checkout. Keep a copy of that key elsewhere; without it the
+mirror cannot be read. Until a mirror is set, each launch reminds you.
+Under the built-in implementation only an `https://` mirror can be
+pushed, with a token in `DOROTHY_MIRROR_TOKEN`.
+
+```toml
+[history]
+enabled = true     # false: no history, no mirror
+push-seconds = 60  # at most one push per this many seconds, 10 to 86400
+```
+
 ### Development mode
 
 For the people building her, `--dev` goes before a chat, a `--resume` or a
