@@ -257,14 +257,18 @@ class CompactingSession implements ChatSession {
             // App reconnecting during a handover: the seed waits for the
             // clusters being saved, so their turns don't go in whole.
             this.#waiting = true;
-            void saving.then(() => {
-                this.#waiting = false;
-                try {
-                    this.#begin();
-                } catch (error) {
-                    this.#die(error);
-                }
-            });
+            void saving
+                .then(() => {
+                    this.#waiting = false;
+                    try {
+                        this.#begin();
+                    } catch (error) {
+                        this.#die(error);
+                    }
+                })
+                // Only a listener's throw on the error #die emitted gets
+                // here; the error was told, and no caller hears this.
+                .catch(() => {});
         }
     }
 

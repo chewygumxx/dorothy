@@ -468,6 +468,40 @@ describe("Compaction", () => {
         }
     });
 
+    it("leaves no unhandled rejection when a listener throws on the error after a save", async () => {
+        const unhandled: unknown[] = [];
+        const onUnhandled = (reason: unknown) => unhandled.push(reason);
+        process.on("unhandledRejection", onUnhandled);
+        try {
+            let saveDone = () => {};
+            const saving = new Promise<void>((resolve) => {
+                saveDone = resolve;
+            });
+            const h = harness({ saving });
+            const first = h.open();
+            first.send("abcd");
+            h.sessions[0]?.reply(150);
+            h.timers.advance(1000);
+            await until(() => h.calls.length === 1);
+            h.calls[0]?.answer(CLUSTERED);
+            await until(() => h.saved.length === 1);
+            void first.close();
+            const next = h.open([...HISTORY, turn("user"), turn("assistant")]);
+            next.subscribe((event) => {
+                if (event.type === "error") {
+                    throw new Error("listener broke");
+                }
+            });
+            h.faults.connect = new Error("spawn failed");
+            saveDone();
+            await until(() => h.events.some((e) => e.type === "error"));
+            await settle();
+            expect(unhandled).toEqual([]);
+        } finally {
+            process.off("unhandledRejection", onUnhandled);
+        }
+    });
+
     it("fails as a session does when the session after a run can't connect", async () => {
         const h = harness({ estimate: 500 });
         const session = h.open([...HISTORY, turn("user"), turn("assistant")]);
