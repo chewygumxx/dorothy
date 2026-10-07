@@ -216,10 +216,12 @@ bun run dev -- --recover <url-or-path>     # rebuild an empty data dir
 
 The history is pushed to a mirror off this machine, encrypted: set one
 with `--mirror`, which makes `DOROTHY_MIRROR_KEY` and stores it with
-dotenvx. A mirror path is taken from where you run the command, and the
-key goes in the `.env` of the directory `--mirror` runs from, so run it
-from this checkout. Keep a copy of that key elsewhere; without it the
-mirror cannot be read. Until a mirror is set, each launch reminds you.
+dotenvx only when none is set, and never replaces one that is. A mirror
+path is taken from where you run the command, and the key goes in the
+`.env` of the directory `--mirror` runs from, so run it from this
+checkout. `--mirror` with no argument shows the mirror's status. Keep a
+copy of that key elsewhere; without it the mirror cannot be read. Until a
+mirror is set, each launch reminds you. A push is tried at each launch.
 Under the built-in implementation only an `https://` mirror can be
 pushed, with a token in `DOROTHY_MIRROR_TOKEN`.
 
