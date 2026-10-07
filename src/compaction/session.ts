@@ -80,6 +80,8 @@ class Shared {
     clusters: Cluster[];
     #failures = 0;
     readonly #runs = new Map<AbortController, Promise<void>>();
+    // Sessions a handover replaced, still closing.
+    readonly #closing = new Set<Promise<void>>();
 
     constructor(options: CompactionOptions) {
         this.options = options;
@@ -116,11 +118,21 @@ class Shared {
         void done.finally(() => this.#runs.delete(controller));
     }
 
+    // Closes a replaced session; the promise never rejects. Its errors go
+    // unreported, as App's do when it replaces a session.
+    retire(session: ChatSession): Promise<void> {
+        const closing = session.close().catch(() => {});
+        this.#closing.add(closing);
+        void closing.finally(() => this.#closing.delete(closing));
+        return closing;
+    }
+
     async stop(): Promise<void> {
         for (const controller of this.#runs.keys()) {
             controller.abort();
         }
         await Promise.all(this.#runs.values());
+        await Promise.all(this.#closing);
     }
 }
 
@@ -151,7 +163,7 @@ export class Compaction {
     }
 
     // Quitting: every call is cancelled, and the promise settles once each
-    // has let go of its claim.
+    // has let go of its claim and each replaced session has closed.
     stop(): Promise<void> {
         return this.#shared.stop();
     }
@@ -179,6 +191,8 @@ class CompactingSession implements ChatSession {
     // Saving the clusters for the handover: a message waits for the new
     // session rather than going to the old one, which is about to close.
     #handing = false;
+    // This wrapper's replaced sessions, still closing.
+    readonly #retiring = new Set<Promise<void>>();
 
     constructor(
         shared: Shared,
@@ -237,7 +251,7 @@ class CompactingSession implements ChatSession {
         this.#closed = true;
         this.#cancelIdle();
         this.#run?.abort();
-        await this.#inner?.close();
+        await Promise.all([this.#inner?.close(), ...this.#retiring]);
     }
 
     #emit(event: ConversationEvent): void {
@@ -449,7 +463,11 @@ class CompactingSession implements ChatSession {
         // The old session's last reply may have started an idle wait.
         this.#cancelIdle();
         this.#attach(this.#connect(shared.seed(this.#turns)));
-        void old?.close();
+        if (old !== null) {
+            const closing = this.#shared.retire(old);
+            this.#retiring.add(closing);
+            void closing.finally(() => this.#retiring.delete(closing));
+        }
         this.#emit({
             type: "compacted",
             from: outcome.range.from,

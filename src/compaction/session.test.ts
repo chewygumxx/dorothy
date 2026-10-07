@@ -81,7 +81,11 @@ class FakeSession implements ChatSession {
     closed = false;
     interrupts = 0;
     readonly #listeners = new Set<(event: ConversationEvent) => void>();
-    constructor(readonly seed: Seed) {}
+    constructor(
+        readonly seed: Seed,
+        // Settles when closing finishes, as the CLI's subprocess ends.
+        readonly closing: Promise<void> = Promise.resolve(),
+    ) {}
     subscribe(listener: (event: ConversationEvent) => void): () => void {
         this.#listeners.add(listener);
         return () => {
@@ -97,6 +101,7 @@ class FakeSession implements ChatSession {
     }
     async close(): Promise<void> {
         this.closed = true;
+        await this.closing;
     }
     emit(event: ConversationEvent): void {
         for (const listener of this.#listeners) {
@@ -127,6 +132,7 @@ function harness({
     save = { ok: true },
     saving = Promise.resolve(),
     record = null,
+    closing = Promise.resolve(),
 }: {
     estimate?: number;
     claim?: Claim | null;
@@ -137,6 +143,8 @@ function harness({
     saving?: Promise<void>;
     // Thrown by the transcript's record, when given.
     record?: Error | null;
+    // Settles when the first session may finish closing.
+    closing?: Promise<void>;
 } = {}) {
     const timers = new FakeTimers();
     const sessions: FakeSession[] = [];
@@ -175,7 +183,10 @@ function harness({
         now: () => NOW,
     });
     const connect = (seed: Seed) => {
-        const session = new FakeSession(seed);
+        const session = new FakeSession(
+            seed,
+            sessions.length === 0 ? closing : Promise.resolve(),
+        );
         sessions.push(session);
         return session;
     };
@@ -681,6 +692,28 @@ describe("Compaction", () => {
         h.timers.advance(100_000);
         await settle();
         expect(h.calls).toHaveLength(3);
+    });
+
+    it("waits for the old session to finish closing, so a quit just after the handover leaves no CLI running", async () => {
+        let closed = () => {};
+        const closing = new Promise<void>((resolve) => {
+            closed = resolve;
+        });
+        const h = harness({ closing });
+        const session = h.open();
+        session.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.sessions[0]?.closed === true);
+        const settled: string[] = [];
+        void session.close().then(() => settled.push("close"));
+        void h.compaction.stop().then(() => settled.push("stop"));
+        await settle();
+        expect(settled).toEqual([]);
+        closed();
+        await until(() => settled.length === 2);
     });
 
     it("passes the inner session's events through, and its interrupts", async () => {
