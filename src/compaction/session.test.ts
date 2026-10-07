@@ -86,6 +86,8 @@ class FakeSession implements ChatSession {
         readonly seed: Seed,
         // Settles when closing finishes, as the CLI's subprocess ends.
         readonly closing: Promise<void> = Promise.resolve(),
+        // Called on each send, and may throw.
+        readonly sending: (text: string) => void = () => {},
     ) {}
     subscribe(listener: (event: ConversationEvent) => void): () => void {
         this.#listeners.add(listener);
@@ -94,6 +96,7 @@ class FakeSession implements ChatSession {
         };
     }
     send(text: string): void {
+        this.sending(text);
         this.sent.push(text);
     }
     interrupt(): Promise<void> {
@@ -167,10 +170,16 @@ function harness({
     // What each save was given as the compaction's cost.
     const costs: number[] = [];
     const recorded: { through: number; clusters: number }[] = [];
-    // Set to make connecting, or estimating a seed, throw.
-    const faults: { connect: Error | null; estimate: Error | null } = {
+    // Set to make connecting, estimating a seed, or sending this text,
+    // throw.
+    const faults: {
+        connect: Error | null;
+        estimate: Error | null;
+        send: string | null;
+    } = {
         connect: null,
         estimate: null,
+        send: null,
     };
     const compaction = new Compaction({
         config: { soft: 100, hard: 200, tail: 4 },
@@ -219,6 +228,11 @@ function harness({
         const session = new FakeSession(
             seed,
             sessions.length === 0 ? closing : Promise.resolve(),
+            (text) => {
+                if (text === faults.send) {
+                    throw new Error("pipe closed");
+                }
+            },
         );
         sessions.push(session);
         return session;
@@ -383,6 +397,24 @@ describe("Compaction", () => {
         h.timers.advance(100_000);
         await settle();
         expect(h.calls).toHaveLength(1);
+    });
+
+    it("sends every held message on when sending one throws", async () => {
+        const h = harness();
+        const session = h.open();
+        session.send("abcd");
+        h.sessions[0]?.reply(250);
+        session.send("first");
+        session.send("second");
+        await until(() => h.calls.length === 1);
+        h.faults.send = "first";
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.sessions[1]?.sent.length === 1);
+        await settle();
+        expect(h.sessions[1]?.sent).toEqual(["second"]);
+        expect(warnings(h.events)).toEqual([
+            "compaction: couldn't send a held message: pipe closed",
+        ]);
     });
 
     it("holds a message sent while the clusters are saved, for the new session", async () => {

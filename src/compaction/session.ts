@@ -824,8 +824,17 @@ class CompactingSession implements ChatSession {
             this.#announced = false;
             this.#handing = false;
             this.#cutShort = false;
+            // One that can't be sent doesn't keep back the rest.
             for (const message of held) {
-                this.#forward(message);
+                try {
+                    this.#forward(message);
+                } catch (error) {
+                    try {
+                        this.#warn(
+                            `compaction: couldn't send a held message: ${describeError(error)}`,
+                        );
+                    } catch {}
+                }
             }
         }
     }
