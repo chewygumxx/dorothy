@@ -501,6 +501,42 @@ describe("Compaction", () => {
         await until(() => released === 1);
     });
 
+    it("asks again for the claim when a message is held while an idle compaction waits for it", async () => {
+        let refuse = (_taken: boolean) => {};
+        const answers = [
+            new Promise<boolean>((resolve) => {
+                refuse = resolve;
+            }),
+        ];
+        const claim: Claim = {
+            take: () => answers.shift() ?? Promise.resolve(true),
+            release: async () => {},
+        };
+        const h = harness({ claim });
+        const session = h.open();
+        session.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        // While the claim is asked for, a reply crosses hard and the next
+        // message is held.
+        session.send("during");
+        h.sessions[0]?.reply(250);
+        session.send("next");
+        refuse(false);
+        await settle();
+        expect(h.sessions[0]?.sent).toEqual(["abcd", "during"]);
+        h.timers.advance(CLAIM_RETRY_MS);
+        await until(() => h.calls.length === 1);
+        // The exchange sent meanwhile moves the outgoing turns on.
+        h.calls[0]?.answer({
+            ...CLUSTERED,
+            output: { clusters: [{ through: 5, abstract: "The start." }] },
+        });
+
+        await until(() => h.sessions[1]?.sent.length === 1);
+        expect(h.sessions[1]?.sent).toEqual(["next"]);
+    });
+
     it("counts a failed save as a failure, and hands over nothing", async () => {
         const h = harness({ save: { ok: false, reason: "disk full" } });
         const session = h.open();

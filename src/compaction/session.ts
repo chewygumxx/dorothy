@@ -354,9 +354,11 @@ class CompactingSession implements ChatSession {
     async #compactOnce(signal: AbortSignal): Promise<void> {
         const shared = this.#shared;
         const { claim = null } = shared.options;
-        const holding = this.#urgent || this.#inner === null;
         if (claim !== null) {
             while (!(await claim.take())) {
+                // Asked when refused: a turn may have crossed hard, and a
+                // message been held, since the run started.
+                const holding = this.#urgent || this.#inner === null;
                 if (!holding || signal.aborted) {
                     return;
                 }
