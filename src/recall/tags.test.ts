@@ -244,6 +244,74 @@ describe("listTags", () => {
         );
     });
 
+    it("counts only visible chats, though hidden and live ones carry it too", async () => {
+        const P = phrase(5);
+        const PRIVATE = "k00000009";
+        await writeFile(
+            vocabulary,
+            JSON.stringify({
+                v: 1,
+                rev: 2,
+                concepts: {
+                    [K.dorothy]: concept("dorothy"),
+                    [K.memory]: concept("memory", {
+                        altLabel: ["recall"],
+                        broader: [K.dorothy],
+                    }),
+                    [K.tui]: concept("tui"),
+                    [K.tagging]: concept("tagging", {
+                        broader: [K.memory, K.tui],
+                    }),
+                    [K.secret]: concept("secret"),
+                    [K.unused]: concept("unused"),
+                    [K.folded]: { mergedInto: K.memory, at: AT },
+                    [K.gone]: { deleted: AT, labels: ["misc"] },
+                    [PRIVATE]: concept("private", { broader: [K.memory] }),
+                },
+            }),
+        );
+        // Under memory, carried only by a hidden chat and the live one,
+        // both later than any visible carrier of memory or dorothy.
+        await conversation(P, day(18), "private", {
+            hidden: true,
+            tags: [PRIVATE],
+        });
+        await conversation(LIVE, day(19), "now", { tags: [PRIVATE] });
+        const later = new Date(Date.now() + 5000);
+        for (const path of [
+            vocabulary,
+            join(dir, `${LIVE}.jsonl`),
+            sidecarPath(dir, LIVE),
+        ]) {
+            await utimes(path, later, later);
+        }
+        await sync();
+        const listed = listTags(index, {}, OPTIONS).results;
+        expect(listed.map((tag) => tag.name)).toEqual([
+            "tui",
+            "dorothy",
+            "memory",
+            "tagging",
+            "unused",
+        ]);
+        expect(listed.find((tag) => tag.name === "memory")).toMatchObject({
+            narrower: ["tagging"],
+            conversations: 2,
+            dateCreated: "2026-10-04",
+            dateModified: "2026-10-10",
+        });
+        expect(listed.find((tag) => tag.name === "dorothy")).toMatchObject({
+            conversations: 2,
+            dateModified: "2026-10-10",
+        });
+        expect(names(listTags(index, { under: "memory" }, OPTIONS))).toEqual([
+            "tagging",
+        ]);
+        expect(
+            refusal(() => listTags(index, { under: "private" }, OPTIONS)),
+        ).toBe(`${NO_TAG}: private.`);
+    });
+
     it("is unavailable while the vocabulary is broken", async () => {
         await breakVocabulary();
         expect(refusal(() => listTags(index, {}, OPTIONS))).toBe(
