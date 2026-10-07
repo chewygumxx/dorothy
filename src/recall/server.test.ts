@@ -154,7 +154,7 @@ describe("the recall server", () => {
             name: "search",
             arguments: { query: "" },
         });
-        expect(textOf(empty)).toBe("Give some words to search for.");
+        expect(textOf(empty)).toBe("Give some words or tags to search for.");
     });
 
     it("reports an index it cannot open", async () => {

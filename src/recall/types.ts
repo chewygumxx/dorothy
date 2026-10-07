@@ -31,9 +31,14 @@ export function toolOf(name: string): Tool | null {
 }
 
 export type SearchInput = {
-    query: string;
+    query?: string | undefined;
+    tags?: string[] | undefined;
     after?: string | undefined;
     before?: string | undefined;
+    limit?: number | undefined;
+};
+export type TagsInput = {
+    under?: string | undefined;
     limit?: number | undefined;
 };
 export type OpenInput = {
@@ -54,6 +59,7 @@ export type ConversationObject = {
     identifier: string;
     name?: string;
     description?: string;
+    keywords?: string[];
     dateCreated: string;
     dateModified: string;
 };
@@ -70,6 +76,19 @@ export type OpenResult = ConversationObject & {
     turns: number;
     window: WindowTurn[];
 };
+// A concept, under schema.org's name for a term in a vocabulary.
+export type TagObject = {
+    "@type": "DefinedTerm";
+    name: string;
+    alternateName?: string[];
+    description: string;
+    broader?: string[];
+    narrower?: string[];
+    conversations: number;
+    dateCreated?: string;
+    dateModified?: string;
+};
+export type TagsResult = { results: TagObject[]; more: number };
 // A cluster of this conversation, word for word from where reading
 // started. matched says whether words were found, when words were given.
 export type RecollectResult = {
