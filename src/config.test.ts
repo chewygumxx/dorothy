@@ -42,6 +42,7 @@ describe("parseConfig", () => {
                 statusline: { modules: ["cost", "in"], maxLines: 2 },
                 replyStats: { modules: [], maxLines: 1 },
                 memory: DEFAULT_CONFIG.memory,
+                compaction: DEFAULT_CONFIG.compaction,
             },
             warnings: [],
         });
@@ -116,6 +117,83 @@ describe("parseConfig", () => {
         expect(parseConfig("memory = 3")).toEqual({
             config: DEFAULT_CONFIG,
             warnings: ["config.toml: memory is not a table"],
+        });
+    });
+
+    it("budgets 4000 tokens of memory by default", () => {
+        expect(DEFAULT_CONFIG.memory.budget).toBe(4000);
+    });
+
+    it("reads the compaction table", () => {
+        const text = [
+            "[compaction]",
+            "enabled = false",
+            "soft = 3000",
+            "hard = 5000",
+            "tail = 1000",
+        ].join("\n");
+        expect(parseConfig(text)).toEqual({
+            config: {
+                ...DEFAULT_CONFIG,
+                compaction: {
+                    enabled: false,
+                    soft: 3000,
+                    hard: 5000,
+                    tail: 1000,
+                },
+            },
+            warnings: [],
+        });
+    });
+
+    it("warns of each bad compaction value and keeps its default", () => {
+        const text = [
+            "[compaction]",
+            'enabled = "no"',
+            "soft = 1000",
+            "hard = 960000",
+            "tail = 2.5",
+            "speed = 1",
+        ].join("\n");
+        expect(parseConfig(text)).toEqual({
+            config: DEFAULT_CONFIG,
+            warnings: [
+                "config.toml: compaction.enabled must be true or false",
+                "config.toml: compaction.soft must be a whole number from 2000 to 900000",
+                "config.toml: compaction.hard must be a whole number from 4000 to 950000",
+                "config.toml: compaction.tail must be a whole number from 500 to 200000",
+                "config.toml: unknown key compaction.speed",
+            ],
+        });
+    });
+
+    it("takes all three defaults when tail < soft < hard fails", () => {
+        const { config, warnings } = parseConfig(
+            "[compaction]\nsoft = 9000\nhard = 8000\n",
+        );
+        expect(config.compaction).toEqual(DEFAULT_CONFIG.compaction);
+        expect(warnings).toEqual([
+            "config.toml: compaction needs tail < soft < hard; using the defaults for all three",
+        ]);
+    });
+
+    it("keeps a soft below the default tail as long as tail is lowered too", () => {
+        const { config, warnings } = parseConfig(
+            "[compaction]\nsoft = 3000\nhard = 6000\ntail = 600\n",
+        );
+        expect(config.compaction).toEqual({
+            enabled: true,
+            soft: 3000,
+            hard: 6000,
+            tail: 600,
+        });
+        expect(warnings).toEqual([]);
+    });
+
+    it("warns when compaction is not a table", () => {
+        expect(parseConfig("compaction = 1")).toEqual({
+            config: DEFAULT_CONFIG,
+            warnings: ["config.toml: compaction is not a table"],
         });
     });
 

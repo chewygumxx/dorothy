@@ -21,6 +21,7 @@ export const WARNING_LIMIT = 3;
 
 export type Line = {
     id: number;
+    // lookup: a dim memory line, a lookup or a compaction.
     role: "you" | "dorothy" | "lookup" | "error";
     text: string;
     // A lookup's second line: what Dorothy opened a conversation for.
@@ -91,6 +92,18 @@ export function lookupLine(
                   ? "1 conversation"
                   : `${lookup.hits} conversations`;
         return { text: `⌕ searched ${query} · ${found}` };
+    }
+    if (lookup.tool === "recollect") {
+        const cluster = `cluster ${lookup.cluster}`;
+        if (!ok) {
+            return { text: `⌕ couldn't recollect ${cluster}` };
+        }
+        return {
+            text:
+                lookup.turns === null
+                    ? `⌕ recollected ${cluster}`
+                    : `⌕ recollected ${cluster}, turns ${lookup.turns[0]}-${lookup.turns[1]}`,
+        };
     }
     const name = oneRow(lookup.name);
     return ok
@@ -224,6 +237,35 @@ function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
             };
         case "warning":
             return reduce(state, { type: "warning", message: event.message });
+        case "compacting":
+            return {
+                ...state,
+                lines: append(state.lines, {
+                    role: "lookup",
+                    text: "compacting…",
+                }),
+            };
+        // Compaction's warnings tell of failures and a full context, which
+        // a compaction that succeeds has ended; but not of compaction being
+        // off until the next launch, which one run's success doesn't undo.
+        // That warning is worded in src/compaction/session.ts, where a
+        // `ready` refusal switches compaction off: keep "until the next
+        // launch" in it.
+        case "compacted":
+            return {
+                ...state,
+                warnings: state.warnings.filter(
+                    (warning) =>
+                        !warning.startsWith("compaction") ||
+                        warning.includes("until the next launch"),
+                ),
+                lines: append(state.lines, {
+                    role: "lookup",
+                    text: `compacted turns ${event.from}-${event.through} into ${event.clusters} cluster${event.clusters === 1 ? "" : "s"}`,
+                }),
+            };
+        case "memory-cost":
+            return reduce(state, { type: "memory-cost", usd: event.usd });
         case "lookup": {
             const segment = state.live.trim();
             const lines =

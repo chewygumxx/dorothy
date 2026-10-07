@@ -267,6 +267,23 @@ const run = (state: ChatState, ...actions: Parameters<typeof reduce>[1][]) =>
     actions.reduce(reduce, state);
 
 describe("lookupLine", () => {
+    it("names the cluster and the turns recollected", () => {
+        const recollected = {
+            tool: "recollect" as const,
+            cluster: 2,
+            turns: [18, 24] as [number, number],
+        };
+        expect(lookupLine(true, recollected)).toEqual({
+            text: "⌕ recollected cluster 2, turns 18-24",
+        });
+        expect(lookupLine(true, { ...recollected, turns: null })).toEqual({
+            text: "⌕ recollected cluster 2",
+        });
+        expect(lookupLine(false, recollected)).toEqual({
+            text: "⌕ couldn't recollect cluster 2",
+        });
+    });
+
     it("says what was searched and found", () => {
         expect(lookupLine(true, searched)).toEqual({
             text: '⌕ searched "render" · 2 conversations',
@@ -542,5 +559,82 @@ describe("lookups in a resumed reply", () => {
             ["lookup", '⌕ couldn\'t search "render"'],
             ["dorothy", ""],
         ]);
+    });
+});
+
+describe("compaction events", () => {
+    const after = (...events: ConversationEvent[]) =>
+        events.reduce(
+            (state, event) => reduce(state, { type: "event", event }),
+            initialState([]),
+        );
+
+    it("show compacting, then what was compacted, as dim lines", () => {
+        const state = after(
+            { type: "compacting" },
+            { type: "compacted", from: 1, through: 31, clusters: 2 },
+            { type: "compacted", from: 32, through: 40, clusters: 1 },
+        );
+        expect(state.lines.map((line) => [line.role, line.text])).toEqual([
+            ["lookup", "compacting…"],
+            ["lookup", "compacted turns 1-31 into 2 clusters"],
+            ["lookup", "compacted turns 32-40 into 1 cluster"],
+        ]);
+    });
+
+    it("clear compaction's warnings once a compaction succeeds", () => {
+        let state = initialState([], ["transcript not saved: gone"]);
+        for (const message of [
+            "compaction failed: offline",
+            "compaction: the context is nearly full; sending anyway",
+        ]) {
+            state = reduce(state, { type: "warning", message });
+        }
+        state = reduce(state, {
+            type: "event",
+            event: { type: "compacted", from: 1, through: 4, clusters: 1 },
+        });
+        expect(state.warnings).toEqual(["transcript not saved: gone"]);
+        state = reduce(state, {
+            type: "warning",
+            message:
+                "compaction: nothing to compact; the latest exchange alone fills the tail",
+        });
+        expect(
+            reduce(state, {
+                type: "event",
+                event: { type: "compacted", from: 5, through: 8, clusters: 1 },
+            }).warnings,
+        ).toEqual(["transcript not saved: gone"]);
+    });
+
+    it("keep the warnings that compaction is off until the next launch", () => {
+        // Two runs overlapping after a reconnect: one gives up, the other
+        // still lands.
+        let state = initialState([]);
+        for (const message of [
+            "compaction failed: bad; no more tries until the next launch",
+            "compaction: off until the next launch; the notes can't be read",
+            "compaction failed: offline",
+        ]) {
+            state = reduce(state, { type: "warning", message });
+        }
+        state = reduce(state, {
+            type: "event",
+            event: { type: "compacted", from: 1, through: 4, clusters: 1 },
+        });
+        expect(state.warnings).toEqual([
+            "compaction failed: bad; no more tries until the next launch",
+            "compaction: off until the next launch; the notes can't be read",
+        ]);
+    });
+
+    it("counts compaction's cost as memory's", () => {
+        expect(
+            after(
+                { type: "memory-cost", usd: 0.25 },
+                { type: "memory-cost", usd: 0.5 },
+            ).memoryCostUsd,
+        ).toBe(0.75);
     });
 });

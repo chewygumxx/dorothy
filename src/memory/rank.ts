@@ -152,24 +152,36 @@ export function tier(candidates: readonly Candidate[], budget: number): Tiered {
     return { placed, omitted: rest.slice(index), pinTokens };
 }
 
+// reserved: tokens already spent on this conversation's own abstracts,
+// which come before every note on other conversations.
 export function buildMemory(
     entries: readonly Entry[],
     {
         now,
         config,
         exclude,
-    }: { now: number; config: MemoryConfig; exclude: string | null },
+        reserved = 0,
+    }: {
+        now: number;
+        config: MemoryConfig;
+        exclude: string | null;
+        reserved?: number;
+    },
 ): { block: string; tiered: Tiered; warnings: string[] } {
     const tiered = tier(
         rank(entries, { now, halfLifeDays: config.halfLifeDays, exclude }),
-        config.budget,
+        Math.max(0, config.budget - reserved),
     );
-    const warnings =
-        tiered.pinTokens > config.budget
-            ? [
-                  `memory: pinned notes take ~${tiered.pinTokens} tokens, over the budget of ${config.budget}`,
-              ]
-            : [];
+    const over = reserved + tiered.pinTokens > config.budget;
+    const warnings = !over
+        ? []
+        : reserved === 0
+          ? [
+                `memory: pinned notes take ~${tiered.pinTokens} tokens, over the budget of ${config.budget}`,
+            ]
+          : [
+                `memory: this conversation's summaries take ~${reserved} tokens and pinned notes ~${tiered.pinTokens}, over the budget of ${config.budget}`,
+            ];
     return {
         block: renderBlock(tiered.placed, tiered.omitted.length),
         tiered,

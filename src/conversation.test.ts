@@ -10,7 +10,10 @@
 
 import { describe, expect, it } from "bun:test";
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import { QUIT_GRACE_MS } from "./compaction/shared.js";
 import {
+    CLOSE_GRACE_MS,
+    COMPACTED_BY_CLI,
     Conversation,
     type ConversationEvent,
     conversationOptions,
@@ -21,6 +24,7 @@ import {
     personaPrompt,
     systemPrompt,
     type Turn,
+    withClusters,
     withHistory,
     withMemory,
 } from "./persona.js";
@@ -71,6 +75,28 @@ const executionError = (errors: string[]) =>
         ...(result(0, "error_during_execution") as object),
         is_error: true,
         errors,
+    }) as unknown as SDKMessage;
+// What the CLI says each time a request's response arrives: the usage of
+// that one request, not the turn's.
+const usage = (input: number, cacheRead: number, cacheWrite: number) =>
+    ({
+        type: "assistant",
+        message: {
+            content: [],
+            usage: {
+                input_tokens: input,
+                cache_read_input_tokens: cacheRead,
+                cache_creation_input_tokens: cacheWrite,
+                output_tokens: 1,
+            },
+        },
+        parent_tool_use_id: null,
+    }) as unknown as SDKMessage;
+const compactBoundary = () =>
+    ({
+        type: "system",
+        subtype: "compact_boundary",
+        compact_metadata: { trigger: "auto", pre_tokens: 100 },
     }) as unknown as SDKMessage;
 
 type Fake = {
@@ -180,6 +206,7 @@ describe("Conversation", () => {
             type: "turn-end",
             reply: "Hello",
             interrupted: false,
+            contextTokens: 3412,
             stats: {
                 inputTokens: 10,
                 cacheReadTokens: 3000,
@@ -373,6 +400,88 @@ describe("Conversation", () => {
         expect(of(events, "error")[0]?.message).toBe("one; two");
     });
 
+    it("measures the context from the last request, plus the reply", async () => {
+        const fake = fakeQuery([
+            [
+                usage(5, 1000, 100),
+                usage(7, 2000, 300),
+                delta("12345678"),
+                result(0.001),
+            ],
+        ]);
+        const { conversation, events } = started(fake);
+        conversation.send("hi");
+        await until(() => of(events, "turn-end").length === 1);
+        // 7 + 2000 + 300, and 8 characters of reply at 4 a token.
+        expect(of(events, "turn-end")[0]?.contextTokens).toBe(2309);
+    });
+
+    it("falls back on the turn's usage when no request reported any", async () => {
+        const fake = fakeQuery([[delta("Hello"), result(0.001)]]);
+        const { conversation, events } = started(fake);
+        conversation.send("hi");
+        await until(() => of(events, "turn-end").length === 1);
+        // 10 + 3000 + 400 from the result, and 5 characters of reply.
+        expect(of(events, "turn-end")[0]?.contextTokens).toBe(3412);
+    });
+
+    it("measures each turn afresh", async () => {
+        const fake = fakeQuery([
+            [usage(1, 100, 0), result(0.001)],
+            [result(0.002)],
+        ]);
+        const { conversation, events } = started(fake);
+        conversation.send("one");
+        await until(() => of(events, "turn-end").length === 1);
+        conversation.send("two");
+        await until(() => of(events, "turn-end").length === 2);
+        expect(of(events, "turn-end").map((e) => e.contextTokens)).toEqual([
+            101, 3410,
+        ]);
+    });
+
+    it("measures the main context, not a subagent's", async () => {
+        const fake = fakeQuery([
+            [
+                usage(7, 2000, 300),
+                {
+                    ...(usage(50, 90000, 900) as object),
+                    parent_tool_use_id: "toolu_1",
+                } as unknown as SDKMessage,
+                delta("12345678"),
+                result(0.001),
+            ],
+        ]);
+        const { conversation, events } = started(fake);
+        conversation.send("hi");
+        await until(() => of(events, "turn-end").length === 1);
+        expect(of(events, "turn-end")[0]?.contextTokens).toBe(2309);
+    });
+
+    it("warns of the CLI compacting on its own, and the turn goes on", async () => {
+        const fake = fakeQuery([
+            [
+                usage(5, 1000, 100),
+                delta("Hel"),
+                compactBoundary(),
+                delta("lo"),
+                result(0.001),
+            ],
+        ]);
+        const { conversation, events } = started(fake);
+        conversation.send("hi");
+        await until(() => of(events, "turn-end").length === 1);
+        expect(of(events, "warning").map((e) => e.message)).toEqual([
+            COMPACTED_BY_CLI,
+        ]);
+        expect(of(events, "error")).toEqual([]);
+        const end = of(events, "turn-end")[0];
+        expect(end?.reply).toBe("Hello");
+        // The measurement before the boundary is stale: the result's usage,
+        // 10 + 3000 + 400, and 5 characters of reply.
+        expect(end?.contextTokens).toBe(3412);
+    });
+
     it("hands the partial reply to the error when the session dies", async () => {
         const fake = fakeQuery([[delta("Par")]], { fail: new Error("boom") });
         const { conversation, events } = started(fake);
@@ -383,6 +492,14 @@ describe("Conversation", () => {
             message: "boom",
             partial: "Par",
         });
+    });
+});
+
+describe("the grace periods", () => {
+    // Quitting waits for a compaction's save as long as close() waits for
+    // the CLI to exit; src/compaction/ can't import the one to share it.
+    it("give a quit's save as long as the CLI gets to exit", () => {
+        expect(QUIT_GRACE_MS).toBe(CLOSE_GRACE_MS);
     });
 });
 
@@ -438,6 +555,53 @@ function startedWithRecall(fake: Fake) {
 }
 
 describe("Conversation with recall", () => {
+    const CLUSTERS = [
+        { from: 1, through: 2, abstract: "Cats.", at: "x", model: "m" },
+    ];
+
+    it("seeds clusters between the memory and the tail, and offers recollect", () => {
+        const fake = fakeQuery([]);
+        const history: Turn[] = [{ role: "user", text: "Later" }];
+        new Conversation({
+            queryFn: fake.fn,
+            recall: RECALL,
+            memory: "<memory/>",
+            clusters: CLUSTERS,
+            history,
+        }).start();
+        expect(fake.options?.systemPrompt).toBe(
+            withHistory(
+                withClusters(
+                    withMemory(personaPrompt({ recall: true }), "<memory/>"),
+                    CLUSTERS,
+                    true,
+                ),
+                history,
+            ),
+        );
+        expect(fake.options?.mcpServers).toEqual({
+            memory: {
+                type: "stdio",
+                command: RECALL.command,
+                args: [...RECALL.args, "--recollect"],
+            },
+        });
+        expect(fake.options?.allowedTools).toEqual([
+            "mcp__memory__search",
+            "mcp__memory__open",
+            "mcp__memory__recollect",
+        ]);
+    });
+
+    it("seeds clusters without recall, offering no tool", () => {
+        const fake = fakeQuery([]);
+        new Conversation({ queryFn: fake.fn, clusters: CLUSTERS }).start();
+        expect(fake.options?.systemPrompt).toBe(
+            withHistory(withClusters(systemPrompt, CLUSTERS, false), []),
+        );
+        expect(fake.options?.mcpServers).toBeUndefined();
+    });
+
     it("launches the recall server and allows only its tools", () => {
         const fake = fakeQuery([]);
         startedWithRecall(fake);

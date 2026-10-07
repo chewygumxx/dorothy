@@ -85,6 +85,22 @@ describe("RecallIndex", () => {
         index.close();
     });
 
+    it("is at schema version 2, with a clusters table", () => {
+        const index = RecallIndex.open(path);
+        try {
+            expect(SCHEMA_VERSION).toBe(2);
+            expect(
+                index.db
+                    .query(
+                        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'clusters'",
+                    )
+                    .get(),
+            ).toEqual({ name: "clusters" });
+        } finally {
+            index.close();
+        }
+    });
+
     it("keeps what it holds across opens", () => {
         const first = RecallIndex.open(path);
         insert(first, "a");
@@ -252,6 +268,20 @@ describe("RecallIndex", () => {
         expect(await other.claim("a", "them", 1200, 500)).toBe(false);
         expect(await other.claim("a", "them", 1500, 500)).toBe(true);
         expect(await index.claim("a", "me", 1600, 500)).toBe(false);
+        index.close();
+        other.close();
+    });
+
+    it("renews only its owner's claim, and only while it holds", async () => {
+        const index = RecallIndex.open(path);
+        const other = RecallIndex.open(path);
+        expect(await index.claim("a", "me", 1000, 500)).toBe(true);
+        expect(await other.renew("a", "them", 1100, 500)).toBe(false);
+        expect(await index.renew("a", "me", 1400, 500)).toBe(true);
+        expect(await other.claim("a", "them", 1600, 500)).toBe(false);
+        expect(await index.renew("a", "me", 1900, 500)).toBe(false);
+        expect(await other.claim("a", "them", 1900, 500)).toBe(true);
+        expect(await index.renew("b", "me", 1900, 500)).toBe(false);
         index.close();
         other.close();
     });

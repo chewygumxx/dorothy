@@ -15,9 +15,11 @@ import { join } from "node:path";
 import { EMPTY_SIDECAR, type Sidecar, sidecarPath } from "../memory/sidecar.js";
 import { newPhrase } from "../session-id.js";
 import {
+    NO_CLUSTER,
     NOT_FOUND,
     openConversation,
     RecallError,
+    recollect,
     search,
     termsOf,
     WINDOW_TOKENS,
@@ -32,6 +34,8 @@ const A = phrase(1);
 const B = phrase(2);
 const C = phrase(3);
 const LIVE = phrase(9);
+const OWN = phrase(8);
+const LONG = phrase(7);
 // Local noon on the day, so dates read the same in every time zone.
 const day = (date: number, minute = 0) =>
     new Date(2026, 9, date, 12, minute).toISOString();
@@ -336,5 +340,124 @@ describe("windowOf", () => {
 
     it("gives nothing for no turns", () => {
         expect(windowOf([], 1)).toEqual([]);
+    });
+});
+
+describe("recollect", () => {
+    const cluster = (from: number, through: number) => ({
+        from,
+        through,
+        abstract: `Turns ${from} to ${through}.`,
+        at: day(1),
+        model: "m",
+    });
+    // Eight turns: two clusters of three, and two turns of tail.
+    beforeEach(async () => {
+        await conversation(
+            OWN,
+            [
+                session(day(1)),
+                user(day(1, 1), "the cat sat"),
+                reply(day(1, 2), "on the mat"),
+                user(day(1, 3), "a render bug"),
+                reply(day(1, 4), "the dog barked"),
+                user(day(1, 5), "a render fix"),
+                reply(day(1, 6), "the bird sang"),
+                user(day(1, 7), "now"),
+                reply(day(1, 8), "then"),
+            ],
+            { clusters: [cluster(1, 3), cluster(4, 6)] },
+        );
+        await syncIndex(index, dir);
+    });
+    const opened = (input: Parameters<typeof recollect>[1]) =>
+        recollect(index, input, { phrase: OWN });
+
+    it("opens a cluster from its first turn, never past its last", () => {
+        const result = opened({ cluster: 1 });
+        expect(result.cluster).toBe(1);
+        expect(result.turns).toEqual([1, 3]);
+        expect(result.total).toBe(8);
+        expect(result.matched).toBeUndefined();
+        expect(result.window.map((turn) => turn.turn)).toEqual([1, 2, 3]);
+    });
+
+    it("starts at the turn asked for", () => {
+        expect(
+            opened({ cluster: 2, turn: 5 }).window.map((turn) => turn.turn),
+        ).toEqual([5, 6]);
+    });
+
+    it("centres on the first turn matching the words", async () => {
+        // Six turns of about 1200 tokens: the window holds three. Read from
+        // the first turn it would be turns 1-3; centred on the match, 4-6.
+        const long = (word: string) => `${word} ${"x".repeat(4800)}`;
+        await conversation(
+            LONG,
+            [
+                session(day(1)),
+                user(day(1, 1), long("alpha")),
+                reply(day(1, 2), long("bravo")),
+                user(day(1, 3), long("charlie")),
+                reply(day(1, 4), long("delta")),
+                user(day(1, 5), long("echo")),
+                reply(day(1, 6), long("foxtrot")),
+            ],
+            { clusters: [cluster(1, 6)] },
+        );
+        await syncIndex(index, dir);
+        const ask = (input: Parameters<typeof recollect>[1]) =>
+            recollect(index, input, { phrase: LONG });
+        expect(ask({ cluster: 1 }).window.map((turn) => turn.turn)).toEqual([
+            1, 2, 3,
+        ]);
+        const result = ask({ cluster: 1, words: "echo" });
+        expect(result.matched).toBe(true);
+        expect(result.window.map((turn) => turn.turn)).toEqual([4, 5, 6]);
+    });
+
+    it("looks for words only from the turn asked for, within the cluster", () => {
+        const after = opened({ cluster: 2, words: "render bug", turn: 5 });
+        expect(after.matched).toBe(true);
+        expect(after.window[0]?.turn).toBe(5);
+        const before = opened({ cluster: 2, words: "dog", turn: 5 });
+        expect(before.matched).toBe(false);
+        expect(before.window[0]?.turn).toBe(5);
+        const elsewhere = opened({ cluster: 1, words: "bird" });
+        expect(elsewhere.matched).toBe(false);
+        expect(elsewhere.window.map((turn) => turn.turn)).toEqual([1, 2, 3]);
+    });
+
+    it("refuses an unknown cluster, a turn outside it and empty words", () => {
+        expect(() => opened({ cluster: 3 })).toThrow(NO_CLUSTER);
+        expect(() => opened({ cluster: 1, turn: 4 })).toThrow(
+            "turn must be from 1 to 3, within cluster 1.",
+        );
+        expect(() => opened({ cluster: 1, words: " ?? " })).not.toThrow();
+        expect(() => opened({ cluster: 1, words: "   " })).toThrow(
+            "Give some words to look for.",
+        );
+        expect(() =>
+            recollect(index, { cluster: 1 }, { phrase: null }),
+        ).toThrow(NO_CLUSTER);
+    });
+
+    it("refuses a cluster number that is not a whole number", () => {
+        for (const cluster of [
+            1.5,
+            0.5,
+            Number.NaN,
+            Number.POSITIVE_INFINITY,
+        ]) {
+            expect(() => opened({ cluster })).toThrow(NO_CLUSTER);
+        }
+    });
+
+    it("never opens another conversation's clusters", async () => {
+        await conversation(A, [user(day(2), "elsewhere")], {
+            clusters: [cluster(1, 1)],
+        });
+        await syncIndex(index, dir);
+        expect(opened({ cluster: 1 }).window[0]?.text).toBe("the cat sat");
     });
 });

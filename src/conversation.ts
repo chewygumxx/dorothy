@@ -15,12 +15,14 @@ import {
     type SDKMessage,
     type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import type { Cluster } from "./memory/sidecar.js";
 import {
     baseOptions,
     cliOptions,
     type PersonaMode,
     personaPrompt,
     type Turn,
+    withClusters,
     withHistory,
     withMemory,
 } from "./persona.js";
@@ -28,6 +30,7 @@ import {
     ALLOWED_TOOLS,
     describeLookup,
     type Lookup,
+    RECOLLECT_TOOL,
     SERVER_NAME,
     type Tool,
     toolOf,
@@ -61,6 +64,10 @@ export type ConversationEvent =
           reply: string;
           interrupted: boolean;
           stats: TurnStats;
+          // Estimated tokens the next request starts from: what the last
+          // request read, plus the reply it added. Conversation always sets
+          // it.
+          contextTokens?: number;
       }
     | { type: "sdk"; message: RawMessage }
     // A lookup Dorothy made; offset is where in the reply it happened.
@@ -72,6 +79,12 @@ export type ConversationEvent =
           lookup: Lookup;
       }
     | { type: "warning"; message: string }
+    // Compaction is under way and the next message waits for it.
+    | { type: "compacting" }
+    // Turns from to through now live in clusters of a new session.
+    | { type: "compacted"; from: number; through: number; clusters: number }
+    // What a background call for memory cost, such as compaction's.
+    | { type: "memory-cost"; usd: number }
     // partial: the reply streamed so far, when the turn died mid-reply.
     | { type: "error"; message: string; partial?: string };
 
@@ -113,8 +126,19 @@ type ResultMessage = Extract<SDKMessage, { type: "result" }>;
 type PendingCall = { tool: Tool; input: unknown; offset: number };
 
 // How long close() waits for the subprocess to exit on its own before
-// terminating it.
-const CLOSE_GRACE_MS = 2000;
+// terminating it. Compaction's QUIT_GRACE_MS equals it, as
+// conversation.test.ts checks.
+export const CLOSE_GRACE_MS = 2000;
+
+// DISABLE_COMPACT keeps the CLI from compacting. If it ever does, the
+// conversation it summarised is no longer the one Dorothy's compaction
+// planned, so the event is reported as a warning: an error would end the
+// turn on screen and lose its reply, while the turn continues as usual.
+export const COMPACTED_BY_CLI =
+    "the CLI compacted this session itself, despite DISABLE_COMPACT";
+
+// Characters as the note limits count them, four to a token.
+const estimate = (text: string) => Math.ceil([...text].length / 4);
 
 // The prompt stream for streaming input mode: one consumer (the SDK), fed by
 // send(), finished by end().
@@ -186,6 +210,9 @@ export type SessionSetup = {
     // How to launch the recall server; null leaves recall off.
     recall?: RecallLaunch | null;
     persona?: PersonaMode;
+    // The abstracts of the turns compaction took out; history then holds
+    // only the turns after them.
+    clusters?: readonly Cluster[];
 };
 
 // What a session starts with, shared with --dump-context so that the dump
@@ -195,14 +222,20 @@ export function conversationOptions({
     memory = "",
     recall = null,
     persona = "chat",
+    clusters = [],
 }: SessionSetup = {}): Options {
+    const recollect = recall !== null && clusters.length > 0;
     return {
         ...baseOptions,
         ...cliOptions(),
         systemPrompt: withHistory(
-            withMemory(
-                personaPrompt({ recall: recall !== null, mode: persona }),
-                memory,
+            withClusters(
+                withMemory(
+                    personaPrompt({ recall: recall !== null, mode: persona }),
+                    memory,
+                ),
+                clusters,
+                recollect,
             ),
             history,
         ),
@@ -210,9 +243,17 @@ export function conversationOptions({
             ? {}
             : {
                   mcpServers: {
-                      [SERVER_NAME]: { type: "stdio", ...recall },
+                      [SERVER_NAME]: {
+                          type: "stdio",
+                          command: recall.command,
+                          args: recollect
+                              ? [...recall.args, "--recollect"]
+                              : recall.args,
+                      },
                   },
-                  allowedTools: ALLOWED_TOOLS,
+                  allowedTools: recollect
+                      ? [...ALLOWED_TOOLS, RECOLLECT_TOOL]
+                      : ALLOWED_TOOLS,
               }),
     };
 }
@@ -236,6 +277,8 @@ export class Conversation implements ChatSession {
     #interrupted = false;
     #sessionCost = 0;
     #ready = false;
+    // What the latest request of this turn read, from its usage.
+    #lastInput: number | null = null;
 
     constructor({
         queryFn = query,
@@ -317,6 +360,16 @@ export class Conversation implements ChatSession {
 
     #handleMessage(message: SDKMessage): void {
         this.#emit({ type: "sdk", message });
+        if (
+            message.type === "system" &&
+            message.subtype === "compact_boundary"
+        ) {
+            // Its context is replaced, so what the last request read no
+            // longer measures it.
+            this.#lastInput = null;
+            this.#emit({ type: "warning", message: COMPACTED_BY_CLI });
+            return;
+        }
         if (message.type === "system" && message.subtype === "init") {
             this.#checkRecall(message);
         }
@@ -346,6 +399,18 @@ export class Conversation implements ChatSession {
             this.#reply += text;
             this.#emit({ type: "delta", text });
         } else if (message.type === "assistant") {
+            // A subagent's request reads its own context, not this one.
+            const usage = message.message.usage;
+            if (
+                message.parent_tool_use_id === null &&
+                usage !== undefined &&
+                usage !== null
+            ) {
+                this.#lastInput =
+                    usage.input_tokens +
+                    (usage.cache_read_input_tokens ?? 0) +
+                    (usage.cache_creation_input_tokens ?? 0);
+            }
             for (const block of message.message.content) {
                 const tool =
                     block.type === "tool_use" ? toolOf(block.name) : null;
@@ -394,17 +459,26 @@ export class Conversation implements ChatSession {
                     : message.errors.join("; ");
             this.#fail(text || message.subtype);
             this.#streaming = false;
+            this.#lastInput = null;
         } else if (message.type === "result") {
             this.#settleCalls();
+            const stats = this.#stats(message);
+            const read =
+                this.#lastInput ??
+                stats.inputTokens +
+                    stats.cacheReadTokens +
+                    stats.cacheWriteTokens;
             this.#emit({
                 type: "turn-end",
                 reply: this.#reply,
                 interrupted: this.#interrupted,
-                stats: this.#stats(message),
+                stats,
+                contextTokens: read + estimate(this.#reply),
             });
             this.#reply = "";
             this.#interrupted = false;
             this.#streaming = false;
+            this.#lastInput = null;
         }
     }
 

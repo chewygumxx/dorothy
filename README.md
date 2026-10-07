@@ -160,12 +160,29 @@ can start:
 bun run dev -- --recall-server
 ```
 
+A long chat does not outgrow Dorothy's context. Once it passes a threshold,
+she compacts it while you are idle: the oldest turns leave her context in
+clusters, split where the topic changes, each summarised by her in an
+abstract that stays with her for the rest of the chat. The newest turns stay
+word for word. She can open any cluster to read it exactly again, shown as a
+dim `⌕ recollected` line, and her notes on other chats shrink to make room
+as the chat grows. The abstracts sit in the chat's notes; `--resume` starts
+from them.
+
+```toml
+[compaction]
+enabled = true  # false: no compaction at all
+soft = 64000    # context tokens before compacting at idle
+hard = 128000   # context tokens before the next message waits for it
+tail = 16000    # newest turns kept word for word, in tokens
+```
+
 The `[memory]` table of `config.toml` sets it up:
 
 ```toml
 [memory]
 enabled = true       # false: no notes in chats and no reviews
-budget = 2000        # estimated tokens of notes per chat, 200 to 20000
+budget = 4000        # estimated tokens of notes per chat, 200 to 20000
 idle-seconds = 60    # idle time before a review, 10 to 3600
 half-life-days = 30  # how fast a chat fades, 1 to 3650
 catch-up = 5         # unreviewed chats reviewed per launch, 0 to 50

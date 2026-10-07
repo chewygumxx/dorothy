@@ -14,7 +14,7 @@ import { dirname, join } from "node:path";
 import type { Lock } from "../memory/sidecar.js";
 import { type Env, xdgDir } from "../xdg.js";
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 // Times are milliseconds since the epoch. Both FTS tables take their text
 // from the table beside them, which triggers keep them in step with.
@@ -65,6 +65,13 @@ const SCHEMA = [
         phrase TEXT PRIMARY KEY,
         owner TEXT NOT NULL,
         until INTEGER NOT NULL
+    )`,
+    `CREATE TABLE clusters (
+        phrase TEXT NOT NULL,
+        n INTEGER NOT NULL,
+        first_turn INTEGER NOT NULL,
+        last_turn INTEGER NOT NULL,
+        PRIMARY KEY (phrase, n)
     )`,
     `CREATE VIRTUAL TABLE turns_fts USING fts5(
         text, content=turns,
@@ -255,6 +262,23 @@ export class RecallIndex {
                 .get(phrase) as { owner: string } | null;
             return row?.owner === owner;
         });
+    }
+
+    // A claim still held by owner lives ms from now; false when owner no
+    // longer holds it, as after it expired.
+    renew(
+        phrase: string,
+        owner: string,
+        now: number,
+        ms: number,
+    ): Promise<boolean> {
+        return this.exclusive(
+            () =>
+                this.db.run(
+                    "UPDATE claims SET until = ? WHERE phrase = ? AND owner = ? AND until > ?",
+                    [now + ms, phrase, owner, now],
+                ).changes > 0,
+        );
     }
 
     release(phrase: string, owner: string): Promise<void> {

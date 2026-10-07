@@ -12,11 +12,13 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { describeLookup } from "./recall/types.js";
 import {
     parseTranscript,
     readTranscript,
     TranscriptWriter,
     toRecall,
+    toTurn,
     transcriptDir,
     transcriptPath,
 } from "./transcript.js";
@@ -423,5 +425,102 @@ describe("recall events", () => {
                 turns: null,
             },
         ]);
+    });
+});
+
+describe("compaction events", () => {
+    it("are not turns, and are not malformed", () => {
+        expect(
+            toTurn({
+                v: 1,
+                kind: "compaction",
+                at: "x",
+                through: 4,
+                clusters: 1,
+            }),
+        ).toBe("ignore");
+        const read = parseTranscript(
+            [
+                JSON.stringify({ v: 1, kind: "user", at: "a", text: "Hi." }),
+                JSON.stringify({
+                    v: 1,
+                    kind: "compaction",
+                    at: "b",
+                    through: 1,
+                    clusters: 1,
+                }),
+                JSON.stringify({
+                    v: 1,
+                    kind: "assistant",
+                    at: "c",
+                    text: "Hello.",
+                    interrupted: false,
+                }),
+            ].join("\n"),
+        );
+        expect(read.turns.map((turn) => turn.text)).toEqual(["Hi.", "Hello."]);
+        expect(read.skipped).toBe(0);
+    });
+});
+
+describe("recollect events", () => {
+    const event = {
+        v: 1,
+        kind: "recall",
+        at: "2026-10-07T08:00:00.000Z",
+        id: "toolu_9",
+        ok: true,
+        offset: 4,
+        tool: "recollect",
+        cluster: 2,
+        words: "render",
+        turns: [18, 24],
+    };
+
+    it("read back as written", () => {
+        expect<unknown>(toRecall(event)).toEqual(event);
+        const { words: _, ...plain } = event;
+        expect<unknown>(toRecall({ ...plain, turns: null })).toEqual({
+            ...plain,
+            turns: null,
+        });
+    });
+
+    it("are refused with a bad cluster or range", () => {
+        expect(toRecall({ ...event, cluster: -1 })).toBeNull();
+        expect(toRecall({ ...event, cluster: 1.5 })).toBeNull();
+        expect(toRecall({ ...event, cluster: "2" })).toBeNull();
+        expect(toRecall({ ...event, turns: [18] })).toBeNull();
+        expect(toRecall({ ...event, words: 3 })).toBeNull();
+    });
+
+    it("read back whatever input the lookup was made with", () => {
+        const cases: [unknown, number][] = [
+            [{ cluster: 0 }, 0],
+            [{ cluster: -1 }, 0],
+            [{ cluster: 1.5 }, 0],
+            [{ cluster: "2" }, 0],
+            [{}, 0],
+            [{ cluster: 2 }, 2],
+        ];
+        for (const [input, cluster] of cases) {
+            const lookup = describeLookup("recollect", input, null);
+            const written = JSON.stringify({
+                v: 1,
+                kind: "recall",
+                at: "2026-10-07T08:00:00.000Z",
+                id: "toolu_9",
+                ok: false,
+                offset: 0,
+                ...lookup,
+            });
+            const read = parseTranscript(written);
+            expect(read.skipped).toBe(0);
+            expect(toRecall(JSON.parse(written))).toMatchObject({
+                tool: "recollect",
+                cluster,
+                turns: null,
+            });
+        }
     });
 });

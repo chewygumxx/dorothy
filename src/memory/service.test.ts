@@ -17,18 +17,20 @@ import { DEFAULT_CONFIG } from "../config.js";
 import { systemPrompt } from "../persona.js";
 import { RecallIndex } from "../recall/store.js";
 import { newPhrase } from "../session-id.js";
+import type { Timers } from "../timers.js";
 import type { Entry } from "./catalogue.js";
 import {
+    CLUSTERS_INSTRUCTION,
     READS_INSTRUCTION,
     REVIEW_INSTRUCTIONS,
     REVIEW_TIMEOUT_MS,
     type ReviewQueryFn,
 } from "./review.js";
-import type { Timers } from "./scheduler.js";
 import {
     MemoryService,
     type MemoryServiceOptions,
     type Notice,
+    REVIEW_CLAIM_RETRY_MS,
 } from "./service.js";
 import {
     EMPTY_SIDECAR,
@@ -641,15 +643,133 @@ describe("MemoryService with the index", () => {
         expect(await claimable()).toBe(true);
     });
 
-    it("leaves a conversation another process has claimed", async () => {
-        await transcript(LIVE, [user("a"), reply("b")]);
+    // A compaction, or another process, holding the conversation's claim.
+    async function claimed(of: string): Promise<RecallIndex> {
         const other = RecallIndex.open(join(dir, "index", "recall.sqlite"));
-        await other.claim(LIVE, "them", NOW.getTime(), 60_000);
+        expect(await other.claim(of, "them", NOW.getTime(), 60_000)).toBe(true);
+        return other;
+    }
+
+    it("waits for the live conversation's claim, and reviews once it is let go", async () => {
+        await transcript(LIVE, [user("a"), reply("b")]);
+        const other = await claimed(LIVE);
         const fake = reviews(NOTES);
-        const { memory } = setup({ queryFn: fake.fn, index });
+        const { memory, timers } = setup({ queryFn: fake.fn, index });
+        try {
+            memory.turnEnded();
+            await settle();
+            expect(fake.calls).toHaveLength(0);
+            timers.advance(REVIEW_CLAIM_RETRY_MS);
+            await settle();
+            expect(fake.calls).toHaveLength(0);
+            await other.release(LIVE, "them");
+            timers.advance(REVIEW_CLAIM_RETRY_MS);
+            await until(() => fake.calls.length === 1);
+            expect(fake.calls).toHaveLength(1);
+            await until(async () => (await sidecarOf(LIVE)) !== null);
+        } finally {
+            other.close();
+        }
+    });
+
+    it("stops waiting for the claim, unreviewed, when a message is sent or the run stops", async () => {
+        await transcript(LIVE, [user("a"), reply("b")]);
+        for (const end of ["sent", "stop"] as const) {
+            const other = await claimed(LIVE);
+            const fake = reviews(NOTES);
+            const { memory, timers } = setup({ queryFn: fake.fn, index });
+            try {
+                memory.turnEnded();
+                await settle();
+                expect(timers.pending.size).toBe(1);
+                if (end === "sent") {
+                    memory.sent("next");
+                    // Its provisional title holds the index's write lock,
+                    // which the other connection's release would wait on.
+                    await until(async () => (await sidecarOf(LIVE)) !== null);
+                } else {
+                    await memory.stop();
+                }
+                expect(timers.pending.size).toBe(0);
+                await other.release(LIVE, "them");
+                timers.advance(REVIEW_CLAIM_RETRY_MS);
+                await settle();
+                expect(fake.calls).toHaveLength(0);
+            } finally {
+                await memory.stop();
+                other.close();
+            }
+        }
+    });
+
+    it("leaves another conversation another process has claimed", async () => {
+        await transcript(OTHER, [user("a"), reply("b")]);
+        const other = await claimed(OTHER);
+        const fake = reviews(NOTES);
+        const { memory, timers } = setup({
+            queryFn: fake.fn,
+            index,
+            entries: [entry(OTHER, null)],
+        });
+        try {
+            memory.ready();
+            await settle();
+            expect(fake.calls).toHaveLength(0);
+            expect(timers.pending.size).toBe(0);
+        } finally {
+            other.close();
+        }
+    });
+});
+
+describe("the block for a compacted session", () => {
+    it("leaves the abstracts' tokens out of the budget", () => {
+        const { memory } = setup({
+            queryFn: reviews().fn,
+            config: { ...DEFAULT_CONFIG.memory, budget: 200 },
+            entries: [
+                entry(phrase(1), { ...NOTES, title: "First" }),
+                entry(phrase(2), { ...NOTES, title: "Second" }),
+            ],
+        });
+        expect(memory.block()).toContain("Second");
+        expect(memory.block(190)).not.toContain("Second");
+    });
+
+    it("tells a review of a compacted conversation how to read it", async () => {
+        await transcript(LIVE, [
+            user("Old"),
+            reply("Older"),
+            user("New"),
+            reply("Newer"),
+        ]);
+        await writeFile(
+            sidecarPath(dir, LIVE),
+            JSON.stringify({
+                ...EMPTY_SIDECAR,
+                ...NOTES,
+                clusters: [
+                    {
+                        from: 1,
+                        through: 2,
+                        abstract: "Old.",
+                        at: NOW.toISOString(),
+                        model: "claude-test",
+                    },
+                ],
+            }),
+        );
+        const query = reviews(NOTES);
+        const { memory } = setup({ queryFn: query.fn });
         memory.turnEnded();
-        await settle();
-        expect(fake.calls).toHaveLength(0);
-        other.close();
+        await until(() => query.calls.length > 0);
+        const call = query.calls[0];
+        expect(String(call?.options.systemPrompt)).toEndWith(
+            CLUSTERS_INSTRUCTION,
+        );
+        expect(call?.prompt).toContain(
+            '<cluster n="1" turns="1-2">Old.</cluster>',
+        );
+        expect(call?.prompt).not.toContain("Older");
     });
 });

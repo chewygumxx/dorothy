@@ -8,31 +8,407 @@
 //
 //
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    setSystemTime,
+    spyOn,
+} from "bun:test";
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { configPath, DEFAULT_CONFIG } from "../config.js";
+import type { ChatSession } from "../conversation.js";
 import { newPhrase } from "../session-id.js";
-import { runTui } from "./run.js";
+import { transcriptDir } from "../transcript.js";
+import { xdgDir } from "../xdg.js";
+import {
+    closeInOrder,
+    clusterSaver,
+    indexClaims,
+    indexUses,
+    notesReady,
+    openChatIndex,
+    openIndex,
+    runTui,
+    sessionMaker,
+} from "./run.js";
 
+// runTui reads the config and opens the transcript and the index from
+// these, so every one points into the test's directory.
+const XDG = ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"] as const;
 let dir = "";
-let saved: string | undefined;
+let saved: Partial<Record<(typeof XDG)[number], string>> = {};
 beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), "dorothy-run-"));
-    saved = process.env.XDG_DATA_HOME;
-    process.env.XDG_DATA_HOME = dir;
+    saved = {};
+    for (const variable of XDG) {
+        saved[variable] = process.env[variable];
+        process.env[variable] = dir;
+    }
 });
 afterEach(async () => {
-    if (saved === undefined) {
-        delete process.env.XDG_DATA_HOME;
-    } else {
-        process.env.XDG_DATA_HOME = saved;
+    for (const variable of XDG) {
+        const value = saved[variable];
+        if (value === undefined) {
+            delete process.env[variable];
+        } else {
+            process.env[variable] = value;
+        }
     }
     await rm(dir, { recursive: true, force: true });
 });
 
 describe("runTui", () => {
+    it("reads and writes only under the test's directory", () => {
+        // The cache holds the index and the CLI's home.
+        const cache = xdgDir(process.env, "XDG_CACHE_HOME", ".cache");
+        for (const path of [configPath(), transcriptDir(), cache]) {
+            expect(path).toStartWith(dir);
+        }
+    });
+
     it("exits 1 before rendering when the transcript to resume is missing", async () => {
-        expect(await runTui(newPhrase())).toBe(1);
+        const phrase = newPhrase();
+        const written: string[] = [];
+        const write = spyOn(process.stderr, "write").mockImplementation(
+            (chunk) => {
+                written.push(String(chunk));
+                return true;
+            },
+        );
+        try {
+            expect(await runTui(phrase)).toBe(1);
+        } finally {
+            write.mockRestore();
+        }
+        expect(written.join("")).toStartWith(
+            `dorothy: cannot resume ${phrase}: `,
+        );
+    });
+});
+
+describe("sessionMaker", () => {
+    it("tells memory of a message as it is sent, so a review can't take the claim while compaction holds it", () => {
+        const log: string[] = [];
+        const inner: ChatSession = {
+            subscribe: () => () => {},
+            send: (text) => log.push(`inner ${text}`),
+            interrupt: async () => {},
+            close: async () => {},
+        };
+        // Past hard: every message is held for the compaction under way.
+        const compaction = {
+            session: (
+                _turns: unknown,
+                connect: (seed: {
+                    turns: never[];
+                    clusters: never[];
+                }) => ChatSession,
+            ): ChatSession => ({
+                ...connect({ turns: [], clusters: [] }),
+                send: (text) => log.push(`held ${text}`),
+            }),
+        };
+        const create = sessionMaker({
+            compaction,
+            connect: () => inner,
+            clusters: [],
+            memory: {
+                sent: (text) => log.push(`memory ${text}`),
+                ready: () => {},
+                turnEnded: () => {},
+            },
+        });
+        create([]).send("next");
+        expect(log).toEqual(["memory next", "held next"]);
+    });
+});
+
+describe("notesReady", () => {
+    it("refuses compaction once the notes became unreadable after launch", async () => {
+        const phrase = newPhrase();
+        expect(await notesReady(dir, phrase)).toEqual({ ok: true });
+        await writeFile(join(dir, `${phrase}.meta.json`), "{");
+        const ready = await notesReady(dir, phrase);
+        expect(ready.ok).toBe(false);
+        expect(ready.ok ? "" : ready.reason).toStartWith(
+            "its notes can't be read (",
+        );
+    });
+});
+
+describe("indexUses", () => {
+    it("asks for the index for compaction when this chat compacts, whatever memory says", () => {
+        const memoryOff = {
+            ...DEFAULT_CONFIG,
+            memory: { ...DEFAULT_CONFIG.memory, enabled: false, recall: false },
+        };
+        expect(indexUses(memoryOff, true)).toEqual({
+            memory: false,
+            recall: false,
+            compaction: true,
+        });
+        // Compaction on in the config, but off for this chat: its notes
+        // can't be read.
+        expect(indexUses(DEFAULT_CONFIG, false)).toEqual({
+            memory: DEFAULT_CONFIG.memory.enabled,
+            recall: DEFAULT_CONFIG.memory.recall,
+            compaction: false,
+        });
+    });
+});
+
+describe("openChatIndex", () => {
+    const memoryOff = {
+        ...DEFAULT_CONFIG,
+        memory: { ...DEFAULT_CONFIG.memory, enabled: false, recall: false },
+    };
+    const indexFile = () =>
+        join(
+            xdgDir(process.env, "XDG_CACHE_HOME", ".cache"),
+            "dorothy",
+            "recall.sqlite",
+        );
+
+    it("opens the index in the cache for compaction alone", () => {
+        const opened = openChatIndex(memoryOff, true);
+        try {
+            expect(opened.index).not.toBeNull();
+            expect(opened.warning).toBeNull();
+            expect(indexFile()).toStartWith(dir);
+            expect(existsSync(indexFile())).toBe(true);
+        } finally {
+            opened.index?.close();
+        }
+    });
+
+    it("opens no index when nothing in this chat uses it", () => {
+        const opened = openChatIndex(memoryOff, false);
+        opened.index?.close();
+        expect(opened).toEqual({ index: null, warning: null });
+        expect(existsSync(indexFile())).toBe(false);
+    });
+});
+
+describe("openIndex", () => {
+    const off = { memory: false, recall: false, compaction: false };
+    const failing = () => {
+        throw new Error("disk gone");
+    };
+
+    it("opens the index for compaction alone, for its claim and lock", () => {
+        const index = { name: "index" };
+        expect(openIndex({ ...off, compaction: true }, () => index)).toEqual({
+            index,
+            warning: null,
+        });
+    });
+
+    it("leaves the index shut when nothing uses it", () => {
+        let opened = 0;
+        expect(openIndex(off, () => ++opened)).toEqual({
+            index: null,
+            warning: null,
+        });
+        expect(opened).toBe(0);
+    });
+
+    it("names what starts without the index when it can't be opened", () => {
+        expect(openIndex({ ...off, compaction: true }, failing)).toEqual({
+            index: null,
+            warning:
+                "index: can't be opened (disk gone); starting without compaction's lock",
+        });
+        expect(
+            openIndex({ memory: true, recall: true, compaction: true }, failing)
+                .warning,
+        ).toBe(
+            "memory: the index can't be opened (disk gone); starting without memory, recall and compaction's lock",
+        );
+        expect(
+            openIndex({ ...off, memory: true, recall: true }, failing).warning,
+        ).toBe(
+            "memory: the index can't be opened (disk gone); starting without memory and recall",
+        );
+    });
+});
+
+describe("closeInOrder", () => {
+    it("runs every step in order even when an earlier one throws, then rethrows the first", async () => {
+        const ran: string[] = [];
+        const step = (name: string, fail?: string) => async () => {
+            ran.push(name);
+            if (fail !== undefined) {
+                throw new Error(fail);
+            }
+        };
+        await expect(
+            closeInOrder([
+                step("compaction", "first"),
+                step("memory"),
+                step("index", "second"),
+                step("transcript"),
+            ]),
+        ).rejects.toThrow("first");
+        expect(ran).toEqual(["compaction", "memory", "index", "transcript"]);
+    });
+
+    it("settles quietly when every step does", async () => {
+        const ran: string[] = [];
+        await closeInOrder([
+            () => {
+                ran.push("a");
+            },
+            async () => {
+                ran.push("b");
+            },
+        ]);
+        expect(ran).toEqual(["a", "b"]);
+    });
+});
+
+describe("indexClaims", () => {
+    it("renews a chain's claim at each take, so it lives a call's length from each run", async () => {
+        // The index's claims table, as the store keeps it.
+        const table = new Map<string, { owner: string; until: number }>();
+        const index = {
+            claim: async (
+                phrase: string,
+                owner: string,
+                now: number,
+                ms: number,
+            ) => {
+                const row = table.get(phrase);
+                if (row === undefined || row.until <= now) {
+                    table.set(phrase, { owner, until: now + ms });
+                }
+                return table.get(phrase)?.owner === owner;
+            },
+            renew: async (
+                phrase: string,
+                owner: string,
+                now: number,
+                ms: number,
+            ) => {
+                const row = table.get(phrase);
+                if (row?.owner !== owner || row.until <= now) {
+                    return false;
+                }
+                row.until = now + ms;
+                return true;
+            },
+            release: async (phrase: string, owner: string) => {
+                if (table.get(phrase)?.owner === owner) {
+                    table.delete(phrase);
+                }
+            },
+        };
+        const claims = indexClaims(index, "a-phrase");
+        const chain = claims();
+        try {
+            setSystemTime(new Date(0));
+            expect(await chain.take()).toBe(true);
+            // The chain's second run, near the end of the first's life.
+            setSystemTime(new Date(140_000));
+            expect(await chain.take()).toBe(true);
+            setSystemTime(new Date(200_000));
+            expect(await claims().take()).toBe(false);
+        } finally {
+            setSystemTime();
+        }
+    });
+
+    it("gives each chain its own owner, so two chains of one TUI exclude each other", async () => {
+        // The index's claims table: one owner a conversation, released only
+        // by that owner.
+        const table = new Map<string, string>();
+        const index = {
+            claim: async (phrase: string, owner: string) => {
+                if (!table.has(phrase)) {
+                    table.set(phrase, owner);
+                }
+                return table.get(phrase) === owner;
+            },
+            renew: async (phrase: string, owner: string) =>
+                table.get(phrase) === owner,
+            release: async (phrase: string, owner: string) => {
+                if (table.get(phrase) === owner) {
+                    table.delete(phrase);
+                }
+            },
+        };
+        const claim = indexClaims(index, "a-phrase");
+        const old = claim();
+        const next = claim();
+        expect(await old.take()).toBe(true);
+        expect(await next.take()).toBe(false);
+        await old.release();
+        expect(await next.take()).toBe(true);
+        // A late release by the old run leaves the new run's claim alone.
+        await old.release();
+        expect(await claim().take()).toBe(false);
+    });
+});
+
+describe("clusterSaver", () => {
+    const cluster = (from: number, through: number) => ({
+        from,
+        through,
+        abstract: "Turns.",
+        at: "2026-10-07T08:00:00.000Z",
+        model: "claude-test",
+    });
+    const notes = async (phrase: string) =>
+        JSON.parse(await readFile(join(dir, `${phrase}.meta.json`), "utf8"));
+
+    it("saves the clusters and adds the compaction's cost", async () => {
+        const phrase = newPhrase();
+        const save = clusterSaver({ dir, phrase, transcript: true });
+        expect(await save([cluster(1, 4)], 0.25)).toEqual({ ok: true });
+        expect(await save([cluster(5, 8)], 0.5)).toEqual({ ok: true });
+        const written = await notes(phrase);
+        expect(written.clusters).toHaveLength(2);
+        expect(written.compactionCostUsd).toBe(0.75);
+    });
+
+    it("hands back the notes' clusters when another writer covered those turns first", async () => {
+        const phrase = newPhrase();
+        const other = clusterSaver({ dir, phrase, transcript: true });
+        expect(await other([cluster(1, 4), cluster(5, 8)], 0.25)).toEqual({
+            ok: true,
+        });
+        const save = clusterSaver({ dir, phrase, transcript: true });
+        expect(await save([cluster(1, 4)], 0.5)).toEqual({
+            ok: true,
+            clusters: [cluster(1, 4), cluster(5, 8)],
+        });
+        // Nothing written: the cost is the other writer's alone.
+        expect((await notes(phrase)).compactionCostUsd).toBe(0.25);
+    });
+
+    it("hands back the notes' clusters however much of those turns they cover, for compaction to judge", async () => {
+        const phrase = newPhrase();
+        const save = clusterSaver({ dir, phrase, transcript: true });
+        expect(await save([cluster(5, 8)], 0.5)).toEqual({
+            ok: true,
+            clusters: [],
+        });
+        expect(await save([cluster(1, 6)], 0.5)).toEqual({ ok: true });
+        expect(await save([cluster(5, 8)], 0.5)).toEqual({
+            ok: true,
+            clusters: [cluster(1, 6)],
+        });
+    });
+
+    it("saves nothing without a transcript", async () => {
+        const phrase = newPhrase();
+        const save = clusterSaver({ dir, phrase, transcript: false });
+        expect(await save([cluster(1, 4)], 0.25)).toEqual({ ok: true });
+        await expect(notes(phrase)).rejects.toThrow();
     });
 });

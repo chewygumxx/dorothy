@@ -14,10 +14,12 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { MemoryConfig } from "../config.js";
 import { systemPrompt, type Turn, withMemory } from "../persona.js";
 import type { RecallIndex } from "../recall/store.js";
+import { REAL_TIMERS, sleep, type Timers } from "../timers.js";
 import { type ResumedTurn, readTranscript } from "../transcript.js";
 import type { Entry } from "./catalogue.js";
 import { buildMemory } from "./rank.js";
 import {
+    CLUSTERS_INSTRUCTION,
     pendingReads,
     READS_INSTRUCTION,
     REVIEW_INSTRUCTIONS,
@@ -27,7 +29,7 @@ import {
     reviewSchema,
     runReview,
 } from "./review.js";
-import { REAL_TIMERS, ReviewScheduler, type Timers } from "./scheduler.js";
+import { ReviewScheduler } from "./scheduler.js";
 import {
     markFailed,
     markReviewed,
@@ -72,6 +74,10 @@ const describeError = (error: unknown) =>
 
 // A claim outlives the longest review by this much.
 const CLAIM_MARGIN_MS = 30_000;
+// How often a review of the live conversation asks again for a claim
+// another holds, a compaction at the same idle most often. Compaction's
+// retry is its own, in src/compaction/, which memory does not import.
+export const REVIEW_CLAIM_RETRY_MS = 2000;
 
 // It has turns no review has covered, Dorothy may review it, and its
 // back-off is over.
@@ -117,6 +123,9 @@ export class MemoryService implements MemoryHooks {
     // The live conversation's first review is done, or asked for.
     #reviewedOnce: boolean;
     #stopped = false;
+    // A review of the live conversation waiting for its claim, which a
+    // message sent ends.
+    #waiting: AbortController | null = null;
 
     constructor(options: MemoryServiceOptions) {
         this.#dir = options.dir;
@@ -148,9 +157,20 @@ export class MemoryService implements MemoryHooks {
         this.#pinWarned = built.warnings.length > 0;
     }
 
-    // The block a new session starts with, as of the latest review.
-    block(): string {
-        return this.#block;
+    // The block a new session starts with, as of the latest review, with
+    // reserved tokens of the live conversation's own abstracts charged
+    // first. A pin overrun is told once a run.
+    block(reserved = 0): string {
+        if (reserved === 0) {
+            return this.#block;
+        }
+        const built = this.#build(this.#phrase, reserved);
+        const [warning] = built.warnings;
+        if (warning !== undefined && !this.#pinWarned) {
+            this.#pinWarned = true;
+            this.#warn(warning);
+        }
+        return built.block;
     }
 
     // What building the first block found wrong, for the startup warnings.
@@ -167,6 +187,7 @@ export class MemoryService implements MemoryHooks {
 
     sent(text: string): void {
         this.#scheduler.cancelIdle();
+        this.#waiting?.abort();
         if (this.#titled || this.#flushed === null) {
             return;
         }
@@ -239,31 +260,81 @@ export class MemoryService implements MemoryHooks {
         this.#emit({ type: "warning", message });
     }
 
-    #build(exclude: string): { block: string; warnings: string[] } {
+    #build(
+        exclude: string,
+        reserved = 0,
+    ): { block: string; warnings: string[] } {
         return buildMemory([...this.#entries.values()], {
             now: this.#now().getTime(),
             config: this.#config,
             exclude,
+            reserved,
         });
     }
 
     async #review(phrase: string, signal: AbortSignal): Promise<void> {
         const index = this.#index;
-        if (
-            index !== null &&
-            !(await index.claim(
-                phrase,
-                this.#owner,
-                this.#now().getTime(),
-                REVIEW_TIMEOUT_MS + CLAIM_MARGIN_MS,
-            ))
-        ) {
+        if (index !== null && !(await this.#claim(index, phrase, signal))) {
             return;
         }
         try {
             await this.#reviewClaimed(phrase, signal);
         } finally {
             await index?.release(phrase, this.#owner);
+        }
+    }
+
+    // Takes the conversation's claim. At a shared idle compaction takes it
+    // first, and the live conversation's review waits for it, asking again
+    // until it is granted, a message is sent or the run stops. Another
+    // conversation's is left to whoever holds it: one review runs at a
+    // time, and the live conversation's would wait behind it.
+    async #claim(
+        index: RecallIndex,
+        phrase: string,
+        signal: AbortSignal,
+    ): Promise<boolean> {
+        const take = () =>
+            index.claim(
+                phrase,
+                this.#owner,
+                this.#now().getTime(),
+                REVIEW_TIMEOUT_MS + CLAIM_MARGIN_MS,
+            );
+        if (await take()) {
+            return true;
+        }
+        if (phrase !== this.#phrase || signal.aborted) {
+            return false;
+        }
+        const waiting = new AbortController();
+        const stop = () => waiting.abort();
+        signal.addEventListener("abort", stop, { once: true });
+        this.#waiting = waiting;
+        try {
+            for (;;) {
+                await sleep(
+                    this.#timers,
+                    REVIEW_CLAIM_RETRY_MS,
+                    waiting.signal,
+                );
+                if (waiting.signal.aborted) {
+                    return false;
+                }
+                if (await take()) {
+                    if (!waiting.signal.aborted) {
+                        return true;
+                    }
+                    // A message was sent while the claim was asked for.
+                    await index.release(phrase, this.#owner);
+                    return false;
+                }
+            }
+        } finally {
+            signal.removeEventListener("abort", stop);
+            if (this.#waiting === waiting) {
+                this.#waiting = null;
+            }
         }
     }
 
@@ -343,13 +414,18 @@ export class MemoryService implements MemoryHooks {
             return;
         }
         const readIds = reads.map((read) => read.id);
+        const instructions = [
+            REVIEW_INSTRUCTIONS,
+            ...(reads.length > 0 ? [READS_INSTRUCTION] : []),
+            ...((current?.clusters.length ?? 0) > 0
+                ? [CLUSTERS_INSTRUCTION]
+                : []),
+        ].join(" ");
         const outcome = await runReview({
             queryFn: this.#queryFn,
             systemPrompt: [
                 withMemory(systemPrompt, this.#build(phrase).block),
-                reads.length > 0
-                    ? `${REVIEW_INSTRUCTIONS} ${READS_INSTRUCTION}`
-                    : REVIEW_INSTRUCTIONS,
+                instructions,
             ].join("\n\n"),
             prompt: reviewPrompt(turns, current, reads),
             schema: reviewSchema(readIds),

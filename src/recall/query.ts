@@ -17,14 +17,18 @@ import type {
     Match,
     OpenInput,
     OpenResult,
+    RecollectInput,
+    RecollectResult,
     SearchInput,
     SearchResult,
+    WindowTurn,
 } from "./types.js";
 
 // A mistake in what Dorothy asked for, worded for her to relay.
 export class RecallError extends Error {}
 
 export const NOT_FOUND = "No conversation by that name.";
+export const NO_CLUSTER = "No cluster by that number.";
 export const WINDOW_TOKENS = 4000;
 const MAX_TERMS = 16;
 const MATCHES_PER_HIT = 3;
@@ -265,6 +269,24 @@ export function windowOf<T extends { text: string }>(
     return turns.slice(low, high + 1);
 }
 
+// A turn as the index holds it, its time in milliseconds.
+type TurnRow = {
+    turn: number;
+    role: "user" | "assistant";
+    at: number;
+    text: string;
+};
+
+// The window around turn, its times as ISO strings.
+const isoWindow = (
+    turns: readonly TurnRow[],
+    turn: number | undefined,
+): WindowTurn[] =>
+    windowOf(turns, turn).map((row) => ({
+        ...row,
+        at: new Date(row.at).toISOString(),
+    }));
+
 export function openConversation(
     index: RecallIndex,
     input: OpenInput,
@@ -298,19 +320,93 @@ export function openConversation(
         .query(
             "SELECT n AS turn, role, at, text FROM turns WHERE phrase = ? ORDER BY n",
         )
-        .all(row.phrase) as {
-        turn: number;
-        role: "user" | "assistant";
-        at: number;
-        text: string;
-    }[];
+        .all(row.phrase) as TurnRow[];
     return {
         ...objectOf(row),
         ...(row.abstract !== null ? { abstract: row.abstract } : {}),
         turns: turns.length,
-        window: windowOf(turns, input.turn).map((turn) => ({
-            ...turn,
-            at: new Date(turn.at).toISOString(),
-        })),
+        window: isoWindow(turns, input.turn),
+    };
+}
+
+// A cluster of the live conversation, read from turn (its first by
+// default) and never past its last. With words, the window centres on the
+// first turn from there on that holds them all, or any of them.
+export function recollect(
+    index: RecallIndex,
+    input: RecollectInput,
+    options: { phrase: string | null },
+): RecollectResult {
+    const phrase = options.phrase;
+    // A cluster is a whole number or nothing: no rounding, so the cluster
+    // opened is the cluster the transcript records, and a refused call
+    // records nothing opened.
+    const n = Number.isInteger(input.cluster) ? input.cluster : 0;
+    const range =
+        phrase === null
+            ? null
+            : (index.db
+                  .query(
+                      "SELECT first_turn AS first, last_turn AS last FROM clusters WHERE phrase = ? AND n = ?",
+                  )
+                  .get(phrase, n) as { first: number; last: number } | null);
+    if (phrase === null || range === null) {
+        throw new RecallError(NO_CLUSTER);
+    }
+    let start = range.first;
+    if (input.turn !== undefined) {
+        const turn = Number.isFinite(input.turn)
+            ? Math.round(input.turn)
+            : Number.NaN;
+        if (!(turn >= range.first && turn <= range.last)) {
+            throw new RecallError(
+                `turn must be from ${range.first} to ${range.last}, within cluster ${n}.`,
+            );
+        }
+        start = turn;
+    }
+    let centre = start;
+    let matched: boolean | undefined;
+    if (input.words !== undefined) {
+        if (normalise(input.words) === "") {
+            throw new RecallError("Give some words to look for.");
+        }
+        const terms = termsOf(input.words);
+        const find = (expression: string) =>
+            index.db
+                .query(
+                    `SELECT t.n AS n FROM turns_fts
+                     JOIN turns t ON t.rowid = turns_fts.rowid
+                     WHERE turns_fts MATCH ? AND t.phrase = ?
+                         AND t.n BETWEEN ? AND ?
+                     ORDER BY t.n LIMIT 1`,
+                )
+                .get(expression, phrase, start, range.last) as {
+                n: number;
+            } | null;
+        const hit =
+            find(terms.join(" ")) ??
+            (terms.length > 1 ? find(terms.join(" OR ")) : null);
+        matched = hit !== null;
+        centre = hit?.n ?? start;
+    }
+    const turns = index.db
+        .query(
+            "SELECT n AS turn, role, at, text FROM turns WHERE phrase = ? AND n BETWEEN ? AND ? ORDER BY n",
+        )
+        .all(phrase, start, range.last) as TurnRow[];
+    const total =
+        (
+            index.db
+                .query("SELECT turns FROM conversations WHERE phrase = ?")
+                .get(phrase) as { turns: number } | null
+        )?.turns ?? 0;
+    const at = turns.findIndex((turn) => turn.turn === centre);
+    return {
+        cluster: n,
+        turns: [range.first, range.last],
+        total,
+        ...(matched === undefined ? {} : { matched }),
+        window: isoWindow(turns, at === -1 ? 1 : at + 1),
     };
 }

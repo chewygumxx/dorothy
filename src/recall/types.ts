@@ -8,14 +8,19 @@
 //
 //
 
-// The server's name; the CLI calls its tools mcp__memory__search and
-// mcp__memory__open.
+// The server's name; the CLI calls its tools mcp__memory__search,
+// mcp__memory__open and mcp__memory__recollect.
 export const SERVER_NAME = "memory";
-export const TOOLS = ["search", "open"] as const;
+export const TOOLS = ["search", "open", "recollect"] as const;
 export type Tool = (typeof TOOLS)[number];
-export const ALLOWED_TOOLS = TOOLS.map(
+// The external tools, over other conversations, allowed in every session
+// with recall: every tool but recollect.
+export const ALLOWED_TOOLS = TOOLS.filter((tool) => tool !== "recollect").map(
     (tool) => `mcp__${SERVER_NAME}__${tool}`,
 );
+// The internal tool, over this conversation's clusters, allowed only in a
+// session seeded with clusters.
+export const RECOLLECT_TOOL = `mcp__${SERVER_NAME}__recollect`;
 
 const PREFIX = `mcp__${SERVER_NAME}__`;
 
@@ -34,6 +39,11 @@ export type SearchInput = {
 export type OpenInput = {
     conversation: string;
     purpose: string;
+    turn?: number | undefined;
+};
+export type RecollectInput = {
+    cluster: number;
+    words?: string | undefined;
     turn?: number | undefined;
 };
 
@@ -60,6 +70,15 @@ export type OpenResult = ConversationObject & {
     turns: number;
     window: WindowTurn[];
 };
+// A cluster of this conversation, word for word from where reading
+// started. matched says whether words were found, when words were given.
+export type RecollectResult = {
+    cluster: number;
+    turns: [number, number];
+    total: number;
+    matched?: boolean;
+    window: WindowTurn[];
+};
 
 // What the transcript keeps of a lookup: its input and a summary of what
 // came back, never the results, which can be found again.
@@ -78,7 +97,13 @@ export type OpenLookup = {
     purpose: string;
     turns: [number, number] | null;
 };
-export type Lookup = SearchLookup | OpenLookup;
+export type RecollectLookup = {
+    tool: "recollect";
+    cluster: number;
+    words?: string;
+    turns: [number, number] | null;
+};
+export type Lookup = SearchLookup | OpenLookup | RecollectLookup;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
@@ -93,6 +118,16 @@ function parse<T>(text: string | null): T | null {
     } catch {
         return null;
     }
+}
+
+// The first and last turn of a window, or null for none.
+function windowRange(window: unknown): [number, number] | null {
+    const turns = Array.isArray(window) ? (window as WindowTurn[]) : [];
+    const first = turns[0];
+    const last = turns.at(-1);
+    return first !== undefined && last !== undefined
+        ? [first.turn, last.turn]
+        : null;
 }
 
 // result: the tool's text, or null when the call failed. The result is read
@@ -122,6 +157,23 @@ export function describeLookup(
         }
         return lookup;
     }
+    if (tool === "recollect") {
+        const lookup: RecollectLookup = {
+            tool,
+            cluster:
+                typeof fields.cluster === "number" &&
+                Number.isInteger(fields.cluster) &&
+                fields.cluster >= 1
+                    ? fields.cluster
+                    : 0,
+            turns: null,
+        };
+        if (typeof fields.words === "string") {
+            lookup.words = fields.words;
+        }
+        lookup.turns = windowRange(parse<RecollectResult>(result)?.window);
+        return lookup;
+    }
     const conversation = textOf(fields.conversation);
     const lookup: OpenLookup = {
         tool,
@@ -134,11 +186,6 @@ export function describeLookup(
     if (typeof opened?.name === "string") {
         lookup.name = opened.name;
     }
-    const window = Array.isArray(opened?.window) ? opened.window : [];
-    const first = window[0];
-    const last = window.at(-1);
-    if (first !== undefined && last !== undefined) {
-        lookup.turns = [first.turn, last.turn];
-    }
+    lookup.turns = windowRange(opened?.window);
     return lookup;
 }
