@@ -302,7 +302,10 @@ Everything already on screen stays.
 The work holds the conversation's review claim in the index, so two TUIs
 never compact or review one conversation at once. When a review and a
 compaction are both due, compaction runs first and the review follows; one
-background call runs at a time per conversation.
+background call runs at a time per conversation. A review of the live
+conversation refused the claim asks again every 2 seconds until it is
+granted, a message is sent or the TUI quits; a review of another
+conversation is still left to whoever holds its claim.
 
 ### The CLI's own compaction
 

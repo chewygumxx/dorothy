@@ -30,6 +30,7 @@ import {
     MemoryService,
     type MemoryServiceOptions,
     type Notice,
+    REVIEW_CLAIM_RETRY_MS,
 } from "./service.js";
 import {
     EMPTY_SIDECAR,
@@ -642,16 +643,82 @@ describe("MemoryService with the index", () => {
         expect(await claimable()).toBe(true);
     });
 
-    it("leaves a conversation another process has claimed", async () => {
-        await transcript(LIVE, [user("a"), reply("b")]);
+    // A compaction, or another process, holding the conversation's claim.
+    async function claimed(of: string): Promise<RecallIndex> {
         const other = RecallIndex.open(join(dir, "index", "recall.sqlite"));
-        await other.claim(LIVE, "them", NOW.getTime(), 60_000);
+        expect(await other.claim(of, "them", NOW.getTime(), 60_000)).toBe(true);
+        return other;
+    }
+
+    it("waits for the live conversation's claim, and reviews once it is let go", async () => {
+        await transcript(LIVE, [user("a"), reply("b")]);
+        const other = await claimed(LIVE);
         const fake = reviews(NOTES);
-        const { memory } = setup({ queryFn: fake.fn, index });
-        memory.turnEnded();
-        await settle();
-        expect(fake.calls).toHaveLength(0);
-        other.close();
+        const { memory, timers } = setup({ queryFn: fake.fn, index });
+        try {
+            memory.turnEnded();
+            await settle();
+            expect(fake.calls).toHaveLength(0);
+            timers.advance(REVIEW_CLAIM_RETRY_MS);
+            await settle();
+            expect(fake.calls).toHaveLength(0);
+            await other.release(LIVE, "them");
+            timers.advance(REVIEW_CLAIM_RETRY_MS);
+            await until(() => fake.calls.length === 1);
+            expect(fake.calls).toHaveLength(1);
+            await until(async () => (await sidecarOf(LIVE)) !== null);
+        } finally {
+            other.close();
+        }
+    });
+
+    it("stops waiting for the claim, unreviewed, when a message is sent or the run stops", async () => {
+        await transcript(LIVE, [user("a"), reply("b")]);
+        for (const end of ["sent", "stop"] as const) {
+            const other = await claimed(LIVE);
+            const fake = reviews(NOTES);
+            const { memory, timers } = setup({ queryFn: fake.fn, index });
+            try {
+                memory.turnEnded();
+                await settle();
+                expect(timers.pending.size).toBe(1);
+                if (end === "sent") {
+                    memory.sent("next");
+                    // Its provisional title holds the index's write lock,
+                    // which the other connection's release would wait on.
+                    await until(async () => (await sidecarOf(LIVE)) !== null);
+                } else {
+                    await memory.stop();
+                }
+                expect(timers.pending.size).toBe(0);
+                await other.release(LIVE, "them");
+                timers.advance(REVIEW_CLAIM_RETRY_MS);
+                await settle();
+                expect(fake.calls).toHaveLength(0);
+            } finally {
+                await memory.stop();
+                other.close();
+            }
+        }
+    });
+
+    it("leaves another conversation another process has claimed", async () => {
+        await transcript(OTHER, [user("a"), reply("b")]);
+        const other = await claimed(OTHER);
+        const fake = reviews(NOTES);
+        const { memory, timers } = setup({
+            queryFn: fake.fn,
+            index,
+            entries: [entry(OTHER, null)],
+        });
+        try {
+            memory.ready();
+            await settle();
+            expect(fake.calls).toHaveLength(0);
+            expect(timers.pending.size).toBe(0);
+        } finally {
+            other.close();
+        }
     });
 });
 

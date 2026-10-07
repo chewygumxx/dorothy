@@ -14,7 +14,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { MemoryConfig } from "../config.js";
 import { systemPrompt, type Turn, withMemory } from "../persona.js";
 import type { RecallIndex } from "../recall/store.js";
-import { REAL_TIMERS, type Timers } from "../timers.js";
+import { REAL_TIMERS, sleep, type Timers } from "../timers.js";
 import { type ResumedTurn, readTranscript } from "../transcript.js";
 import type { Entry } from "./catalogue.js";
 import { buildMemory } from "./rank.js";
@@ -74,6 +74,10 @@ const describeError = (error: unknown) =>
 
 // A claim outlives the longest review by this much.
 const CLAIM_MARGIN_MS = 30_000;
+// How often a review of the live conversation asks again for a claim
+// another holds, a compaction at the same idle most often. Compaction's
+// retry is its own, in src/compaction/, which memory does not import.
+export const REVIEW_CLAIM_RETRY_MS = 2000;
 
 // It has turns no review has covered, Dorothy may review it, and its
 // back-off is over.
@@ -119,6 +123,9 @@ export class MemoryService implements MemoryHooks {
     // The live conversation's first review is done, or asked for.
     #reviewedOnce: boolean;
     #stopped = false;
+    // A review of the live conversation waiting for its claim, which a
+    // message sent ends.
+    #waiting: AbortController | null = null;
 
     constructor(options: MemoryServiceOptions) {
         this.#dir = options.dir;
@@ -180,6 +187,7 @@ export class MemoryService implements MemoryHooks {
 
     sent(text: string): void {
         this.#scheduler.cancelIdle();
+        this.#waiting?.abort();
         if (this.#titled || this.#flushed === null) {
             return;
         }
@@ -266,21 +274,67 @@ export class MemoryService implements MemoryHooks {
 
     async #review(phrase: string, signal: AbortSignal): Promise<void> {
         const index = this.#index;
-        if (
-            index !== null &&
-            !(await index.claim(
-                phrase,
-                this.#owner,
-                this.#now().getTime(),
-                REVIEW_TIMEOUT_MS + CLAIM_MARGIN_MS,
-            ))
-        ) {
+        if (index !== null && !(await this.#claim(index, phrase, signal))) {
             return;
         }
         try {
             await this.#reviewClaimed(phrase, signal);
         } finally {
             await index?.release(phrase, this.#owner);
+        }
+    }
+
+    // Takes the conversation's claim. At a shared idle compaction takes it
+    // first, and the live conversation's review waits for it, asking again
+    // until it is granted, a message is sent or the run stops. Another
+    // conversation's is left to whoever holds it: one review runs at a
+    // time, and the live conversation's would wait behind it.
+    async #claim(
+        index: RecallIndex,
+        phrase: string,
+        signal: AbortSignal,
+    ): Promise<boolean> {
+        const take = () =>
+            index.claim(
+                phrase,
+                this.#owner,
+                this.#now().getTime(),
+                REVIEW_TIMEOUT_MS + CLAIM_MARGIN_MS,
+            );
+        if (await take()) {
+            return true;
+        }
+        if (phrase !== this.#phrase || signal.aborted) {
+            return false;
+        }
+        const waiting = new AbortController();
+        const stop = () => waiting.abort();
+        signal.addEventListener("abort", stop, { once: true });
+        this.#waiting = waiting;
+        try {
+            for (;;) {
+                await sleep(
+                    this.#timers,
+                    REVIEW_CLAIM_RETRY_MS,
+                    waiting.signal,
+                );
+                if (waiting.signal.aborted) {
+                    return false;
+                }
+                if (await take()) {
+                    if (!waiting.signal.aborted) {
+                        return true;
+                    }
+                    // A message was sent while the claim was asked for.
+                    await index.release(phrase, this.#owner);
+                    return false;
+                }
+            }
+        } finally {
+            signal.removeEventListener("abort", stop);
+            if (this.#waiting === waiting) {
+                this.#waiting = null;
+            }
         }
     }
 

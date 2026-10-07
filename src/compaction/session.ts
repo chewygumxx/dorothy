@@ -12,7 +12,7 @@ import type { CompactionConfig } from "../config.js";
 import type { ChatSession, ConversationEvent } from "../conversation.js";
 import type { Cluster } from "../memory/sidecar.js";
 import type { Turn } from "../persona.js";
-import { REAL_TIMERS, type Timers } from "../timers.js";
+import { REAL_TIMERS, sleep, type Timers } from "../timers.js";
 import { type CompactOutcome, compact } from "./compact.js";
 import { callCap, covered, pressure, seedTurns } from "./plan.js";
 import type { StructuredCall } from "./types.js";
@@ -72,25 +72,6 @@ const streams = (event: ConversationEvent) =>
     event.type === "delta" ||
     event.type === "lookup" ||
     (event.type === "sdk" && event.message.type === "stream_event");
-
-// A wait that ends early, and quietly, when the signal aborts.
-function sleep(timers: Timers, ms: number, signal: AbortSignal): Promise<void> {
-    return new Promise((resolve) => {
-        if (signal.aborted) {
-            resolve();
-            return;
-        }
-        const timer = timers.set(() => {
-            signal.removeEventListener("abort", onAbort);
-            resolve();
-        }, ms);
-        const onAbort = () => {
-            timers.clear(timer);
-            resolve();
-        };
-        signal.addEventListener("abort", onAbort, { once: true });
-    });
-}
 
 // What one run's compaction keeps across its sessions: the clusters so
 // far, the failures, and the calls, saves and closings under way. Only
