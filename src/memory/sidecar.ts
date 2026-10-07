@@ -60,6 +60,34 @@ export type Cluster = {
 };
 // Holds a write against writers in other processes; the index provides it.
 export type Lock = <T>(work: () => Promise<T>) => Promise<T>;
+// Commits paths with a message once they are written, inside the lock
+// they were written under. It never throws: a failed commit is warned of
+// and retried by history (src/history/), which memory never imports.
+export type Recorder = (
+    paths: readonly string[],
+    message: string,
+) => Promise<void>;
+// A write's commit: its message, and any files written beside it.
+export type Recording = {
+    recorder: Recorder;
+    message: string;
+    also?: readonly string[];
+};
+// What memory sees of history.
+export type HistoryHandle = {
+    recorder: Recorder;
+    // The lock history commits under: the index's, or history's own.
+    lock: Lock;
+    // Commits or restores whatever changed while Dorothy was away.
+    sweep(): Promise<void>;
+    // Restores a file found broken; true when it was. Takes the lock.
+    heal(path: string): Promise<boolean>;
+    close(): void;
+};
+// For a command: history with the index's lock, or null when it is off.
+export type OpenHistory = (
+    index: { lock: Lock } | null,
+) => Promise<HistoryHandle | null>;
 
 export type Sidecar = {
     v: 1;
