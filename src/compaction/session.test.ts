@@ -484,6 +484,35 @@ describe("Compaction", () => {
         expect(h.events).not.toContainEqual({ type: "compacting" });
     });
 
+    it("sends every message held for a save on when sending one throws", async () => {
+        let saveDone = () => {};
+        const saving = new Promise<void>((resolve) => {
+            saveDone = resolve;
+        });
+        const h = harness({ saving });
+        const first = h.open();
+        first.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.saved.length === 1);
+        void first.close();
+        const next = h.open([...HISTORY, turn("user"), turn("assistant")]);
+        next.send("first");
+        next.send("second");
+        h.faults.send = "first";
+        saveDone();
+        await until(() => h.sessions[1]?.sent.length === 1);
+        await settle();
+        expect(h.sessions[1]?.sent).toEqual(["second"]);
+        expect(h.events.filter((e) => e.type === "error")).toEqual([]);
+        expect(warnings(h.events)).toEqual([
+            "compaction: couldn't send a held message: pipe closed",
+        ]);
+        await next.close();
+    });
+
     it("seeds a reconnection made while the compaction is recorded only once it is", async () => {
         let recordDone = () => {};
         const recording = new Promise<void>((resolve) => {

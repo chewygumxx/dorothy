@@ -354,9 +354,7 @@ class CompactingSession implements ChatSession {
         this.#attach(this.#connect(seed));
         // Esc on these, held for a save, ends no chain to come.
         this.#cutShort = false;
-        for (const held of this.#held.splice(0)) {
-            this.#forward(held);
-        }
+        this.#sendHeld(this.#held.splice(0));
         if (after.length > 0) {
             // After the caller has subscribed; no caller hears a throw.
             queueMicrotask(() => {
@@ -870,17 +868,22 @@ class CompactingSession implements ChatSession {
             this.#announced = false;
             this.#handing = false;
             this.#cutShort = false;
-            // One that can't be sent doesn't keep back the rest.
-            for (const message of held) {
+            this.#sendHeld(held);
+        }
+    }
+
+    // Sends held messages on; one that can't be sent is warned of and
+    // doesn't keep back the rest.
+    #sendHeld(held: readonly Held[]): void {
+        for (const message of held) {
+            try {
+                this.#forward(message);
+            } catch (error) {
                 try {
-                    this.#forward(message);
-                } catch (error) {
-                    try {
-                        this.#warn(
-                            `compaction: couldn't send a held message: ${describeError(error)}`,
-                        );
-                    } catch {}
-                }
+                    this.#warn(
+                        `compaction: couldn't send a held message: ${describeError(error)}`,
+                    );
+                } catch {}
             }
         }
     }
