@@ -283,6 +283,9 @@ class CompactingSession implements ChatSession {
     // The inner session's seed predates clusters saved since, by runs that
     // followed one another without a session between.
     #behind = false;
+    // Esc on a held message: no run follows the current one, which hands
+    // over even to a seed still past hard.
+    #cutShort = false;
 
     constructor(
         shared: Shared,
@@ -374,6 +377,7 @@ class CompactingSession implements ChatSession {
             for (const held of this.#held) {
                 held.interrupted = true;
             }
+            this.#cutShort = true;
             return Promise.resolve();
         }
         return this.#inner?.interrupt() ?? Promise.resolve();
@@ -662,14 +666,14 @@ class CompactingSession implements ChatSession {
         }
         // One run compacts at most a call's worth of turns. While a
         // message waits, or before the first session, a seed still past
-        // hard is compacted again at once, with no session between. A seed
-        // that can't be estimated is taken as under hard: the clusters are
-        // saved, so the handover goes ahead.
+        // hard is compacted again at once, with no session between, unless
+        // Esc cut the chain short. A seed that can't be estimated is taken
+        // as under hard: the clusters are saved, so the handover goes ahead.
         const seed = shared.seed(this.#turns);
-        if (
+        const past =
             (this.#held.length > 0 || this.#inner === null) &&
-            this.#pastHard(seed, after)
-        ) {
+            this.#pastHard(seed, after);
+        if (past && !this.#cutShort) {
             this.#again = true;
             this.#behind = this.#inner !== null;
         } else {
@@ -679,9 +683,10 @@ class CompactingSession implements ChatSession {
             // as full as before, so the wait before the next try doubles
             // as it does for any failure. The clusters stay saved. Urgency
             // stands until the session connects, so that a held message
-            // sent on to the old session is warned of.
+            // sent on to the old session is warned of, and after it when
+            // the new seed is still past hard.
             const next = this.#connect(seed);
-            this.#urgent = false;
+            this.#urgent = past;
             // The old session's last reply may have started an idle wait.
             this.#cancelIdle();
             this.#attach(next);
@@ -760,8 +765,12 @@ class CompactingSession implements ChatSession {
         }
         if (this.#again) {
             this.#again = false;
-            this.#start();
-            return;
+            if (!this.#cutShort) {
+                this.#start();
+                return;
+            }
+            // Esc came after the run chose to go on: its seed is past hard.
+            this.#urgent = true;
         }
         if (this.#inner === null || this.#behind) {
             const old = this.#inner;
@@ -788,6 +797,7 @@ class CompactingSession implements ChatSession {
             this.#urgent = false;
             this.#announced = false;
             this.#handing = false;
+            this.#cutShort = false;
             for (const message of held) {
                 this.#forward(message);
             }

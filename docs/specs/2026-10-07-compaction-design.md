@@ -218,7 +218,8 @@ output tokens.
 - Esc while a message is held marks it interrupted. It is still sent when
   compaction ends, and interrupted as soon as its reply starts streaming,
   so it ends as any interrupted turn does, in `App`'s history and the
-  model's context alike.
+  model's context alike. Esc also ends a chain of calls (below) once the
+  current call lands; that call is not aborted.
 - A message still held when the session closes is not sent. On quit nothing
   follows. On a reconnect, which `App` makes only to send a new message, the
   new session's history holds the held one once, unanswered, before the new
@@ -231,12 +232,14 @@ output tokens.
 - While a message is held, or before the first session connects, a call
   that leaves the new seed's estimate still past `hard` is followed at once
   by another, with no session between. The chain ends when the estimate
-  falls to `hard`, or when a run ends without saving: a failed call, nothing
-  to compact, or notes no longer readable. The held message then goes to a
-  session seeded from the clusters saved so far, with the warning that the
-  context is nearly full. A claim held elsewhere does not end the chain: a
-  run holding a message, or before the first session, asks again every 2
-  seconds until it is granted or the TUI quits.
+  falls to `hard`; when Esc marks the held message interrupted, after the
+  current call; or when a run ends without saving: a failed call, nothing
+  to compact, or notes no longer readable. Unless the estimate fell to
+  `hard`, the held message then goes to a session seeded from the clusters
+  saved so far, with the warning that the context is nearly full. A claim
+  held elsewhere does not end the chain: a run holding a message, or before
+  the first session, asks again every 2 seconds until it is granted or the
+  TUI quits.
 
 ### The outgoing turns
 

@@ -1344,6 +1344,80 @@ describe("Compaction", () => {
         expect(h.sessions[1]?.interrupts).toBe(1);
     });
 
+    it("ends a chain at the current call when a held message is interrupted, and sends it on nearly full", async () => {
+        // Three calls would bring the seed under hard.
+        const history = Array.from({ length: 10 }, (_, i) =>
+            sized(i % 2 === 0 ? "user" : "assistant", 40),
+        );
+        const h = harness({ estimate: seedSize });
+        const session = h.open(history);
+        session.send("early");
+        await until(() => h.calls.length === 1);
+        await session.interrupt();
+        h.calls[0]?.answer(through(2));
+        await until(() => h.sessions[0]?.sent.length === 1);
+        await settle();
+        expect(h.calls).toHaveLength(1);
+        expect(h.sessions).toHaveLength(1);
+        expect(h.sessions[0]?.seed.clusters.map((c) => c.through)).toEqual([2]);
+        expect(h.sessions[0]?.sent).toEqual(["early"]);
+        expect(compactedRanges(h.events)).toEqual([[1, 2]]);
+        expect(warnings(h.events)).toEqual([
+            "compaction: the context is nearly full; sending anyway",
+        ]);
+        expect(h.sessions[0]?.interrupts).toBe(0);
+        h.sessions[0]?.emit({ type: "delta", text: "Of" });
+        expect(h.sessions[0]?.interrupts).toBe(1);
+    });
+
+    it("ends a chain with a session at the current call when a held message is interrupted", async () => {
+        const history = Array.from({ length: 6 }, (_, i) =>
+            sized(i % 2 === 0 ? "user" : "assistant", 30),
+        );
+        const h = harness({ estimate: seedSize });
+        const session = h.open(history);
+        session.send("y".repeat(240));
+        h.sessions[0]?.reply(250, "z".repeat(240));
+        session.send("next");
+        await until(() => h.calls.length === 1);
+        await session.interrupt();
+        h.calls[0]?.answer(through(3));
+        await until(() => h.sessions[1]?.sent.length === 1);
+        await settle();
+        expect(h.calls).toHaveLength(1);
+        expect(h.sessions).toHaveLength(2);
+        expect(h.sessions[0]?.closed).toBe(true);
+        expect(h.sessions[1]?.sent).toEqual(["next"]);
+        expect(warnings(h.events)).toEqual([
+            "compaction: the context is nearly full; sending anyway",
+        ]);
+        h.sessions[1]?.emit({ type: "delta", text: "Of" });
+        expect(h.sessions[1]?.interrupts).toBe(1);
+    });
+
+    it("ends a chain when Esc comes after the run chose to go on", async () => {
+        const history = Array.from({ length: 10 }, (_, i) =>
+            sized(i % 2 === 0 ? "user" : "assistant", 40),
+        );
+        const h = harness({ estimate: seedSize });
+        const session = h.open(history);
+        session.subscribe((event) => {
+            if (event.type === "compacted") {
+                void session.interrupt();
+            }
+        });
+        session.send("early");
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(through(2));
+        await until(() => h.sessions[0]?.sent.length === 1);
+        await settle();
+        expect(h.calls).toHaveLength(1);
+        expect(h.sessions[0]?.sent).toEqual(["early"]);
+        expect(warnings(h.events)).toEqual([
+            "compaction: the context is nearly full; sending anyway",
+        ]);
+    });
+
     it("interrupts a held message sent on after a failed compaction", async () => {
         const h = harness();
         const session = h.open();
