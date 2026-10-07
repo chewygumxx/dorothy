@@ -350,6 +350,8 @@ class CompactingSession implements ChatSession {
             return;
         }
         this.#attach(this.#connect(seed));
+        // Esc on these, held for a save, ends no chain to come.
+        this.#cutShort = false;
         for (const held of this.#held.splice(0)) {
             this.#forward(held);
         }

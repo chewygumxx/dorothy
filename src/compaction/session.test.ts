@@ -1643,6 +1643,51 @@ describe("Compaction", () => {
         ]);
     });
 
+    it("lets Esc on a message held for a save end no later chain", async () => {
+        let saveDone = () => {};
+        const saving = new Promise<void>((resolve) => {
+            saveDone = resolve;
+        });
+        let sizing = false;
+        const h = harness({
+            saving,
+            estimate: (seed) => (sizing ? seedSize(seed) : 0),
+        });
+        const first = h.open();
+        first.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.saved.length === 1);
+        void first.close();
+        const next = h.open([...HISTORY, turn("user"), turn("assistant")]);
+        next.send("waiting");
+        await next.interrupt();
+        saveDone();
+        await until(() => h.sessions[1]?.sent.length === 1);
+        h.sessions[1]?.reply(10, "x".repeat(4 * 60));
+        for (let exchange = 0; exchange < 3; exchange++) {
+            next.send("y".repeat(4 * 60));
+            h.sessions[1]?.reply(10, "z".repeat(4 * 60));
+        }
+        // Past hard, two calls or more bring the seed under it.
+        sizing = true;
+        h.sessions[1]?.reply(250);
+        next.send("held");
+        await until(() => h.calls.length === 2);
+        const prompt = h.calls[1]?.request.prompt ?? "";
+        const last = Math.max(
+            ...[...prompt.matchAll(/<turn n="(\d+)">/g)].map((m) =>
+                Number(m[1]),
+            ),
+        );
+        h.calls[1]?.answer(through(last));
+        await until(() => h.calls.length === 3);
+        expect(h.sessions).toHaveLength(2);
+        await h.compaction.stop();
+    });
+
     it("interrupts a held message sent on after a failed compaction", async () => {
         const h = harness();
         const session = h.open();
