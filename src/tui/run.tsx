@@ -196,10 +196,37 @@ export function openIndex<T>(
             lost.length === 1
                 ? lost.join("")
                 : `${lost.slice(0, -1).join(", ")} and ${lost.at(-1)}`;
+        // Memory and recall lose the index itself. When only compaction
+        // wanted it, "memory:" would be wrong, and "compaction:" would be
+        // cleared by the first compaction that succeeds, which runs
+        // unlocked and leaves this true; so it is worded by the index.
+        const reason = describeError(error);
         return {
             index: null,
-            warning: `memory: the index can't be opened (${describeError(error)}); starting without ${listed}`,
+            warning:
+                uses.memory || uses.recall
+                    ? `memory: the index can't be opened (${reason}); starting without ${listed}`
+                    : `index: can't be opened (${reason}); starting without ${listed}`,
         };
+    }
+}
+
+// Each step of quitting runs even if an earlier one throws, so a throw
+// can't leave the index or the transcript open; the first throw is
+// rethrown once all have run.
+export async function closeInOrder(
+    steps: readonly (() => unknown)[],
+): Promise<void> {
+    let failure: { error: unknown } | null = null;
+    for (const step of steps) {
+        try {
+            await step();
+        } catch (error) {
+            failure ??= { error };
+        }
+    }
+    if (failure !== null) {
+        throw failure.error;
     }
 }
 
@@ -362,10 +389,12 @@ export async function runTui(
     } finally {
         // Running reviews and compactions are closed unsaved, and let go
         // of their claims before the index they are held in closes.
-        await compaction?.stop();
-        await memory?.stop();
-        index?.close();
-        await writer?.close();
+        await closeInOrder([
+            () => compaction?.stop(),
+            () => memory?.stop(),
+            () => index?.close(),
+            () => writer?.close(),
+        ]);
     }
     return 0;
 }

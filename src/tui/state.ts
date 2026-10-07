@@ -248,6 +248,9 @@ function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
         // Compaction's warnings tell of failures and a full context, which
         // a compaction that succeeds has ended; but not of compaction being
         // off until the next launch, which one run's success doesn't undo.
+        // That warning is worded in src/compaction/session.ts, where a
+        // `ready` refusal switches compaction off: keep "until the next
+        // launch" in it.
         case "compacted":
             return {
                 ...state,

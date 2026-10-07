@@ -18,6 +18,7 @@ import { newPhrase } from "../session-id.js";
 import { transcriptDir } from "../transcript.js";
 import { xdgDir } from "../xdg.js";
 import {
+    closeInOrder,
     clusterSaver,
     indexClaims,
     indexUses,
@@ -179,7 +180,7 @@ describe("openIndex", () => {
         expect(openIndex({ ...off, compaction: true }, failing)).toEqual({
             index: null,
             warning:
-                "memory: the index can't be opened (disk gone); starting without compaction's lock",
+                "index: can't be opened (disk gone); starting without compaction's lock",
         });
         expect(
             openIndex({ memory: true, recall: true, compaction: true }, failing)
@@ -192,6 +193,40 @@ describe("openIndex", () => {
         ).toBe(
             "memory: the index can't be opened (disk gone); starting without memory and recall",
         );
+    });
+});
+
+describe("closeInOrder", () => {
+    it("runs every step in order even when an earlier one throws, then rethrows the first", async () => {
+        const ran: string[] = [];
+        const step = (name: string, fail?: string) => async () => {
+            ran.push(name);
+            if (fail !== undefined) {
+                throw new Error(fail);
+            }
+        };
+        await expect(
+            closeInOrder([
+                step("compaction", "first"),
+                step("memory"),
+                step("index", "second"),
+                step("transcript"),
+            ]),
+        ).rejects.toThrow("first");
+        expect(ran).toEqual(["compaction", "memory", "index", "transcript"]);
+    });
+
+    it("settles quietly when every step does", async () => {
+        const ran: string[] = [];
+        await closeInOrder([
+            () => {
+                ran.push("a");
+            },
+            async () => {
+                ran.push("b");
+            },
+        ]);
+        expect(ran).toEqual(["a", "b"]);
     });
 });
 
