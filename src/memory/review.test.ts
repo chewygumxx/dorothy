@@ -19,13 +19,21 @@ import {
     REVIEW_INSTRUCTIONS,
     REVIEW_SCHEMA,
     type ReviewQueryFn,
+    type ReviewTags,
     reviewPrompt,
     reviewSchema,
     runReview,
+    TAGS_INSTRUCTION,
     validateNotes,
     validateReview,
 } from "./review.js";
-import { EMPTY_SIDECAR, mergeEdit, withProvisional } from "./sidecar.js";
+import {
+    EMPTY_SIDECAR,
+    mergeEdit,
+    mergeReview,
+    withProvisional,
+} from "./sidecar.js";
+import type { Concept, Vocabulary } from "./vocabulary.js";
 
 const AT = "2026-10-05T05:40:12.000Z";
 const NOTES = {
@@ -539,5 +547,162 @@ describe("reviewing a compacted conversation", () => {
 
     it("says how to read them", () => {
         expect(CLUSTERS_INSTRUCTION).toContain("<earlier>");
+    });
+});
+
+describe("tags in the review", () => {
+    const concept = (
+        prefLabel: string,
+        fields: Partial<Concept> = {},
+    ): Concept => ({
+        prefLabel,
+        altLabel: [],
+        broader: [],
+        scopeNote: `About ${prefLabel}.`,
+        by: "dorothy",
+        at: AT,
+        edited: null,
+        ...fields,
+    });
+    const vocabulary: Vocabulary = {
+        v: 1,
+        rev: 1,
+        concepts: {
+            k00000001: concept("dorothy"),
+            k00000002: concept("R&D", {
+                altLabel: ["a<b", 'say "hi"'],
+                broader: ["k00000001", "k00000003"],
+                scopeNote: "Research & <development>.",
+            }),
+            k00000003: concept("secret"),
+        },
+    };
+    // secret is carried only by hidden conversations, so it is not shown.
+    const tags: ReviewTags = {
+        vocabulary,
+        concepts: [
+            ["k00000001", vocabulary.concepts.k00000001 as Concept],
+            ["k00000002", vocabulary.concepts.k00000002 as Concept],
+        ],
+    };
+    const turns: Turn[] = [{ role: "user", text: "Hi" }];
+
+    it("lists the vocabulary she may see, escaped", () => {
+        const prompt = reviewPrompt(turns, null, [], tags);
+        expect(prompt).toContain(
+            [
+                "The concepts you tag with:",
+                "<vocabulary>",
+                '<concept label="dorothy">About dorothy.</concept>',
+                '<concept label="R&amp;D" alt="a&lt;b; say &quot;hi&quot;" broader="dorothy">Research &amp; &lt;development&gt;.</concept>',
+                "</vocabulary>",
+            ].join("\n"),
+        );
+        expect(prompt).not.toContain("secret");
+        expect(prompt).toContain("<tags/>");
+    });
+
+    it("says when the vocabulary is empty", () => {
+        expect(
+            reviewPrompt(turns, null, [], { vocabulary, concepts: [] }),
+        ).toContain("<vocabulary/>");
+    });
+
+    it("shows the conversation's tags by label, the user's marked fixed", () => {
+        const hers = mergeReview(
+            null,
+            { title: "T", description: "D.", abstract: "A." },
+            {
+                model: "m",
+                at: AT,
+                throughTurn: 1,
+                costUsd: 0,
+                tags: ["k00000002", "k00000009"],
+            },
+        );
+        expect(reviewPrompt(turns, hers, [], tags)).toContain(
+            "<tags>R&amp;D</tags>",
+        );
+        const theirs = mergeEdit(hers, { tags: ["k00000001"] }, AT);
+        expect(reviewPrompt(turns, theirs, [], tags)).toContain(
+            '<tags fixed="true">dorothy</tags>',
+        );
+    });
+
+    it("leaves tags out when tagging is off", () => {
+        const prompt = reviewPrompt(turns, null);
+        expect(prompt).not.toContain("<tags");
+        expect(prompt).not.toContain("vocabulary");
+    });
+
+    it("asks for tags and coined concepts in the schema", () => {
+        expect(reviewSchema([], false)).toBe(REVIEW_SCHEMA);
+        const schema = reviewSchema(["toolu_1"], true) as {
+            properties: Record<string, unknown>;
+            required: string[];
+        };
+        expect(Object.keys(schema.properties)).toEqual([
+            "title",
+            "description",
+            "abstract",
+            "tags",
+            "coined",
+            "appraisals",
+        ]);
+        expect(schema.required).toEqual([
+            "title",
+            "description",
+            "abstract",
+            "tags",
+            "coined",
+            "appraisals",
+        ]);
+    });
+
+    it("reads her tags leniently, never failing the notes", () => {
+        expect(validateReview(NOTES, [], true)).toEqual({
+            ok: true,
+            notes: NOTES,
+            appraisals: {},
+            tags: { tags: [], coined: [] },
+        });
+        expect(
+            validateReview({ ...NOTES, tags: "memory", coined: 3 }, [], true),
+        ).toEqual({
+            ok: true,
+            notes: NOTES,
+            appraisals: {},
+            tags: { tags: [], coined: [] },
+        });
+        expect(
+            validateReview({ ...NOTES, tags: ["R&amp;D"] }, [], true),
+        ).toMatchObject({ tags: { tags: ["R&D"] } });
+        expect(validateReview(NOTES, [])).not.toHaveProperty("tags");
+    });
+
+    it("hands her tags back from a run", async () => {
+        const fake = fakeQuery([
+            init("claude-test"),
+            success({ ...NOTES, tags: ["memory"], coined: [] }),
+        ]);
+        expect(await run(fake, { tagging: true })).toMatchObject({
+            ok: true,
+            tags: { tags: ["memory"], coined: [] },
+        });
+    });
+
+    it("has her coin only when nothing fits, and keep fixed tags", () => {
+        expect(TAGS_INSTRUCTION).toBe(
+            [
+                "Give up to 5 tags for the conversation's main subjects, most",
+                "important first, using a concept's label, or one of its",
+                "alternatives, wherever one fits. Only when none fits, coin a",
+                "concept: a label of ideally 12 characters and at most 50,",
+                "descriptive on its own, with a sentence of at most 160",
+                "characters saying what it covers, and the labels of any broader",
+                "concepts. Coin at most 3. Tags marked fixed were set by the",
+                "user: return them exactly as they are and coin nothing.",
+            ].join(" "),
+        );
     });
 });

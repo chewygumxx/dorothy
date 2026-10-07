@@ -26,6 +26,14 @@ import {
     type Served,
     type Sidecar,
 } from "./sidecar.js";
+import { readTagOutput, type TagOutput } from "./tagging.js";
+import {
+    byLabel,
+    type Concept,
+    resolveTags,
+    TAG_LIMITS,
+    type Vocabulary,
+} from "./vocabulary.js";
 
 // The SDK's query() fits this; tests pass a fake.
 export type ReviewHandle = StructuredHandle;
@@ -75,6 +83,57 @@ export const CLUSTERS_INSTRUCTION = [
     "they were in your context; write your notes on the whole",
     "conversation.",
 ].join(" ");
+
+export const TAGS_INSTRUCTION = [
+    "Give up to 5 tags for the conversation's main subjects, most",
+    "important first, using a concept's label, or one of its",
+    "alternatives, wherever one fits. Only when none fits, coin a",
+    "concept: a label of ideally 12 characters and at most 50,",
+    "descriptive on its own, with a sentence of at most 160",
+    "characters saying what it covers, and the labels of any broader",
+    "concepts. Coin at most 3. Tags marked fixed were set by the",
+    "user: return them exactly as they are and coin nothing.",
+].join(" ");
+
+const LABEL = {
+    type: "string",
+    minLength: 1,
+    maxLength: TAG_LIMITS.label,
+} as const;
+
+export const TAG_PROPERTIES = {
+    tags: { type: "array", maxItems: TAG_LIMITS.tags, items: LABEL },
+    coined: {
+        type: "array",
+        maxItems: TAG_LIMITS.coined,
+        items: {
+            type: "object",
+            properties: {
+                prefLabel: LABEL,
+                altLabel: {
+                    type: "array",
+                    maxItems: TAG_LIMITS.altLabels,
+                    items: LABEL,
+                },
+                broader: { type: "array", items: LABEL },
+                scopeNote: {
+                    type: "string",
+                    minLength: 1,
+                    maxLength: TAG_LIMITS.scopeNote,
+                },
+            },
+            required: ["prefLabel", "scopeNote"],
+            additionalProperties: false,
+        },
+    },
+} as const;
+
+// The vocabulary as read for a review, and the concepts she is shown
+// from it, in label order.
+export type ReviewTags = {
+    vocabulary: Vocabulary;
+    concepts: readonly [string, Concept][];
+};
 
 // A read awaiting Dorothy's appraisal: an open that succeeded.
 export type PendingRead = {
@@ -129,16 +188,51 @@ export type ReviewOutcome =
           ok: true;
           notes: Notes;
           appraisals: Record<string, Served>;
+          tags?: TagOutput;
           model: string;
           costUsd: number;
       }
     | { ok: false; reason: string; costUsd: number };
 
-// The conversation, then the notes as they stand, then the earlier titles.
+// One line per concept she may see; a broader concept she may not see
+// is left unnamed.
+function conceptLine(tags: ReviewTags, concept: Concept): string {
+    const shown = new Set(tags.concepts.map(([id]) => id));
+    const broader = concept.broader
+        .filter((parent) => shown.has(parent))
+        .map(
+            (parent) => (tags.vocabulary.concepts[parent] as Concept).prefLabel,
+        )
+        .sort(byLabel);
+    const alt =
+        concept.altLabel.length > 0
+            ? ` alt="${escapeAttribute(concept.altLabel.join("; "))}"`
+            : "";
+    const under =
+        broader.length > 0
+            ? ` broader="${escapeAttribute(broader.join("; "))}"`
+            : "";
+    return `<concept label="${escapeAttribute(concept.prefLabel)}"${alt}${under}>${escapeXml(concept.scopeNote)}</concept>`;
+}
+
+// The conversation's tags by label; the user's set is fixed.
+function tagsLine(tags: ReviewTags, current: Sidecar | null): string {
+    const labels = resolveTags(tags.vocabulary, current?.tags ?? []).map(
+        (id) => (tags.vocabulary.concepts[id] as Concept).prefLabel,
+    );
+    const mark = current?.fields.tags?.by === "user" ? ' fixed="true"' : "";
+    return labels.length === 0
+        ? `<tags${mark}/>`
+        : `<tags${mark}>${escapeXml(labels.join("; "))}</tags>`;
+}
+
+// The conversation, then the notes as they stand, then the earlier titles,
+// then the vocabulary when she tags.
 export function reviewPrompt(
     turns: readonly ResumedTurn[],
     current: Sidecar | null,
     reads: readonly PendingRead[] = [],
+    tags?: ReviewTags,
 ): string {
     const ids = new Set(reads.map((read) => read.id));
     const clusters = current?.clusters ?? [];
@@ -155,20 +249,23 @@ export function reviewPrompt(
             )
             .join("\n\n"),
     ].join("\n");
-    const notes = FIELDS.map((field) => {
-        const value = current?.[field] ?? null;
-        if (value === null) {
-            return `<${field}/>`;
-        }
-        const by = current?.fields[field]?.by;
-        const mark =
-            by === "user"
-                ? ' fixed="true"'
-                : by === "prompt"
-                  ? ' provisional="true"'
-                  : "";
-        return `<${field}${mark}>${escapeXml(value)}</${field}>`;
-    });
+    const notes = [
+        ...FIELDS.map((field) => {
+            const value = current?.[field] ?? null;
+            if (value === null) {
+                return `<${field}/>`;
+            }
+            const by = current?.fields[field]?.by;
+            const mark =
+                by === "user"
+                    ? ' fixed="true"'
+                    : by === "prompt"
+                      ? ' provisional="true"'
+                      : "";
+            return `<${field}${mark}>${escapeXml(value)}</${field}>`;
+        }),
+        ...(tags === undefined ? [] : [tagsLine(tags, current)]),
+    ];
     const titles = (current?.titles ?? []).map(
         (past) => `<title>${escapeXml(past.title)}</title>`,
     );
@@ -206,6 +303,21 @@ export function reviewPrompt(
                   "</titles>",
               ]
             : []),
+        ...(tags === undefined
+            ? []
+            : [
+                  "",
+                  "The concepts you tag with:",
+                  ...(tags.concepts.length === 0
+                      ? ["<vocabulary/>"]
+                      : [
+                            "<vocabulary>",
+                            ...tags.concepts.map(([, concept]) =>
+                                conceptLine(tags, concept),
+                            ),
+                            "</vocabulary>",
+                        ]),
+              ]),
     ].join("\n");
 }
 
@@ -235,18 +347,26 @@ export function validateNotes(
     return { ok: true, notes: notes as Notes };
 }
 
-// One appraisal per read, exactly: the schema makes it a constraint, not a
-// request.
+// One appraisal per read, exactly: the schema makes it a constraint, not
+// a request. While she tags, tags and coined concepts are asked for too.
 export function reviewSchema(
     readIds: readonly string[],
+    tagging = false,
 ): Record<string, unknown> {
+    const base = tagging
+        ? {
+              ...REVIEW_SCHEMA,
+              properties: { ...REVIEW_SCHEMA.properties, ...TAG_PROPERTIES },
+              required: [...REVIEW_SCHEMA.required, "tags", "coined"],
+          }
+        : REVIEW_SCHEMA;
     if (readIds.length === 0) {
-        return REVIEW_SCHEMA;
+        return base;
     }
     return {
-        ...REVIEW_SCHEMA,
+        ...base,
         properties: {
-            ...REVIEW_SCHEMA.properties,
+            ...base.properties,
             appraisals: {
                 type: "array",
                 minItems: readIds.length,
@@ -262,22 +382,29 @@ export function reviewSchema(
                 },
             },
         },
-        required: [...REVIEW_SCHEMA.required, "appraisals"],
+        required: [...base.required, "appraisals"],
     };
 }
 
 export function validateReview(
     output: unknown,
     readIds: readonly string[] = [],
+    tagging = false,
 ):
-    | { ok: true; notes: Notes; appraisals: Record<string, Served> }
+    | {
+          ok: true;
+          notes: Notes;
+          appraisals: Record<string, Served>;
+          tags?: TagOutput;
+      }
     | { ok: false; reason: string } {
     const checked = validateNotes(output);
     if (!checked.ok) {
         return checked;
     }
+    const tags = tagging ? { tags: readTagOutput(output) } : {};
     if (readIds.length === 0) {
-        return { ...checked, appraisals: {} };
+        return { ...checked, appraisals: {}, ...tags };
     }
     const list = (output as Record<string, unknown>).appraisals;
     if (!Array.isArray(list)) {
@@ -303,7 +430,7 @@ export function validateReview(
     if (Object.keys(appraisals).length !== readIds.length) {
         return { ok: false, reason: "not every read is appraised" };
     }
-    return { ...checked, appraisals };
+    return { ...checked, appraisals, ...tags };
 }
 
 // A one-shot query on Dorothy's model and persona, answering with notes.
@@ -316,6 +443,7 @@ export async function runReview({
     timeoutMs = REVIEW_TIMEOUT_MS,
     schema = REVIEW_SCHEMA,
     readIds = [],
+    tagging = false,
 }: {
     queryFn: ReviewQueryFn;
     systemPrompt: string;
@@ -325,6 +453,7 @@ export async function runReview({
     timeoutMs?: number;
     schema?: Record<string, unknown>;
     readIds?: readonly string[];
+    tagging?: boolean;
 }): Promise<ReviewOutcome> {
     const outcome = await structuredCall({ queryFn, timers })({
         what: "review",
@@ -337,12 +466,13 @@ export async function runReview({
     if (!outcome.ok) {
         return outcome;
     }
-    const checked = validateReview(outcome.output, readIds);
+    const checked = validateReview(outcome.output, readIds, tagging);
     return checked.ok
         ? {
               ok: true,
               notes: checked.notes,
               appraisals: checked.appraisals,
+              ...(checked.tags === undefined ? {} : { tags: checked.tags }),
               model: outcome.model,
               costUsd: outcome.costUsd,
           }
