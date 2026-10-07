@@ -313,6 +313,27 @@ describe("the Tags line", () => {
         });
     });
 
+    it("hands back a fixed set whose concepts are all gone", () => {
+        const gone: Sidecar = {
+            ...sidecar,
+            tags: ["k00000009"],
+            fields: { ...sidecar.fields, tags: { by: "user", at: AT } },
+        };
+        const view = renderEditView(PHRASE, gone, ok);
+        expect(view).toContain("# Tags (empty)\nTags:\n");
+        expect(parseEditView(view, gone, ok)).toEqual({
+            kind: "edit",
+            changes: { tags: null },
+        });
+        const hers: Sidecar = {
+            ...gone,
+            fields: { ...gone.fields, tags: { by: "dorothy", at: AT } },
+        };
+        expect(
+            parseEditView(renderEditView(PHRASE, hers, ok), hers, ok),
+        ).toEqual({ kind: "unchanged" });
+    });
+
     it("refuses an unknown label, too many, or tags it cannot read", () => {
         expect(edited("Tags: memory; nothing")).toEqual({
             kind: "error",

@@ -283,7 +283,10 @@ export function parseEditView(
         const same =
             ids.length === current.length &&
             ids.every((id, at) => id === current[at]);
-        if (!same) {
+        // A fixed set whose concepts are all gone shows as an empty line,
+        // which hands it back as emptying it would.
+        const lapsed = ids.length === 0 && base.fields.tags?.by === "user";
+        if (!same || lapsed) {
             changes.tags = ids.length === 0 ? null : ids;
         }
     }
