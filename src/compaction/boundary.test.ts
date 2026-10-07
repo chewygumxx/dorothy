@@ -37,7 +37,9 @@ const SDK_HOLDERS = [
 ].map((module) => join(import.meta.dir, "..", `${module}.js`));
 
 // What a file imports at run time, statically or with import(), resolved
-// to absolute paths; type-only imports and exports are left out.
+// to absolute paths; type-only imports and exports are left out. The scan
+// is textual: an import() of a template literal is not caught, and an
+// import in a comment is flagged, which fails safe.
 function runtimeImports(path: string, text: string): string[] {
     const code = text.replaceAll(/(?:import|export) type [^;]+;/g, "");
     return [...code.matchAll(/(?:from|import\s*\(|import)\s*["']([^"']+)["']/g)]
