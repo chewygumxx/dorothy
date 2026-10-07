@@ -19,6 +19,13 @@ import {
     type Provenance,
     type Sidecar,
 } from "./sidecar.js";
+import {
+    type Concept,
+    resolveLabel,
+    resolveTags,
+    TAG_LIMITS,
+    type Vocabulary,
+} from "./vocabulary.js";
 
 const WIDTH = 72;
 const LABELS: Record<Field, string> = {
@@ -26,7 +33,11 @@ const LABELS: Record<Field, string> = {
     description: "Description",
     abstract: "Abstract",
 };
-const HEADER = /^(Title|Pinned|Hidden|Description|Abstract):(.*)$/;
+const HEADER = /^(Title|Pinned|Hidden|Tags|Description|Abstract):(.*)$/;
+// The vocabulary as read for the view, or why it could not be.
+export type TagsContext =
+    | { kind: "ok"; vocabulary: Vocabulary }
+    | { kind: "broken"; reason: string };
 const UNKNOWN = /^([A-Z][A-Za-z-]*):/;
 // These take the lines after them, up to the next field.
 const PARAGRAPHS = new Set(["Description", "Abstract"]);
@@ -44,10 +55,15 @@ export type EditParse =
 // A line starting with # is a comment and one starting with a field name is
 // a field, so neither may start a wrapped line: such a word stays on the
 // line before, however long, and opening a paragraph it is indented.
-const startsBadly = (word: string) => word.startsWith("#") || HEADER.test(word);
+const startsBadly = (word: string, header: RegExp) =>
+    word.startsWith("#") || header.test(word);
 
 // Greedy, at spaces.
-export function wrap(text: string, width = WIDTH): string[] {
+export function wrap(
+    text: string,
+    width = WIDTH,
+    header: RegExp = HEADER,
+): string[] {
     const lines: string[] = [];
     let line = "";
     for (const word of text.split(" ")) {
@@ -55,10 +71,10 @@ export function wrap(text: string, width = WIDTH): string[] {
             continue;
         }
         if (line === "") {
-            line = startsBadly(word) ? ` ${word}` : word;
+            line = startsBadly(word, header) ? ` ${word}` : word;
         } else if (
             line.length + 1 + word.length <= width ||
-            startsBadly(word)
+            startsBadly(word, header)
         ) {
             line += ` ${word}`;
         } else {
@@ -89,9 +105,36 @@ function owner(value: string | null, source: Provenance | undefined): string {
     return ` (${parts.join(", ")})`;
 }
 
+// A conversation's tags as the view shows them: preferred labels, merges
+// followed.
+function tagsText(vocabulary: Vocabulary, sidecar: Sidecar): string {
+    return resolveTags(vocabulary, sidecar.tags)
+        .map((id) => (vocabulary.concepts[id] as Concept).prefLabel)
+        .join("; ");
+}
+
+function tagLines(sidecar: Sidecar, tags: TagsContext | undefined): string[] {
+    if (tags === undefined) {
+        return [];
+    }
+    if (tags.kind === "broken") {
+        return [
+            "",
+            `# Tags can't be shown: the vocabulary can't be read (${tags.reason}).`,
+        ];
+    }
+    const text = tagsText(tags.vocabulary, sidecar);
+    return [
+        "",
+        `# Tags${owner(text === "" ? null : text, sidecar.fields.tags)}`,
+        `Tags: ${text}`.trimEnd(),
+    ];
+}
+
 export function renderEditView(
     phrase: string,
     sidecar: Sidecar | null,
+    tags?: TagsContext,
 ): string {
     const shown = sidecar ?? EMPTY_SIDECAR;
     const lines = [
@@ -102,6 +145,7 @@ export function renderEditView(
         `Title: ${shown.title ?? ""}`.trimEnd(),
         `Pinned: ${shown.pinned ? "yes" : "no"}`,
         `Hidden: ${shown.hidden ? "yes" : "no"}`,
+        ...tagLines(shown, tags),
     ];
     for (const field of ["description", "abstract"] as const) {
         lines.push(
@@ -126,7 +170,11 @@ export function renderEditView(
 
 // shown: the sidecar the template was rendered from. Only what differs from
 // it, whitespace aside, is an edit.
-export function parseEditView(text: string, shown: Sidecar | null): EditParse {
+export function parseEditView(
+    text: string,
+    shown: Sidecar | null,
+    tags?: TagsContext,
+): EditParse {
     // Some editors save a byte order mark at the start of the file.
     const lines = text
         .replace(/^\uFEFF/, "")
@@ -194,6 +242,49 @@ export function parseEditView(text: string, shown: Sidecar | null): EditParse {
         }
         if (yes !== base[key]) {
             changes[key] = yes;
+        }
+    }
+    const given = found.get("Tags");
+    if (given !== undefined) {
+        if (tags === undefined) {
+            return { kind: "error", reason: "there is no field Tags" };
+        }
+        if (tags.kind === "broken") {
+            return {
+                kind: "error",
+                reason: "Tags can't be set while the vocabulary can't be read",
+            };
+        }
+        const ids: string[] = [];
+        for (const label of normalise(given.join(" "))
+            .split(";")
+            .map(normalise)) {
+            if (label === "") {
+                continue;
+            }
+            const id = resolveLabel(tags.vocabulary, label);
+            if (id === null) {
+                return {
+                    kind: "error",
+                    reason: `No tag by that name: ${label}`,
+                };
+            }
+            if (!ids.includes(id)) {
+                ids.push(id);
+            }
+        }
+        if (ids.length > TAG_LIMITS.tags) {
+            return {
+                kind: "error",
+                reason: `Tags takes at most ${TAG_LIMITS.tags} tags`,
+            };
+        }
+        const current = resolveTags(tags.vocabulary, base.tags);
+        const same =
+            ids.length === current.length &&
+            ids.every((id, at) => id === current[at]);
+        if (!same) {
+            changes.tags = ids.length === 0 ? null : ids;
         }
     }
     return Object.keys(changes).length === 0

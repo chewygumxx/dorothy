@@ -190,4 +190,36 @@ describe("runMemoryEdit", () => {
         expect(await run(edit, err)).toBe(1);
         expect(err.text).toContain("editor exited with 1");
     });
+
+    it("sets a chat's tags by label", async () => {
+        await writeFile(join(transcripts, `${a}.jsonl`), chat);
+        await writeFile(
+            join(dir, "dorothy", "tags.json"),
+            JSON.stringify({
+                v: 1,
+                rev: 1,
+                concepts: {
+                    k00000001: {
+                        prefLabel: "memory",
+                        scopeNote: "Remembering.",
+                        by: "dorothy",
+                        at: NOW.toISOString(),
+                    },
+                },
+            }),
+        );
+        const err = capture();
+        const code = await run(
+            async (text: string): Promise<EditResult> => ({
+                ok: true,
+                text: text.replace(/^Tags:.*$/m, "Tags: Memory"),
+            }),
+            err,
+        );
+        expect(err.text).toBe("");
+        expect(code).toBe(0);
+        const read = await readSidecar(transcripts, a);
+        expect(read.kind === "ok" && read.sidecar.tags).toEqual(["k00000001"]);
+        expect(read.kind === "ok" && read.sidecar.fields.tags?.by).toBe("user");
+    });
 });

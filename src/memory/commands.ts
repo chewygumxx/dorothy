@@ -16,7 +16,11 @@ import { transcriptDir } from "../transcript.js";
 import { type EditResult, editInEditor } from "../tui/external-editor.js";
 import type { Env } from "../xdg.js";
 import { indexCatalogue } from "./catalogue.js";
-import { parseEditView, renderEditView } from "./edit-view.js";
+import {
+    parseEditView,
+    renderEditView,
+    type TagsContext,
+} from "./edit-view.js";
 import { formatList, listRows } from "./list.js";
 import { rank, tier } from "./rank.js";
 import {
@@ -25,6 +29,12 @@ import {
     sidecarPath,
     updateSidecar,
 } from "./sidecar.js";
+import {
+    EMPTY_VOCABULARY,
+    readVocabulary,
+    resolveTags,
+    vocabularyPath,
+} from "./vocabulary.js";
 
 export type Output = { write(text: string): unknown };
 
@@ -106,7 +116,18 @@ export async function runMemoryEdit(
         return 1;
     }
     const shown = read.kind === "ok" ? read.sidecar : null;
-    let text = renderEditView(phrase, shown);
+    const vocabulary = await readVocabulary(vocabularyPath(env));
+    const tags: TagsContext =
+        vocabulary.kind === "unparseable"
+            ? { kind: "broken", reason: vocabulary.reason }
+            : {
+                  kind: "ok",
+                  vocabulary:
+                      vocabulary.kind === "ok"
+                          ? vocabulary.vocabulary
+                          : EMPTY_VOCABULARY,
+              };
+    let text = renderEditView(phrase, shown, tags);
     let index: RecallIndex | null = null;
     try {
         index = RecallIndex.open(indexPath(env));
@@ -120,7 +141,7 @@ export async function runMemoryEdit(
                 err.write(`dorothy: ${result.message}\n`);
                 return 1;
             }
-            const parsed = parseEditView(result.text, shown);
+            const parsed = parseEditView(result.text, shown, tags);
             if (parsed.kind === "unchanged") {
                 return 0;
             }
@@ -132,7 +153,15 @@ export async function runMemoryEdit(
             const update = await updateSidecar(
                 dir,
                 phrase,
-                (current) => mergeEdit(current, parsed.changes, at),
+                (current) => {
+                    const next = mergeEdit(current, parsed.changes, at);
+                    return tags.kind === "ok"
+                        ? {
+                              ...next,
+                              tags: resolveTags(tags.vocabulary, next.tags),
+                          }
+                        : next;
+                },
                 index?.lock,
             );
             if (update.kind === "unparseable" || update.kind === "failed") {
