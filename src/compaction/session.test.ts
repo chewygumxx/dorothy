@@ -126,13 +126,17 @@ function harness({
     clusters = [],
     save = { ok: true },
     saving = Promise.resolve(),
+    record = null,
 }: {
     estimate?: number;
     claim?: Claim | null;
     clusters?: Cluster[];
-    save?: SaveResult;
+    // An error is thrown rather than returned.
+    save?: SaveResult | Error;
     // Settles when the save may finish.
     saving?: Promise<void>;
+    // Thrown by the transcript's record, when given.
+    record?: Error | null;
 } = {}) {
     const timers = new FakeTimers();
     const sessions: FakeSession[] = [];
@@ -154,10 +158,16 @@ function harness({
         save: async (added) => {
             saved.push([...added]);
             await saving;
+            if (save instanceof Error) {
+                throw save;
+            }
             return save;
         },
         record: async (entry) => {
             recorded.push(entry);
+            if (record !== null) {
+                throw record;
+            }
         },
         estimate: () => estimate,
         claim,
@@ -504,6 +514,96 @@ describe("Compaction", () => {
         expect(h.sessions).toHaveLength(1);
         expect(h.recorded).toEqual([]);
         expect(h.compaction.clusters()).toEqual([]);
+    });
+
+    it("hands over when recording fails after the save, rather than compacting again at every idle", async () => {
+        const h = harness({ record: new Error("transcript gone") });
+        const session = h.open();
+        session.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.sessions.length === 2);
+        expect(warnings(h.events)).toEqual([
+            "compaction: couldn't record the compaction in the transcript: transcript gone",
+        ]);
+        expect(h.compaction.clusters()).toHaveLength(1);
+        expect(h.sessions[0]?.closed).toBe(true);
+        expect(h.events).toContainEqual({
+            type: "compacted",
+            from: 1,
+            through: 2,
+            clusters: 1,
+        });
+    });
+
+    it("counts a thrown save as a failure, so the next idle waits twice as long", async () => {
+        const h = harness({ save: new Error("disk gone") });
+        const session = h.open();
+        session.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => warnings(h.events).length === 1);
+        expect(warnings(h.events)).toEqual(["compaction failed: disk gone"]);
+        expect(h.sessions).toHaveLength(1);
+        session.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1999);
+        await settle();
+        expect(h.calls).toHaveLength(1);
+        h.timers.advance(1);
+        await until(() => h.calls.length === 2);
+    });
+
+    it("counts a thrown claim as a failure, and sends the held message on", async () => {
+        const claim: Claim = {
+            take: async () => {
+                throw new Error("index gone");
+            },
+            release: async () => {},
+        };
+        const h = harness({ claim });
+        const session = h.open();
+        session.send("abcd");
+        h.sessions[0]?.reply(250);
+        session.send("next");
+        await until(() => h.sessions[0]?.sent.includes("next") === true);
+        expect(warnings(h.events)).toEqual([
+            "compaction failed: index gone",
+            "compaction: the context is nearly full; sending anyway",
+        ]);
+        session.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1999);
+        await settle();
+        expect(h.timers.pending.size).toBe(1);
+    });
+
+    it("keeps a handover whose claim can't be let go, and counts no failure", async () => {
+        const claim: Claim = {
+            take: async () => true,
+            release: async () => {
+                throw new Error("index gone");
+            },
+        };
+        const h = harness({ claim });
+        const session = h.open();
+        session.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => warnings(h.events).length === 1);
+        expect(warnings(h.events)).toEqual([
+            "compaction: couldn't let go of the claim: index gone",
+        ]);
+        expect(h.sessions).toHaveLength(2);
+        h.sessions[1]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 2);
     });
 
     it("passes the inner session's events through, and its interrupts", async () => {

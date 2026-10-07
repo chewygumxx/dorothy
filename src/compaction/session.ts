@@ -338,7 +338,7 @@ class CompactingSession implements ChatSession {
         this.#run = controller;
         const done = this.#compactOnce(controller.signal)
             .catch((error: unknown) => {
-                this.#warn(`compaction failed: ${describeError(error)}`);
+                this.#fail(describeError(error));
             })
             .finally(() => {
                 this.#run = null;
@@ -377,7 +377,20 @@ class CompactingSession implements ChatSession {
             }
             await this.#land(outcome, signal);
         } finally {
-            await claim?.release();
+            if (claim !== null) {
+                await this.#release(claim);
+            }
+        }
+    }
+
+    // After the outcome: a claim that can't be let go expires.
+    async #release(claim: Claim): Promise<void> {
+        try {
+            await claim.release();
+        } catch (error) {
+            this.#warn(
+                `compaction: couldn't let go of the claim: ${describeError(error)}`,
+            );
         }
     }
 
@@ -409,10 +422,17 @@ class CompactingSession implements ChatSession {
             return;
         }
         shared.added(outcome.clusters);
-        await shared.options.record({
-            through: outcome.range.through,
-            clusters: outcome.clusters.length,
-        });
+        // The event only tells; the sidecar holds the clusters.
+        try {
+            await shared.options.record({
+                through: outcome.range.through,
+                clusters: outcome.clusters.length,
+            });
+        } catch (error) {
+            this.#warn(
+                `compaction: couldn't record the compaction in the transcript: ${describeError(error)}`,
+            );
+        }
         // Closed or quitting meanwhile: the clusters are kept, but no new
         // session is wanted.
         if (signal.aborted || this.#closed) {
