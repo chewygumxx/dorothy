@@ -20,6 +20,7 @@
         "@dotenvx/dotenvx": "^2.32.4",
         "@modelcontextprotocol/sdk": "^1.31.0",
         "ink": "^7.1.1",
+        "isomorphic-git": "1.43.1",
         "lowlight": "^3.3.0",
         "marked": "^18.0.14",
         "niceware": "^4.0.0",
