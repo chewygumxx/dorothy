@@ -51,6 +51,7 @@ import {
     readVocabulary,
     resolveTags,
     type Vocabulary,
+    vocabularyProblem,
     writeVocabulary,
 } from "./vocabulary.js";
 
@@ -331,6 +332,8 @@ export class MemoryService implements MemoryHooks {
     // another run coined since the review began is reused, not coined
     // twice. The user's set is kept, merges followed. Undefined leaves the
     // sidecar's tags as they are, as when the file has broken meanwhile.
+    // The read, rev + 1 and write repeat updateVocabulary's, which would
+    // take the lock again: RecallIndex.exclusive is not re-entrant.
     async #tag(
         latest: Sidecar | null,
         output: TagOutput,
@@ -351,6 +354,11 @@ export class MemoryService implements MemoryHooks {
         }
         const tagged = applyTagging(vocabulary, output, stamp);
         if (tagged.coined > 0) {
+            // One breaking the rules would pause tags everywhere: it is
+            // never written, nor tags taken from it.
+            if (vocabularyProblem(tagged.vocabulary) !== null) {
+                return undefined;
+            }
             await writeVocabulary(path, {
                 ...tagged.vocabulary,
                 rev: vocabulary.rev + 1,

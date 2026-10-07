@@ -8,7 +8,7 @@
 //
 //
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -42,6 +42,7 @@ import {
     sidecarPath,
     updateSidecar,
 } from "./sidecar.js";
+import * as tagging from "./tagging.js";
 import { type Concept, readVocabulary, type Vocabulary } from "./vocabulary.js";
 
 const NOW = new Date("2026-10-05T00:00:00.000Z");
@@ -934,6 +935,51 @@ describe("tagging", () => {
         );
         expect(warnings).toHaveLength(1);
         expect(await readFile(vocabulary, "utf8")).toBe("{ broken");
+    });
+
+    it("writes no vocabulary that breaks the rules, nor tags from it", async () => {
+        await writeVocabularyFile({ k00000001: concept("memory") });
+        const before = await readFile(vocabulary, "utf8");
+        await transcript(OTHER, [user("a"), reply("b")]);
+        const kept = { tags: ["k00000001"], reviewedThrough: 0 };
+        await saved(OTHER, kept);
+        const broken = spyOn(tagging, "applyTagging").mockImplementation(
+            (current) => ({
+                vocabulary: {
+                    ...current,
+                    concepts: {
+                        ...current.concepts,
+                        k00000002: concept("Memory"),
+                    },
+                },
+                coined: 1,
+                tags: ["k00000002"],
+                dropped: [],
+            }),
+        );
+        try {
+            const fake = reviews({
+                ...NOTES,
+                tags: ["Memory"],
+                coined: [{ prefLabel: "Memory", scopeNote: "Again." }],
+            });
+            const { memory } = setup({
+                queryFn: fake.fn,
+                vocabulary,
+                entries: [entry(OTHER, kept)],
+            });
+            memory.ready();
+            await until(
+                async () => (await sidecarOf(OTHER))?.title === "Remembering",
+            );
+            expect(broken).toHaveBeenCalled();
+        } finally {
+            broken.mockRestore();
+        }
+        const sidecar = await sidecarOf(OTHER);
+        expect(sidecar?.tags).toEqual(["k00000001"]);
+        expect(sidecar?.fields.tags).toBeUndefined();
+        expect(await readFile(vocabulary, "utf8")).toBe(before);
     });
 
     it("catches up conversations reviewed before tags, while tags work", async () => {
