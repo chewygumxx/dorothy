@@ -11,30 +11,28 @@
 import type { ChatSession, ConversationEvent } from "../conversation.js";
 import type { Cluster } from "../memory/sidecar.js";
 import type { Turn } from "../persona.js";
-import { sleep } from "../timers.js";
-import { type CompactOutcome, compact } from "./compact.js";
-import { callCap, covered, pressure } from "./plan.js";
+import { pressure } from "./plan.js";
+import { type Chained, compactOnce, type Landing } from "./run.js";
 import {
-    type Claim,
     type CompactionOptions,
-    type SaveResult,
+    describeError,
     type Seed,
     Shared,
 } from "./shared.js";
 
+export { CLAIM_RETRY_MS } from "./run.js";
 export type { Claim, CompactionOptions, SaveResult, Seed } from "./shared.js";
 export { MAX_FAILURES } from "./shared.js";
 
-// How often a compaction past hard, a message held or not, or before the
-// first session, asks again for a claim that another call holds.
-export const CLAIM_RETRY_MS = 2000;
-
-const describeError = (error: unknown) =>
-    error instanceof Error ? error.message : String(error);
-
 type Held = { text: string; interrupted: boolean };
-// A chain's claim, and whether its latest take was granted.
-type Chained = { claim: Claim; held: boolean };
+// A run under way, and how it landed: null until its clusters are saved
+// and its new session, if any, has taken over, so that a throw from then
+// on, such as a listener's, is not a failed compaction; "chained" when
+// another run follows at once, "handed" when a session took over.
+type Run = {
+    controller: AbortController;
+    landed: "chained" | "handed" | null;
+};
 
 // The reply to a message sent has started: its text, a lookup, or the
 // API's stream.
@@ -97,20 +95,13 @@ class CompactingSession implements ChatSession {
     // Past hard: the next message waits for compaction.
     #urgent = false;
     #idle: unknown = null;
-    #run: AbortController | null = null;
+    #run: Run | null = null;
     #closed = false;
     // Saving the clusters for the handover: a message waits for the new
     // session rather than going to the old one, which is about to close.
     #handing = false;
     // Connecting waits for a save under way; messages wait with it.
     #waiting = false;
-    // The run's clusters are saved and its new session, if any, has taken
-    // over: a throw from here on, such as a listener's, is not a failed
-    // compaction.
-    #landed = false;
-    // The run's clusters left the seed past hard while a message waits:
-    // another run follows at once.
-    #again = false;
     // The inner session's seed predates clusters saved since, by runs that
     // followed one another without a session between.
     #behind = false;
@@ -236,7 +227,7 @@ class CompactingSession implements ChatSession {
     async close(): Promise<void> {
         this.#closed = true;
         this.#cancelIdle();
-        this.#run?.abort();
+        this.#run?.controller.abort();
         await Promise.all([
             this.#inner?.close(),
             ...this.#shared.retiring(this),
@@ -354,13 +345,13 @@ class CompactingSession implements ChatSession {
             return;
         }
         const controller = new AbortController();
-        this.#run = controller;
-        this.#landed = false;
-        const done = this.#compactOnce(controller.signal)
+        const run: Run = { controller, landed: null };
+        this.#run = run;
+        const done = this.#compactOnce(run)
             .catch((error: unknown) => {
-                if (this.#landed) {
+                if (run.landed !== null) {
                     this.#warn(
-                        `compaction: after ${this.#again ? "saving" : "handing over"}: ${describeError(error)}`,
+                        `compaction: after ${run.landed === "chained" ? "saving" : "handing over"}: ${describeError(error)}`,
                     );
                 } else {
                     this.#fail(describeError(error));
@@ -369,7 +360,7 @@ class CompactingSession implements ChatSession {
             .finally(() => {
                 this.#run = null;
                 try {
-                    this.#afterRun(controller.signal.aborted);
+                    this.#afterRun(run);
                 } catch (error) {
                     this.#escaped(error);
                 }
@@ -391,53 +382,44 @@ class CompactingSession implements ChatSession {
         } catch {}
     }
 
-    async #compactOnce(signal: AbortSignal): Promise<void> {
+    // One run, then what its landing asks of this session.
+    async #compactOnce(run: Run): Promise<void> {
         const shared = this.#shared;
         if (this.#claim === null) {
             const claim = shared.options.claims?.() ?? null;
             this.#claim = claim === null ? null : { claim, held: false };
         }
-        const chained = this.#claim;
-        if (chained !== null) {
-            while (!(await chained.claim.take())) {
-                chained.held = false;
-                // Asked when refused: a turn may have crossed hard, and a
-                // message been held, since the run started.
-                const holding = this.#urgent || this.#inner === null;
-                if (!holding || signal.aborted) {
-                    return;
-                }
-                await sleep(shared.timers, CLAIM_RETRY_MS, signal);
-                if (signal.aborted) {
-                    return;
-                }
-            }
-            chained.held = true;
-        }
-        const ready = (await shared.options.ready?.()) ?? { ok: true };
-        if (!ready.ok) {
-            shared.switchOff();
-            this.#cancelIdle();
-            this.#warn(
-                `compaction: off until the next launch; ${ready.reason}`,
-            );
-            return;
-        }
-        const outcome = await compact({
-            turns: [...this.#turns],
-            clusters: shared.clusters,
-            tail: shared.options.config.tail,
-            cap: callCap(shared.options.config),
-            persona: shared.options.persona,
-            recollect: shared.options.recollect,
-            call: shared.options.call,
-            now: shared.now,
-            signal,
+        const signal = run.controller.signal;
+        const landing = await compactOnce(shared, this.#claim, signal, {
+            holding: () => this.#urgent || this.#inner === null,
+            turns: () => this.#turns,
+            cost: (usd) => this.#emit({ type: "memory-cost", usd }),
+            settled: (signal) => this.#whenSettled(signal),
+            saving: () => {
+                this.#handing = true;
+            },
         });
-        if (signal.aborted) {
-            return;
+        switch (landing.kind) {
+            case "none":
+                return;
+            case "off":
+                shared.switchOff();
+                this.#cancelIdle();
+                this.#warn(
+                    `compaction: off until the next launch; ${landing.reason}`,
+                );
+                return;
+            case "nothing":
+                this.#warn(
+                    "compaction: nothing to compact; the latest exchange alone fills the tail",
+                );
+                return;
+            case "failed":
+                this.#fail(landing.reason);
+                return;
+            case "saved":
+                this.#land(landing, run);
         }
-        await this.#land(outcome, signal);
     }
 
     // Once no run follows, the chain lets go of its claim; one that can't
@@ -460,64 +442,14 @@ class CompactingSession implements ChatSession {
         }
     }
 
-    async #land(outcome: CompactOutcome, signal: AbortSignal): Promise<void> {
+    // Hands over to a session seeded with the clusters saved, or chains
+    // another run while the seed is still past hard.
+    #land(landing: Extract<Landing, { kind: "saved" }>, run: Run): void {
         const shared = this.#shared;
-        // Compaction is tried again only after a turn-end, which adds an
-        // exchange, so finding nothing is not retried until another.
-        if (outcome.kind === "nothing") {
-            this.#warn(
-                "compaction: nothing to compact; the latest exchange alone fills the tail",
-            );
-            return;
-        }
-        if (outcome.costUsd > 0) {
-            this.#emit({ type: "memory-cost", usd: outcome.costUsd });
-        }
-        if (outcome.kind === "failed") {
-            this.#fail(outcome.reason);
-            return;
-        }
-        await this.#whenSettled(signal);
-        if (signal.aborted) {
-            return;
-        }
-        this.#handing = true;
-        // The event only tells; the sidecar holds the clusters. Warnings of
-        // the landing follow the compacted event, which clears compaction's
-        // warnings.
-        const after: string[] = [];
-        // Quitting doesn't wait for the save and record, which go on.
-        const saved = await shared.unlessStopped(
-            shared.landing(
-                this.#keep(
-                    outcome,
-                    this.#turns.findLastIndex((turn) => turn.role === "user") +
-                        1,
-                    after,
-                ),
-            ),
-        );
-        if (saved === null) {
-            return;
-        }
-        if (!saved.ok) {
-            this.#fail(saved.reason);
-            return;
-        }
-        // Another writer's clusters, taken up, are theirs to record; the
-        // screen tells of the turns they cover past this run's start.
-        const landed =
-            saved.clusters === undefined
-                ? { through: outcome.range.through, clusters: outcome.clusters }
-                : {
-                      through: covered(saved.clusters),
-                      clusters: saved.clusters.filter(
-                          (cluster) => cluster.from >= outcome.range.from,
-                      ),
-                  };
+        const after = landing.after;
         // Closed or quitting meanwhile: the clusters are kept, but no new
         // session is wanted.
-        if (signal.aborted || this.#closed) {
+        if (run.controller.signal.aborted || this.#closed) {
             for (const message of after) {
                 this.#warn(message);
             }
@@ -533,8 +465,8 @@ class CompactingSession implements ChatSession {
             (this.#held.length > 0 || this.#inner === null) &&
             this.#pastHard(seed, after);
         if (past && !this.#cutShort) {
-            this.#again = true;
             this.#behind = this.#inner !== null;
+            run.landed = "chained";
         } else {
             const old = this.#inner;
             // A connect that throws here, after the save, still counts as a
@@ -553,17 +485,17 @@ class CompactingSession implements ChatSession {
             if (old !== null) {
                 this.#shared.retire(old, this);
             }
+            run.landed = "handed";
         }
-        this.#landed = true;
         // Warned even when a listener throws on the event; the first throw
         // is the one rethrown, not a later one on a warning.
         let failure: { error: unknown } | null = null;
         try {
             this.#emit({
                 type: "compacted",
-                from: outcome.range.from,
-                through: landed.through,
-                clusters: landed.clusters.length,
+                from: landing.from,
+                through: landing.through,
+                clusters: landing.clusters,
             });
         } catch (error) {
             failure = { error };
@@ -578,34 +510,6 @@ class CompactingSession implements ChatSession {
         if (failure !== null) {
             throw failure.error;
         }
-    }
-
-    // Saves the clusters, given latest, the turn of the newest message, and
-    // records the compaction unless another writer's were taken up, which
-    // are theirs to record. A record that fails is warned of after.
-    async #keep(
-        outcome: Extract<CompactOutcome, { kind: "compacted" }>,
-        latest: number,
-        after: string[],
-    ): Promise<SaveResult> {
-        const saved = await this.#shared.save(
-            outcome.clusters,
-            outcome.costUsd,
-            latest,
-        );
-        if (saved.ok && saved.clusters === undefined) {
-            try {
-                await this.#shared.options.record({
-                    through: outcome.range.through,
-                    clusters: outcome.clusters.length,
-                });
-            } catch (error) {
-                after.push(
-                    `compaction: couldn't record the compaction in the transcript: ${describeError(error)}`,
-                );
-            }
-        }
-        return saved;
     }
 
     #pastHard(seed: Seed, warnings: string[]): boolean {
@@ -656,14 +560,13 @@ class CompactingSession implements ChatSession {
     // Unless another run follows, a session exists afterwards and held
     // messages go to it: after a failure, to the session that is nearly
     // full, seeded from the clusters saved so far.
-    #afterRun(aborted: boolean): void {
+    #afterRun(run: Run): void {
         if (this.#closed) {
             return;
         }
-        if (this.#again) {
-            this.#again = false;
+        if (run.landed === "chained") {
             // Quitting: no run follows.
-            if (aborted) {
+            if (run.controller.signal.aborted) {
                 return;
             }
             if (!this.#cutShort) {

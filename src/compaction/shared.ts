@@ -59,6 +59,9 @@ export type CompactionOptions = {
     now?: () => Date;
 };
 
+export const describeError = (error: unknown) =>
+    error instanceof Error ? error.message : String(error);
+
 // Why another writer's clusters can't replace a run's, or null when they
 // can: they must cover at least the run's first turn, and stop before the
 // latest message, whose exchange the seed always keeps.
