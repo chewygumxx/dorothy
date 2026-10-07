@@ -208,8 +208,10 @@ seed.
 ### The trigger
 
 After each `turn-end`, the wrapper records the context size: the latest
-request's input tokens, uncached plus cache read plus cache write, plus its
-output tokens.
+request's input tokens, uncached plus cache read plus cache write, plus the
+reply's estimated tokens, which the next request reads back. A subagent's
+request is not counted, and a turn with no usage on its messages falls
+back to the result's.
 
 - Past `soft`, compaction is due and runs at the next idle, after the same
   idle time as reviews (`[memory] idle-seconds`).
