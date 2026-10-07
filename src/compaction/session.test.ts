@@ -1823,6 +1823,43 @@ describe("Compaction", () => {
         ]);
     });
 
+    it("ends a chain with a session when Esc comes after the run chose to go on", async () => {
+        // Turns 1 to 6 of 30 tokens, then two exchanges of 60: three calls
+        // would bring the seed under hard.
+        const history = Array.from({ length: 6 }, (_, i) =>
+            sized(i % 2 === 0 ? "user" : "assistant", 30),
+        );
+        const h = harness({ estimate: seedSize });
+        const session = h.open(history);
+        session.subscribe((event) => {
+            if (event.type === "compacted") {
+                void session.interrupt();
+            }
+        });
+        session.send("y".repeat(240));
+        h.sessions[0]?.reply(10, "z".repeat(240));
+        session.send("y".repeat(240));
+        h.sessions[0]?.reply(250, "z".repeat(240));
+        session.send("next");
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(through(3));
+        await until(() => h.sessions[1]?.sent.length === 1);
+        await settle();
+        expect(h.calls).toHaveLength(1);
+        expect(h.sessions).toHaveLength(2);
+        expect(h.sessions[0]?.closed).toBe(true);
+        expect(h.sessions[0]?.sent).toHaveLength(2);
+        expect(h.sessions[1]?.seed.clusters.map((c) => c.through)).toEqual([3]);
+        expect(h.sessions[1]?.sent).toEqual(["next"]);
+        expect(compactedRanges(h.events)).toEqual([[1, 3]]);
+        expect(warnings(h.events)).toEqual([
+            "compaction: the context is nearly full; sending anyway",
+        ]);
+        h.sessions[1]?.emit({ type: "delta", text: "Of" });
+        expect(h.sessions[1]?.interrupts).toBe(1);
+        expect(h.sessions[0]?.interrupts).toBe(0);
+    });
+
     it("lets Esc on a message held for a save end no later chain", async () => {
         let saveDone = () => {};
         const saving = new Promise<void>((resolve) => {
