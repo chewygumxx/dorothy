@@ -459,7 +459,9 @@ API refusing a request as too long, shown as the usual error.
 | `src/compaction/compact.ts`       | one compaction: request, `StructuredCall`, validation                                                                             | no   |
 | `src/structured.ts`               | `StructuredCall` over a one-shot `query()`                                                                                        | no   |
 | `src/persona.ts` (`cliOptions`)   | `DISABLE_COMPACT=1`                                                                                                               | yes  |
-| `src/compaction/session.ts`       | `compacting(session)`: trigger, holding, handover, back-off, taking up another TUI's clusters                                     | no   |
+| `src/compaction/session.ts`       | `Compaction` and its session: trigger, holding, handover, chaining runs, back-off, the phase                                      | no   |
+| `src/compaction/run.ts`           | one run: claim, ready check, call, settle, save or take up another TUI's clusters, record                                         | no   |
+| `src/compaction/shared.ts`        | what compaction keeps across sessions: clusters, failures, saves under way, replaced sessions                                     | no   |
 | `src/persona.ts`                  | `withClusters`                                                                                                                    | yes  |
 | `src/memory/sidecar.ts`           | `clusters`: parse, validate, append                                                                                               | no   |
 | `src/memory/rank.ts`              | the tier walk charging abstracts first                                                                                            | yes  |
