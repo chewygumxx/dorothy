@@ -722,7 +722,9 @@ class CompactingSession implements ChatSession {
             }
         }
         this.#landed = true;
-        // Warned even when a listener throws on the event.
+        // Warned even when a listener throws on the event; the first throw
+        // is the one rethrown, not a later one on a warning.
+        let failure: { error: unknown } | null = null;
         try {
             this.#emit({
                 type: "compacted",
@@ -730,10 +732,18 @@ class CompactingSession implements ChatSession {
                 through: landed.through,
                 clusters: landed.clusters.length,
             });
-        } finally {
-            for (const message of after) {
+        } catch (error) {
+            failure = { error };
+        }
+        for (const message of after) {
+            try {
                 this.#warn(message);
+            } catch (error) {
+                failure ??= { error };
             }
+        }
+        if (failure !== null) {
+            throw failure.error;
         }
     }
 
