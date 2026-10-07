@@ -210,6 +210,11 @@ output tokens.
   compaction ends, and interrupted as soon as its reply starts streaming,
   so it ends as any interrupted turn does, in `App`'s history and the
   model's context alike.
+- A message still held when the session closes is not sent. On quit nothing
+  follows. On a reconnect, which `App` makes only to send a new message, the
+  new session's history holds the held one once, unanswered, before the new
+  one, so Dorothy answers the new message with it in view, as after any
+  error mid-turn.
 - Before a session connects, its seed is estimated at `ceil(codePoints / 4)`
   tokens, as the budget estimates notes. An estimate past `hard` compacts
   before connecting, behind the same notice. This covers resuming a long
@@ -460,6 +465,7 @@ are where the SDK meets compaction.
 | It fails while a message is held               | the message goes to the old session, or to one seeded from the clusters saved so far, with a warning that the context is nearly full |
 | The API rejects a request as too long          | the usual error and reconnect, which seeds from clusters                                                                             |
 | The user quits mid-compaction                  | the call is aborted and nothing is written                                                                                           |
+| The session closes while a message is held     | not sent; on reconnect, the new session's history holds it once, unanswered                                                          |
 | The sidecar is unparseable                     | compaction is skipped with a warning; the file is not touched                                                                        |
 | Another TUI holds the claim                    | skipped; tried again at the next idle                                                                                                |
 | Another TUI compacted those turns first        | its clusters are taken up and handed over to; nothing is written                                                                     |
