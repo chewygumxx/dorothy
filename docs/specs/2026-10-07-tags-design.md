@@ -481,10 +481,10 @@ dorothy (12)
     compaction (3)
     tagging (2)
   persona (4)
+misc (0)
 tui (5)
   rendering (3)
   tagging (2, see above)
-misc (0)
 ```
 
 - Roots are the concepts with no `broader`; children are indented two
