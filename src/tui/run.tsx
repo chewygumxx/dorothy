@@ -210,6 +210,18 @@ export function openIndex<T>(
     }
 }
 
+// The chat's index, in the cache, when memory, recall or this chat's
+// compaction uses it; null otherwise, or with a warning when it can't be
+// opened.
+export function openChatIndex(
+    config: Pick<Config, "memory">,
+    compactable: boolean,
+): { index: RecallIndex | null; warning: string | null } {
+    return openIndex(indexUses(config, compactable), () =>
+        RecallIndex.open(indexPath()),
+    );
+}
+
 // Each step of quitting runs even if an earlier one throws, so a throw
 // can't leave the index or the transcript open; the first throw is
 // rethrown once all have run.
@@ -283,9 +295,7 @@ export async function runTui(
 
     // The index is opened before the first session, whose prompt carries
     // the block.
-    const opened = openIndex(indexUses(config, compactable), () =>
-        RecallIndex.open(indexPath()),
-    );
+    const opened = openChatIndex(config, compactable);
     const index = opened.index;
     if (opened.warning !== null) {
         warnings.push(opened.warning);

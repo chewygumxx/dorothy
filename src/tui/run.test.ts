@@ -17,6 +17,7 @@ import {
     setSystemTime,
     spyOn,
 } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,6 +32,7 @@ import {
     indexClaims,
     indexUses,
     notesReady,
+    openChatIndex,
     openIndex,
     runTui,
     sessionMaker,
@@ -158,6 +160,38 @@ describe("indexUses", () => {
             recall: DEFAULT_CONFIG.memory.recall,
             compaction: false,
         });
+    });
+});
+
+describe("openChatIndex", () => {
+    const memoryOff = {
+        ...DEFAULT_CONFIG,
+        memory: { ...DEFAULT_CONFIG.memory, enabled: false, recall: false },
+    };
+    const indexFile = () =>
+        join(
+            xdgDir(process.env, "XDG_CACHE_HOME", ".cache"),
+            "dorothy",
+            "recall.sqlite",
+        );
+
+    it("opens the index in the cache for compaction alone", () => {
+        const opened = openChatIndex(memoryOff, true);
+        try {
+            expect(opened.index).not.toBeNull();
+            expect(opened.warning).toBeNull();
+            expect(indexFile()).toStartWith(dir);
+            expect(existsSync(indexFile())).toBe(true);
+        } finally {
+            opened.index?.close();
+        }
+    });
+
+    it("opens no index when nothing in this chat uses it", () => {
+        const opened = openChatIndex(memoryOff, false);
+        opened.index?.close();
+        expect(opened).toEqual({ index: null, warning: null });
+        expect(existsSync(indexFile())).toBe(false);
     });
 });
 
