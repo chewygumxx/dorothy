@@ -44,6 +44,10 @@ export type CompactionOptions = {
     record(entry: { through: number; clusters: number }): Promise<void>;
     // Estimated tokens of the prompt a session with this seed starts with.
     estimate(seed: Seed): number;
+    // Checked before each call to Dorothy: a refusal, such as notes that
+    // can no longer be read, turns compaction off until the next launch,
+    // and its reason ends the warning that says so.
+    ready?(): Promise<SaveResult>;
     claim?: Claim | null;
     timers?: Timers;
     now?: () => Date;
@@ -79,6 +83,7 @@ class Shared {
     readonly now: () => Date;
     clusters: Cluster[];
     #failures = 0;
+    #off = false;
     readonly #runs = new Map<AbortController, Promise<void>>();
     // Sessions a handover replaced, still closing.
     readonly #closing = new Set<Promise<void>>();
@@ -99,8 +104,13 @@ class Shared {
         };
     }
 
+    // Given up on: too many failures, or switched off.
     get exhausted(): boolean {
-        return this.#failures >= MAX_FAILURES;
+        return this.#off || this.#failures >= MAX_FAILURES;
+    }
+
+    switchOff(): void {
+        this.#off = true;
     }
 
     idleDelay(): number {
@@ -436,6 +446,15 @@ class CompactingSession implements ChatSession {
             }
         }
         try {
+            const ready = (await shared.options.ready?.()) ?? { ok: true };
+            if (!ready.ok) {
+                shared.switchOff();
+                this.#cancelIdle();
+                this.#warn(
+                    `compaction: off until the next launch; ${ready.reason}`,
+                );
+                return;
+            }
             const outcome = await compact({
                 turns: [...this.#turns],
                 clusters: shared.clusters,

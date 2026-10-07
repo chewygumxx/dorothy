@@ -133,6 +133,7 @@ function harness({
     saving = Promise.resolve(),
     record = null,
     closing = Promise.resolve(),
+    ready,
 }: {
     estimate?: number;
     claim?: Claim | null;
@@ -145,6 +146,8 @@ function harness({
     record?: Error | null;
     // Settles when the first session may finish closing.
     closing?: Promise<void>;
+    // What the check before Dorothy's call answers; no check without.
+    ready?: SaveResult;
 } = {}) {
     const timers = new FakeTimers();
     const sessions: FakeSession[] = [];
@@ -178,6 +181,7 @@ function harness({
             }
         },
         estimate: () => estimate,
+        ...(ready === undefined ? {} : { ready: async () => ready }),
         claim,
         timers,
         now: () => NOW,
@@ -756,6 +760,30 @@ describe("Compaction", () => {
         session.send("abcd");
         h.sessions[0]?.reply(150);
         expect(armed).toEqual([1]);
+    });
+
+    it("stops compacting, without asking Dorothy, once the notes became unreadable after launch", async () => {
+        const h = harness({
+            ready: { ok: false, reason: "its notes can't be read (not JSON)" },
+        });
+        const session = h.open();
+        session.send("abcd");
+        h.sessions[0]?.reply(250);
+        session.send("next");
+        await until(() => h.sessions[0]?.sent.includes("next") === true);
+        expect(h.calls).toHaveLength(0);
+        expect(warnings(h.events)).toEqual([
+            "compaction: off until the next launch; its notes can't be read (not JSON)",
+            "compaction: the context is nearly full; sending anyway",
+        ]);
+        h.sessions[0]?.reply(250);
+        session.send("straight");
+        expect(h.sessions[0]?.sent.at(-1)).toBe("straight");
+        h.sessions[0]?.reply(150);
+        expect(h.timers.pending.size).toBe(0);
+        h.timers.advance(100_000);
+        await settle();
+        expect(h.calls).toHaveLength(0);
     });
 
     it("passes the inner session's events through, and its interrupts", async () => {
