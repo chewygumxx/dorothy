@@ -60,6 +60,15 @@ export type CompactionOptions = {
 const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
 
+type Held = { text: string; interrupted: boolean };
+
+// The reply to a message sent has started: its text, a lookup, or the
+// API's stream.
+const streams = (event: ConversationEvent) =>
+    event.type === "delta" ||
+    event.type === "lookup" ||
+    (event.type === "sdk" && event.message.type === "stream_event");
+
 // A wait that ends early, and quietly, when the signal aborts.
 function sleep(timers: Timers, ms: number, signal: AbortSignal): Promise<void> {
     return new Promise((resolve) => {
@@ -224,10 +233,14 @@ class CompactingSession implements ChatSession {
     // held message joins them when it is sent.
     readonly #turns: Turn[];
     #inner: ChatSession | null = null;
-    #held: string[] = [];
+    // Messages waiting for compaction; Esc marks them interrupted.
+    #held: Held[] = [];
     #announced = false;
     #streaming = false;
     #settled: (() => void)[] = [];
+    // A message interrupted while held was sent: it is interrupted once
+    // its reply starts.
+    #interrupting = false;
     // Past hard: the next message waits for compaction.
     #urgent = false;
     #idle: unknown = null;
@@ -297,8 +310,8 @@ class CompactingSession implements ChatSession {
             return;
         }
         this.#attach(this.#connect(seed));
-        for (const text of this.#held.splice(0)) {
-            this.#forward(text);
+        for (const held of this.#held.splice(0)) {
+            this.#forward(held);
         }
     }
 
@@ -315,7 +328,7 @@ class CompactingSession implements ChatSession {
             return;
         }
         if (this.#waiting) {
-            this.#held.push(text);
+            this.#held.push({ text, interrupted: false });
             return;
         }
         if (
@@ -324,14 +337,22 @@ class CompactingSession implements ChatSession {
             (this.#urgent && !this.#shared.exhausted)
         ) {
             this.#announce();
-            this.#held.push(text);
+            this.#held.push({ text, interrupted: false });
             this.#start();
             return;
         }
-        this.#forward(text);
+        this.#forward({ text, interrupted: false });
     }
 
+    // A held message is sent as usual once compaction ends, and then
+    // interrupted, so it ends as any interrupted turn does.
     interrupt(): Promise<void> {
+        if (this.#held.length > 0) {
+            for (const held of this.#held) {
+                held.interrupted = true;
+            }
+            return Promise.resolve();
+        }
         return this.#inner?.interrupt() ?? Promise.resolve();
     }
 
@@ -362,9 +383,10 @@ class CompactingSession implements ChatSession {
         }
     }
 
-    #forward(text: string): void {
+    #forward({ text, interrupted }: Held): void {
         this.#turns.push({ role: "user", text });
         this.#streaming = true;
+        this.#interrupting = interrupted;
         this.#inner?.send(text);
     }
 
@@ -373,6 +395,12 @@ class CompactingSession implements ChatSession {
         inner.subscribe((event) => {
             if (inner !== this.#inner) {
                 return;
+            }
+            if (this.#interrupting && streams(event)) {
+                this.#interrupting = false;
+                inner.interrupt().catch((error: unknown) => {
+                    this.#warn(`interrupt failed: ${describeError(error)}`);
+                });
             }
             if (event.type === "turn-end") {
                 this.#turns.push({ role: "assistant", text: event.reply });
@@ -385,6 +413,7 @@ class CompactingSession implements ChatSession {
                 return;
             }
             if (event.type === "error") {
+                this.#interrupting = false;
                 if (event.partial) {
                     this.#turns.push({
                         role: "assistant",
@@ -399,6 +428,7 @@ class CompactingSession implements ChatSession {
 
     #settle(): void {
         this.#streaming = false;
+        this.#interrupting = false;
         for (const wake of this.#settled.splice(0)) {
             wake();
         }
@@ -674,8 +704,8 @@ class CompactingSession implements ChatSession {
         this.#urgent = false;
         this.#announced = false;
         this.#handing = false;
-        for (const text of held) {
-            this.#forward(text);
+        for (const message of held) {
+            this.#forward(message);
         }
     }
 }

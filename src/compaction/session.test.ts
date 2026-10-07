@@ -1118,6 +1118,57 @@ describe("Compaction", () => {
         expect(h.calls).toHaveLength(0);
     });
 
+    it("sends a message interrupted while held, and interrupts it once it streams", async () => {
+        const h = harness();
+        const session = h.open();
+        session.send("abcd");
+        h.sessions[0]?.reply(250);
+        session.send("next");
+        await until(() => h.calls.length === 1);
+        await session.interrupt();
+        expect(h.sessions[0]?.interrupts).toBe(0);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.sessions[1]?.sent.length === 1);
+        expect(h.sessions[1]?.sent).toEqual(["next"]);
+        expect(h.sessions[1]?.interrupts).toBe(0);
+        h.sessions[1]?.emit({ type: "delta", text: "Of" });
+        expect(h.sessions[1]?.interrupts).toBe(1);
+        h.sessions[1]?.emit({ type: "delta", text: " course" });
+        h.sessions[1]?.emit({
+            type: "turn-end",
+            reply: "Of course",
+            interrupted: true,
+            stats: STATS,
+            contextTokens: 10,
+        });
+        expect(h.sessions[1]?.interrupts).toBe(1);
+        expect(h.events).toContainEqual(
+            expect.objectContaining({ type: "turn-end", interrupted: true }),
+        );
+        // The next message is not interrupted.
+        session.send("again");
+        h.sessions[1]?.emit({ type: "delta", text: "Yes" });
+        expect(h.sessions[1]?.interrupts).toBe(1);
+    });
+
+    it("interrupts a held message sent on after a failed compaction", async () => {
+        const h = harness();
+        const session = h.open();
+        session.send("abcd");
+        h.sessions[0]?.reply(250);
+        session.send("next");
+        await until(() => h.calls.length === 1);
+        await session.interrupt();
+        h.calls[0]?.answer({ ok: false, reason: "offline", costUsd: 0 });
+        await until(() => h.sessions[0]?.sent.includes("next") === true);
+        expect(h.sessions[0]?.interrupts).toBe(0);
+        h.sessions[0]?.emit({
+            type: "sdk",
+            message: { type: "stream_event", event: { type: "message_start" } },
+        });
+        expect(h.sessions[0]?.interrupts).toBe(1);
+    });
+
     it("passes the inner session's events through, and its interrupts", async () => {
         const h = harness();
         const session = h.open();

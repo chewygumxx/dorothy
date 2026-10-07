@@ -206,6 +206,10 @@ output tokens.
   idle time as reviews (`[memory] idle-seconds`).
 - Past `hard`, the next message is held behind a dim `compacting…` notice
   until compaction ends, and then sent to the new session.
+- Esc while a message is held marks it interrupted. It is still sent when
+  compaction ends, and interrupted as soon as its reply starts streaming,
+  so it ends as any interrupted turn does, in `App`'s history and the
+  model's context alike.
 - Before a session connects, its seed is estimated at `ceil(codePoints / 4)`
   tokens, as the budget estimates notes. An estimate past `hard` compacts
   before connecting, behind the same notice. This covers resuming a long
