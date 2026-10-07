@@ -969,6 +969,45 @@ describe("Compaction", () => {
         expect(h.sessions[0]?.closed).toBe(true);
     });
 
+    it("lets Compaction.stop settle while a record never does", async () => {
+        const h = harness({ recording: new Promise<void>(() => {}) });
+        const session = h.open();
+        session.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.recorded.length === 1);
+        let stopped = false;
+        void h.compaction.stop().then(() => {
+            stopped = true;
+        });
+        await until(() => stopped);
+        expect(h.sessions).toHaveLength(1);
+    });
+
+    it("lets Compaction.stop settle while a save never does, and a reconnection waits for it", async () => {
+        const h = harness({ saving: new Promise<void>(() => {}) });
+        const first = h.open();
+        first.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.saved.length === 1);
+        void first.close();
+        const next = h.open([...HISTORY, turn("user"), turn("assistant")]);
+        next.send("waiting");
+        let stopped = false;
+        void h.compaction.stop().then(() => {
+            stopped = true;
+        });
+        await until(() => stopped);
+        await settle();
+        expect(h.sessions).toHaveLength(1);
+        expect(h.recorded).toEqual([]);
+    });
+
     it("leaves an idle compaction to whoever holds the claim", async () => {
         const taken: boolean[] = [];
         const claim: Claim = {

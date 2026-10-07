@@ -112,6 +112,9 @@ class Shared {
     // Saves under way, each settling once its clusters are added and the
     // compaction recorded.
     readonly #saving = new Set<Promise<void>>();
+    // Aborted on quitting: from then on nothing waits for a save or a
+    // record, which may never settle.
+    readonly #stopping = new AbortController();
 
     constructor(options: CompactionOptions) {
         this.options = options;
@@ -185,12 +188,30 @@ class Shared {
         return work;
     }
 
-    // Settles once every save under way, and its record, has; null when
-    // none is.
-    saved(): Promise<void> | null {
+    // Settles as work does, or with null once quitting, whichever comes
+    // first; work goes on regardless.
+    unlessStopped<T>(work: Promise<T>): Promise<T | null> {
+        const signal = this.#stopping.signal;
+        if (signal.aborted) {
+            return Promise.resolve(null);
+        }
+        return new Promise((resolve, reject) => {
+            const stop = () => resolve(null);
+            signal.addEventListener("abort", stop, { once: true });
+            work.then(resolve, reject).finally(() =>
+                signal.removeEventListener("abort", stop),
+            );
+        });
+    }
+
+    // Settles once every save under way, and its record, has, with true;
+    // with false once quitting; null when none is under way.
+    saved(): Promise<boolean> | null {
         return this.#saving.size === 0
             ? null
-            : Promise.all(this.#saving).then(() => {});
+            : this.unlessStopped(Promise.all(this.#saving)).then(
+                  (done) => done !== null,
+              );
     }
 
     track(controller: AbortController, done: Promise<void>): void {
@@ -215,6 +236,7 @@ class Shared {
     }
 
     async stop(): Promise<void> {
+        this.#stopping.abort();
         for (const controller of this.#runs.keys()) {
             controller.abort();
         }
@@ -317,7 +339,11 @@ class CompactingSession implements ChatSession {
             // clusters being saved, so their turns don't go in whole.
             this.#waiting = true;
             void saving
-                .then(() => {
+                .then((done) => {
+                    // Quitting: no session is wanted.
+                    if (!done) {
+                        return;
+                    }
                     this.#waiting = false;
                     try {
                         this.#begin();
@@ -662,13 +688,20 @@ class CompactingSession implements ChatSession {
         // the landing follow the compacted event, which clears compaction's
         // warnings.
         const after: string[] = [];
-        const saved = await shared.landing(
-            this.#keep(
-                outcome,
-                this.#turns.findLastIndex((turn) => turn.role === "user") + 1,
-                after,
+        // Quitting doesn't wait for the save and record, which go on.
+        const saved = await shared.unlessStopped(
+            shared.landing(
+                this.#keep(
+                    outcome,
+                    this.#turns.findLastIndex((turn) => turn.role === "user") +
+                        1,
+                    after,
+                ),
             ),
         );
+        if (saved === null) {
+            return;
+        }
         if (!saved.ok) {
             this.#fail(saved.reason);
             return;
