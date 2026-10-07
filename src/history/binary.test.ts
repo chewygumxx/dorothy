@@ -9,8 +9,8 @@
 //
 
 import { afterAll, describe, expect, it } from "bun:test";
-import { chmodSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { chmodSync, existsSync, rmSync, writeFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { binaryRepo, credentialHelpers, isolatedEnv } from "./binary.js";
 import { bareRepo, put, removeRoots, TEST_ENV, tempRoot } from "./testing.js";
 
@@ -117,6 +117,94 @@ describe("the git binary engine", () => {
                     repo.push("mirror", "sealed", null),
                 ).rejects.toThrow();
             }
+        }
+    });
+});
+
+describe("the git binary engine's repository", () => {
+    it("stays in its own directory when a parent is a repository", async () => {
+        const parent = tempRoot();
+        const outer = binaryRepo(parent, { env: TEST_ENV });
+        await outer.init();
+        put(parent, "seed.txt", "1\n");
+        const tip = await outer.commit(["seed.txt"], "seed");
+        const child = join(parent, "data");
+        put(child, "a.txt", "1\n");
+        const inner = binaryRepo(child, { env: TEST_ENV });
+        await expect(inner.commit(["a.txt"], "leak")).rejects.toThrow();
+        expect(await outer.resolve("HEAD")).toBe(tip);
+        expect(await outer.files("HEAD")).toEqual(["seed.txt"]);
+        expect((await outer.log()).map((commit) => commit.message)).toEqual([
+            "seed",
+        ]);
+    });
+
+    it("works from a relative root", async () => {
+        const base = tempRoot();
+        const relativeRoot = relative(process.cwd(), join(base, "rel"));
+        const a = binaryRepo(relativeRoot, { env: TEST_ENV });
+        expect(a.root).toBe(join(base, "rel"));
+        await a.init();
+        put(a.root, "a.txt", "1\n");
+        const tip = await a.commit(["a.txt"], "one");
+        expect(tip).not.toBeNull();
+        await a.appendSealed(
+            "bundles/000001.enc",
+            new Uint8Array([1]),
+            "readme\n",
+            "seal 1",
+        );
+        expect(await a.sealedNames()).toEqual(["bundles/000001.enc"]);
+        const b = binaryRepo(relative(process.cwd(), join(base, "other")), {
+            env: TEST_ENV,
+        });
+        await b.init();
+        expect(await b.unbundle((await a.bundle(null)) as Uint8Array)).toBe(
+            tip as string,
+        );
+    });
+
+    it("carries the user's credential helpers to pushes and fetches only", async () => {
+        const dir = tempRoot();
+        const marker = join(dir, "helper-ran");
+        const config = join(dir, "gitconfig");
+        writeFileSync(
+            config,
+            // Quoted, since an unquoted ; starts a comment in a git config.
+            `[credential]\n\thelper = "!f() { touch ${marker}; }; f"\n`,
+        );
+        const server = Bun.serve({
+            port: 0,
+            hostname: "127.0.0.1",
+            fetch: () =>
+                new Response("no", {
+                    status: 401,
+                    headers: { "WWW-Authenticate": 'Basic realm="x"' },
+                }),
+        });
+        try {
+            const url = `http://127.0.0.1:${server.port}/r.git`;
+            const repo = binaryRepo(join(dir, "data"), {
+                env: { ...TEST_ENV, GIT_CONFIG_GLOBAL: config },
+            });
+            await repo.init();
+            put(repo.root, "a.txt", "1\n");
+            await repo.commit(["a.txt"], "one");
+            await repo.appendSealed(
+                "bundles/000001.enc",
+                new Uint8Array([1]),
+                "readme\n",
+                "seal 1",
+            );
+            await repo.setRemote("mirror", url);
+            expect(existsSync(marker)).toBe(false);
+            await expect(repo.push("mirror", "sealed", null)).rejects.toThrow();
+            expect(existsSync(marker)).toBe(true);
+            rmSync(marker);
+            await expect(repo.fetch(url, "sealed", null)).rejects.toThrow();
+            expect(existsSync(marker)).toBe(true);
+        } finally {
+            await server.stop(true);
         }
     });
 });

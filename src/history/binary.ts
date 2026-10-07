@@ -10,7 +10,7 @@
 
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, resolve as resolvePath } from "node:path";
 import type { Env } from "../xdg.js";
 import { AUTHOR, type Commit, MAIN, type MemoryRepo, SEALED } from "./repo.js";
 
@@ -110,10 +110,18 @@ const decoder = new TextDecoder();
 const text = (ran: Ran) => decoder.decode(ran.stdout);
 
 export function binaryRepo(
-    root: string,
+    location: string,
     { env = process.env }: { env?: Env } = {},
 ): MemoryRepo {
-    const base = isolatedEnv(env);
+    // Absolute, since git runs with root as its working directory.
+    const root = resolvePath(location);
+    // Git never looks above the data directory for a repository, so a
+    // parent that is one (a dotfiles repository over $HOME) is not
+    // written to when root has none of its own.
+    const base = {
+        ...isolatedEnv(env),
+        GIT_CEILING_DIRECTORIES: dirname(root),
+    };
     let helpers: Promise<string[]> | null = null;
 
     const run = async (
