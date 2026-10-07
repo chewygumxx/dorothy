@@ -59,8 +59,25 @@ export type CompactionOptions = {
     now?: () => Date;
 };
 
+// How long quitting waits for a save under way, and its record, before
+// it goes on without them. Paired with CLOSE_GRACE_MS in
+// src/conversation.ts, which Conversation.close gives the CLI to exit;
+// keep the two equal.
+export const QUIT_GRACE_MS = 2000;
+
 export const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
+
+// Settles once work has, or ms have passed; work never rejects here.
+function within(timers: Timers, ms: number, work: Promise<void>) {
+    return new Promise<void>((resolve) => {
+        const timer = timers.set(resolve, ms);
+        void work.then(() => {
+            timers.clear(timer);
+            resolve();
+        });
+    });
+}
 
 // Why another writer's clusters can't replace a run's, or null when they
 // can: they must cover at least the run's first turn, and stop before the
@@ -97,8 +114,11 @@ export class Shared {
     // Saves under way, each settling once its clusters are added and the
     // compaction recorded.
     readonly #saving = new Set<Promise<void>>();
-    // Aborted on quitting: from then on nothing waits for a save or a
-    // record, which may never settle.
+    // Quitting has begun: no session is wanted after a save.
+    #quitting = false;
+    // Aborted once quitting has waited QUIT_GRACE_MS for the saves under
+    // way: from then on nothing waits for a save or a record, which may
+    // never settle.
     readonly #stopping = new AbortController();
 
     constructor(options: CompactionOptions) {
@@ -190,12 +210,12 @@ export class Shared {
     }
 
     // Settles once every save under way, and its record, has, with true;
-    // with false once quitting; null when none is under way.
+    // with false when quitting; null when none is under way.
     saved(): Promise<boolean> | null {
         return this.#saving.size === 0
             ? null
             : this.unlessStopped(Promise.all(this.#saving)).then(
-                  (done) => done !== null,
+                  (done) => done !== null && !this.#quitting,
               );
     }
 
@@ -220,11 +240,22 @@ export class Shared {
         );
     }
 
+    // Quitting: calls are cancelled at once; a save under way, and its
+    // record, are waited for up to QUIT_GRACE_MS, so that what they write
+    // to isn't closed under them, and then left to go on.
     async stop(): Promise<void> {
-        this.#stopping.abort();
+        this.#quitting = true;
         for (const controller of this.#runs.keys()) {
             controller.abort();
         }
+        if (this.#saving.size > 0) {
+            await within(
+                this.timers,
+                QUIT_GRACE_MS,
+                Promise.all(this.#saving).then(() => {}),
+            );
+        }
+        this.#stopping.abort();
         await Promise.all(this.#runs.values());
         await Promise.all(this.#closing.keys());
     }

@@ -22,6 +22,7 @@ import {
     CLAIM_RETRY_MS,
     type Claim,
     Compaction,
+    QUIT_GRACE_MS,
     type SaveResult,
     type Seed,
 } from "./session.js";
@@ -969,6 +970,38 @@ describe("Compaction", () => {
         expect(h.sessions[0]?.closed).toBe(true);
     });
 
+    it("lets Compaction.stop wait for a save under way, and connect nothing after it", async () => {
+        let saveDone = () => {};
+        const saving = new Promise<void>((resolve) => {
+            saveDone = resolve;
+        });
+        const h = harness({ saving });
+        const first = h.open();
+        first.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.saved.length === 1);
+        void first.close();
+        const next = h.open([...HISTORY, turn("user"), turn("assistant")]);
+        next.send("waiting");
+        // What had been recorded when stop settled: nothing it writes to
+        // is closed under the save.
+        const recordedAtStop: number[] = [];
+        void h.compaction.stop().then(() => {
+            recordedAtStop.push(h.recorded.length);
+        });
+        await settle();
+        expect(recordedAtStop).toEqual([]);
+        h.timers.advance(QUIT_GRACE_MS - 1);
+        saveDone();
+        await until(() => recordedAtStop.length === 1);
+        expect(recordedAtStop).toEqual([1]);
+        await settle();
+        expect(h.sessions).toHaveLength(1);
+    });
+
     it("lets Compaction.stop settle while a record never does", async () => {
         const h = harness({ recording: new Promise<void>(() => {}) });
         const session = h.open();
@@ -982,6 +1015,9 @@ describe("Compaction", () => {
         void h.compaction.stop().then(() => {
             stopped = true;
         });
+        await settle();
+        expect(stopped).toBe(false);
+        h.timers.advance(QUIT_GRACE_MS);
         await until(() => stopped);
         expect(h.sessions).toHaveLength(1);
     });
@@ -1002,6 +1038,10 @@ describe("Compaction", () => {
         void h.compaction.stop().then(() => {
             stopped = true;
         });
+        h.timers.advance(QUIT_GRACE_MS - 1);
+        await settle();
+        expect(stopped).toBe(false);
+        h.timers.advance(1);
         await until(() => stopped);
         await settle();
         expect(h.sessions).toHaveLength(1);

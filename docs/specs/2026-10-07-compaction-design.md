@@ -489,7 +489,7 @@ are where the SDK meets compaction.
 | Dorothy's call fails or returns invalid output | nothing written; warning; retried at later idles, each wait doubled; after three failures, not until next launch                     |
 | It fails while a message is held               | the message goes to the old session, or to one seeded from the clusters saved so far, with a warning that the context is nearly full |
 | The API rejects a request as too long          | the usual error and reconnect, which seeds from clusters                                                                             |
-| The user quits mid-compaction                  | the call is aborted and nothing is written                                                                                           |
+| The user quits mid-compaction                  | the call is aborted and nothing is written; a save under way, and its record, are waited for up to 2 seconds                         |
 | The session closes while a message is held     | not sent; on reconnect, the new session's history holds it once, unanswered                                                          |
 | The sidecar is unparseable                     | compaction is off until the next launch, with a warning; at launch, off for that chat; the file is not touched                       |
 | Recording the compaction fails                 | the handover goes ahead, with a warning                                                                                              |

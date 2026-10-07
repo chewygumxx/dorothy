@@ -22,7 +22,7 @@ import {
 
 export { CLAIM_RETRY_MS } from "./run.js";
 export type { Claim, CompactionOptions, SaveResult, Seed } from "./shared.js";
-export { MAX_FAILURES } from "./shared.js";
+export { MAX_FAILURES, QUIT_GRACE_MS } from "./shared.js";
 
 type Held = { text: string; interrupted: boolean };
 // A run under way, and how it landed: null until its clusters are saved
