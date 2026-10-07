@@ -12,6 +12,7 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { binaryRepo } from "./binary.js";
+import { isoRepo } from "./iso.js";
 import { MAIN, type MemoryRepo, SEALED } from "./repo.js";
 import { put, removeRoots, TEST_ENV, tempRoot } from "./testing.js";
 
@@ -216,4 +217,8 @@ function contract(make: (root: string) => MemoryRepo): void {
 
 describe("the git binary engine", () => {
     contract((root) => binaryRepo(root, { env: TEST_ENV }));
+});
+
+describe("the isomorphic-git engine", () => {
+    contract((root) => isoRepo(root));
 });
