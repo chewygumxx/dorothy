@@ -104,7 +104,7 @@ export async function notesReady(
 // Compaction's save: the clusters and their cost go into the notes, unless
 // the notes' clusters already reach their turns, which are handed back.
 // Without a transcript there is no conversation for notes to describe;
-// the clusters live in this run only.
+// the clusters live in this launch only.
 export function clusterSaver({
     dir,
     phrase,
