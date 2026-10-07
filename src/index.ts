@@ -234,16 +234,24 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
         await oneShot(mode.prompt, mode.persona);
     } else if (mode.kind === "list") {
         const { runList } = await import("./memory/commands.js");
-        process.exitCode = await runList();
+        const { commandHistory } = await import("./history/commands.js");
+        process.exitCode = await runList({ openHistory: commandHistory() });
     } else if (mode.kind === "memory") {
         const { runMemoryEdit } = await import("./memory/commands.js");
-        process.exitCode = await runMemoryEdit(mode.phrase);
+        const { commandHistory } = await import("./history/commands.js");
+        process.exitCode = await runMemoryEdit(mode.phrase, {
+            openHistory: commandHistory(),
+        });
     } else if (mode.kind === "tags") {
         const { runTags } = await import("./memory/commands.js");
-        process.exitCode = await runTags();
+        const { commandHistory } = await import("./history/commands.js");
+        process.exitCode = await runTags({ openHistory: commandHistory() });
     } else if (mode.kind === "tags-edit") {
         const { runTagsEdit } = await import("./memory/commands.js");
-        process.exitCode = await runTagsEdit();
+        const { commandHistory } = await import("./history/commands.js");
+        process.exitCode = await runTagsEdit({
+            openHistory: commandHistory(),
+        });
     } else if (mode.kind === "recall-server") {
         const { runRecallServer } = await import("./recall/server.js");
         process.exitCode = await runRecallServer(mode.exclude, mode.recollect);

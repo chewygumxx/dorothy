@@ -28,6 +28,7 @@ import { formatList, listRows } from "./list.js";
 import { rank, tier } from "./rank.js";
 import {
     mergeEdit,
+    type OpenHistory,
     readSidecar,
     sidecarPath,
     updateSidecar,
@@ -37,6 +38,7 @@ import {
     parseTagsView,
     renderTagsTree,
     renderTagsView,
+    type TagsEdit,
 } from "./tags-view.js";
 import {
     EMPTY_VOCABULARY,
@@ -59,11 +61,13 @@ export async function runList({
     out = process.stdout,
     err = process.stderr,
     now = Date.now(),
+    openHistory,
 }: {
     env?: Env;
     out?: Output;
     err?: Output;
     now?: number;
+    openHistory?: OpenHistory;
 } = {}): Promise<number> {
     const { config, warnings } = await readConfig(env);
     let index: RecallIndex;
@@ -75,6 +79,9 @@ export async function runList({
         );
         return 1;
     }
+    // Whatever changed while Dorothy was away is committed, or restored,
+    // before anything is read.
+    const versions = (await openHistory?.(index)) ?? null;
     try {
         const loaded = await indexCatalogue(index, transcriptDir(env)).load();
         for (const warning of [...warnings, ...loaded.warnings]) {
@@ -90,6 +97,7 @@ export async function runList({
         out.write(`${formatList(listRows(loaded.entries, tiered))}\n`);
         return 0;
     } finally {
+        versions?.close();
         index.close();
     }
 }
@@ -101,18 +109,15 @@ export async function runTags({
     out = process.stdout,
     err = process.stderr,
     now = Date.now(),
+    openHistory,
 }: {
     env?: Env;
     out?: Output;
     err?: Output;
     now?: number;
+    openHistory?: OpenHistory;
 } = {}): Promise<number> {
     const path = vocabularyPath(env);
-    const read = await readVocabulary(path);
-    if (read.kind === "unparseable") {
-        err.write(`dorothy: ${path}: ${read.reason}\n`);
-        return 1;
-    }
     let index: RecallIndex;
     try {
         index = RecallIndex.open(indexPath(env));
@@ -122,7 +127,15 @@ export async function runTags({
         );
         return 1;
     }
+    // Whatever changed while Dorothy was away is committed, or restored,
+    // before anything is read.
+    const versions = (await openHistory?.(index)) ?? null;
     try {
+        const read = await readVocabulary(path);
+        if (read.kind === "unparseable") {
+            err.write(`dorothy: ${path}: ${read.reason}\n`);
+            return 1;
+        }
         for (const warning of await syncIndex(
             index,
             transcriptDir(env),
@@ -146,6 +159,7 @@ export async function runTags({
         );
         return 1;
     } finally {
+        versions?.close();
         index.close();
     }
 }
@@ -171,11 +185,13 @@ export async function runMemoryEdit(
         err = process.stderr,
         edit = (text: string) => editInEditor(text),
         now = () => new Date(),
+        openHistory,
     }: {
         env?: Env;
         err?: Output;
         edit?: (text: string) => Promise<EditResult>;
         now?: () => Date;
+        openHistory?: OpenHistory;
     } = {},
 ): Promise<number> {
     const dir = transcriptDir(env);
@@ -186,22 +202,27 @@ export async function runMemoryEdit(
         err.write(`dorothy: no chat ${phrase}: ${describeError(error)}\n`);
         return 1;
     }
-    const read = await readSidecar(dir, phrase);
-    if (read.kind === "unparseable") {
-        err.write(`dorothy: ${sidecarPath(dir, phrase)}: ${read.reason}\n`);
-        return 1;
-    }
-    const shown = read.kind === "ok" ? read.sidecar : null;
-    const path = vocabularyPath(env);
-    const tags = tagsContext(await readVocabulary(path));
-    let text = renderEditView(phrase, shown, tags);
     let index: RecallIndex | null = null;
     try {
         index = RecallIndex.open(indexPath(env));
     } catch {
-        // Without the index the edit goes unlocked, as before recall.
+        // Without the index the edit takes history's lock, or none, as
+        // before recall.
     }
+    // Whatever changed while Dorothy was away is committed, or restored,
+    // before anything is read.
+    const versions = (await openHistory?.(index)) ?? null;
+    const lock = index?.lock ?? versions?.lock;
     try {
+        const read = await readSidecar(dir, phrase);
+        if (read.kind === "unparseable") {
+            err.write(`dorothy: ${sidecarPath(dir, phrase)}: ${read.reason}\n`);
+            return 1;
+        }
+        const shown = read.kind === "ok" ? read.sidecar : null;
+        const path = vocabularyPath(env);
+        const tags = tagsContext(await readVocabulary(path));
+        let text = renderEditView(phrase, shown, tags);
         for (;;) {
             const result = await edit(text);
             if (!result.ok) {
@@ -254,7 +275,14 @@ export async function runMemoryEdit(
                         ),
                     };
                 },
-                index?.lock,
+                lock,
+                versions === null
+                    ? undefined
+                    : {
+                          recorder: versions.recorder,
+                          message: `edit: ${phrase} (user)`,
+                          also: [path],
+                      },
             );
             if (refused.tags) {
                 text = reopen(TAGS_BROKEN);
@@ -269,9 +297,17 @@ export async function runMemoryEdit(
             return 0;
         }
     } finally {
+        versions?.close();
         index?.close();
     }
 }
+
+// How many concepts an edit touches, for its commit.
+const edited = (edit: TagsEdit) =>
+    edit.changed.size +
+    edit.created.length +
+    edit.deleted.length +
+    edit.merged.size;
 
 // Opens the vocabulary in $EDITOR until the edit parses and applies, then
 // writes it over what the file holds by then, so concepts Dorothy coined
@@ -281,32 +317,49 @@ export async function runTagsEdit({
     err = process.stderr,
     edit = (text: string) => editInEditor(text),
     now = () => new Date(),
+    openHistory,
 }: {
     env?: Env;
     err?: Output;
     edit?: (text: string) => Promise<EditResult>;
     now?: () => Date;
+    openHistory?: OpenHistory;
 } = {}): Promise<number> {
     const path = vocabularyPath(env);
-    const read = await readVocabulary(path);
-    if (read.kind === "unparseable") {
-        err.write(`dorothy: ${path}: ${read.reason}\n`);
-        return 1;
-    }
-    const shown = read.kind === "ok" ? read.vocabulary : EMPTY_VOCABULARY;
     let index: RecallIndex | null = null;
-    let counts = new Map<string, number>();
     try {
-        const opened = RecallIndex.open(indexPath(env));
-        index = opened;
-        await syncIndex(opened, transcriptDir(env), now().getTime(), path);
-        counts = await opened.exclusive(() => carrierCounts(opened));
+        index = RecallIndex.open(indexPath(env));
     } catch {
-        // Without the index the view has no counts and the save goes
-        // unlocked, as --memory's does.
+        // Without the index the view has no counts and the save takes
+        // history's lock, or none, as --memory's does.
     }
-    let text = renderTagsView(shown, counts);
+    // Whatever changed while Dorothy was away is committed, or restored,
+    // before anything is read.
+    const versions = (await openHistory?.(index)) ?? null;
     try {
+        const read = await readVocabulary(path);
+        if (read.kind === "unparseable") {
+            err.write(`dorothy: ${path}: ${read.reason}\n`);
+            return 1;
+        }
+        const shown = read.kind === "ok" ? read.vocabulary : EMPTY_VOCABULARY;
+        let counts = new Map<string, number>();
+        if (index !== null) {
+            const opened = index;
+            try {
+                await syncIndex(
+                    opened,
+                    transcriptDir(env),
+                    now().getTime(),
+                    path,
+                );
+                counts = await opened.exclusive(() => carrierCounts(opened));
+            } catch {
+                // A failed sync leaves the view without counts; the index
+                // still holds the lock.
+            }
+        }
+        let text = renderTagsView(shown, counts);
         for (;;) {
             const result = await edit(text);
             if (!result.ok) {
@@ -335,7 +388,13 @@ export async function runTagsEdit({
                     }
                     return applied.vocabulary;
                 },
-                index?.lock,
+                index?.lock ?? versions?.lock,
+                versions === null
+                    ? undefined
+                    : {
+                          recorder: versions.recorder,
+                          message: `edit-tags: ${edited(parsed.edit)} concepts (user)`,
+                      },
             );
             if (refused.reason !== null) {
                 text = reopen(refused.reason);
@@ -348,6 +407,7 @@ export async function runTagsEdit({
             return 0;
         }
     } finally {
+        versions?.close();
         index?.close();
     }
 }

@@ -15,7 +15,12 @@ import { join } from "node:path";
 import { newPhrase } from "../session-id.js";
 import type { EditResult } from "../tui/external-editor.js";
 import { runList, runMemoryEdit, runTags, runTagsEdit } from "./commands.js";
-import { readSidecar, sidecarPath } from "./sidecar.js";
+import {
+    type HistoryHandle,
+    type OpenHistory,
+    readSidecar,
+    sidecarPath,
+} from "./sidecar.js";
 
 const NOW = new Date("2026-10-05T00:00:00.000Z");
 const phrase = (seed: number) =>
@@ -95,6 +100,21 @@ describe("runList", () => {
         ).toBe(0);
         expect(out.text).toContain("Memory");
     });
+
+    it("sweeps history before reading, and closes it", async () => {
+        const history = fakeHistory();
+        const out = capture();
+        expect(
+            await runList({
+                env,
+                out,
+                err: capture(),
+                now: NOW.getTime(),
+                openHistory: history.openHistory,
+            }),
+        ).toBe(0);
+        expect(history.calls).toEqual(["open", "close"]);
+    });
 });
 
 // Plays the user at the editor, one reply per opening.
@@ -107,6 +127,30 @@ function editor(...replies: ((text: string) => EditResult)[]) {
         );
     };
     return { edit, seen };
+}
+
+// A history that notes what each command asks of it.
+function fakeHistory() {
+    const calls: string[] = [];
+    const recorded: { paths: readonly string[]; message: string }[] = [];
+    const handle: HistoryHandle = {
+        recorder: async (paths, message) => {
+            recorded.push({ paths, message });
+        },
+        lock: (work) => work(),
+        sweep: async () => {
+            calls.push("sweep");
+        },
+        heal: async () => false,
+        close: () => {
+            calls.push("close");
+        },
+    };
+    const openHistory: OpenHistory = async (index) => {
+        calls.push(index === null ? "open without index" : "open");
+        return handle;
+    };
+    return { openHistory, calls, recorded };
 }
 
 describe("runMemoryEdit", () => {
@@ -221,6 +265,34 @@ describe("runMemoryEdit", () => {
         const read = await readSidecar(transcripts, a);
         expect(read.kind === "ok" && read.sidecar.tags).toEqual(["k00000001"]);
         expect(read.kind === "ok" && read.sidecar.fields.tags?.by).toBe("user");
+    });
+
+    it("records the user's edit with the vocabulary beside it", async () => {
+        await writeFile(join(transcripts, `${a}.jsonl`), chat);
+        const history = fakeHistory();
+        const { edit } = editor((text) => ({
+            ok: true,
+            text: text.replace("Title:", "Title: Mine"),
+        }));
+        expect(
+            await runMemoryEdit(a, {
+                env,
+                err: capture(),
+                edit,
+                now: () => NOW,
+                openHistory: history.openHistory,
+            }),
+        ).toBe(0);
+        expect(history.recorded).toEqual([
+            {
+                paths: [
+                    sidecarPath(transcripts, a),
+                    join(dir, "dorothy", "tags.json"),
+                ],
+                message: `edit: ${a} (user)`,
+            },
+        ]);
+        expect(history.calls).toEqual(["open", "close"]);
     });
 
     describe("with a review landing while the editor is open", () => {
@@ -410,6 +482,26 @@ describe("runTagsEdit", () => {
             },
         },
     };
+
+    it("records the edit, counting the concepts it changed", async () => {
+        await writeFile(tagsFile(), JSON.stringify(vocabulary));
+        const history = fakeHistory();
+        expect(
+            await runTagsEdit({
+                env,
+                err: capture(),
+                edit: async (text: string): Promise<EditResult> => ({
+                    ok: true,
+                    text: text.replace("Tag: memory", "Tag: remembering"),
+                }),
+                now: () => NOW,
+                openHistory: history.openHistory,
+            }),
+        ).toBe(0);
+        expect(history.recorded).toEqual([
+            { paths: [tagsFile()], message: "edit-tags: 1 concepts (user)" },
+        ]);
+    });
 
     it("reopens with the error until the edit holds, then saves it", async () => {
         await writeFile(tagsFile(), JSON.stringify(vocabulary));
