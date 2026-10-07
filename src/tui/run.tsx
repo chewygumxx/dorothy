@@ -12,7 +12,11 @@ import { randomBytes } from "node:crypto";
 import { render } from "ink";
 import { COMPACTION_TIMEOUT_MS } from "../compaction/compact.js";
 import { clusterTokens, seedTurns } from "../compaction/plan.js";
-import { Compaction, type Seed } from "../compaction/session.js";
+import {
+    Compaction,
+    type SaveResult,
+    type Seed,
+} from "../compaction/session.js";
 import { readConfig } from "../config.js";
 import {
     type ChatSession,
@@ -80,6 +84,19 @@ export function sessionMaker({
                 : compaction.session(turns, connect);
         return memory === null ? session : trackMemory(session, memory);
     };
+}
+
+// Before each compaction: notes that became unreadable since launch are
+// left alone, as at launch, so compaction stops rather than paying for
+// clusters it can't save.
+export async function notesReady(
+    dir: string,
+    phrase: string,
+): Promise<SaveResult> {
+    const notes = await readSidecar(dir, phrase);
+    return notes.kind === "unparseable"
+        ? { ok: false, reason: `its notes can't be read (${notes.reason})` }
+        : { ok: true };
 }
 
 export async function runTui(
@@ -217,6 +234,10 @@ export async function runTui(
                           }
                         : { ok: false, reason: result.reason };
               },
+              ready: () =>
+                  transcript === null
+                      ? Promise.resolve({ ok: true })
+                      : notesReady(dir, phrase),
               record: async (entry) => {
                   await transcript?.append({ kind: "compaction", ...entry });
               },

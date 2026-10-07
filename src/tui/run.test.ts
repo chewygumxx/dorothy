@@ -9,12 +9,12 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChatSession } from "../conversation.js";
 import { newPhrase } from "../session-id.js";
-import { runTui, sessionMaker } from "./run.js";
+import { notesReady, runTui, sessionMaker } from "./run.js";
 
 let dir = "";
 let saved: string | undefined;
@@ -72,5 +72,18 @@ describe("sessionMaker", () => {
         });
         create([]).send("next");
         expect(log).toEqual(["memory next", "held next"]);
+    });
+});
+
+describe("notesReady", () => {
+    it("refuses compaction once the notes became unreadable after launch", async () => {
+        const phrase = newPhrase();
+        expect(await notesReady(dir, phrase)).toEqual({ ok: true });
+        await writeFile(join(dir, `${phrase}.meta.json`), "{");
+        const ready = await notesReady(dir, phrase);
+        expect(ready.ok).toBe(false);
+        expect(ready.ok ? "" : ready.reason).toStartWith(
+            "its notes can't be read (",
+        );
     });
 });
