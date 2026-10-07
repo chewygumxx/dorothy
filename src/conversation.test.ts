@@ -438,6 +438,24 @@ describe("Conversation", () => {
         ]);
     });
 
+    it("measures the main context, not a subagent's", async () => {
+        const fake = fakeQuery([
+            [
+                usage(7, 2000, 300),
+                {
+                    ...(usage(50, 90000, 900) as object),
+                    parent_tool_use_id: "toolu_1",
+                } as unknown as SDKMessage,
+                delta("12345678"),
+                result(0.001),
+            ],
+        ]);
+        const { conversation, events } = started(fake);
+        conversation.send("hi");
+        await until(() => of(events, "turn-end").length === 1);
+        expect(of(events, "turn-end")[0]?.contextTokens).toBe(2309);
+    });
+
     it("reports the CLI compacting on its own as an error", async () => {
         const fake = fakeQuery([[compactBoundary()]]);
         const { conversation, events } = started(fake);

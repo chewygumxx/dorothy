@@ -395,8 +395,13 @@ export class Conversation implements ChatSession {
             this.#reply += text;
             this.#emit({ type: "delta", text });
         } else if (message.type === "assistant") {
+            // A subagent's request reads its own context, not this one.
             const usage = message.message.usage;
-            if (usage !== undefined && usage !== null) {
+            if (
+                message.parent_tool_use_id === null &&
+                usage !== undefined &&
+                usage !== null
+            ) {
                 this.#lastInput =
                     usage.input_tokens +
                     (usage.cache_read_input_tokens ?? 0) +
