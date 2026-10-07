@@ -151,6 +151,15 @@ existing sidecars need no migration:
 - Writes go through the existing locked update, so they never lose a
   concurrent review's notes.
 
+Version 1 also gains `compactionCostUsd`, beside `reviewCostUsd`, defaulting
+to 0: what the conversation's compactions have cost. It is read as
+`reviewCostUsd` is, a missing or malformed value counting as 0, and written
+by the same locked update that appends the clusters, so only a compaction
+that saved its own clusters adds its cost. A run that took up another TUI's
+clusters, a failed one, and a conversation with no transcript to describe add
+nothing. Resuming does not show it: the screen's cost comes from the
+transcript.
+
 ### Transcript
 
 A new event, written just before the new session's `session` event:
@@ -223,9 +232,11 @@ output tokens.
   that leaves the new seed's estimate still past `hard` is followed at once
   by another, with no session between. The chain ends when the estimate
   falls to `hard`, or when a run ends without saving: a failed call, nothing
-  to compact, notes no longer readable, or the claim held elsewhere. The
-  held message then goes to a session seeded from the clusters saved so
-  far, with the warning that the context is nearly full.
+  to compact, or notes no longer readable. The held message then goes to a
+  session seeded from the clusters saved so far, with the warning that the
+  context is nearly full. A claim held elsewhere does not end the chain: a
+  run holding a message, or before the first session, asks again every 2
+  seconds until it is granted or the TUI quits.
 
 ### The outgoing turns
 
@@ -454,7 +465,7 @@ API refusing a request as too long, shown as the usual error.
 | `src/conversation.ts`             | the seed in `conversationOptions`, the tool list                                                                                  | no   |
 | `src/dump.ts`                     | `--dump-context --resume` shows the compacted seed                                                                                | no   |
 | `src/tui/run.tsx`                 | `createSession` seeding from clusters, wiring the wrapper, the save handing back another TUI's clusters, the index for compaction | no   |
-| `src/timers.ts`                   | the injected timers and `sleep`, shared by compaction and memory                                                                  | no   |
+| `src/timers.ts`                   | the injected timers and `sleep`, shared by compaction, memory and `src/structured.ts`                                             | no   |
 | `src/tui/state.ts`, `History.tsx` | the notices and the `⌕` line                                                                                                      | yes  |
 | `src/config.ts`                   | `[compaction]`                                                                                                                    | yes  |
 
@@ -471,8 +482,9 @@ are where the SDK meets compaction.
 | The API rejects a request as too long          | the usual error and reconnect, which seeds from clusters                                                                             |
 | The user quits mid-compaction                  | the call is aborted and nothing is written                                                                                           |
 | The session closes while a message is held     | not sent; on reconnect, the new session's history holds it once, unanswered                                                          |
-| The sidecar is unparseable                     | compaction is skipped with a warning; the file is not touched                                                                        |
-| Another TUI holds the claim                    | skipped; tried again at the next idle                                                                                                |
+| The sidecar is unparseable                     | compaction is off until the next launch, with a warning; at launch, off for that chat; the file is not touched                       |
+| Recording the compaction fails                 | the handover goes ahead, with a warning                                                                                              |
+| Another TUI holds the claim                    | at an idle run: skipped, tried again at the next idle; while a message is held: asked again every 2 seconds                          |
 | Another TUI compacted those turns first        | its clusters are taken up if they stop before the latest message, else a failure; nothing is written                                 |
 | The latest exchange alone is past `hard`       | warning; the chat continues as it is                                                                                                 |
 | `[memory] recall = false`                      | no `recollect`; the abstracts are still seeded                                                                                       |
