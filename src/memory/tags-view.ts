@@ -346,6 +346,13 @@ export function applyTagsEdit(
         };
         parents.push([id, draft.under]);
     }
+    // Merge targets are named as the labels stand before any deletion or
+    // merge, so a chain or a merge into a deleted concept is seen as one
+    // whatever the order of the blocks.
+    const targets = new Map<string, string | null>();
+    for (const [source, label] of edit.merged) {
+        targets.set(source, resolveLabel(v, label));
+    }
     for (const id of edit.deleted) {
         v.concepts[id] = { deleted: at, labels: labelsOf(live(id)) };
     }
@@ -364,7 +371,7 @@ export function applyTagsEdit(
     }
     const sources = new Set(edit.merged.keys());
     for (const [source, label] of edit.merged) {
-        const target = resolveLabel(v, label);
+        const target = targets.get(source) ?? null;
         if (target === null) {
             return fail(`Merge names no concept: ${label}`);
         }
@@ -373,7 +380,12 @@ export function applyTagsEdit(
         }
         if (sources.has(target)) {
             return fail(
-                `${live(target).prefLabel} is merged itself, so nothing can be merged into it`,
+                `${label} is merged itself, so nothing can be merged into it`,
+            );
+        }
+        if (edit.deleted.includes(target)) {
+            return fail(
+                `${label} is deleted, so nothing can be merged into it`,
             );
         }
         const from = live(source);

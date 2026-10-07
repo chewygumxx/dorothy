@@ -368,6 +368,44 @@ describe("the edit view", () => {
         });
     });
 
+    it.each([
+        [
+            "the intermediate block later",
+            [
+                ["Tag: recollection\n", "Tag: recollection\nMerge: tui\n"],
+                ["Tag: tui\n", "Tag: tui\nMerge: dorothy\n"],
+            ],
+            "tui is merged itself, so nothing can be merged into it",
+        ],
+        [
+            "the intermediate block earlier",
+            [
+                ["Tag: dorothy\n", "Tag: dorothy\nMerge: memory\n"],
+                ["Tag: recollection\n", "Tag: recollection\nMerge: dorothy\n"],
+            ],
+            "dorothy is merged itself, so nothing can be merged into it",
+        ],
+    ])("refuses a merge chain, %s", (_order, swaps, reason) => {
+        expect(applied(parse(...(swaps as [string, string][])))).toEqual({
+            ok: false,
+            reason,
+        });
+    });
+
+    it("refuses a merge into a concept deleted in the same edit", () => {
+        const parsed = parseTagsView(
+            VIEW.replace(
+                /Concept: k00000004\n[\s\S]*?conversations\)\n/,
+                "",
+            ).replace("Tag: recollection\n", "Tag: recollection\nMerge: tui\n"),
+            SMALL,
+        );
+        expect(applied(parsed)).toEqual({
+            ok: false,
+            reason: "tui is deleted, so nothing can be merged into it",
+        });
+    });
+
     it("keeps what Dorothy coined meanwhile, unless the user's label clashes", () => {
         const meanwhile: Vocabulary = {
             ...SMALL,
