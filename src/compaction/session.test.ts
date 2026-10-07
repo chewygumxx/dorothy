@@ -129,6 +129,7 @@ type Pending = {
 function harness({
     estimate = 0,
     claim = null,
+    claims,
     clusters = [],
     save = { ok: true },
     saving = Promise.resolve(),
@@ -138,7 +139,9 @@ function harness({
     recollect = true,
 }: {
     estimate?: number;
+    // One claim for every run, unless claims makes each run its own.
     claim?: Claim | null;
+    claims?: () => Claim;
     clusters?: Cluster[];
     // An error is thrown rather than returned.
     save?: SaveResult | Error;
@@ -197,7 +200,7 @@ function harness({
             return estimate;
         },
         ...(ready === undefined ? {} : { ready: async () => ready }),
-        claim,
+        claims: claims ?? (claim === null ? null : () => claim),
         timers,
         now: () => NOW,
     });
@@ -609,6 +612,43 @@ describe("Compaction", () => {
         await settle();
         expect(h.calls).toHaveLength(0);
         expect(h.timers.pending.size).toBe(0);
+    });
+
+    it("gives each run its own claim, so a reconnected session's waits for the old run's", async () => {
+        // The index's claims: one holder for the conversation, by owner.
+        let holder: symbol | null = null;
+        const claims = (): Claim => {
+            const owner = Symbol("run");
+            return {
+                take: async () => {
+                    holder ??= owner;
+                    return holder === owner;
+                },
+                release: async () => {
+                    if (holder === owner) {
+                        holder = null;
+                    }
+                },
+            };
+        };
+        const h = harness({ claims });
+        const old = h.open();
+        old.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        // App reconnects while the old run is still in Dorothy's call.
+        const next = h.open([...HISTORY, turn("user"), turn("assistant")]);
+        next.send("abcd");
+        h.sessions[1]?.reply(250);
+        next.send("held");
+        await until(() => h.timers.pending.size === 1);
+        expect(h.calls).toHaveLength(1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => holder === null);
+        h.timers.advance(CLAIM_RETRY_MS);
+        await until(() => h.calls.length === 2);
+        expect(holder).not.toBeNull();
     });
 
     it("asks again for the claim while holding a message", async () => {

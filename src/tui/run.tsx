@@ -13,6 +13,7 @@ import { render } from "ink";
 import { COMPACTION_TIMEOUT_MS } from "../compaction/compact.js";
 import { clusterTokens, seedTurns } from "../compaction/plan.js";
 import {
+    type Claim,
     Compaction,
     type SaveResult,
     type Seed,
@@ -97,6 +98,29 @@ export async function notesReady(
     return notes.kind === "unparseable"
         ? { ok: false, reason: `its notes can't be read (${notes.reason})` }
         : { ok: true };
+}
+
+// Compaction's claims on the conversation in the index, which reviews take
+// too. Each run has its own owner: with one for the TUI, a run after App
+// reconnects could take the claim the old run still holds, whose release
+// would then delete it while the new run works.
+export function indexClaims(
+    index: Pick<RecallIndex, "claim" | "release">,
+    phrase: string,
+): () => Claim {
+    return () => {
+        const owner = `${process.pid}-${randomBytes(4).toString("hex")}`;
+        return {
+            take: () =>
+                index.claim(
+                    phrase,
+                    owner,
+                    Date.now(),
+                    COMPACTION_TIMEOUT_MS + CLAIM_MARGIN_MS,
+                ),
+            release: () => index.release(phrase, owner),
+        };
+    };
 }
 
 export async function runTui(
@@ -205,7 +229,6 @@ export async function runTui(
     };
 
     const claims = index;
-    const owner = `${process.pid}-${randomBytes(4).toString("hex")}`;
     const compaction = compactable
         ? new Compaction({
               config: config.compaction,
@@ -245,19 +268,7 @@ export async function runTui(
               },
               estimate: (seed) =>
                   tokens(String(conversationOptions(setup(seed)).systemPrompt)),
-              claim:
-                  claims === null
-                      ? null
-                      : {
-                            take: () =>
-                                claims.claim(
-                                    phrase,
-                                    owner,
-                                    Date.now(),
-                                    COMPACTION_TIMEOUT_MS + CLAIM_MARGIN_MS,
-                                ),
-                            release: () => claims.release(phrase, owner),
-                        },
+              claims: claims === null ? null : indexClaims(claims, phrase),
           })
         : null;
 

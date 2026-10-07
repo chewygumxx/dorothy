@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChatSession } from "../conversation.js";
 import { newPhrase } from "../session-id.js";
-import { notesReady, runTui, sessionMaker } from "./run.js";
+import { indexClaims, notesReady, runTui, sessionMaker } from "./run.js";
 
 let dir = "";
 let saved: string | undefined;
@@ -85,5 +85,36 @@ describe("notesReady", () => {
         expect(ready.ok ? "" : ready.reason).toStartWith(
             "its notes can't be read (",
         );
+    });
+});
+
+describe("indexClaims", () => {
+    it("gives each run its own owner, so two runs of one TUI exclude each other", async () => {
+        // The index's claims table: one owner a conversation, released only
+        // by that owner.
+        const table = new Map<string, string>();
+        const index = {
+            claim: async (phrase: string, owner: string) => {
+                if (!table.has(phrase)) {
+                    table.set(phrase, owner);
+                }
+                return table.get(phrase) === owner;
+            },
+            release: async (phrase: string, owner: string) => {
+                if (table.get(phrase) === owner) {
+                    table.delete(phrase);
+                }
+            },
+        };
+        const claim = indexClaims(index, "a-phrase");
+        const old = claim();
+        const next = claim();
+        expect(await old.take()).toBe(true);
+        expect(await next.take()).toBe(false);
+        await old.release();
+        expect(await next.take()).toBe(true);
+        // A late release by the old run leaves the new run's claim alone.
+        await old.release();
+        expect(await claim().take()).toBe(false);
     });
 });

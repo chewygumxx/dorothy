@@ -50,7 +50,9 @@ export type CompactionOptions = {
     // can no longer be read, turns compaction off until the next launch,
     // and its reason ends the warning that says so.
     ready?(): Promise<SaveResult>;
-    claim?: Claim | null;
+    // A claim for one run, made afresh for each: runs, even two of one
+    // TUI, exclude each other as two TUIs do.
+    claims?: (() => Claim) | null;
     timers?: Timers;
     now?: () => Date;
 };
@@ -447,7 +449,7 @@ class CompactingSession implements ChatSession {
 
     async #compactOnce(signal: AbortSignal): Promise<void> {
         const shared = this.#shared;
-        const { claim = null } = shared.options;
+        const claim = shared.options.claims?.() ?? null;
         if (claim !== null) {
             while (!(await claim.take())) {
                 // Asked when refused: a turn may have crossed hard, and a
