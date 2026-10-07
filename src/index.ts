@@ -352,6 +352,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     } else {
         // Loaded only for chat, so one-shot replies never pay for React.
         const { runTui } = await import("./tui/run.js");
-        process.exitCode = await runTui(mode.resume, mode.persona);
+        // runTui has closed everything by now. A push or a repack still
+        // running must not hold the terminal after the chat is gone.
+        process.exit(await runTui(mode.resume, mode.persona));
     }
 }

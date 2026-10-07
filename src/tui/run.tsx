@@ -34,7 +34,7 @@ import {
     maintainDaily,
     openHistory,
 } from "../history/history.js";
-import { Mirror, waiting } from "../history/mirror.js";
+import { Mirror } from "../history/mirror.js";
 import { MIRROR, NO_MIRROR } from "../history/repo.js";
 import { parseKey } from "../history/seal.js";
 import { indexCatalogue } from "../memory/catalogue.js";
@@ -182,8 +182,7 @@ export type LaunchedHistory = {
 };
 
 // History at launch, before anything is read: opened under the index's
-// lock, swept, and the mirror pushed in the background when commits
-// wait. Null when the config turns it off, or when it can't be used,
+// lock, swept, and the mirror pushed in the background. Null when the config turns it off, or when it can't be used,
 // which joins the launch's warnings with its own.
 export async function launchHistory({
     config,
@@ -221,10 +220,19 @@ export async function launchHistory({
         pushMs: config.history.pushSeconds * 1000,
     });
     history.afterCommit(() => mirror.schedule());
-    if ((await history.repo.remote(MIRROR)) === null) {
-        history.warn(NO_MIRROR);
-    } else if (await waiting(history.repo)) {
-        void mirror.push();
+    // With a mirror, a push at every launch: what a push cut short at
+    // quit left is sent now, and one with nothing new is cheap. The push
+    // seals whatever waits first.
+    try {
+        if ((await history.repo.remote(MIRROR)) === null) {
+            history.warn(NO_MIRROR);
+        } else {
+            void mirror.push();
+        }
+    } catch (error) {
+        history.warn(
+            `history: couldn't look for the mirror (${describeError(error)})`,
+        );
     }
     void maintainDaily(history.repo);
     warnings.push(...history.takeWarnings());

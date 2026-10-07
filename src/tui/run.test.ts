@@ -17,6 +17,7 @@ import {
     setSystemTime,
     spyOn,
 } from "bun:test";
+import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -477,6 +478,65 @@ describe("launchHistory", () => {
             "memory has no mirror · dorothy --mirror <url>",
         ]);
         launched?.close();
+    });
+
+    it("pushes to a mirror at every launch, even when nothing waits", async () => {
+        const key = randomBytes(32).toString("base64");
+        const env = { ...process.env, DOROTHY_MIRROR_KEY: key };
+        // A bare repository with git isolated, local to this file, which
+        // may not import from history (boundary.test.ts).
+        const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null" };
+        const bareRepo = async () => {
+            const path = await mkdtemp(join(dir, "mirror-"));
+            const proc = Bun.spawn(["git", "init", "-q", "--bare", path], {
+                env: gitEnv,
+            });
+            expect(await proc.exited).toBe(0);
+            return path;
+        };
+        const sealedAt = async (bare: string) => {
+            const proc = Bun.spawn(
+                ["git", "rev-parse", "--verify", "-q", "refs/heads/sealed"],
+                { cwd: bare, env: gitEnv, stdout: "pipe", stderr: "ignore" },
+            );
+            const out = await new Response(proc.stdout).text();
+            return (await proc.exited) === 0 ? out.trim() : null;
+        };
+        const pushed = async (bare: string) => {
+            for (let tries = 0; tries < 100; tries++) {
+                const tip = await sealedAt(bare);
+                if (tip !== null) {
+                    return tip;
+                }
+                await new Promise((resolve) => setTimeout(resolve, 50));
+            }
+            return null;
+        };
+        const options = {
+            config: DEFAULT_CONFIG,
+            index: null,
+            warnings: [] as string[],
+            env,
+            hook: null,
+        };
+
+        const first = await launchHistory(options);
+        const bare = await bareRepo();
+        await first?.history.repo.setRemote("mirror", bare);
+        first?.close();
+        const second = await launchHistory(options);
+        expect(await pushed(bare)).not.toBeNull();
+        // Everything is sealed now, so nothing waits; a new mirror still
+        // gets the branch at the next launch.
+        const other = await bareRepo();
+        await second?.history.repo.setRemote("mirror", other);
+        second?.close();
+        const third = await launchHistory(options);
+        expect(await pushed(other)).not.toBeNull();
+        expect(options.warnings).toEqual([
+            "memory has no mirror · dorothy --mirror <url>",
+        ]);
+        third?.close();
     });
 
     it("is off when the config says so", async () => {
