@@ -89,8 +89,11 @@ export class Compaction {
         return new CompactingSession(this.#shared, turns, connect);
     }
 
-    // Quitting: every call is cancelled, and the promise settles once each
-    // has let go of its claim and each replaced session has closed.
+    // Quitting: every call is cancelled at once; a save under way, and its
+    // record, are waited for up to QUIT_GRACE_MS, so that what they write
+    // to isn't closed under them, and then left to go on. The promise
+    // settles once each run has let go of its claim and each replaced
+    // session has closed.
     stop(): Promise<void> {
         return this.#shared.stop();
     }

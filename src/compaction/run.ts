@@ -130,7 +130,8 @@ export async function compactOnce(
     // warnings.
     const after: string[] = [];
     const turns = host.turns();
-    // Quitting doesn't wait for the save and record, which go on.
+    // Quitting waits for the save and record up to QUIT_GRACE_MS, then
+    // leaves them to go on.
     const saved = await shared.unlessStopped(
         shared.landing(
             keep(

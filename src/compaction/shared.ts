@@ -193,8 +193,9 @@ export class Shared {
         return work;
     }
 
-    // Settles as work does, or with null once quitting, whichever comes
-    // first; work goes on regardless.
+    // Settles as work does, or with null once quitting has waited
+    // QUIT_GRACE_MS for the saves under way, whichever comes first; work
+    // goes on regardless.
     unlessStopped<T>(work: Promise<T>): Promise<T | null> {
         const signal = this.#stopping.signal;
         if (signal.aborted) {
