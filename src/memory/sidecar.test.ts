@@ -278,6 +278,13 @@ describe("withProvisional", () => {
     it("leaves an existing sidecar alone", () => {
         expect(withProvisional(reviewed, "Hey", AT)).toBeNull();
     });
+
+    it("shares no arrays with the empty sidecar", () => {
+        const sidecar = withProvisional(null, "Hey", AT);
+        expect(sidecar?.clusters).not.toBe(EMPTY_SIDECAR.clusters);
+        expect(sidecar?.titles).not.toBe(EMPTY_SIDECAR.titles);
+        expect(sidecar?.appraisals).not.toBe(EMPTY_SIDECAR.appraisals);
+    });
 });
 
 describe("mergeReview", () => {
@@ -492,6 +499,21 @@ const cluster = (from: number, through: number, abstract = "About it.") =>
         at: "2026-10-07T08:00:00.000Z",
         model: "claude-test",
     }) satisfies Cluster;
+
+describe("EMPTY_SIDECAR", () => {
+    it("is frozen, with all it holds", () => {
+        expect(Object.isFrozen(EMPTY_SIDECAR)).toBe(true);
+        for (const held of [
+            EMPTY_SIDECAR.titles,
+            EMPTY_SIDECAR.fields,
+            EMPTY_SIDECAR.appraisals,
+            EMPTY_SIDECAR.clusters,
+        ]) {
+            expect(Object.isFrozen(held)).toBe(true);
+        }
+        expect(() => EMPTY_SIDECAR.clusters.push(cluster(1, 2))).toThrow();
+    });
+});
 
 describe("clusters", () => {
     it("are empty in a new sidecar and in one written before them", () => {

@@ -92,7 +92,9 @@ export type EditChanges = Partial<Record<Field, string | null>> & {
     hidden?: boolean;
 };
 
-export const EMPTY_SIDECAR: Sidecar = {
+// Frozen through, so that a change made through a sidecar built on it
+// throws instead of reaching every sidecar built after.
+export const EMPTY_SIDECAR: Sidecar = frozen({
     v: 1,
     rev: 0,
     title: null,
@@ -107,7 +109,15 @@ export const EMPTY_SIDECAR: Sidecar = {
     appraisals: {},
     failures: null,
     clusters: [],
-};
+});
+
+function frozen(sidecar: Sidecar): Sidecar {
+    Object.freeze(sidecar.titles);
+    Object.freeze(sidecar.fields);
+    Object.freeze(sidecar.appraisals);
+    Object.freeze(sidecar.clusters);
+    return Object.freeze(sidecar);
+}
 
 const AUTHORS: readonly string[] = ["prompt", "dorothy", "user"];
 
@@ -406,6 +416,8 @@ export function withProvisional(
         title,
         titles: [],
         fields: { title: { by: "prompt", at } },
+        appraisals: {},
+        clusters: [],
     };
 }
 
