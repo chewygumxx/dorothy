@@ -37,6 +37,7 @@ import {
     updateSidecar,
 } from "../memory/sidecar.js";
 import { type MemoryHooks, trackMemory } from "../memory/track.js";
+import { vocabularyPath } from "../memory/vocabulary.js";
 import {
     type PersonaMode,
     personaPrompt,
@@ -302,7 +303,8 @@ export async function runTui(
     }
     let memory: MemoryService | null = null;
     if (config.memory.enabled && index !== null) {
-        const loaded = await indexCatalogue(index, dir).load();
+        const vocabulary = vocabularyPath();
+        const loaded = await indexCatalogue(index, dir, vocabulary).load();
         warnings.push(...loaded.warnings);
         memory = new MemoryService({
             dir,
@@ -311,6 +313,7 @@ export async function runTui(
             config: config.memory,
             entries: loaded.entries,
             index,
+            vocabulary,
             // Without a transcript the live chat is left alone.
             flushed: transcript === null ? null : () => transcript.flushed(),
         });
