@@ -959,6 +959,75 @@ describe("Compaction", () => {
         expect(holder).not.toBeNull();
     });
 
+    it("holds one claim through a chain of runs, so a review waiting for it runs after the chain", async () => {
+        // The index's claims, by owner; a review waiting for this
+        // conversation's takes it the moment it is let go.
+        const review = Symbol("review");
+        let holder: symbol | null = null;
+        let made = 0;
+        let released = 0;
+        const claims = (): Claim => {
+            made++;
+            const owner = Symbol("chain");
+            return {
+                take: async () => {
+                    holder ??= owner;
+                    return holder === owner;
+                },
+                release: async () => {
+                    released++;
+                    if (holder === owner) {
+                        holder = review;
+                    }
+                },
+            };
+        };
+        const history = Array.from({ length: 10 }, (_, i) =>
+            sized(i % 2 === 0 ? "user" : "assistant", 40),
+        );
+        const h = harness({ estimate: seedSize, claims });
+        const session = h.open(history);
+        session.send("early");
+        for (const [n, last] of [2, 4, 6].entries()) {
+            await until(() => h.calls.length === n + 1);
+            expect(holder === review).toBe(false);
+            h.calls[n]?.answer(through(last));
+        }
+        await until(() => h.sessions[0]?.sent.length === 1);
+        await until(() => released === 1);
+        expect(made).toBe(1);
+        expect(holder === review).toBe(true);
+    });
+
+    it("lets go of a chain's claim when quitting between its runs", async () => {
+        let released = 0;
+        const claim: Claim = {
+            take: async () => true,
+            release: async () => {
+                released++;
+            },
+        };
+        const history = Array.from({ length: 10 }, (_, i) =>
+            sized(i % 2 === 0 ? "user" : "assistant", 40),
+        );
+        const h = harness({ estimate: seedSize, claim });
+        const session = h.open(history);
+        let stopped: Promise<void> | null = null;
+        session.subscribe((event) => {
+            if (event.type === "compacted") {
+                stopped = h.compaction.stop();
+            }
+        });
+        session.send("early");
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(through(2));
+        await until(() => stopped !== null);
+        await stopped;
+        expect(released).toBe(1);
+        await settle();
+        expect(h.calls).toHaveLength(1);
+    });
+
     it("asks again for the claim while holding a message", async () => {
         const answers = [false, true];
         let released = 0;

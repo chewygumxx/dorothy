@@ -55,8 +55,9 @@ export type CompactionOptions = {
     // can no longer be read, turns compaction off until the next launch,
     // and its reason ends the warning that says so.
     ready?(): Promise<SaveResult>;
-    // A claim for one run, made afresh for each: runs, even two of one
-    // TUI, exclude each other as two TUIs do.
+    // A claim for one chain of runs, made afresh for each: chains, even two
+    // of one TUI, exclude each other as two TUIs do. Each run of a chain
+    // takes it: the first gets it, and the runs chained after it renew it.
     claims?: (() => Claim) | null;
     timers?: Timers;
     now?: () => Date;
@@ -66,6 +67,8 @@ const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
 
 type Held = { text: string; interrupted: boolean };
+// A chain's claim, and whether its latest take was granted.
+type Chained = { claim: Claim; held: boolean };
 
 // Why another writer's clusters can't replace a run's, or null when they
 // can: they must cover at least the run's first turn, and stop before the
@@ -294,6 +297,9 @@ class CompactingSession implements ChatSession {
     // Esc on a held message: no run follows the current one, which hands
     // over even to a seed still past hard.
     #cutShort = false;
+    // The claim of the runs under way, one after another with no gap: let
+    // go once no run follows, so a review waiting for it runs after them.
+    #claim: Chained | null = null;
 
     constructor(
         shared: Shared,
@@ -527,11 +533,14 @@ class CompactingSession implements ChatSession {
             .finally(() => {
                 this.#run = null;
                 try {
-                    this.#afterRun();
+                    this.#afterRun(controller.signal.aborted);
                 } catch (error) {
                     this.#escaped(error);
                 }
             })
+            // Inside the run's promise, so that Compaction.stop waits for
+            // the claim to be let go.
+            .finally(() => this.#endChain())
             // The catch above can throw too, on a listener's: the run's
             // promise is awaited by Compaction.stop, which must settle.
             .catch((error: unknown) => this.#escaped(error));
@@ -548,9 +557,14 @@ class CompactingSession implements ChatSession {
 
     async #compactOnce(signal: AbortSignal): Promise<void> {
         const shared = this.#shared;
-        const claim = shared.options.claims?.() ?? null;
-        if (claim !== null) {
-            while (!(await claim.take())) {
+        if (this.#claim === null) {
+            const claim = shared.options.claims?.() ?? null;
+            this.#claim = claim === null ? null : { claim, held: false };
+        }
+        const chained = this.#claim;
+        if (chained !== null) {
+            while (!(await chained.claim.take())) {
+                chained.held = false;
                 // Asked when refused: a turn may have crossed hard, and a
                 // message been held, since the run started.
                 const holding = this.#urgent || this.#inner === null;
@@ -562,43 +576,47 @@ class CompactingSession implements ChatSession {
                     return;
                 }
             }
+            chained.held = true;
         }
-        try {
-            const ready = (await shared.options.ready?.()) ?? { ok: true };
-            if (!ready.ok) {
-                shared.switchOff();
-                this.#cancelIdle();
-                this.#warn(
-                    `compaction: off until the next launch; ${ready.reason}`,
-                );
-                return;
-            }
-            const outcome = await compact({
-                turns: [...this.#turns],
-                clusters: shared.clusters,
-                tail: shared.options.config.tail,
-                cap: callCap(shared.options.config),
-                persona: shared.options.persona,
-                recollect: shared.options.recollect,
-                call: shared.options.call,
-                now: shared.now,
-                signal,
-            });
-            if (signal.aborted) {
-                return;
-            }
-            await this.#land(outcome, signal);
-        } finally {
-            if (claim !== null) {
-                await this.#release(claim);
-            }
+        const ready = (await shared.options.ready?.()) ?? { ok: true };
+        if (!ready.ok) {
+            shared.switchOff();
+            this.#cancelIdle();
+            this.#warn(
+                `compaction: off until the next launch; ${ready.reason}`,
+            );
+            return;
         }
+        const outcome = await compact({
+            turns: [...this.#turns],
+            clusters: shared.clusters,
+            tail: shared.options.config.tail,
+            cap: callCap(shared.options.config),
+            persona: shared.options.persona,
+            recollect: shared.options.recollect,
+            call: shared.options.call,
+            now: shared.now,
+            signal,
+        });
+        if (signal.aborted) {
+            return;
+        }
+        await this.#land(outcome, signal);
     }
 
-    // After the outcome: a claim that can't be let go expires.
-    async #release(claim: Claim): Promise<void> {
+    // Once no run follows, the chain lets go of its claim; one that can't
+    // be let go expires.
+    async #endChain(): Promise<void> {
+        const chained = this.#claim;
+        if (this.#run !== null || chained === null) {
+            return;
+        }
+        this.#claim = null;
+        if (!chained.held) {
+            return;
+        }
         try {
-            await claim.release();
+            await chained.claim.release();
         } catch (error) {
             this.#warn(
                 `compaction: couldn't let go of the claim: ${describeError(error)}`,
@@ -785,12 +803,16 @@ class CompactingSession implements ChatSession {
     // Unless another run follows, a session exists afterwards and held
     // messages go to it: after a failure, to the session that is nearly
     // full, seeded from the clusters saved so far.
-    #afterRun(): void {
+    #afterRun(aborted: boolean): void {
         if (this.#closed) {
             return;
         }
         if (this.#again) {
             this.#again = false;
+            // Quitting: no run follows.
+            if (aborted) {
+                return;
+            }
             if (!this.#cutShort) {
                 this.#start();
                 return;

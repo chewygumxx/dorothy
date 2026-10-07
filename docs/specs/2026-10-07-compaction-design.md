@@ -325,7 +325,10 @@ Everything already on screen stays.
 The work holds the conversation's review claim in the index, so two TUIs
 never compact or review one conversation at once. When a review and a
 compaction are both due, compaction runs first and the review follows; one
-background call runs at a time per conversation. A review of the live
+background call runs at a time per conversation. A chain of calls holds
+one claim from its first call until it ends, however it ends, renewing it
+at each call so that it lasts a call's timeout and a margin from each; a
+review waiting for the claim runs after the chain. A review of the live
 conversation refused the claim asks again every 2 seconds until it is
 granted, a message is sent or the TUI quits; a review of another
 conversation is still left to whoever holds its claim.
@@ -462,7 +465,7 @@ API refusing a request as too long, shown as the usual error.
 | `src/memory/service.ts`           | rebuilding the block on demand; the live review waits for the claim                                                               | no   |
 | `src/memory/review.ts`            | the review prompt over abstracts and tail                                                                                         | yes  |
 | `src/transcript.ts`               | the `compaction` event                                                                                                            | no   |
-| `src/recall/store.ts`, `sync.ts`  | the `clusters` table                                                                                                              | no   |
+| `src/recall/store.ts`, `sync.ts`  | the `clusters` table; renewing a claim its owner holds                                                                            | no   |
 | `src/recall/query.ts`             | `recollect`                                                                                                                       | no   |
 | `src/recall/server.ts`            | registering `recollect`                                                                                                           | no   |
 | `src/conversation.ts`             | the seed in `conversationOptions`, the tool list                                                                                  | no   |

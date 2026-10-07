@@ -8,7 +8,15 @@
 //
 //
 
-import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    setSystemTime,
+    spyOn,
+} from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -231,7 +239,57 @@ describe("closeInOrder", () => {
 });
 
 describe("indexClaims", () => {
-    it("gives each run its own owner, so two runs of one TUI exclude each other", async () => {
+    it("renews a chain's claim at each take, so it lives a call's length from each run", async () => {
+        // The index's claims table, as the store keeps it.
+        const table = new Map<string, { owner: string; until: number }>();
+        const index = {
+            claim: async (
+                phrase: string,
+                owner: string,
+                now: number,
+                ms: number,
+            ) => {
+                const row = table.get(phrase);
+                if (row === undefined || row.until <= now) {
+                    table.set(phrase, { owner, until: now + ms });
+                }
+                return table.get(phrase)?.owner === owner;
+            },
+            renew: async (
+                phrase: string,
+                owner: string,
+                now: number,
+                ms: number,
+            ) => {
+                const row = table.get(phrase);
+                if (row?.owner !== owner || row.until <= now) {
+                    return false;
+                }
+                row.until = now + ms;
+                return true;
+            },
+            release: async (phrase: string, owner: string) => {
+                if (table.get(phrase)?.owner === owner) {
+                    table.delete(phrase);
+                }
+            },
+        };
+        const claims = indexClaims(index, "a-phrase");
+        const chain = claims();
+        try {
+            setSystemTime(new Date(0));
+            expect(await chain.take()).toBe(true);
+            // The chain's second run, near the end of the first's life.
+            setSystemTime(new Date(140_000));
+            expect(await chain.take()).toBe(true);
+            setSystemTime(new Date(200_000));
+            expect(await claims().take()).toBe(false);
+        } finally {
+            setSystemTime();
+        }
+    });
+
+    it("gives each chain its own owner, so two chains of one TUI exclude each other", async () => {
         // The index's claims table: one owner a conversation, released only
         // by that owner.
         const table = new Map<string, string>();
@@ -242,6 +300,8 @@ describe("indexClaims", () => {
                 }
                 return table.get(phrase) === owner;
             },
+            renew: async (phrase: string, owner: string) =>
+                table.get(phrase) === owner,
             release: async (phrase: string, owner: string) => {
                 if (table.get(phrase) === owner) {
                     table.delete(phrase);

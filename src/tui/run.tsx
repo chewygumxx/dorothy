@@ -139,23 +139,22 @@ export function clusterSaver({
 }
 
 // Compaction's claims on the conversation in the index, which reviews take
-// too. Each run has its own owner: with one for the TUI, a run after App
-// reconnects could take the claim the old run still holds, whose release
-// would then delete it while the new run works.
+// too. Each chain of runs has its own owner: with one for the TUI, a run
+// after App reconnects could take the claim the old chain still holds,
+// whose release would then delete it while the new run works. A chain
+// takes its claim at each run, renewing it once held, so that it lasts a
+// call and a margin from the start of each.
 export function indexClaims(
-    index: Pick<RecallIndex, "claim" | "release">,
+    index: Pick<RecallIndex, "claim" | "renew" | "release">,
     phrase: string,
 ): () => Claim {
     return () => {
         const owner = `${process.pid}-${randomBytes(4).toString("hex")}`;
+        const life = COMPACTION_TIMEOUT_MS + CLAIM_MARGIN_MS;
         return {
-            take: () =>
-                index.claim(
-                    phrase,
-                    owner,
-                    Date.now(),
-                    COMPACTION_TIMEOUT_MS + CLAIM_MARGIN_MS,
-                ),
+            take: async () =>
+                (await index.renew(phrase, owner, Date.now(), life)) ||
+                index.claim(phrase, owner, Date.now(), life),
             release: () => index.release(phrase, owner),
         };
     };
