@@ -265,6 +265,10 @@ export async function runTui(
     const compaction = compactable
         ? new Compaction({
               config: config.compaction,
+              // The review's idle wait too: at a shared idle compaction
+              // runs first only because its timer is armed first, on the
+              // same turn-end, and same-delay timers fire in order. Keep
+              // the two delays shared, or order them some other way.
               idleMs: config.memory.idleSeconds * 1000,
               clusters,
               persona: personaPrompt({ recall: false, mode: persona }),
