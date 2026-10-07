@@ -109,6 +109,8 @@ const isTurnRange = (value: unknown): value is [number, number] =>
     Array.isArray(value) &&
     value.length === 2 &&
     value.every((turn) => Number.isInteger(turn) && turn >= 1);
+const isStringList = (value: unknown): value is string[] =>
+    Array.isArray(value) && value.every((item) => typeof item === "string");
 
 // A recall event as written, or null for one that cannot be read.
 export function toRecall(event: unknown): RecallEvent | null {
@@ -142,6 +144,7 @@ export function toRecall(event: unknown): RecallEvent | null {
             ...(typeof event.before === "string"
                 ? { before: event.before }
                 : {}),
+            ...(isStringList(event.tags) ? { tags: event.tags } : {}),
         };
     }
     if (
@@ -173,6 +176,19 @@ export function toRecall(event: unknown): RecallEvent | null {
             cluster: event.cluster as number,
             ...(typeof event.words === "string" ? { words: event.words } : {}),
             turns: event.turns,
+        };
+    }
+    if (
+        event.tool === "tags" &&
+        typeof event.hits === "number" &&
+        Number.isInteger(event.hits) &&
+        (event.under === undefined || typeof event.under === "string")
+    ) {
+        return {
+            ...base,
+            tool: "tags",
+            hits: event.hits,
+            ...(typeof event.under === "string" ? { under: event.under } : {}),
         };
     }
     return null;

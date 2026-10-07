@@ -589,6 +589,7 @@ describe("Conversation with recall", () => {
         expect(fake.options?.allowedTools).toEqual([
             "mcp__memory__search",
             "mcp__memory__open",
+            "mcp__memory__tags",
             "mcp__memory__recollect",
         ]);
     });
@@ -611,6 +612,7 @@ describe("Conversation with recall", () => {
         expect(fake.options?.allowedTools).toEqual([
             "mcp__memory__search",
             "mcp__memory__open",
+            "mcp__memory__tags",
         ]);
         expect(fake.options?.systemPrompt).toBe(
             withHistory(withMemory(personaPrompt({ recall: true }), ""), []),

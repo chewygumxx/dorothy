@@ -9,9 +9,9 @@
 //
 
 // The server's name; the CLI calls its tools mcp__memory__search,
-// mcp__memory__open and mcp__memory__recollect.
+// mcp__memory__open, mcp__memory__recollect and mcp__memory__tags.
 export const SERVER_NAME = "memory";
-export const TOOLS = ["search", "open", "recollect"] as const;
+export const TOOLS = ["search", "open", "recollect", "tags"] as const;
 export type Tool = (typeof TOOLS)[number];
 // The external tools, over other conversations, allowed in every session
 // with recall: every tool but recollect.
@@ -104,6 +104,7 @@ export type RecollectResult = {
 export type SearchLookup = {
     tool: "search";
     query: string;
+    tags?: string[];
     after?: string;
     before?: string;
     hits: number;
@@ -122,7 +123,12 @@ export type RecollectLookup = {
     words?: string;
     turns: [number, number] | null;
 };
-export type Lookup = SearchLookup | OpenLookup | RecollectLookup;
+export type TagsLookup = {
+    tool: "tags";
+    under?: string;
+    hits: number;
+};
+export type Lookup = SearchLookup | OpenLookup | RecollectLookup | TagsLookup;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
@@ -170,6 +176,14 @@ export function describeLookup(
         if (typeof fields.before === "string") {
             lookup.before = fields.before;
         }
+        if (Array.isArray(fields.tags)) {
+            const tags = fields.tags.filter(
+                (tag): tag is string => typeof tag === "string",
+            );
+            if (tags.length > 0) {
+                lookup.tags = tags;
+            }
+        }
         const found = parse<SearchResult>(result);
         if (Array.isArray(found?.results) && typeof found.more === "number") {
             lookup.hits = found.results.length + found.more;
@@ -191,6 +205,17 @@ export function describeLookup(
             lookup.words = fields.words;
         }
         lookup.turns = windowRange(parse<RecollectResult>(result)?.window);
+        return lookup;
+    }
+    if (tool === "tags") {
+        const lookup: TagsLookup = { tool, hits: 0 };
+        if (typeof fields.under === "string") {
+            lookup.under = fields.under;
+        }
+        const listed = parse<TagsResult>(result);
+        if (Array.isArray(listed?.results) && typeof listed.more === "number") {
+            lookup.hits = listed.results.length + listed.more;
+        }
         return lookup;
     }
     const conversation = textOf(fields.conversation);

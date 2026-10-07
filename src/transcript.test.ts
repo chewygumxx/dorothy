@@ -395,6 +395,37 @@ describe("recall events", () => {
         expect(toRecall({ ...JSON.parse(search), offset: -1 })).toBeNull();
     });
 
+    it("reads back tag lookups and searches by tag", () => {
+        const base = {
+            v: 1,
+            kind: "recall",
+            at: "2026-10-07T12:00:00.000Z",
+            id: "toolu_1",
+            ok: true,
+            offset: 0,
+        };
+        for (const event of [
+            { ...base, tool: "tags", hits: 3 },
+            { ...base, tool: "tags", under: "memory", hits: 0 },
+            { ...base, tool: "search", query: "", tags: ["memory"], hits: 1 },
+        ]) {
+            expect<unknown>(toRecall(event)).toEqual(event);
+        }
+        expect(toRecall({ ...base, tool: "tags", hits: 1.5 })).toBeNull();
+        expect(
+            toRecall({ ...base, tool: "tags", under: 7, hits: 1 }),
+        ).toBeNull();
+        expect<unknown>(
+            toRecall({
+                ...base,
+                tool: "search",
+                query: "",
+                tags: [1],
+                hits: 1,
+            }),
+        ).toEqual({ ...base, tool: "search", query: "", hits: 1 });
+    });
+
     it("writes a lookup like any other event", async () => {
         const path = join(dir, "t.jsonl");
         const writer = await TranscriptWriter.open(path, clock);

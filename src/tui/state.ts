@@ -81,9 +81,14 @@ export function lookupLine(
     lookup: Lookup,
 ): { text: string; detail?: string } {
     if (lookup.tool === "search") {
-        const query = `"${oneRow(lookup.query)}"`;
+        const query = oneRow(lookup.query);
+        const tags = (lookup.tags ?? []).map(oneRow);
+        const subject = [
+            ...(query === "" ? [] : [`"${query}"`]),
+            ...(tags.length === 0 ? [] : [`tagged ${tags.join(", ")}`]),
+        ].join(" ");
         if (!ok) {
-            return { text: `⌕ couldn't search ${query}` };
+            return { text: `⌕ couldn't search ${subject}` };
         }
         const found =
             lookup.hits === 0
@@ -91,7 +96,23 @@ export function lookupLine(
                 : lookup.hits === 1
                   ? "1 conversation"
                   : `${lookup.hits} conversations`;
-        return { text: `⌕ searched ${query} · ${found}` };
+        return { text: `⌕ searched ${subject} · ${found}` };
+    }
+    if (lookup.tool === "tags") {
+        if (!ok) {
+            return { text: "⌕ couldn't list tags" };
+        }
+        const what =
+            lookup.under === undefined
+                ? "tags"
+                : `tags under ${oneRow(lookup.under)}`;
+        const count =
+            lookup.hits === 0
+                ? "no tags"
+                : lookup.hits === 1
+                  ? "1 tag"
+                  : `${lookup.hits} tags`;
+        return { text: `⌕ listed ${what} · ${count}` };
     }
     if (lookup.tool === "recollect") {
         const cluster = `cluster ${lookup.cluster}`;
