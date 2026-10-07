@@ -25,14 +25,17 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { EMPTY_SIDECAR, type Lock } from "../memory/sidecar.js";
+import { binaryRepo } from "./binary.js";
 import {
     HOOK_MARK,
     hookScript,
     MemoryHistory,
+    maintainDaily,
     openHistory,
 } from "./history.js";
+import { isoRepo } from "./iso.js";
 import { openRepo } from "./open.js";
-import { put, removeRoots, tempRoot } from "./testing.js";
+import { put, removeRoots, TEST_ENV, tempRoot } from "./testing.js";
 
 afterAll(removeRoots);
 
@@ -367,5 +370,22 @@ describe("a lock that fails", () => {
             "history: couldn't commit (busy); it will be committed with the next change",
             "history: couldn't restore tags.json (busy)",
         ]);
+    });
+});
+
+describe("maintainDaily", () => {
+    it("repacks under the binary at most once a day", async () => {
+        const repo = binaryRepo(root, { env: TEST_ENV });
+        await repo.init();
+        put(root, "tags.json", vocabulary(1));
+        await repo.commit(["tags.json"], "one");
+        const now = Date.now();
+        expect(await maintainDaily(repo, now)).toBe(true);
+        expect(await maintainDaily(repo, now + 1000)).toBe(false);
+        expect(await maintainDaily(repo, now + 2 * 86_400_000)).toBe(true);
+    });
+
+    it("leaves isomorphic-git alone, which cannot repack", async () => {
+        expect(await maintainDaily(isoRepo(root))).toBe(false);
     });
 });

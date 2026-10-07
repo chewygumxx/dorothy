@@ -8,8 +8,15 @@
 //
 //
 
-import { existsSync } from "node:fs";
-import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { existsSync, statSync } from "node:fs";
+import {
+    chmod,
+    mkdir,
+    readFile,
+    rename,
+    utimes,
+    writeFile,
+} from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import type { HistoryHandle, Lock, Recorder } from "../memory/sidecar.js";
 import { transcriptDir } from "../transcript.js";
@@ -440,5 +447,34 @@ export async function openHistory({
     } catch (error) {
         file?.close();
         return { ok: false, reason: `history is off: ${describeError(error)}` };
+    }
+}
+
+const DAY_MS = 86_400_000;
+
+// A repack at most once a day, under the binary. Nothing waits on it, so
+// a failure is quiet.
+export async function maintainDaily(
+    repo: MemoryRepo,
+    now: number = Date.now(),
+): Promise<boolean> {
+    if (repo.engine !== "git") {
+        return false;
+    }
+    const marker = join(repo.root, ".git", "dorothy-maintained");
+    try {
+        if (now - statSync(marker).mtimeMs < DAY_MS) {
+            return false;
+        }
+    } catch {
+        // Never maintained.
+    }
+    try {
+        await repo.maintain();
+        await writeFile(marker, "");
+        await utimes(marker, now / 1000, now / 1000);
+        return true;
+    } catch {
+        return false;
     }
 }
