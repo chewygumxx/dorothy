@@ -92,6 +92,30 @@ describe("readTagOutput", () => {
         });
     });
 
+    it("reads escaped quotes as quotes, and &amp;quot; as &quot;", () => {
+        expect(
+            readTagOutput({
+                tags: ["say &quot;hi&quot;", "&amp;quot;"],
+                coined: [
+                    {
+                        prefLabel: "say &quot;bye&quot;",
+                        scopeNote: "About &quot;bye&quot;.",
+                    },
+                ],
+            }),
+        ).toEqual({
+            tags: ['say "hi"', "&quot;"],
+            coined: [
+                {
+                    prefLabel: 'say "bye"',
+                    altLabel: [],
+                    broader: [],
+                    scopeNote: 'About "bye".',
+                },
+            ],
+        });
+    });
+
     it("reads anything else as no tags", () => {
         expect(readTagOutput(null)).toEqual({ tags: [], coined: [] });
         expect(readTagOutput({ tags: "memory", coined: {} })).toEqual({
@@ -111,6 +135,36 @@ describe("applyTagging", () => {
         expect(tagged.tags).toEqual([MEMORY, TUI]);
         expect(tagged.coined).toBe(0);
         expect(tagged.vocabulary).toEqual(BASE);
+    });
+
+    it("resolves a label with a quote echoed back escaped", () => {
+        const quoted: Vocabulary = {
+            ...BASE,
+            concepts: { ...BASE.concepts, k00000010: concept('say "hi"') },
+        };
+        const tagged = applyTagging(
+            quoted,
+            readTagOutput({ tags: ["say &quot;hi&quot;"] }),
+            STAMP,
+        );
+        expect(tagged.tags).toEqual(["k00000010"]);
+    });
+
+    it("stores a coined label's quotes as quotes", () => {
+        const tagged = applyTagging(
+            BASE,
+            readTagOutput({
+                tags: ["say &quot;bye&quot;"],
+                coined: [coin("say &quot;bye&quot;")],
+            }),
+            STAMP,
+            draws(),
+        );
+        expect(tagged.coined).toBe(1);
+        expect(
+            (tagged.vocabulary.concepts.k000000a0 as Concept).prefLabel,
+        ).toBe('say "bye"');
+        expect(tagged.tags).toEqual(["k000000a0"]);
     });
 
     it("coins what nothing fits, under its broader concepts", () => {

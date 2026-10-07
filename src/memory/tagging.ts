@@ -36,8 +36,11 @@ export type TagOutput = { tags: string[]; coined: Coined[] };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
-// What the model echoes of escaped text is read as text.
-const clean = (text: string) => normalise(unescapeXml(text));
+// What the model echoes of escaped text is read as text. Labels sit in XML
+// attributes, where " is &quot;, which unescapeXml leaves; it goes first so
+// that &amp;quot; still decodes once, to &quot;.
+const clean = (text: string) =>
+    normalise(unescapeXml(text.replaceAll("&quot;", '"')));
 const strings = (value: unknown): string[] =>
     Array.isArray(value)
         ? value
