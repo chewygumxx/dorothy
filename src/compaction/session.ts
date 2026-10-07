@@ -570,14 +570,18 @@ class CompactingSession implements ChatSession {
         if (old !== null) {
             this.#shared.retire(old, this);
         }
-        this.#emit({
-            type: "compacted",
-            from: outcome.range.from,
-            through: outcome.range.through,
-            clusters: outcome.clusters.length,
-        });
-        if (unrecorded !== null) {
-            this.#warn(unrecorded);
+        // Warned even when a listener throws on the event.
+        try {
+            this.#emit({
+                type: "compacted",
+                from: outcome.range.from,
+                through: outcome.range.through,
+                clusters: outcome.clusters.length,
+            });
+        } finally {
+            if (unrecorded !== null) {
+                this.#warn(unrecorded);
+            }
         }
     }
 

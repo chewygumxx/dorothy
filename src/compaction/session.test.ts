@@ -852,6 +852,30 @@ describe("Compaction", () => {
         await until(() => h.calls.length === 2);
     });
 
+    it("still warns that recording failed when a listener throws on the compacted event", async () => {
+        const h = harness({ record: new Error("transcript gone") });
+        const session = h.open();
+        session.subscribe((event) => {
+            if (event.type === "compacted") {
+                throw new Error("listener broke");
+            }
+        });
+        session.send("abcd");
+        h.sessions[0]?.reply(150);
+        h.timers.advance(1000);
+        await until(() => h.calls.length === 1);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() =>
+            warnings(h.events).includes(
+                "compaction: after handing over: listener broke",
+            ),
+        );
+        expect(warnings(h.events)).toEqual([
+            "compaction: couldn't record the compaction in the transcript: transcript gone",
+            "compaction: after handing over: listener broke",
+        ]);
+    });
+
     it("re-arms an idle wait set while a compaction failed with the doubled delay", async () => {
         const h = harness();
         const session = h.open();
