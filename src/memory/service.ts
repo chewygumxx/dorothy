@@ -32,14 +32,18 @@ import {
 } from "./review.js";
 import { ReviewScheduler } from "./scheduler.js";
 import {
+    type HistoryHandle,
+    type Lock,
     markFailed,
     markReviewed,
     mergeReview,
     ownsAll,
     provisionalTitle,
+    type Recording,
     readSidecar,
     reviewDue,
     type Sidecar,
+    sidecarPath,
     untagged,
     updateSidecar,
     withProvisional,
@@ -78,6 +82,9 @@ export type MemoryServiceOptions = {
     // tags.json; null leaves tags alone, as when memory runs without a
     // data directory to keep them in.
     vocabulary?: string | null;
+    // History: each write is committed, and a broken file is restored
+    // before a review reads it. Null or absent without.
+    versions?: HistoryHandle | null;
     queryFn?: ReviewQueryFn;
     now?: () => Date;
     timers?: Timers;
@@ -121,6 +128,7 @@ export class MemoryService implements MemoryHooks {
     readonly #flushed: (() => Promise<void>) | null;
     readonly #index: RecallIndex | null;
     readonly #vocabulary: string | null;
+    readonly #versions: HistoryHandle | null;
     // A broken vocabulary is told once a run.
     #vocabularyWarned = false;
     // Who this run's claims belong to.
@@ -153,6 +161,7 @@ export class MemoryService implements MemoryHooks {
         this.#flushed = options.flushed;
         this.#index = options.index ?? null;
         this.#vocabulary = options.vocabulary ?? null;
+        this.#versions = options.versions ?? null;
         this.#queryFn = options.queryFn ?? query;
         this.#now = options.now ?? (() => new Date());
         this.#timers = options.timers ?? REAL_TIMERS;
@@ -222,7 +231,8 @@ export class MemoryService implements MemoryHooks {
             this.#dir,
             this.#phrase,
             (current) => withProvisional(current, title, at),
-            this.#index?.lock,
+            this.#lock,
+            this.#recording(`title: ${this.#phrase} (prompt)`),
         ).then((result) => {
             if (result.kind === "failed") {
                 this.#warn(`memory: couldn't save a title: ${result.reason}`);
@@ -296,6 +306,20 @@ export class MemoryService implements MemoryHooks {
         this.#emit({ type: "warning", message });
     }
 
+    // The lock writes take: the index's, or history's own without it.
+    get #lock(): Lock | undefined {
+        return this.#index?.lock ?? this.#versions?.lock;
+    }
+
+    #recording(
+        message: string,
+        also: readonly string[] = [],
+    ): Recording | undefined {
+        return this.#versions === null
+            ? undefined
+            : { recorder: this.#versions.recorder, message, also };
+    }
+
     // The vocabulary as the file holds it, empty when there is none; null
     // when tags are off or the file is broken.
     async #readVocabulary(): Promise<Vocabulary | null> {
@@ -303,7 +327,12 @@ export class MemoryService implements MemoryHooks {
         if (path === null) {
             return null;
         }
-        const read = await readVocabulary(path);
+        let read = await readVocabulary(path);
+        // Restored from history, it is read again. Never inside the
+        // lock: healing takes it.
+        if (read.kind === "unparseable" && (await this.#versions?.heal(path))) {
+            read = await readVocabulary(path);
+        }
         if (read.kind === "unparseable") {
             if (!this.#vocabularyWarned) {
                 this.#vocabularyWarned = true;
@@ -468,7 +497,13 @@ export class MemoryService implements MemoryHooks {
         if (phrase === this.#phrase) {
             await this.#flushed?.();
         }
-        const read = await readSidecar(this.#dir, phrase);
+        let read = await readSidecar(this.#dir, phrase);
+        if (
+            read.kind === "unparseable" &&
+            (await this.#versions?.heal(sidecarPath(this.#dir, phrase)))
+        ) {
+            read = await readSidecar(this.#dir, phrase);
+        }
         // Unparseable: warned of at launch and never written. Hidden:
         // forgotten.
         if (
@@ -505,7 +540,7 @@ export class MemoryService implements MemoryHooks {
         ) {
             return;
         }
-        const lock = this.#index?.lock;
+        const lock = this.#lock;
         // Every note and tag is the user's and nothing awaits appraisal: a
         // review could change nothing, so none is paid for.
         if (
@@ -521,6 +556,7 @@ export class MemoryService implements MemoryHooks {
                         ? null
                         : markReviewed(latest, turns.length),
                 lock,
+                this.#recording(`review: ${phrase} (dorothy, nothing new)`),
             );
             if (skipped.kind === "written") {
                 this.#remember(phrase, skipped.sidecar, turns.length);
@@ -576,6 +612,7 @@ export class MemoryService implements MemoryHooks {
                 phrase,
                 (latest) => (latest?.hidden ? null : markFailed(latest, at)),
                 lock,
+                this.#recording(`review: ${phrase} (dorothy, failed)`),
             );
             if (failed.kind === "written") {
                 this.#remember(phrase, failed.sidecar, null);
@@ -609,6 +646,10 @@ export class MemoryService implements MemoryHooks {
                 });
             },
             lock,
+            this.#recording(
+                `review: ${phrase} (dorothy, ${outcome.model})`,
+                this.#vocabulary === null ? [] : [this.#vocabulary],
+            ),
         );
         if (result.kind === "failed") {
             this.#warn(

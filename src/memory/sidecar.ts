@@ -427,6 +427,7 @@ export function updateSidecar(
         current: Sidecar | null,
     ) => Sidecar | null | Promise<Sidecar | null>,
     lock?: Lock,
+    record?: Recording,
 ): Promise<UpdateResult> {
     const path = sidecarPath(dir, phrase);
     const write = async (): Promise<UpdateResult> => {
@@ -441,6 +442,7 @@ export function updateSidecar(
         }
         const sidecar = { ...next, rev: (current?.rev ?? 0) + 1 };
         await writeAtomic(path, `${JSON.stringify(sidecar, null, 2)}\n`);
+        await record?.recorder([path, ...(record.also ?? [])], record.message);
         return { kind: "written", sidecar };
     };
     const run = lock === undefined ? write : () => lock(write);

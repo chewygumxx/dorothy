@@ -17,6 +17,7 @@ import {
     characters,
     type Lock,
     normalise,
+    type Recording,
     writeAtomic,
 } from "./sidecar.js";
 
@@ -411,6 +412,7 @@ export function updateVocabulary(
     path: string,
     change: (current: Vocabulary) => Vocabulary | null,
     lock?: Lock,
+    record?: Recording,
 ): Promise<VocabularyUpdate> {
     const write = async (): Promise<VocabularyUpdate> => {
         const read = await readVocabulary(path);
@@ -424,6 +426,7 @@ export function updateVocabulary(
         }
         const vocabulary = { ...next, rev: current.rev + 1 };
         await writeVocabulary(path, vocabulary);
+        await record?.recorder([path, ...(record.also ?? [])], record.message);
         return { kind: "written", vocabulary };
     };
     const run = lock === undefined ? write : () => lock(write);
