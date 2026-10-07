@@ -246,12 +246,15 @@ function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
                 }),
             };
         // Compaction's warnings tell of failures and a full context, which
-        // a compaction that succeeds has ended.
+        // a compaction that succeeds has ended; but not of compaction being
+        // off until the next launch, which one run's success doesn't undo.
         case "compacted":
             return {
                 ...state,
                 warnings: state.warnings.filter(
-                    (warning) => !warning.startsWith("compaction"),
+                    (warning) =>
+                        !warning.startsWith("compaction") ||
+                        warning.includes("until the next launch"),
                 ),
                 lines: append(state.lines, {
                     role: "lookup",

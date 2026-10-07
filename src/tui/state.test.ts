@@ -608,6 +608,27 @@ describe("compaction events", () => {
         ).toEqual(["transcript not saved: gone"]);
     });
 
+    it("keep the warnings that compaction is off until the next launch", () => {
+        // Two runs overlapping after a reconnect: one gives up, the other
+        // still lands.
+        let state = initialState([]);
+        for (const message of [
+            "compaction failed: bad; no more tries until the next launch",
+            "compaction: off until the next launch; the notes can't be read",
+            "compaction failed: offline",
+        ]) {
+            state = reduce(state, { type: "warning", message });
+        }
+        state = reduce(state, {
+            type: "event",
+            event: { type: "compacted", from: 1, through: 4, clusters: 1 },
+        });
+        expect(state.warnings).toEqual([
+            "compaction failed: bad; no more tries until the next launch",
+            "compaction: off until the next launch; the notes can't be read",
+        ]);
+    });
+
     it("counts compaction's cost as memory's", () => {
         expect(
             after(
