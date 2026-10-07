@@ -17,8 +17,8 @@ import { type CompactOutcome, compact } from "./compact.js";
 import { callCap, covered, pressure, seedTurns } from "./plan.js";
 import type { StructuredCall } from "./types.js";
 
-// How often a compaction holding a message asks again for a claim that
-// another call holds.
+// How often a compaction past hard, a message held or not, or before the
+// first session, asks again for a claim that another call holds.
 export const CLAIM_RETRY_MS = 2000;
 // Failures in a run after which compaction stops until the next launch.
 export const MAX_FAILURES = 3;

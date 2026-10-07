@@ -237,9 +237,9 @@ output tokens.
   to compact, or notes no longer readable. Unless the estimate fell to
   `hard`, the held message then goes to a session seeded from the clusters
   saved so far, with the warning that the context is nearly full. A claim
-  held elsewhere does not end the chain: a run holding a message, or before
-  the first session, asks again every 2 seconds until it is granted or the
-  TUI quits.
+  held elsewhere does not end the chain: a run past `hard`, whether or not
+  a message is held yet, or before the first session, asks again every 2
+  seconds until it is granted or the TUI quits.
 
 ### The outgoing turns
 
@@ -487,7 +487,7 @@ are where the SDK meets compaction.
 | The session closes while a message is held     | not sent; on reconnect, the new session's history holds it once, unanswered                                                          |
 | The sidecar is unparseable                     | compaction is off until the next launch, with a warning; at launch, off for that chat; the file is not touched                       |
 | Recording the compaction fails                 | the handover goes ahead, with a warning                                                                                              |
-| Another TUI holds the claim                    | at an idle run: skipped, tried again at the next idle; while a message is held: asked again every 2 seconds                          |
+| Another TUI holds the claim                    | past `hard`, a message held or not, or before the first session: asked again every 2 seconds; else skipped until the next idle       |
 | Another TUI compacted those turns first        | its clusters are taken up if they stop before the latest message, else a failure; nothing is written                                 |
 | The latest exchange alone is past `hard`       | warning; the chat continues as it is                                                                                                 |
 | `[memory] recall = false`                      | no `recollect`; the abstracts are still seeded                                                                                       |
