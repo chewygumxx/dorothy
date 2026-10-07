@@ -38,6 +38,9 @@ const HEADER = /^(Title|Pinned|Hidden|Tags|Description|Abstract):(.*)$/;
 export type TagsContext =
     | { kind: "ok"; vocabulary: Vocabulary }
     | { kind: "broken"; reason: string };
+// The error for a Tags: line given while the vocabulary is broken.
+export const TAGS_BROKEN =
+    "Tags can't be set while the vocabulary can't be read";
 const UNKNOWN = /^([A-Z][A-Za-z-]*):/;
 // These take the lines after them, up to the next field.
 const PARAGRAPHS = new Set(["Description", "Abstract"]);
@@ -250,10 +253,7 @@ export function parseEditView(
             return { kind: "error", reason: "there is no field Tags" };
         }
         if (tags.kind === "broken") {
-            return {
-                kind: "error",
-                reason: "Tags can't be set while the vocabulary can't be read",
-            };
+            return { kind: "error", reason: TAGS_BROKEN };
         }
         const ids: string[] = [];
         for (const label of normalise(given.join(" "))

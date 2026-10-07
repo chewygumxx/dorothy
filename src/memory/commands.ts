@@ -21,6 +21,7 @@ import { indexCatalogue } from "./catalogue.js";
 import {
     parseEditView,
     renderEditView,
+    TAGS_BROKEN,
     type TagsContext,
 } from "./edit-view.js";
 import { formatList, listRows } from "./list.js";
@@ -42,6 +43,7 @@ import {
     readVocabulary,
     resolveTags,
     updateVocabulary,
+    type VocabularyRead,
     vocabularyPath,
 } from "./vocabulary.js";
 
@@ -151,6 +153,15 @@ export async function runTags({
 // The error line a reopened template starts with, never more than one.
 const ERROR_LINES = /^(# error: .*\n)+/;
 
+const tagsContext = (read: VocabularyRead): TagsContext =>
+    read.kind === "unparseable"
+        ? { kind: "broken", reason: read.reason }
+        : {
+              kind: "ok",
+              vocabulary:
+                  read.kind === "ok" ? read.vocabulary : EMPTY_VOCABULARY,
+          };
+
 // Opens a conversation's notes in $EDITOR until they parse, then writes
 // only what the user changed.
 export async function runMemoryEdit(
@@ -181,17 +192,8 @@ export async function runMemoryEdit(
         return 1;
     }
     const shown = read.kind === "ok" ? read.sidecar : null;
-    const vocabulary = await readVocabulary(vocabularyPath(env));
-    const tags: TagsContext =
-        vocabulary.kind === "unparseable"
-            ? { kind: "broken", reason: vocabulary.reason }
-            : {
-                  kind: "ok",
-                  vocabulary:
-                      vocabulary.kind === "ok"
-                          ? vocabulary.vocabulary
-                          : EMPTY_VOCABULARY,
-              };
+    const path = vocabularyPath(env);
+    const tags = tagsContext(await readVocabulary(path));
     let text = renderEditView(phrase, shown, tags);
     let index: RecallIndex | null = null;
     try {
@@ -206,29 +208,58 @@ export async function runMemoryEdit(
                 err.write(`dorothy: ${result.message}\n`);
                 return 1;
             }
-            const parsed = parseEditView(result.text, shown, tags);
+            const reopen = (reason: string) =>
+                `# error: ${reason}\n${result.text.replace(ERROR_LINES, "")}`;
+            // Labels resolve against the vocabulary as it is now, so one
+            // coined while the editor was open is known. Broken meanwhile,
+            // it leaves the line to be checked against what was shown.
+            const fresh = tagsContext(await readVocabulary(path));
+            const parsed = parseEditView(
+                result.text,
+                shown,
+                fresh.kind === "ok" ? fresh : tags,
+            );
             if (parsed.kind === "unchanged") {
                 return 0;
             }
             if (parsed.kind === "error") {
-                text = `# error: ${parsed.reason}\n${result.text.replace(ERROR_LINES, "")}`;
+                text = reopen(parsed.reason);
                 continue;
             }
             const at = now().toISOString();
+            const refused = { tags: false };
+            // Under the sidecar's lock the vocabulary is read once more:
+            // the tags as they are now, a review's among them, are pruned
+            // only against one that reads, and kept as they are otherwise.
             const update = await updateSidecar(
                 dir,
                 phrase,
-                (current) => {
+                async (current) => {
+                    const latest = await readVocabulary(path);
+                    if (latest.kind === "unparseable") {
+                        if (parsed.changes.tags !== undefined) {
+                            refused.tags = true;
+                            return null;
+                        }
+                        return mergeEdit(current, parsed.changes, at);
+                    }
                     const next = mergeEdit(current, parsed.changes, at);
-                    return tags.kind === "ok"
-                        ? {
-                              ...next,
-                              tags: resolveTags(tags.vocabulary, next.tags),
-                          }
-                        : next;
+                    return {
+                        ...next,
+                        tags: resolveTags(
+                            latest.kind === "ok"
+                                ? latest.vocabulary
+                                : EMPTY_VOCABULARY,
+                            next.tags,
+                        ),
+                    };
                 },
                 index?.lock,
             );
+            if (refused.tags) {
+                text = reopen(TAGS_BROKEN);
+                continue;
+            }
             if (update.kind === "unparseable" || update.kind === "failed") {
                 err.write(
                     `dorothy: ${sidecarPath(dir, phrase)}: ${update.reason}\n`,

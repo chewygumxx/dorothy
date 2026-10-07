@@ -222,6 +222,133 @@ describe("runMemoryEdit", () => {
         expect(read.kind === "ok" && read.sidecar.tags).toEqual(["k00000001"]);
         expect(read.kind === "ok" && read.sidecar.fields.tags?.by).toBe("user");
     });
+
+    describe("with a review landing while the editor is open", () => {
+        const tagsFile = () => join(dir, "dorothy", "tags.json");
+        const concept = (prefLabel: string) => ({
+            prefLabel,
+            scopeNote: `About ${prefLabel}.`,
+            by: "dorothy",
+            at: NOW.toISOString(),
+        });
+        const theirs = {
+            by: "dorothy",
+            at: NOW.toISOString(),
+            model: "claude-test",
+            throughTurn: 1,
+        };
+        // What a review does meanwhile: coins memory and tags the chat.
+        const review = async () => {
+            await writeFile(
+                tagsFile(),
+                JSON.stringify({
+                    v: 1,
+                    rev: 2,
+                    concepts: {
+                        k00000001: concept("memory"),
+                        k00000002: concept("tui"),
+                    },
+                }),
+            );
+            await writeFile(
+                sidecarPath(transcripts, a),
+                JSON.stringify({
+                    v: 1,
+                    rev: 1,
+                    tags: ["k00000001"],
+                    reviewedThrough: 1,
+                    fields: { tags: theirs },
+                }),
+            );
+        };
+
+        it.each([
+            ["missing", null],
+            [
+                "older",
+                { v: 1, rev: 1, concepts: { k00000002: concept("tui") } },
+            ],
+        ])("keeps her tags when tags.json was %s at open", async (_, at) => {
+            await writeFile(join(transcripts, `${a}.jsonl`), chat);
+            if (at !== null) {
+                await writeFile(tagsFile(), JSON.stringify(at));
+            }
+            const { edit } = editor((text) => ({
+                ok: true,
+                text: text.replace("Pinned: no", "Pinned: yes"),
+            }));
+            const err = capture();
+            const code = await run(async (text) => {
+                await review();
+                return edit(text);
+            }, err);
+            expect(err.text).toBe("");
+            expect(code).toBe(0);
+            expect(await sidecar()).toMatchObject({
+                pinned: true,
+                tags: ["k00000001"],
+                fields: { tags: theirs },
+            });
+        });
+
+        it("takes a label coined after it opened", async () => {
+            await writeFile(join(transcripts, `${a}.jsonl`), chat);
+            const { edit } = editor((text) => ({
+                ok: true,
+                text: text.replace(/^Tags:.*$/m, "Tags: tui; memory"),
+            }));
+            const err = capture();
+            const code = await run(async (text) => {
+                await review();
+                return edit(text);
+            }, err);
+            expect(err.text).toBe("");
+            expect(code).toBe(0);
+            expect(await sidecar()).toMatchObject({
+                tags: ["k00000002", "k00000001"],
+                fields: { tags: { by: "user" } },
+            });
+        });
+
+        it("keeps the tags as they are if tags.json broke meanwhile", async () => {
+            await writeFile(join(transcripts, `${a}.jsonl`), chat);
+            await review();
+            await writeFile(
+                sidecarPath(transcripts, a),
+                JSON.stringify({
+                    v: 1,
+                    rev: 1,
+                    tags: ["k00000001", "k00000009"],
+                    fields: { tags: theirs },
+                }),
+            );
+            const { edit, seen } = editor(
+                (text) => ({
+                    ok: true,
+                    text: text
+                        .replace("Pinned: no", "Pinned: yes")
+                        .replace(/^Tags:.*$/m, "Tags: tui"),
+                }),
+                (text) => ({
+                    ok: true,
+                    text: text.replace(/^Tags:.*\n/m, ""),
+                }),
+            );
+            const code = await run(async (text) => {
+                await writeFile(tagsFile(), "{ broken");
+                return edit(text);
+            });
+            expect(code).toBe(0);
+            expect(seen[1]).toStartWith(
+                "# error: Tags can't be set while the vocabulary can't be read\n",
+            );
+            expect(await sidecar()).toMatchObject({
+                pinned: true,
+                tags: ["k00000001", "k00000009"],
+                fields: { tags: theirs },
+            });
+        });
+    });
 });
 
 describe("runTags", () => {
