@@ -131,8 +131,8 @@ const CLOSE_GRACE_MS = 2000;
 
 // DISABLE_COMPACT keeps the CLI from compacting. If it ever does, the
 // conversation it summarised is no longer the one Dorothy's compaction
-// planned, so the event is reported as an error; the turn otherwise
-// continues as usual.
+// planned, so the event is reported as a warning: an error would end the
+// turn on screen and lose its reply, while the turn continues as usual.
 export const COMPACTED_BY_CLI =
     "the CLI compacted this session itself, despite DISABLE_COMPACT";
 
@@ -363,7 +363,10 @@ export class Conversation implements ChatSession {
             message.type === "system" &&
             message.subtype === "compact_boundary"
         ) {
-            this.#fail(COMPACTED_BY_CLI);
+            // Its context is replaced, so what the last request read no
+            // longer measures it.
+            this.#lastInput = null;
+            this.#emit({ type: "warning", message: COMPACTED_BY_CLI });
             return;
         }
         if (message.type === "system" && message.subtype === "init") {

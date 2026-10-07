@@ -456,12 +456,28 @@ describe("Conversation", () => {
         expect(of(events, "turn-end")[0]?.contextTokens).toBe(2309);
     });
 
-    it("reports the CLI compacting on its own as an error", async () => {
-        const fake = fakeQuery([[compactBoundary()]]);
+    it("warns of the CLI compacting on its own, and the turn goes on", async () => {
+        const fake = fakeQuery([
+            [
+                usage(5, 1000, 100),
+                delta("Hel"),
+                compactBoundary(),
+                delta("lo"),
+                result(0.001),
+            ],
+        ]);
         const { conversation, events } = started(fake);
         conversation.send("hi");
-        await until(() => of(events, "error").length === 1);
-        expect(of(events, "error")[0]?.message).toBe(COMPACTED_BY_CLI);
+        await until(() => of(events, "turn-end").length === 1);
+        expect(of(events, "warning").map((e) => e.message)).toEqual([
+            COMPACTED_BY_CLI,
+        ]);
+        expect(of(events, "error")).toEqual([]);
+        const end = of(events, "turn-end")[0];
+        expect(end?.reply).toBe("Hello");
+        // The measurement before the boundary is stale: the result's usage,
+        // 10 + 3000 + 400, and 5 characters of reply.
+        expect(end?.contextTokens).toBe(3412);
     });
 
     it("hands the partial reply to the error when the session dies", async () => {
