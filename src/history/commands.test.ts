@@ -431,6 +431,56 @@ describe("runMirror", () => {
         expect(await repo().remote("mirror")).toBeNull();
     });
 
+    it("never makes a key, or takes another, over bundles already sealed", async () => {
+        write("tags.json", vocabulary(1));
+        const bare = await bareRepo();
+        const keyed = {
+            ...options(),
+            env: { ...env, DOROTHY_MIRROR_KEY: newKey() },
+        };
+        expect(await runMirror(bare, keyed)).toBe(0);
+        write("tags.json", vocabulary(2));
+        const sealed = await repo().sealedNames();
+        const checkout = tempRoot();
+        put(checkout, ".env", "");
+        let saved = 0;
+        const setSecret = async () => {
+            saved += 1;
+        };
+        const other = await bareRepo();
+
+        err = capture();
+        expect(
+            await runMirror(other, {
+                ...options(),
+                err,
+                cwd: checkout,
+                setSecret,
+            }),
+        ).toBe(1);
+        expect(err.text).toBe(
+            "dorothy: DOROTHY_MIRROR_KEY is not set, and the bundles already sealed need the key they were sealed with; set that one with dotenvx set. No mirror is set\n",
+        );
+
+        err = capture();
+        expect(
+            await runMirror(other, {
+                ...options(),
+                err,
+                env: { ...env, DOROTHY_MIRROR_KEY: newKey() },
+                cwd: checkout,
+                setSecret,
+            }),
+        ).toBe(1);
+        expect(err.text).toBe(
+            "dorothy: DOROTHY_MIRROR_KEY does not open the bundles already sealed; set the key they were sealed with. No mirror is set\n",
+        );
+
+        expect(saved).toBe(0);
+        expect(await repo().remote("mirror")).toBe(bare);
+        expect(await repo().sealedNames()).toEqual(sealed);
+    });
+
     it("knows a local mirror from a hosted one", () => {
         expect(isLocal("/mnt/backup/memory.git")).toBe(true);
         expect(isLocal("./memory.git")).toBe(true);
