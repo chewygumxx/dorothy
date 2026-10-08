@@ -48,17 +48,6 @@ or estimates.
 
 In order; the first is next.
 
-### Workspace Modularity
-
-Split `src/` into Bun workspace packages, so each subsystem declares what
-it depends on, where today a `boundary.test.ts` checks its imports.
-
-- **Status**: Pending Specification
-- **Required**: Requisites Fulfilled
-- **Rationale**: Maintenance would otherwise be built in `src/` and moved, and
-  the Messages API move becomes the replacement of one adapter package
-  rather than of imports across the tree.
-
 ### Agentic Asset Refactor
 
 Revise Claude assets for compartmentalisation into specialised modules and
@@ -66,7 +55,7 @@ components. Generalisation of assets from `.claude/CLAUDE.md` to
 `.agents/AGENTS.md` for broader compatibility with alternative models.
 
 - **Status**: Pending Specification
-- **Required**: Workspace Modularity
+- **Required**: Requisites Fulfilled
 - **Rationale**: Context window growth and token consumption rate are far too
   high with respect to the size of this repository and projected work
   immediately foreseeable.
@@ -78,10 +67,10 @@ conversations from their notes, in background passes that can be undone.
 Its undo and log are to be revisited against memory history.
 
 - **Status**: Design Agreed, Pending Specification
-- **Required**: Workspace Modularity
+- **Required**: Requisites Fulfilled
 - **Rationale**: A vocabulary without upkeep drifts. Memory history, now
-  done, recovers from a wrong pass, and modularity lets it be built as a
-  package.
+  done, recovers from a wrong pass, and it is to be built inside the
+  `memory` package.
 
 ### Topic Overviews (4b)
 
@@ -99,9 +88,10 @@ control the system prompt (the `api` commit scope). Findings:
 [context leak](./reports/2026-10-07-context-leak.md).
 
 - **Status**: Pending Design
-- **Required**: Workspace Modularity
-- **Rationale**: Modularity keeps the SDK inside one package, and coming
-  after maintenance, its calls through `StructuredCall` move with the rest.
+- **Required**: Requisites Fulfilled
+- **Rationale**: Modularity keeps the SDK inside one package, `agent`, and
+  coming after maintenance, its calls through `StructuredCall` move with the
+  rest.
 
 ### Token Budgets and a Gateway
 
@@ -139,6 +129,13 @@ Found but not scheduled, each with its source.
   Dorothy approves (the maintenance design's approach C).
 - A provisional title from a cheap model, editing memory from inside the
   TUI, and memory in one-shot mode (catalogue spec, Out of scope).
+- Memory's commands taking their dependencies injected more widely: the
+  CLI passes the history commands none, so each falls back to the
+  process's environment, streams and entry script (workspace modularity).
+- A single binary with `bun build --compile` from `cli` (workspace
+  modularity spec, Later).
+- Splitting `memory` along its subdirectories, should it outgrow one
+  package (workspace modularity spec, Later).
 
 ## Done
 
@@ -150,7 +147,7 @@ In order of completion.
   [plan](./plans/2026-10-03-input-editor.md).
 - **Markdown replies**: [spec](./specs/2026-10-03-markdown-replies-design.md),
   [plan](./plans/2026-10-03-markdown-replies.md).
-- ****Status** line and minimum size**:
+- **Status line and minimum size**:
   [spec](./specs/2026-10-05-statusline-and-minimum-size-design.md),
   [plan](./plans/2026-10-05-statusline-and-minimum-size.md).
 - **Conversation catalogue (1)**:
@@ -172,6 +169,10 @@ In order of completion.
   [probes](./reports/2026-10-08-memory-history.md),
   [report](./reports/2026-10-08-memory-history-implementation.md); merged in
   #8 and #9.
+- **Workspace modularity**:
+  [spec](./specs/2026-10-09-workspace-modularity-design.md),
+  [diagram](./specs/2026-10-09-workspace-modularity-packages.html),
+  [plan](./plans/2026-10-09-workspace-modularity.md).
 
 ## Revisions
 
@@ -182,3 +183,8 @@ In order of completion.
   ahead of Cyclical Maintenance, as the agent's context and token use have
   outgrown the repository's size and the work ahead. Ahead's phases take
   the Status, Required and Rationale fields.
+- 2026-10-09: Workspace Modularity is done, so the Agentic Asset Refactor
+  is next and no phase in Ahead waits on another done one. Cyclical
+  maintenance is built inside `memory`, and the Messages API move replaces
+  `agent`. Candidates gain injected history commands, a compiled binary
+  and a split of `memory`.

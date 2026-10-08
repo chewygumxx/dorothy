@@ -60,23 +60,17 @@ bunx dotenvx set CLAUDE_CODE_OAUTH_TOKEN <token>
 
 ## Usage
 
-Run directly from source, no build step required:
+Bun runs the source directly; there is no build step:
 
 ```sh
 bun run dev -- "What is your name?"
 ```
 
-Or build once and run the compiled output:
-
-```sh
-bun run build
-bun start -- "What is your name?"
-```
-
-Either command streams one reply to stdout as it is generated, in character as
-Dorothy per the system prompt in `src/persona.ts`. A prompt that starts with a
-dash follows `--`, as in `bun run dev -- -- "-v means?"`; any other leading
-option is refused rather than sent, and `--help` prints the usage.
+`bun start` runs the same source. Either streams one reply to stdout as it is
+generated, in character as Dorothy per the system prompt in
+`packages/agent/src/persona.ts`. A prompt that starts with a dash follows `--`,
+as in `bun run dev -- -- "-v means?"`; any other leading option is refused
+rather than sent, and `--help` prints the usage.
 
 Run with no argument for a chat in the terminal:
 
@@ -270,6 +264,12 @@ sync pushed.
 
 ## Development
 
+The code is five Bun workspace packages under `packages/` (`core`, `memory`,
+`agent`, `tui` and `cli`), linked by Bun's isolated linker; `.claude/CLAUDE.md`
+describes them.
+
+- `bun run dev` and `bun run start` run the CLI from source
+  (`packages/cli/src/index.ts`).
 - `bun run commit` composes a commit interactively.
 - `bun run check` runs the typecheck, format check, lint, Markdown lint, YAML
   checks (prettier, then yamllint with `@chewygumxx/yamllint-config`) and tests
