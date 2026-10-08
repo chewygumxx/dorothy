@@ -144,33 +144,33 @@ Found but not scheduled, each with its source.
 
 In order of completion.
 
-- **TUI chat**: [spec](specs/2026-10-03-tui-chat-design.md),
-  [plan](plans/2026-10-03-tui-chat.md).
-- **Input editor**: [spec](specs/2026-10-03-input-editor-design.md),
-  [plan](plans/2026-10-03-input-editor.md).
-- **Markdown replies**: [spec](specs/2026-10-03-markdown-replies-design.md),
-  [plan](plans/2026-10-03-markdown-replies.md).
+- **TUI chat**: [spec](./specs/2026-10-03-tui-chat-design.md),
+  [plan](./plans/2026-10-03-tui-chat.md).
+- **Input editor**: [spec](./specs/2026-10-03-input-editor-design.md),
+  [plan](./plans/2026-10-03-input-editor.md).
+- **Markdown replies**: [spec](./specs/2026-10-03-markdown-replies-design.md),
+  [plan](./plans/2026-10-03-markdown-replies.md).
 - ****Status** line and minimum size**:
-  [spec](specs/2026-10-05-statusline-and-minimum-size-design.md),
-  [plan](plans/2026-10-05-statusline-and-minimum-size.md).
+  [spec](./specs/2026-10-05-statusline-and-minimum-size-design.md),
+  [plan](./plans/2026-10-05-statusline-and-minimum-size.md).
 - **Conversation catalogue (1)**:
-  [spec](specs/2026-10-05-conversation-catalogue-design.md),
-  [plan](plans/2026-10-05-conversation-catalogue.md).
-- **Recall (2)**: [spec](specs/2026-10-06-recall-design.md),
-  [plan](plans/2026-10-06-recall.md),
-  [report](reports/2026-10-06-recall.md).
-- **Compaction**: [spec](specs/2026-10-07-compaction-design.md),
-  [plan](plans/2026-10-07-compaction.md),
-  [probes](reports/2026-10-07-compaction.md),
-  [report](reports/2026-10-07-compaction-implementation.md).
-- **Tags (3)**: [spec](specs/2026-10-07-tags-design.md),
-  [plan](plans/2026-10-08-tags.md),
-  [probes](reports/2026-10-08-tags.md),
-  [report](reports/2026-10-08-tags-implementation.md).
-- **Memory history**: [spec](specs/2026-10-08-memory-history-design.md),
-  [plan](plans/2026-10-08-memory-history.md),
-  [probes](reports/2026-10-08-memory-history.md),
-  [report](reports/2026-10-08-memory-history-implementation.md); merged in
+  [spec](./specs/2026-10-05-conversation-catalogue-design.md),
+  [plan](./plans/2026-10-05-conversation-catalogue.md).
+- **Recall (2)**: [spec](./specs/2026-10-06-recall-design.md),
+  [plan](./plans/2026-10-06-recall.md),
+  [report](./reports/2026-10-06-recall.md).
+- **Compaction**: [spec](./specs/2026-10-07-compaction-design.md),
+  [plan](./plans/2026-10-07-compaction.md),
+  [probes](./reports/2026-10-07-compaction.md),
+  [report](./reports/2026-10-07-compaction-implementation.md).
+- **Tags (3)**: [spec](./specs/2026-10-07-tags-design.md),
+  [plan](./plans/2026-10-08-tags.md),
+  [probes](./reports/2026-10-08-tags.md),
+  [report](./reports/2026-10-08-tags-implementation.md).
+- **Memory history**: [spec](./specs/2026-10-08-memory-history-design.md),
+  [plan](./plans/2026-10-08-memory-history.md),
+  [probes](./reports/2026-10-08-memory-history.md),
+  [report](./reports/2026-10-08-memory-history-implementation.md); merged in
   #8 and #9.
 
 ## Revisions
