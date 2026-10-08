@@ -228,8 +228,13 @@ one that is, and never makes one once bundles have been sealed). Commit
 key elsewhere (`dotenvx get DOROTHY_MIRROR_KEY`): without it the mirror
 cannot be read. `--mirror` with no argument shows the mirror's status.
 Until a mirror is set, each launch reminds you. A push is tried at each
-launch. Under the built-in implementation only an `https://` mirror can
-be pushed, with a token in `DOROTHY_MIRROR_TOKEN`.
+launch. An `https://` mirror is pushed with the token in
+`DOROTHY_MIRROR_TOKEN`, under git and the built-in implementation alike;
+for GitHub, a fine-grained token for the mirror's repository alone, with
+read and write access to its contents. Set it with
+`bunx dotenvx set DOROTHY_MIRROR_TOKEN <token>`. Without a token, git
+uses your own credential helpers, and the built-in implementation, which
+pushes only over `https://`, cannot push.
 
 ```toml
 [history]
