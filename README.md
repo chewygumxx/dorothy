@@ -214,16 +214,22 @@ bun run dev -- --mirror <url-or-path>      # set the sealed mirror
 bun run dev -- --recover <url-or-path>     # rebuild an empty data dir
 ```
 
-The history is pushed to a mirror off this machine, encrypted: set one
-with `--mirror`, which makes `DOROTHY_MIRROR_KEY` and stores it with
-dotenvx only when none is set, and never replaces one that is. A mirror
-path is taken from where you run the command, and the key goes in the
-`.env` of the directory `--mirror` runs from, so run it from this
-checkout. `--mirror` with no argument shows the mirror's status. Keep a
-copy of that key elsewhere; without it the mirror cannot be read. Until a
-mirror is set, each launch reminds you. A push is tried at each launch.
-Under the built-in implementation only an `https://` mirror can be
-pushed, with a token in `DOROTHY_MIRROR_TOKEN`.
+Each `--history` line starts with the commit's short sha, which is what
+`--restore` and `--rollback` take as `<rev>`.
+
+The history is pushed to a mirror off this machine, encrypted. The
+mirror must exist first: an empty repository on a host, or for a local
+one `git init --bare /path/to/memory.git`. Then set it with `--mirror`,
+run from this checkout: a mirror path is taken from where you run the
+command, and `--mirror` makes `DOROTHY_MIRROR_KEY` and saves it with
+dotenvx in the `.env` there, only when none is set (it never replaces
+one that is, and never makes one once bundles have been sealed). Commit
+`.env` afterwards (the key in it is encrypted), and keep a copy of the
+key elsewhere (`dotenvx get DOROTHY_MIRROR_KEY`): without it the mirror
+cannot be read. `--mirror` with no argument shows the mirror's status.
+Until a mirror is set, each launch reminds you. A push is tried at each
+launch. Under the built-in implementation only an `https://` mirror can
+be pushed, with a token in `DOROTHY_MIRROR_TOKEN`.
 
 ```toml
 [history]
