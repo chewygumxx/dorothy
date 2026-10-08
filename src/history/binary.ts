@@ -53,15 +53,21 @@ const SHUT_OUT = new Set([
     "GIT_CONFIG_COUNT",
 ]);
 
+// The mirror's secrets, which no git command needs: the token reaches a
+// push or fetch only through Dorothy's credential helper.
+const SECRETS = new Set(["DOROTHY_MIRROR_KEY", "DOROTHY_MIRROR_TOKEN"]);
+
 // The environment every command runs in: the caller's, less what locates
-// a repository or configures git, with the user's global and system
-// configuration shut out and Dorothy as the author.
+// a repository or configures git and the mirror's secrets, with the
+// user's global and system configuration shut out and Dorothy as the
+// author.
 export function isolatedEnv(env: Env): Record<string, string> {
     const isolated: Record<string, string> = {};
     for (const [key, value] of Object.entries(env)) {
         if (
             value !== undefined &&
             !SHUT_OUT.has(key) &&
+            !SECRETS.has(key) &&
             !/^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(key)
         ) {
             isolated[key] = value;
@@ -107,6 +113,12 @@ export async function credentialHelpers(
         return [];
     }
 }
+
+// The helper a mirror token answers through: it gives the token, read
+// from the environment so it never appears in a command line, as
+// isomorphic-git does, and stores and erases nothing.
+export const TOKEN_HELPER =
+    '!f() { test "$1" = get || return 0; echo username=dorothy; echo "password=$DOROTHY_MIRROR_TOKEN"; }; f';
 
 // A push or fetch over ssh must fail rather than prompt on the terminal,
 // which GIT_TERMINAL_PROMPT does not stop; a user's own ssh command stands.
