@@ -569,6 +569,7 @@ export async function runMirror(
         out = process.stdout,
         err = process.stderr,
         setSecret = saveSecret,
+        cwd = process.cwd(),
     } = options;
     const target = url === null ? null : mirrorUrl(url, options);
     if (url !== null && target === null) {
@@ -606,11 +607,17 @@ export async function runMirror(
             return 1;
         }
         // A bundle sealed under another key would stop every recovery
-        // there.
+        // there; a key is made only where the entry guard will read it.
         if (key === null) {
             if ((await repo.sealedNames()).length > 0) {
                 err.write(
                     "dorothy: DOROTHY_MIRROR_KEY is not set, and the bundles already sealed need the key they were sealed with; set that one with dotenvx set. No mirror is set\n",
+                );
+                return 1;
+            }
+            if (!existsSync(join(cwd, ".env"))) {
+                err.write(
+                    `dorothy: there is no .env in ${cwd} to keep DOROTHY_MIRROR_KEY in; run --mirror from the checkout whose .env holds Dorothy's credentials. No mirror is set\n`,
                 );
                 return 1;
             }

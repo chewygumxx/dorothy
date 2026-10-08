@@ -335,7 +335,12 @@ describe("runMirror", () => {
         const setSecret = async (name: string, value: string) => {
             saved.push([name, value]);
         };
-        expect(await runMirror(bare, { ...options(), setSecret })).toBe(0);
+        // Where the key is saved: a .env the entry guard reads.
+        const checkout = tempRoot();
+        put(checkout, ".env", "");
+        expect(
+            await runMirror(bare, { ...options(), setSecret, cwd: checkout }),
+        ).toBe(0);
         expect(saved.map(([name]) => name)).toEqual(["DOROTHY_MIRROR_KEY"]);
         expect(out.text).toContain("Made DOROTHY_MIRROR_KEY");
         expect(out.text).toContain(`Pushed to ${bare}\n`);
@@ -427,6 +432,25 @@ describe("runMirror", () => {
         expect(saved).toBe(0);
         expect(err.text).toBe(
             "dorothy: DOROTHY_MIRROR_KEY is set but is not 32 bytes of base64; it is left as it is, and no mirror is set\n",
+        );
+        expect(await repo().remote("mirror")).toBeNull();
+    });
+
+    it("makes a key only beside a .env, changing nothing otherwise", async () => {
+        write("tags.json", vocabulary(1));
+        const bare = await bareRepo();
+        let saved = 0;
+        const code = await runMirror(bare, {
+            ...options(),
+            cwd: tempRoot(),
+            setSecret: async () => {
+                saved += 1;
+            },
+        });
+        expect(code).toBe(1);
+        expect(saved).toBe(0);
+        expect(err.text).toMatch(
+            /^dorothy: there is no \.env in \S+ to keep DOROTHY_MIRROR_KEY in; run --mirror from the checkout whose \.env holds Dorothy's credentials\. No mirror is set\n$/,
         );
         expect(await repo().remote("mirror")).toBeNull();
     });
