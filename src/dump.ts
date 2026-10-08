@@ -8,25 +8,12 @@
 //
 //
 
-import { query } from "@anthropic-ai/claude-agent-sdk";
 import { type CaptureQueryFn, dumpRequest } from "./capture.js";
-import { clusterTokens, seedTurns } from "./compaction/plan.js";
-import { readConfig } from "./config.js";
-import type { Turn } from "./contracts/session.js";
 import { conversationOptions } from "./conversation.js";
-import { earlierSection } from "./memory/block.js";
-import { indexCatalogue } from "./memory/catalogue.js";
-import { buildMemory } from "./memory/rank.js";
-import { type Cluster, readSidecar } from "./memory/sidecar.js";
+import { previewStart } from "./memory/preview.js";
 import type { PersonaMode } from "./persona.js";
-import { indexPath, RecallIndex } from "./recall/store.js";
 import { recallLaunch } from "./recall-launch.js";
-import { newPhrase } from "./session-id.js";
-import { readTranscript, transcriptDir, transcriptPath } from "./transcript.js";
 import type { Env } from "./xdg.js";
-
-const describeError = (error: unknown) =>
-    error instanceof Error ? error.message : String(error);
 
 export type DumpRequest = {
     resume: string | null;
@@ -41,7 +28,7 @@ export async function runDump(
     request: DumpRequest,
     {
         env = process.env,
-        queryFn = query,
+        queryFn,
         write = {
             out: (text: string) => {
                 process.stdout.write(text);
@@ -56,79 +43,30 @@ export async function runDump(
         write?: { out: (text: string) => void; err: (text: string) => void };
     } = {},
 ): Promise<number> {
-    const phrase = request.resume ?? newPhrase();
-    let history: Turn[] = [];
-    if (request.resume !== null) {
-        const path = transcriptPath(phrase, env);
-        try {
-            history = (await readTranscript(path)).turns;
-        } catch (error) {
-            write.err(
-                `dorothy: cannot resume ${phrase}: ${path}: ${describeError(error)}\n`,
-            );
-            return 1;
-        }
+    const preview = await previewStart({
+        resume: request.resume,
+        recallLaunch,
+        env,
+    });
+    if (!preview.ok) {
+        write.err(`dorothy: ${preview.message}\n`);
+        return 1;
     }
-    const { config, warnings } = await readConfig(env);
-    let clusters: Cluster[] = [];
-    if (request.resume !== null) {
-        const notes = await readSidecar(transcriptDir(env), phrase);
-        if (notes.kind === "ok") {
-            clusters = notes.sidecar.clusters;
-        }
+    const body = await dumpRequest({
+        prompt: request.message,
+        options: conversationOptions({
+            ...preview.start,
+            persona: request.persona,
+        }),
+        ...(queryFn === undefined ? {} : { queryFn }),
+    });
+    for (const warning of preview.warnings) {
+        write.err(`dorothy: ${warning}\n`);
     }
-    let index: RecallIndex | null = null;
-    if (config.memory.enabled || config.memory.recall) {
-        try {
-            index = RecallIndex.open(indexPath(env));
-        } catch (error) {
-            warnings.push(
-                `memory: the index can't be opened (${describeError(error)})`,
-            );
-        }
+    if (body === null) {
+        write.err("dorothy: the CLI sent no request to dump\n");
+        return 1;
     }
-    try {
-        const recall =
-            config.memory.recall && index !== null
-                ? recallLaunch(phrase)
-                : null;
-        let memory = "";
-        if (config.memory.enabled && index !== null) {
-            const loaded = await indexCatalogue(
-                index,
-                transcriptDir(env),
-            ).load();
-            const built = buildMemory(loaded.entries, {
-                now: Date.now(),
-                config: config.memory,
-                exclude: phrase,
-                reserved: clusterTokens(clusters, recall !== null),
-            });
-            warnings.push(...loaded.warnings, ...built.warnings);
-            memory = built.block;
-        }
-        const body = await dumpRequest({
-            prompt: request.message,
-            options: conversationOptions({
-                history: seedTurns(history, clusters),
-                memory,
-                earlier: earlierSection(clusters, recall !== null),
-                recall,
-                recollect: recall !== null && clusters.length > 0,
-                persona: request.persona,
-            }),
-            queryFn,
-        });
-        for (const warning of warnings) {
-            write.err(`dorothy: ${warning}\n`);
-        }
-        if (body === null) {
-            write.err("dorothy: the CLI sent no request to dump\n");
-            return 1;
-        }
-        write.out(`${JSON.stringify(body, null, 2)}\n`);
-        return 0;
-    } finally {
-        index?.close();
-    }
+    write.out(`${JSON.stringify(body, null, 2)}\n`);
+    return 0;
 }
