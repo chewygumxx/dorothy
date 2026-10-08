@@ -25,11 +25,6 @@ export default defineConfig({
             description: "Api",
         },
         {
-            name: "sdk",
-            fullName: "SDK",
-            description: "Agent SDK source, ie. src/",
-        },
-        {
             name: "config",
             fullName: "Config",
             description:
