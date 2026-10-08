@@ -38,7 +38,27 @@ export default defineConfig({
         {
             name: "tui",
             fullName: "TUI",
-            description: "Terminal chat interface, ie. src/tui/",
+            description: "Terminal chat interface, ie. packages/tui/",
+        },
+        {
+            name: "core",
+            fullName: "Core",
+            description: "Shared contracts and basics, ie. packages/core/",
+        },
+        {
+            name: "memory",
+            fullName: "Memory",
+            description: "Her memory database, ie. packages/memory/",
+        },
+        {
+            name: "agent",
+            fullName: "Agent",
+            description: "Her model side, ie. packages/agent/",
+        },
+        {
+            name: "cli",
+            fullName: "CLI",
+            description: "The entry point, ie. packages/cli/",
         },
     ],
 });
