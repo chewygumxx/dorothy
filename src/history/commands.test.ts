@@ -159,9 +159,12 @@ describe("runHistory", () => {
         const lines = out.text.trimEnd().split("\n");
         expect(lines).toHaveLength(2);
         expect(lines[0]).toMatch(
-            /^\d{4}-\d\d-\d\d \d\d:\d\d {2}outside {2}outside: tags\.json$/,
+            /^[0-9a-f]{7} {2}\d{4}-\d\d-\d\d \d\d:\d\d {2}outside {2}outside: tags\.json$/,
         );
         expect(lines[1]).toMatch(/ {2}adopt {4}adopt: 3 files$/);
+        // The sha is one --restore and --rollback take.
+        const [head] = await repo().log(undefined, 1);
+        expect(lines[0]).toStartWith(`${head?.sha.slice(0, 7)}  `);
         out = capture();
         expect(await runHistory({ ...options(), path: SIDECAR })).toBe(0);
         expect(out.text).toContain("adopt: 3 files");

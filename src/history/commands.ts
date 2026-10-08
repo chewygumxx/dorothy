@@ -217,7 +217,7 @@ export async function runHistory(
             options.count ?? 20,
         )) {
             out.write(
-                `${when(commit.at)}  ${authorOf(commit.message).padEnd(7)}  ${commit.message}\n`,
+                `${short(commit.sha)}  ${when(commit.at)}  ${authorOf(commit.message).padEnd(7)}  ${commit.message}\n`,
             );
         }
         return 0;
