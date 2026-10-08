@@ -275,24 +275,28 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
         const { runOneShot } = await import("@dorothy/agent");
         await runOneShot(mode.prompt, mode.persona);
     } else if (mode.kind === "list") {
-        const { runList } = await import("@dorothy/memory/commands");
-        const { commandHistory } = await import("@dorothy/memory/commands");
+        const { commandHistory, runList } = await import(
+            "@dorothy/memory/commands"
+        );
         process.exitCode = await runList({ openHistory: commandHistory() });
     } else if (mode.kind === "memory") {
-        const { runMemoryEdit } = await import("@dorothy/memory/commands");
-        const { commandHistory } = await import("@dorothy/memory/commands");
+        const { commandHistory, runMemoryEdit } = await import(
+            "@dorothy/memory/commands"
+        );
         const { editInEditor } = await import("@dorothy/tui");
         process.exitCode = await runMemoryEdit(mode.phrase, {
             edit: (text) => editInEditor(text),
             openHistory: commandHistory(),
         });
     } else if (mode.kind === "tags") {
-        const { runTags } = await import("@dorothy/memory/commands");
-        const { commandHistory } = await import("@dorothy/memory/commands");
+        const { commandHistory, runTags } = await import(
+            "@dorothy/memory/commands"
+        );
         process.exitCode = await runTags({ openHistory: commandHistory() });
     } else if (mode.kind === "tags-edit") {
-        const { runTagsEdit } = await import("@dorothy/memory/commands");
-        const { commandHistory } = await import("@dorothy/memory/commands");
+        const { commandHistory, runTagsEdit } = await import(
+            "@dorothy/memory/commands"
+        );
         const { editInEditor } = await import("@dorothy/tui");
         process.exitCode = await runTagsEdit({
             edit: (text) => editInEditor(text),
