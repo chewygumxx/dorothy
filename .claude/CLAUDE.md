@@ -24,6 +24,10 @@ Continuously granularly commit as you work. Compose single-line commit messages
 whenever appropriate. If the granular commit does indeed warrant further
 context, include such within the commit message body.
 
+`docs/roadmap.md` orders the phases of work. Once a phase merges, revise it as
+its Revising section says before starting the next phase, and add work found
+along the way where it would serve best.
+
 When appropriate and worthwhile to compact, append the following
 newline-delimited items to your response:
 
