@@ -85,8 +85,8 @@ class FakeTimers implements Timers {
 
 // Answers each review in turn: notes, an error, "timeout" (fails as a
 // call that timed out does) or "hang" (answers only once cancelled).
-// Calls are kept in the shape the SDK was given, so assertions read the
-// system prompt and schema where they did.
+// Calls are kept in the shape the assertions read, the system prompt and
+// schema under options.
 function reviews(...answers: (object | Error | "hang" | "timeout")[]) {
     const calls: {
         prompt: string;

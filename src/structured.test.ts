@@ -159,6 +159,17 @@ describe("structuredCall", () => {
         });
     });
 
+    it("fails when the query cannot start", async () => {
+        const throwing: StructuredQueryFn = () => {
+            throw new Error("bad options");
+        };
+        expect(await structuredCall({ queryFn: throwing })(REQUEST)).toEqual({
+            ok: false,
+            reason: "bad options",
+            costUsd: 0,
+        });
+    });
+
     it("times out, closing the query", async () => {
         const fake = fakeQuery("hang");
         const { timers, fire } = manualTimers();
