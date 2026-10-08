@@ -169,6 +169,9 @@ command run later in the same process never switches.
 One setting is carried over from the user's global configuration, for
 pushing only: `credential.helper`, read once with
 `git config --global --get-all credential.helper` and passed as `-c`.
+When `DOROTHY_MIRROR_TOKEN` is set, a helper of Dorothy's that answers
+with it replaces the user's, so their helpers never store it; the token
+reaches git only in a push's or a fetch's environment.
 
 **isomorphic-git**, pinned at 1.43.1 (MIT), reads no configuration. It
 uses the same author, and Node's `fs` under Bun.
@@ -357,7 +360,7 @@ Every mirror is sealed, local paths included.
 | ------------------------------ | ---------------------------------------------------------------------- | --------------------------------------------- |
 | A local path                   | yes                                                                    | no: "this mirror needs the git binary"        |
 | `ssh://` or `git@host:path`    | yes, through the user's ssh agent and `~/.ssh/config`                  | no: the same warning                          |
-| `https://`                     | yes, through the carried-over `credential.helper`                     | yes, with `DOROTHY_MIRROR_TOKEN` from `.env`  |
+| `https://`                     | yes, with `DOROTHY_MIRROR_TOKEN`, else the carried-over `credential.helper` | yes, with `DOROTHY_MIRROR_TOKEN` from `.env`  |
 
 `DOROTHY_MIRROR_KEY` and `DOROTHY_MIRROR_TOKEN` live in the `.env` the
 entry guard already decrypts, and are set only with `dotenvx set`; tests
@@ -488,7 +491,7 @@ tests shut out the user's git configuration as production does.
   commit with one, read, restore and bundle with the other, both ways.
 - `binary.ts`: a global config with `commit.gpgsign=true` and a hooks path
   does not reach a commit; `credential.helper` is carried over for pushes
-  only.
+  only, and a token replaces it.
 - `lint.ts`: every file kind; a truncated transcript; a rewritten earlier
   line; a torn final line allowed; a first commit with no committed bytes.
 - `heal.ts`: a live transcript's appends committed as a turn, never as
