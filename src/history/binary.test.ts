@@ -32,7 +32,7 @@ async function gitOut(root: string, args: string[]): Promise<string> {
 }
 
 describe("isolatedEnv", () => {
-    it("shuts out the user's configuration, templates and dates, and anything locating a repository", () => {
+    it("shuts out the user's configuration, templates and dates, the mirror's secrets, and anything locating a repository", () => {
         const env = isolatedEnv({
             PATH: "/usr/bin",
             GIT_DIR: "/elsewhere",
@@ -46,6 +46,8 @@ describe("isolatedEnv", () => {
             GIT_TEMPLATE_DIR: "/elsewhere/templates",
             GIT_AUTHOR_DATE: "2000-01-01T00:00:00Z",
             GIT_COMMITTER_DATE: "2000-01-01T00:00:00Z",
+            DOROTHY_MIRROR_KEY: "key",
+            DOROTHY_MIRROR_TOKEN: "token",
             HOME: undefined,
         });
         expect(env).toEqual({
@@ -211,6 +213,63 @@ describe("the git binary engine's repository", () => {
             rmSync(marker);
             await expect(repo.fetch(url, "sealed", null)).rejects.toThrow();
             expect(existsSync(marker)).toBe(true);
+        } finally {
+            await server.stop(true);
+        }
+    });
+
+    it("pushes and fetches with a mirror token in place of the user's helpers", async () => {
+        const dir = tempRoot();
+        const marker = join(dir, "helper-ran");
+        const config = join(dir, "gitconfig");
+        writeFileSync(
+            config,
+            `[credential]\n\thelper = "!f() { touch ${marker}; }; f"\n`,
+        );
+        const seen: string[] = [];
+        const server = Bun.serve({
+            port: 0,
+            hostname: "127.0.0.1",
+            fetch: (request) => {
+                seen.push(request.headers.get("authorization") ?? "");
+                return new Response("no", {
+                    status: 401,
+                    headers: { "WWW-Authenticate": 'Basic realm="x"' },
+                });
+            },
+        });
+        try {
+            const url = `http://127.0.0.1:${server.port}/r.git`;
+            const repo = binaryRepo(join(dir, "data"), {
+                env: {
+                    ...TEST_ENV,
+                    GIT_CONFIG_GLOBAL: config,
+                    DOROTHY_MIRROR_TOKEN: "from-the-environment",
+                },
+            });
+            await repo.init();
+            put(repo.root, "a.txt", "1\n");
+            await repo.commit(["a.txt"], "one");
+            await repo.appendSealed(
+                "bundles/000001.enc",
+                new Uint8Array([1]),
+                "readme\n",
+                "seal 1",
+            );
+            await repo.setRemote("mirror", url);
+            const basic = `Basic ${btoa("dorothy:github_pat_x")}`;
+            await expect(
+                repo.push("mirror", "sealed", "github_pat_x"),
+            ).rejects.toThrow();
+            expect(seen).toContain(basic);
+            seen.length = 0;
+            await expect(
+                repo.fetch(url, "sealed", "github_pat_x"),
+            ).rejects.toThrow();
+            expect(seen).toContain(basic);
+            expect(existsSync(marker)).toBe(false);
+            const stored = await gitOut(repo.root, ["config", "--list"]);
+            expect(stored).not.toContain("github_pat_x");
         } finally {
             await server.stop(true);
         }

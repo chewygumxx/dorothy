@@ -53,15 +53,21 @@ const SHUT_OUT = new Set([
     "GIT_CONFIG_COUNT",
 ]);
 
+// The mirror's secrets, which no git command needs: the token reaches a
+// push or fetch only through Dorothy's credential helper.
+const SECRETS = new Set(["DOROTHY_MIRROR_KEY", "DOROTHY_MIRROR_TOKEN"]);
+
 // The environment every command runs in: the caller's, less what locates
-// a repository or configures git, with the user's global and system
-// configuration shut out and Dorothy as the author.
+// a repository or configures git and the mirror's secrets, with the
+// user's global and system configuration shut out and Dorothy as the
+// author.
 export function isolatedEnv(env: Env): Record<string, string> {
     const isolated: Record<string, string> = {};
     for (const [key, value] of Object.entries(env)) {
         if (
             value !== undefined &&
             !SHUT_OUT.has(key) &&
+            !SECRETS.has(key) &&
             !/^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(key)
         ) {
             isolated[key] = value;
@@ -107,6 +113,12 @@ export async function credentialHelpers(
         return [];
     }
 }
+
+// The helper a mirror token answers through: it gives the token, read
+// from the environment so it never appears in a command line, as
+// isomorphic-git does, and stores and erases nothing.
+export const TOKEN_HELPER =
+    '!f() { test "$1" = get || return 0; echo username=dorothy; echo "password=$DOROTHY_MIRROR_TOKEN"; }; f';
 
 // A push or fetch over ssh must fail rather than prompt on the terminal,
 // which GIT_TERMINAL_PROMPT does not stop; a user's own ssh command stands.
@@ -182,8 +194,21 @@ export function binaryRepo(
     };
     // The helpers (and ssh's batch mode) as configuration in the
     // environment, where a command's
-    // own -c would not reach them past ISOLATION's.
-    const credentials = async (): Promise<Record<string, string>> => {
+    // own -c would not reach them past ISOLATION's. A mirror token
+    // replaces the user's helpers, which git would otherwise ask to store
+    // it once a push succeeds.
+    const credentials = async (
+        token: string | null,
+    ): Promise<Record<string, string>> => {
+        if (token !== null) {
+            return {
+                ...sshBatch(env),
+                DOROTHY_MIRROR_TOKEN: token,
+                GIT_CONFIG_COUNT: "1",
+                GIT_CONFIG_KEY_0: "credential.helper",
+                GIT_CONFIG_VALUE_0: TOKEN_HELPER,
+            };
+        }
         helpers ??= credentialHelpers(env);
         const found = await helpers;
         const extra: Record<string, string> = {
@@ -414,7 +439,7 @@ export function binaryRepo(
             const ran = await run(["remote", "get-url", name]);
             return ran.code === 0 ? text(ran).trim() : null;
         },
-        async push(remote, branch, _token) {
+        async push(remote, branch, token) {
             await must(
                 [
                     "push",
@@ -422,10 +447,10 @@ export function binaryRepo(
                     remote,
                     `refs/heads/${branch}:refs/heads/${branch}`,
                 ],
-                { extra: await credentials() },
+                { extra: await credentials(token) },
             );
         },
-        async fetch(url, branch, _token) {
+        async fetch(url, branch, token) {
             await must(
                 [
                     "fetch",
@@ -434,7 +459,7 @@ export function binaryRepo(
                     url,
                     `refs/heads/${branch}:refs/heads/${branch}`,
                 ],
-                { extra: await credentials() },
+                { extra: await credentials(token) },
             );
         },
         async checkout() {

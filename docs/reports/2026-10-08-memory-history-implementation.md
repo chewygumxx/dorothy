@@ -182,10 +182,11 @@ The ones a reader of the spec would notice:
 | Plan Ruling 15: a restored live transcript is appended to the old file | The writer reopens its path (`fd0a7b5`) | Otherwise the rest of the chat was lost | A `stat` per append |
 | (silent) Which `.env` holds a new key | The current directory's, and only when one exists (`c45963c`) | The entry guard reads that one | A user must run `--mirror` from the checkout |
 | (silent) A key that does not match the bundles | Sealing stops with a warning, and `--mirror` refuses (`6b71f98`, `1e62f7a`) | A second key breaks recovery silently | A check per seal |
+| The binary pushes `https://` through the user's `credential.helper` | `DOROTHY_MIRROR_TOKEN`, when set, is given by a helper of Dorothy's in place of the user's (`728148f`) | One fine-grained token then serves both engines, and the user's helpers never store it | A token that is set wins over the user's own credentials |
 
 ## Commits
 
-52 commits, oldest first. Scopes follow `.commitlintrc.mts`: `sdk` for
+57 commits, oldest first. Scopes follow `.commitlintrc.mts`: `sdk` for
 `src/` outside `src/tui/`, `tui` for `src/tui/`, none for docs, and
 `build` as the type for the dependency.
 
@@ -254,12 +255,23 @@ The ones a reader of the spec would notice:
 - `818b24f` docs: Keep the second probe's sample data
 - `eb07d6d` docs: Report the second history probe
 - `13bc9ea` fix(sdk): Say a refused --mirror changed nothing
+- `09448b3` docs: Report the second probe and its fix
+
+### The mirror token
+
+Added after the PR opened, so one fine-grained token pushes an
+`https://` mirror under either engine.
+
+- `9e73f7b` fix(sdk): Keep the mirror's secrets from git
+- `728148f` feat(sdk): Push an https mirror with its token
+- `a2f4d48` docs: Say an https mirror's token works under git
+- `fae8141` docs: Specify the mirror token under git
 
 This report's update follows.
 
 ## Verification
 
-- `bun run check` passes, with 1105 tests across 62 files. It runs:
+- `bun run check` passes, with 1106 tests across 62 files. It runs:
   - the typecheck;
   - Biome, remark and yamllint;
   - dotenvx's check and the em dash lint;
@@ -296,7 +308,9 @@ None blocks merge.
 
 - **isomorphic-git pushes only to `https://`**, with a token in
   `DOROTHY_MIRROR_TOKEN`, and that path is untested here; a local mirror
-  needs the git binary.
+  needs the git binary. The binary's use of the token is tested against
+  a local server that asks for it, and its first push to GitHub, with a
+  fine-grained token, succeeded.
 - **isomorphic-git trusts file stats.** A same-size rewrite within the
   second of the last commit is not swept until it changes again. Dorothy's
   own commits and the lint at read time are unaffected.
