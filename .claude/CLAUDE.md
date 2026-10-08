@@ -139,13 +139,19 @@ up outside changes first, and restores a file that fails the lint
 imports history: writers take a `Recording` through `updateSidecar` and
 `updateVocabulary`, the service a `HistoryHandle` as `versions`, and
 memory's commands an `OpenHistory` from `src/index.ts`. Healing takes the
-lock, so it happens only outside it. `mirror.ts` seals new commits as
+lock, so it happens only outside it. The lock is the recall index's when
+it is open, and otherwise history's `FileLock` (`lock.ts`) on
+`.git/dorothy.lock`; both are `exclusiveLock` (`src/sqlite-lock.ts`), a
+SQLite `BEGIN IMMEDIATE` write lock. `mirror.ts` seals new commits as
 AES-256-GCM bundles (`seal.ts`) on the orphan branch `sealed`, pushes it to
 the remote `mirror` under `DOROTHY_MIRROR_KEY`, and `--recover` rebuilds
-from it. `run.tsx` opens the index and history before it reads anything,
-commits each turn once the transcript is flushed, and shows history's
-notices with memory's. Tests pass every root, key and environment in, and
-the binary's tests shut out the user's git configuration.
+from it; a key that does not open the newest bundle seals nothing. `run.tsx`
+opens the index and history before it reads anything, commits each turn
+once the transcript is flushed, and shows history's notices with memory's.
+Once `runTui` resolves, everything is closed and `src/index.ts` ends the
+process, so a push or repack still running never holds the terminal.
+Tests pass every root, key and environment in, and the binary's tests shut
+out the user's git configuration.
 
 `query()` spawns the SDK's bundled `claude` binary on every call, so
 `baseOptions` (`src/persona.ts`) keeps that subprocess lean: `tools: []` drops
