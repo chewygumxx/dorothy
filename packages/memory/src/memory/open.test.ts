@@ -18,7 +18,7 @@ import {
 } from "bun:test";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -443,7 +443,7 @@ describe("mergeNotices", () => {
 
 describe("launchHistory", () => {
     // A bare repository with git isolated, local to this file, which
-    // may not import from history (boundary.test.ts).
+    // may not import from history (the package graph keeps it out).
     const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null" };
     const bareRepo = async () => {
         const path = await mkdtemp(join(dir, "mirror-"));
@@ -716,6 +716,41 @@ describe("openMemory", () => {
         const text = await Bun.file(transcriptPath(memory.phrase, env)).text();
         expect(text).toContain('"kind":"user"');
         expect(text).toContain('"promptHash":"with"');
+    });
+
+    // The recorder's warning travels recorder, notice channel, merged
+    // notices, to the screen. A directory put where the transcript was
+    // makes the writer's reopen fail, so the append is refused for real.
+    it("warns on its notices when a transcript append fails", async () => {
+        const inner = new FakeSession();
+        const opened = await openMemory({
+            resume: null,
+            call: quiet,
+            prompts,
+            connect: () => inner,
+            recallLaunch: (phrase) => ({ command: "x", args: [phrase] }),
+            env,
+        });
+        if (!opened.ok) {
+            throw new Error(opened.message);
+        }
+        const { memory } = opened;
+        try {
+            const path = transcriptPath(memory.phrase, env);
+            await rm(path);
+            await mkdir(path);
+            const warned = new Promise<string>((resolve) => {
+                memory.notices?.subscribe((notice) => {
+                    if (notice.type === "warning") {
+                        resolve(notice.message);
+                    }
+                });
+            });
+            memory.createSession([]).send("hello");
+            expect(await warned).toStartWith("transcript not saved: ");
+        } finally {
+            await memory.close();
+        }
     });
 
     // Memory's turn-end hook starts the first review, which flushes the
