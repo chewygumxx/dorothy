@@ -9,15 +9,8 @@
 //
 
 import { pathToFileURL } from "node:url";
-import { query } from "@anthropic-ai/claude-agent-sdk";
 import { config } from "@dotenvx/dotenvx";
-import {
-    baseOptions,
-    cliOptions,
-    type PersonaMode,
-    personaPrompt,
-    prepareCliHome,
-} from "./persona.js";
+import { type PersonaMode, prepareCliHome } from "./persona.js";
 import { isPhrase } from "./session-id.js";
 
 export type Mode =
@@ -249,34 +242,6 @@ export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
         : { kind: "usage", message: "chat needs a terminal" };
 }
 
-async function oneShot(prompt: string, persona: PersonaMode): Promise<void> {
-    try {
-        for await (const message of query({
-            prompt,
-            options: {
-                ...baseOptions,
-                ...cliOptions(),
-                systemPrompt: personaPrompt({ recall: false, mode: persona }),
-            },
-        })) {
-            if (
-                message.type === "stream_event" &&
-                message.event.type === "content_block_delta" &&
-                message.event.delta.type === "text_delta"
-            ) {
-                process.stdout.write(message.event.delta.text);
-            }
-        }
-    } catch (error) {
-        process.stderr.write(
-            `${error instanceof Error ? error.message : String(error)}\n`,
-        );
-        process.exitCode = 1;
-        return;
-    }
-    process.stdout.write("\n");
-}
-
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     const mode = parseArgs(
         process.argv.slice(2),
@@ -304,7 +269,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
         const { runDump } = await import("./dump.js");
         process.exitCode = await runDump(mode);
     } else if (mode.kind === "oneshot") {
-        await oneShot(mode.prompt, mode.persona);
+        const { runOneShot } = await import("./one-shot.js");
+        await runOneShot(mode.prompt, mode.persona);
     } else if (mode.kind === "list") {
         const { runList } = await import("./memory/commands.js");
         const { commandHistory } = await import("./history/commands.js");
