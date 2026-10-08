@@ -32,7 +32,7 @@ async function gitOut(root: string, args: string[]): Promise<string> {
 }
 
 describe("isolatedEnv", () => {
-    it("shuts out the user's configuration and anything locating a repository", () => {
+    it("shuts out the user's configuration, templates and dates, and anything locating a repository", () => {
         const env = isolatedEnv({
             PATH: "/usr/bin",
             GIT_DIR: "/elsewhere",
@@ -43,6 +43,9 @@ describe("isolatedEnv", () => {
             GIT_CONFIG_KEY_0: "core.bare",
             GIT_CONFIG_VALUE_0: "true",
             GIT_SSH_COMMAND: "ssh -i key",
+            GIT_TEMPLATE_DIR: "/elsewhere/templates",
+            GIT_AUTHOR_DATE: "2000-01-01T00:00:00Z",
+            GIT_COMMITTER_DATE: "2000-01-01T00:00:00Z",
             HOME: undefined,
         });
         expect(env).toEqual({

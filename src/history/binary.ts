@@ -34,9 +34,13 @@ const ISOLATION = [
     "maintenance.auto=false",
 ];
 
-// Variables that would point git at another repository, or carry
-// configuration of their own.
-const LOCATING = new Set([
+// Variables that would point git at another repository, carry
+// configuration of their own, seed a new repository from a template (with
+// its hooks) or date a commit as other than when it was made.
+const SHUT_OUT = new Set([
+    "GIT_TEMPLATE_DIR",
+    "GIT_AUTHOR_DATE",
+    "GIT_COMMITTER_DATE",
     "GIT_DIR",
     "GIT_WORK_TREE",
     "GIT_INDEX_FILE",
@@ -57,7 +61,7 @@ export function isolatedEnv(env: Env): Record<string, string> {
     for (const [key, value] of Object.entries(env)) {
         if (
             value !== undefined &&
-            !LOCATING.has(key) &&
+            !SHUT_OUT.has(key) &&
             !/^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(key)
         ) {
             isolated[key] = value;
