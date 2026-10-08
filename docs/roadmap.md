@@ -185,7 +185,7 @@ In order of completion.
   outgrown the repository's size and the work ahead. Ahead's phases take
   the Status, Required and Rationale fields.
 - 2026-10-09: Workspace Modularity is done, so the Agentic Asset Refactor
-  is next and no phase in Ahead waits on a phase not yet done. Cyclical
+  is next and no phase in Ahead still waits on it. Cyclical
   Maintenance is built inside `memory`, and the Messages API move replaces
   `agent`. Candidates gain injected history commands, a compiled binary
   and a split of `memory`.

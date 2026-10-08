@@ -42,19 +42,22 @@ passed unchanged throughout.
 At the head of the branch (before this report) `bun run check` passes with
 1118 tests, up from 1106 at `1f821e7`.
 
-Three live probes ran under throwaway XDG directories, and all but one
-step ran as expected:
+Live probes ran under throwaway XDG directories. Four ran as expected and
+one is open:
 
 - the dump built a request through the Agent SDK's CLI under the isolated
   linker, and the recall server's tools reached it;
 - the recall server's entry point loads in about 100 ms, against about
   230 ms for all of memory;
 - the commands ran clean;
-- the chat started and quit cleanly, and the data repository's hook names
-  the CLI's new entry script and is rewritten on launch;
-- **but** the credentials in `.env` did not decrypt on this machine, so
-  the session never became ready and the header never showed a model name
-  (see [the probes](#the-probes)).
+- the TUI launched and quit on Ctrl+D with exit status 0, and the data
+  repository's hook names the CLI's new entry script and is rewritten on
+  launch;
+- **open:** the session never became ready. dotenvx reported
+  `DECRYPTION_FAILED` at launch and the header showed no model name for
+  30 s, so the Agent SDK's chat session through `openMemory` was not seen
+  to start (see [Known limitations](#known-limitations) for the step that
+  remains).
 
 ## How it was built
 
@@ -134,15 +137,16 @@ memory, at under half the cost. The script was removed afterwards.
 
 `bun run dev` in tmux, 120 by 40, then Ctrl+D without sending anything.
 
-- **The session was never ready.** dotenvx printed
-  `DECRYPTION_FAILED: could not decrypt CLAUDE_CODE_OAUTH_TOKEN,
-  DOROTHY_MIRROR_TOKEN, DOROTHY_MIRROR_KEY`: this machine has neither a
-  private key in the environment nor a `.env.keys`. For 30 s the status
-  line read `dorothy · <phrase> · … · sdk … · starting`, with no model
-  name. This is a finding about the machine's credentials, not a fault in
-  the packages, and it was not worked around. The step is left for a
-  machine with the key, to see the header's model name. The dump above
-  needed no credentials.
+- **The session was never ready.** At launch dotenvx reported
+  `DECRYPTION_FAILED` for `CLAUDE_CODE_OAUTH_TOKEN`,
+  `DOROTHY_MIRROR_TOKEN` and `DOROTHY_MIRROR_KEY` (the message is
+  paraphrased here). This machine has neither a private key in the
+  environment nor a `.env.keys`. For 30 s the status line read
+  `dorothy · <phrase> · … · sdk … · starting`, with no model name. The
+  cause is most likely the missing credentials, but that is inferred: the
+  failed decryption and the stuck "starting" were seen, not shown to be
+  linked. It was not worked around, and the step stays open (see
+  [Known limitations](#known-limitations)).
 - **The TUI otherwise came up whole**, with the memory notice (`memory has
   no mirror`), the input and the footer. Ctrl+D ended the process in about
   a second with exit status 0.
@@ -167,7 +171,6 @@ memory, at under half the cost. The script was removed afterwards.
   exited 0.
 - `bun run dev --help` printed the usage, and `--recall-server` started
   without error.
-- Each printed the memory notice about the missing mirror, as before.
 
 ## Rulings made during execution
 
@@ -228,10 +231,8 @@ reproduced here as they shaped the code):
 - **The recall server's entry loads in about 100 ms**, against about 230
   ms for memory's whole index, which is what `./recall-server` being its
   own entry point buys: every chat launches it as a subprocess.
-- **The credentials do not decrypt on every machine.** Anything that
-  needs the Agent SDK to authenticate, the ready session included,
-  cannot be probed without the private key. The dump and the commands
-  need none.
+- **The credentials did not decrypt here.** Probing the ready session
+  probably needs the private key; the dump and the commands needed none.
 
 ## Verification
 
@@ -308,12 +309,18 @@ This report and the roadmap's link to it follow.
 
 ## Known limitations
 
-None blocks merge.
+One probe step is open, and no other limitation is known to block merge.
+Merging is the user's call once that step is done.
 
-- **The ready-session probe is outstanding.** The header's model name,
-  which shows the Agent SDK started and the recall server with it, was
-  not seen because the credentials did not decrypt here. The dump covers
-  the same path without credentials, and the hook, the quit and the
+- **The ready-session probe is open.** The dump shows that the Agent SDK's
+  CLI starts and launches the recall server under the isolated linker. It
+  goes through `previewStart` and `dumpRequest`, though, not through
+  `openMemory`'s `createSession` and `connect` or the streaming
+  `Conversation` that emits `ready`, so that wiring is unconfirmed live.
+  The remaining step, on a machine where `.env` decrypts: run
+  `bun run dev` (optionally with the four XDG variables pointed at a
+  temporary directory), wait for the model's name in the header, and quit
+  with Ctrl+D without sending a message. The hook, the quit and the
   commands were probed live.
 - **Minor review findings were left**, each judged safe:
   - `declared()` in the graph test ignores `peerDependencies` and
@@ -333,7 +340,7 @@ None blocks merge.
     opens the TUI, a prompt runs one-shot";
   - the comment at `packages/memory/src/memory/open.test.ts:446` still
     names `boundary.test.ts`.
-- **Ahead of the next phase**, the roadmap's Candidates gain three
-  follow-ups from this work: memory's commands taking their dependencies
+- **Follow-ups for later.** The roadmap's Candidates section gains three
+  from this work: memory's commands taking their dependencies
   injected more widely, a single binary with `bun build --compile` from
   `cli`, and a split of `memory` should it outgrow one package.
