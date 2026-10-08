@@ -14,6 +14,8 @@ import {
     mkdir,
     readFile,
     rename,
+    rm,
+    stat,
     utimes,
     writeFile,
 } from "node:fs/promises";
@@ -44,6 +46,9 @@ export function localTime(at: string): string {
 // The data directory: transcripts/, tags.json and, now, .git/.
 export const historyRoot = (env: Env = process.env) =>
     dirname(transcriptDir(env));
+
+// How old an index.lock must be before history takes it for a crash's.
+const STALE_LOCK_MS = 60_000;
 
 // A hook carrying this line is Dorothy's to rewrite; one without it is the
 // user's, and never replaced.
@@ -95,7 +100,16 @@ export class MemoryHistory {
     #afterCommit: () => void = () => {};
 
     private constructor(options: HistoryOptions) {
-        this.repo = options.repo;
+        const repo = options.repo;
+        // Every commit made through history, its own and its commands',
+        // first clears a lock a crashed git left.
+        this.repo = {
+            ...repo,
+            commit: async (paths, message) => {
+                await this.#clearStaleLock();
+                return repo.commit(paths, message);
+            },
+        };
         this.root = options.repo.root;
         this.lock = options.lock;
         this.#now = options.now ?? (() => new Date());
@@ -259,6 +273,25 @@ export class MemoryHistory {
             }
         }
         return [...named];
+    }
+
+    // A git that stopped mid-commit leaves .git/index.lock, and every
+    // commit after fails on it. Under Dorothy's lock no git of hers is
+    // running, so one older than a minute is taken as a crash's; a git of
+    // the user's may hold one that long only while its editor is open.
+    async #clearStaleLock(): Promise<void> {
+        const path = join(this.root, ".git", "index.lock");
+        let changed: number;
+        try {
+            changed = (await stat(path)).mtimeMs;
+        } catch {
+            return;
+        }
+        if (Date.now() - changed <= STALE_LOCK_MS) {
+            return;
+        }
+        await rm(path, { force: true });
+        this.warn(`history: removed ${path}, a stale lock a stopped git left`);
     }
 
     // Why a file may not be committed as it is, or null; a missing file is

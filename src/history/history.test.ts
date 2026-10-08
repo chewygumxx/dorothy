@@ -22,6 +22,7 @@ import {
     existsSync,
     readFileSync,
     statSync,
+    utimesSync,
     writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -187,6 +188,29 @@ describe("adopting", () => {
 });
 
 describe("recording", () => {
+    it("clears a lock a crashed git left, and only a stale one", async () => {
+        const history = await open();
+        const lock = join(root, ".git", "index.lock");
+        writeFileSync(lock, "");
+        put(root, "tags.json", vocabulary(1));
+        await record(history, ["tags.json"], "fresh");
+        // A minute's grace: a git of the user's may still hold it.
+        expect(existsSync(lock)).toBe(true);
+        expect((await messages(history))[0]).toBe("adopt: 1 files");
+        const old = Date.now() / 1000 - 120;
+        utimesSync(lock, old, old);
+        put(root, SIDECAR, sidecar("One"));
+        await record(history, [SIDECAR], "stale");
+        expect(existsSync(lock)).toBe(false);
+        expect((await messages(history)).slice(0, 2)).toEqual([
+            "stale",
+            "catch-up: tags.json",
+        ]);
+        expect(warnings).toContain(
+            `history: removed ${lock}, a stale lock a stopped git left`,
+        );
+    });
+
     it("commits a change once, under its message", async () => {
         const history = await open();
         put(root, SIDECAR, sidecar("One"));
