@@ -7,6 +7,7 @@
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.3.283",
         "@dorothy/core": "workspace:*",
+        "@dorothy/tui": "workspace:*",
         "@dotenvx/dotenvx": "^2.32.4",
         "@modelcontextprotocol/sdk": "^1.31.0",
         "ink": "^7.1.1",
@@ -42,6 +43,21 @@
       "name": "@dorothy/core",
       "dependencies": {
         "niceware": "^4.0.0",
+      },
+    },
+    "packages/tui": {
+      "name": "@dorothy/tui",
+      "dependencies": {
+        "@dorothy/core": "workspace:*",
+        "ink": "^7.1.1",
+        "lowlight": "^3.3.0",
+        "marked": "^18.0.14",
+        "react": "^19.2.0",
+        "string-width": "^8.3.0",
+      },
+      "devDependencies": {
+        "@types/react": "^19.2.0",
+        "ink-testing-library": "^4.0.0",
       },
     },
   },
@@ -145,6 +161,8 @@
     "@conventional-changelog/template": ["@conventional-changelog/template@1.4.0", "", {}, "sha512-aalGyl7dbB5PArRebDIX43ZvBlXrYm9uWzGJ26t+4SzJVPsOuvfILGGbw5X4yX7i50YEmJ8zvbiWnqH/AAnZqg=="],
 
     "@dorothy/core": ["@dorothy/core@workspace:packages/core"],
+
+    "@dorothy/tui": ["@dorothy/tui@workspace:packages/tui"],
 
     "@dotenvx/dotenvx": ["@dotenvx/dotenvx@2.32.4", "", { "dependencies": { "@dotenvx/primitives": "^3.0.3", "@dotenvx/tooling": "^1.0.3", "global-agent": "^3.0.0", "node-forge": "^1.4.0", "undici": "^6.28.1", "yocto-spinner": "^1.2.1" }, "bin": { "dx": "src/cli/dotenvx.js", "dotenvx": "src/cli/dotenvx.js" } }, "sha512-nJJqsTXaY+mEITPpDFxoPVEPPS4mw815BU/YFjzamnp3eIELOR/CzJeOc7Lt9Vv2ZHH3sYDMUlnaN34FClc/zA=="],
 
