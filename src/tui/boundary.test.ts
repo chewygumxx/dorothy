@@ -26,7 +26,7 @@ describe("the TUI", () => {
         expect(importers.sort()).toEqual([]);
     });
 
-    it("leaves memory to run.tsx, which wires it in", async () => {
+    it("imports no memory module", async () => {
         const importers: string[] = [];
         for await (const path of new Glob("*.{ts,tsx}").scan(import.meta.dir)) {
             const text = await Bun.file(`${import.meta.dir}/${path}`).text();
@@ -34,10 +34,10 @@ describe("the TUI", () => {
                 importers.push(path);
             }
         }
-        expect(importers.sort()).toEqual(["run.tsx"]);
+        expect(importers.sort()).toEqual([]);
     });
 
-    it("leaves compaction to run.tsx, which wires it in", async () => {
+    it("imports no compaction module", async () => {
         const importers: string[] = [];
         for await (const path of new Glob("*.{ts,tsx}").scan(import.meta.dir)) {
             const text = await Bun.file(`${import.meta.dir}/${path}`).text();
@@ -45,10 +45,10 @@ describe("the TUI", () => {
                 importers.push(path);
             }
         }
-        expect(importers.sort()).toEqual(["run.tsx"]);
+        expect(importers.sort()).toEqual([]);
     });
 
-    it("leaves history to run.tsx, which wires it in", async () => {
+    it("imports no history module", async () => {
         const importers: string[] = [];
         for await (const path of new Glob("*.{ts,tsx}").scan(import.meta.dir)) {
             const text = await Bun.file(`${import.meta.dir}/${path}`).text();
@@ -56,10 +56,10 @@ describe("the TUI", () => {
                 importers.push(path);
             }
         }
-        expect(importers.sort()).toEqual(["run.tsx"]);
+        expect(importers.sort()).toEqual([]);
     });
 
-    it("leaves recall to run.tsx, but for its types", async () => {
+    it("imports nothing from recall but its types", async () => {
         const importers: string[] = [];
         for await (const path of new Glob("*.{ts,tsx}").scan(import.meta.dir)) {
             const text = await Bun.file(`${import.meta.dir}/${path}`).text();
@@ -73,6 +73,6 @@ describe("the TUI", () => {
                 importers.push(path);
             }
         }
-        expect(importers.sort()).toEqual(["run.tsx"]);
+        expect(importers.sort()).toEqual([]);
     });
 });

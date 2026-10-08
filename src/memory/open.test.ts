@@ -4,7 +4,7 @@
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/src/tui/run.test.ts
+// ::: :/src/memory/open.test.ts
 //
 //
 
@@ -41,7 +41,7 @@ import {
     sessionMaker,
     turnCommitter,
     withTurnEnd,
-} from "./run.js";
+} from "./open.js";
 
 // runTui reads the config and opens the transcript and the index from
 // these, so every one points into the test's directory.

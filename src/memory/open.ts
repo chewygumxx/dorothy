@@ -1,10 +1,10 @@
-// vim:set expandtab shiftwidth=4 filetype=typescriptreact:
+// vim:set expandtab shiftwidth=4 filetype=typescript:
 // SPDX-License-Identifier: GPL-3.0-only
 
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/src/tui/run.tsx
+// ::: :/src/memory/open.ts
 //
 //
 
@@ -37,21 +37,6 @@ import {
 import { Mirror } from "../history/mirror.js";
 import { type MemoryRepo, MIRROR, NO_MIRROR } from "../history/repo.js";
 import { parseKey } from "../history/seal.js";
-import { earlierSection } from "../memory/block.js";
-import { indexCatalogue } from "../memory/catalogue.js";
-import { tokens } from "../memory/rank.js";
-import { noticeChannel, sessionRecorder } from "../memory/record.js";
-import { MemoryService } from "../memory/service.js";
-import {
-    appendClusters,
-    type Cluster,
-    type Lock,
-    type Recorder,
-    readSidecar,
-    updateSidecar,
-} from "../memory/sidecar.js";
-import { type MemoryHooks, trackMemory } from "../memory/track.js";
-import { vocabularyPath } from "../memory/vocabulary.js";
 import {
     type PersonaMode,
     personaPrompt,
@@ -67,8 +52,23 @@ import {
     transcriptDir,
     transcriptPath,
 } from "../transcript.js";
+import { runApp } from "../tui/run-app.js";
 import type { Env } from "../xdg.js";
-import { runApp } from "./run-app.js";
+import { earlierSection } from "./block.js";
+import { indexCatalogue } from "./catalogue.js";
+import { tokens } from "./rank.js";
+import { noticeChannel, sessionRecorder } from "./record.js";
+import { MemoryService } from "./service.js";
+import {
+    appendClusters,
+    type Cluster,
+    type Lock,
+    type Recorder,
+    readSidecar,
+    updateSidecar,
+} from "./sidecar.js";
+import { type MemoryHooks, trackMemory } from "./track.js";
+import { vocabularyPath } from "./vocabulary.js";
 
 const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);

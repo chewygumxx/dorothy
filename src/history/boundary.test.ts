@@ -43,13 +43,14 @@ describe("history", () => {
         );
     });
 
-    // Memory's writers record through what they are given.
-    it("is never imported by memory", async () => {
+    // Memory's writers record through what they are given; only
+    // open.ts, which wires the chat, gives it to them.
+    it("is imported in memory by open.ts alone", async () => {
         expect(
             await importing(
                 join(import.meta.dir, "..", "memory"),
                 /from "\.\.\/history\//,
             ),
-        ).toEqual([]);
+        ).toEqual(["open.ts"]);
     });
 });
