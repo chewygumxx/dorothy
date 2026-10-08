@@ -8,7 +8,6 @@
 //
 //
 
-import { resolve } from "node:path";
 import {
     type Options,
     query,
@@ -29,11 +28,7 @@ import {
     type ConversationEvent,
     type TurnStats,
 } from "./contracts/session.js";
-import {
-    type RecallLaunch,
-    type SessionStart,
-    withSection,
-} from "./contracts/start.js";
+import { type SessionStart, withSection } from "./contracts/start.js";
 import {
     baseOptions,
     cliOptions,
@@ -41,20 +36,6 @@ import {
     personaPrompt,
     withHistory,
 } from "./persona.js";
-
-// Dorothy's memory tools: this program again, as an MCP server, leaving out
-// the conversation it serves.
-export function recallLaunch(phrase: string): RecallLaunch {
-    return {
-        command: process.execPath,
-        args: [
-            resolve(process.argv[1] ?? ""),
-            "--recall-server",
-            "--exclude",
-            phrase,
-        ],
-    };
-}
 
 export type QueryHandle = AsyncIterable<SDKMessage> & {
     interrupt(): Promise<unknown>;

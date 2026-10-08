@@ -23,7 +23,6 @@ import type { ChatSession, ResumedTurn, Turn } from "../contracts/session.js";
 import {
     Conversation,
     conversationOptions,
-    recallLaunch,
     type SessionSetup,
 } from "../conversation.js";
 import { entryHook } from "../history/commands.js";
@@ -44,6 +43,7 @@ import {
     systemPrompt,
 } from "../persona.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
+import { recallLaunch } from "../recall-launch.js";
 import { newPhrase } from "../session-id.js";
 import { structuredCall } from "../structured.js";
 import {
