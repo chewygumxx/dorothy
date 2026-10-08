@@ -11,11 +11,16 @@
 import { Box, Text, useApp, useInput, useWindowSize } from "ink";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { type Config, DEFAULT_CONFIG } from "../config.js";
-import type { ChatSession, ConversationEvent } from "../conversation.js";
-import type { Turn } from "../persona.js";
-import type { ResumedTurn, TranscriptEntry } from "../transcript.js";
+import type { EditResult } from "../contracts/editor.js";
+import type { NoticeSource } from "../contracts/notices.js";
+import type {
+    ChatSession,
+    ConversationEvent,
+    ResumedTurn,
+    Turn,
+} from "../contracts/session.js";
+import type { TranscriptEntry } from "../transcript.js";
 import { type Draft, EMPTY_DRAFT, layoutDraft } from "./editor.js";
-import type { EditResult } from "./external-editor.js";
 import { Header, Statusline, Warnings } from "./Header.js";
 import { History } from "./History.js";
 import { cleanPaste, draftWidth, type EditorMemory, Input } from "./Input.js";
@@ -33,15 +38,6 @@ import { moduleRows } from "./statusline.js";
 
 export type TranscriptSink = {
     append(entry: TranscriptEntry): Promise<void>;
-};
-
-// What the memory service tells the chat. The shapes are reducer actions, so
-// a notice is dispatched as it comes.
-export type Notice =
-    | { type: "warning"; message: string }
-    | { type: "memory-cost"; usd: number };
-export type NoticeSource = {
-    subscribe(listener: (notice: Notice) => void): () => void;
 };
 
 export type AppProps = {

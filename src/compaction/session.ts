@@ -8,9 +8,12 @@
 //
 //
 
-import type { ChatSession, ConversationEvent } from "../conversation.js";
+import type {
+    ChatSession,
+    ConversationEvent,
+    Turn,
+} from "../contracts/session.js";
 import type { Cluster } from "../memory/sidecar.js";
-import type { Turn } from "../persona.js";
 import { pressure } from "./plan.js";
 import { type Chained, compactOnce, type Landing } from "./run.js";
 import {

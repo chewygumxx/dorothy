@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { DEFAULT_CONFIG } from "../config.js";
+import type { Notice } from "../contracts/notices.js";
 import { systemPrompt } from "../persona.js";
 import { RecallIndex } from "../recall/store.js";
 import { newPhrase } from "../session-id.js";
@@ -30,7 +31,6 @@ import {
 import {
     MemoryService,
     type MemoryServiceOptions,
-    type Notice,
     REVIEW_CLAIM_RETRY_MS,
 } from "./service.js";
 import {

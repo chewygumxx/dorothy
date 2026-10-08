@@ -8,6 +8,7 @@
 //
 //
 
+import type { Turn } from "../contracts/session.js";
 import { escapeXml, renderClusters, unescapeXml } from "../memory/block.js";
 import {
     type Cluster,
@@ -15,7 +16,6 @@ import {
     normalise,
     overLimit,
 } from "../memory/sidecar.js";
-import type { Turn } from "../persona.js";
 import type { Range } from "./plan.js";
 
 // She is told she can reopen the turns, and asked to note what she might

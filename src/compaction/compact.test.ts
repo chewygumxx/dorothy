@@ -9,12 +9,12 @@
 //
 
 import { describe, expect, it } from "bun:test";
+import type { Turn } from "../contracts/session.js";
 import type {
     StructuredCall,
     StructuredOutcome,
     StructuredRequest,
 } from "../contracts/structured.js";
-import type { Turn } from "../persona.js";
 import { clusterInstructions } from "./clusters.js";
 import { COMPACTION_TIMEOUT_MS, compact } from "./compact.js";
 

@@ -10,9 +10,8 @@
 
 import { type FileHandle, mkdir, open, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { Lookup } from "./contracts/recall.js";
-import type { TurnStats } from "./conversation.js";
-import type { Turn } from "./persona.js";
+import type { RecallEvent } from "./contracts/recall.js";
+import type { ResumedTurn, Turn, TurnStats } from "./contracts/session.js";
 import { type Env, xdgDir } from "./xdg.js";
 
 export type SessionEvent = {
@@ -55,17 +54,6 @@ export type CompactionEvent = {
     through: number;
     clusters: number;
 };
-// A lookup Dorothy made mid-reply. offset is where in the reply's text it
-// happened, in UTF-16 code units, so a resumed chat can place it.
-type RecallBase = {
-    v: 1;
-    kind: "recall";
-    at: string;
-    id: string;
-    ok: boolean;
-    offset: number;
-};
-export type RecallEvent = RecallBase & Lookup;
 export type TranscriptEvent =
     | SessionEvent
     | UserEvent
@@ -193,14 +181,6 @@ export function toRecall(event: unknown): RecallEvent | null {
     }
     return null;
 }
-
-// A turn read back from a transcript: a reply keeps the stats recorded after
-// it, what the chat had cost by then, and the lookups made while writing it.
-export type ResumedTurn = Turn & {
-    stats?: TurnStats;
-    chatCostUsd?: number;
-    lookups?: RecallEvent[];
-};
 
 const finite = (value: unknown): value is number =>
     typeof value === "number" && Number.isFinite(value);

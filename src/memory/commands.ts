@@ -11,11 +11,12 @@
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { readConfig } from "../config.js";
+import type { EditResult } from "../contracts/editor.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { syncIndex } from "../recall/sync.js";
 import { carrierCounts } from "../recall/tags.js";
 import { transcriptDir } from "../transcript.js";
-import { type EditResult, editInEditor } from "../tui/external-editor.js";
+import { editInEditor } from "../tui/external-editor.js";
 import type { Env } from "../xdg.js";
 import { indexCatalogue } from "./catalogue.js";
 import {

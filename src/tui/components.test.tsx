@@ -12,7 +12,7 @@ import { describe, expect, it } from "bun:test";
 import { Box } from "ink";
 import { render } from "ink-testing-library";
 import { DEFAULT_CONFIG } from "../config.js";
-import type { TurnStats } from "../conversation.js";
+import type { TurnStats } from "../contracts/session.js";
 import { Header, Statusline, shortId, Warnings } from "./Header.js";
 import { cutToWidth, History, LineView } from "./History.js";
 import { LiveReply, wrapRows } from "./LiveReply.js";

@@ -19,8 +19,9 @@ import {
     type Seed,
 } from "../compaction/session.js";
 import { type Config, readConfig } from "../config.js";
+import type { NoticeSource } from "../contracts/notices.js";
+import type { ChatSession, ResumedTurn, Turn } from "../contracts/session.js";
 import {
-    type ChatSession,
     Conversation,
     conversationOptions,
     recallLaunch,
@@ -50,24 +51,18 @@ import {
 } from "../memory/sidecar.js";
 import { type MemoryHooks, trackMemory } from "../memory/track.js";
 import { vocabularyPath } from "../memory/vocabulary.js";
-import {
-    type PersonaMode,
-    personaPrompt,
-    promptHash,
-    type Turn,
-} from "../persona.js";
+import { type PersonaMode, personaPrompt, promptHash } from "../persona.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { newPhrase } from "../session-id.js";
 import { structuredCall } from "../structured.js";
 import {
-    type ResumedTurn,
     readTranscript,
     TranscriptWriter,
     transcriptDir,
     transcriptPath,
 } from "../transcript.js";
 import type { Env } from "../xdg.js";
-import { App, type NoticeSource } from "./App.js";
+import { App } from "./App.js";
 import { editInEditor } from "./external-editor.js";
 
 const describeError = (error: unknown) =>

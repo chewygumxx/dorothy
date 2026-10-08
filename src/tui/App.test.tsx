@@ -11,15 +11,17 @@
 import { describe, expect, it } from "bun:test";
 import { render } from "ink-testing-library";
 import { type Config, DEFAULT_CONFIG } from "../config.js";
+import type { EditResult } from "../contracts/editor.js";
+import type { Notice, NoticeSource } from "../contracts/notices.js";
 import type {
     ChatSession,
     ConversationEvent,
+    ResumedTurn,
+    Turn,
     TurnStats,
-} from "../conversation.js";
-import type { Turn } from "../persona.js";
-import type { ResumedTurn, TranscriptEntry } from "../transcript.js";
-import { App, type Notice, type NoticeSource } from "./App.js";
-import type { EditResult } from "./external-editor.js";
+} from "../contracts/session.js";
+import type { TranscriptEntry } from "../transcript.js";
+import { App } from "./App.js";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
 // ink-testing-library leaves rows unset, so Ink would take the size of the

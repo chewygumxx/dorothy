@@ -10,7 +10,7 @@
 
 import stringWidth from "string-width";
 import type { LineConfig, ModuleName } from "../config.js";
-import type { TurnStats } from "../conversation.js";
+import type { TurnStats } from "../contracts/session.js";
 
 export const SEPARATOR = " · ";
 

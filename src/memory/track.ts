@@ -8,7 +8,7 @@
 //
 //
 
-import type { ChatSession, ConversationEvent } from "../conversation.js";
+import type { ChatSession, ConversationEvent } from "../contracts/session.js";
 
 export type MemoryHooks = {
     sent(text: string): void;

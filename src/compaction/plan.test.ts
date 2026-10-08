@@ -9,8 +9,9 @@
 //
 
 import { describe, expect, it } from "bun:test";
+import type { Turn } from "../contracts/session.js";
 import type { Cluster } from "../memory/sidecar.js";
-import { type Turn, withClusters } from "../persona.js";
+import { withClusters } from "../persona.js";
 import {
     callCap,
     clusterTokens,

@@ -12,10 +12,12 @@ import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { MemoryConfig } from "../config.js";
-import { systemPrompt, type Turn, withMemory } from "../persona.js";
+import type { Notice } from "../contracts/notices.js";
+import type { ResumedTurn, Turn } from "../contracts/session.js";
+import { systemPrompt, withMemory } from "../persona.js";
 import type { RecallIndex } from "../recall/store.js";
 import { REAL_TIMERS, sleep, type Timers } from "../timers.js";
-import { type ResumedTurn, readTranscript } from "../transcript.js";
+import { readTranscript } from "../transcript.js";
 import type { Entry } from "./catalogue.js";
 import { buildMemory } from "./rank.js";
 import {
@@ -58,11 +60,6 @@ import {
     vocabularyProblem,
     writeVocabulary,
 } from "./vocabulary.js";
-
-// The same shapes as App's notices.
-export type Notice =
-    | { type: "warning"; message: string }
-    | { type: "memory-cost"; usd: number };
 
 export type MemoryServiceOptions = {
     // The transcripts directory.

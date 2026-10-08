@@ -9,10 +9,13 @@
 //
 
 import type { CompactionConfig } from "../config.js";
+import {
+    type ChatSession,
+    CLOSE_GRACE_MS,
+    type Turn,
+} from "../contracts/session.js";
 import type { StructuredCall } from "../contracts/structured.js";
-import type { ChatSession } from "../conversation.js";
 import type { Cluster } from "../memory/sidecar.js";
-import type { Turn } from "../persona.js";
 import { REAL_TIMERS, type Timers } from "../timers.js";
 import { covered, seedTurns } from "./plan.js";
 
@@ -60,10 +63,9 @@ export type CompactionOptions = {
 };
 
 // How long quitting waits for a save under way, and its record, before
-// it goes on without them. Paired with CLOSE_GRACE_MS in
-// src/conversation.ts, which Conversation.close gives the CLI to exit;
-// conversation.test.ts fails if the two differ.
-export const QUIT_GRACE_MS = 2000;
+// it goes on without them. It is the session's grace by definition: the
+// time Conversation.close gives the CLI to exit.
+export const QUIT_GRACE_MS = CLOSE_GRACE_MS;
 
 export const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);

@@ -12,9 +12,9 @@ import type { Lookup } from "../contracts/recall.js";
 import type {
     ConversationEvent,
     RawMessage,
+    ResumedTurn,
     TurnStats,
-} from "../conversation.js";
-import type { ResumedTurn } from "../transcript.js";
+} from "../contracts/session.js";
 
 export const RAW_LIMIT = 20;
 export const WARNING_LIMIT = 3;

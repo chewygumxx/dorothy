@@ -10,16 +10,16 @@
 
 import { describe, expect, it } from "bun:test";
 import type {
+    ChatSession,
+    ConversationEvent,
+    Turn,
+    TurnStats,
+} from "../contracts/session.js";
+import type {
     StructuredOutcome,
     StructuredRequest,
 } from "../contracts/structured.js";
-import type {
-    ChatSession,
-    ConversationEvent,
-    TurnStats,
-} from "../conversation.js";
 import type { Cluster } from "../memory/sidecar.js";
-import type { Turn } from "../persona.js";
 import type { Timers } from "../timers.js";
 import { clusterInstructions } from "./clusters.js";
 import {

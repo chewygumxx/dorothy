@@ -10,9 +10,9 @@
 
 import { describe, expect, it } from "bun:test";
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import { cliOptions, type Turn } from "../persona.js";
+import type { ResumedTurn, Turn } from "../contracts/session.js";
+import { cliOptions } from "../persona.js";
 import type { Timers } from "../timers.js";
-import type { ResumedTurn } from "../transcript.js";
 import {
     CLUSTERS_INSTRUCTION,
     pendingReads,

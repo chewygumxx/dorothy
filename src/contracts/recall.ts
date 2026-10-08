@@ -233,3 +233,15 @@ export function describeLookup(
     lookup.turns = windowRange(opened?.window);
     return lookup;
 }
+
+// A lookup Dorothy made mid-reply. offset is where in the reply's text it
+// happened, in UTF-16 code units, so a resumed chat can place it.
+type RecallBase = {
+    v: 1;
+    kind: "recall";
+    at: string;
+    id: string;
+    ok: boolean;
+    offset: number;
+};
+export type RecallEvent = RecallBase & Lookup;

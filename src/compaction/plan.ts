@@ -8,9 +8,10 @@
 //
 //
 
+import type { Turn } from "../contracts/session.js";
 import { tokens } from "../memory/rank.js";
 import type { Cluster } from "../memory/sidecar.js";
-import { type Turn, withClusters } from "../persona.js";
+import { withClusters } from "../persona.js";
 
 // Turns from to through, counting from 1, both included.
 export type Range = { from: number; through: number };

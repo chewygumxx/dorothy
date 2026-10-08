@@ -11,6 +11,7 @@
 import { chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Options } from "@anthropic-ai/claude-agent-sdk";
+import type { Turn } from "./contracts/session.js";
 import { renderClusters } from "./memory/block.js";
 import type { Cluster } from "./memory/sidecar.js";
 import { type Env, xdgDir } from "./xdg.js";
@@ -195,8 +196,6 @@ export function prepareCliHome(env: Env = process.env): void {
     mkdirSync(home, { recursive: true, mode: 0o700 });
     chmodSync(home, 0o700);
 }
-
-export type Turn = { role: "user" | "assistant"; text: string };
 
 // Prior turns go after the persona as context rather than as messages, so a
 // resumed session never speaks them in the user's voice.

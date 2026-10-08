@@ -18,75 +18,28 @@ import {
 import {
     ALLOWED_TOOLS,
     describeLookup,
-    type Lookup,
     RECOLLECT_TOOL,
     SERVER_NAME,
     type Tool,
     toolOf,
 } from "./contracts/recall.js";
+import {
+    type ChatSession,
+    CLOSE_GRACE_MS,
+    type ConversationEvent,
+    type Turn,
+    type TurnStats,
+} from "./contracts/session.js";
 import type { Cluster } from "./memory/sidecar.js";
 import {
     baseOptions,
     cliOptions,
     type PersonaMode,
     personaPrompt,
-    type Turn,
     withClusters,
     withHistory,
     withMemory,
 } from "./persona.js";
-
-export type TurnStats = {
-    // Input the cache did not serve; cached input is counted apart.
-    inputTokens: number;
-    cacheReadTokens: number;
-    cacheWriteTokens: number;
-    outputTokens: number;
-    ttftMs: number | null;
-    durationMs: number;
-    costUsd: number;
-    sessionCostUsd: number;
-};
-
-// The fields of an SDK message the raw pane reads. Every SDKMessage fits it,
-// so the TUI shows them without depending on the SDK's types.
-export type RawMessage = {
-    type: string;
-    subtype?: string;
-    event?: { type?: string; delta?: unknown };
-};
-
-export type ConversationEvent =
-    | { type: "ready"; model: string; sdkSessionId: string }
-    | { type: "delta"; text: string }
-    | {
-          type: "turn-end";
-          reply: string;
-          interrupted: boolean;
-          stats: TurnStats;
-          // Estimated tokens the next request starts from: what the last
-          // request read, plus the reply it added. Conversation always sets
-          // it.
-          contextTokens?: number;
-      }
-    | { type: "sdk"; message: RawMessage }
-    // A lookup Dorothy made; offset is where in the reply it happened.
-    | {
-          type: "lookup";
-          id: string;
-          ok: boolean;
-          offset: number;
-          lookup: Lookup;
-      }
-    | { type: "warning"; message: string }
-    // Compaction is under way and the next message waits for it.
-    | { type: "compacting" }
-    // Turns from to through now live in clusters of a new session.
-    | { type: "compacted"; from: number; through: number; clusters: number }
-    // What a background call for memory cost, such as compaction's.
-    | { type: "memory-cost"; usd: number }
-    // partial: the reply streamed so far, when the turn died mid-reply.
-    | { type: "error"; message: string; partial?: string };
 
 // How the CLI starts the recall server: dorothy --recall-server.
 export type RecallLaunch = { command: string; args: string[] };
@@ -114,21 +67,9 @@ export type QueryFn = (params: {
     options: Options;
 }) => QueryHandle;
 
-export interface ChatSession {
-    subscribe(listener: (event: ConversationEvent) => void): () => void;
-    send(text: string): void;
-    interrupt(): Promise<void>;
-    close(): Promise<void>;
-}
-
 type ResultMessage = Extract<SDKMessage, { type: "result" }>;
 
 type PendingCall = { tool: Tool; input: unknown; offset: number };
-
-// How long close() waits for the subprocess to exit on its own before
-// terminating it. Compaction's QUIT_GRACE_MS equals it, as
-// conversation.test.ts checks.
-export const CLOSE_GRACE_MS = 2000;
 
 // DISABLE_COMPACT keeps the CLI from compacting. If it ever does, the
 // conversation it summarised is no longer the one Dorothy's compaction

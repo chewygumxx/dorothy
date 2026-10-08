@@ -23,7 +23,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configPath, DEFAULT_CONFIG } from "../config.js";
-import type { ChatSession } from "../conversation.js";
+import type { ChatSession } from "../contracts/session.js";
 import { newPhrase } from "../session-id.js";
 import { transcriptDir } from "../transcript.js";
 import { xdgDir } from "../xdg.js";

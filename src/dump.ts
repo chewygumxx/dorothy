@@ -11,11 +11,12 @@
 import { type Options, query } from "@anthropic-ai/claude-agent-sdk";
 import { clusterTokens, seedTurns } from "./compaction/plan.js";
 import { readConfig } from "./config.js";
+import type { Turn } from "./contracts/session.js";
 import { conversationOptions, recallLaunch } from "./conversation.js";
 import { indexCatalogue } from "./memory/catalogue.js";
 import { buildMemory } from "./memory/rank.js";
 import { type Cluster, readSidecar } from "./memory/sidecar.js";
-import type { PersonaMode, Turn } from "./persona.js";
+import type { PersonaMode } from "./persona.js";
 import { indexPath, RecallIndex } from "./recall/store.js";
 import { newPhrase } from "./session-id.js";
 import { readTranscript, transcriptDir, transcriptPath } from "./transcript.js";
