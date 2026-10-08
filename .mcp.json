@@ -1,9 +1,0 @@
-{
-    "mcpServers": {
-        "github": {
-            "type": "http",
-            "url": "https://api.githubcopilot.com/mcp",
-            "headersHelper": "token=$(gh auth token) && printf '{\"Authorization\":\"Bearer %s\"}' \"$token\""
-        }
-    }
-}
