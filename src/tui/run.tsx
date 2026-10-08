@@ -9,7 +9,6 @@
 //
 
 import { randomBytes } from "node:crypto";
-import { render } from "ink";
 import { COMPACTION_TIMEOUT_MS } from "../compaction/compact.js";
 import { clusterTokens, seedTurns } from "../compaction/plan.js";
 import {
@@ -69,8 +68,7 @@ import {
     transcriptPath,
 } from "../transcript.js";
 import type { Env } from "../xdg.js";
-import { App } from "./App.js";
-import { editInEditor } from "./external-editor.js";
+import { runApp } from "./run-app.js";
 
 const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
@@ -597,22 +595,16 @@ export async function runTui(
         return record === null ? session : record(session);
     };
 
-    const app = render(
-        <App
-            phrase={phrase}
-            history={history}
-            editDraft={(text) => editInEditor(text)}
-            createSession={createSession}
-            notices={mergeNotices(memory, launched?.history, channel)}
-            initialWarnings={warnings}
-            initialCostUsd={costUsd}
-            config={config}
-        />,
-        // Kitty-protocol terminals report Shift+Enter apart from Enter.
-        { exitOnCtrlC: false, kittyKeyboard: { mode: "auto" } },
-    );
     try {
-        await app.waitUntilExit();
+        await runApp({
+            phrase,
+            history,
+            createSession,
+            notices: mergeNotices(memory, launched?.history, channel),
+            initialWarnings: warnings,
+            initialCostUsd: costUsd,
+            config,
+        });
     } finally {
         // Running reviews and compactions are closed unsaved, and let go
         // of their claims before the index they are held in closes.
