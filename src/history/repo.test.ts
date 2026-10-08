@@ -140,6 +140,18 @@ function contract(make: (root: string) => MemoryRepo): void {
         expect(await messages(repo, "never.txt")).toEqual([]);
     });
 
+    it("reads a path as a name, never a pattern", async () => {
+        const repo = await fresh();
+        put(repo.root, "a*.txt", "1\n");
+        put(repo.root, "a1.txt", "1\n");
+        await repo.commit(["a*.txt"], "one");
+        expect(await repo.files("HEAD")).toEqual(["a*.txt"]);
+        rmSync(join(repo.root, "a*.txt"));
+        await repo.commit(["a*.txt"], "gone");
+        expect(await repo.files("HEAD")).toEqual([]);
+        expect(await messages(repo, "a*.txt")).toEqual(["gone", "one"]);
+    });
+
     it("lists what changed since the last commit, ignored files aside", async () => {
         const repo = await fresh();
         put(repo.root, ".gitignore", "*.tmp\n");

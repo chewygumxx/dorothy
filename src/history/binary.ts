@@ -125,10 +125,12 @@ export function binaryRepo(
     const root = resolvePath(location);
     // Git never looks above the data directory for a repository, so a
     // parent that is one (a dotfiles repository over $HOME) is not
-    // written to when root has none of its own.
+    // written to when root has none of its own; and a path is a name,
+    // never a pattern, so a file named a*.txt stages only itself.
     const base = {
         ...isolatedEnv(env),
         GIT_CEILING_DIRECTORIES: dirname(root),
+        GIT_LITERAL_PATHSPECS: "1",
     };
     let helpers: Promise<string[]> | null = null;
 
@@ -203,19 +205,22 @@ export function binaryRepo(
             if (paths.length === 0) {
                 return null;
             }
-            for (const path of paths) {
-                await must(
-                    existsSync(join(root, path))
-                        ? ["add", "--", path]
-                        : [
-                              "rm",
-                              "--cached",
-                              "--ignore-unmatch",
-                              "-q",
-                              "--",
-                              path,
-                          ],
-                );
+            const present = paths.filter((path) =>
+                existsSync(join(root, path)),
+            );
+            const missing = paths.filter((path) => !present.includes(path));
+            if (present.length > 0) {
+                await must(["add", "--", ...present]);
+            }
+            if (missing.length > 0) {
+                await must([
+                    "rm",
+                    "--cached",
+                    "--ignore-unmatch",
+                    "-q",
+                    "--",
+                    ...missing,
+                ]);
             }
             if ((await run(["diff", "--cached", "--quiet"])).code === 0) {
                 return null;
