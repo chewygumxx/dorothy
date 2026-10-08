@@ -10,6 +10,10 @@
 
 import { describe, expect, it } from "bun:test";
 import type {
+    StructuredOutcome,
+    StructuredRequest,
+} from "../contracts/structured.js";
+import type {
     ChatSession,
     ConversationEvent,
     TurnStats,
@@ -26,7 +30,6 @@ import {
     type SaveResult,
     type Seed,
 } from "./session.js";
-import type { StructuredOutcome, StructuredRequest } from "./types.js";
 
 const NOW = new Date("2026-10-07T08:00:00.000Z");
 const STATS: TurnStats = {

@@ -12,6 +12,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { readConfig } from "../config.js";
+import { SERVER_NAME } from "../contracts/recall.js";
 import { vocabularyPath } from "../memory/vocabulary.js";
 import { transcriptDir } from "../transcript.js";
 import type { Env } from "../xdg.js";
@@ -24,7 +25,6 @@ import {
 } from "./query.js";
 import { indexPath, RecallIndex } from "./store.js";
 import { syncIndex } from "./sync.js";
-import { SERVER_NAME } from "./types.js";
 
 // The guidance on when to look things up lives here: it always reaches the
 // model with the tools.

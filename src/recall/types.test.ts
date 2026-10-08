@@ -18,7 +18,7 @@ import {
     type SearchHit,
     type SearchResult,
     toolOf,
-} from "./types.js";
+} from "../contracts/recall.js";
 
 const hit = (identifier: string): SearchHit => ({
     "@type": "Conversation",

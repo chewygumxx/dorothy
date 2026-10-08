@@ -9,8 +9,8 @@
 //
 
 import { describe, expect, it } from "bun:test";
+import type { Lookup } from "../contracts/recall.js";
 import type { ConversationEvent, TurnStats } from "../conversation.js";
-import type { Lookup } from "../recall/types.js";
 import {
     type ChatState,
     initialState,

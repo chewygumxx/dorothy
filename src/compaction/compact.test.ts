@@ -9,14 +9,14 @@
 //
 
 import { describe, expect, it } from "bun:test";
-import type { Turn } from "../persona.js";
-import { clusterInstructions } from "./clusters.js";
-import { COMPACTION_TIMEOUT_MS, compact } from "./compact.js";
 import type {
     StructuredCall,
     StructuredOutcome,
     StructuredRequest,
-} from "./types.js";
+} from "../contracts/structured.js";
+import type { Turn } from "../persona.js";
+import { clusterInstructions } from "./clusters.js";
+import { COMPACTION_TIMEOUT_MS, compact } from "./compact.js";
 
 const NOW = new Date("2026-10-07T08:00:00.000Z");
 const turns: Turn[] = [

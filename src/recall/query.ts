@@ -8,19 +8,6 @@
 //
 //
 
-import { salience, tokens } from "../memory/rank.js";
-import { characters, normalise } from "../memory/sidecar.js";
-import { byLabel } from "../memory/vocabulary.js";
-import type { RecallIndex } from "./store.js";
-import { readsByTarget, visitsByPhrase } from "./sync.js";
-import {
-    carriers,
-    conceptByLabel,
-    keywordsOf,
-    listedConcepts,
-    narrowerThan,
-    vocabularyBroken,
-} from "./tags.js";
 import type {
     ConversationObject,
     Match,
@@ -34,7 +21,20 @@ import type {
     TagsInput,
     TagsResult,
     WindowTurn,
-} from "./types.js";
+} from "../contracts/recall.js";
+import { salience, tokens } from "../memory/rank.js";
+import { characters, normalise } from "../memory/sidecar.js";
+import { byLabel } from "../memory/vocabulary.js";
+import type { RecallIndex } from "./store.js";
+import { readsByTarget, visitsByPhrase } from "./sync.js";
+import {
+    carriers,
+    conceptByLabel,
+    keywordsOf,
+    listedConcepts,
+    narrowerThan,
+    vocabularyBroken,
+} from "./tags.js";
 
 // A mistake in what Dorothy asked for, worded for her to relay.
 export class RecallError extends Error {}

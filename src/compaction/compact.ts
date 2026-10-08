@@ -8,6 +8,7 @@
 //
 //
 
+import type { StructuredCall } from "../contracts/structured.js";
 import type { Cluster } from "../memory/sidecar.js";
 import type { Turn } from "../persona.js";
 import {
@@ -17,7 +18,6 @@ import {
     validateClusters,
 } from "./clusters.js";
 import { outgoing, type Range } from "./plan.js";
-import type { StructuredCall } from "./types.js";
 
 // As long as a review may take.
 export const COMPACTION_TIMEOUT_MS = 120_000;

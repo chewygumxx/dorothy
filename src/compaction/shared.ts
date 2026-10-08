@@ -9,12 +9,12 @@
 //
 
 import type { CompactionConfig } from "../config.js";
+import type { StructuredCall } from "../contracts/structured.js";
 import type { ChatSession } from "../conversation.js";
 import type { Cluster } from "../memory/sidecar.js";
 import type { Turn } from "../persona.js";
 import { REAL_TIMERS, type Timers } from "../timers.js";
 import { covered, seedTurns } from "./plan.js";
-import type { StructuredCall } from "./types.js";
 
 // Failures in a launch after which compaction stops until the next launch.
 export const MAX_FAILURES = 3;

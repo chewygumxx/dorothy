@@ -4,7 +4,7 @@
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/src/recall/types.ts
+// ::: :/src/contracts/recall.ts
 //
 //
 

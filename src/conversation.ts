@@ -15,6 +15,15 @@ import {
     type SDKMessage,
     type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import {
+    ALLOWED_TOOLS,
+    describeLookup,
+    type Lookup,
+    RECOLLECT_TOOL,
+    SERVER_NAME,
+    type Tool,
+    toolOf,
+} from "./contracts/recall.js";
 import type { Cluster } from "./memory/sidecar.js";
 import {
     baseOptions,
@@ -26,15 +35,6 @@ import {
     withHistory,
     withMemory,
 } from "./persona.js";
-import {
-    ALLOWED_TOOLS,
-    describeLookup,
-    type Lookup,
-    RECOLLECT_TOOL,
-    SERVER_NAME,
-    type Tool,
-    toolOf,
-} from "./recall/types.js";
 
 export type TurnStats = {
     // Input the cache did not serve; cached input is counted apart.

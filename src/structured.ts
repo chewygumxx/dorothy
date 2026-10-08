@@ -17,7 +17,7 @@ import type {
     StructuredCall,
     StructuredOutcome,
     StructuredRequest,
-} from "./compaction/types.js";
+} from "./contracts/structured.js";
 import { baseOptions, cliOptions } from "./persona.js";
 import { REAL_TIMERS, type Timers } from "./timers.js";
 

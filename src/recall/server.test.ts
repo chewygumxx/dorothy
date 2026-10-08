@@ -14,16 +14,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { EMPTY_SIDECAR, sidecarPath } from "../memory/sidecar.js";
-import { newPhrase } from "../session-id.js";
-import { createRecallServer, type RecallServerOptions } from "./server.js";
-import { RecallIndex } from "./store.js";
 import type {
     OpenResult,
     RecollectResult,
     SearchResult,
     TagsResult,
-} from "./types.js";
+} from "../contracts/recall.js";
+import { EMPTY_SIDECAR, sidecarPath } from "../memory/sidecar.js";
+import { newPhrase } from "../session-id.js";
+import { createRecallServer, type RecallServerOptions } from "./server.js";
+import { RecallIndex } from "./store.js";
 
 const A = newPhrase(() => Uint8Array.from([1, 1, 2, 3, 4, 5, 6, 7]));
 const LIVE = newPhrase(() => Uint8Array.from([9, 1, 2, 3, 4, 5, 6, 7]));

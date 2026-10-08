@@ -10,9 +10,9 @@
 
 import { type FileHandle, mkdir, open, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import type { Lookup } from "./contracts/recall.js";
 import type { TurnStats } from "./conversation.js";
 import type { Turn } from "./persona.js";
-import type { Lookup } from "./recall/types.js";
 import { type Env, xdgDir } from "./xdg.js";
 
 export type SessionEvent = {
