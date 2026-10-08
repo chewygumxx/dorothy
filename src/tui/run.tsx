@@ -35,7 +35,7 @@ import {
     openHistory,
 } from "../history/history.js";
 import { Mirror } from "../history/mirror.js";
-import { MIRROR, NO_MIRROR } from "../history/repo.js";
+import { type MemoryRepo, MIRROR, NO_MIRROR } from "../history/repo.js";
 import { parseKey } from "../history/seal.js";
 import { indexCatalogue } from "../memory/catalogue.js";
 import { tokens } from "../memory/rank.js";
@@ -178,7 +178,8 @@ export function mergeNotices(
 export type LaunchedHistory = {
     history: MemoryHistory;
     mirror: Mirror;
-    close(): void;
+    // Waits for a seal under way, never for a push.
+    close(): Promise<void>;
 };
 
 // History at launch, before anything is read: opened under the index's
@@ -190,12 +191,14 @@ export async function launchHistory({
     warnings,
     env = process.env,
     hook = entryHook(),
+    maintain = maintainDaily,
 }: {
     config: Pick<Config, "history">;
     index: { lock: Lock } | null;
     warnings: string[];
     env?: Env;
     hook?: HookCommand | null;
+    maintain?: (repo: MemoryRepo) => Promise<boolean>;
 }): Promise<LaunchedHistory | null> {
     if (!config.history.enabled) {
         return null;
@@ -223,24 +226,29 @@ export async function launchHistory({
     // With a mirror, a push at every launch: what a push cut short at
     // quit left is sent now, and one with nothing new is cheap. The push
     // seals whatever waits first.
+    let pushed: Promise<unknown> = Promise.resolve();
     try {
         if ((await history.repo.remote(MIRROR)) === null) {
             history.warn(NO_MIRROR);
         } else {
-            void mirror.push();
+            pushed = mirror.push();
         }
     } catch (error) {
         history.warn(
             `history: couldn't look for the mirror (${describeError(error)})`,
         );
     }
-    void maintainDaily(history.repo);
+    // The repack waits for the launch's push, so the two never run at
+    // once, and is skipped once history has closed.
+    let closed = false;
+    void pushed.then(() => (closed ? false : maintain(history.repo)));
     warnings.push(...history.takeWarnings());
     return {
         history,
         mirror,
-        close: () => {
-            mirror.stop();
+        close: async () => {
+            closed = true;
+            await mirror.stop();
             opened.close();
         },
     };
