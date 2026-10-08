@@ -172,7 +172,8 @@ In order of completion.
 - **Workspace modularity**:
   [spec](./specs/2026-10-09-workspace-modularity-design.md),
   [diagram](./specs/2026-10-09-workspace-modularity-packages.html),
-  [plan](./plans/2026-10-09-workspace-modularity.md).
+  [plan](./plans/2026-10-09-workspace-modularity.md),
+  [report](./reports/2026-10-09-workspace-modularity.md).
 
 ## Revisions
 
@@ -184,7 +185,7 @@ In order of completion.
   outgrown the repository's size and the work ahead. Ahead's phases take
   the Status, Required and Rationale fields.
 - 2026-10-09: Workspace Modularity is done, so the Agentic Asset Refactor
-  is next and no phase in Ahead waits on another done one. Cyclical
-  maintenance is built inside `memory`, and the Messages API move replaces
+  is next and no phase in Ahead waits on a phase not yet done. Cyclical
+  Maintenance is built inside `memory`, and the Messages API move replaces
   `agent`. Candidates gain injected history commands, a compiled binary
   and a split of `memory`.
