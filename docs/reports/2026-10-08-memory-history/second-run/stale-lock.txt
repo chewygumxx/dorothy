@@ -1,0 +1,8 @@
+# touch -d "2 minutes ago" .git/index.lock; a TUI open, then from the second window:
+# $B src/index.ts --history -n 3
+dorothy: history: removed $P/data/dorothy/.git/index.lock, a stale lock a stopped git left
+ad35f2a  2026-10-08 18:56  turn     turn: bibelot-hiccoughed-equivoke-dogtooth
+567a4f4  2026-10-08 18:55  dorothy  review: retrace-uproot-sluggishly-interventionism (dorothy, claude-sonnet-5-5)
+c36bafb  2026-10-08 18:55  turn     turn: retrace-uproot-sluggishly-interventionism #1
+exit 0
+# afterwards: ls .git/index.lock: No such file or directory

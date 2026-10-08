@@ -1,0 +1,31 @@
+# Step 4a, from the checkout with the probe's key
+$ $B src/index.ts --mirror $P/mirror.git
+Pushed to $P/mirror.git
+exit 0
+$ git -C $P/mirror.git ls-tree -r --name-only sealed
+SEALED
+bundles/000001.enc
+
+# Step 4b, from $P/keyless (an empty dummy .env), DOROTHY_MIRROR_KEY unset
+$ $B /home/chewygumxx/dev/dorothy/src/index.ts --mirror $P/mirror.git
+dorothy: DOROTHY_MIRROR_KEY is not set, and the bundles already sealed need the key they were sealed with; set that one with dotenvx set. No mirror is set
+exit 1
+$ wc -c $P/keyless/.env
+0 $P/keyless/.env
+mirror's sealed ref unchanged (769105a), SEALED and bundles/000001.enc only
+
+# Step 4c, from the checkout with a different random key
+$ $B src/index.ts --mirror
+Mirror: $P/mirror.git
+Sealed through: 9bce027
+Waiting: no
+exit 0
+$ $B src/index.ts --mirror $P/mirror.git
+dorothy: DOROTHY_MIRROR_KEY does not open the bundles already sealed; set the key they were sealed with. No mirror is set
+exit 1
+mirror's sealed ref unchanged (769105a)
+
+# The TUI with the wrong key, nothing waiting to seal: no warning
+# The TUI with the wrong key after a sweep committed 058fc54 (trimmed):
+! history: DOROTHY_MIRROR_KEY does not open the sealed bundles; set the key they were sealed with
+mirror's sealed ref still 769105a; main 058fc54, sealed-through 9bce027

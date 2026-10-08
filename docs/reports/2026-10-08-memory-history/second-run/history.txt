@@ -1,0 +1,24 @@
+ad35f2a  2026-10-08 18:56  turn     turn: bibelot-hiccoughed-equivoke-dogtooth
+567a4f4  2026-10-08 18:55  dorothy  review: retrace-uproot-sluggishly-interventionism (dorothy, claude-sonnet-5-5)
+c36bafb  2026-10-08 18:55  turn     turn: retrace-uproot-sluggishly-interventionism #1
+6de6173  2026-10-08 18:55  dorothy  title: retrace-uproot-sluggishly-interventionism (prompt)
+2797147  2026-10-08 18:55  turn     turn: retrace-uproot-sluggishly-interventionism
+34e7281  2026-10-08 18:55  turn     turn: benchmarked-incoherent-streamier-deteriorate
+058fc54  2026-10-08 18:54  turn     turn: embosoming-tonsillar-pageant-brutality
+9bce027  2026-10-08 18:52  dorothy  review: gibber-irksomely-discounting-mayest (dorothy, claude-sonnet-5-5)
+589a8e8  2026-10-08 18:51  turn     turn: gibber-irksomely-discounting-mayest #3
+1957115  2026-10-08 18:51  restore  restore: transcripts/gibber-irksomely-discounting-mayest.jsonl from 7d9b3b9 (broken kept)
+c359d27  2026-10-08 18:49  dorothy  review: gibber-irksomely-discounting-mayest (dorothy, claude-sonnet-5-5)
+7d9b3b9  2026-10-08 18:49  turn     turn: gibber-irksomely-discounting-mayest #1
+51e1fe0  2026-10-08 18:49  dorothy  review: smoothed-chanting-purloiner-tricking (dorothy, claude-sonnet-5-5)
+df23514  2026-10-08 18:49  turn     turn: gibber-irksomely-discounting-mayest
+ac0bc54  2026-10-08 18:49  dorothy  title: gibber-irksomely-discounting-mayest (prompt)
+3ec30c2  2026-10-08 18:49  turn     turn: gibber-irksomely-discounting-mayest
+9519a8e  2026-10-08 18:49  restore  restore: transcripts/smoothed-chanting-purloiner-tricking.meta.json from 536802e (broken kept)
+1ef74e6  2026-10-08 18:48  restore  restore: tags.json from cf3dcdd (broken kept)
+2a48ad7  2026-10-08 18:46  dorothy  review: smoothed-chanting-purloiner-tricking (dorothy, claude-sonnet-5-5)
+3b3a489  2026-10-08 18:46  turn     turn: smoothed-chanting-purloiner-tricking #1
+536802e  2026-10-08 18:46  dorothy  title: smoothed-chanting-purloiner-tricking (prompt)
+e5472c8  2026-10-08 18:46  turn     turn: smoothed-chanting-purloiner-tricking
+11c4150  2026-10-08 18:46  turn     turn: tinhorn-fluidal-thalamic-brickyard
+cf3dcdd  2026-10-08 18:46  adopt    adopt: 10 files
