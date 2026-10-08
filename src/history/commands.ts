@@ -605,19 +605,19 @@ export async function runMirror(
         if (key === null) {
             if ((await repo.sealedNames()).length > 0) {
                 err.write(
-                    "dorothy: DOROTHY_MIRROR_KEY is not set, and the bundles already sealed need the key they were sealed with; set that one with dotenvx set. No mirror is set\n",
+                    "dorothy: DOROTHY_MIRROR_KEY is not set, and the bundles already sealed need the key they were sealed with; set that one with dotenvx set. Nothing was changed\n",
                 );
                 return 1;
             }
             if (!existsSync(join(cwd, ".env"))) {
                 err.write(
-                    `dorothy: there is no .env in ${cwd} to keep DOROTHY_MIRROR_KEY in; run --mirror from the checkout whose .env holds Dorothy's credentials. No mirror is set\n`,
+                    `dorothy: there is no .env in ${cwd} to keep DOROTHY_MIRROR_KEY in; run --mirror from the checkout whose .env holds Dorothy's credentials. Nothing was changed\n`,
                 );
                 return 1;
             }
         } else if (!(await opensSealed(repo, key))) {
             err.write(
-                "dorothy: DOROTHY_MIRROR_KEY does not open the bundles already sealed; set the key they were sealed with. No mirror is set\n",
+                "dorothy: DOROTHY_MIRROR_KEY does not open the bundles already sealed; set the key they were sealed with. Nothing was changed\n",
             );
             return 1;
         }

@@ -454,7 +454,7 @@ describe("runMirror", () => {
         expect(code).toBe(1);
         expect(saved).toBe(0);
         expect(err.text).toMatch(
-            /^dorothy: there is no \.env in \S+ to keep DOROTHY_MIRROR_KEY in; run --mirror from the checkout whose \.env holds Dorothy's credentials\. No mirror is set\n$/,
+            /^dorothy: there is no \.env in \S+ to keep DOROTHY_MIRROR_KEY in; run --mirror from the checkout whose \.env holds Dorothy's credentials\. Nothing was changed\n$/,
         );
         expect(await repo().remote("mirror")).toBeNull();
     });
@@ -487,7 +487,7 @@ describe("runMirror", () => {
             }),
         ).toBe(1);
         expect(err.text).toBe(
-            "dorothy: DOROTHY_MIRROR_KEY is not set, and the bundles already sealed need the key they were sealed with; set that one with dotenvx set. No mirror is set\n",
+            "dorothy: DOROTHY_MIRROR_KEY is not set, and the bundles already sealed need the key they were sealed with; set that one with dotenvx set. Nothing was changed\n",
         );
 
         err = capture();
@@ -501,7 +501,7 @@ describe("runMirror", () => {
             }),
         ).toBe(1);
         expect(err.text).toBe(
-            "dorothy: DOROTHY_MIRROR_KEY does not open the bundles already sealed; set the key they were sealed with. No mirror is set\n",
+            "dorothy: DOROTHY_MIRROR_KEY does not open the bundles already sealed; set the key they were sealed with. Nothing was changed\n",
         );
 
         expect(saved).toBe(0);
