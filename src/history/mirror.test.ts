@@ -9,7 +9,7 @@
 //
 
 import { afterAll, describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Lock } from "../memory/sidecar.js";
 import type { Timers } from "../timers.js";
@@ -254,6 +254,9 @@ describe("recover", () => {
         ]);
         expect(await fresh.remote("mirror")).toBe(bare);
         expect(await waiting(fresh)).toBe(false);
+        // The user's alone, whatever git made them.
+        expect(statSync(fresh.root).mode & 0o777).toBe(0o700);
+        expect(statSync(join(fresh.root, ".git")).mode & 0o777).toBe(0o700);
     });
 
     it("stops at a bundle that will not open", async () => {

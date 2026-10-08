@@ -8,6 +8,8 @@
 //
 //
 
+import { chmod } from "node:fs/promises";
+import { join } from "node:path";
 import type { Env } from "../xdg.js";
 
 export type Engine = "git" | "isomorphic-git";
@@ -100,4 +102,11 @@ export async function hasGitBinary(env: Env = process.env): Promise<boolean> {
     } catch {
         return false;
     }
+}
+
+// The data directory and its repository are the user's alone, whatever
+// git init or a recovery's checkout made them.
+export async function keepPrivate(root: string): Promise<void> {
+    await chmod(root, 0o700);
+    await chmod(join(root, ".git"), 0o700);
 }

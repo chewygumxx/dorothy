@@ -18,6 +18,7 @@ import {
 } from "bun:test";
 import {
     appendFileSync,
+    chmodSync,
     existsSync,
     readFileSync,
     statSync,
@@ -108,6 +109,20 @@ describe("adopting", () => {
         ]);
         await open();
         expect(await messages(history)).toEqual(["adopt: 3 files"]);
+    });
+
+    it("keeps the directory and its repository the user's alone", async () => {
+        put(root, "tags.json", vocabulary(1));
+        chmodSync(root, 0o755);
+        const mode = (path: string) => statSync(path).mode & 0o777;
+        await open();
+        expect(mode(root)).toBe(0o700);
+        expect(mode(join(root, ".git"))).toBe(0o700);
+        chmodSync(root, 0o755);
+        chmodSync(join(root, ".git"), 0o755);
+        await open();
+        expect(mode(root)).toBe(0o700);
+        expect(mode(join(root, ".git"))).toBe(0o700);
     });
 
     it("adopts a directory that is not there yet", async () => {

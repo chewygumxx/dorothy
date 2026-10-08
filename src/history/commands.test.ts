@@ -14,6 +14,7 @@ import {
     existsSync,
     readdirSync,
     readFileSync,
+    statSync,
     writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -546,6 +547,12 @@ describe("runRecover", () => {
         expect(fresh.out.text).toMatch(
             /^Recovered 1 of 1 bundles; main is at [0-9a-f]{7}\nAll 3 files pass\.\n$/,
         );
+        for (const path of [
+            join(other, "dorothy"),
+            join(other, "dorothy/.git"),
+        ]) {
+            expect(statSync(path).mode & 0o777).toBe(0o700);
+        }
     });
 
     it("refuses a data directory that holds anything, or no key", async () => {

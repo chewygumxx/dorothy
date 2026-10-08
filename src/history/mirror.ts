@@ -11,6 +11,7 @@
 import type { Lock } from "../memory/sidecar.js";
 import { REAL_TIMERS, type Timers } from "../timers.js";
 import {
+    keepPrivate,
     MAIN,
     type MemoryRepo,
     MIRROR,
@@ -195,6 +196,7 @@ export async function recover({
     token: string | null;
 }): Promise<Recovered> {
     await repo.init();
+    await keepPrivate(repo.root);
     let names: string[];
     try {
         await repo.fetch(url, "sealed", token);
@@ -231,5 +233,6 @@ export async function recover({
         }
         await repo.setRemote(MIRROR, url);
     }
+    await keepPrivate(repo.root);
     return { applied, of: names.length, tip, stopped };
 }

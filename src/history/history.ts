@@ -25,7 +25,7 @@ import { recoverFile, stamp } from "./heal.js";
 import { fileKind, lint } from "./lint.js";
 import { FileLock } from "./lock.js";
 import { openRepo } from "./open.js";
-import { type Engine, MAIN, type MemoryRepo } from "./repo.js";
+import { type Engine, keepPrivate, MAIN, type MemoryRepo } from "./repo.js";
 
 export type HistoryNotice = { type: "warning"; message: string };
 export type HookCommand = { exec: string; script: string };
@@ -105,6 +105,7 @@ export class MemoryHistory {
             ) {
                 await history.#adopt();
             }
+            await keepPrivate(history.root);
         });
         if (options.hook) {
             await history.#installHook(options.hook);
@@ -341,6 +342,7 @@ export class MemoryHistory {
         if (!this.repo.exists()) {
             await this.repo.init();
         }
+        await keepPrivate(this.root);
         const ignore = join(this.root, ".gitignore");
         if (!existsSync(ignore)) {
             await writeFile(ignore, "*.tmp\n", { mode: 0o600 });
