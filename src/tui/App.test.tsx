@@ -20,8 +20,6 @@ import type {
     Turn,
     TurnStats,
 } from "../contracts/session.js";
-import { EXPECTED, SCRIPT } from "../memory/record.fixture.js";
-import type { TranscriptEntry } from "../transcript.js";
 import { App } from "./App.js";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
@@ -91,7 +89,6 @@ class FakeSession implements ChatSession {
 
 function setup({
     history = [],
-    failWrites = false,
     config = DEFAULT_CONFIG,
     notices,
     editDraft = async (text: string): Promise<EditResult> => ({
@@ -100,35 +97,24 @@ function setup({
     }),
 }: {
     history?: ResumedTurn[];
-    failWrites?: boolean;
     config?: Config;
     notices?: NoticeSource;
     editDraft?: (text: string) => Promise<EditResult>;
 } = {}) {
     const sessions: FakeSession[] = [];
     const histories: Turn[][] = [];
-    const entries: TranscriptEntry[] = [];
     const app = render(
         <App
             config={config}
             notices={notices}
             editDraft={editDraft}
             phrase="tumble-orchid-vapor-lantern"
-            promptHash="abc"
             history={history}
             createSession={(turns) => {
                 histories.push([...turns]);
                 const session = new FakeSession();
                 sessions.push(session);
                 return session;
-            }}
-            transcript={{
-                append: async (entry) => {
-                    if (failWrites) {
-                        throw new Error("disk full");
-                    }
-                    entries.push(entry);
-                },
             }}
         />,
     );
@@ -142,7 +128,7 @@ function setup({
         setSize(app, columns, rows);
         await tick();
     };
-    return { app, sessions, histories, entries, session, type, resize };
+    return { app, sessions, histories, session, type, resize };
 }
 
 describe("App", () => {
@@ -280,8 +266,19 @@ describe("App", () => {
     });
 
     it("orders warnings, input, statusline and header under the border", async () => {
-        const { app, session, type } = setup({ failWrites: true });
+        const listeners = new Set<(notice: Notice) => void>();
+        const { app, session, type } = setup({
+            notices: {
+                subscribe(listener) {
+                    listeners.add(listener);
+                    return () => listeners.delete(listener);
+                },
+            },
+        });
         await tick();
+        for (const listener of listeners) {
+            listener({ type: "warning", message: "memory: couldn't review" });
+        }
         await type("hello");
         await type("\r");
         session().emit({
@@ -293,7 +290,7 @@ describe("App", () => {
         await tick();
         const lines = (app.lastFrame() ?? "").split("\n");
         const warning = lines.findIndex((line) =>
-            line.startsWith("! transcript not saved"),
+            line.startsWith("! memory: couldn't review"),
         );
         expect(lines[warning - 1]).toStartWith("────");
         expect(lines[warning + 1]).toStartWith("›");
@@ -363,27 +360,8 @@ describe("App", () => {
         expect(app.lastFrame()).not.toContain("1 in");
     });
 
-    it("records the scripted chat", async () => {
-        const { sessions, entries, type } = setup();
-        await tick();
-        for (const step of SCRIPT) {
-            if ("send" in step) {
-                await type(step.send);
-                await type("\r");
-            } else {
-                const target =
-                    step.session === undefined
-                        ? sessions.at(-1)
-                        : sessions[step.session];
-                target?.emit(step.emit);
-            }
-            await tick();
-        }
-        expect(entries).toEqual(EXPECTED);
-    });
-
-    it("starts a session and records it once ready", async () => {
-        const { app, session, entries } = setup();
+    it("starts a session and shows it once ready", async () => {
+        const { app, session } = setup();
         await tick();
         expect(app.lastFrame()).toContain("tumble-orchid-vapor-lantern");
         expect(app.lastFrame()).toContain("starting");
@@ -394,42 +372,10 @@ describe("App", () => {
         });
         await tick();
         expect(app.lastFrame()).toContain("test-model");
-        expect(entries).toEqual([
-            {
-                kind: "session",
-                phrase: "tumble-orchid-vapor-lantern",
-                sdkSessionId: "sdk-1",
-                model: "test-model",
-                promptHash: "abc",
-                resumed: false,
-            },
-        ]);
     });
 
-    it("records each lookup in the transcript", async () => {
-        const { sessions, entries } = setup();
-        await tick();
-        sessions[0]?.emit({
-            type: "lookup",
-            id: "toolu_1",
-            ok: true,
-            offset: 4,
-            lookup: { tool: "search", query: "render", hits: 2 },
-        });
-        await tick();
-        expect(entries).toContainEqual({
-            kind: "recall",
-            id: "toolu_1",
-            ok: true,
-            offset: 4,
-            tool: "search",
-            query: "render",
-            hits: 2,
-        });
-    });
-
-    it("sends a message, streams the reply and records the turn", async () => {
-        const { app, session, entries, type } = setup();
+    it("sends a message and streams the reply", async () => {
+        const { app, session, type } = setup();
         await tick();
         await type("hello");
         await type("\r");
@@ -446,21 +392,15 @@ describe("App", () => {
         await tick();
         expect(app.lastFrame()).toContain("Hi there");
         expect(app.lastFrame()).toContain("1 in · 2 out");
-        expect(entries).toEqual([
-            { kind: "user", text: "hello" },
-            { kind: "assistant", text: "Hi there", interrupted: false },
-            { kind: "stats", ...stats },
-        ]);
     });
 
     it("ignores an empty or whitespace-only Enter", async () => {
-        const { session, entries, type } = setup();
+        const { session, type } = setup();
         await tick();
         await type("\r");
         await type("   ");
         await type("\r");
         expect(session().sent).toEqual([]);
-        expect(entries).toEqual([]);
     });
 
     it("keeps composing while a reply streams, and sends after", async () => {
@@ -535,7 +475,7 @@ describe("App", () => {
     });
 
     it("reconnects with full history after the session dies mid-reply", async () => {
-        const { app, sessions, histories, entries, type } = setup({
+        const { app, sessions, histories, type } = setup({
             history: [
                 { role: "user", text: "earlier" },
                 { role: "assistant", text: "yes" },
@@ -560,11 +500,6 @@ describe("App", () => {
             { role: "user", text: "hello" },
             { role: "assistant", text: "Par" },
         ]);
-        expect(entries).toContainEqual({
-            kind: "assistant",
-            text: "Par",
-            interrupted: true,
-        });
         expect(sessions[1]?.sent).toEqual(["again"]);
     });
 
@@ -578,16 +513,6 @@ describe("App", () => {
         await tick();
         expect(session().interrupts).toBe(1);
         expect(app.lastFrame()).toContain("interrupt failed: subprocess gone");
-    });
-
-    it("records a resumed session as resumed", async () => {
-        const { session, entries } = setup({
-            history: [{ role: "user", text: "earlier" }],
-        });
-        await tick();
-        session().emit({ type: "ready", model: "m", sdkSessionId: "s" });
-        await tick();
-        expect(entries[0]).toMatchObject({ kind: "session", resumed: true });
     });
 
     it("interrupts on Ctrl+C while streaming and quits when idle", async () => {
@@ -790,7 +715,7 @@ describe("App", () => {
     });
 
     it("takes no message while closing, and closes once", async () => {
-        const { app, session, entries, type } = setup();
+        const { app, session, type } = setup();
         await tick();
         session().closing = new Promise(() => {});
         await type("\u0004");
@@ -798,7 +723,7 @@ describe("App", () => {
         await type("\r");
         await type("\u0004");
         expect(app.lastFrame()).toContain("closing");
-        expect(entries.filter((entry) => entry.kind === "user")).toEqual([]);
+        expect(session().sent).toEqual([]);
         expect(session().closes).toBe(1);
     });
 
@@ -824,14 +749,5 @@ describe("App", () => {
         await type("\r");
         expect(session().closed).toBe(true);
         expect(session().sent).toEqual([]);
-    });
-
-    it("warns once when the transcript cannot be written, and keeps chatting", async () => {
-        const { app, session, type } = setup({ failWrites: true });
-        await tick();
-        await type("hello");
-        await type("\r");
-        expect(app.lastFrame()).toContain("transcript not saved: disk full");
-        expect(session().sent).toEqual(["hello"]);
     });
 });

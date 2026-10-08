@@ -41,6 +41,7 @@ import { parseKey } from "../history/seal.js";
 import { earlierSection } from "../memory/block.js";
 import { indexCatalogue } from "../memory/catalogue.js";
 import { tokens } from "../memory/rank.js";
+import { noticeChannel, sessionRecorder } from "../memory/record.js";
 import { MemoryService } from "../memory/service.js";
 import {
     appendClusters,
@@ -569,23 +570,40 @@ export async function runTui(
           })
         : null;
 
+    // The recorder wraps what the session maker returns, so a reply is
+    // appended before memory's turn-end hook asks for the flush.
+    const channel = noticeChannel();
+    const record =
+        transcript === null
+            ? null
+            : sessionRecorder({
+                  sink: transcript,
+                  phrase,
+                  promptHash: promptHash(
+                      personaPrompt({ recall: recall !== null, mode: persona }),
+                  ),
+                  resumed: history.length > 0,
+                  warn: (message) => channel.warn(message),
+              });
+    const make = sessionMaker({
+        compaction,
+        connect,
+        clusters,
+        memory,
+        turnEnded: turns?.ended ?? null,
+    });
+    const createSession = (turns: Turn[]): ChatSession => {
+        const session = make(turns);
+        return record === null ? session : record(session);
+    };
+
     const app = render(
         <App
             phrase={phrase}
-            promptHash={promptHash(
-                personaPrompt({ recall: recall !== null, mode: persona }),
-            )}
             history={history}
             editDraft={(text) => editInEditor(text)}
-            createSession={sessionMaker({
-                compaction,
-                connect,
-                clusters,
-                memory,
-                turnEnded: turns?.ended ?? null,
-            })}
-            notices={mergeNotices(memory, launched?.history)}
-            transcript={writer}
+            createSession={createSession}
+            notices={mergeNotices(memory, launched?.history, channel)}
             initialWarnings={warnings}
             initialCostUsd={costUsd}
             config={config}

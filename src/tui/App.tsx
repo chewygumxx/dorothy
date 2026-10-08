@@ -19,7 +19,6 @@ import type {
     ResumedTurn,
     Turn,
 } from "../contracts/session.js";
-import type { TranscriptEntry } from "../transcript.js";
 import { type Draft, EMPTY_DRAFT, layoutDraft } from "./editor.js";
 import { Header, Statusline, Warnings } from "./Header.js";
 import { History } from "./History.js";
@@ -36,16 +35,10 @@ import { RawPane } from "./RawPane.js";
 import { initialState, type Line, reduce } from "./state.js";
 import { moduleRows } from "./statusline.js";
 
-export type TranscriptSink = {
-    append(entry: TranscriptEntry): Promise<void>;
-};
-
 export type AppProps = {
     phrase: string;
-    promptHash: string;
     history: ResumedTurn[];
     createSession(history: Turn[]): ChatSession;
-    transcript: TranscriptSink | null;
     initialWarnings?: string[];
     // What the chat cost before this run, for --resume.
     initialCostUsd?: number;
@@ -62,10 +55,8 @@ const describeError = (error: unknown) =>
 
 export function App({
     phrase,
-    promptHash,
     history,
     createSession,
-    transcript,
     initialWarnings = [],
     initialCostUsd = 0,
     config = DEFAULT_CONFIG,
@@ -95,53 +86,14 @@ export function App({
     // Refs, not state: event listeners registered once must see current values.
     const turns = useRef<Turn[]>([...history]);
     const session = useRef<ChatSession | null>(null);
-    const resumed = useRef(history.length > 0);
-
-    const record = (entry: TranscriptEntry) => {
-        transcript?.append(entry).catch((error: unknown) => {
-            dispatch({
-                type: "warning",
-                message: `transcript not saved: ${describeError(error)}`,
-            });
-        });
-    };
 
     const onEvent = (event: ConversationEvent) => {
-        if (event.type === "ready") {
-            record({
-                kind: "session",
-                phrase,
-                sdkSessionId: event.sdkSessionId,
-                model: event.model,
-                promptHash,
-                resumed: resumed.current,
-            });
-            resumed.current = true;
-        } else if (event.type === "lookup") {
-            record({
-                kind: "recall",
-                id: event.id,
-                ok: event.ok,
-                offset: event.offset,
-                ...event.lookup,
-            });
-        } else if (event.type === "turn-end") {
+        if (event.type === "turn-end") {
             turns.current.push({ role: "assistant", text: event.reply });
-            record({
-                kind: "assistant",
-                text: event.reply,
-                interrupted: event.interrupted,
-            });
-            record({ kind: "stats", ...event.stats });
         } else if (event.type === "error" && event.partial) {
             // Keep what was already on screen, so a reconnect or --resume
             // carries it too.
             turns.current.push({ role: "assistant", text: event.partial });
-            record({
-                kind: "assistant",
-                text: event.partial,
-                interrupted: true,
-            });
         }
     };
 
@@ -212,7 +164,6 @@ export function App({
         }
         setDraft(EMPTY_DRAFT);
         turns.current.push({ role: "user", text });
-        record({ kind: "user", text });
         dispatch({ type: "sent", text });
         session.current?.send(text);
     };
