@@ -37,7 +37,7 @@ passed unchanged throughout.
 
 - Spec: [`docs/specs/2026-10-09-workspace-modularity-design.md`](../specs/2026-10-09-workspace-modularity-design.md)
 - Plan: [`docs/plans/2026-10-09-workspace-modularity.md`](../plans/2026-10-09-workspace-modularity.md)
-- Branch: `feat/workspace-modularity`, from `main` at `1f821e7`
+- Branch: `feat/workspace-modularity`, from `main` at `60cc328`
 
 At the head of the branch (before this report) `bun run check` passes with
 1118 tests, up from 1106 at `1f821e7`.
