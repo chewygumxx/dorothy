@@ -20,6 +20,7 @@ import type {
     Turn,
     TurnStats,
 } from "../contracts/session.js";
+import { EXPECTED, SCRIPT } from "../memory/record.fixture.js";
 import type { TranscriptEntry } from "../transcript.js";
 import { App } from "./App.js";
 
@@ -360,6 +361,25 @@ describe("App", () => {
         await tick();
         expect(app.lastFrame()).toContain(`${" ".repeat(9)}2 out`);
         expect(app.lastFrame()).not.toContain("1 in");
+    });
+
+    it("records the scripted chat", async () => {
+        const { sessions, entries, type } = setup();
+        await tick();
+        for (const step of SCRIPT) {
+            if ("send" in step) {
+                await type(step.send);
+                await type("\r");
+            } else {
+                const target =
+                    step.session === undefined
+                        ? sessions.at(-1)
+                        : sessions[step.session];
+                target?.emit(step.emit);
+            }
+            await tick();
+        }
+        expect(entries).toEqual(EXPECTED);
     });
 
     it("starts a session and records it once ready", async () => {

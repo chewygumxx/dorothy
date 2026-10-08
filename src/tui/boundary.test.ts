@@ -34,7 +34,8 @@ describe("the TUI", () => {
                 importers.push(path);
             }
         }
-        expect(importers.sort()).toEqual(["run.tsx"]);
+        // App.test.tsx reads the scripted chat while App still records it.
+        expect(importers.sort()).toEqual(["App.test.tsx", "run.tsx"]);
     });
 
     it("leaves compaction to run.tsx, which wires it in", async () => {
