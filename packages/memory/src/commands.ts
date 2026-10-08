@@ -1,3 +1,13 @@
+// vim:set expandtab shiftwidth=4 filetype=typescript:
+// SPDX-License-Identifier: GPL-3.0-only
+
+//
+//
+// ~chewygumxx/dorothy.git
+// ::: :/packages/memory/src/commands.ts
+//
+//
+
 // @dorothy/memory/commands: the commands that read and edit memory and
 // its history, each run once by a process of its own.
 

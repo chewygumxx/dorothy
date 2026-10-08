@@ -1,3 +1,13 @@
+// vim:set expandtab shiftwidth=4 filetype=typescript:
+// SPDX-License-Identifier: GPL-3.0-only
+
+//
+//
+// ~chewygumxx/dorothy.git
+// ::: :/packages/memory/src/index.ts
+//
+//
+
 // @dorothy/memory: her memory database. A chat opens it with
 // openMemory; --dump-context previews a chat's start with previewStart.
 // The recall server and the commands have entry points of their own, so
