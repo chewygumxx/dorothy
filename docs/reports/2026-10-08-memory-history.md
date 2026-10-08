@@ -29,11 +29,18 @@ and that the pre-commit hook refuses a broken file. Every step did what the
 plan expected, with the small differences noted in each. One small defect
 turned up: the restore warning dates the commit in UTC.
 
+A [second run](#second-run-after-the-reviews-fixes) followed the
+whole-branch review's fixes. It found every fix working, and one small
+defect: a refused `--mirror` says `No mirror is set` while the old mirror
+stays set.
+
 - Spec: [`docs/specs/2026-10-08-memory-history-design.md`][spec]
 - Plan: [`docs/plans/2026-10-08-memory-history.md`][plan], Task 11
-- Branch: `feat/memory-history` at `24ff233`
+- Branch: `feat/memory-history`, the first run at `24ff233` and the
+  second at `ad5936d`
 - Sample data: [`2026-10-08-memory-history/`](2026-10-08-memory-history/),
-  described under [Sample data](#sample-data)
+  described under [Sample data](#sample-data), and the second run's in
+  [`second-run/`](2026-10-08-memory-history/second-run/)
 
 [spec]: ../specs/2026-10-08-memory-history-design.md
 [plan]: ../plans/2026-10-08-memory-history.md
@@ -371,3 +378,322 @@ indentation, since the repository's format check covers JSON under
 `export DOROTHY_MIRROR_KEY='<32 random bytes, base64>'`: the placeholder is
 quoted, as unquoted it would parse as redirections, and shellcheck and
 shfmt, which CI runs on the scripts, would reject it.
+
+## Second run, after the review's fixes
+
+The second run ran the code at `ad5936d`, after the whole-branch review's
+fixes (`6b71f98` to `e54ddef`). It exercises those fixes live and checks
+again that adoption, turns, reviews, the mirror and recovery still hold.
+Five messages went to the model, and the run cost about $0.14: $0.046 for
+the three chats and $0.093 for their reviews, by the TUI's `chat` and
+`memory` figures.
+
+### Setup differences
+
+The setup was the first run's, with the same seed data and `config.toml`,
+in a new `mktemp -d` directory, `$P`. The XDG variables were echoed and
+checked in both windows before the first launch. The differences:
+
+- `env.sh` exports `$P` and builds the XDG paths from it.
+- `say.sh` types into window 0 by name, not the active window, which the
+  first run found typing into the second window's shell. It also skips
+  blank lines before reading the status line: with fewer lines on screen
+  than the pane's 40 rows, its last line was blank and the wait ran out.
+- A second key of 32 random bytes, for step 4c, was kept in `$P`, never
+  in a `.env`.
+- `$P/keyless` held an empty dummy `.env` for step 4b, the one `--mirror`
+  run with no key.
+
+`md5sum .env` in the checkout read `d25ebc6afd489f34347bfd370638799f`
+before the run and after it: `.env` was unchanged.
+
+### 1. Adoption, privacy, short shas
+
+**Run.** Launch, quit with Ctrl+C, then `stat -c '%a %n'` of the data
+directory and its `.git`, and `--history`.
+
+**Expected.** The no-mirror reminder, `adopt: 10 files`, `700` for both,
+and each `--history` line led by a 7-character sha.
+
+**Happened.** As expected. The first screen showed
+`! memory has no mirror · dorothy --mirror <url>`. Then (paths trimmed):
+
+```text
+700 .../data/dorothy
+700 .../data/dorothy/.git
+dorothy: memory has no mirror · dorothy --mirror <url>
+11c4150  2026-10-08 18:46  turn     turn: tinhorn-fluidal-thalamic-brickyard
+cf3dcdd  2026-10-08 18:46  adopt    adopt: 10 files
+```
+
+The seed data had been copied with the default `755`; adoption made both
+`700`.
+
+### 2. A restore by sha under both engines
+
+**Run.** One message, about basil bolting on a windowsill, and an idle
+past the review; then quit. With the binary,
+`--restore tags.json cf3dcdd`, the adoption's version. Then, with
+`env PATH=/nonexistent`, `--history -n 3` and
+`--restore transcripts/smoothed-chanting-purloiner-tricking.meta.json
+536802e`, the sidecar as its title left it, before the review.
+
+**Expected.** Both restores work, each with a `restore:` commit.
+
+**Happened.** As expected. The review (`2a48ad7`) changed `tags.json` and
+the sidecar. The binary's restore (trimmed of the reminder):
+
+```text
+Restored tags.json from cf3dcdd; what it replaced is in broken/tags.json.20
+26-10-08T07-48-53-258Z
+1ef74e6  2026-10-08 18:48  restore  restore: tags.json from cf3dcdd (broken
+kept)
+```
+
+isomorphic-git's `--history -n 3` listed `1ef74e6`, `2a48ad7` and
+`3b3a489`, short shas included. Its restore (trimmed):
+
+```text
+Restored transcripts/smoothed-chanting-purloiner-tricking.meta.json from 53
+6802e; what it replaced is in broken/transcripts/smoothed-chanting-purloine
+r-tricking.meta.json.2026-10-08T07-49-05-614Z
+9519a8e  ...  restore: transcripts/smoothed-chanting-purloiner-tricking.met
+a.json from 536802e (broken kept)
+```
+
+Each restore commit held the file as it was at the sha and the copy it
+replaced; `git status` was clean after both. At the next launch, the
+restored sidecar, lacking its review, was reviewed again (`51e1fe0`).
+
+### 3. A live transcript put back, then followed
+
+**Run.** A new chat, message A (a companion plant for tomatoes in a pot).
+After `turn: gibber-irksomely-discounting-mayest #1` (`7d9b3b9`) showed in
+`--history` in the second window, that window ran
+`printf '{"broken\n' >> <transcript>`. Then message B (how deep a pot) and,
+after its reply, message C (plastic or terracotta).
+
+**Expected.** A restore warning naming the transcript, B's lines in the
+broken copy under `broken/`, and C's lines in the transcript at its path,
+committed as a turn.
+
+**Happened.** As expected. After B's reply the TUI showed (trimmed at the
+pane's edge):
+
+```text
+! Restored transcripts/gibber-irksomely-discounting-mayest.jsonl from 7d9b3b
+9 (2026-10-08); the broken copy is in broke…
+```
+
+The restore, `1957115`, took the place of B's turn commit, so the chat's
+turns went `#1`, then `#3`. The transcript's tail, from
+[`transcript-tail.txt`][tail]
+(trimmed to the kind and text):
+
+```text
+transcripts/...mayest.jsonl, 7 lines:
+  user       Message A: what's a good companion plant for tomatoes ...
+  session
+  assistant  Basil is a classic pick: ...
+  stats
+  user       Message C: thanks, last one: plastic or terracotta ...
+  assistant  Plastic (or glazed ceramic) is the better pick ...
+  stats
+broken/transcripts/...mayest.jsonl.2026-10-08T07-51-42-523Z, 8 lines:
+  A's four lines, then {"broken, then
+  user       Message B: and how deep should that pot be? One line.
+  assistant  At least 30 cm (12 in) deep, ...
+  stats
+```
+
+`589a8e8 turn: gibber-irksomely-discounting-mayest #3` added C's three
+lines to the transcript at its path: the writer had reopened it. B's
+exchange is only in the broken copy, as the plan has it.
+
+### 4. The mirror's key guard
+
+**a. Run.** From the checkout with the probe's key,
+`git init --bare $P/mirror.git` and `--mirror $P/mirror.git`.
+**Expected.** `Pushed to`, `bundles/000001.enc`. **Happened.** As
+expected: `Pushed to /tmp/dorothy-history-probe2.dPHCX4/mirror.git`, and
+the `sealed` branch held `SEALED` and `bundles/000001.enc`, sealed through
+`9bce027`.
+
+**b. Run.** In a subshell, `cd $P/keyless`, `unset DOROTHY_MIRROR_KEY`
+(`env` then held none), and
+`$B /home/chewygumxx/dev/dorothy/src/index.ts --mirror $P/mirror.git`.
+**Expected.** Exit 1 and a refusal, no key made, mirror unchanged.
+**Happened.** As expected, from
+[`mirror-refusals.txt`][refusals]
+(wrapped):
+
+```text
+dorothy: DOROTHY_MIRROR_KEY is not set, and the bundles already sealed
+need the key they were sealed with; set that one with dotenvx set. No
+mirror is set
+exit 1
+```
+
+The dummy `.env` was still 0 bytes, and the mirror's `sealed` was still
+`769105a`, holding `bundles/000001.enc` only. The data repository's
+`mirror` remote was still set to the same path, so `No mirror is set` is
+not so (see [Findings](#findings-of-the-second-run)).
+
+**c. Run.** From the checkout, with `DOROTHY_MIRROR_KEY` set to the second
+key: `--mirror`, then `--mirror $P/mirror.git`. Then the TUI with that
+key, quit without a message.
+**Expected.** A refusal and exit 1 from both commands, nothing sealed; the
+TUI warns
+`history: DOROTHY_MIRROR_KEY does not open the sealed bundles; set the key
+they were sealed with`, and the mirror gets no bundle.
+**Happened.** Partly as expected. `--mirror` with no argument printed the
+status and exited 0; only the set refused (wrapped):
+
+```text
+Mirror: /tmp/dorothy-history-probe2.dPHCX4/mirror.git
+Sealed through: 9bce027
+Waiting: no
+exit 0
+dorothy: DOROTHY_MIRROR_KEY does not open the bundles already sealed; set
+the key they were sealed with. No mirror is set
+exit 1
+```
+
+The TUI showed no warning: nothing was waiting to seal, and the key is
+checked only when there is. The launch's empty transcript was left
+uncommitted. A `--history -n 2` with the right key swept it in as
+`058fc54`; a second launch with the wrong key then showed the warning on
+its first screen:
+
+```text
+! history: DOROTHY_MIRROR_KEY does not open the sealed bundles; set the key
+they were sealed with
+```
+
+After both launches the mirror's `sealed` was still `769105a`, with
+`main` at `058fc54` and the seal still through `9bce027`. Nothing was
+sealed under the wrong key.
+
+**d. Run.** The right key, a launch, one message (a fan for tomato
+seedlings), an idle past the review and 30 seconds more, then quit.
+**Expected.** `bundles/000002.enc` on the mirror. **Happened.** As
+expected, and one more. The launch's push sealed `058fc54` and the
+sweep before it as seal 2, and the review then made seal 3:
+
+```text
+9dcdddf 18:55:35 seal 3
+e0220d0 18:55:18 seal 2
+769105a 18:52:32 seal 1
+```
+
+### 5. A stale index.lock
+
+**Run.** With everything quit, `touch -d '2 minutes ago' .git/index.lock`
+in the data directory. A launch, no message, then `--history -n 3` from
+the second window, whose sweep commits the launch's empty transcript.
+
+**Expected.** A warning naming the removed lock, and the commit through.
+
+**Happened.** As expected, from
+[`stale-lock.txt`](2026-10-08-memory-history/second-run/stale-lock.txt)
+(wrapped, the path trimmed):
+
+```text
+dorothy: history: removed .../data/dorothy/.git/index.lock, a stale lock
+a stopped git left
+ad35f2a  2026-10-08 18:56  turn     turn: bibelot-hiccoughed-equivoke-dogto
+oth
+```
+
+`.git/index.lock` was gone afterwards.
+
+### 6. Recovery
+
+**Run.** In the second window, in a subshell with the right key,
+`XDG_DATA_HOME=$P/recovered` and `XDG_CACHE_HOME=$P/recovered-cache`:
+`--recover $P/mirror.git`, `stat -c '%a %n'` of the recovered directory
+and its `.git`, then `diff -r --exclude=.git` of the two data directories.
+
+**Expected.** `Recovered 2 of 2 bundles`, `All <n> files pass.`, `700`
+for both, and a diff of only what changed after the last push.
+
+**Happened.** As expected, with three bundles for the reason in step 4d.
+From [`recover.txt`](2026-10-08-memory-history/second-run/recover.txt):
+
+```text
+Recovered 3 of 3 bundles; main is at 567a4f4
+All 22 files pass.
+exit 0
+700 $P/recovered/dorothy
+700 $P/recovered/dorothy/.git
+Only in $P/data/dorothy/transcripts: bibelot-hiccoughed-equivoke-dogtooth
+.jsonl
+```
+
+`567a4f4` is step 4d's review, the last sealed. The one file only in the
+data directory is the stale-lock step's empty transcript: `ad35f2a` was
+committed by `--history` while the TUI was open, and waits for the next
+launch's push. The `broken/` copies from steps 2 and 3 were recovered too.
+
+### 7. Quit time
+
+**Run.** The stale-lock step's TUI, open about 40 seconds with the mirror
+set, quit with one Ctrl+C, timed from the key to its `bun` process
+leaving.
+
+**Expected.** About the first run's 118 ms.
+
+**Happened.** 132 ms.
+
+### Findings of the second run
+
+- **A refused `--mirror` says `No mirror is set` while one is.** A defect,
+  small: each of the three refusals in `src/history/commands.ts` ends
+  `No mirror is set`, but a refusal leaves any mirror already set in
+  place. Here the data repository's `mirror` remote, set in step 4a, was
+  still set after 4b and 4c. Something like `the mirror is left as it
+  was` would be true either way.
+- **`--mirror` with no argument does not check the key.** Not a defect:
+  the status reads and seals nothing, so it exits 0 under a wrong key, as
+  4c showed. It does not say the key is wrong, though, which the user
+  would learn only from the TUI's warning or a refused set.
+- **The TUI warns of a wrong key only when something waits to seal.** Not
+  a defect: nothing is sealed under the wrong key either way, and in a
+  chat the first turn's commit brings the warning. A launch quit without
+  a message, with nothing waiting, never shows it.
+- **A restore of a good file is still called broken.** Not a defect: a
+  restore keeps what it replaced under `broken/` and commits as
+  `(broken kept)`, though in step 2 the replaced files were sound. The
+  wording is the plan's.
+- **A sidecar restored to before its review is reviewed again.** Not a
+  defect: step 2's restored sidecar had no review, so the next launch's
+  scheduler reviewed it (`51e1fe0`), at the cost of a review.
+- **A restore takes a turn's place in the count.** Not a defect: B's turn
+  became the restore commit, so the chat's turns read `#1`, then `#3`.
+- **A command's commit waits for the next launch to be sealed.** Not a
+  defect: the TUI seals after its own commits and at launch, so
+  `ad35f2a`, from `--history` while the TUI was open, was still waiting
+  at quit and is the one file the recovery lacks.
+- **Every fix the run touched worked:** the private directory and short
+  shas (step 1), restores by sha under both engines (2), the reopened
+  transcript (3), the key guard (4), the stale lock (5), a private
+  recovery (6) and a quick quit (7). The restore warning's local date
+  could not be told from UTC here, as the run fell after 11:00 local time
+  (AEDT), when both dates agree; nor did the run restore a deleted file.
+
+### Sample data of the second run
+
+[`second-run/`](2026-10-08-memory-history/second-run/) holds:
+
+- `history.txt`: the final `--history -n 50`, 24 commits.
+- `transcript-tail.txt`: step 3's transcript and its broken copy, whole,
+  with the restore and `#3` commits.
+- `mirror-refusals.txt`: steps 4a to 4c.
+- `stale-lock.txt`: step 5's `--history`.
+- `recover.txt`: step 6's recovery, `stat` and `diff`.
+- `probe/`: `env.sh` and `say.sh`, as changed; `config.toml` and
+  `rename.sh` are the first run's. `env.sh`'s key line is the first run's
+  placeholder.
+
+[tail]: 2026-10-08-memory-history/second-run/transcript-tail.txt
+[refusals]: 2026-10-08-memory-history/second-run/mirror-refusals.txt
