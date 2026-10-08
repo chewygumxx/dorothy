@@ -12,12 +12,8 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-    type CaptureQueryFn,
-    captureServer,
-    dumpRequest,
-    runDump,
-} from "./dump.js";
+import type { CaptureQueryFn } from "./capture.js";
+import { runDump } from "./dump.js";
 import { EMPTY_SIDECAR } from "./memory/sidecar.js";
 import { personaPrompt } from "./persona.js";
 import { newPhrase } from "./session-id.js";
@@ -44,58 +40,6 @@ const posting = (
     };
     return fn;
 };
-
-describe("captureServer", () => {
-    it("records the request bodies it is sent, and answers every call with an error", async () => {
-        const server = captureServer();
-        try {
-            const hello = await fetch(`${server.url}/api/hello`, {
-                method: "HEAD",
-            });
-            const sent = await fetch(`${server.url}/v1/messages`, {
-                method: "POST",
-                body: JSON.stringify({ messages: [] }),
-            });
-            expect(hello.status).toBe(400);
-            expect(sent.status).toBe(400);
-            expect(server.bodies).toEqual([{ messages: [] }]);
-        } finally {
-            server.stop();
-        }
-    });
-});
-
-describe("dumpRequest", () => {
-    it("returns the first request, sent to a stand-in for the API", async () => {
-        const fake = posting();
-        const body = await dumpRequest({
-            prompt: "hi",
-            options: { systemPrompt: "SYSTEM", env: { HOME: "/home/u" } },
-            queryFn: fake,
-        });
-        expect(body).toEqual({ system: "SYSTEM" });
-        expect(fake.options?.env?.ANTHROPIC_BASE_URL).toMatch(
-            /^http:\/\/127\.0\.0\.1:\d+$/,
-        );
-        expect(fake.options?.env?.HOME).toBe("/home/u");
-    });
-
-    it("returns null when nothing was sent", async () => {
-        const silent: CaptureQueryFn = () => (async function* () {})();
-        expect(
-            await dumpRequest({ prompt: "hi", options: {}, queryFn: silent }),
-        ).toBeNull();
-    });
-
-    it("stops the stand-in afterwards", async () => {
-        const fake = posting();
-        await dumpRequest({ prompt: "hi", options: {}, queryFn: fake });
-        const url = fake.options?.env?.ANTHROPIC_BASE_URL;
-        await expect(
-            fetch(`${url}/v1/messages`, { method: "POST" }),
-        ).rejects.toThrow();
-    });
-});
 
 describe("runDump", () => {
     let dir: string;
