@@ -136,6 +136,10 @@ Found but not scheduled, each with its source.
   modularity spec, Later).
 - Splitting `memory` along its subdirectories, should it outgrow one
   package (workspace modularity spec, Later).
+- Enabling Biome's `noUndeclaredDependencies`, or an equivalent check, so
+  that a package cannot import something only the root declares: the
+  isolated linker leaves the root's declarations visible to every package
+  (workspace modularity, final review).
 
 ## Done
 
