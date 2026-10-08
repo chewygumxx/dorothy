@@ -12,10 +12,9 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { DEFAULT_CONFIG } from "../config.js";
 import type { Notice } from "../contracts/notices.js";
-import { systemPrompt } from "../persona.js";
+import type { StructuredCall } from "../contracts/structured.js";
 import { RecallIndex } from "../recall/store.js";
 import { newPhrase } from "../session-id.js";
 import type { Timers } from "../timers.js";
@@ -24,8 +23,6 @@ import {
     CLUSTERS_INSTRUCTION,
     READS_INSTRUCTION,
     REVIEW_INSTRUCTIONS,
-    REVIEW_TIMEOUT_MS,
-    type ReviewQueryFn,
     TAGS_INSTRUCTION,
 } from "./review.js";
 import {
@@ -47,6 +44,7 @@ import * as tagging from "./tagging.js";
 import { type Concept, readVocabulary, type Vocabulary } from "./vocabulary.js";
 
 const NOW = new Date("2026-10-05T00:00:00.000Z");
+const PERSONA = "You are Dorothy, under test.";
 const DAY = 86_400_000;
 const phrase = (seed: number) =>
     newPhrase(() => Uint8Array.from([seed, 1, 2, 3, 4, 5, 6, 7]));
@@ -85,41 +83,56 @@ class FakeTimers implements Timers {
     }
 }
 
-// Answers each review in turn: notes, an error, or "hang" (never answers).
-function reviews(...answers: (object | Error | "hang")[]) {
-    const calls: { prompt: string; options: Options }[] = [];
+// Answers each review in turn: notes, an error, "timeout" (fails as a
+// call that timed out does) or "hang" (answers only once cancelled).
+// Calls are kept in the shape the SDK was given, so assertions read the
+// system prompt and schema where they did.
+function reviews(...answers: (object | Error | "hang" | "timeout")[]) {
+    const calls: {
+        prompt: string;
+        options: {
+            systemPrompt: string;
+            outputFormat: {
+                type: "json_schema";
+                schema: Record<string, unknown>;
+            };
+        };
+    }[] = [];
     let closed = 0;
-    const fn: ReviewQueryFn = ({ prompt, options }) => {
-        calls.push({ prompt, options });
-        const answer = answers.shift() ?? new Error("no more answers");
-        async function* run(): AsyncGenerator<SDKMessage> {
-            if (answer === "hang") {
-                await new Promise(() => {});
-                return;
-            }
-            if (answer instanceof Error) {
-                throw answer;
-            }
-            yield {
-                type: "system",
-                subtype: "init",
-                model: "claude-test",
-                session_id: "s",
-            } as unknown as SDKMessage;
-            yield {
-                type: "result",
-                subtype: "success",
-                is_error: false,
-                result: "",
-                structured_output: answer,
-                total_cost_usd: 0.25,
-            } as unknown as SDKMessage;
-        }
-        return Object.assign(run(), {
-            close: () => {
-                closed++;
+    const fn: StructuredCall = async ({ system, prompt, schema, signal }) => {
+        calls.push({
+            prompt,
+            options: {
+                systemPrompt: system,
+                outputFormat: { type: "json_schema", schema },
             },
         });
+        const answer = answers.shift() ?? new Error("no more answers");
+        if (answer === "hang") {
+            await new Promise<void>((resolve) => {
+                if (signal?.aborted) {
+                    resolve();
+                    return;
+                }
+                signal?.addEventListener("abort", () => resolve(), {
+                    once: true,
+                });
+            });
+            closed++;
+            return { ok: false, reason: "cancelled", costUsd: 0 };
+        }
+        if (answer === "timeout") {
+            return { ok: false, reason: "timed out after 120s", costUsd: 0 };
+        }
+        if (answer instanceof Error) {
+            return { ok: false, reason: answer.message, costUsd: 0 };
+        }
+        return {
+            ok: true,
+            output: answer,
+            model: "claude-test",
+            costUsd: 0.25,
+        };
     };
     return { fn, calls, closed: () => closed };
 }
@@ -164,7 +177,7 @@ async function until(check: () => boolean | Promise<boolean>): Promise<void> {
 }
 
 function setup(
-    options: Partial<MemoryServiceOptions> & { queryFn: ReviewQueryFn },
+    options: Partial<MemoryServiceOptions> & { call: StructuredCall },
 ) {
     const timers = new FakeTimers();
     const notices: Notice[] = [];
@@ -175,6 +188,7 @@ function setup(
         config: DEFAULT_CONFIG.memory,
         entries: [],
         flushed: async () => {},
+        persona: PERSONA,
         now: () => NOW,
         timers,
         ...options,
@@ -186,7 +200,7 @@ function setup(
 describe("MemoryService", () => {
     it("builds the block from the other conversations", () => {
         const { memory } = setup({
-            queryFn: reviews().fn,
+            call: reviews().fn,
             entries: [
                 entry(phrase(1), { title: "Earlier chat" }),
                 entry(LIVE, { title: "This chat" }),
@@ -197,7 +211,7 @@ describe("MemoryService", () => {
     });
 
     it("writes a provisional title on the first send only", async () => {
-        const { memory } = setup({ queryFn: reviews().fn });
+        const { memory } = setup({ call: reviews().fn });
         memory.sent("Hey there o/\nsecond line");
         await until(async () => (await sidecarOf(LIVE)) !== null);
         expect(await sidecarOf(LIVE)).toEqual({
@@ -214,7 +228,7 @@ describe("MemoryService", () => {
 
     it("titles a resumed conversation from its first message", async () => {
         const { memory } = setup({
-            queryFn: reviews().fn,
+            call: reviews().fn,
             history: [
                 { role: "user", text: "Original question" },
                 { role: "assistant", text: "An answer" },
@@ -228,7 +242,7 @@ describe("MemoryService", () => {
     it("reviews after the first reply at once, then after idling", async () => {
         await transcript(LIVE, [user("Hi"), reply("Hello")]);
         const query = reviews(NOTES, { ...NOTES, title: "Second" });
-        const { memory, notices, timers } = setup({ queryFn: query.fn });
+        const { memory, notices, timers } = setup({ call: query.fn });
         memory.turnEnded();
         await until(async () => (await sidecarOf(LIVE)) !== null);
         expect(await sidecarOf(LIVE)).toMatchObject({
@@ -261,7 +275,7 @@ describe("MemoryService", () => {
     it("waits for the transcript to flush before a live review", async () => {
         await transcript(LIVE, [user("Hi")]);
         const { memory } = setup({
-            queryFn: reviews(NOTES).fn,
+            call: reviews(NOTES).fn,
             flushed: () => transcript(LIVE, [user("Hi"), reply("Hello")]),
         });
         memory.turnEnded();
@@ -272,7 +286,7 @@ describe("MemoryService", () => {
     it("warns of a failed review and writes nothing", async () => {
         await transcript(LIVE, [user("Hi"), reply("Hello")]);
         const { memory, notices } = setup({
-            queryFn: reviews(new Error("overloaded")).fn,
+            call: reviews(new Error("overloaded")).fn,
         });
         memory.turnEnded();
         await until(() => notices.length > 0);
@@ -295,7 +309,7 @@ describe("MemoryService", () => {
         await updateSidecar(dir, LIVE, (current) =>
             mergeEdit(current, { title: "Mine" }, NOW.toISOString()),
         );
-        const { memory } = setup({ queryFn: reviews(NOTES).fn });
+        const { memory } = setup({ call: reviews(NOTES).fn });
         memory.turnEnded();
         await until(async () => (await sidecarOf(LIVE))?.description != null);
         expect(await sidecarOf(LIVE)).toMatchObject({
@@ -308,7 +322,7 @@ describe("MemoryService", () => {
         await transcript(LIVE, [user("Hi"), reply("Hello")]);
         await writeFile(sidecarPath(dir, LIVE), "{ broken");
         const query = reviews(NOTES);
-        const { memory } = setup({ queryFn: query.fn });
+        const { memory } = setup({ call: query.fn });
         memory.sent("Hi");
         memory.turnEnded();
         await settle();
@@ -330,7 +344,7 @@ describe("MemoryService", () => {
         }
         const query = reviews(NOTES, NOTES, NOTES);
         const { memory } = setup({
-            queryFn: query.fn,
+            call: query.fn,
             config: { ...DEFAULT_CONFIG.memory, catchUp: 2 },
             entries: [
                 entry(older, null, { lastActive: NOW.getTime() - DAY }),
@@ -359,7 +373,7 @@ describe("MemoryService", () => {
         const other = phrase(1);
         await transcript(other, [user("Hi"), reply("Hello")]);
         const { memory } = setup({
-            queryFn: reviews(NOTES).fn,
+            call: reviews(NOTES).fn,
             entries: [entry(other, { title: "Old title" })],
         });
         expect(memory.block()).toContain("Old title");
@@ -373,7 +387,7 @@ describe("MemoryService", () => {
         await transcript(stale, [user("Hi"), reply("Hello")]);
         const query = reviews(NOTES);
         const { memory } = setup({
-            queryFn: query.fn,
+            call: query.fn,
             entries: [
                 entry(stale, { title: "Stale one" }),
                 entry(other, { title: "Other", reviewedThrough: 2 }),
@@ -382,7 +396,7 @@ describe("MemoryService", () => {
         memory.ready();
         await until(() => query.calls.length > 0);
         const system = String(query.calls[0]?.options.systemPrompt);
-        expect(system.startsWith(systemPrompt)).toBe(true);
+        expect(system.startsWith(PERSONA)).toBe(true);
         expect(system).toContain("<title>Other</title>");
         expect(system).not.toContain("Stale one");
         expect(system.endsWith(REVIEW_INSTRUCTIONS)).toBe(true);
@@ -391,7 +405,7 @@ describe("MemoryService", () => {
     it("leaves the live conversation alone when its transcript is not saved", async () => {
         await transcript(LIVE, [user("Hi"), reply("Hello")]);
         const query = reviews(NOTES);
-        const { memory } = setup({ queryFn: query.fn, flushed: null });
+        const { memory } = setup({ call: query.fn, flushed: null });
         memory.sent("Hi");
         memory.turnEnded();
         await settle();
@@ -403,7 +417,7 @@ describe("MemoryService", () => {
         const [pinned, stale] = [phrase(1), phrase(2)];
         await transcript(stale, [user("Hi"), reply("Hello")]);
         const { memory, notices } = setup({
-            queryFn: reviews(NOTES).fn,
+            call: reviews(NOTES).fn,
             config: { ...DEFAULT_CONFIG.memory, budget: 200 },
             entries: [
                 entry(pinned, {
@@ -439,7 +453,7 @@ describe("MemoryService", () => {
             ...fields,
         }));
         const { memory, notices } = setup({
-            queryFn: reviews({ ...NOTES, abstract: "y".repeat(900) }).fn,
+            call: reviews({ ...NOTES, abstract: "y".repeat(900) }).fn,
             config: { ...DEFAULT_CONFIG.memory, budget: 200 },
             entries: [entry(pinned, fields)],
         });
@@ -458,7 +472,7 @@ describe("MemoryService", () => {
     it("on stop, cancels the review without a word", async () => {
         await transcript(LIVE, [user("Hi"), reply("Hello")]);
         const query = reviews("hang");
-        const { memory, notices } = setup({ queryFn: query.fn });
+        const { memory, notices } = setup({ call: query.fn });
         memory.turnEnded();
         await until(() => query.calls.length > 0);
         memory.stop();
@@ -493,7 +507,7 @@ describe("MemoryService with the index", () => {
         await saved(OTHER, { failures });
         const fake = reviews(NOTES);
         const { memory } = setup({
-            queryFn: fake.fn,
+            call: fake.fn,
             index,
             entries: [entry(OTHER, { failures })],
         });
@@ -507,7 +521,7 @@ describe("MemoryService with the index", () => {
         await saved(OTHER, { failures: { count: 2, at: ago(3 * HOUR) } });
         const fake = reviews(new Error("boom"), NOTES);
         const { memory } = setup({
-            queryFn: fake.fn,
+            call: fake.fn,
             index,
             entries: [entry(OTHER, {})],
         });
@@ -521,13 +535,11 @@ describe("MemoryService with the index", () => {
     it("counts a timeout, not a review cancelled by quitting", async () => {
         await transcript(OTHER, [user("a"), reply("b")]);
         const timed = setup({
-            queryFn: reviews("hang").fn,
+            call: reviews("timeout").fn,
             index,
             entries: [entry(OTHER, null)],
         });
         timed.memory.ready();
-        await settle();
-        timed.timers.advance(REVIEW_TIMEOUT_MS);
         await until(
             async () => (await sidecarOf(OTHER))?.failures?.count === 1,
         );
@@ -536,7 +548,7 @@ describe("MemoryService with the index", () => {
         const LATER = phrase(2);
         await transcript(LATER, [user("a"), reply("b")]);
         const quit = setup({
-            queryFn: reviews("hang").fn,
+            call: reviews("hang").fn,
             index,
             entries: [entry(LATER, null)],
         });
@@ -557,7 +569,7 @@ describe("MemoryService with the index", () => {
         await saved(OTHER, owned);
         const fake = reviews(NOTES);
         const { memory } = setup({
-            queryFn: fake.fn,
+            call: fake.fn,
             index,
             entries: [entry(OTHER, owned)],
         });
@@ -588,7 +600,7 @@ describe("MemoryService with the index", () => {
             appraisals: [{ id: "toolu_1", served: "useful" }],
         });
         const { memory } = setup({
-            queryFn: fake.fn,
+            call: fake.fn,
             index,
             entries: [entry(OTHER, { title: "Rendering" })],
         });
@@ -622,7 +634,7 @@ describe("MemoryService with the index", () => {
         await transcript(LIVE, [user("a"), reply("b")]);
         const own = RecallIndex.open(join(dir, "index", "recall.sqlite"));
         const fake = reviews("hang");
-        const { memory } = setup({ queryFn: fake.fn, index: own });
+        const { memory } = setup({ call: fake.fn, index: own });
         try {
             memory.turnEnded();
             await until(() => fake.calls.length > 0);
@@ -636,7 +648,7 @@ describe("MemoryService with the index", () => {
     it("lets go of the claim of a review that finishes", async () => {
         await transcript(LIVE, [user("a"), reply("b")]);
         const own = RecallIndex.open(join(dir, "index", "recall.sqlite"));
-        const { memory } = setup({ queryFn: reviews(NOTES).fn, index: own });
+        const { memory } = setup({ call: reviews(NOTES).fn, index: own });
         try {
             memory.turnEnded();
             await until(async () => (await sidecarOf(LIVE)) !== null);
@@ -658,7 +670,7 @@ describe("MemoryService with the index", () => {
         await transcript(LIVE, [user("a"), reply("b")]);
         const other = await claimed(LIVE);
         const fake = reviews(NOTES);
-        const { memory, timers } = setup({ queryFn: fake.fn, index });
+        const { memory, timers } = setup({ call: fake.fn, index });
         try {
             memory.turnEnded();
             await settle();
@@ -681,7 +693,7 @@ describe("MemoryService with the index", () => {
         for (const end of ["sent", "stop"] as const) {
             const other = await claimed(LIVE);
             const fake = reviews(NOTES);
-            const { memory, timers } = setup({ queryFn: fake.fn, index });
+            const { memory, timers } = setup({ call: fake.fn, index });
             try {
                 memory.turnEnded();
                 await settle();
@@ -711,7 +723,7 @@ describe("MemoryService with the index", () => {
         const other = await claimed(OTHER);
         const fake = reviews(NOTES);
         const { memory, timers } = setup({
-            queryFn: fake.fn,
+            call: fake.fn,
             index,
             entries: [entry(OTHER, null)],
         });
@@ -729,7 +741,7 @@ describe("MemoryService with the index", () => {
 describe("the block for a compacted session", () => {
     it("leaves the abstracts' tokens out of the budget", () => {
         const { memory } = setup({
-            queryFn: reviews().fn,
+            call: reviews().fn,
             config: { ...DEFAULT_CONFIG.memory, budget: 200 },
             entries: [
                 entry(phrase(1), { ...NOTES, title: "First" }),
@@ -764,7 +776,7 @@ describe("the block for a compacted session", () => {
             }),
         );
         const query = reviews(NOTES);
-        const { memory } = setup({ queryFn: query.fn });
+        const { memory } = setup({ call: query.fn });
         memory.turnEnded();
         await until(() => query.calls.length > 0);
         const call = query.calls[0];
@@ -823,7 +835,7 @@ describe("tagging", () => {
             coined: [{ prefLabel: "memory", scopeNote: "Remembering." }],
         });
         const { memory } = setup({
-            queryFn: fake.fn,
+            call: fake.fn,
             vocabulary,
             entries: [entry(OTHER, null)],
         });
@@ -856,7 +868,7 @@ describe("tagging", () => {
         await transcript(OTHER, [user("a"), reply("b")]);
         const fake = reviews({ ...NOTES, tags: ["Recall"], coined: [] });
         const { memory } = setup({
-            queryFn: fake.fn,
+            call: fake.fn,
             vocabulary,
             entries: [
                 entry(OTHER, null),
@@ -892,7 +904,7 @@ describe("tagging", () => {
             coined: [{ prefLabel: "new", scopeNote: "New." }],
         });
         const { memory } = setup({
-            queryFn: fake.fn,
+            call: fake.fn,
             vocabulary,
             entries: [entry(OTHER, theirs)],
         });
@@ -916,7 +928,7 @@ describe("tagging", () => {
         await saved(OTHER, kept);
         const fake = reviews(NOTES);
         const { memory, notices } = setup({
-            queryFn: fake.fn,
+            call: fake.fn,
             vocabulary,
             entries: [entry(OTHER, kept)],
         });
@@ -965,7 +977,7 @@ describe("tagging", () => {
                 coined: [{ prefLabel: "Memory", scopeNote: "Again." }],
             });
             const { memory } = setup({
-                queryFn: fake.fn,
+                call: fake.fn,
                 vocabulary,
                 entries: [entry(OTHER, kept)],
             });
@@ -989,7 +1001,7 @@ describe("tagging", () => {
         await saved(OTHER, old);
         const fake = reviews({ ...NOTES, tags: [], coined: [] });
         const { memory } = setup({
-            queryFn: fake.fn,
+            call: fake.fn,
             vocabulary,
             entries: [entry(OTHER, old)],
         });
@@ -1008,7 +1020,7 @@ describe("tagging", () => {
         await saved(OTHER, old);
         const fake = reviews(NOTES);
         const { memory } = setup({
-            queryFn: fake.fn,
+            call: fake.fn,
             vocabulary,
             entries: [entry(OTHER, old)],
         });
@@ -1021,7 +1033,7 @@ describe("tagging", () => {
         await transcript(OTHER, [user("a"), reply("b")]);
         const fake = reviews(NOTES);
         const { memory } = setup({
-            queryFn: fake.fn,
+            call: fake.fn,
             entries: [entry(OTHER, null)],
         });
         memory.ready();
@@ -1050,13 +1062,13 @@ describe("tagging", () => {
                 coined: [{ prefLabel: "memory", scopeNote: "Remembering." }],
             };
             const first = setup({
-                queryFn: reviews(answer).fn,
+                call: reviews(answer).fn,
                 vocabulary,
                 index,
                 entries: [entry(a, null)],
             });
             const second = setup({
-                queryFn: reviews(answer).fn,
+                call: reviews(answer).fn,
                 vocabulary,
                 index,
                 entries: [entry(b, null)],
@@ -1115,7 +1127,7 @@ describe("versions", () => {
 
     it("records the provisional title", async () => {
         const { versions, recorded } = fakeVersions();
-        const { memory } = setup({ queryFn: reviews().fn, versions });
+        const { memory } = setup({ call: reviews().fn, versions });
         memory.sent("Hey there");
         await until(() => recorded.length > 0);
         expect(recorded).toEqual([
@@ -1130,7 +1142,7 @@ describe("versions", () => {
         await transcript(LIVE, [user("Hi"), reply("Hello")]);
         const { versions, recorded } = fakeVersions();
         const { memory } = setup({
-            queryFn: reviews({ ...NOTES, tags: [], coined: [] }).fn,
+            call: reviews({ ...NOTES, tags: [], coined: [] }).fn,
             versions,
             vocabulary: tagsPath(),
         });
@@ -1148,7 +1160,7 @@ describe("versions", () => {
         await transcript(LIVE, [user("Hi"), reply("Hello")]);
         const { versions, recorded } = fakeVersions();
         const { memory } = setup({
-            queryFn: reviews(new Error("down")).fn,
+            call: reviews(new Error("down")).fn,
             versions,
         });
         memory.turnEnded();
@@ -1169,7 +1181,7 @@ describe("versions", () => {
             return true;
         });
         const { memory } = setup({
-            queryFn: reviews({
+            call: reviews({
                 ...NOTES,
                 tags: ["memory"],
                 coined: [{ prefLabel: "memory", scopeNote: "Remembering." }],
@@ -1194,7 +1206,7 @@ describe("versions", () => {
             return true;
         });
         const { memory } = setup({
-            queryFn: reviews(NOTES).fn,
+            call: reviews(NOTES).fn,
             versions,
             entries: [entry(OTHER, null)],
         });

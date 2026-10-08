@@ -9,16 +9,18 @@
 //
 
 import { describe, expect, it } from "bun:test";
-import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ResumedTurn, Turn } from "../contracts/session.js";
-import { cliOptions } from "../persona.js";
-import type { Timers } from "../timers.js";
+import type {
+    StructuredCall,
+    StructuredOutcome,
+    StructuredRequest,
+} from "../contracts/structured.js";
 import {
     CLUSTERS_INSTRUCTION,
     pendingReads,
     REVIEW_INSTRUCTIONS,
     REVIEW_SCHEMA,
-    type ReviewQueryFn,
+    REVIEW_TIMEOUT_MS,
     type ReviewTags,
     reviewPrompt,
     reviewSchema,
@@ -42,89 +44,34 @@ const NOTES = {
     abstract: "Notes, tiers and budgets.",
 };
 
-const init = (model = "claude-test") =>
-    ({
-        type: "system",
-        subtype: "init",
-        model,
-        session_id: "s",
-    }) as unknown as SDKMessage;
-const success = (output: unknown, cost = 0.25) =>
-    ({
-        type: "result",
-        subtype: "success",
-        is_error: false,
-        result: "",
-        structured_output: output,
-        total_cost_usd: cost,
-    }) as unknown as SDKMessage;
-const failure = (errors: string[]) =>
-    ({
-        type: "result",
-        subtype: "error_max_structured_output_retries",
-        is_error: true,
-        errors,
-        total_cost_usd: 0.5,
-    }) as unknown as SDKMessage;
-
-type Fake = {
-    fn: ReviewQueryFn;
-    prompt: string | null;
-    options: Options | null;
-    closed: boolean;
-};
-
-// "hang" never yields, standing for a review that never answers.
-function fakeQuery(script: SDKMessage[] | "hang" | Error): Fake {
-    const fake: Fake = {
-        fn: ({ prompt, options }) => {
-            fake.prompt = prompt;
-            fake.options = options;
-            async function* run(): AsyncGenerator<SDKMessage> {
-                if (script === "hang") {
-                    await new Promise(() => {});
-                    return;
-                }
-                if (script instanceof Error) {
-                    throw script;
-                }
-                yield* script;
-            }
-            return Object.assign(run(), {
-                close: () => {
-                    fake.closed = true;
-                },
-            });
-        },
-        prompt: null,
-        options: null,
-        closed: false,
-    };
-    return fake;
-}
-
-// Holds the one timer a review sets, to fire on demand.
-function manualTimer() {
-    let fire = () => {};
-    let cleared = false;
-    const timers: Timers = {
-        set: (fn) => {
-            fire = fn;
-            return 1;
-        },
-        clear: () => {
-            cleared = true;
+// A call answering with output, or failing with a reason, as the agent's
+// structuredCall does; requests are kept for the assertions.
+function fakeCall(outcome: StructuredOutcome): {
+    call: StructuredCall;
+    requests: StructuredRequest[];
+} {
+    const requests: StructuredRequest[] = [];
+    return {
+        requests,
+        call: async (request) => {
+            requests.push(request);
+            return outcome;
         },
     };
-    return { timers, fire: () => fire(), cleared: () => cleared };
 }
+const answered = (output: unknown, costUsd = 0.25): StructuredOutcome => ({
+    ok: true,
+    output,
+    model: "claude-test",
+    costUsd,
+});
 
 const run = (
-    fake: Fake,
+    call: StructuredCall,
     extra: Partial<Parameters<typeof runReview>[0]> = {},
 ) =>
     runReview({
-        queryFn: fake.fn,
+        call,
         systemPrompt: "SYSTEM",
         prompt: "PROMPT",
         ...extra,
@@ -132,34 +79,33 @@ const run = (
 
 describe("runReview", () => {
     it("returns the notes, the model and the cost", async () => {
-        const fake = fakeQuery([init("claude-test"), success(NOTES)]);
-        expect(await run(fake)).toEqual({
+        const { call, requests } = fakeCall(answered(NOTES));
+        expect(await run(call)).toEqual({
             ok: true,
             notes: NOTES,
             appraisals: {},
             model: "claude-test",
             costUsd: 0.25,
         });
-        expect(fake.prompt).toBe("PROMPT");
-        expect(fake.options).toMatchObject({
-            systemPrompt: "SYSTEM",
-            tools: [],
-            settingSources: [],
-            includePartialMessages: false,
-            outputFormat: { type: "json_schema", schema: REVIEW_SCHEMA },
-        });
-        expect(fake.options).toMatchObject(cliOptions());
+        expect(requests).toEqual([
+            {
+                what: "review",
+                system: "SYSTEM",
+                prompt: "PROMPT",
+                schema: REVIEW_SCHEMA,
+                timeoutMs: REVIEW_TIMEOUT_MS,
+            },
+        ]);
     });
 
     it("asks with the schema given and returns the appraisals", async () => {
-        const fake = fakeQuery([
-            init(),
-            success({
+        const { call, requests } = fakeCall(
+            answered({
                 ...NOTES,
                 appraisals: [{ id: "toolu_1", served: "slight" }],
             }),
-        ]);
-        const outcome = await run(fake, {
+        );
+        const outcome = await run(call, {
             schema: reviewSchema(["toolu_1"]),
             readIds: ["toolu_1"],
         });
@@ -167,18 +113,22 @@ describe("runReview", () => {
             ok: true,
             appraisals: { toolu_1: "slight" },
         });
-        expect(fake.options?.outputFormat).toEqual({
-            type: "json_schema",
-            schema: reviewSchema(["toolu_1"]),
-        });
+        expect(requests[0]?.schema).toEqual(reviewSchema(["toolu_1"]));
+    });
+
+    it("passes the signal and the time limit on", async () => {
+        const { call, requests } = fakeCall(answered(NOTES));
+        const controller = new AbortController();
+        await run(call, { signal: controller.signal, timeoutMs: 5 });
+        expect(requests[0]?.signal).toBe(controller.signal);
+        expect(requests[0]?.timeoutMs).toBe(5);
     });
 
     it("normalises the notes' whitespace", async () => {
-        const fake = fakeQuery([
-            init(),
-            success({ ...NOTES, abstract: "Notes,\n\ntiers  and budgets. " }),
-        ]);
-        const outcome = await run(fake);
+        const { call } = fakeCall(
+            answered({ ...NOTES, abstract: "Notes,\n\ntiers  and budgets. " }),
+        );
+        const outcome = await run(call);
         expect(outcome.ok && outcome.notes.abstract).toBe(
             "Notes, tiers and budgets.",
         );
@@ -187,90 +137,29 @@ describe("runReview", () => {
     it("fails on notes that break a limit or are missing", async () => {
         expect(
             await run(
-                fakeQuery([
-                    init(),
-                    success({ ...NOTES, title: "x".repeat(61) }),
-                ]),
+                fakeCall(answered({ ...NOTES, title: "x".repeat(61) })).call,
             ),
         ).toEqual({
             ok: false,
             reason: "title is 61 characters, over 60",
             costUsd: 0.25,
         });
-        expect(await run(fakeQuery([init(), success({ title: "a" })]))).toEqual(
-            {
-                ok: false,
-                reason: "no description in the notes",
-                costUsd: 0.25,
-            },
-        );
+        expect(await run(fakeCall(answered({ title: "a" })).call)).toEqual({
+            ok: false,
+            reason: "no description in the notes",
+            costUsd: 0.25,
+        });
     });
 
-    it("fails on an error result", async () => {
-        expect(
-            await run(fakeQuery([init(), failure(["no valid output"])])),
-        ).toEqual({
+    it("passes a failed call's reason and cost through", async () => {
+        const { call } = fakeCall({
             ok: false,
             reason: "no valid output",
-            costUsd: 0.5,
+            costUsd: 0.1,
         });
-    });
-
-    it("fails when the query cannot start", async () => {
-        const throwing: ReviewQueryFn = () => {
-            throw new Error("bad options");
-        };
         expect(
-            await runReview({
-                queryFn: throwing,
-                systemPrompt: "SYSTEM",
-                prompt: "PROMPT",
-            }),
-        ).toEqual({ ok: false, reason: "bad options", costUsd: 0 });
-    });
-
-    it("fails when the query throws or ends without a result", async () => {
-        expect(await run(fakeQuery(new Error("spawn failed")))).toEqual({
-            ok: false,
-            reason: "spawn failed",
-            costUsd: 0,
-        });
-        expect(await run(fakeQuery([init()]))).toEqual({
-            ok: false,
-            reason: "the review ended without a result",
-            costUsd: 0,
-        });
-    });
-
-    it("times out, closing the query", async () => {
-        const fake = fakeQuery("hang");
-        const timer = manualTimer();
-        const pending = run(fake, { timers: timer.timers });
-        timer.fire();
-        expect(await pending).toEqual({
-            ok: false,
-            reason: "timed out after 120s",
-            costUsd: 0,
-        });
-        expect(fake.closed).toBe(true);
-    });
-
-    it("stops when cancelled, clearing its timer", async () => {
-        const fake = fakeQuery("hang");
-        const timer = manualTimer();
-        const controller = new AbortController();
-        const pending = run(fake, {
-            timers: timer.timers,
-            signal: controller.signal,
-        });
-        controller.abort();
-        expect(await pending).toEqual({
-            ok: false,
-            reason: "cancelled",
-            costUsd: 0,
-        });
-        expect(fake.closed).toBe(true);
-        expect(timer.cleared()).toBe(true);
+            await runReview({ call, systemPrompt: "s", prompt: "p" }),
+        ).toEqual({ ok: false, reason: "no valid output", costUsd: 0.1 });
     });
 });
 
@@ -337,11 +226,10 @@ describe("REVIEW_INSTRUCTIONS", () => {
 
 describe("escaped notes", () => {
     it("stores what the model echoed of the escaping as plain text", async () => {
-        const fake = fakeQuery([
-            init(),
-            success({ ...NOTES, abstract: "Array&lt;T&gt; &amp; more" }),
-        ]);
-        const outcome = await run(fake);
+        const { call } = fakeCall(
+            answered({ ...NOTES, abstract: "Array&lt;T&gt; &amp; more" }),
+        );
+        const outcome = await run(call);
         expect(outcome.ok && outcome.notes.abstract).toBe("Array<T> & more");
     });
 
@@ -681,11 +569,10 @@ describe("tags in the review", () => {
     });
 
     it("hands her tags back from a run", async () => {
-        const fake = fakeQuery([
-            init("claude-test"),
-            success({ ...NOTES, tags: ["memory"], coined: [] }),
-        ]);
-        expect(await run(fake, { tagging: true })).toMatchObject({
+        const { call } = fakeCall(
+            answered({ ...NOTES, tags: ["memory"], coined: [] }),
+        );
+        expect(await run(call, { tagging: true })).toMatchObject({
             ok: true,
             tags: { tags: ["memory"], coined: [] },
         });

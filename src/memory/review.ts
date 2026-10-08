@@ -9,12 +9,7 @@
 //
 
 import type { ResumedTurn } from "../contracts/session.js";
-import {
-    type StructuredHandle,
-    type StructuredQueryFn,
-    structuredCall,
-} from "../structured.js";
-import { REAL_TIMERS, type Timers } from "../timers.js";
+import type { StructuredCall } from "../contracts/structured.js";
 import { escapeXml, renderClusters, unescapeXml } from "./block.js";
 import {
     FIELDS,
@@ -34,10 +29,6 @@ import {
     TAG_LIMITS,
     type Vocabulary,
 } from "./vocabulary.js";
-
-// The SDK's query() fits this; tests pass a fake.
-export type ReviewHandle = StructuredHandle;
-export type ReviewQueryFn = StructuredQueryFn;
 
 export const REVIEW_TIMEOUT_MS = 120_000;
 
@@ -435,27 +426,25 @@ export function validateReview(
 
 // A one-shot query on Dorothy's model and persona, answering with notes.
 export async function runReview({
-    queryFn,
+    call,
     systemPrompt,
     prompt,
     signal,
-    timers = REAL_TIMERS,
     timeoutMs = REVIEW_TIMEOUT_MS,
     schema = REVIEW_SCHEMA,
     readIds = [],
     tagging = false,
 }: {
-    queryFn: ReviewQueryFn;
+    call: StructuredCall;
     systemPrompt: string;
     prompt: string;
     signal?: AbortSignal;
-    timers?: Timers;
     timeoutMs?: number;
     schema?: Record<string, unknown>;
     readIds?: readonly string[];
     tagging?: boolean;
 }): Promise<ReviewOutcome> {
-    const outcome = await structuredCall({ queryFn, timers })({
+    const outcome = await call({
         what: "review",
         system: systemPrompt,
         prompt,

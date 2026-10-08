@@ -51,7 +51,12 @@ import {
 } from "../memory/sidecar.js";
 import { type MemoryHooks, trackMemory } from "../memory/track.js";
 import { vocabularyPath } from "../memory/vocabulary.js";
-import { type PersonaMode, personaPrompt, promptHash } from "../persona.js";
+import {
+    type PersonaMode,
+    personaPrompt,
+    promptHash,
+    systemPrompt,
+} from "../persona.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { newPhrase } from "../session-id.js";
 import { structuredCall } from "../structured.js";
@@ -488,6 +493,8 @@ export async function runTui(
             index,
             vocabulary,
             versions: launched?.history.handle() ?? null,
+            call: structuredCall(),
+            persona: systemPrompt,
             // Without a transcript the live chat is left alone.
             flushed: transcript === null ? null : () => transcript.flushed(),
         });

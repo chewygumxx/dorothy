@@ -10,11 +10,11 @@
 
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { MemoryConfig } from "../config.js";
 import type { Notice } from "../contracts/notices.js";
 import type { ResumedTurn, Turn } from "../contracts/session.js";
-import { systemPrompt, withMemory } from "../persona.js";
+import { withSection } from "../contracts/start.js";
+import type { StructuredCall } from "../contracts/structured.js";
 import type { RecallIndex } from "../recall/store.js";
 import { REAL_TIMERS, sleep, type Timers } from "../timers.js";
 import { readTranscript } from "../transcript.js";
@@ -26,7 +26,6 @@ import {
     READS_INSTRUCTION,
     REVIEW_INSTRUCTIONS,
     REVIEW_TIMEOUT_MS,
-    type ReviewQueryFn,
     reviewPrompt,
     reviewSchema,
     runReview,
@@ -82,7 +81,10 @@ export type MemoryServiceOptions = {
     // History: each write is committed, and a broken file is restored
     // before a review reads it. Null or absent without.
     versions?: HistoryHandle | null;
-    queryFn?: ReviewQueryFn;
+    // How a review asks the model; the agent supplies the real one.
+    call: StructuredCall;
+    // The persona reviews run on: the chat persona without recall.
+    persona: string;
     now?: () => Date;
     timers?: Timers;
 };
@@ -130,7 +132,8 @@ export class MemoryService implements MemoryHooks {
     #vocabularyWarned = false;
     // Who this run's claims belong to.
     readonly #owner = `${process.pid}-${randomBytes(4).toString("hex")}`;
-    readonly #queryFn: ReviewQueryFn;
+    readonly #call: StructuredCall;
+    readonly #persona: string;
     readonly #now: () => Date;
     readonly #timers: Timers;
     readonly #entries: Map<string, Entry>;
@@ -159,7 +162,8 @@ export class MemoryService implements MemoryHooks {
         this.#index = options.index ?? null;
         this.#vocabulary = options.vocabulary ?? null;
         this.#versions = options.versions ?? null;
-        this.#queryFn = options.queryFn ?? query;
+        this.#call = options.call;
+        this.#persona = options.persona;
         this.#now = options.now ?? (() => new Date());
         this.#timers = options.timers ?? REAL_TIMERS;
         this.#entries = new Map(
@@ -570,9 +574,9 @@ export class MemoryService implements MemoryHooks {
             ...(tagging ? [TAGS_INSTRUCTION] : []),
         ].join(" ");
         const outcome = await runReview({
-            queryFn: this.#queryFn,
+            call: this.#call,
             systemPrompt: [
-                withMemory(systemPrompt, this.#build(phrase).block),
+                withSection(this.#persona, this.#build(phrase).block),
                 instructions,
             ].join("\n\n"),
             prompt: reviewPrompt(
@@ -593,7 +597,6 @@ export class MemoryService implements MemoryHooks {
             readIds,
             tagging,
             signal,
-            timers: this.#timers,
         });
         if (signal.aborted) {
             return;
