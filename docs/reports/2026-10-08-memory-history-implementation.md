@@ -49,7 +49,8 @@ from that mirror.
 At the head of the branch `bun run check` passes with 1105 tests across 62
 files, up from 927 on `main`.
 
-A live probe in tmux ran every step as the plan expected:
+Two live probes in tmux, before and after the review's fixes, ran every
+step as expected:
 
 - adoption;
 - turns and a review committed;
@@ -184,7 +185,7 @@ The ones a reader of the spec would notice:
 
 ## Commits
 
-47 commits, oldest first. Scopes follow `.commitlintrc.mts`: `sdk` for
+52 commits, oldest first. Scopes follow `.commitlintrc.mts`: `sdk` for
 `src/` outside `src/tui/`, `tui` for `src/tui/`, none for docs, and
 `build` as the type for the dependency.
 
@@ -246,7 +247,15 @@ The ones a reader of the spec would notice:
 - `ffdb2d9` docs: Explain mirror setup and --history shas
 - `e54ddef` docs: Note the shared lock and the TUI's exit
 
-This report and the deferred doc follow.
+### Reports, and the second probe
+
+- `11f5b15` docs: Defer memory history's minor findings
+- `ad5936d` docs: Report how memory history was built
+- `818b24f` docs: Keep the second probe's sample data
+- `eb07d6d` docs: Report the second history probe
+- `13bc9ea` fix(sdk): Say a refused --mirror changed nothing
+
+This report's update follows.
 
 ## Verification
 
@@ -266,11 +275,20 @@ This report and the deferred doc follow.
   configuration. The test helper's default for saving a secret throws, so
   no test can write this repository's `.env`; its checksum was the same
   before and after every task and the probe.
-- **The live probe**, in tmux with temporary XDG directories, is described
-  in full in the [probe report](2026-10-08-memory-history.md). It ran
-  before the whole-branch review's fixes. Those fixes are covered by
-  tests, but the probe's `history.txt` shows the old `--history` format,
-  without short shas.
+- **Two live probes**, in tmux with temporary XDG directories, are
+  described in full in the [probe report](2026-10-08-memory-history.md).
+  - The first ran at `24ff233`, before the whole-branch review's fixes.
+  - The second ran at `ad5936d`, after them, and exercised them live:
+    - the data directory and `.git` at 0700;
+    - short shas in `--history`, and a restore by sha under both engines;
+    - a live transcript put back mid-chat, with the next message landing
+      at its path;
+    - `--mirror` refusing to make or take a key the sealed bundles do not
+      open, and the chat sealing nothing under a wrong key;
+    - a stale `.git/index.lock` cleared;
+    - a recovery of three bundles into a 0700 directory.
+  - It found one defect: a refused `--mirror` said `No mirror is set`
+    while a mirror was set. Fixed in `13bc9ea`.
 
 ## Known limitations
 

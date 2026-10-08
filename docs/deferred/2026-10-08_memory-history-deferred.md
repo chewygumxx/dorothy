@@ -22,10 +22,10 @@ tags:
 
 # Memory history deferred findings
 
-Branch `feat/memory-history` (as of `e54ddef`). These come from the
-per-task reviews, the whole-branch review and the review of its fixes. The
-whole-branch review triaged them, and none blocks merge. Entries that later
-commits fixed are left out.
+Branch `feat/memory-history` (as of `13bc9ea`). These come from the
+per-task reviews, the whole-branch review, the review of its fixes and the
+second live probe. The whole-branch review triaged them, and none blocks
+merge. Entries that later commits fixed are left out.
 
 ## Parked behaviours
 
@@ -115,7 +115,12 @@ Each of these is real, but rare or bounded. Each was left with a ruling.
   base64"; `isLocal("")` is true.
 - `src/history/mirror.ts`: with no `sealed` ref at all, a push reports
   `pushed` without contacting the mirror; a timer push that joins a running
-  push leaves newer commits for the next schedule.
+  push leaves newer commits for the next schedule; the wrong-key warning
+  appears only once a commit waits to be sealed, so a chat that commits
+  nothing gives no sign of a wrong key (seen in the second probe).
+- `src/history/commands.ts`: `--mirror` with no argument prints the status
+  without checking that the key opens the sealed bundles (seen in the
+  second probe).
 - `src/tui/run.tsx`: live turn numbers fall behind a resume's count after
   a turn that ends in an error; `openChatIndex`'s comment still says
   "compactable"; one comment line runs past 80 characters.
