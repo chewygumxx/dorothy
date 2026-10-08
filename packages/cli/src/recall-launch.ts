@@ -4,7 +4,7 @@
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/src/recall-launch.ts
+// ::: :/packages/cli/src/recall-launch.ts
 //
 //
 

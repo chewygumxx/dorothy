@@ -4,7 +4,7 @@
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/src/run-tui.ts
+// ::: :/packages/cli/src/run-tui.ts
 //
 //
 

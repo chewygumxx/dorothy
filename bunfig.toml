@@ -29,9 +29,9 @@ bun = true
 linker = "isolated"
 
 #
-# dotenvx owns .env (see src/index.ts): its values are encrypted, and Bun
-# would otherwise preload the raw ciphertext into process.env, which
-# dotenvx then declines to overwrite.
+# dotenvx owns .env (see packages/cli/src/index.ts): its values are
+# encrypted, and Bun would otherwise preload the raw ciphertext into
+# process.env, which dotenvx then declines to overwrite.
 #
 
 [env]

@@ -4,7 +4,7 @@
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/src/dump.test.ts
+// ::: :/packages/cli/src/dump.test.ts
 //
 //
 

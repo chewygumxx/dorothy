@@ -17,7 +17,6 @@
     "include": [
         ".commitlintrc.mts",
         "scripts/**/*.mjs",
-        "src",
         "packages/*/src",
         "test-setup.ts"
     ]
