@@ -218,7 +218,7 @@ Each `--history` line starts with the commit's short sha, which is what
 `--restore` and `--rollback` take as `<rev>`.
 
 The history is pushed to a mirror off this machine, encrypted. The
-mirror must exist first: an empty repository on a host, or for a local
+mirror must exist first: a private repository on a host, or for a local
 one `git init --bare /path/to/memory.git`. Then set it with `--mirror`,
 run from this checkout: a mirror path is taken from where you run the
 command, and `--mirror` makes `DOROTHY_MIRROR_KEY` and saves it with
