@@ -239,6 +239,35 @@ describe("recording", () => {
         );
     });
 
+    it("dates a restore in local time, as --history does", async () => {
+        const zone = process.env.TZ;
+        const pad = (value: number) => String(value).padStart(2, "0");
+        try {
+            // Twenty-six hours apart, so at any moment one of them is on
+            // another day than UTC.
+            for (const tz of ["Pacific/Kiritimati", "Etc/GMT+12"]) {
+                process.env.TZ = tz;
+                root = join(tempRoot(), "data");
+                warnings = [];
+                put(root, "tags.json", vocabulary(1));
+                const history = await open();
+                const [good] = await history.repo.log("tags.json");
+                const at = new Date(good?.at ?? "");
+                put(root, "tags.json", "{");
+                await history.heal("tags.json");
+                expect(warnings).toEqual([
+                    `Restored tags.json from ${good?.sha.slice(0, 7)} (${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}); the broken copy is in broken/`,
+                ]);
+            }
+        } finally {
+            if (zone === undefined) {
+                delete process.env.TZ;
+            } else {
+                process.env.TZ = zone;
+            }
+        }
+    });
+
     it("restores rather than commits a named file that fails the lint", async () => {
         put(root, "tags.json", vocabulary(1));
         const history = await open();

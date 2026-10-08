@@ -33,6 +33,14 @@ export type HookCommand = { exec: string; script: string };
 const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
 
+const pad = (value: number) => String(value).padStart(2, "0");
+
+// A commit's time as the user reads it: local, to the minute.
+export function localTime(at: string): string {
+    const date = new Date(at);
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 // The data directory: transcripts/, tags.json and, now, .git/.
 export const historyRoot = (env: Env = process.env) =>
     dirname(transcriptDir(env));
@@ -328,7 +336,7 @@ export class MemoryHistory {
         this.#afterCommit();
         if (healed.kind === "restored") {
             this.warn(
-                `Restored ${path} from ${healed.from.slice(0, 7)} (${healed.at.slice(0, 10)}); the broken copy is in broken/`,
+                `Restored ${path} from ${healed.from.slice(0, 7)} (${localTime(healed.at).slice(0, 10)}); the broken copy is in broken/`,
             );
             return true;
         }

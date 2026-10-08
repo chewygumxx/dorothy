@@ -21,6 +21,7 @@ import { goodVersion, putBack, RECOVERY_DEPTH, type Version } from "./heal.js";
 import {
     type HookCommand,
     historyRoot,
+    localTime,
     type MemoryHistory,
     openHistory,
 } from "./history.js";
@@ -184,13 +185,6 @@ export function authorOf(message: string): string {
     }
 }
 
-const pad = (value: number) => String(value).padStart(2, "0");
-// Local time, to the minute.
-const when = (at: string) => {
-    const date = new Date(at);
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-};
-
 export async function runHistory(
     options: CommandOptions & { path?: string | null; count?: number },
 ): Promise<number> {
@@ -217,7 +211,7 @@ export async function runHistory(
             options.count ?? 20,
         )) {
             out.write(
-                `${short(commit.sha)}  ${when(commit.at)}  ${authorOf(commit.message).padEnd(7)}  ${commit.message}\n`,
+                `${short(commit.sha)}  ${localTime(commit.at)}  ${authorOf(commit.message).padEnd(7)}  ${commit.message}\n`,
             );
         }
         return 0;
