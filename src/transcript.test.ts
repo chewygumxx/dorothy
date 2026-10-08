@@ -9,7 +9,14 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+    mkdtemp,
+    readFile,
+    rename,
+    rm,
+    stat,
+    writeFile,
+} from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { describeLookup } from "./recall/types.js";
@@ -124,6 +131,32 @@ describe("TranscriptWriter", () => {
         await second.append({ kind: "user", text: "after" });
         await second.close();
         expect(await lines(path)).toHaveLength(2);
+    });
+
+    it("reopens its file when another was put in its place", async () => {
+        const path = join(dir, "restored.jsonl");
+        const writer = await TranscriptWriter.open(path, clock);
+        await writer.append({ kind: "user", text: "before" });
+        const other = join(dir, "other.jsonl");
+        await writeFile(other, await readFile(path));
+        await rename(other, path);
+        await writer.append({ kind: "user", text: "after" });
+        await writer.close();
+        expect(
+            (await lines(path)).map((e) => (e as { text: string }).text),
+        ).toEqual(["before", "after"]);
+    });
+
+    it("reopens its file when it was removed", async () => {
+        const path = join(dir, "removed.jsonl");
+        const writer = await TranscriptWriter.open(path, clock);
+        await writer.append({ kind: "user", text: "before" });
+        await rm(path);
+        await writer.append({ kind: "user", text: "after" });
+        await writer.close();
+        expect(
+            (await lines(path)).map((e) => (e as { text: string }).text),
+        ).toEqual(["after"]);
     });
 
     it("rejects when the directory cannot be created", async () => {
