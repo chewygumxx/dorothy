@@ -20,11 +20,8 @@ import {
 import { type Config, readConfig } from "../config.js";
 import type { NoticeSource } from "../contracts/notices.js";
 import type { ChatSession, ResumedTurn, Turn } from "../contracts/session.js";
-import {
-    Conversation,
-    conversationOptions,
-    type SessionSetup,
-} from "../conversation.js";
+import type { RecallLaunch, SessionStart } from "../contracts/start.js";
+import type { StructuredCall } from "../contracts/structured.js";
 import { entryHook } from "../history/commands.js";
 import {
     type HookCommand,
@@ -36,23 +33,14 @@ import {
 import { Mirror } from "../history/mirror.js";
 import { type MemoryRepo, MIRROR, NO_MIRROR } from "../history/repo.js";
 import { parseKey } from "../history/seal.js";
-import {
-    type PersonaMode,
-    personaPrompt,
-    promptHash,
-    systemPrompt,
-} from "../persona.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
-import { recallLaunch } from "../recall-launch.js";
 import { newPhrase } from "../session-id.js";
-import { structuredCall } from "../structured.js";
 import {
     readTranscript,
     TranscriptWriter,
     transcriptDir,
     transcriptPath,
 } from "../transcript.js";
-import { runApp } from "../tui/run-app.js";
 import type { Env } from "../xdg.js";
 import { earlierSection } from "./block.js";
 import { indexCatalogue } from "./catalogue.js";
@@ -390,9 +378,10 @@ export function openIndex<T>(
 export function openChatIndex(
     config: Pick<Config, "memory">,
     compactable: boolean,
+    env: Env = process.env,
 ): { index: RecallIndex | null; warning: string | null } {
     return openIndex(indexUses(config, compactable), () =>
-        RecallIndex.open(indexPath()),
+        RecallIndex.open(indexPath(env)),
     );
 }
 
@@ -415,29 +404,77 @@ export async function closeInOrder(
     }
 }
 
-export async function runTui(
-    resume: string | null,
-    persona: PersonaMode = "chat",
-): Promise<number> {
+// What memory needs of the model side, as text: it never builds a
+// prompt from the persona itself.
+export type MemoryPrompts = {
+    // Reviews run on the chat persona, without recall.
+    review: string;
+    // Compaction runs on the persona of this chat's mode, without recall.
+    compaction: string;
+    // The promptHash a session records, with recall on or off.
+    hash(recall: boolean): string;
+    // The system prompt a session starting so would have, for
+    // compaction's estimate of what a compacted session costs.
+    session(start: SessionStart): string;
+};
+
+export type OpenMemoryOptions = {
+    // The chat to resume, or null for a new one.
+    resume: string | null;
+    call: StructuredCall;
+    prompts: MemoryPrompts;
+    // A new session from memory's start, untracked and unrecorded.
+    connect(start: SessionStart): ChatSession;
+    recallLaunch(phrase: string): RecallLaunch;
+    env?: Env;
+};
+
+// A chat's memory, open: what the screen starts from, the sessions it
+// makes, and the notices it shows.
+export type Memory = {
+    phrase: string;
+    history: ResumedTurn[];
+    costUsd: number;
+    config: Config;
+    warnings: string[];
+    notices: NoticeSource | undefined;
+    createSession(turns: Turn[]): ChatSession;
+    // Running reviews and compactions are closed unsaved, and let go of
+    // their claims before the index they are held in closes.
+    close(): Promise<void>;
+};
+
+export type OpenedMemory =
+    | { ok: true; memory: Memory }
+    | { ok: false; message: string };
+
+export async function openMemory({
+    resume,
+    call,
+    prompts,
+    connect,
+    recallLaunch,
+    env = process.env,
+}: OpenMemoryOptions): Promise<OpenedMemory> {
     const phrase = resume ?? newPhrase();
-    const path = transcriptPath(phrase);
-    const dir = transcriptDir();
+    const path = transcriptPath(phrase, env);
+    const dir = transcriptDir(env);
     let history: ResumedTurn[] = [];
     let costUsd = 0;
     const warnings: string[] = [];
-    const { config, warnings: configWarnings } = await readConfig();
+    const { config, warnings: configWarnings } = await readConfig(env);
     warnings.push(...configWarnings);
 
     // The index and history open before anything is read, so that
     // history restores a broken file first. The index serves compaction
     // whenever the config lets it, since this chat's notes are not read
     // yet.
-    const opened = openChatIndex(config, config.compaction.enabled);
+    const opened = openChatIndex(config, config.compaction.enabled, env);
     const index = opened.index;
     if (opened.warning !== null) {
         warnings.push(opened.warning);
     }
-    const launched = await launchHistory({ config, index, warnings });
+    const launched = await launchHistory({ config, index, warnings, env });
 
     // A resumed conversation starts from its clusters. Notes that cannot be
     // read are never written, so compaction stays off for this chat.
@@ -454,11 +491,11 @@ export async function runTui(
                 );
             }
         } catch (error) {
-            process.stderr.write(
-                `dorothy: cannot resume ${resume}: ${path}: ${describeError(error)}\n`,
-            );
             await closeInOrder([() => launched?.close(), () => index?.close()]);
-            return 1;
+            return {
+                ok: false,
+                message: `cannot resume ${resume}: ${path}: ${describeError(error)}`,
+            };
         }
         const notes = await readSidecar(dir, phrase);
         if (notes.kind === "ok") {
@@ -479,12 +516,12 @@ export async function runTui(
     }
     const transcript = writer;
 
-    let memory: MemoryService | null = null;
+    let service: MemoryService | null = null;
     if (config.memory.enabled && index !== null) {
-        const vocabulary = vocabularyPath();
+        const vocabulary = vocabularyPath(env);
         const loaded = await indexCatalogue(index, dir, vocabulary).load();
         warnings.push(...loaded.warnings);
-        memory = new MemoryService({
+        service = new MemoryService({
             dir,
             phrase,
             history,
@@ -493,12 +530,12 @@ export async function runTui(
             index,
             vocabulary,
             versions: launched?.history.handle() ?? null,
-            call: structuredCall(),
-            persona: systemPrompt,
+            call,
+            persona: prompts.review,
             // Without a transcript the live chat is left alone.
             flushed: transcript === null ? null : () => transcript.flushed(),
         });
-        warnings.push(...memory.warnings());
+        warnings.push(...service.warnings());
     }
 
     const recall =
@@ -507,26 +544,20 @@ export async function runTui(
     // Every session, first, resumed, reconnected or compacted, starts the
     // same way: the clusters, the notes on other conversations with the
     // clusters' tokens charged first, then the turns after the clusters.
-    const setup = (seed: Seed): SessionSetup => ({
+    const startOf = (seed: Seed): SessionStart => ({
         history: seed.turns,
         memory:
-            memory?.block(clusterTokens(seed.clusters, recall !== null)) ?? "",
+            service?.block(clusterTokens(seed.clusters, recall !== null)) ?? "",
         earlier: earlierSection(seed.clusters, recall !== null),
         recall,
         recollect: recall !== null && seed.clusters.length > 0,
-        persona,
     });
-    const connect = (seed: Seed): ChatSession => {
-        const conversation = new Conversation(setup(seed));
-        conversation.start();
-        return conversation;
-    };
 
     const claims = index;
     // Writes outside memory's service take the index's lock, or
     // history's own without it.
     const writeLock = claims?.lock ?? launched?.history.lock;
-    const turns =
+    const committer =
         launched === null || transcript === null
             ? null
             : turnCommitter(
@@ -544,10 +575,10 @@ export async function runTui(
               // the two delays shared, or order them some other way.
               idleMs: config.memory.idleSeconds * 1000,
               clusters,
-              persona: personaPrompt({ recall: false, mode: persona }),
+              persona: prompts.compaction,
               // With recall on, a session with clusters offers recollect.
               recollect: recall !== null,
-              call: structuredCall(),
+              call,
               save: clusterSaver({
                   dir,
                   phrase,
@@ -562,8 +593,7 @@ export async function runTui(
               record: async (entry) => {
                   await transcript?.append({ kind: "compaction", ...entry });
               },
-              estimate: (seed) =>
-                  tokens(String(conversationOptions(setup(seed)).systemPrompt)),
+              estimate: (seed) => tokens(prompts.session(startOf(seed))),
               claims: claims === null ? null : indexClaims(claims, phrase),
           })
         : null;
@@ -577,45 +607,40 @@ export async function runTui(
             : sessionRecorder({
                   sink: transcript,
                   phrase,
-                  promptHash: promptHash(
-                      personaPrompt({ recall: recall !== null, mode: persona }),
-                  ),
+                  promptHash: prompts.hash(recall !== null),
                   resumed: history.length > 0,
                   warn: (message) => channel.warn(message),
               });
     const make = sessionMaker({
         compaction,
-        connect,
+        connect: (seed) => connect(startOf(seed)),
         clusters,
-        memory,
-        turnEnded: turns?.ended ?? null,
+        memory: service,
+        turnEnded: committer?.ended ?? null,
     });
-    const createSession = (turns: Turn[]): ChatSession => {
-        const session = make(turns);
-        return record === null ? session : record(session);
-    };
 
-    try {
-        await runApp({
+    return {
+        ok: true,
+        memory: {
             phrase,
             history,
-            createSession,
-            notices: mergeNotices(memory, launched?.history, channel),
-            initialWarnings: warnings,
-            initialCostUsd: costUsd,
+            costUsd,
             config,
-        });
-    } finally {
-        // Running reviews and compactions are closed unsaved, and let go
-        // of their claims before the index they are held in closes.
-        await closeInOrder([
-            () => compaction?.stop(),
-            () => memory?.stop(),
-            () => turns?.settled(),
-            () => launched?.close(),
-            () => index?.close(),
-            () => writer?.close(),
-        ]);
-    }
-    return 0;
+            warnings,
+            notices: mergeNotices(service, launched?.history, channel),
+            createSession: (turns) => {
+                const session = make(turns);
+                return record === null ? session : record(session);
+            },
+            close: () =>
+                closeInOrder([
+                    () => compaction?.stop(),
+                    () => service?.stop(),
+                    () => committer?.settled(),
+                    () => launched?.close(),
+                    () => index?.close(),
+                    () => writer?.close(),
+                ]),
+        },
+    };
 }

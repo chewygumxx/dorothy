@@ -15,7 +15,6 @@ import {
     expect,
     it,
     setSystemTime,
-    spyOn,
 } from "bun:test";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -24,26 +23,30 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configPath, DEFAULT_CONFIG } from "../config.js";
 import type { ChatSession } from "../contracts/session.js";
+import { type SessionStart, withSection } from "../contracts/start.js";
+import type { StructuredCall } from "../contracts/structured.js";
 import { newPhrase } from "../session-id.js";
-import { transcriptDir } from "../transcript.js";
+import { transcriptDir, transcriptPath } from "../transcript.js";
 import { xdgDir } from "../xdg.js";
+import { FakeSession } from "./fake-session.js";
 import {
     closeInOrder,
     clusterSaver,
     indexClaims,
     indexUses,
     launchHistory,
+    type MemoryPrompts,
     mergeNotices,
     notesReady,
     openChatIndex,
     openIndex,
-    runTui,
+    openMemory,
     sessionMaker,
     turnCommitter,
     withTurnEnd,
 } from "./open.js";
 
-// runTui reads the config and opens the transcript and the index from
+// openMemory reads the config and opens the transcript and the index from
 // these, so every one points into the test's directory.
 const XDG = ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"] as const;
 let dir = "";
@@ -66,35 +69,6 @@ afterEach(async () => {
         }
     }
     await rm(dir, { recursive: true, force: true });
-});
-
-describe("runTui", () => {
-    it("reads and writes only under the test's directory", () => {
-        // The cache holds the index and the CLI's home.
-        const cache = xdgDir(process.env, "XDG_CACHE_HOME", ".cache");
-        for (const path of [configPath(), transcriptDir(), cache]) {
-            expect(path).toStartWith(dir);
-        }
-    });
-
-    it("exits 1 before rendering when the transcript to resume is missing", async () => {
-        const phrase = newPhrase();
-        const written: string[] = [];
-        const write = spyOn(process.stderr, "write").mockImplementation(
-            (chunk) => {
-                written.push(String(chunk));
-                return true;
-            },
-        );
-        try {
-            expect(await runTui(phrase)).toBe(1);
-        } finally {
-            write.mockRestore();
-        }
-        expect(written.join("")).toStartWith(
-            `dorothy: cannot resume ${phrase}: `,
-        );
-    });
 });
 
 describe("sessionMaker", () => {
@@ -660,5 +634,142 @@ describe("clusterSaver", () => {
                 message: `compaction: ${phrase} (dorothy, claude-test)`,
             },
         ]);
+    });
+});
+
+describe("openMemory", () => {
+    const env = process.env;
+    const prompts: MemoryPrompts = {
+        review: "R",
+        compaction: "C",
+        hash: (recall) => (recall ? "with" : "without"),
+        session: (start) => withSection("S", start.memory),
+    };
+    const quiet: StructuredCall = async () => ({
+        ok: false,
+        reason: "not under test",
+        costUsd: 0,
+    });
+
+    it("reads and writes only under the test's directory", () => {
+        // The cache holds the index and the CLI's home.
+        const cache = xdgDir(process.env, "XDG_CACHE_HOME", ".cache");
+        for (const path of [configPath(), transcriptDir(), cache]) {
+            expect(path).toStartWith(dir);
+        }
+    });
+
+    it("fails to resume a chat that has no transcript", async () => {
+        const opened = await openMemory({
+            resume: "tumble-orchid-vapor-lantern",
+            call: quiet,
+            prompts,
+            connect: () => {
+                throw new Error("no session expected");
+            },
+            recallLaunch: (phrase) => ({ command: "x", args: [phrase] }),
+            env,
+        });
+        expect(opened.ok).toBe(false);
+        if (!opened.ok) {
+            expect(opened.message).toStartWith(
+                "cannot resume tumble-orchid-vapor-lantern: ",
+            );
+        }
+    });
+
+    it("starts sessions with memory's start and records them", async () => {
+        const starts: SessionStart[] = [];
+        const inner = new FakeSession();
+        const opened = await openMemory({
+            resume: null,
+            call: quiet,
+            prompts,
+            connect: (start) => {
+                starts.push(start);
+                return inner;
+            },
+            recallLaunch: (phrase) => ({ command: "x", args: [phrase] }),
+            env,
+        });
+        if (!opened.ok) {
+            throw new Error(opened.message);
+        }
+        const { memory } = opened;
+        try {
+            memory.createSession([]).send("hello");
+            inner.emit({ type: "ready", model: "m", sdkSessionId: "s" });
+            expect(starts).toHaveLength(1);
+            expect(starts[0]).toMatchObject({
+                history: [],
+                earlier: "",
+                recollect: false,
+            });
+            expect(inner.sent).toEqual(["hello"]);
+        } finally {
+            await memory.close();
+        }
+        const text = await Bun.file(transcriptPath(memory.phrase, env)).text();
+        expect(text).toContain('"kind":"user"');
+        expect(text).toContain('"promptHash":"with"');
+    });
+
+    // Memory's turn-end hook starts the first review, which flushes the
+    // transcript and reads it: the reply must have been appended by then.
+    it("has a turn's reply in the transcript when memory reviews it", async () => {
+        const inner = new FakeSession();
+        let phrase = "";
+        // What the review found on disk, or, should it never ask, a
+        // note saying so once the wait is up, so the test fails rather
+        // than hangs.
+        let reviewed: (transcript: string) => void = () => {};
+        const read = new Promise<string>((resolve) => {
+            reviewed = resolve;
+        });
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const unasked = new Promise<string>((resolve) => {
+            timer = setTimeout(() => resolve("no review asked"), 2000);
+        });
+        const opened = await openMemory({
+            resume: null,
+            call: async (request) => {
+                reviewed(await Bun.file(transcriptPath(phrase, env)).text());
+                return quiet(request);
+            },
+            prompts,
+            connect: () => inner,
+            recallLaunch: (phrase) => ({ command: "x", args: [phrase] }),
+            env,
+        });
+        if (!opened.ok) {
+            throw new Error(opened.message);
+        }
+        const { memory } = opened;
+        phrase = memory.phrase;
+        try {
+            memory.createSession([]).send("hello");
+            inner.emit({ type: "ready", model: "m", sdkSessionId: "s" });
+            inner.emit({
+                type: "turn-end",
+                reply: "a reply to review",
+                interrupted: false,
+                stats: {
+                    inputTokens: 1,
+                    cacheReadTokens: 0,
+                    cacheWriteTokens: 0,
+                    outputTokens: 1,
+                    ttftMs: null,
+                    durationMs: 1,
+                    costUsd: 0,
+                    sessionCostUsd: 0,
+                },
+            });
+            expect(await Promise.race([read, unasked])).toContain(
+                '"text":"a reply to review"',
+            );
+        } finally {
+            clearTimeout(timer);
+            await memory.close();
+        }
     });
 });
