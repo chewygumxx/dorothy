@@ -9,9 +9,9 @@
 //
 
 import { pathToFileURL } from "node:url";
+import type { PersonaMode } from "@dorothy/agent";
 import { isPhrase } from "@dorothy/core";
 import { config } from "@dotenvx/dotenvx";
-import { type PersonaMode, prepareCliHome } from "./persona.js";
 
 export type Mode =
     | { kind: "oneshot"; prompt: string; persona: PersonaMode }
@@ -255,6 +255,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
         mode.kind === "dump"
     ) {
         config({ quiet: true });
+        // Loaded here rather than at the top, so the modes that never talk
+        // to the model do not pay for the Agent SDK.
+        const { prepareCliHome } = await import("@dorothy/agent");
         prepareCliHome();
     }
     if (mode.kind === "mirror" || mode.kind === "recover") {
@@ -269,7 +272,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
         const { runDump } = await import("./dump.js");
         process.exitCode = await runDump(mode);
     } else if (mode.kind === "oneshot") {
-        const { runOneShot } = await import("./one-shot.js");
+        const { runOneShot } = await import("@dorothy/agent");
         await runOneShot(mode.prompt, mode.persona);
     } else if (mode.kind === "list") {
         const { runList } = await import("./memory/commands.js");

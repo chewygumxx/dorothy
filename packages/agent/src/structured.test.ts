@@ -4,7 +4,7 @@
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/src/structured.test.ts
+// ::: :/packages/agent/src/structured.test.ts
 //
 //
 

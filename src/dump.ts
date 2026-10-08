@@ -8,11 +8,14 @@
 //
 //
 
+import {
+    type CaptureQueryFn,
+    conversationOptions,
+    dumpRequest,
+    type PersonaMode,
+} from "@dorothy/agent";
 import type { Env } from "@dorothy/core";
-import { type CaptureQueryFn, dumpRequest } from "./capture.js";
-import { conversationOptions } from "./conversation.js";
 import { previewStart } from "./memory/preview.js";
-import type { PersonaMode } from "./persona.js";
 import { recallLaunch } from "./recall-launch.js";
 
 export type DumpRequest = {

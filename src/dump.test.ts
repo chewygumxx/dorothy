@@ -12,10 +12,9 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { type CaptureQueryFn, personaPrompt } from "@dorothy/agent";
 import { newPhrase } from "@dorothy/core";
-import type { CaptureQueryFn } from "./capture.js";
 import { runDump } from "./dump.js";
-import { personaPrompt } from "./persona.js";
 
 // Stands in for the CLI: sends the system prompt to whatever API the
 // options name, as the CLI would send the whole request.

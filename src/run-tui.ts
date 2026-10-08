@@ -11,17 +11,18 @@
 // A chat on the terminal: memory opened with the model side's prompts
 // and sessions, the screen run over it, and memory closed after.
 
-import { runApp } from "@dorothy/tui";
-import { Conversation, conversationOptions } from "./conversation.js";
-import { openMemory } from "./memory/open.js";
 import {
+    Conversation,
+    conversationOptions,
     type PersonaMode,
     personaPrompt,
     promptHash,
+    structuredCall,
     systemPrompt,
-} from "./persona.js";
+} from "@dorothy/agent";
+import { runApp } from "@dorothy/tui";
+import { openMemory } from "./memory/open.js";
 import { recallLaunch } from "./recall-launch.js";
-import { structuredCall } from "./structured.js";
 
 export async function runTui(
     resume: string | null,

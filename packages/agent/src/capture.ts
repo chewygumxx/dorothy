@@ -4,7 +4,7 @@
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/src/capture.ts
+// ::: :/packages/agent/src/capture.ts
 //
 //
 

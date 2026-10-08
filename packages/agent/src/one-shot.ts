@@ -4,7 +4,7 @@
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/src/one-shot.ts
+// ::: :/packages/agent/src/one-shot.ts
 //
 //
 

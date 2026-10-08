@@ -4,7 +4,7 @@
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/src/conversation.ts
+// ::: :/packages/agent/src/conversation.ts
 //
 //
 

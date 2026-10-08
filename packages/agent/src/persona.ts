@@ -4,7 +4,7 @@
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/src/persona.ts
+// ::: :/packages/agent/src/persona.ts
 //
 //
 
