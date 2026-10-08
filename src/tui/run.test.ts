@@ -17,6 +17,7 @@ import {
     setSystemTime,
     spyOn,
 } from "bun:test";
+import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -31,11 +32,15 @@ import {
     clusterSaver,
     indexClaims,
     indexUses,
+    launchHistory,
+    mergeNotices,
     notesReady,
     openChatIndex,
     openIndex,
     runTui,
     sessionMaker,
+    turnCommitter,
+    withTurnEnd,
 } from "./run.js";
 
 // runTui reads the config and opens the transcript and the index from
@@ -355,6 +360,231 @@ describe("indexClaims", () => {
     });
 });
 
+describe("withTurnEnd", () => {
+    it("tells history of each turn's end after memory", () => {
+        const log: string[] = [];
+        const hooks = withTurnEnd(
+            {
+                sent: (text) => log.push(`sent ${text}`),
+                ready: () => log.push("ready"),
+                turnEnded: () => log.push("memory"),
+            },
+            () => log.push("history"),
+        );
+        hooks?.sent("hi");
+        hooks?.ready();
+        hooks?.turnEnded();
+        expect(log).toEqual(["sent hi", "ready", "memory", "history"]);
+        const alone = withTurnEnd(null, () => log.push("alone"));
+        alone?.turnEnded();
+        expect(log.at(-1)).toBe("alone");
+        expect(withTurnEnd(null, null)).toBeNull();
+    });
+});
+
+describe("turnCommitter", () => {
+    it("commits each turn once its transcript is flushed, in order", async () => {
+        const log: string[] = [];
+        const turns = turnCommitter(
+            {
+                turn: async (path, count) => {
+                    log.push(`turn ${path} #${count}`);
+                },
+                warn: (message) => log.push(message),
+            },
+            "/data/x.jsonl",
+            async () => {
+                await new Promise((resolve) => setTimeout(resolve, 5));
+                log.push("flushed");
+            },
+            3,
+        );
+        turns.ended();
+        turns.ended();
+        await turns.settled();
+        expect(log).toEqual([
+            "flushed",
+            "turn /data/x.jsonl #4",
+            "flushed",
+            "turn /data/x.jsonl #5",
+        ]);
+    });
+
+    it("warns rather than throws when a turn can't be committed", async () => {
+        const warnings: string[] = [];
+        const turns = turnCommitter(
+            {
+                turn: async () => {
+                    throw new Error("locked");
+                },
+                warn: (message) => warnings.push(message),
+            },
+            "/data/x.jsonl",
+            async () => {},
+            0,
+        );
+        turns.ended();
+        await turns.settled();
+        expect(warnings).toEqual(["history: couldn't commit turn 1 (locked)"]);
+    });
+});
+
+describe("mergeNotices", () => {
+    it("listens to every source, and stops listening to all", () => {
+        const listeners: ((notice: {
+            type: "warning";
+            message: string;
+        }) => void)[] = [];
+        let off = 0;
+        const source = {
+            subscribe: (
+                listener: (notice: {
+                    type: "warning";
+                    message: string;
+                }) => void,
+            ) => {
+                listeners.push(listener);
+                return () => {
+                    off += 1;
+                };
+            },
+        };
+        const seen: unknown[] = [];
+        const merged = mergeNotices(source, null, source);
+        const stop = merged?.subscribe((notice) => seen.push(notice));
+        for (const listener of listeners) {
+            listener({ type: "warning", message: "w" });
+        }
+        expect(seen).toHaveLength(2);
+        stop?.();
+        expect(off).toBe(2);
+        expect(mergeNotices(null, undefined)).toBeUndefined();
+        expect(mergeNotices(source)).toBe(source);
+    });
+});
+
+describe("launchHistory", () => {
+    // A bare repository with git isolated, local to this file, which
+    // may not import from history (boundary.test.ts).
+    const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null" };
+    const bareRepo = async () => {
+        const path = await mkdtemp(join(dir, "mirror-"));
+        const proc = Bun.spawn(["git", "init", "-q", "--bare", path], {
+            env: gitEnv,
+        });
+        expect(await proc.exited).toBe(0);
+        return path;
+    };
+    const sealedAt = async (bare: string) => {
+        const proc = Bun.spawn(
+            ["git", "rev-parse", "--verify", "-q", "refs/heads/sealed"],
+            { cwd: bare, env: gitEnv, stdout: "pipe", stderr: "ignore" },
+        );
+        const out = await new Response(proc.stdout).text();
+        return (await proc.exited) === 0 ? out.trim() : null;
+    };
+
+    it("adopts the data directory and asks for a mirror", async () => {
+        const warnings: string[] = [];
+        const launched = await launchHistory({
+            config: DEFAULT_CONFIG,
+            index: null,
+            warnings,
+            hook: null,
+        });
+        expect(launched).not.toBeNull();
+        expect(existsSync(join(dir, "dorothy", ".git", "HEAD"))).toBe(true);
+        expect(warnings).toEqual([
+            "memory has no mirror · dorothy --mirror <url>",
+        ]);
+        await launched?.close();
+    });
+
+    it("pushes to a mirror at every launch, even when nothing waits", async () => {
+        const key = randomBytes(32).toString("base64");
+        const env = { ...process.env, DOROTHY_MIRROR_KEY: key };
+        const pushed = async (bare: string) => {
+            for (let tries = 0; tries < 100; tries++) {
+                const tip = await sealedAt(bare);
+                if (tip !== null) {
+                    return tip;
+                }
+                await new Promise((resolve) => setTimeout(resolve, 50));
+            }
+            return null;
+        };
+        const options = {
+            config: DEFAULT_CONFIG,
+            index: null,
+            warnings: [] as string[],
+            env,
+            hook: null,
+        };
+
+        const first = await launchHistory(options);
+        const bare = await bareRepo();
+        await first?.history.repo.setRemote("mirror", bare);
+        await first?.close();
+        const second = await launchHistory(options);
+        expect(await pushed(bare)).not.toBeNull();
+        // Everything is sealed now, so nothing waits; a new mirror still
+        // gets the branch at the next launch.
+        const other = await bareRepo();
+        await second?.history.repo.setRemote("mirror", other);
+        await second?.close();
+        const third = await launchHistory(options);
+        expect(await pushed(other)).not.toBeNull();
+        expect(options.warnings).toEqual([
+            "memory has no mirror · dorothy --mirror <url>",
+        ]);
+        await third?.close();
+    });
+
+    it("repacks only once the launch's push is done", async () => {
+        const options = {
+            config: DEFAULT_CONFIG,
+            index: null,
+            warnings: [] as string[],
+            env: {
+                ...process.env,
+                DOROTHY_MIRROR_KEY: randomBytes(32).toString("base64"),
+            },
+            hook: null,
+        };
+        const first = await launchHistory(options);
+        const bare = await bareRepo();
+        await first?.history.repo.setRemote("mirror", bare);
+        await first?.close();
+        let seen: string | null = null;
+        let done!: () => void;
+        const maintained = new Promise<void>((resolve) => {
+            done = resolve;
+        });
+        const second = await launchHistory({
+            ...options,
+            maintain: async () => {
+                seen = await sealedAt(bare);
+                done();
+                return true;
+            },
+        });
+        await maintained;
+        expect(seen).not.toBeNull();
+        await second?.close();
+    });
+
+    it("is off when the config says so", async () => {
+        expect(
+            await launchHistory({
+                config: { history: { enabled: false, pushSeconds: 60 } },
+                index: null,
+                warnings: [],
+                hook: null,
+            }),
+        ).toBeNull();
+    });
+});
+
 describe("clusterSaver", () => {
     const cluster = (from: number, through: number) => ({
         from,
@@ -410,5 +640,25 @@ describe("clusterSaver", () => {
         const save = clusterSaver({ dir, phrase, transcript: false });
         expect(await save([cluster(1, 4)], 0.25)).toEqual({ ok: true });
         await expect(notes(phrase)).rejects.toThrow();
+    });
+
+    it("records the compaction in history", async () => {
+        const phrase = newPhrase();
+        const recorded: { paths: readonly string[]; message: string }[] = [];
+        const save = clusterSaver({
+            dir,
+            phrase,
+            transcript: true,
+            recorder: async (paths, message) => {
+                recorded.push({ paths, message });
+            },
+        });
+        expect(await save([cluster(1, 4)], 0.25)).toEqual({ ok: true });
+        expect(recorded).toEqual([
+            {
+                paths: [join(dir, `${phrase}.meta.json`)],
+                message: `compaction: ${phrase} (dorothy, claude-test)`,
+            },
+        ]);
     });
 });

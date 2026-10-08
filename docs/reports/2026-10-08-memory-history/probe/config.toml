@@ -1,0 +1,5 @@
+[memory]
+idle-seconds = 10
+
+[history]
+push-seconds = 10

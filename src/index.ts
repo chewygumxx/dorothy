@@ -33,6 +33,12 @@ export type Mode =
     | { kind: "memory"; phrase: string }
     | { kind: "tags" }
     | { kind: "tags-edit" }
+    | { kind: "history"; path: string | null; count: number }
+    | { kind: "restore"; path: string; rev: string | null }
+    | { kind: "rollback"; rev: string }
+    | { kind: "check"; staged: boolean }
+    | { kind: "mirror"; url: string | null }
+    | { kind: "recover"; url: string }
     | { kind: "recall-server"; exclude: string | null; recollect: boolean }
     | { kind: "help" }
     | { kind: "usage"; message: string };
@@ -45,6 +51,14 @@ export const USAGE = [
     "       dorothy --memory <phrase>  correct, pin or hide a chat's notes",
     "       dorothy --tags             Dorothy's tags, as a tree",
     "       dorothy --edit-tags        correct, merge or delete her tags",
+    "       dorothy --history [<path>] [-n <count>]",
+    "                                  what changed in her memory, newest first",
+    "       dorothy --restore <path> [<rev>]",
+    "                                  put a file back as it was",
+    "       dorothy --rollback <rev>   put notes and tags back as they were",
+    "       dorothy --check [--staged] lint memory's files",
+    "       dorothy --mirror [<url>]   set or show the sealed mirror",
+    "       dorothy --recover <url>    rebuild memory from the mirror",
     "       dorothy --recall-server    memory search for MCP clients (stdio)",
     "       dorothy -- <prompt...>     a prompt that starts with -",
     "       dorothy --dump-context [--resume <phrase>] [message...]",
@@ -142,6 +156,62 @@ export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
                       "--recall-server takes only --exclude <phrase> [--recollect]",
               };
     }
+    if (first === "--history") {
+        const usage = {
+            kind: "usage",
+            message: "--history takes [<path>] [-n <count>]",
+        } as const;
+        let path: string | null = null;
+        let count = 20;
+        for (let index = 0; index < rest.length; index++) {
+            const word = rest[index] as string;
+            if (word === "-n") {
+                const value = Number(rest[index + 1]);
+                if (!Number.isInteger(value) || value < 1) {
+                    return usage;
+                }
+                count = value;
+                index++;
+            } else if (path === null && !word.startsWith("-")) {
+                path = word;
+            } else {
+                return usage;
+            }
+        }
+        return { kind: "history", path, count };
+    }
+    if (first === "--restore") {
+        const [path, rev] = rest;
+        return path !== undefined && rest.length <= 2
+            ? { kind: "restore", path, rev: rev ?? null }
+            : { kind: "usage", message: "--restore takes <path> [<rev>]" };
+    }
+    if (first === "--rollback") {
+        const [rev] = rest;
+        return rev !== undefined && rest.length === 1
+            ? { kind: "rollback", rev }
+            : { kind: "usage", message: "--rollback takes one revision" };
+    }
+    if (first === "--check") {
+        if (
+            rest.length === 0 ||
+            (rest.length === 1 && rest[0] === "--staged")
+        ) {
+            return { kind: "check", staged: rest.length === 1 };
+        }
+        return { kind: "usage", message: "--check takes only --staged" };
+    }
+    if (first === "--mirror") {
+        return rest.length <= 1
+            ? { kind: "mirror", url: rest[0] ?? null }
+            : { kind: "usage", message: "--mirror takes one url or path" };
+    }
+    if (first === "--recover") {
+        const [url] = rest;
+        return url !== undefined && rest.length === 1
+            ? { kind: "recover", url }
+            : { kind: "usage", message: "--recover takes one url or path" };
+    }
     if (first === "--memory") {
         const phrase = rest[0];
         if (rest.length !== 1 || phrase === undefined || !isPhrase(phrase)) {
@@ -222,6 +292,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
         config({ quiet: true });
         prepareCliHome();
     }
+    if (mode.kind === "mirror" || mode.kind === "recover") {
+        config({ quiet: true });
+    }
     if (mode.kind === "help") {
         process.stdout.write(`${USAGE}\n`);
     } else if (mode.kind === "usage") {
@@ -234,22 +307,53 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
         await oneShot(mode.prompt, mode.persona);
     } else if (mode.kind === "list") {
         const { runList } = await import("./memory/commands.js");
-        process.exitCode = await runList();
+        const { commandHistory } = await import("./history/commands.js");
+        process.exitCode = await runList({ openHistory: commandHistory() });
     } else if (mode.kind === "memory") {
         const { runMemoryEdit } = await import("./memory/commands.js");
-        process.exitCode = await runMemoryEdit(mode.phrase);
+        const { commandHistory } = await import("./history/commands.js");
+        process.exitCode = await runMemoryEdit(mode.phrase, {
+            openHistory: commandHistory(),
+        });
     } else if (mode.kind === "tags") {
         const { runTags } = await import("./memory/commands.js");
-        process.exitCode = await runTags();
+        const { commandHistory } = await import("./history/commands.js");
+        process.exitCode = await runTags({ openHistory: commandHistory() });
     } else if (mode.kind === "tags-edit") {
         const { runTagsEdit } = await import("./memory/commands.js");
-        process.exitCode = await runTagsEdit();
+        const { commandHistory } = await import("./history/commands.js");
+        process.exitCode = await runTagsEdit({
+            openHistory: commandHistory(),
+        });
+    } else if (mode.kind === "history") {
+        const { runHistory } = await import("./history/commands.js");
+        process.exitCode = await runHistory({
+            path: mode.path,
+            count: mode.count,
+        });
+    } else if (mode.kind === "restore") {
+        const { runRestore } = await import("./history/commands.js");
+        process.exitCode = await runRestore(mode.path, mode.rev);
+    } else if (mode.kind === "rollback") {
+        const { runRollback } = await import("./history/commands.js");
+        process.exitCode = await runRollback(mode.rev);
+    } else if (mode.kind === "check") {
+        const { runCheck } = await import("./history/commands.js");
+        process.exitCode = await runCheck({ staged: mode.staged });
+    } else if (mode.kind === "mirror") {
+        const { runMirror } = await import("./history/commands.js");
+        process.exitCode = await runMirror(mode.url);
+    } else if (mode.kind === "recover") {
+        const { runRecover } = await import("./history/commands.js");
+        process.exitCode = await runRecover(mode.url);
     } else if (mode.kind === "recall-server") {
         const { runRecallServer } = await import("./recall/server.js");
         process.exitCode = await runRecallServer(mode.exclude, mode.recollect);
     } else {
         // Loaded only for chat, so one-shot replies never pay for React.
         const { runTui } = await import("./tui/run.js");
-        process.exitCode = await runTui(mode.resume, mode.persona);
+        // runTui has closed everything by now. A push or a repack still
+        // running must not hold the terminal after the chat is gone.
+        process.exit(await runTui(mode.resume, mode.persona));
     }
 }

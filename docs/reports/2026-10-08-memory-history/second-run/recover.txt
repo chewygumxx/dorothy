@@ -1,0 +1,9 @@
+# XDG_DATA_HOME=$P/recovered XDG_CACHE_HOME=$P/recovered-cache
+# $B src/index.ts --recover $P/mirror.git; stat; diff -r --exclude=.git
+Recovered 3 of 3 bundles; main is at 567a4f4
+All 22 files pass.
+exit 0
+700 $P/recovered/dorothy
+700 $P/recovered/dorothy/.git
+Only in $P/data/dorothy/transcripts: bibelot-hiccoughed-equivoke-dogtooth.jsonl
+diff exit 1

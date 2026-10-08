@@ -8,7 +8,7 @@
 //
 //
 
-import { type FileHandle, mkdir, open, readFile } from "node:fs/promises";
+import { type FileHandle, mkdir, open, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { TurnStats } from "./conversation.js";
 import type { Turn } from "./persona.js";
@@ -294,12 +294,17 @@ export function parseTranscript(text: string): TranscriptRead {
     return { turns, skipped, costUsd };
 }
 
+// Chats are private: new transcripts are the user's alone.
+const openAppend = (path: string) => open(path, "a", 0o600);
+
 export class TranscriptWriter {
-    readonly #handle: FileHandle;
+    readonly #path: string;
+    #handle: FileHandle;
     readonly #now: () => Date;
     #pending: Promise<void> = Promise.resolve();
 
-    private constructor(handle: FileHandle, now: () => Date) {
+    private constructor(path: string, handle: FileHandle, now: () => Date) {
+        this.#path = path;
         this.#handle = handle;
         this.#now = now;
     }
@@ -308,10 +313,9 @@ export class TranscriptWriter {
         path: string,
         now: () => Date = () => new Date(),
     ): Promise<TranscriptWriter> {
-        // Chats are private: new directories and transcripts are the user's
-        // alone.
+        // New directories are the user's alone too.
         await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-        return new TranscriptWriter(await open(path, "a", 0o600), now);
+        return new TranscriptWriter(path, await openAppend(path), now);
     }
 
     // Appends are chained so un-awaited calls still land in call order, and a
@@ -320,11 +324,31 @@ export class TranscriptWriter {
         const { kind, ...fields } = entry;
         const event = { v: 1, kind, at: this.#now().toISOString(), ...fields };
         const line = `${JSON.stringify(event)}\n`;
-        const write = this.#pending.then(() =>
-            this.#handle.appendFile(line, "utf8"),
-        );
+        const write = this.#pending.then(async () => {
+            await this.#follow();
+            await this.#handle.appendFile(line, "utf8");
+        });
         this.#pending = write.catch(() => {});
         return write;
+    }
+
+    // A file put in the transcript's place (history restoring it) or
+    // removed would take every later append with the old one: the path is
+    // reopened when it no longer names the file held open.
+    async #follow(): Promise<void> {
+        const held = await this.#handle.stat();
+        let current: { dev: number; ino: number } | null = null;
+        try {
+            current = await stat(this.#path);
+        } catch {
+            // Gone: reopening makes it again.
+        }
+        if (current?.ino === held.ino && current.dev === held.dev) {
+            return;
+        }
+        const replaced = this.#handle;
+        this.#handle = await openAppend(this.#path);
+        await replaced.close();
     }
 
     // Resolves once every append queued so far has landed or failed, so a

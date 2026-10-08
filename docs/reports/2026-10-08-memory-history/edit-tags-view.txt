@@ -1,0 +1,76 @@
+# Dorothy's vocabulary. Lines starting with # are ignored.
+# Change a concept to make it yours. Delete a block to delete its concept;
+# Dorothy won't coin its labels again. Merge: folds a concept into another.
+# Add a block without Concept: to create one. Lists are separated by ;.
+
+Concept: k459bcd6a
+Tag: bike maintenance
+Also: bicycle repair
+Under:
+Note:
+Maintaining and repairing bicycles, including drivetrain, shifting, wear
+checks and adjustments.
+# (Dorothy, claude-sonnet-5-5, 2026-10-07; 2 conversations)
+
+Concept: kb658bca3
+Tag: derailleur adjustment
+Also:
+Under: bike maintenance
+Note:
+Adjusting bike derailleurs, cable tension, barrel adjusters and hanger
+alignment for crisp indexed shifting.
+# (Dorothy, claude-sonnet-5-5, 2026-10-07; 1 conversation)
+
+Concept: k707126e4
+Tag: drivetrain troubleshooting
+Also:
+Under: bike maintenance
+Note:
+Diagnosing bike drivetrain problems such as skipping gears, worn chains
+and cogs, and poor shifting.
+# (Dorothy, claude-sonnet-5-5, 2026-10-07; 2 conversations)
+
+Concept: kb25919c9
+Tag: espresso machine care
+Also: espresso descaling
+Under:
+Note:
+Maintaining espresso machines, including descaling frequency, descaler
+choice, rinsing and water quality.
+# (Dorothy, claude-sonnet-5-5, 2026-10-07; 1 conversation)
+
+Concept: k7dc0289a
+Tag: fermentation troubleshooting
+Also:
+Under:
+Note:
+Diagnosing problems in fermented foods and cultures, such as odd smells,
+sluggish activity, hooch or mold.
+# (Dorothy, claude-sonnet-5-5, 2026-10-07; 2 conversations)
+
+Concept: kbfbafa44
+Tag: houseplant care
+Also: plant care; pothos care
+Under:
+Note:
+Caring for indoor plants, including watering, drainage, light, repotting
+and diagnosing problems like yellowing leaves or root rot.
+# (Dorothy, claude-sonnet-5-5, 2026-10-07; 1 conversation)
+
+Concept: k968b3535
+Tag: levain
+Also:
+Under: sourdough baking
+Note:
+Maintaining, reviving and troubleshooting sourdough starters, including
+feeding schedules, ratios, smells and signs of spoilage.
+# (yours, 2026-10-07; 3 conversations)
+
+Concept: k9a718830
+Tag: sourdough baking
+Also:
+Under:
+Note:
+Baking bread with wild-yeast sourdough cultures, including starter care
+and readiness for baking.
+# (Dorothy, claude-sonnet-5-5, 2026-10-07; 3 conversations)

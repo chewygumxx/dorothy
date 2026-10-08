@@ -42,6 +42,7 @@ import {
     untagged,
     updateSidecar,
     withProvisional,
+    writeAtomic,
 } from "./sidecar.js";
 
 const PHRASE = "tumble-orchid-vapor-lantern";
@@ -719,5 +720,18 @@ describe("tags", () => {
             false,
         );
         expect(untagged(null)).toBe(false);
+    });
+});
+
+describe("writeAtomic", () => {
+    it("writes bytes as well as text", async () => {
+        const dir = await mkdtemp(join(tmpdir(), "dorothy-atomic-"));
+        try {
+            const path = join(dir, "file");
+            await writeAtomic(path, new Uint8Array([0xff, 0x0a]));
+            expect([...(await readFile(path))]).toEqual([0xff, 0x0a]);
+        } finally {
+            await rm(dir, { recursive: true, force: true });
+        }
     });
 });

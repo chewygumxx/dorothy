@@ -1,0 +1,34 @@
+# wc -l
+   7 transcripts/gibber-irksomely-discounting-mayest.jsonl
+   8 broken/transcripts/gibber-irksomely-discounting-mayest.jsonl.2026-10-08T07-51-42-523Z
+  15 total
+
+# transcript at its path
+{"v":1,"kind":"user","at":"2026-10-08T07:49:25.924Z","text":"Message A: what's a good companion plant for tomatoes in a small balcony pot? One line please."}
+{"v":1,"kind":"session","at":"2026-10-08T07:49:25.985Z","phrase":"gibber-irksomely-discounting-mayest","sdkSessionId":"f86006e5-eaab-402f-bf84-7cb113df2a60","model":"claude-sonnet-5-5","promptHash":"xxh3:25c43ce42f7a023d","resumed":false}
+{"v":1,"kind":"assistant","at":"2026-10-08T07:49:35.142Z","text":"Basil is a classic pick: it fits in the same pot and is easy to snip. Marigolds or chives also work if you want something to deter pests.","interrupted":false}
+{"v":1,"kind":"stats","at":"2026-10-08T07:49:35.142Z","inputTokens":2,"cacheReadTokens":1066,"cacheWriteTokens":2578,"outputTokens":48,"ttftMs":9168,"durationMs":9189,"costUsd":0.0110092,"sessionCostUsd":0.0110092}
+{"v":1,"kind":"user","at":"2026-10-08T07:51:52.625Z","text":"Message C: thanks, last one: plastic or terracotta for that pot? One line."}
+{"v":1,"kind":"assistant","at":"2026-10-08T07:51:55.456Z","text":"Plastic (or glazed ceramic) is the better pick for a balcony tomato, since it holds moisture longer and terracotta can dry out fast in sun and wind.","interrupted":false}
+{"v":1,"kind":"stats","at":"2026-10-08T07:51:55.456Z","inputTokens":2,"cacheReadTokens":3710,"cacheWriteTokens":127,"outputTokens":57,"ttftMs":2805,"durationMs":2818,"costUsd":0.0018239999999999992,"sessionCostUsd":0.015217999999999999}
+
+# broken copy
+{"v":1,"kind":"user","at":"2026-10-08T07:49:25.924Z","text":"Message A: what's a good companion plant for tomatoes in a small balcony pot? One line please."}
+{"v":1,"kind":"session","at":"2026-10-08T07:49:25.985Z","phrase":"gibber-irksomely-discounting-mayest","sdkSessionId":"f86006e5-eaab-402f-bf84-7cb113df2a60","model":"claude-sonnet-5-5","promptHash":"xxh3:25c43ce42f7a023d","resumed":false}
+{"v":1,"kind":"assistant","at":"2026-10-08T07:49:35.142Z","text":"Basil is a classic pick: it fits in the same pot and is easy to snip. Marigolds or chives also work if you want something to deter pests.","interrupted":false}
+{"v":1,"kind":"stats","at":"2026-10-08T07:49:35.142Z","inputTokens":2,"cacheReadTokens":1066,"cacheWriteTokens":2578,"outputTokens":48,"ttftMs":9168,"durationMs":9189,"costUsd":0.0110092,"sessionCostUsd":0.0110092}
+{"broken
+{"v":1,"kind":"user","at":"2026-10-08T07:51:39.014Z","text":"Message B: and how deep should that pot be? One line."}
+{"v":1,"kind":"assistant","at":"2026-10-08T07:51:42.507Z","text":"At least 30 cm (12 in) deep, and 40 cm or more is better, with about 30-40 cm across if you're sharing it with basil.","interrupted":false}
+{"v":1,"kind":"stats","at":"2026-10-08T07:51:42.507Z","inputTokens":2,"cacheReadTokens":3434,"cacheWriteTokens":301,"outputTokens":49,"ttftMs":3454,"durationMs":3464,"costUsd":0.0023847999999999994,"sessionCostUsd":0.013394}
+
+# git log --oneline -3 (data repository)
+589a8e8 turn: gibber-irksomely-discounting-mayest #3
+1957115 restore: transcripts/gibber-irksomely-discounting-mayest.jsonl from 7d9b3b9 (broken kept)
+c359d27 review: gibber-irksomely-discounting-mayest (dorothy, claude-sonnet-5-5)
+
+# git show --stat 589a8e8
+589a8e8 turn: gibber-irksomely-discounting-mayest #3
+
+ transcripts/gibber-irksomely-discounting-mayest.jsonl | 3 +++
+ 1 file changed, 3 insertions(+)

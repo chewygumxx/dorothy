@@ -1,0 +1,5 @@
+Recovered 2 of 2 bundles; main is at a29e3da
+All 17 files pass.
+
+$ diff -r --exclude=.git data/dorothy recovered/dorothy
+Only in /tmp/dorothy-history-probe.c0HYLK/data/dorothy/transcripts: goodnight-sapiency-documenting-geotropic.jsonl
