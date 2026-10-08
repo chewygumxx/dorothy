@@ -107,5 +107,8 @@ describe("the workspace", () => {
         expect(() =>
             Bun.resolveSync("@dorothy/memory/src/memory/open.ts", from("cli")),
         ).toThrow();
+        expect(() =>
+            Bun.resolveSync("@dorothy/cli/src/run-tui.ts", from("memory")),
+        ).toThrow();
     });
 });

@@ -2,6 +2,7 @@
     "name": "@dorothy/cli",
     "private": true,
     "type": "module",
+    "exports": {},
     "dependencies": {
         "@dorothy/agent": "workspace:*",
         "@dorothy/core": "workspace:*",
