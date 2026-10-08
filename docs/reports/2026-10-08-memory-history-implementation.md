@@ -309,7 +309,8 @@ None blocks merge.
 - **isomorphic-git pushes only to `https://`**, with a token in
   `DOROTHY_MIRROR_TOKEN`, and that path is untested here; a local mirror
   needs the git binary. The binary's use of the token is tested against
-  a local server that asks for it, not against GitHub.
+  a local server that asks for it, and its first push to GitHub, with a
+  fine-grained token, succeeded.
 - **isomorphic-git trusts file stats.** A same-size rewrite within the
   second of the last commit is not swept until it changes again. Dorothy's
   own commits and the lint at read time are unaffected.
