@@ -8,9 +8,9 @@
 //
 //
 
+import type { LineConfig } from "@dorothy/core";
 import { Box, Static, Text, useWindowSize } from "ink";
 import stringWidth from "string-width";
-import type { LineConfig } from "../config.js";
 import { LABEL_WIDTH } from "./LiveReply.js";
 import { RowsView } from "./Markdown.js";
 import { renderMarkdown } from "./markdown/render.js";

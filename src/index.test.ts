@@ -9,8 +9,8 @@
 //
 
 import { describe, expect, it } from "bun:test";
+import { newPhrase } from "@dorothy/core";
 import { parseArgs } from "./index.js";
-import { newPhrase } from "./session-id.js";
 
 const phrase = newPhrase(() => Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]));
 

@@ -6,6 +6,7 @@
       "name": "dorothy",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.3.283",
+        "@dorothy/core": "workspace:*",
         "@dotenvx/dotenvx": "^2.32.4",
         "@modelcontextprotocol/sdk": "^1.31.0",
         "ink": "^7.1.1",
@@ -35,6 +36,12 @@
         "prettier": "^3.9.9",
         "remark-cli": "^12.0.1",
         "typescript": "^7.0.2",
+      },
+    },
+    "packages/core": {
+      "name": "@dorothy/core",
+      "dependencies": {
+        "niceware": "^4.0.0",
       },
     },
   },
@@ -136,6 +143,8 @@
     "@conventional-changelog/git-client": ["@conventional-changelog/git-client@3.1.2", "", { "dependencies": { "@simple-libs/child-process-utils": "^2.0.0", "@simple-libs/stream-utils": "^2.0.0", "semver": "^7.5.2" }, "peerDependencies": { "conventional-commits-filter": "^6.0.1", "conventional-commits-parser": "^7.1.2" }, "optionalPeers": ["conventional-commits-filter", "conventional-commits-parser"] }, "sha512-jZqwnJwf7nboIlAcw/mkOjVa6DexCcUOgT2oOQgkoi3z9vR8tGFkcMy2BFcYwjhL9sYcDDXkRQDayiDieCoW7A=="],
 
     "@conventional-changelog/template": ["@conventional-changelog/template@1.4.0", "", {}, "sha512-aalGyl7dbB5PArRebDIX43ZvBlXrYm9uWzGJ26t+4SzJVPsOuvfILGGbw5X4yX7i50YEmJ8zvbiWnqH/AAnZqg=="],
+
+    "@dorothy/core": ["@dorothy/core@workspace:packages/core"],
 
     "@dotenvx/dotenvx": ["@dotenvx/dotenvx@2.32.4", "", { "dependencies": { "@dotenvx/primitives": "^3.0.3", "@dotenvx/tooling": "^1.0.3", "global-agent": "^3.0.0", "node-forge": "^1.4.0", "undici": "^6.28.1", "yocto-spinner": "^1.2.1" }, "bin": { "dx": "src/cli/dotenvx.js", "dotenvx": "src/cli/dotenvx.js" } }, "sha512-nJJqsTXaY+mEITPpDFxoPVEPPS4mw815BU/YFjzamnp3eIELOR/CzJeOc7Lt9Vv2ZHH3sYDMUlnaN34FClc/zA=="],
 

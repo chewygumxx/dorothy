@@ -4,7 +4,7 @@
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/src/recall/types.test.ts
+// ::: :/packages/core/src/contracts/recall.test.ts
 //
 //
 
@@ -18,7 +18,7 @@ import {
     type SearchHit,
     type SearchResult,
     toolOf,
-} from "../contracts/recall.js";
+} from "./recall.js";
 
 const hit = (identifier: string): SearchHit => ({
     "@type": "Conversation",

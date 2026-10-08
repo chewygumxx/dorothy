@@ -12,8 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { newPhrase } from "@dorothy/core";
 import { runTui } from "./run-tui.js";
-import { newPhrase } from "./session-id.js";
 
 // runTui opens memory from these, so every one points into the test's
 // directory.

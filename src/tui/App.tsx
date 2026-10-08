@@ -8,17 +8,18 @@
 //
 //
 
+import {
+    type ChatSession,
+    type Config,
+    type ConversationEvent,
+    DEFAULT_CONFIG,
+    type EditResult,
+    type NoticeSource,
+    type ResumedTurn,
+    type Turn,
+} from "@dorothy/core";
 import { Box, Text, useApp, useInput, useWindowSize } from "ink";
 import { useEffect, useReducer, useRef, useState } from "react";
-import { type Config, DEFAULT_CONFIG } from "../config.js";
-import type { EditResult } from "../contracts/editor.js";
-import type { NoticeSource } from "../contracts/notices.js";
-import type {
-    ChatSession,
-    ConversationEvent,
-    ResumedTurn,
-    Turn,
-} from "../contracts/session.js";
 import { type Draft, EMPTY_DRAFT, layoutDraft } from "./editor.js";
 import { Header, Statusline, Warnings } from "./Header.js";
 import { History } from "./History.js";

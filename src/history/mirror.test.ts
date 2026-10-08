@@ -11,8 +11,8 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import type { Timers } from "@dorothy/core";
 import type { Lock } from "../memory/sidecar.js";
-import type { Timers } from "../timers.js";
 import { binaryRepo } from "./binary.js";
 import { isoRepo } from "./iso.js";
 import { Mirror, recover, sealPending, waiting } from "./mirror.js";

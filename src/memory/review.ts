@@ -8,8 +8,7 @@
 //
 //
 
-import type { ResumedTurn } from "../contracts/session.js";
-import type { StructuredCall } from "../contracts/structured.js";
+import type { ResumedTurn, StructuredCall } from "@dorothy/core";
 import { escapeXml, renderClusters, unescapeXml } from "./block.js";
 import {
     FIELDS,

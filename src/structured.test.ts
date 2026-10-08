@@ -10,10 +10,9 @@
 
 import { describe, expect, it } from "bun:test";
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { StructuredRequest } from "./contracts/structured.js";
+import type { StructuredRequest, Timers } from "@dorothy/core";
 import { baseOptions, cliOptions } from "./persona.js";
 import { type StructuredQueryFn, structuredCall } from "./structured.js";
-import type { Timers } from "./timers.js";
 
 const init = (model = "claude-test") =>
     ({

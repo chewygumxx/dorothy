@@ -12,8 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { newPhrase } from "@dorothy/core";
 import { RecallIndex } from "../recall/store.js";
-import { newPhrase } from "../session-id.js";
 import { indexCatalogue } from "./catalogue.js";
 import { EMPTY_SIDECAR, sidecarPath } from "./sidecar.js";
 

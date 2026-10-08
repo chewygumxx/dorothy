@@ -8,7 +8,7 @@
 //
 //
 
-import type { MemoryConfig } from "../config.js";
+import type { MemoryConfig } from "@dorothy/core";
 import { type Note, renderBlock, renderEntry, type Tier } from "./block.js";
 import type { Entry, Read, Visit } from "./catalogue.js";
 import { characters, type Served } from "./sidecar.js";

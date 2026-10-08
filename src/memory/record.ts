@@ -14,8 +14,12 @@
 // has been closed records nothing more, as App stopped hearing a session
 // once it had moved on.
 
-import type { Notice, NoticeSource } from "../contracts/notices.js";
-import type { ChatSession, ConversationEvent } from "../contracts/session.js";
+import type {
+    ChatSession,
+    ConversationEvent,
+    Notice,
+    NoticeSource,
+} from "@dorothy/core";
 import type { TranscriptEntry } from "../transcript.js";
 
 export type TranscriptSink = {

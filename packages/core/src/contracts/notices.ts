@@ -4,7 +4,7 @@
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/src/contracts/notices.ts
+// ::: :/packages/core/src/contracts/notices.ts
 //
 //
 

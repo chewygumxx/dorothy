@@ -4,7 +4,7 @@
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/src/contracts/start.ts
+// ::: :/packages/core/src/contracts/start.ts
 //
 //
 

@@ -13,7 +13,7 @@
 // index.ts.
 
 import { resolve } from "node:path";
-import type { RecallLaunch } from "./contracts/start.js";
+import type { RecallLaunch } from "@dorothy/core";
 
 export function recallLaunch(phrase: string): RecallLaunch {
     return {

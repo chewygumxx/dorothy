@@ -20,9 +20,9 @@ import {
     writeFile,
 } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
+import type { Env } from "@dorothy/core";
 import type { HistoryHandle, Lock, Recorder } from "../memory/sidecar.js";
 import { transcriptDir } from "../transcript.js";
-import type { Env } from "../xdg.js";
 import { recoverFile, stamp } from "./heal.js";
 import { fileKind, lint } from "./lint.js";
 import { FileLock } from "./lock.js";

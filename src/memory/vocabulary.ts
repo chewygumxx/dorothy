@@ -11,7 +11,7 @@
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type Env, xdgDir } from "../xdg.js";
+import { type Env, xdgDir } from "@dorothy/core";
 import {
     CONCEPT_ID,
     characters,

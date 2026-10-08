@@ -9,8 +9,8 @@
 //
 
 import { describe, expect, it } from "bun:test";
+import type { ChatSession } from "@dorothy/core";
 import type { ReactElement } from "react";
-import type { ChatSession } from "../contracts/session.js";
 import { App } from "./App.js";
 import { runApp } from "./run-app.js";
 

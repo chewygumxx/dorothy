@@ -4,7 +4,7 @@
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/src/session-id.ts
+// ::: :/packages/core/src/session-id.ts
 //
 //
 

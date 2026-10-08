@@ -21,7 +21,7 @@ import type {
     TagsInput,
     TagsResult,
     WindowTurn,
-} from "../contracts/recall.js";
+} from "@dorothy/core";
 import { salience, tokens } from "../memory/rank.js";
 import { characters, normalise } from "../memory/sidecar.js";
 import { byLabel } from "../memory/vocabulary.js";

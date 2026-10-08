@@ -11,8 +11,7 @@
 import { chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Options } from "@anthropic-ai/claude-agent-sdk";
-import type { Turn } from "./contracts/session.js";
-import { type Env, xdgDir } from "./xdg.js";
+import { type Env, type Turn, xdgDir } from "@dorothy/core";
 
 // Chat is Dorothy as the user meets her. Development mode is for the people
 // building her: she says which mode she is in, and describes her context

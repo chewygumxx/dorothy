@@ -9,6 +9,19 @@
 //
 
 import { randomBytes } from "node:crypto";
+import {
+    type ChatSession,
+    type Config,
+    type Env,
+    type NoticeSource,
+    newPhrase,
+    type RecallLaunch,
+    type ResumedTurn,
+    readConfig,
+    type SessionStart,
+    type StructuredCall,
+    type Turn,
+} from "@dorothy/core";
 import { COMPACTION_TIMEOUT_MS } from "../compaction/compact.js";
 import { clusterTokens, seedTurns } from "../compaction/plan.js";
 import {
@@ -17,11 +30,6 @@ import {
     type SaveResult,
     type Seed,
 } from "../compaction/session.js";
-import { type Config, readConfig } from "../config.js";
-import type { NoticeSource } from "../contracts/notices.js";
-import type { ChatSession, ResumedTurn, Turn } from "../contracts/session.js";
-import type { RecallLaunch, SessionStart } from "../contracts/start.js";
-import type { StructuredCall } from "../contracts/structured.js";
 import { entryHook } from "../history/commands.js";
 import {
     type HookCommand,
@@ -34,14 +42,12 @@ import { Mirror } from "../history/mirror.js";
 import { type MemoryRepo, MIRROR, NO_MIRROR } from "../history/repo.js";
 import { parseKey } from "../history/seal.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
-import { newPhrase } from "../session-id.js";
 import {
     readTranscript,
     TranscriptWriter,
     transcriptDir,
     transcriptPath,
 } from "../transcript.js";
-import type { Env } from "../xdg.js";
 import { earlierSection } from "./block.js";
 import { indexCatalogue } from "./catalogue.js";
 import { tokens } from "./rank.js";

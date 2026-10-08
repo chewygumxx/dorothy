@@ -9,7 +9,7 @@
 //
 
 import { describe, expect, it } from "bun:test";
-import { DEFAULT_CONFIG } from "../config.js";
+import { DEFAULT_CONFIG } from "@dorothy/core";
 import { type Note, renderEntry, type Tier } from "./block.js";
 import type { Entry, Visit } from "./catalogue.js";
 import {

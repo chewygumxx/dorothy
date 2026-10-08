@@ -8,8 +8,7 @@
 //
 //
 
-import type { Turn } from "../contracts/session.js";
-import { withSection } from "../contracts/start.js";
+import { type Turn, withSection } from "@dorothy/core";
 import { earlierSection } from "../memory/block.js";
 import { tokens } from "../memory/rank.js";
 import type { Cluster } from "../memory/sidecar.js";

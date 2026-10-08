@@ -8,8 +8,8 @@
 //
 //
 
+import { REAL_TIMERS, type Timers } from "@dorothy/core";
 import type { Lock } from "../memory/sidecar.js";
-import { REAL_TIMERS, type Timers } from "../timers.js";
 import {
     keepPrivate,
     MAIN,

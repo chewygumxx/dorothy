@@ -11,7 +11,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve as resolvePath } from "node:path";
-import type { Env } from "../xdg.js";
+import type { Env } from "@dorothy/core";
 import { AUTHOR, type Commit, MAIN, type MemoryRepo, SEALED } from "./repo.js";
 
 // Before every command: the user's signing, hooks and automatic garbage

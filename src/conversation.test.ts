@@ -10,8 +10,7 @@
 
 import { describe, expect, it } from "bun:test";
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { ConversationEvent, Turn } from "./contracts/session.js";
-import { withSection } from "./contracts/start.js";
+import { type ConversationEvent, type Turn, withSection } from "@dorothy/core";
 import {
     COMPACTED_BY_CLI,
     Conversation,

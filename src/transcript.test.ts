@@ -19,7 +19,7 @@ import {
 } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { describeLookup } from "./contracts/recall.js";
+import { describeLookup } from "@dorothy/core";
 import {
     parseTranscript,
     readTranscript,

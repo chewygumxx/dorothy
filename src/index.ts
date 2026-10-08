@@ -9,9 +9,9 @@
 //
 
 import { pathToFileURL } from "node:url";
+import { isPhrase } from "@dorothy/core";
 import { config } from "@dotenvx/dotenvx";
 import { type PersonaMode, prepareCliHome } from "./persona.js";
-import { isPhrase } from "./session-id.js";
 
 export type Mode =
     | { kind: "oneshot"; prompt: string; persona: PersonaMode }

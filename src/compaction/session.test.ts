@@ -12,15 +12,13 @@ import { describe, expect, it } from "bun:test";
 import type {
     ChatSession,
     ConversationEvent,
-    Turn,
-    TurnStats,
-} from "../contracts/session.js";
-import type {
     StructuredOutcome,
     StructuredRequest,
-} from "../contracts/structured.js";
+    Timers,
+    Turn,
+    TurnStats,
+} from "@dorothy/core";
 import type { Cluster } from "../memory/sidecar.js";
-import type { Timers } from "../timers.js";
 import { clusterInstructions } from "./clusters.js";
 import {
     CLAIM_RETRY_MS,

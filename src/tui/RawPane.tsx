@@ -8,8 +8,8 @@
 //
 //
 
+import type { RawMessage } from "@dorothy/core";
 import { Box, Text } from "ink";
-import type { RawMessage } from "../contracts/session.js";
 import type { RawEntry } from "./state.js";
 
 // One line per message: its type, its subtype or stream event type, and the

@@ -11,7 +11,7 @@
 // A session for tests: it keeps what is sent, and emits what a test
 // tells it to.
 
-import type { ChatSession, ConversationEvent } from "../contracts/session.js";
+import type { ChatSession, ConversationEvent } from "@dorothy/core";
 
 export class FakeSession implements ChatSession {
     readonly listeners = new Set<(event: ConversationEvent) => void>();

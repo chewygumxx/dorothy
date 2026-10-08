@@ -9,12 +9,13 @@
 //
 
 import { describe, expect, it } from "bun:test";
-import type { ResumedTurn, Turn } from "../contracts/session.js";
 import type {
+    ResumedTurn,
     StructuredCall,
     StructuredOutcome,
     StructuredRequest,
-} from "../contracts/structured.js";
+    Turn,
+} from "@dorothy/core";
 import {
     CLUSTERS_INSTRUCTION,
     pendingReads,

@@ -8,7 +8,7 @@
 //
 //
 
-import { REAL_TIMERS, type Timers } from "../timers.js";
+import { REAL_TIMERS, type Timers } from "@dorothy/core";
 
 export type Review = (phrase: string, signal: AbortSignal) => Promise<void>;
 

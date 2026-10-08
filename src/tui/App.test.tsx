@@ -9,17 +9,19 @@
 //
 
 import { describe, expect, it } from "bun:test";
+import {
+    type ChatSession,
+    type Config,
+    type ConversationEvent,
+    DEFAULT_CONFIG,
+    type EditResult,
+    type Notice,
+    type NoticeSource,
+    type ResumedTurn,
+    type Turn,
+    type TurnStats,
+} from "@dorothy/core";
 import { render } from "ink-testing-library";
-import { type Config, DEFAULT_CONFIG } from "../config.js";
-import type { EditResult } from "../contracts/editor.js";
-import type { Notice, NoticeSource } from "../contracts/notices.js";
-import type {
-    ChatSession,
-    ConversationEvent,
-    ResumedTurn,
-    Turn,
-    TurnStats,
-} from "../contracts/session.js";
 import { App } from "./App.js";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));

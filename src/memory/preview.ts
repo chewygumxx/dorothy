@@ -13,18 +13,21 @@
 // memory block with the clusters charged first, and recall as the config
 // has it.
 
+import {
+    type Env,
+    newPhrase,
+    type RecallLaunch,
+    readConfig,
+    type SessionStart,
+    type Turn,
+} from "@dorothy/core";
 import { clusterTokens, seedTurns } from "../compaction/plan.js";
-import { readConfig } from "../config.js";
-import type { Turn } from "../contracts/session.js";
-import type { RecallLaunch, SessionStart } from "../contracts/start.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
-import { newPhrase } from "../session-id.js";
 import {
     readTranscript,
     transcriptDir,
     transcriptPath,
 } from "../transcript.js";
-import type { Env } from "../xdg.js";
 import { earlierSection } from "./block.js";
 import { indexCatalogue } from "./catalogue.js";
 import { buildMemory } from "./rank.js";

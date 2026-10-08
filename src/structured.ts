@@ -13,13 +13,14 @@ import {
     query,
     type SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import type {
-    StructuredCall,
-    StructuredOutcome,
-    StructuredRequest,
-} from "./contracts/structured.js";
+import {
+    REAL_TIMERS,
+    type StructuredCall,
+    type StructuredOutcome,
+    type StructuredRequest,
+    type Timers,
+} from "@dorothy/core";
 import { baseOptions, cliOptions } from "./persona.js";
-import { REAL_TIMERS, type Timers } from "./timers.js";
 
 export type StructuredHandle = AsyncIterable<SDKMessage> & { close(): void };
 // The SDK's query() fits this; tests pass a fake.

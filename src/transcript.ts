@@ -10,9 +10,14 @@
 
 import { type FileHandle, mkdir, open, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { RecallEvent } from "./contracts/recall.js";
-import type { ResumedTurn, Turn, TurnStats } from "./contracts/session.js";
-import { type Env, xdgDir } from "./xdg.js";
+import {
+    type Env,
+    type RecallEvent,
+    type ResumedTurn,
+    type Turn,
+    type TurnStats,
+    xdgDir,
+} from "@dorothy/core";
 
 export type SessionEvent = {
     v: 1;

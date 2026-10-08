@@ -21,6 +21,14 @@
 bun = true
 
 #
+# Each package sees only what its package.json declares, so an undeclared
+# import fails to resolve under Bun and tsc alike.
+#
+
+[install]
+linker = "isolated"
+
+#
 # dotenvx owns .env (see src/index.ts): its values are encrypted, and Bun
 # would otherwise preload the raw ciphertext into process.env, which
 # dotenvx then declines to overwrite.

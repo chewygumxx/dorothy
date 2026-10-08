@@ -11,9 +11,9 @@
 import { Database } from "bun:sqlite";
 import { chmodSync, closeSync, mkdirSync, openSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { type Env, xdgDir } from "@dorothy/core";
 import type { Lock } from "../memory/sidecar.js";
 import { exclusiveLock } from "../sqlite-lock.js";
-import { type Env, xdgDir } from "../xdg.js";
 
 export const SCHEMA_VERSION = 3;
 

@@ -9,9 +9,8 @@
 //
 
 import { describe, expect, it } from "bun:test";
+import { MODULE_NAMES, type TurnStats } from "@dorothy/core";
 import stringWidth from "string-width";
-import { MODULE_NAMES } from "../config.js";
-import type { TurnStats } from "../contracts/session.js";
 import { fitModules, moduleRows, renderModule } from "./statusline.js";
 
 const stats: TurnStats = {

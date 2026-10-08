@@ -12,9 +12,9 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { newPhrase } from "@dorothy/core";
 import { EMPTY_SIDECAR, type Sidecar, sidecarPath } from "../memory/sidecar.js";
 import type { Concept } from "../memory/vocabulary.js";
-import { newPhrase } from "../session-id.js";
 import {
     listTags,
     NO_TAG,

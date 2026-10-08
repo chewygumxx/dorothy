@@ -12,12 +12,14 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_CONFIG } from "../config.js";
-import type { Notice } from "../contracts/notices.js";
-import type { StructuredCall } from "../contracts/structured.js";
+import {
+    DEFAULT_CONFIG,
+    type Notice,
+    newPhrase,
+    type StructuredCall,
+    type Timers,
+} from "@dorothy/core";
 import { RecallIndex } from "../recall/store.js";
-import { newPhrase } from "../session-id.js";
-import type { Timers } from "../timers.js";
 import type { Entry } from "./catalogue.js";
 import {
     CLUSTERS_INSTRUCTION,

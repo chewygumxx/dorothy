@@ -16,19 +16,18 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import {
     ALLOWED_TOOLS,
-    describeLookup,
-    RECOLLECT_TOOL,
-    SERVER_NAME,
-    type Tool,
-    toolOf,
-} from "./contracts/recall.js";
-import {
     type ChatSession,
     CLOSE_GRACE_MS,
     type ConversationEvent,
+    describeLookup,
+    RECOLLECT_TOOL,
+    SERVER_NAME,
+    type SessionStart,
+    type Tool,
     type TurnStats,
-} from "./contracts/session.js";
-import { type SessionStart, withSection } from "./contracts/start.js";
+    toolOf,
+    withSection,
+} from "@dorothy/core";
 import {
     baseOptions,
     cliOptions,

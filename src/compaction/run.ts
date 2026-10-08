@@ -8,8 +8,7 @@
 //
 //
 
-import type { Turn } from "../contracts/session.js";
-import { sleep } from "../timers.js";
+import { sleep, type Turn } from "@dorothy/core";
 import { type CompactOutcome, compact } from "./compact.js";
 import { callCap, covered } from "./plan.js";
 import {

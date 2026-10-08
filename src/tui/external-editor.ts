@@ -12,7 +12,7 @@ import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { EditResult } from "../contracts/editor.js";
+import type { EditResult } from "@dorothy/core";
 
 export function editorCommand(env: NodeJS.ProcessEnv = process.env): string {
     return env.VISUAL || env.EDITOR || "vi";

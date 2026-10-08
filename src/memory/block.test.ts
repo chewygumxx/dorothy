@@ -9,7 +9,7 @@
 //
 
 import { describe, expect, it } from "bun:test";
-import { withSection } from "../contracts/start.js";
+import { withSection } from "@dorothy/core";
 import {
     earlierSection,
     escapeXml,

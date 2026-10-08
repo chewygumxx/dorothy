@@ -9,8 +9,7 @@
 //
 
 import { describe, expect, it } from "bun:test";
-import type { Turn } from "../contracts/session.js";
-import { withSection } from "../contracts/start.js";
+import { type Turn, withSection } from "@dorothy/core";
 import { earlierSection } from "../memory/block.js";
 import type { Cluster } from "../memory/sidecar.js";
 import {

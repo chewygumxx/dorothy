@@ -9,7 +9,7 @@
 //
 
 import { describe, expect, it } from "bun:test";
-import type { Turn } from "../contracts/session.js";
+import type { Turn } from "@dorothy/core";
 import type { Cluster } from "../memory/sidecar.js";
 import {
     clusterInstructions,

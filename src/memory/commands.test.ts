@@ -12,8 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { EditResult } from "../contracts/editor.js";
-import { newPhrase } from "../session-id.js";
+import { type EditResult, newPhrase } from "@dorothy/core";
 import { runList, runMemoryEdit, runTags, runTagsEdit } from "./commands.js";
 import {
     type HistoryHandle,

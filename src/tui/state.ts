@@ -8,13 +8,13 @@
 //
 //
 
-import type { Lookup } from "../contracts/recall.js";
 import type {
     ConversationEvent,
+    Lookup,
     RawMessage,
     ResumedTurn,
     TurnStats,
-} from "../contracts/session.js";
+} from "@dorothy/core";
 
 export const RAW_LIMIT = 20;
 export const WARNING_LIMIT = 3;

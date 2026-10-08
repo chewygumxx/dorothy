@@ -10,7 +10,7 @@
 
 import { chmod } from "node:fs/promises";
 import { join } from "node:path";
-import type { Env } from "../xdg.js";
+import type { Env } from "@dorothy/core";
 
 export type Engine = "git" | "isomorphic-git";
 

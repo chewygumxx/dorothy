@@ -10,6 +10,7 @@
 
 import { open, readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { isPhrase } from "@dorothy/core";
 import {
     readSidecar,
     type Served,
@@ -24,7 +25,6 @@ import {
     readVocabulary,
     type VocabularyRead,
 } from "../memory/vocabulary.js";
-import { isPhrase } from "../session-id.js";
 import { toRecall, toTurn } from "../transcript.js";
 import type { RecallIndex } from "./store.js";
 

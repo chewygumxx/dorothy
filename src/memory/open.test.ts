@@ -21,13 +21,17 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { configPath, DEFAULT_CONFIG } from "../config.js";
-import type { ChatSession } from "../contracts/session.js";
-import { type SessionStart, withSection } from "../contracts/start.js";
-import type { StructuredCall } from "../contracts/structured.js";
-import { newPhrase } from "../session-id.js";
+import {
+    type ChatSession,
+    configPath,
+    DEFAULT_CONFIG,
+    newPhrase,
+    type SessionStart,
+    type StructuredCall,
+    withSection,
+    xdgDir,
+} from "@dorothy/core";
 import { transcriptDir, transcriptPath } from "../transcript.js";
-import { xdgDir } from "../xdg.js";
 import { FakeSession } from "./fake-session.js";
 import {
     closeInOrder,

@@ -8,8 +8,7 @@
 //
 //
 
-import type { Turn } from "../contracts/session.js";
-import type { StructuredCall } from "../contracts/structured.js";
+import type { StructuredCall, Turn } from "@dorothy/core";
 import type { Cluster } from "../memory/sidecar.js";
 import {
     clusterInstructions,

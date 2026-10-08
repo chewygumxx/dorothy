@@ -8,7 +8,7 @@
 //
 //
 
-import type { Turn } from "../contracts/session.js";
+import type { Turn } from "@dorothy/core";
 import { escapeXml, renderClusters, unescapeXml } from "../memory/block.js";
 import {
     type Cluster,

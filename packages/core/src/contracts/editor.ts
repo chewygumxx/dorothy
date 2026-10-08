@@ -4,7 +4,7 @@
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/src/contracts/editor.ts
+// ::: :/packages/core/src/contracts/editor.ts
 //
 //
 

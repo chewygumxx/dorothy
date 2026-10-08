@@ -12,11 +12,10 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { type Env, readConfig } from "@dorothy/core";
 import { set } from "@dotenvx/dotenvx";
-import { readConfig } from "../config.js";
 import { type OpenHistory, writeAtomic } from "../memory/sidecar.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
-import type { Env } from "../xdg.js";
 import { goodVersion, putBack, RECOVERY_DEPTH, type Version } from "./heal.js";
 import {
     type HookCommand,

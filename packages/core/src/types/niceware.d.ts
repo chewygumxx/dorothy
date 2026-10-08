@@ -4,7 +4,7 @@
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/src/types/niceware.d.ts
+// ::: :/packages/core/src/types/niceware.d.ts
 //
 //
 

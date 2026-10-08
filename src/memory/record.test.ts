@@ -9,8 +9,7 @@
 //
 
 import { describe, expect, it } from "bun:test";
-import type { Notice } from "../contracts/notices.js";
-import type { ChatSession, ConversationEvent } from "../contracts/session.js";
+import type { ChatSession, ConversationEvent, Notice } from "@dorothy/core";
 import type { TranscriptEntry } from "../transcript.js";
 import { FakeSession } from "./fake-session.js";
 import { EXPECTED, HASH, PHRASE, SCRIPT } from "./record.fixture.js";

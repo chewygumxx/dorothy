@@ -4,7 +4,7 @@
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/src/xdg.ts
+// ::: :/packages/core/src/xdg.ts
 //
 //
 

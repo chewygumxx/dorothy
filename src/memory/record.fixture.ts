@@ -12,7 +12,7 @@
 // for it, so that the move of recording from App to memory is checked
 // against the same file.
 
-import type { ConversationEvent, TurnStats } from "../contracts/session.js";
+import type { ConversationEvent, TurnStats } from "@dorothy/core";
 import type { TranscriptEntry } from "../transcript.js";
 
 export const PHRASE = "tumble-orchid-vapor-lantern";

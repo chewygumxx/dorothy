@@ -12,16 +12,16 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+    newPhrase,
+    type OpenResult,
+    type RecollectResult,
+    type SearchResult,
+    type TagsResult,
+} from "@dorothy/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import type {
-    OpenResult,
-    RecollectResult,
-    SearchResult,
-    TagsResult,
-} from "../contracts/recall.js";
 import { EMPTY_SIDECAR, sidecarPath } from "../memory/sidecar.js";
-import { newPhrase } from "../session-id.js";
 import { createRecallServer, type RecallServerOptions } from "./server.js";
 import { RecallIndex } from "./store.js";
 

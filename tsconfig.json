@@ -14,5 +14,11 @@
         "types": ["bun"],
         "skipLibCheck": true
     },
-    "include": [".commitlintrc.mts", "scripts/**/*.mjs", "src", "test-setup.ts"]
+    "include": [
+        ".commitlintrc.mts",
+        "scripts/**/*.mjs",
+        "src",
+        "packages/*/src",
+        "test-setup.ts"
+    ]
 }

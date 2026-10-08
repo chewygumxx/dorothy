@@ -8,9 +8,8 @@
 //
 //
 
+import type { LineConfig, ModuleName, TurnStats } from "@dorothy/core";
 import stringWidth from "string-width";
-import type { LineConfig, ModuleName } from "../config.js";
-import type { TurnStats } from "../contracts/session.js";
 
 export const SEPARATOR = " · ";
 

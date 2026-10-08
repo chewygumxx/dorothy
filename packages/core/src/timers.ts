@@ -4,7 +4,7 @@
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/src/timers.ts
+// ::: :/packages/core/src/timers.ts
 //
 //
 

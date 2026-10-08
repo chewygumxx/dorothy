@@ -8,15 +8,16 @@
 //
 //
 
-import type { CompactionConfig } from "../config.js";
 import {
     type ChatSession,
     CLOSE_GRACE_MS,
+    type CompactionConfig,
+    REAL_TIMERS,
+    type StructuredCall,
+    type Timers,
     type Turn,
-} from "../contracts/session.js";
-import type { StructuredCall } from "../contracts/structured.js";
+} from "@dorothy/core";
 import type { Cluster } from "../memory/sidecar.js";
-import { REAL_TIMERS, type Timers } from "../timers.js";
 import { covered, seedTurns } from "./plan.js";
 
 // Failures in a launch after which compaction stops until the next launch.

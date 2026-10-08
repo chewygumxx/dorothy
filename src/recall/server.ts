@@ -8,14 +8,12 @@
 //
 //
 
+import { type Env, readConfig, SERVER_NAME } from "@dorothy/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { readConfig } from "../config.js";
-import { SERVER_NAME } from "../contracts/recall.js";
 import { vocabularyPath } from "../memory/vocabulary.js";
 import { transcriptDir } from "../transcript.js";
-import type { Env } from "../xdg.js";
 import {
     listTags,
     openConversation,

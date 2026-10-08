@@ -9,7 +9,7 @@
 //
 
 import { describe, expect, it } from "bun:test";
-import type { Timers } from "../timers.js";
+import type { Timers } from "@dorothy/core";
 import { ReviewScheduler } from "./scheduler.js";
 
 class FakeTimers implements Timers {

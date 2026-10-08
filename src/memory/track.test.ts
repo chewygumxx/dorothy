@@ -9,7 +9,7 @@
 //
 
 import { describe, expect, it } from "bun:test";
-import type { ChatSession, ConversationEvent } from "../contracts/session.js";
+import type { ChatSession, ConversationEvent } from "@dorothy/core";
 import { trackMemory } from "./track.js";
 
 const stats = {
