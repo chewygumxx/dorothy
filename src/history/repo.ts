@@ -63,8 +63,8 @@ export type MemoryRepo = {
     // Records a remote, replacing one of the same name.
     setRemote(name: string, url: string): Promise<void>;
     remote(name: string): Promise<string | null>;
-    // Fast-forward only. token is for an https remote under
-    // isomorphic-git; the binary uses the user's credential helpers.
+    // Fast-forward only. token is for an https remote, under either
+    // engine; without one, the binary uses the user's credential helpers.
     push(remote: string, branch: string, token: string | null): Promise<void>;
     // Into refs/heads/<branch>.
     fetch(url: string, branch: string, token: string | null): Promise<void>;

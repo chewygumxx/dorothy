@@ -194,8 +194,21 @@ export function binaryRepo(
     };
     // The helpers (and ssh's batch mode) as configuration in the
     // environment, where a command's
-    // own -c would not reach them past ISOLATION's.
-    const credentials = async (): Promise<Record<string, string>> => {
+    // own -c would not reach them past ISOLATION's. A mirror token
+    // replaces the user's helpers, which git would otherwise ask to store
+    // it once a push succeeds.
+    const credentials = async (
+        token: string | null,
+    ): Promise<Record<string, string>> => {
+        if (token !== null) {
+            return {
+                ...sshBatch(env),
+                DOROTHY_MIRROR_TOKEN: token,
+                GIT_CONFIG_COUNT: "1",
+                GIT_CONFIG_KEY_0: "credential.helper",
+                GIT_CONFIG_VALUE_0: TOKEN_HELPER,
+            };
+        }
         helpers ??= credentialHelpers(env);
         const found = await helpers;
         const extra: Record<string, string> = {
@@ -426,7 +439,7 @@ export function binaryRepo(
             const ran = await run(["remote", "get-url", name]);
             return ran.code === 0 ? text(ran).trim() : null;
         },
-        async push(remote, branch, _token) {
+        async push(remote, branch, token) {
             await must(
                 [
                     "push",
@@ -434,10 +447,10 @@ export function binaryRepo(
                     remote,
                     `refs/heads/${branch}:refs/heads/${branch}`,
                 ],
-                { extra: await credentials() },
+                { extra: await credentials(token) },
             );
         },
-        async fetch(url, branch, _token) {
+        async fetch(url, branch, token) {
             await must(
                 [
                     "fetch",
@@ -446,7 +459,7 @@ export function binaryRepo(
                     url,
                     `refs/heads/${branch}:refs/heads/${branch}`,
                 ],
-                { extra: await credentials() },
+                { extra: await credentials(token) },
             );
         },
         async checkout() {
