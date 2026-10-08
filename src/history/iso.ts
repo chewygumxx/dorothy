@@ -175,16 +175,21 @@ export function isoRepo(location: string): MemoryRepo {
             }
             let entries: Awaited<ReturnType<typeof git.log>>;
             try {
+                // force: a file missing at the tip (deleted) still has its
+                // history listed, as the binary lists it.
                 entries = await git.log({
                     fs,
                     dir,
                     ref: MAIN,
                     ...(path === undefined
                         ? { depth: limit }
-                        : { filepath: path }),
+                        : { filepath: path, force: true }),
                 });
-            } catch {
-                return [];
+            } catch (error) {
+                if (error instanceof git.Errors.NotFoundError) {
+                    return [];
+                }
+                throw error;
             }
             return entries.slice(0, limit).map(
                 (entry): Commit => ({

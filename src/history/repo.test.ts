@@ -129,6 +129,17 @@ function contract(make: (root: string) => MemoryRepo): void {
         expect(await repo.commit(["never.txt"], "nothing")).toBeNull();
     });
 
+    it("logs a deleted file's commits, its deletion first", async () => {
+        const repo = await fresh();
+        put(repo.root, "a.txt", "1\n");
+        put(repo.root, "b.txt", "1\n");
+        await repo.commit(["a.txt", "b.txt"], "one");
+        rmSync(join(repo.root, "a.txt"));
+        await repo.commit(["a.txt"], "gone");
+        expect(await messages(repo, "a.txt")).toEqual(["gone", "one"]);
+        expect(await messages(repo, "never.txt")).toEqual([]);
+    });
+
     it("lists what changed since the last commit, ignored files aside", async () => {
         const repo = await fresh();
         put(repo.root, ".gitignore", "*.tmp\n");
