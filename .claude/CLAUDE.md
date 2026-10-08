@@ -1,6 +1,6 @@
 ---
 ctime: 2026-09-29
-mtime: 2026-10-07
+mtime: 2026-10-09
 spdx: GPL-3.0-only
 title: CLAUDE.md
 description: >-
@@ -27,14 +27,6 @@ context, include such within the commit message body.
 `docs/roadmap.md` orders the phases of work. Once a phase merges, revise it as
 its Revising section says before starting the next phase, and add work found
 along the way where it would serve best.
-
-When appropriate and worthwhile to compact, append the following
-newline-delimited items to your response:
-
-- A `/compact <summary>`
-- Appraisal rating scaled 1-100
-- Risk assessment rating scaled 1-100
-- Terse single-sentence justification.
 
 ## Architecture
 
