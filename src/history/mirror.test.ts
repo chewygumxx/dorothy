@@ -68,12 +68,13 @@ function mirrorOf(
     {
         key = KEY,
         timers = new FakeTimers(),
-    }: { key?: Uint8Array | null; timers?: FakeTimers } = {},
+        locked = lock,
+    }: { key?: Uint8Array | null; timers?: FakeTimers; locked?: Lock } = {},
 ) {
     const warnings: string[] = [];
     const mirror = new Mirror({
         repo,
-        lock,
+        lock: locked,
         key: () => key,
         token: () => null,
         warn: (message) => warnings.push(message),
@@ -203,10 +204,53 @@ describe("Mirror", () => {
         timers.fire();
         expect(timers.pending.size).toBe(0);
         mirror.schedule();
-        mirror.stop();
+        await mirror.stop();
         expect(timers.pending.size).toBe(0);
         mirror.schedule();
         expect(timers.pending.size).toBe(0);
+    });
+});
+
+describe("Mirror.stop", () => {
+    it("waits for a seal in progress", async () => {
+        const repo = await repoWith({ "tags.json": "{}\n" });
+        await repo.setRemote("mirror", await bareRepo());
+        let entered!: () => void;
+        const inside = new Promise<void>((resolve) => {
+            entered = resolve;
+        });
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        const gated: Lock = async (work) => {
+            entered();
+            await gate;
+            return work();
+        };
+        const { mirror } = mirrorOf(repo, { locked: gated });
+        const pushing = mirror.push();
+        await inside;
+        let stopped = false;
+        const stopping = mirror.stop().then(() => {
+            stopped = true;
+        });
+        await Bun.sleep(20);
+        expect(stopped).toBe(false);
+        release();
+        await stopping;
+        expect(await repo.sealedNames()).toEqual(["bundles/000001.enc"]);
+        expect((await pushing).kind).toBe("pushed");
+    });
+
+    it("leaves nothing to seal after it", async () => {
+        const repo = await repoWith({ "tags.json": "{}\n" });
+        await repo.setRemote("mirror", await bareRepo());
+        const { mirror } = mirrorOf(repo);
+        const pushing = mirror.push();
+        await mirror.stop();
+        expect(await pushing).toEqual({ kind: "stopped" });
+        expect(await repo.sealedNames()).toEqual([]);
     });
 });
 

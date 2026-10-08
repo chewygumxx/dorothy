@@ -85,6 +85,8 @@ export type PushOutcome =
     | { kind: "pushed"; sealed: boolean }
     // Nothing new was sealed; what was sealed before is pushed.
     | { kind: "wrong-key" }
+    // Stopped before it sealed anything.
+    | { kind: "stopped" }
     | { kind: "failed"; reason: string };
 
 export type MirrorOptions = {
@@ -107,6 +109,8 @@ export class Mirror {
     #timer: unknown = null;
     #stopped = false;
     #running: Promise<PushOutcome> | null = null;
+    // A seal under way, which stopping waits for; it never rejects.
+    #sealing: Promise<unknown> | null = null;
 
     constructor(options: MirrorOptions) {
         this.#options = options;
@@ -130,13 +134,16 @@ export class Mirror {
         return this.#running;
     }
 
-    // Quitting never waits on a push; what is left goes at the next launch.
-    stop(): void {
+    // Quitting waits for a seal under way, which holds the lock and writes
+    // the repository, but never for a push: what is left goes at the next
+    // launch. Nothing is sealed after.
+    async stop(): Promise<void> {
         this.#stopped = true;
         if (this.#timer !== null) {
             this.#timers.clear(this.#timer);
             this.#timer = null;
         }
+        await this.#sealing;
     }
 
     async #push(): Promise<PushOutcome> {
@@ -152,7 +159,20 @@ export class Mirror {
                 );
                 return { kind: "no-key" };
             }
-            const sealed = await lock(() => sealPending(repo, key));
+            if (this.#stopped) {
+                return { kind: "stopped" };
+            }
+            const sealing = lock(() => sealPending(repo, key));
+            this.#sealing = sealing.then(
+                () => {},
+                () => {},
+            );
+            let sealed: Sealed;
+            try {
+                sealed = await sealing;
+            } finally {
+                this.#sealing = null;
+            }
             if (sealed === "wrong-key") {
                 warn(WRONG_KEY);
             }
