@@ -44,9 +44,9 @@ export type AppProps = {
     initialCostUsd?: number;
     // The statusline and reply stats; the defaults when not given.
     config?: Config;
-    // Memory's warnings and review costs; run.tsx supplies them.
+    // Memory's warnings and review costs; runTui passes openMemory's.
     notices?: NoticeSource;
-    // Opens the draft in $EDITOR; run.tsx supplies the real one.
+    // Opens the draft in $EDITOR; runApp supplies the real one.
     editDraft(text: string): Promise<EditResult>;
 };
 
