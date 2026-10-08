@@ -275,52 +275,54 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
         const { runOneShot } = await import("@dorothy/agent");
         await runOneShot(mode.prompt, mode.persona);
     } else if (mode.kind === "list") {
-        const { runList } = await import("./memory/commands.js");
-        const { commandHistory } = await import("./history/commands.js");
+        const { runList } = await import("@dorothy/memory/commands");
+        const { commandHistory } = await import("@dorothy/memory/commands");
         process.exitCode = await runList({ openHistory: commandHistory() });
     } else if (mode.kind === "memory") {
-        const { runMemoryEdit } = await import("./memory/commands.js");
-        const { commandHistory } = await import("./history/commands.js");
+        const { runMemoryEdit } = await import("@dorothy/memory/commands");
+        const { commandHistory } = await import("@dorothy/memory/commands");
         const { editInEditor } = await import("@dorothy/tui");
         process.exitCode = await runMemoryEdit(mode.phrase, {
             edit: (text) => editInEditor(text),
             openHistory: commandHistory(),
         });
     } else if (mode.kind === "tags") {
-        const { runTags } = await import("./memory/commands.js");
-        const { commandHistory } = await import("./history/commands.js");
+        const { runTags } = await import("@dorothy/memory/commands");
+        const { commandHistory } = await import("@dorothy/memory/commands");
         process.exitCode = await runTags({ openHistory: commandHistory() });
     } else if (mode.kind === "tags-edit") {
-        const { runTagsEdit } = await import("./memory/commands.js");
-        const { commandHistory } = await import("./history/commands.js");
+        const { runTagsEdit } = await import("@dorothy/memory/commands");
+        const { commandHistory } = await import("@dorothy/memory/commands");
         const { editInEditor } = await import("@dorothy/tui");
         process.exitCode = await runTagsEdit({
             edit: (text) => editInEditor(text),
             openHistory: commandHistory(),
         });
     } else if (mode.kind === "history") {
-        const { runHistory } = await import("./history/commands.js");
+        const { runHistory } = await import("@dorothy/memory/commands");
         process.exitCode = await runHistory({
             path: mode.path,
             count: mode.count,
         });
     } else if (mode.kind === "restore") {
-        const { runRestore } = await import("./history/commands.js");
+        const { runRestore } = await import("@dorothy/memory/commands");
         process.exitCode = await runRestore(mode.path, mode.rev);
     } else if (mode.kind === "rollback") {
-        const { runRollback } = await import("./history/commands.js");
+        const { runRollback } = await import("@dorothy/memory/commands");
         process.exitCode = await runRollback(mode.rev);
     } else if (mode.kind === "check") {
-        const { runCheck } = await import("./history/commands.js");
+        const { runCheck } = await import("@dorothy/memory/commands");
         process.exitCode = await runCheck({ staged: mode.staged });
     } else if (mode.kind === "mirror") {
-        const { runMirror } = await import("./history/commands.js");
+        const { runMirror } = await import("@dorothy/memory/commands");
         process.exitCode = await runMirror(mode.url);
     } else if (mode.kind === "recover") {
-        const { runRecover } = await import("./history/commands.js");
+        const { runRecover } = await import("@dorothy/memory/commands");
         process.exitCode = await runRecover(mode.url);
     } else if (mode.kind === "recall-server") {
-        const { runRecallServer } = await import("./recall/server.js");
+        const { runRecallServer } = await import(
+            "@dorothy/memory/recall-server"
+        );
         process.exitCode = await runRecallServer(mode.exclude, mode.recollect);
     } else {
         // Loaded only for chat, so one-shot replies never pay for React.

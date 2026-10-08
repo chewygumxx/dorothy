@@ -20,8 +20,8 @@ import {
     structuredCall,
     systemPrompt,
 } from "@dorothy/agent";
+import { openMemory } from "@dorothy/memory";
 import { runApp } from "@dorothy/tui";
-import { openMemory } from "./memory/open.js";
 import { recallLaunch } from "./recall-launch.js";
 
 export async function runTui(

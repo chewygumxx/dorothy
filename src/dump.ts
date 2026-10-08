@@ -15,7 +15,7 @@ import {
     type PersonaMode,
 } from "@dorothy/agent";
 import type { Env } from "@dorothy/core";
-import { previewStart } from "./memory/preview.js";
+import { previewStart } from "@dorothy/memory";
 import { recallLaunch } from "./recall-launch.js";
 
 export type DumpRequest = {
