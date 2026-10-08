@@ -37,9 +37,12 @@ editor) and the basics they share. `memory`, `agent` and `tui` depend on
 `core` alone, never on each other; `cli` depends on all four and wires
 them together. Each package exports only the entry points its
 `package.json` names (`"."`, and memory's `./recall-server` and
-`./commands`), and Bun's isolated linker resolves only what a package
-declares, so an undeclared or internal import fails under Bun and `tsc`.
-`workspace.test.ts` pins the graph.
+`./commands`), and `cli` exports nothing. Under Bun's isolated linker a package
+resolves what it declares and what the root declares (its development tools and
+`@dorothy/cli`), since the root's `node_modules` is an ancestor of every
+package; an undeclared package or an internal path of a `@dorothy` one fails
+under Bun and `tsc`. `workspace.test.ts` pins the `@dorothy` graph, the entry
+points and the Agent SDK's single holder.
 
 `core` (`packages/core/src/`) also holds the XDG directories (`xdg.ts`), the
 configuration (`config.ts`), timers, session phrases and the recall tools' names
@@ -218,7 +221,9 @@ it with the private key from Dotenvx Armor (or a gitignored `.env.keys`).
 `.husky/pre-commit` rejects any staged env file holding a plaintext value.
 `@dotenvx/dotenvx` is declared by `cli` and again in the root's devDependencies,
 since under the isolated linker the root's `lint:env` script and
-`.husky/pre-commit` need its binary linked at the root. `bunfig.toml` disables
+`.husky/pre-commit` need its binary linked at the root. `zod` is declared by
+`agent` because the Agent SDK takes it as a peer, so it must not be pruned as
+unused. `bunfig.toml` disables
 Bun's own `.env` autoload (`[env] file = false`): otherwise Bun preloads the raw
 ciphertext, `config()` declines to overwrite it, and the API rejects the
 ciphertext as a bearer token.
