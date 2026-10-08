@@ -1,10 +1,10 @@
 ---
 name: maintenance-design-agreed
-description: "Agreed design for cyclical maintenance (sub-project 4a), paused 2026-10-08 until memory history lands"
+description: "Agreed design for cyclical maintenance (sub-project 4a), queued after workspace modularity on docs/roadmap.md"
 metadata:
   node_type: memory
   ctime: 2026-10-08
-  mtime: 2026-10-08
+  mtime: 2026-10-09
   spdx: GPL-3.0-only
   type: project
   originSessionId: 6d4ead19-0e3d-4f19-a216-a3e1114b5bea
@@ -51,9 +51,11 @@ Agreed decisions:
 
 **Why:** paused, not abandoned; the user wants recovery from a broken or wrong
 `tags.json` before granting full authority.
-**How to apply:** when memory history is merged, resume by writing
-`docs/specs/<date>-maintenance-design.md` from these decisions, revisiting undo
-and the log in light of git history (spec
+**How to apply:** memory history merged on 2026-10-09 (PRs #8, #9), and
+`docs/roadmap.md` now orders the work: workspace modularity first, then this.
+When its turn comes, write `docs/specs/<date>-maintenance-design.md` from these
+decisions, built as a workspace package rather than `src/maintenance/`, and
+revisit undo and the log in light of git history (spec
 `docs/specs/2026-10-08-memory-history-design.md`).
 
 <!-- vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3: -->

@@ -7,4 +7,4 @@
 - [No worktrees](./no-worktrees.md)
   plain branches in the main checkout; the worktree guard blocks the user
 - [Maintenance design agreed](./maintenance-design-agreed.md)
-  sub-project 4a decisions, paused until memory history lands
+  sub-project 4a decisions, queued after workspace modularity
