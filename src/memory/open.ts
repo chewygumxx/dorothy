@@ -598,8 +598,12 @@ export async function openMemory({
           })
         : null;
 
-    // The recorder wraps what the session maker returns, so a reply is
-    // appended before memory's turn-end hook asks for the flush.
+    // The recorder wraps what the session maker returns: it hears the one
+    // session App sees across compaction's swaps, and records a message
+    // when the user sends it, even one compaction holds back. That a
+    // reply is appended before memory's turn-end hook asks for the flush
+    // holds in either order, as the recorder records an event before
+    // passing it on and trackMemory (track.ts) calls its hooks after.
     const channel = noticeChannel();
     const record =
         transcript === null

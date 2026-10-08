@@ -727,12 +727,15 @@ describe("openMemory", () => {
             reviewed = resolve;
         });
         let timer: ReturnType<typeof setTimeout> | undefined;
+        let system = "";
         const unasked = new Promise<string>((resolve) => {
             timer = setTimeout(() => resolve("no review asked"), 2000);
         });
         const opened = await openMemory({
             resume: null,
             call: async (request) => {
+                // Reviews run on the review prompt, never compaction's.
+                system = request.system;
                 reviewed(await Bun.file(transcriptPath(phrase, env)).text());
                 return quiet(request);
             },
@@ -767,6 +770,7 @@ describe("openMemory", () => {
             expect(await Promise.race([read, unasked])).toContain(
                 '"text":"a reply to review"',
             );
+            expect(system).toStartWith("R");
         } finally {
             clearTimeout(timer);
             await memory.close();
