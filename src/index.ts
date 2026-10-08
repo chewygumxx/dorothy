@@ -312,7 +312,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     } else if (mode.kind === "memory") {
         const { runMemoryEdit } = await import("./memory/commands.js");
         const { commandHistory } = await import("./history/commands.js");
+        const { editInEditor } = await import("./tui/external-editor.js");
         process.exitCode = await runMemoryEdit(mode.phrase, {
+            edit: (text) => editInEditor(text),
             openHistory: commandHistory(),
         });
     } else if (mode.kind === "tags") {
@@ -322,7 +324,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     } else if (mode.kind === "tags-edit") {
         const { runTagsEdit } = await import("./memory/commands.js");
         const { commandHistory } = await import("./history/commands.js");
+        const { editInEditor } = await import("./tui/external-editor.js");
         process.exitCode = await runTagsEdit({
+            edit: (text) => editInEditor(text),
             openHistory: commandHistory(),
         });
     } else if (mode.kind === "history") {

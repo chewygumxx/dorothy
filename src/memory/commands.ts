@@ -11,12 +11,11 @@
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { readConfig } from "../config.js";
-import type { EditResult } from "../contracts/editor.js";
+import type { Editor } from "../contracts/editor.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { syncIndex } from "../recall/sync.js";
 import { carrierCounts } from "../recall/tags.js";
 import { transcriptDir } from "../transcript.js";
-import { editInEditor } from "../tui/external-editor.js";
 import type { Env } from "../xdg.js";
 import { indexCatalogue } from "./catalogue.js";
 import {
@@ -184,16 +183,16 @@ export async function runMemoryEdit(
     {
         env = process.env,
         err = process.stderr,
-        edit = (text: string) => editInEditor(text),
+        edit,
         now = () => new Date(),
         openHistory,
     }: {
         env?: Env;
         err?: Output;
-        edit?: (text: string) => Promise<EditResult>;
+        edit: Editor;
         now?: () => Date;
         openHistory?: OpenHistory;
-    } = {},
+    },
 ): Promise<number> {
     const dir = transcriptDir(env);
     const transcript = join(dir, `${phrase}.jsonl`);
@@ -316,16 +315,16 @@ const edited = (edit: TagsEdit) =>
 export async function runTagsEdit({
     env = process.env,
     err = process.stderr,
-    edit = (text: string) => editInEditor(text),
+    edit,
     now = () => new Date(),
     openHistory,
 }: {
     env?: Env;
     err?: Output;
-    edit?: (text: string) => Promise<EditResult>;
+    edit: Editor;
     now?: () => Date;
     openHistory?: OpenHistory;
-} = {}): Promise<number> {
+}): Promise<number> {
     const path = vocabularyPath(env);
     let index: RecallIndex | null = null;
     try {
