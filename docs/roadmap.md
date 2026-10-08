@@ -47,72 +47,84 @@ dates or estimates.
 
 In order; the first is next.
 
-### Workspace modularity
+### Workspace Modularity
 
 Split `src/` into Bun workspace packages, so each subsystem declares what
 it depends on, where today a `boundary.test.ts` checks its imports.
 
-- Needs: nothing.
-- Why here: maintenance would otherwise be built in `src/` and moved, and
+- **Status**: Pending Specification
+- **Required**: Requisites Fulfilled
+- **Rationale**: Maintenance would otherwise be built in `src/` and moved, and
   the Messages API move becomes the replacement of one adapter package
   rather than of imports across the tree.
-- Status: needs a spec.
 
-### Cyclical maintenance (4a)
+### Agentic Asset Refactor
+
+Revise Claude assets for compartmentalisation into specialised modules and
+components. Generalisation of assets from `.claude/CLAUDE.md` to
+`.agents/AGENTS.md` for broader compatibility with alternative models.
+
+- **Status**: Pending Specification
+- **Required**: Workspace Modularity
+- **Rationale**: Context window growth and token consumption rate are far too
+  high with respect to the size of this repository and projected work
+  immediately forseeable.
+
+### Cyclical Maintenance (4a)
 
 Dorothy revises, merges and prunes the tag vocabulary and deep-tags
 conversations from their notes, in background passes that can be undone.
 
-- Needs: memory history, to recover from a wrong pass; workspace
-  modularity, to be built as a package.
-- Why here: a vocabulary without upkeep drifts, and its design is agreed.
-- Status: design agreed in conversation, spec to write; its undo and log
+- **Status**: Design agreed in conversation, spec to write; its undo and log
   to be revisited against memory history.
+- **Required**: Memory history, to recover from a wrong pass; workspace
+  modularity, to be built as a package.
+- **Rationale**: A vocabulary without upkeep drifts, and its design is agreed.
 
-### Topic overviews (4b)
+### Topic Overviews (4b)
 
 Background agents write an overview of each well-populated concept from
 the conversations that carry it.
 
-- Needs: cyclical maintenance, which keeps the concepts worth an overview.
-- Status: split from 4a; not designed.
+- **Status**: Split from 4a; not designed.
+- **Required**: Cyclical Maintenance
 
 ### The Messages API
 
 Move from the Agent SDK to Anthropic's Messages API, the only way to fully
 control the system prompt (the `api` commit scope).
 
-- Needs: workspace modularity, which keeps the SDK inside one package.
-- Why here: after maintenance, so its calls through `StructuredCall` move
+- **Status**: Not designed. Findings:
+  [context leak](./reports/2026-10-07-context-leak.md).
+- **Required**: Workspace modularity, which keeps the SDK inside one package.
+- **Rationale**: After maintenance, so its calls through `StructuredCall` move
   with the rest.
-- Status: not designed. Findings:
-  [context leak](reports/2026-10-07-context-leak.md).
 
 ### Token budgets and a gateway
 
 One module for the budgets that shape Dorothy's context, enforced by a
 proxy that every request passes through.
 
-- Needs: nothing strictly; simpler once requests are Dorothy's own, after
+- **Status**: An idea, in
+  [budgets and a gateway](./notes/2026-10-07_budgets-gateway.md).
+- **Required**: Nothing strictly; simpler once requests are Dorothy's own, after
   the Messages API.
-- Status: an idea, in
-  [budgets and a gateway](notes/2026-10-07_budgets-gateway.md).
 
 ### Relations and embeddings (5)
 
 Links between conversations and semantic search beside FTS5.
 
-- Needs: evidence from recall that FTS5 falls short.
-- Status: conditional; no such evidence yet.
+- **Required**: evidence from recall that FTS5 falls short.
+- **Status**: conditional; no such evidence yet.
 
 ## Candidates
 
 Found but not scheduled, each with its source.
 
 - Sweeps of deferred findings:
-  [memory history](deferred/2026-10-08_memory-history-deferred.md),
-  [tags](deferred/2026-10-08_tags-deferred.md) and
-  [compaction test gaps](deferred/2026-10-07_compaction-test-gaps.md).
+  [memory history](./deferred/2026-10-08_memory-history-deferred.md),
+  [tags](./deferred/2026-10-08_tags-deferred.md) and
+  [compaction test gaps](./deferred/2026-10-07_compaction-test-gaps.md).
 - Forgetting a conversation, which must reach history and the mirror
   (memory history spec, Later).
 - Consolidating sealed bundles, and more than one mirror (memory history
@@ -132,7 +144,7 @@ In order of completion.
   [plan](plans/2026-10-03-input-editor.md).
 - **Markdown replies**: [spec](specs/2026-10-03-markdown-replies-design.md),
   [plan](plans/2026-10-03-markdown-replies.md).
-- **Status line and minimum size**:
+- ****Status** line and minimum size**:
   [spec](specs/2026-10-05-statusline-and-minimum-size-design.md),
   [plan](plans/2026-10-05-statusline-and-minimum-size.md).
 - **Conversation catalogue (1)**:
