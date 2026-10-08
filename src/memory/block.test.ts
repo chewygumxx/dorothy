@@ -9,7 +9,9 @@
 //
 
 import { describe, expect, it } from "bun:test";
+import { withSection } from "../contracts/start.js";
 import {
+    earlierSection,
     escapeXml,
     MEMORY_PREAMBLE,
     type Note,
@@ -17,6 +19,15 @@ import {
     renderClusters,
     unescapeXml,
 } from "./block.js";
+import type { Cluster } from "./sidecar.js";
+
+const CLUSTER: Cluster = {
+    from: 1,
+    through: 4,
+    abstract: "Tea",
+    at: "x",
+    model: "m",
+};
 
 const pinned: Note = {
     title: "Memory and metadata",
@@ -142,6 +153,53 @@ describe("renderClusters", () => {
             '<cluster n="2" turns="15-31">Render bugs.</cluster>',
             "</earlier>",
         ]);
+    });
+});
+
+describe("earlierSection", () => {
+    const clusters = [
+        { ...CLUSTER, from: 1, through: 4, abstract: "Tea & toast" },
+        { ...CLUSTER, from: 5, through: 9, abstract: "Jam" },
+    ];
+
+    it("renders the abstracts with recollect's preamble", () => {
+        expect(earlierSection(clusters, true)).toBe(
+            [
+                "Earlier in this conversation, in your own summaries; " +
+                    "recollect opens a cluster's turns word for word:",
+                "",
+                "<earlier>",
+                '<cluster n="1" turns="1-4">Tea &amp; toast</cluster>',
+                '<cluster n="2" turns="5-9">Jam</cluster>',
+                "</earlier>",
+            ].join("\n"),
+        );
+    });
+
+    it("renders the plain preamble without recollect", () => {
+        expect(earlierSection(clusters, false)).toStartWith(
+            "Earlier in this conversation, in your own summaries:\n\n",
+        );
+    });
+
+    it("is empty without clusters", () => {
+        expect(earlierSection([], true)).toBe("");
+    });
+
+    it("makes the prompt the persona made before", () => {
+        // persona.withClusters joined [prompt, "", preamble, "", ...lines].
+        expect(withSection("P", earlierSection(clusters, false))).toBe(
+            [
+                "P",
+                "",
+                "Earlier in this conversation, in your own summaries:",
+                "",
+                "<earlier>",
+                '<cluster n="1" turns="1-4">Tea &amp; toast</cluster>',
+                '<cluster n="2" turns="5-9">Jam</cluster>',
+                "</earlier>",
+            ].join("\n"),
+        );
     });
 });
 

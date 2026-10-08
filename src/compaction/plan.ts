@@ -9,9 +9,10 @@
 //
 
 import type { Turn } from "../contracts/session.js";
+import { withSection } from "../contracts/start.js";
+import { earlierSection } from "../memory/block.js";
 import { tokens } from "../memory/rank.js";
 import type { Cluster } from "../memory/sidecar.js";
-import { withClusters } from "../persona.js";
 
 // Turns from to through, counting from 1, both included.
 export type Range = { from: number; through: number };
@@ -84,7 +85,7 @@ export function clusterTokens(
 ): number {
     return clusters.length === 0
         ? 0
-        : tokens(withClusters("", clusters, recollect));
+        : tokens(withSection("", earlierSection(clusters, recollect)));
 }
 
 export type Pressure = "none" | "soft" | "hard";

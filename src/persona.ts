@@ -12,8 +12,6 @@ import { chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Options } from "@anthropic-ai/claude-agent-sdk";
 import type { Turn } from "./contracts/session.js";
-import { renderClusters } from "./memory/block.js";
-import type { Cluster } from "./memory/sidecar.js";
 import { type Env, xdgDir } from "./xdg.js";
 
 // Chat is Dorothy as the user meets her. Development mode is for the people
@@ -207,29 +205,6 @@ export function withHistory(prompt: string, turns: readonly Turn[]): string {
         (turn) => `${turn.role === "user" ? "User" : "Dorothy"}: ${turn.text}`,
     );
     return `${prompt}\n\nThe conversation so far, which you are continuing:\n\n${lines.join("\n\n")}`;
-}
-
-// The notes on earlier conversations go after the persona and before any
-// history, so the turns still come last.
-export function withMemory(prompt: string, block: string): string {
-    return block === "" ? prompt : `${prompt}\n\n${block}`;
-}
-
-// The abstracts of a compacted conversation's earlier turns go after the
-// notes on other conversations and before the turns still in full, so the
-// prompt reads oldest first.
-export function withClusters(
-    prompt: string,
-    clusters: readonly Cluster[],
-    recollect: boolean,
-): string {
-    if (clusters.length === 0) {
-        return prompt;
-    }
-    const preamble = recollect
-        ? "Earlier in this conversation, in your own summaries; recollect opens a cluster's turns word for word:"
-        : "Earlier in this conversation, in your own summaries:";
-    return [prompt, "", preamble, "", ...renderClusters(clusters)].join("\n");
 }
 
 // Identifies the persona version a transcript was recorded with. Not a

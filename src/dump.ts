@@ -13,6 +13,7 @@ import { clusterTokens, seedTurns } from "./compaction/plan.js";
 import { readConfig } from "./config.js";
 import type { Turn } from "./contracts/session.js";
 import { conversationOptions, recallLaunch } from "./conversation.js";
+import { earlierSection } from "./memory/block.js";
 import { indexCatalogue } from "./memory/catalogue.js";
 import { buildMemory } from "./memory/rank.js";
 import { type Cluster, readSidecar } from "./memory/sidecar.js";
@@ -191,9 +192,10 @@ export async function runDump(
             prompt: request.message,
             options: conversationOptions({
                 history: seedTurns(history, clusters),
-                clusters,
                 memory,
+                earlier: earlierSection(clusters, recall !== null),
                 recall,
+                recollect: recall !== null && clusters.length > 0,
                 persona: request.persona,
             }),
             queryFn,

@@ -27,22 +27,20 @@ import {
     type ChatSession,
     CLOSE_GRACE_MS,
     type ConversationEvent,
-    type Turn,
     type TurnStats,
 } from "./contracts/session.js";
-import type { Cluster } from "./memory/sidecar.js";
+import {
+    type RecallLaunch,
+    type SessionStart,
+    withSection,
+} from "./contracts/start.js";
 import {
     baseOptions,
     cliOptions,
     type PersonaMode,
     personaPrompt,
-    withClusters,
     withHistory,
-    withMemory,
 } from "./persona.js";
-
-// How the CLI starts the recall server: dorothy --recall-server.
-export type RecallLaunch = { command: string; args: string[] };
 
 // Dorothy's memory tools: this program again, as an MCP server, leaving out
 // the conversation it serves.
@@ -144,39 +142,31 @@ async function settleWithin(work: Promise<void>, ms: number): Promise<void> {
     clearTimeout(timer);
 }
 
-export type SessionSetup = {
-    history?: readonly Turn[];
-    // The memory block, frozen for the session.
-    memory?: string;
-    // How to launch the recall server; null leaves recall off.
-    recall?: RecallLaunch | null;
-    persona?: PersonaMode;
-    // The abstracts of the turns compaction took out; history then holds
-    // only the turns after them.
-    clusters?: readonly Cluster[];
-};
+// A session's start and the persona it speaks with. Every field may be
+// left out, for tests and the dump.
+export type SessionSetup = Partial<SessionStart> & { persona?: PersonaMode };
 
 // What a session starts with, shared with --dump-context so that the dump
 // shows exactly what a chat would send.
 export function conversationOptions({
     history = [],
     memory = "",
+    earlier = "",
     recall = null,
+    recollect = false,
     persona = "chat",
-    clusters = [],
 }: SessionSetup = {}): Options {
-    const recollect = recall !== null && clusters.length > 0;
+    const offered = recall !== null && recollect;
     return {
         ...baseOptions,
         ...cliOptions(),
         systemPrompt: withHistory(
-            withClusters(
-                withMemory(
+            withSection(
+                withSection(
                     personaPrompt({ recall: recall !== null, mode: persona }),
                     memory,
                 ),
-                clusters,
-                recollect,
+                earlier,
             ),
             history,
         ),
@@ -187,12 +177,12 @@ export function conversationOptions({
                       [SERVER_NAME]: {
                           type: "stdio",
                           command: recall.command,
-                          args: recollect
+                          args: offered
                               ? [...recall.args, "--recollect"]
                               : recall.args,
                       },
                   },
-                  allowedTools: recollect
+                  allowedTools: offered
                       ? [...ALLOWED_TOOLS, RECOLLECT_TOOL]
                       : ALLOWED_TOOLS,
               }),

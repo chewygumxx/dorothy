@@ -10,8 +10,9 @@
 
 import { describe, expect, it } from "bun:test";
 import type { Turn } from "../contracts/session.js";
+import { withSection } from "../contracts/start.js";
+import { earlierSection } from "../memory/block.js";
 import type { Cluster } from "../memory/sidecar.js";
-import { withClusters } from "../persona.js";
 import {
     callCap,
     clusterTokens,
@@ -101,11 +102,13 @@ describe("outgoing with a cap", () => {
 });
 
 describe("clusterTokens", () => {
-    it("costs what withClusters adds, and nothing without clusters", () => {
+    it("costs what the earlier section adds, and nothing without clusters", () => {
         const clusters = [cluster(1, 4)];
         expect(clusterTokens([], true)).toBe(0);
         expect(clusterTokens(clusters, true)).toBe(
-            Math.ceil([...withClusters("", clusters, true)].length / 4),
+            Math.ceil(
+                [...withSection("", earlierSection(clusters, true))].length / 4,
+            ),
         );
     });
 });

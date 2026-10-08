@@ -57,6 +57,22 @@ export function renderClusters(clusters: readonly Cluster[]): string[] {
     ];
 }
 
+// The earlier turns' abstracts as a section of a session's system
+// prompt, or "" for none. recollect: whether the session offers the tool
+// that opens a cluster word for word.
+export function earlierSection(
+    clusters: readonly Cluster[],
+    recollect: boolean,
+): string {
+    if (clusters.length === 0) {
+        return "";
+    }
+    const preamble = recollect
+        ? "Earlier in this conversation, in your own summaries; recollect opens a cluster's turns word for word:"
+        : "Earlier in this conversation, in your own summaries:";
+    return [preamble, "", ...renderClusters(clusters)].join("\n");
+}
+
 export function renderEntry({ note, tier }: Placed): string {
     const lines = [
         note.pinned ? '<conversation pinned="true">' : "<conversation>",

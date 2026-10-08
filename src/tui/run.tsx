@@ -38,6 +38,7 @@ import {
 import { Mirror } from "../history/mirror.js";
 import { type MemoryRepo, MIRROR, NO_MIRROR } from "../history/repo.js";
 import { parseKey } from "../history/seal.js";
+import { earlierSection } from "../memory/block.js";
 import { indexCatalogue } from "../memory/catalogue.js";
 import { tokens } from "../memory/rank.js";
 import { MemoryService } from "../memory/service.js";
@@ -509,10 +510,11 @@ export async function runTui(
     // clusters' tokens charged first, then the turns after the clusters.
     const setup = (seed: Seed): SessionSetup => ({
         history: seed.turns,
-        clusters: seed.clusters,
         memory:
             memory?.block(clusterTokens(seed.clusters, recall !== null)) ?? "",
+        earlier: earlierSection(seed.clusters, recall !== null),
         recall,
+        recollect: recall !== null && seed.clusters.length > 0,
         persona,
     });
     const connect = (seed: Seed): ChatSession => {
