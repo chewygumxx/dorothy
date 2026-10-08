@@ -40,8 +40,9 @@ After a phase merges:
 4. Reorder Ahead if a phase's reasons have changed, and add a line to
    Revisions saying what moved and why.
 
-A phase names what it needs and why it sits where it does. It carries no
-dates or estimates.
+Each phase in Ahead gives its **Status**, the phases it has as
+**Required**, and its **Rationale** for where it sits. It carries no dates
+or estimates.
 
 ## Ahead
 
@@ -68,54 +69,59 @@ components. Generalisation of assets from `.claude/CLAUDE.md` to
 - **Required**: Workspace Modularity
 - **Rationale**: Context window growth and token consumption rate are far too
   high with respect to the size of this repository and projected work
-  immediately forseeable.
+  immediately foreseeable.
 
 ### Cyclical Maintenance (4a)
 
 Dorothy revises, merges and prunes the tag vocabulary and deep-tags
 conversations from their notes, in background passes that can be undone.
+Its undo and log are to be revisited against memory history.
 
-- **Status**: Design agreed in conversation, spec to write; its undo and log
-  to be revisited against memory history.
-- **Required**: Memory history, to recover from a wrong pass; workspace
-  modularity, to be built as a package.
-- **Rationale**: A vocabulary without upkeep drifts, and its design is agreed.
+- **Status**: Design Agreed, Pending Specification
+- **Required**: Workspace Modularity
+- **Rationale**: A vocabulary without upkeep drifts. Memory history, now
+  done, recovers from a wrong pass, and modularity lets it be built as a
+  package.
 
 ### Topic Overviews (4b)
 
 Background agents write an overview of each well-populated concept from
-the conversations that carry it.
+the conversations that carry it. Split from 4a.
 
-- **Status**: Split from 4a; not designed.
+- **Status**: Pending Design
 - **Required**: Cyclical Maintenance
+- **Rationale**: Maintenance keeps the concepts worth an overview.
 
 ### The Messages API
 
 Move from the Agent SDK to Anthropic's Messages API, the only way to fully
-control the system prompt (the `api` commit scope).
+control the system prompt (the `api` commit scope). Findings:
+[context leak](./reports/2026-10-07-context-leak.md).
 
-- **Status**: Not designed. Findings:
-  [context leak](./reports/2026-10-07-context-leak.md).
-- **Required**: Workspace modularity, which keeps the SDK inside one package.
-- **Rationale**: After maintenance, so its calls through `StructuredCall` move
-  with the rest.
+- **Status**: Pending Design
+- **Required**: Workspace Modularity
+- **Rationale**: Modularity keeps the SDK inside one package, and coming
+  after maintenance, its calls through `StructuredCall` move with the rest.
 
-### Token budgets and a gateway
+### Token Budgets and a Gateway
 
 One module for the budgets that shape Dorothy's context, enforced by a
-proxy that every request passes through.
+proxy that every request passes through. Notes:
+[budgets and a gateway](./notes/2026-10-07_budgets-gateway.md).
 
-- **Status**: An idea, in
-  [budgets and a gateway](./notes/2026-10-07_budgets-gateway.md).
-- **Required**: Nothing strictly; simpler once requests are Dorothy's own, after
-  the Messages API.
+- **Status**: Idea
+- **Required**: Requisites Fulfilled
+- **Rationale**: Simpler once requests are Dorothy's own, after the
+  Messages API.
 
-### Relations and embeddings (5)
+### Relations and Embeddings (5)
 
 Links between conversations and semantic search beside FTS5.
 
-- **Required**: evidence from recall that FTS5 falls short.
-- **Status**: conditional; no such evidence yet.
+- **Status**: Conditional
+- **Required**: Requisites Fulfilled
+- **Rationale**: Only worth building once recall shows FTS5 falling short;
+  there is no such evidence yet.
 
 ## Candidates
 
@@ -172,3 +178,7 @@ In order of completion.
 - 2026-10-09: Started, with memory history done. Workspace modularity
   goes ahead of cyclical maintenance, so maintenance is built as a package
   and the Messages API move stays within one.
+- 2026-10-09: Agentic Asset Refactor goes after Workspace Modularity and
+  ahead of Cyclical Maintenance, as the agent's context and token use have
+  outgrown the repository's size and the work ahead. Ahead's phases take
+  the Status, Required and Rationale fields.
