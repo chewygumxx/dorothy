@@ -22,21 +22,44 @@ import { SEALED_README, seal, sealedName, unseal } from "./seal.js";
 const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
 
-// The commits on main since the last sealed one, sealed as the next bundle
-// on the sealed branch; false when there were none. The caller holds the
-// lock.
-export async function sealPending(
+// Said when the key would start a bundle no recovery could open.
+export const WRONG_KEY =
+    "history: DOROTHY_MIRROR_KEY does not open the sealed bundles; set the key they were sealed with";
+
+// Whether the key opens the newest sealed bundle, as every bundle in the
+// chain must; true when nothing is sealed yet.
+export async function opensSealed(
     repo: MemoryRepo,
     key: Uint8Array,
 ): Promise<boolean> {
+    const newest = (await repo.sealedNames()).at(-1);
+    return (
+        newest === undefined ||
+        (await unseal(await repo.sealedFile(newest), key)).ok
+    );
+}
+
+export type Sealed = "sealed" | "nothing" | "wrong-key";
+
+// The commits on main since the last sealed one, sealed as the next bundle
+// on the sealed branch: "nothing" when there were none, "wrong-key" when
+// the key does not open the bundles before it, since recovery would stop
+// at the first sealed under another. The caller holds the lock.
+export async function sealPending(
+    repo: MemoryRepo,
+    key: Uint8Array,
+): Promise<Sealed> {
     const since = await repo.resolve(SEALED_THROUGH);
     const tip = await repo.resolve(MAIN);
     if (tip === null || tip === since) {
-        return false;
+        return "nothing";
+    }
+    if (!(await opensSealed(repo, key))) {
+        return "wrong-key";
     }
     const bundle = await repo.bundle(since);
     if (bundle === null) {
-        return false;
+        return "nothing";
     }
     const sequence = (await repo.sealedNames()).length + 1;
     await repo.appendSealed(
@@ -46,7 +69,7 @@ export async function sealPending(
         `seal ${sequence}`,
     );
     await repo.setRef(SEALED_THROUGH, tip);
-    return true;
+    return "sealed";
 }
 
 // Whether main has commits not yet sealed.
@@ -59,6 +82,8 @@ export type PushOutcome =
     | { kind: "no-mirror" }
     | { kind: "no-key" }
     | { kind: "pushed"; sealed: boolean }
+    // Nothing new was sealed; what was sealed before is pushed.
+    | { kind: "wrong-key" }
     | { kind: "failed"; reason: string };
 
 export type MirrorOptions = {
@@ -127,11 +152,15 @@ export class Mirror {
                 return { kind: "no-key" };
             }
             const sealed = await lock(() => sealPending(repo, key));
-            if ((await repo.resolve(SEALED)) === null) {
-                return { kind: "pushed", sealed: false };
+            if (sealed === "wrong-key") {
+                warn(WRONG_KEY);
             }
-            await repo.push(MIRROR, "sealed", this.#options.token());
-            return { kind: "pushed", sealed };
+            if ((await repo.resolve(SEALED)) !== null) {
+                await repo.push(MIRROR, "sealed", this.#options.token());
+            }
+            return sealed === "wrong-key"
+                ? { kind: "wrong-key" }
+                : { kind: "pushed", sealed: sealed === "sealed" };
         } catch (error) {
             const reason = describeError(error);
             warn(`history: couldn't push to the mirror (${reason})`);

@@ -17,6 +17,7 @@ import { binaryRepo } from "./binary.js";
 import { isoRepo } from "./iso.js";
 import { Mirror, recover, sealPending, waiting } from "./mirror.js";
 import { MAIN, type MemoryRepo, SEALED, SEALED_THROUGH } from "./repo.js";
+import { SEALED_README, seal, sealedName } from "./seal.js";
 import { bareRepo, put, removeRoots, TEST_ENV, tempRoot } from "./testing.js";
 
 afterAll(removeRoots);
@@ -86,11 +87,11 @@ describe("sealPending", () => {
     it("seals new commits as the next bundle, and nothing twice", async () => {
         const repo = await repoWith({ "tags.json": "{}\n" });
         expect(await waiting(repo)).toBe(true);
-        expect(await sealPending(repo, KEY)).toBe(true);
+        expect(await sealPending(repo, KEY)).toBe("sealed");
         expect(await waiting(repo)).toBe(false);
-        expect(await sealPending(repo, KEY)).toBe(false);
+        expect(await sealPending(repo, KEY)).toBe("nothing");
         await commit(repo, { "tags.json": "{ }\n" }, "two");
-        expect(await sealPending(repo, KEY)).toBe(true);
+        expect(await sealPending(repo, KEY)).toBe("sealed");
         expect(await repo.sealedNames()).toEqual([
             "bundles/000001.enc",
             "bundles/000002.enc",
@@ -98,6 +99,18 @@ describe("sealPending", () => {
         expect(await repo.resolve(SEALED_THROUGH)).toBe(
             await repo.resolve(MAIN),
         );
+    });
+
+    it("seals nothing under a key that does not open the bundles before", async () => {
+        const repo = await repoWith({ "tags.json": "{}\n" });
+        expect(await sealPending(repo, KEY)).toBe("sealed");
+        const through = await repo.resolve(SEALED_THROUGH);
+        await commit(repo, { "tags.json": "{ }\n" }, "two");
+        expect(await sealPending(repo, OTHER)).toBe("wrong-key");
+        expect(await repo.sealedNames()).toEqual(["bundles/000001.enc"]);
+        expect(await repo.resolve(SEALED_THROUGH)).toBe(through);
+        expect(await waiting(repo)).toBe(true);
+        expect(await sealPending(repo, KEY)).toBe("sealed");
     });
 });
 
@@ -139,6 +152,34 @@ describe("Mirror", () => {
             "history: the mirror needs DOROTHY_MIRROR_KEY (32 bytes, base64) in .env; set it with dotenvx set",
         ]);
         expect(await repo.sealedNames()).toEqual([]);
+    });
+
+    it("warns of a key that does not open the bundles, and seals nothing", async () => {
+        const bare = await bareRepo();
+        const repo = await repoWith({ "tags.json": "{}\n" });
+        await repo.setRemote("mirror", bare);
+        expect(await mirrorOf(repo).mirror.push()).toEqual({
+            kind: "pushed",
+            sealed: true,
+        });
+        await commit(repo, { "tags.json": "{ }\n" }, "two");
+        const other = mirrorOf(repo, { key: OTHER });
+        expect(await other.mirror.push()).toEqual({ kind: "wrong-key" });
+        expect(other.warnings).toEqual([
+            "history: DOROTHY_MIRROR_KEY does not open the sealed bundles; set the key they were sealed with",
+        ]);
+        expect(await repo.sealedNames()).toEqual(["bundles/000001.enc"]);
+        // The right key goes on with the chain, and recovery opens it all.
+        await mirrorOf(repo).mirror.push();
+        const fresh = binaryRepo(join(tempRoot(), "data"), { env: TEST_ENV });
+        expect(
+            await recover({ repo: fresh, url: bare, key: KEY, token: null }),
+        ).toEqual({
+            applied: 2,
+            of: 2,
+            tip: await repo.resolve(MAIN),
+            stopped: null,
+        });
     });
 
     it("warns of a failed push and keeps what it sealed", async () => {
@@ -238,8 +279,16 @@ describe("recover", () => {
         await mirrorOf(repo).mirror.push();
         const first = await repo.resolve(MAIN);
         await commit(repo, { "tags.json": "{ }\n" }, "two");
-        // The second bundle is sealed under another key.
-        await mirrorOf(repo, { key: OTHER }).mirror.push();
+        // The second bundle is sealed under another key, by hand: sealing
+        // itself refuses to.
+        const bundle = await repo.bundle(first);
+        await repo.appendSealed(
+            sealedName(2),
+            await seal(bundle as Uint8Array, OTHER),
+            SEALED_README,
+            "seal 2",
+        );
+        await repo.push("mirror", "sealed", null);
 
         const fresh = binaryRepo(join(tempRoot(), "data"), { env: TEST_ENV });
         expect(
