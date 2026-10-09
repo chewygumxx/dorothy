@@ -42,8 +42,8 @@ passed unchanged throughout.
 At the head of the branch `bun run check` passes with 1119 tests, up from
 1106 at `1f821e7`.
 
-Live probes ran under throwaway XDG directories. Four ran as expected and
-one is open:
+Live probes ran under throwaway XDG directories, and a chat on the user's
+machine completed the last of them:
 
 - the dump built a request through the Agent SDK's CLI under the isolated
   linker, and the recall server's tools reached it;
@@ -53,12 +53,11 @@ one is open:
 - the TUI launched and quit on Ctrl+D with exit status 0, and the data
   repository's hook names the CLI's new entry script and is rewritten on
   launch;
-- **open:** a chat answering a message. A session reports `ready` only
-  once its first turn starts, so the probes, which sent nothing, saw
-  `starting`, as expected. A launch on the user's machine was then seen
-  live, with the moved entry script, the Agent SDK's binary from the
-  isolated store and the recall server all running (see
-  [Known limitations](#known-limitations) for the step that remains).
+- a chat answered messages. A session reports `ready` only once its first
+  turn starts, so the probes, which sent nothing, saw `starting`, as
+  expected; on the user's machine the status line then read
+  `claude-sonnet-5-5 · sdk … · ready` (see
+  [A launch on the user's machine](#a-launch-on-the-users-machine)).
 
 ## How it was built
 
@@ -181,10 +180,20 @@ directory, the pane was observed read-only (`herdr pane process-info` and
   as `bun …/packages/cli/src/index.ts --recall-server --exclude <phrase>`,
   so `recallLaunch` works from the moved entry script.
 - **The status line read `starting`**, before any message, as above.
+- **Once the user sent a message, the chat worked end to end.** The status
+  line read `dorothy · <phrase> · claude-sonnet-5-5 · sdk … · ready`, and
+  several turns ran, each with its stats line. Dorothy looked things up
+  through the recall server, reported the notes on earlier conversations
+  in her system prompt (the memory block, through `SessionStart` and
+  `withSection`), and, restarted in development mode, said so. The footer
+  showed background reviews' cost (`memory $0.0504`), so the injected
+  `StructuredCall` ran too.
 - **A raw `[?0u` showed in the pane.** It is Ink's query for the kitty
   keyboard protocol (`kittyKeyboard: { mode: "auto" }`, unchanged from
-  `main`), which Herdr's terminal printed rather than answered: cosmetic,
-  and not from this work.
+  `main`), which Herdr's terminal printed rather than answered. It is not
+  only cosmetic: Dorothy reported that the user's first message began
+  with `[?0u`, so the text reaches the input draft (see
+  [Known limitations](#known-limitations)). It is not from this work.
 
 ### The commands
 
@@ -365,16 +374,14 @@ the commits from before the packages use it.
 
 ## Known limitations
 
-One step is open, and no other limitation is known to block merge.
-Merging is the user's call once that step is done.
+No limitation is known to block merge; merging is the user's call.
 
-- **A chat answering a message is unconfirmed.** The launch, the recall
-  server, the hook, the quit and the commands were seen live, but no
-  message was sent, so no turn ran through `openMemory`'s `createSession`
-  and `connect` and the streaming `Conversation`. The remaining step, on
-  a machine where `.env` decrypts: in `bun run dev`, send one short
-  message (a fraction of a cent); once the reply starts, the header
-  should show the model and the status `ready`.
+- **`[?0u` reaches the input draft under Herdr.** Ink's query for the kitty
+  keyboard protocol (`kittyKeyboard: { mode: "auto" }` in `runApp`, as on
+  `main` before it) is printed by Herdr's terminal, and the text arrives in
+  the first message. It predates this work; the fix belongs to the TUI,
+  for example by filtering the sequence out of input or turning the
+  protocol off where the terminal does not answer.
 - **What the root declares is visible to every package.** Under the
   isolated linker a package resolves its own declarations and the root's:
   the development tools, and `@dorothy/cli`, which exports nothing. A check
