@@ -25,20 +25,41 @@ export default defineConfig({
             description: "Api",
         },
         {
-            name: "sdk",
-            fullName: "SDK",
-            description: "Agent SDK source, ie. src/",
-        },
-        {
             name: "config",
             fullName: "Config",
             description:
                 "Repository tooling configuration, ie. tsconfig, editorconfig, etc.",
         },
         {
+            name: "sdk",
+            fullName: "SDK",
+            description:
+                "Retired: src/ before the workspace packages; kept so older commits still lint",
+        },
+        {
             name: "tui",
             fullName: "TUI",
-            description: "Terminal chat interface, ie. src/tui/",
+            description: "Terminal chat interface, ie. packages/tui/",
+        },
+        {
+            name: "core",
+            fullName: "Core",
+            description: "Shared contracts and basics, ie. packages/core/",
+        },
+        {
+            name: "memory",
+            fullName: "Memory",
+            description: "Her memory database, ie. packages/memory/",
+        },
+        {
+            name: "agent",
+            fullName: "Agent",
+            description: "Her model side, ie. packages/agent/",
+        },
+        {
+            name: "cli",
+            fullName: "CLI",
+            description: "The entry point, ie. packages/cli/",
         },
     ],
 });

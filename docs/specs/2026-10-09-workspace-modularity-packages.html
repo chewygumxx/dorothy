@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dorothy's workspace packages</title>
+  <link href="https://fonts.googleapis.com/css2?family=Mona+Sans:wght@400;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      /* GitHub dark (Primer) */
+      --color-paper:   #0d1117;
+      --color-paper-2: #161b22;
+      --color-ink:     #e6edf3;
+      --color-muted:   #8b949e;
+      --color-rule:    #30363d;
+      --color-accent:  #f78166;
+      --font-sans:     'Mona Sans', -apple-system, 'Segoe UI', system-ui, sans-serif;
+      --font-mono:     'Geist Mono', ui-monospace, SFMono-Regular, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+
+    .frame { max-width: 1200px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-family: var(--font-sans);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+
+    .caption {
+      font-size: 0.9rem;
+      line-height: 1.5;
+      color: var(--color-muted);
+      margin-top: 1rem;
+      max-width: 60ch;
+    }
+
+    svg { width: 100%; min-width: 1000px; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Dependency graph · Workspace modularity</p>
+    <h1>Dorothy's workspace packages</h1>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1000 460" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="workspace-modularity-packages-title workspace-modularity-packages-desc">
+        <title id="workspace-modularity-packages-title">Dorothy's workspace packages</title>
+        <desc id="workspace-modularity-packages-desc">Five packages: cli depends on tui, memory, agent and core; tui, memory and agent each depend only on core, which holds the shared contracts and has the highest fan-in.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#8b949e"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#f78166"/></marker>
+          <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4493f8"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#0d1117"/>
+
+        <!-- Rank labels -->
+        <text x="40" y="112" fill="#8b949e" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">RANK 0</text>
+        <text x="40" y="232" fill="#8b949e" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">RANK 1</text>
+        <text x="40" y="352" fill="#8b949e" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">RANK 2</text>
+
+        <!-- Connectors, drawn before boxes -->
+        <!-- cli -> tui -->
+        <path d="M 512,136 V 148 Q 512,156 504,156 H 188 Q 180,156 180,164 V 200" fill="none" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
+        <!-- cli -> memory (16px below cli -> tui where they run parallel) -->
+        <path d="M 544,136 V 164 Q 544,172 536,172 H 428 Q 420,172 420,180 V 200" fill="none" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
+        <!-- cli -> agent -->
+        <path d="M 608,136 V 156 Q 608,164 616,164 H 812 Q 820,164 820,172 V 200" fill="none" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
+        <!-- cli -> core (straight, through the lane between memory and agent) -->
+        <line x1="576" y1="136" x2="576" y2="320" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
+        <!-- tui -> core -->
+        <path d="M 180,256 V 288 Q 180,296 188,296 H 504 Q 512,296 512,304 V 320" fill="none" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
+        <!-- memory -> core (16px above tui -> core where they run parallel) -->
+        <path d="M 420,256 V 272 Q 420,280 428,280 H 536 Q 544,280 544,288 V 320" fill="none" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
+        <!-- agent -> core -->
+        <path d="M 820,256 V 280 Q 820,288 812,288 H 616 Q 608,288 608,296 V 320" fill="none" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
+
+        <!-- cli (entry point) -->
+        <rect x="480" y="80" width="160" height="56" rx="6" fill="#0d1117"/>
+        <rect x="480" y="80" width="160" height="56" rx="6" fill="#161b22" stroke="#8b949e" stroke-width="1"/>
+        <rect x="488" y="86" width="28" height="12" rx="2" fill="transparent" stroke="#30363d" stroke-width="0.8"/>
+        <text x="502" y="95" fill="#e6edf3" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">APP</text>
+        <rect x="604" y="88" width="28" height="12" rx="2" fill="transparent" stroke="#30363d" stroke-width="0.8"/>
+        <text x="618" y="97" fill="#e6edf3" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">0 IN</text>
+        <text x="560" y="114" fill="#e6edf3" font-size="12" font-weight="600" font-family="'Mona Sans', sans-serif" text-anchor="middle">cli</text>
+        <text x="560" y="130" fill="#8b949e" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">flags · wiring · dump</text>
+
+        <!-- tui -->
+        <rect x="100" y="200" width="160" height="56" rx="6" fill="#0d1117"/>
+        <rect x="100" y="200" width="160" height="56" rx="6" fill="#161b22" stroke="#8b949e" stroke-width="1"/>
+        <rect x="108" y="206" width="28" height="12" rx="2" fill="transparent" stroke="#30363d" stroke-width="0.8"/>
+        <text x="122" y="215" fill="#e6edf3" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">PKG</text>
+        <rect x="224" y="208" width="28" height="12" rx="2" fill="transparent" stroke="#30363d" stroke-width="0.8"/>
+        <text x="238" y="217" fill="#e6edf3" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">1 IN</text>
+        <text x="180" y="234" fill="#e6edf3" font-size="12" font-weight="600" font-family="'Mona Sans', sans-serif" text-anchor="middle">tui</text>
+        <text x="180" y="250" fill="#8b949e" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">ink · react · marked</text>
+
+        <!-- memory -->
+        <rect x="340" y="200" width="160" height="56" rx="6" fill="#0d1117"/>
+        <rect x="340" y="200" width="160" height="56" rx="6" fill="#161b22" stroke="#8b949e" stroke-width="1"/>
+        <rect x="348" y="206" width="28" height="12" rx="2" fill="transparent" stroke="#30363d" stroke-width="0.8"/>
+        <text x="362" y="215" fill="#e6edf3" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">PKG</text>
+        <rect x="464" y="208" width="28" height="12" rx="2" fill="transparent" stroke="#30363d" stroke-width="0.8"/>
+        <text x="478" y="217" fill="#e6edf3" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">1 IN</text>
+        <text x="420" y="234" fill="#e6edf3" font-size="12" font-weight="600" font-family="'Mona Sans', sans-serif" text-anchor="middle">memory</text>
+        <text x="420" y="250" fill="#8b949e" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">isomorphic-git · mcp</text>
+
+        <!-- agent -->
+        <rect x="740" y="200" width="160" height="56" rx="6" fill="#0d1117"/>
+        <rect x="740" y="200" width="160" height="56" rx="6" fill="#161b22" stroke="#8b949e" stroke-width="1"/>
+        <rect x="748" y="206" width="28" height="12" rx="2" fill="transparent" stroke="#30363d" stroke-width="0.8"/>
+        <text x="762" y="215" fill="#e6edf3" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">PKG</text>
+        <rect x="864" y="208" width="28" height="12" rx="2" fill="transparent" stroke="#30363d" stroke-width="0.8"/>
+        <text x="878" y="217" fill="#e6edf3" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">1 IN</text>
+        <text x="820" y="234" fill="#e6edf3" font-size="12" font-weight="600" font-family="'Mona Sans', sans-serif" text-anchor="middle">agent</text>
+        <text x="820" y="250" fill="#8b949e" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">claude-agent-sdk</text>
+
+        <!-- core (highest fan-in: the contracts; focal) -->
+        <rect x="480" y="320" width="160" height="56" rx="6" fill="#0d1117"/>
+        <rect x="480" y="320" width="160" height="56" rx="6" fill="#161b22" stroke="#f78166" stroke-width="1.2"/>
+        <rect x="488" y="326" width="28" height="12" rx="2" fill="transparent" stroke="#30363d" stroke-width="0.8"/>
+        <text x="502" y="335" fill="#e6edf3" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">PKG</text>
+        <rect x="604" y="328" width="28" height="12" rx="2" fill="transparent" stroke="#30363d" stroke-width="0.8"/>
+        <text x="618" y="337" fill="#e6edf3" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">4 IN</text>
+        <text x="560" y="354" fill="#e6edf3" font-size="12" font-weight="600" font-family="'Mona Sans', sans-serif" text-anchor="middle">core</text>
+        <text x="560" y="370" fill="#8b949e" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">contracts · xdg · config</text>
+
+        <!-- Legend strip -->
+        <line x1="40" y1="400" x2="960" y2="400" stroke="#30363d" stroke-width="0.8"/>
+        <text x="40" y="416" fill="#8b949e" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+
+        <rect x="40" y="428" width="16" height="12" rx="2" fill="#161b22" stroke="#8b949e" stroke-width="1"/>
+        <text x="64" y="437" fill="#8b949e" font-size="8.5" font-family="'Mona Sans', sans-serif">Workspace package (sublabel: what only it depends on)</text>
+
+        <rect x="340" y="428" width="16" height="12" rx="2" fill="#161b22" stroke="#f78166" stroke-width="1.2"/>
+        <text x="364" y="437" fill="#8b949e" font-size="8.5" font-family="'Mona Sans', sans-serif">Shared contracts</text>
+
+        <line x1="500" y1="434" x2="532" y2="434" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
+        <text x="540" y="437" fill="#8b949e" font-size="8.5" font-family="'Mona Sans', sans-serif">Declared dependency</text>
+
+        <text x="680" y="437" fill="#8b949e" font-size="8" font-family="'Geist Mono', monospace">N IN</text>
+        <text x="708" y="437" fill="#8b949e" font-size="8.5" font-family="'Mona Sans', sans-serif">Packages depending on it</text>
+      </svg>
+    </div>
+
+    <p class="caption">tui, memory and agent declare only core, so they never reach each other; cli wires them together. Each package exports one entry point, so no importer sees another's internals.</p>
+  </div>
+</body>
+</html>

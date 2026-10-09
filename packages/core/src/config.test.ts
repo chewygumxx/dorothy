@@ -1,0 +1,360 @@
+// vim:set expandtab shiftwidth=4 filetype=typescript:
+// SPDX-License-Identifier: GPL-3.0-only
+
+//
+//
+// ~chewygumxx/dorothy.git
+// ::: :/packages/core/src/config.test.ts
+//
+//
+
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+    configPath,
+    DEFAULT_CONFIG,
+    parseConfig,
+    readConfig,
+} from "./config.js";
+
+describe("parseConfig", () => {
+    it("gives the defaults for an empty file", () => {
+        expect(parseConfig("")).toEqual({
+            config: DEFAULT_CONFIG,
+            warnings: [],
+        });
+        expect(DEFAULT_CONFIG.memory.recall).toBe(true);
+    });
+
+    it("reads both tables", () => {
+        const text = [
+            "[statusline]",
+            'modules = ["cost", "in"]',
+            "max-lines = 2",
+            "",
+            "[reply-stats]",
+            "modules = []",
+        ].join("\n");
+        expect(parseConfig(text)).toEqual({
+            config: {
+                statusline: { modules: ["cost", "in"], maxLines: 2 },
+                replyStats: { modules: [], maxLines: 1 },
+                memory: DEFAULT_CONFIG.memory,
+                compaction: DEFAULT_CONFIG.compaction,
+                history: DEFAULT_CONFIG.history,
+            },
+            warnings: [],
+        });
+    });
+
+    it("reads [history]", () => {
+        expect(DEFAULT_CONFIG.history).toEqual({
+            enabled: true,
+            pushSeconds: 60,
+        });
+        expect(
+            parseConfig("[history]\nenabled = false\npush-seconds = 300\n"),
+        ).toEqual({
+            config: {
+                ...DEFAULT_CONFIG,
+                history: { enabled: false, pushSeconds: 300 },
+            },
+            warnings: [],
+        });
+        expect(parseConfig("[history]\npush-seconds = 5\n").warnings).toEqual([
+            "config.toml: history.push-seconds must be a whole number from 10 to 86400",
+        ]);
+    });
+
+    it("reads the memory table", () => {
+        const text = [
+            "[memory]",
+            "enabled = false",
+            "budget = 500",
+            "idle-seconds = 30",
+            "half-life-days = 7",
+            "catch-up = 0",
+        ].join("\n");
+        expect(parseConfig(text)).toEqual({
+            config: {
+                ...DEFAULT_CONFIG,
+                memory: {
+                    enabled: false,
+                    recall: true,
+                    budget: 500,
+                    idleSeconds: 30,
+                    halfLifeDays: 7,
+                    catchUp: 0,
+                },
+            },
+            warnings: [],
+        });
+    });
+
+    it("warns of each bad memory value and keeps its default", () => {
+        const text = [
+            "[memory]",
+            'enabled = "yes"',
+            "budget = 100",
+            "idle-seconds = 1.5",
+            "catch-up = 51",
+            "half-life-days = 14",
+            "mood = 1",
+        ].join("\n");
+        expect(parseConfig(text)).toEqual({
+            config: {
+                ...DEFAULT_CONFIG,
+                memory: { ...DEFAULT_CONFIG.memory, halfLifeDays: 14 },
+            },
+            warnings: [
+                "config.toml: memory.enabled must be true or false",
+                "config.toml: memory.budget must be a whole number from 200 to 20000",
+                "config.toml: memory.idle-seconds must be a whole number from 10 to 3600",
+                "config.toml: memory.catch-up must be a whole number from 0 to 50",
+                "config.toml: unknown key memory.mood",
+            ],
+        });
+    });
+
+    it("turns recall off", () => {
+        const { config, warnings } = parseConfig("[memory]\nrecall = false\n");
+        expect(config.memory.recall).toBe(false);
+        expect(config.memory.enabled).toBe(true);
+        expect(warnings).toEqual([]);
+    });
+
+    it("warns of a recall that is not true or false", () => {
+        const { config, warnings } = parseConfig('[memory]\nrecall = "no"\n');
+        expect(config.memory.recall).toBe(true);
+        expect(warnings).toEqual([
+            "config.toml: memory.recall must be true or false",
+        ]);
+    });
+
+    it("warns when memory is not a table", () => {
+        expect(parseConfig("memory = 3")).toEqual({
+            config: DEFAULT_CONFIG,
+            warnings: ["config.toml: memory is not a table"],
+        });
+    });
+
+    it("budgets 4000 tokens of memory by default", () => {
+        expect(DEFAULT_CONFIG.memory.budget).toBe(4000);
+    });
+
+    it("reads the compaction table", () => {
+        const text = [
+            "[compaction]",
+            "enabled = false",
+            "soft = 3000",
+            "hard = 5000",
+            "tail = 1000",
+        ].join("\n");
+        expect(parseConfig(text)).toEqual({
+            config: {
+                ...DEFAULT_CONFIG,
+                compaction: {
+                    enabled: false,
+                    soft: 3000,
+                    hard: 5000,
+                    tail: 1000,
+                },
+            },
+            warnings: [],
+        });
+    });
+
+    it("warns of each bad compaction value and keeps its default", () => {
+        const text = [
+            "[compaction]",
+            'enabled = "no"',
+            "soft = 1000",
+            "hard = 960000",
+            "tail = 2.5",
+            "speed = 1",
+        ].join("\n");
+        expect(parseConfig(text)).toEqual({
+            config: DEFAULT_CONFIG,
+            warnings: [
+                "config.toml: compaction.enabled must be true or false",
+                "config.toml: compaction.soft must be a whole number from 2000 to 900000",
+                "config.toml: compaction.hard must be a whole number from 4000 to 950000",
+                "config.toml: compaction.tail must be a whole number from 500 to 200000",
+                "config.toml: unknown key compaction.speed",
+            ],
+        });
+    });
+
+    it("takes all three defaults when tail < soft < hard fails", () => {
+        const { config, warnings } = parseConfig(
+            "[compaction]\nsoft = 9000\nhard = 8000\n",
+        );
+        expect(config.compaction).toEqual(DEFAULT_CONFIG.compaction);
+        expect(warnings).toEqual([
+            "config.toml: compaction needs tail < soft < hard; using the defaults for all three",
+        ]);
+    });
+
+    it("keeps a soft below the default tail as long as tail is lowered too", () => {
+        const { config, warnings } = parseConfig(
+            "[compaction]\nsoft = 3000\nhard = 6000\ntail = 600\n",
+        );
+        expect(config.compaction).toEqual({
+            enabled: true,
+            soft: 3000,
+            hard: 6000,
+            tail: 600,
+        });
+        expect(warnings).toEqual([]);
+    });
+
+    it("warns when compaction is not a table", () => {
+        expect(parseConfig("compaction = 1")).toEqual({
+            config: DEFAULT_CONFIG,
+            warnings: ["config.toml: compaction is not a table"],
+        });
+    });
+
+    it("keeps a table's defaults for the keys it leaves out", () => {
+        expect(parseConfig("[statusline]\nmax-lines = 3").config).toEqual({
+            ...DEFAULT_CONFIG,
+            statusline: {
+                modules: DEFAULT_CONFIG.statusline.modules,
+                maxLines: 3,
+            },
+        });
+    });
+
+    it("reads comments, CRLF and a BOM", () => {
+        const text = "\uFEFF# mine\r\n[statusline]\r\nmax-lines = 2\r\n";
+        expect(parseConfig(text)).toEqual({
+            config: {
+                ...DEFAULT_CONFIG,
+                statusline: { ...DEFAULT_CONFIG.statusline, maxLines: 2 },
+            },
+            warnings: [],
+        });
+    });
+
+    it("falls back to the defaults on invalid TOML, saying why", () => {
+        expect(parseConfig("[statusline]\nmax-lines =")).toEqual({
+            config: DEFAULT_CONFIG,
+            warnings: ["config.toml line 2: Missing value after '='"],
+        });
+    });
+
+    it("names the line a mistake is on, past a list that spans lines", () => {
+        const fine = '[statusline]\nmodules = [\n  "cost",\n  "in",\n]\n';
+        const { warnings } = parseConfig(
+            `${fine}max-lines = 2\nmax-lines = 3\n`,
+        );
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toStartWith("config.toml line 7: ");
+    });
+
+    it("names the line a list opens on for a mistake inside it", () => {
+        const text = '[statusline]\nmodules = [\n  "cost"\n  "in",\n]';
+        expect(parseConfig(text).warnings[0]).toStartWith(
+            "config.toml line 2: ",
+        );
+    });
+
+    it("skips unknown and repeated modules, one warning each", () => {
+        const text = '[statusline]\nmodules = ["cost", "tokens", "cost", "in"]';
+        expect(parseConfig(text)).toEqual({
+            config: {
+                ...DEFAULT_CONFIG,
+                statusline: { modules: ["cost", "in"], maxLines: 1 },
+            },
+            warnings: [
+                "config.toml: unknown module tokens in statusline",
+                "config.toml: cost repeated in statusline",
+            ],
+        });
+    });
+
+    it("keeps the default modules when modules is not a list of names", () => {
+        for (const value of ['"cost"', "[1, 2]"]) {
+            expect(parseConfig(`[reply-stats]\nmodules = ${value}`)).toEqual({
+                config: DEFAULT_CONFIG,
+                warnings: [
+                    "config.toml: reply-stats.modules is not a list of module names",
+                ],
+            });
+        }
+    });
+
+    it("takes one line when max-lines is not a whole number from 1 to 5", () => {
+        for (const value of ["0", "6", "2.5", '"2"']) {
+            expect(parseConfig(`[statusline]\nmax-lines = ${value}`)).toEqual({
+                config: DEFAULT_CONFIG,
+                warnings: [
+                    "config.toml: statusline.max-lines must be a whole number from 1 to 5",
+                ],
+            });
+        }
+    });
+
+    it("ignores unknown tables and keys, naming each", () => {
+        const text = "colours = 1\n[statusline]\nmax_lines = 2";
+        expect(parseConfig(text)).toEqual({
+            config: DEFAULT_CONFIG,
+            warnings: [
+                "config.toml: unknown key colours",
+                "config.toml: unknown key statusline.max_lines",
+            ],
+        });
+    });
+
+    it("keeps a table's defaults when it is not a table", () => {
+        expect(parseConfig("statusline = 3")).toEqual({
+            config: DEFAULT_CONFIG,
+            warnings: ["config.toml: statusline is not a table"],
+        });
+    });
+});
+
+describe("readConfig", () => {
+    let dir = "";
+    beforeEach(async () => {
+        dir = await mkdtemp(join(tmpdir(), "dorothy-config-"));
+    });
+    afterEach(async () => {
+        await rm(dir, { recursive: true, force: true });
+    });
+
+    it("reads $XDG_CONFIG_HOME/dorothy/config.toml", async () => {
+        await mkdir(join(dir, "dorothy"));
+        await writeFile(
+            join(dir, "dorothy", "config.toml"),
+            "[statusline]\nmax-lines = 2\n",
+        );
+        const { config } = await readConfig({ XDG_CONFIG_HOME: dir });
+        expect(config.statusline.maxLines).toBe(2);
+    });
+
+    it("gives the defaults, quietly, when there is no file", async () => {
+        expect(await readConfig({ XDG_CONFIG_HOME: dir })).toEqual({
+            config: DEFAULT_CONFIG,
+            warnings: [],
+        });
+    });
+
+    it("warns and gives the defaults when the file cannot be read", async () => {
+        await mkdir(join(dir, "dorothy", "config.toml"), { recursive: true });
+        const { config, warnings } = await readConfig({ XDG_CONFIG_HOME: dir });
+        expect(config).toEqual(DEFAULT_CONFIG);
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toStartWith("config.toml: ");
+    });
+
+    it("looks under HOME when XDG_CONFIG_HOME is unset, empty or relative", () => {
+        for (const value of [undefined, "", "conf"]) {
+            expect(
+                configPath({ XDG_CONFIG_HOME: value, HOME: "/home/u" }),
+            ).toBe("/home/u/.config/dorothy/config.toml");
+        }
+    });
+});

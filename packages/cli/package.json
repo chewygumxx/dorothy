@@ -1,0 +1,13 @@
+{
+    "name": "@dorothy/cli",
+    "private": true,
+    "type": "module",
+    "exports": {},
+    "dependencies": {
+        "@dorothy/agent": "workspace:*",
+        "@dorothy/core": "workspace:*",
+        "@dorothy/memory": "workspace:*",
+        "@dorothy/tui": "workspace:*",
+        "@dotenvx/dotenvx": "^2.32.4"
+    }
+}

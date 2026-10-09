@@ -5,17 +5,7 @@
     "": {
       "name": "dorothy",
       "dependencies": {
-        "@anthropic-ai/claude-agent-sdk": "^0.3.283",
-        "@dotenvx/dotenvx": "^2.32.4",
-        "@modelcontextprotocol/sdk": "^1.31.0",
-        "ink": "^7.1.1",
-        "isomorphic-git": "1.43.1",
-        "lowlight": "^3.3.0",
-        "marked": "^18.0.14",
-        "niceware": "^4.0.0",
-        "react": "^19.2.0",
-        "string-width": "^8.3.0",
-        "zod": "^4.6.5",
+        "@dorothy/cli": "workspace:*",
       },
       "devDependencies": {
         "@biomejs/biome": "2.5.14",
@@ -26,15 +16,63 @@
         "@chewygumxx/remark-preset": "^1.0.3",
         "@chewygumxx/yamllint-config": "^1.0.0",
         "@commitlint/cli": "^21.2.2",
+        "@dotenvx/dotenvx": "^2.32.4",
         "@types/bun": "^1.4.2",
-        "@types/react": "^19.2.0",
         "commitizen": "^4.3.2",
         "husky": "^9.1.7",
-        "ink-testing-library": "^4.0.0",
         "markdownlint-cli2": "^0.23.3",
         "prettier": "^3.9.9",
         "remark-cli": "^12.0.1",
         "typescript": "^7.0.2",
+      },
+    },
+    "packages/agent": {
+      "name": "@dorothy/agent",
+      "dependencies": {
+        "@anthropic-ai/claude-agent-sdk": "^0.3.283",
+        "@dorothy/core": "workspace:*",
+        "zod": "^4.6.5",
+      },
+    },
+    "packages/cli": {
+      "name": "@dorothy/cli",
+      "dependencies": {
+        "@dorothy/agent": "workspace:*",
+        "@dorothy/core": "workspace:*",
+        "@dorothy/memory": "workspace:*",
+        "@dorothy/tui": "workspace:*",
+        "@dotenvx/dotenvx": "^2.32.4",
+      },
+    },
+    "packages/core": {
+      "name": "@dorothy/core",
+      "dependencies": {
+        "niceware": "^4.0.0",
+      },
+    },
+    "packages/memory": {
+      "name": "@dorothy/memory",
+      "dependencies": {
+        "@dorothy/core": "workspace:*",
+        "@dotenvx/dotenvx": "^2.32.4",
+        "@modelcontextprotocol/sdk": "^1.31.0",
+        "isomorphic-git": "1.43.1",
+        "zod": "^4.6.5",
+      },
+    },
+    "packages/tui": {
+      "name": "@dorothy/tui",
+      "dependencies": {
+        "@dorothy/core": "workspace:*",
+        "ink": "^7.1.1",
+        "lowlight": "^3.3.0",
+        "marked": "^18.0.14",
+        "react": "^19.2.0",
+        "string-width": "^8.3.0",
+      },
+      "devDependencies": {
+        "@types/react": "^19.2.0",
+        "ink-testing-library": "^4.0.0",
       },
     },
   },
@@ -136,6 +174,16 @@
     "@conventional-changelog/git-client": ["@conventional-changelog/git-client@3.1.2", "", { "dependencies": { "@simple-libs/child-process-utils": "^2.0.0", "@simple-libs/stream-utils": "^2.0.0", "semver": "^7.5.2" }, "peerDependencies": { "conventional-commits-filter": "^6.0.1", "conventional-commits-parser": "^7.1.2" }, "optionalPeers": ["conventional-commits-filter", "conventional-commits-parser"] }, "sha512-jZqwnJwf7nboIlAcw/mkOjVa6DexCcUOgT2oOQgkoi3z9vR8tGFkcMy2BFcYwjhL9sYcDDXkRQDayiDieCoW7A=="],
 
     "@conventional-changelog/template": ["@conventional-changelog/template@1.4.0", "", {}, "sha512-aalGyl7dbB5PArRebDIX43ZvBlXrYm9uWzGJ26t+4SzJVPsOuvfILGGbw5X4yX7i50YEmJ8zvbiWnqH/AAnZqg=="],
+
+    "@dorothy/agent": ["@dorothy/agent@workspace:packages/agent"],
+
+    "@dorothy/cli": ["@dorothy/cli@workspace:packages/cli"],
+
+    "@dorothy/core": ["@dorothy/core@workspace:packages/core"],
+
+    "@dorothy/memory": ["@dorothy/memory@workspace:packages/memory"],
+
+    "@dorothy/tui": ["@dorothy/tui@workspace:packages/tui"],
 
     "@dotenvx/dotenvx": ["@dotenvx/dotenvx@2.32.4", "", { "dependencies": { "@dotenvx/primitives": "^3.0.3", "@dotenvx/tooling": "^1.0.3", "global-agent": "^3.0.0", "node-forge": "^1.4.0", "undici": "^6.28.1", "yocto-spinner": "^1.2.1" }, "bin": { "dx": "src/cli/dotenvx.js", "dotenvx": "src/cli/dotenvx.js" } }, "sha512-nJJqsTXaY+mEITPpDFxoPVEPPS4mw815BU/YFjzamnp3eIELOR/CzJeOc7Lt9Vv2ZHH3sYDMUlnaN34FClc/zA=="],
 

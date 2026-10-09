@@ -1,0 +1,17 @@
+{
+    "name": "@dorothy/memory",
+    "private": true,
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts",
+        "./recall-server": "./src/recall-server.ts",
+        "./commands": "./src/commands.ts"
+    },
+    "dependencies": {
+        "@dorothy/core": "workspace:*",
+        "@dotenvx/dotenvx": "^2.32.4",
+        "@modelcontextprotocol/sdk": "^1.31.0",
+        "isomorphic-git": "1.43.1",
+        "zod": "^4.6.5"
+    }
+}
