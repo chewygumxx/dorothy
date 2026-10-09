@@ -296,11 +296,13 @@ reproduced here as they shaped the code):
 
 ## Commits
 
-38 commits after the plan commit `1f821e7`, oldest first; the spec, the
+41 commits after the plan commit `1f821e7`, oldest first; the spec, the
 diagram and the plan (`c2b5d5b`, `3efab0b`, `1f821e7`) came before them,
 and this revision of the report after. Scopes follow
 `.commitlintrc.mts`: `sdk` and `tui` while the code was still under `src/`,
-then the package names.
+then the package names. `sdk` stays in the config as a retired scope, since
+CI lints every commit of a pull request against the branch's config and
+the commits from before the packages use it.
 
 ### Contracts and wiring (Tasks 1 to 8)
 
@@ -354,6 +356,12 @@ then the package names.
 - `61bbdd5` test(memory): Pin a failed append's warning
 - `05cc8d1` docs: Correct the workspace report's base
 - `d112713` docs: Add the undeclared dependency check
+
+### After the pull request opened
+
+- `6224497` docs: Correct the report's account of the chat
+- `8a0160f` chore(config): Keep the retired sdk scope linting
+- `ee6aa1e` ai: Say why the sdk scope remains
 
 ## Known limitations
 
