@@ -236,6 +236,7 @@ link in place; reinstall from clean
 (`rm -rf node_modules packages/*/node_modules && bun install`) to see the
 boundary again. `bun run check` ends with `bun run test`, which is how CI's
 shared `lint.yaml` runs the tests. Commit scopes are the package names, with
-`config`, `claude` and `api`. Design: `docs/specs/`, plans: `docs/plans/`.
+`config`, `claude` and `api`; `sdk` remains only so commits from before the
+packages still lint. Design: `docs/specs/`, plans: `docs/plans/`.
 
 <!-- vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3: -->
