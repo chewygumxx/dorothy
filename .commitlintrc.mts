@@ -31,6 +31,12 @@ export default defineConfig({
                 "Repository tooling configuration, ie. tsconfig, editorconfig, etc.",
         },
         {
+            name: "sdk",
+            fullName: "SDK",
+            description:
+                "Retired: src/ before the workspace packages; kept so older commits still lint",
+        },
+        {
             name: "tui",
             fullName: "TUI",
             description: "Terminal chat interface, ie. packages/tui/",
