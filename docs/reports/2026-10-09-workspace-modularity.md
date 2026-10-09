@@ -39,8 +39,8 @@ passed unchanged throughout.
 - Plan: [`docs/plans/2026-10-09-workspace-modularity.md`](../plans/2026-10-09-workspace-modularity.md)
 - Branch: `feat/workspace-modularity`, from `main` at `60cc328`
 
-At the head of the branch (before this report) `bun run check` passes with
-1118 tests, up from 1106 at `1f821e7`.
+At the head of the branch `bun run check` passes with 1119 tests, up from
+1106 at `1f821e7`.
 
 Live probes ran under throwaway XDG directories. Four ran as expected and
 one is open:
@@ -53,11 +53,12 @@ one is open:
 - the TUI launched and quit on Ctrl+D with exit status 0, and the data
   repository's hook names the CLI's new entry script and is rewritten on
   launch;
-- **open:** the session never became ready. dotenvx reported
-  `DECRYPTION_FAILED` at launch and the header showed no model name for
-  30 s, so the Agent SDK's chat session through `openMemory` was not seen
-  to start (see [Known limitations](#known-limitations) for the step that
-  remains).
+- **open:** a chat answering a message. A session reports `ready` only
+  once its first turn starts, so the probes, which sent nothing, saw
+  `starting`, as expected. A launch on the user's machine was then seen
+  live, with the moved entry script, the Agent SDK's binary from the
+  isolated store and the recall server all running (see
+  [Known limitations](#known-limitations) for the step that remains).
 
 ## How it was built
 
@@ -137,16 +138,18 @@ memory, at under half the cost. The script was removed afterwards.
 
 `bun run dev` in tmux, 120 by 40, then Ctrl+D without sending anything.
 
-- **The session was never ready.** At launch dotenvx reported
+- **The session did not become ready, as expected with no message
+  sent.** Dorothy emits `ready` on the CLI's first `init` message, and the
+  CLI sends `init` at the start of each turn
+  (`packages/agent/src/conversation.ts`, the same code as on `main`). So
+  until the first message the status line reads
+  `dorothy · <phrase> · … · sdk … · starting`, with no model name, as it
+  did for the 30 s of the probe.
+- **The probe's environment could not decrypt `.env`.** dotenvx reported
   `DECRYPTION_FAILED` for `CLAUDE_CODE_OAUTH_TOKEN`,
-  `DOROTHY_MIRROR_TOKEN` and `DOROTHY_MIRROR_KEY` (the message is
-  paraphrased here). This machine has neither a private key in the
-  environment nor a `.env.keys`. For 30 s the status line read
-  `dorothy · <phrase> · … · sdk … · starting`, with no model name. The
-  cause is most likely the missing credentials, but that is inferred: the
-  failed decryption and the stuck "starting" were seen, not shown to be
-  linked. It was not worked around, and the step stays open (see
-  [Known limitations](#known-limitations)).
+  `DOROTHY_MIRROR_TOKEN` and `DOROTHY_MIRROR_KEY` (paraphrased): it has
+  neither a private key nor a `.env.keys`. A reply would need the
+  credentials; the launch, the hook and the quit did not.
 - **The TUI otherwise came up whole**, with the memory notice (`memory has
   no mirror`), the input and the footer. Ctrl+D ended the process in about
   a second with exit status 0.
@@ -161,6 +164,27 @@ memory, at under half the cost. The script was removed afterwards.
   does not exist), launched and quit again, and read it back: the
   `packages/cli/src/index.ts` path was restored.
 - Run by hand in the data directory, the hook printed `All 0 files pass.`
+
+### A launch on the user's machine
+
+While the user ran `bun run dev` in a Herdr pane, with their own data
+directory, the pane was observed read-only (`herdr pane process-info` and
+`herdr pane read`); nothing was typed into it.
+
+- **The processes match the packages.** `bun run dev` ran
+  `bun packages/cli/src/index.ts`, which started the Agent SDK's `claude`
+  binary from the isolated linker's store
+  (`node_modules/.bun/@anthropic-ai+claude-agent-sdk-linux-x64@0.3.287/`),
+  in Dorothy's private home (`~/.local/cache/dorothy/claude`), with
+  `--allowedTools mcp__memory__search,mcp__memory__open,mcp__memory__tags`
+  and an MCP configuration for the recall server. The recall server ran
+  as `bun …/packages/cli/src/index.ts --recall-server --exclude <phrase>`,
+  so `recallLaunch` works from the moved entry script.
+- **The status line read `starting`**, before any message, as above.
+- **A raw `[?0u` showed in the pane.** It is Ink's query for the kitty
+  keyboard protocol (`kittyKeyboard: { mode: "auto" }`, unchanged from
+  `main`), which Herdr's terminal printed rather than answered: cosmetic,
+  and not from this work.
 
 ### The commands
 
@@ -190,6 +214,10 @@ the plan itself carries are in the plan's own Rulings section.
 | Task 13 keeps `@dotenvx/dotenvx` in the root's devDependencies as well as `cli`'s dependencies | A duplicate declaration |
 | Task 14: the graph test stands unweakened; its "`@dorothy/agent` resolves from memory" failure was a stale link (see the findings) | Nothing |
 | Task 16 links the roadmap's Done entry to the spec and plan only, and Task 17 adds the report link | Nothing |
+| Task 17: the Revisions wording the controller suggested ("no phase in Ahead waits on a phase not yet done") was false, as Topic Overviews waits on Cyclical Maintenance, and was replaced | Nothing |
+| Final review: `cli` gets `"exports": {}`, the graph test checks that `@dorothy/cli/src/run-tui.ts` does not resolve, and `.claude/CLAUDE.md` says the root's declarations are visible to every package | One manifest line |
+| Final review: Biome's `noUndeclaredDependencies` is not enabled on this branch; it is a roadmap candidate | The root's development tools stay importable from every package until a later phase |
+| Final review, parked: `--memory` and `--edit-tags` load all of `@dorothy/tui` for its editor; a `./editor` entry point would change the spec | A slower editor launch |
 
 The plan also ruled, on the spec (the plan's Rulings on the spec section,
 reproduced here as they shaped the code):
@@ -231,17 +259,23 @@ reproduced here as they shaped the code):
 - **The recall server's entry loads in about 100 ms**, against about 230
   ms for memory's whole index, which is what `./recall-server` being its
   own entry point buys: every chat launches it as a subprocess.
-- **The credentials did not decrypt here.** Probing the ready session
-  probably needs the private key; the dump and the commands needed none.
+- **`ready` waits for the first turn.** A session reports `ready` on the
+  CLI's first `init`, which comes with the first message, so a launch with
+  nothing sent always reads `starting`. An earlier draft of this report
+  blamed the missing credentials; the code shows otherwise.
 
 ## Verification
 
-- `bun run check` passes with 1118 tests, up from 1106 at `1f821e7`. It
+- `bun run check` passes with 1119 tests, up from 1106 at `1f821e7`. It
   runs the typecheck, Biome, remark and yamllint, dotenvx's check and the
   em dash lint, then `bun test`.
 - **The package graph is pinned** by `workspace.test.ts`: who depends on
   whom, each package's entry points, the Agent SDK declared by `agent`
-  alone, and that each undeclared import fails to resolve.
+  alone, that each undeclared import fails to resolve, and that the CLI's
+  internals do not resolve from other packages.
+- **A failed transcript append reaches the screen's notices**: an
+  `openMemory` test makes the transcript unwritable and sees the warning
+  on `memory.notices` (`61bbdd5`), end to end.
 - **Tests retired**, with what replaced them:
   - the four boundary test files (`src/compaction/`, `src/history/`,
     `src/recall/` and `src/tui/boundary.test.ts`, 13 cases), by the
@@ -262,7 +296,9 @@ reproduced here as they shaped the code):
 
 ## Commits
 
-30 commits, oldest first, from the base `1f821e7`. Scopes follow
+38 commits after the plan commit `1f821e7`, oldest first; the spec, the
+diagram and the plan (`c2b5d5b`, `3efab0b`, `1f821e7`) came before them,
+and this revision of the report after. Scopes follow
 `.commitlintrc.mts`: `sdk` and `tui` while the code was still under `src/`,
 then the package names.
 
@@ -305,23 +341,40 @@ then the package names.
 - `4a5bef4` ai: Describe Dorothy by package
 - `fd5f20a` docs: Record the workspace packages
 
-This report and the roadmap's link to it follow.
+### The report (Task 17)
+
+- `2df293a` docs: Report the workspace packages
+- `7fbbfb3` docs: Hedge the workspace report's chat probe
+
+### The final review's fixes
+
+- `b522537` fix(cli): Export nothing so no subpath resolves
+- `5fac53d` ai: State what the isolated linker resolves
+- `fa63589` chore(config): Add the file header to entry points
+- `61bbdd5` test(memory): Pin a failed append's warning
+- `05cc8d1` docs: Correct the workspace report's base
+- `d112713` docs: Add the undeclared dependency check
 
 ## Known limitations
 
-One probe step is open, and no other limitation is known to block merge.
+One step is open, and no other limitation is known to block merge.
 Merging is the user's call once that step is done.
 
-- **The ready-session probe is open.** The dump shows that the Agent SDK's
-  CLI starts and launches the recall server under the isolated linker. It
-  goes through `previewStart` and `dumpRequest`, though, not through
-  `openMemory`'s `createSession` and `connect` or the streaming
-  `Conversation` that emits `ready`, so that wiring is unconfirmed live.
-  The remaining step, on a machine where `.env` decrypts: run
-  `bun run dev` (optionally with the four XDG variables pointed at a
-  temporary directory), wait for the model's name in the header, and quit
-  with Ctrl+D without sending a message. The hook, the quit and the
-  commands were probed live.
+- **A chat answering a message is unconfirmed.** The launch, the recall
+  server, the hook, the quit and the commands were seen live, but no
+  message was sent, so no turn ran through `openMemory`'s `createSession`
+  and `connect` and the streaming `Conversation`. The remaining step, on
+  a machine where `.env` decrypts: in `bun run dev`, send one short
+  message (a fraction of a cent); once the reply starts, the header
+  should show the model and the status `ready`.
+- **What the root declares is visible to every package.** Under the
+  isolated linker a package resolves its own declarations and the root's:
+  the development tools, and `@dorothy/cli`, which exports nothing. A check
+  such as Biome's `noUndeclaredDependencies` would close that; it is a
+  roadmap candidate.
+- **`--memory` and `--edit-tags` load all of `@dorothy/tui`** (about 130 to
+  190 ms) for its editor, since `tui` exports only `"."`; a `./editor`
+  entry point would change the spec.
 - **Minor review findings were left**, each judged safe:
   - `declared()` in the graph test ignores `peerDependencies` and
     `optionalDependencies`;
@@ -338,9 +391,10 @@ Merging is the user's call once that step is done.
   - `.claude/CLAUDE.md` names two different `commands.ts` files in
     neighbouring paragraphs, and its CLI paragraph lost "no argument
     opens the TUI, a prompt runs one-shot";
-  - the comment at `packages/memory/src/memory/open.test.ts:446` still
-    names `boundary.test.ts`.
-- **Follow-ups for later.** The roadmap's Candidates section gains three
-  from this work: memory's commands taking their dependencies
-  injected more widely, a single binary with `bun build --compile` from
-  `cli`, and a split of `memory` should it outgrow one package.
+  - a short wrapped line in `.claude/CLAUDE.md`, after its `zod`
+    sentence.
+- **Follow-ups for later.** The roadmap's Candidates section gains four
+  from this work: memory's commands taking their dependencies injected
+  more widely, a single binary with `bun build --compile` from `cli`, a
+  split of `memory` should it outgrow one package, and a check for
+  undeclared dependencies.
