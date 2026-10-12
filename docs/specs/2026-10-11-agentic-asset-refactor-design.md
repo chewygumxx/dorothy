@@ -182,7 +182,10 @@ subdirectories are the natural places for nested files.
 ### `docs/AGENTS.md`
 
 Where specs, plans, reports, notes and deferred findings go and how they
-are named (`YYYY-MM-DD-<topic>.md`, specs ending `-design.md`); the file
+are named: specs, plans and reports `YYYY-MM-DD-<topic>.md`, specs ending
+`-design.md`; notes and deferred findings `YYYY-MM-DD_<topic>.md`; a
+report's captured output in a directory beside it of the same name; the
+file
 header, frontmatter (`ctime`, `mtime`, `spdx`, `title`, `description`,
 `tags`) and breadcrumb; lines of at most 80 characters (remark enforces
 it); no wiki links; a report records probes, rulings and verification.
