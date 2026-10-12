@@ -146,7 +146,8 @@ In this order:
    - new subsystems stay independent of any provider's SDK, speaking
      standard protocols, with SDK types at a thin edge;
    - every new file carries the house header, copied from a sibling;
-     `lint:header` verifies it.
+     `lint:header` keeps headers in sync but only warns of a missing
+     one.
 5. Commits: granular Conventional Commits, single-line where that
    suffices, headers of at most 50 characters, no em dashes, no agent
    trailers; the scopes are the package names with `config`, `claude` and
