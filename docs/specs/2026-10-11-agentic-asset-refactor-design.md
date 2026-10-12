@@ -156,7 +156,10 @@ In this order:
    and where one names a different path or a worktree, these rules win.
 7. The roadmap: `docs/roadmap.md` orders the phases and is revised as its
    Revising section says once a phase merges.
-8. Agent memory is in `.agents/memory/`, indexed by its `MEMORY.md`.
+8. Agent memory is in `.agents/memory/`, indexed by its `MEMORY.md`. A
+   memory names another by its file name or links it as a relative
+   Markdown link, never as a `[[...]]` wiki link, whatever a client's own
+   memory instructions say; remark rejects one as an undefined reference.
 9. Before working in a package, read `packages/<name>/AGENTS.md`; before
    writing docs, `docs/AGENTS.md`.
 
@@ -324,8 +327,9 @@ The other plugins come out:
   as `"lint:header": "sync-header-metadata"`, in `check`, and as
   `"format:header": "sync-header-metadata --update"`. Its verify mode
   passes on the repository today, warning only of files without a header.
-- `repo-memory`: see Agent memory; its ban on wiki links in memory moves
-  to `agents.test.ts`.
+- `repo-memory`: see Agent memory. Wiki links in memory need no plugin:
+  `lint:md` already fails `[[...]]` in any tracked Markdown file, through
+  remark's `no-undefined-references`.
 
 ## `agents.test.ts`
 
@@ -343,7 +347,6 @@ It pins, failing with what to fix:
   `SKILL.md` whose `name` is the directory's, and no excluded skill
   linked; a remote skill (herdr) is checked the same way only where it is
   installed, so CI needs no fetch;
-- no `[[...]]` wiki link in `.agents/memory/`;
 - `.claude/settings.json`'s `enabledPlugins`, exactly, so a plugin added
   later is a decision a review sees.
 
