@@ -19,6 +19,7 @@
         "scripts/**/*.mjs",
         "packages/*/src",
         "test-setup.ts",
+        "agents.test.ts",
         "workspace.test.ts"
     ]
 }

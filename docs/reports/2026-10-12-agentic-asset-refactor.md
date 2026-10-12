@@ -34,6 +34,39 @@ Written last.
 any change but the spec's and plan's: 249 files parsed, 213 breadcrumbs
 correct, none out of sync, 36 files without one (warnings only). Exit 0.
 
+### The skills
+
+`bun install` under the isolated linker installed superpowers from GitHub,
+pinned in `bun.lock` to its tag's commit
+(`+ superpowers@github:obra/superpowers#b92c4fa`), and `prepare`'s sync
+found its skills in `node_modules`: "Found 11 skills in node_modules",
+the four excluded never offered. Each landed as a link,
+`.agents/skills/<name>` into `node_modules/superpowers/skills/<name>` and
+`.claude/skills/<name>` into `.agents/skills/<name>`, and the lock records
+eleven `node_modules` entries with superpowers' version, 6.4.1.
+
+The first `bun run skills` skipped herdr: "installed with `skills add`
+from herdrdev/herdr". The sync claims only the remote skills it installed
+itself, marked by a `via` field, and the lock's herdr entry came from the
+hand-made install of 2026-10-09. With that entry deleted, the sync
+installed herdr and recorded it with `"via": "."`.
+
+The remote's behaviour, captured in `sync.txt` with the CLI's spinner and
+colour codes stripped and its em dashes made hyphens, as the repository
+allows none:
+
+- With herdr removed, `bun run skills --no-remote` synced the eleven and
+  kept herdr's lock entry, and `bun test agents.test.ts` passed with
+  herdr's test skipped (`1 skip`, `0 fail`), as in CI.
+- `bun run skills` then cloned herdrdev/herdr and installed it
+  ("Installed herdr from herdrdev/herdr").
+- Run again with herdr present, it fetched nothing: the eleven synced,
+  and no clone.
+
+`prepare` with its sync replaced by `false` exits 1, so a failing sync
+fails `bun install`; with husky's directory absent and the sync replaced
+by `true` it exits 0, so a missing husky does not.
+
 ## Measurements
 
 A one-word prompt (`claude -p --output-format json "hi"`), from the root

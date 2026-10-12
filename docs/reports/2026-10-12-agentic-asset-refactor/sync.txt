@@ -1,0 +1,79 @@
+$ bun run skills --no-remote
+$ DO_NOT_TRACK=1 skills experimental_sync -y --agent claude-code codex --exclude 'superpowers#using-git-worktrees' --exclude 'superpowers#using-superpowers' --exclude 'superpowers#diagnosing-superpowers' --exclude 'superpowers#writing-skills' --no-remote
+●   claude-code_2-1-296_agent  Agent detected - installing non-interactively
+◇  Found 11 skills in node_modules
+●  systematic-debugging from superpowers
+●  verification-before-completion from superpowers
+●  subagent-driven-development from superpowers
+●  writing-plans from superpowers
+●  brainstorming from superpowers
+●  finishing-a-development-branch from superpowers
+●  test-driven-development from superpowers
+●  receiving-code-review from superpowers
+●  dispatching-parallel-agents from superpowers
+●  requesting-code-review from superpowers
+●  executing-plans from superpowers
+◇  Sync Summary ───────────────────────────────────────────────────────────────╮
+├──────────────────────────────────────────────────────────────────────────────╯
+◇  Sync complete
+◇  Synced 11 skills ──────────────────────────────────────────────╮
+├─────────────────────────────────────────────────────────────────╯
+└  Done!  Review skills before use; they run with full agent permissions.
+$ jq .skills.herdr skills-lock.json
+{
+  "source": "herdrdev/herdr",
+  "sourceType": "github",
+  "skillPath": "skills/herdr/SKILL.md",
+  "computedHash": "66715d76e5947497431ec0db32f2693b9c916ad799c3f32b99e6174b4b9c607f",
+  "via": "."
+}
+$ bun test agents.test.ts
+ 1 skip
+ 0 fail
+ 51 expect() calls
+Ran 16 tests across 1 file. [8.00ms]
+$ bun run skills
+$ DO_NOT_TRACK=1 skills experimental_sync -y --agent claude-code codex --exclude 'superpowers#using-git-worktrees' --exclude 'superpowers#using-superpowers' --exclude 'superpowers#diagnosing-superpowers' --exclude 'superpowers#writing-skills'
+●   claude-code_2-1-296_agent  Agent detected - installing non-interactively
+◇  Found 11 skills in node_modules
+●  systematic-debugging from superpowers
+●  verification-before-completion from superpowers
+●  subagent-driven-development from superpowers
+●  writing-plans from superpowers
+●  brainstorming from superpowers
+●  finishing-a-development-branch from superpowers
+●  test-driven-development from superpowers
+●  receiving-code-review from superpowers
+●  dispatching-parallel-agents from superpowers
+●  requesting-code-review from superpowers
+●  executing-plans from superpowers
+◇  Sync Summary ───────────────────────────────────────────────────────────────╮
+├──────────────────────────────────────────────────────────────────────────────╯
+◇  Sync complete
+◒  Cloning repository…◐  Cloning repository…◓  Cloning repository…◑  Cloning repository…◒  Cloning repository…◐  Cloning repository…◓  Cloning repository…◑  Cloning repository…◒  Cloning repository….◐  Cloning repository….◓  Cloning repository….◑  Cloning repository….◒  Cloning repository….◐  Cloning repository….◓  Cloning repository….◑  Cloning repository….◒  Cloning repository…..◐  Cloning repository…..◓  Cloning repository…..◑  Cloning repository…..◒  Cloning repository…..◐  Cloning repository…..◓  Cloning repository…..◑  Cloning repository…..◒  Cloning repository…...◐  Cloning repository…...◓  Cloning repository…...◑  Cloning repository…...◒  Cloning repository…...◐  Cloning repository…...◇  Repository cloned
+◇  Found 1 skill
+◆  Installed herdr from herdrdev/herdr
+◇  Synced 11 skills ──────────────────────────────────────────────╮
+├─────────────────────────────────────────────────────────────────╯
+└  Done!  Review skills before use; they run with full agent permissions.
+$ bun run skills   # again, with herdr present
+$ DO_NOT_TRACK=1 skills experimental_sync -y --agent claude-code codex --exclude 'superpowers#using-git-worktrees' --exclude 'superpowers#using-superpowers' --exclude 'superpowers#diagnosing-superpowers' --exclude 'superpowers#writing-skills'
+●   claude-code_2-1-296_agent  Agent detected - installing non-interactively
+◇  Found 11 skills in node_modules
+●  systematic-debugging from superpowers
+●  verification-before-completion from superpowers
+●  subagent-driven-development from superpowers
+●  writing-plans from superpowers
+●  brainstorming from superpowers
+●  finishing-a-development-branch from superpowers
+●  test-driven-development from superpowers
+●  receiving-code-review from superpowers
+●  dispatching-parallel-agents from superpowers
+●  requesting-code-review from superpowers
+●  executing-plans from superpowers
+◇  Sync Summary ───────────────────────────────────────────────────────────────╮
+├──────────────────────────────────────────────────────────────────────────────╯
+◇  Sync complete
+◇  Synced 11 skills ──────────────────────────────────────────────╮
+├─────────────────────────────────────────────────────────────────╯
+└  Done!  Review skills before use; they run with full agent permissions.

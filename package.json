@@ -37,7 +37,9 @@
         "husky": "^9.1.7",
         "prettier": "^3.9.9",
         "remark-cli": "^12.0.1",
-        "typescript": "^7.0.2"
+        "typescript": "^7.0.2",
+        "skills": "1.7.2",
+        "superpowers": "github:obra/superpowers#v6.4.1"
     },
     "scripts": {
         "check": "bun run typecheck && bun run format:check && bun run lint && bun run lint:md && bun run lint:yaml && bun run lint:env && bun run lint:emdash && bun run test",
@@ -51,7 +53,8 @@
         "lint:env": "git ls-files -z -- ':(glob)**/.env*' ':(glob)**/*.env' | xargs -0 -r -n1 sh -c 'dotenvx protect --git-file \"$1\" <\"$1\" >/dev/null' sh",
         "lint:md": "git ls-files -z '*.md' | xargs -0 remark --frail --quiet --no-stdout",
         "lint:yaml": "git ls-files -z '*.yaml' '*.yml' | xargs -0 -r prettier --check && git ls-files -z '*.yaml' '*.yml' | YAMLLINT_CONFIG_FILE=node_modules/@chewygumxx/yamllint-config/config.yaml xargs -0 -r yamllint --strict",
-        "prepare": "test -d node_modules/husky && husky || true",
+        "prepare": "{ test -d node_modules/husky && husky || true; } && bun run skills --no-remote",
+        "skills": "DO_NOT_TRACK=1 skills experimental_sync -y --agent claude-code codex --exclude 'superpowers#using-git-worktrees' --exclude 'superpowers#using-superpowers' --exclude 'superpowers#diagnosing-superpowers' --exclude 'superpowers#writing-skills'",
         "start": "bun packages/cli/src/index.ts",
         "test": "bun test",
         "typecheck": "tsc"
@@ -61,6 +64,14 @@
             "path": "@chewygumxx/cz-commitlint"
         }
     },
+    "skills": [
+        {
+            "source": "herdrdev/herdr",
+            "skills": [
+                "herdr"
+            ]
+        }
+    ],
     "remarkConfig": {
         "plugins": [
             "@chewygumxx/remark-preset"
