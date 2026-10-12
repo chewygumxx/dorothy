@@ -93,7 +93,9 @@ packages/cli/AGENTS.md         ┘
 skills-lock.json               the skills CLI's lock, committed
 ```
 
-`.claude/CLAUDE.md` and `.claude/memory/` go.
+`.claude/CLAUDE.md` and `.claude/memory/` go, and so do the worktree
+leftovers, `.worktreeinclude` and the `/.claude/worktrees/` ignore, as
+this repository works on plain branches.
 
 ## Guidance
 
@@ -374,11 +376,13 @@ One branch, in this order, each step a commit or a few:
    the ignores, `skills-lock.json`; the untracked herdr install is
    replaced by the declared one.
 4. Guidance: the five package files, `docs/AGENTS.md`, the root; delete
-   `.claude/CLAUDE.md`.
+   `.claude/CLAUDE.md`, and point `README.md`'s mention of it at the
+   root `AGENTS.md`.
 5. Memory: move to `.agents/memory/`, retire the three, update the index;
    repoint `autoMemoryDirectory`.
 6. Settings: reduce `.claude/settings.json`; add the husky hooks; add
-   `sync-header-metadata` and its scripts.
+   `sync-header-metadata` and its scripts; delete the worktree
+   leftovers.
 7. The roadmap's Revising step, and the phase moved to Done.
 8. Measure again, and write the report.
 
