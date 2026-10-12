@@ -66,8 +66,9 @@ client runs them, so this phase writes them for any client and any model.
 - **Third-party skills are dependencies.** Superpowers and herdr are
   declared in `package.json`, recorded in `bun.lock` and
   `skills-lock.json`, and linked into `.agents/skills/` and
-  `.claude/skills/` by the `skills` CLI on every install. Nothing
-  upstream is committed.
+  `.claude/skills/` by the `skills` CLI: superpowers on every install,
+  herdr, a remote source, by `bun run skills`. Nothing upstream is
+  committed.
 - **Memory under `.agents/`.** Agent memory moves from `.claude/memory/`
   to `.agents/memory/`.
 - **Plugins only where nothing neutral exists.** A rule a plugin enforces
@@ -130,7 +131,8 @@ In this order:
    `package.json` only, the isolated linker, and `workspace.test.ts`.
 3. Commands: `bun run check`, `bun run dev`, `bun run test`, the clean
    reinstall (`rm -rf node_modules packages/*/node_modules && bun
-   install`), and that there is no build.
+   install`), `bun run skills` to fetch the remote skills a fresh
+   checkout lacks, and that there is no build.
 4. Working rules, which no check enforces:
    - plain branches in the main checkout, never worktrees;
    - tests and probes never touch real user data (`$XDG_DATA_HOME/dorothy`
