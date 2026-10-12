@@ -88,10 +88,11 @@ work found along the way where it serves best.
 
 ## Memory
 
-Agent memory is in `.agents/memory/`, indexed by its `MEMORY.md`. A memory
-names another by its file name or a relative Markdown link, never a
-`[[...]]` wiki link, whatever a client's own memory instructions say;
-remark rejects one.
+Agent memory is in `.agents/memory/`, indexed by its `MEMORY.md`, each
+entry a list item linking `./<name>.md`, its hook on the next line. Link
+memories by relative Markdown link, never `[[...]]`, and write no em dash
+and no line over 80 characters, whatever a client's own memory
+instructions say: remark and `lint:emdash` reject them.
 
 ## Before you start
 

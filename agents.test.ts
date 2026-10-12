@@ -206,18 +206,26 @@ describe("the root's guidance", () => {
 
 const MEMORY = at(".agents/memory");
 
+// The memories an index links, as `./name.md` (the house form) or as
+// `name.md` (the form Claude Code's own memory instructions write).
+const indexEntries = (index: string): string[] =>
+    [...index.matchAll(/\]\((?:\.\/)?([^)/]+\.md)\)/g)]
+        .map((match) => match[1] as string)
+        .sort();
+
 describe("agent memory", () => {
     it("lives in .agents/memory, not .claude/memory", () => {
         expect(existsSync(join(MEMORY, "MEMORY.md"))).toBe(true);
         expect(existsSync(at(".claude/memory"))).toBe(false);
     });
 
+    it("reads index entries linked with or without ./", () => {
+        const index = "- [A](./a.md)\n  a hook\n- [B](b.md) a hook\n";
+        expect(indexEntries(index)).toEqual(["a.md", "b.md"]);
+    });
+
     it("indexes every memory there, and nothing else", () => {
-        const indexed = [
-            ...read(join(MEMORY, "MEMORY.md")).matchAll(/\]\(\.\/([^)]+)\)/g),
-        ]
-            .map((match) => match[1] as string)
-            .sort();
+        const indexed = indexEntries(read(join(MEMORY, "MEMORY.md")));
         const memories = readdirSync(MEMORY)
             .filter((name) => name.endsWith(".md") && name !== "MEMORY.md")
             .sort();
