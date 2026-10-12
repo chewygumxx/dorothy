@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-11
-mtime: 2026-10-11
+mtime: 2026-10-12
 spdx: GPL-3.0-only
 title: Agentic asset refactor design
 description: >-
@@ -68,8 +68,7 @@ client runs them, so this phase writes them for any client and any model.
   and linked into `.agents/skills/` and `.claude/skills/` by the `skills`
   CLI on every install. Nothing upstream is committed.
 - **Memory under `.agents/`.** Agent memory moves from `.claude/memory/`
-  to `.agents/memory/`; the remember plugin's buffers move to
-  `.agents/remember/`.
+  to `.agents/memory/`.
 - **Plugins only where nothing neutral exists.** A rule a plugin enforces
   is enforced where commits happen, by husky, CI or a test; a plugin may
   remain as a courtesy on top, never as the only guard.
@@ -88,13 +87,12 @@ packages/tui/AGENTS.md         │
 packages/cli/AGENTS.md         ┘
 .agents/skills/<name>          linked by the skills CLI, gitignored
 .agents/memory/                agent memory, committed
-.agents/remember/              remember buffers, gitignored
 .claude/settings.json          Claude-only settings, reduced
 .claude/skills/<name>          linked by the skills CLI, gitignored
 skills-lock.json               the skills CLI's lock, committed
 ```
 
-`.claude/CLAUDE.md`, `.claude/memory/` and the root `/.remember/` go.
+`.claude/CLAUDE.md` and `.claude/memory/` go.
 
 ## Guidance
 
@@ -254,9 +252,9 @@ installed with its own `LICENSE` rather than copied, no notice is needed.
 A skill the repository writes itself later is committed and linted, with
 a negation in `.gitignore`.
 
-The superpowers plugin stays enabled in the user's settings for other
-projects; this project's `.claude/settings.json` disables it, so no skill
-is listed twice.
+This project's `.claude/settings.json` disables the superpowers plugin,
+so enabling it in the user's settings for other projects never lists a
+skill twice here.
 
 ## Agent memory
 
@@ -271,12 +269,6 @@ is listed twice.
   `.claude/settings.local.json`, set once to `.agents/memory/`'s absolute
   path. The repo-memory plugin, which rewrote it to `.claude/memory` at
   every session start, is disabled here.
-- The remember plugin resolves its directory from `data_dir`, which only
-  `~/.remember/config.json` can set for a project, as the per-project
-  config lives inside the directory it names. The user sets `"data_dir":
-  ".agents/remember"` there, for every project, and moves the buffers;
-  `.gitignore` gains `/.agents/remember/`, and `/.remember/` goes once
-  the buffers have moved.
 
 ## Claude's settings
 
@@ -292,10 +284,14 @@ and four plugin entries:
 
 The other plugins come out:
 
-- `claude-code-setup`, `claude-md-management`, `code-simplifier`,
-  `explanatory-output-style` and `remember` are enabled in the user's
-  settings already; listing them here changes nothing, and they are the
-  user's workflow rather than the repository's.
+- `claude-code-setup`, `claude-md-management`, `code-simplifier` and
+  `explanatory-output-style` are the user's workflow rather than the
+  repository's. None is enabled at user scope today, so the user enables
+  the four in their own settings before the baseline; removing them here
+  then changes nothing.
+- `remember` comes out with nothing in its place: agent memory carries
+  what persists. Its buffers in the root `/.remember/` stay as they are,
+  gitignored and no longer written in this repository.
 - `github-mcp` defines the same server as the tracked `.mcp.json`.
 - `prohibit-em-dash`: `.husky/pre-commit` already rejects staged em
   dashes, and `lint:emdash` checks in CI.
@@ -340,8 +336,9 @@ Before any change, and again at the end, a one-word prompt runs through
 `claude -p --output-format json` from the root and from
 `packages/tui/src/`, with the user's settings as they are, and the report
 records the input and cache tokens of the first request, beside the
-session start's wall time. The same is noted for Codex if it is
-installed.
+session start's wall time and the plugins `claude plugin list` shows
+enabled, since two measurements compare only under the same user
+settings. The same is noted for Codex if it is installed.
 
 ## Migration
 
@@ -355,7 +352,7 @@ One branch, in this order, each step a commit or a few:
 4. Guidance: the five package files, `docs/AGENTS.md`, the root; delete
    `.claude/CLAUDE.md`.
 5. Memory: move to `.agents/memory/`, retire the three, update the index;
-   repoint `autoMemoryDirectory`; ignore `/.agents/remember/`.
+   repoint `autoMemoryDirectory`.
 6. Settings: reduce `.claude/settings.json`; add the husky hooks; add
    `sync-header-metadata` and its scripts.
 7. The roadmap's Revising step, and the phase moved to Done.
@@ -411,6 +408,7 @@ Revised with this spec:
 
 - Dorothy's own guidance in development mode: she reads these files once
   the gateway puts her behind a client.
-- The user's own settings and plugins, beyond the two settings this
-  phase needs (`data_dir`, `autoMemoryDirectory`).
+- The user's own settings and plugins, beyond enabling the four workflow
+  plugins at user scope and setting `autoMemoryDirectory`.
+- The remember plugin, which this repository no longer enables.
 - Upgrading superpowers to v7.
