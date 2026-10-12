@@ -274,7 +274,10 @@ gitignored (`/.agents/skills/` and `/.claude/skills/`), so upstream's text
 never meets this repository's lints, and since upstream's package is
 installed with its own `LICENSE` rather than copied, no notice is needed.
 A skill the repository writes itself later is committed and linted, with
-a negation in `.gitignore`.
+a negation in `.gitignore`. `skills-lock.json` is the CLI's output,
+indented by two spaces where Biome formats by four, so `.biome.json`
+leaves it out of formatting rather than every sync leaving
+`format:check` failing.
 
 This project's `.claude/settings.json` disables the superpowers plugin,
 so enabling it in the user's settings for other projects never lists a
