@@ -52,7 +52,12 @@ client runs them, so this phase writes them for any client and any model.
 
 - **`AGENTS.md`, natively.** Claude Code reads `AGENTS.md` itself since
   v2.1.277: the root's at launch, and a subdirectory's when it opens a
-  file there, provided no `CLAUDE.md` is found. Codex reads `AGENTS.md`
+  file there, provided no `CLAUDE.md` is found. In 2.1.296 this is the
+  built-in `cc-plugin-agents-md`, whose default mode
+  (`claude-md-or-agents-md`) gives a project with no `CLAUDE.md`,
+  `.claude/CLAUDE.md` or `CLAUDE.local.md` of its own its `AGENTS.md`
+  files, loaded where and how `CLAUDE.md` would be; the user's own
+  `CLAUDE.md` does not count. Codex reads `AGENTS.md`
   from the repository root down to its working directory. So the guidance
   is a root `AGENTS.md` plus one per package and one in `docs/`, and
   `.claude/CLAUDE.md` is deleted. A `CLAUDE.md` anywhere above the working
@@ -448,6 +453,11 @@ Revised with this spec:
   themselves defer to user instructions.
 - **Older Claude Code.** Before v2.1.277, and in some sessions it lists,
   Claude Code reads no `AGENTS.md`. The user runs 2.1.296.
+- **A remote switch.** The built-in plugin is available behind a feature
+  flag (`tengu_agents_md_mod`, on by default), so Anthropic could turn it
+  off. A session would then load no guidance at all. The report's probe
+  catches it; the fallback is a root `CLAUDE.md` importing `@AGENTS.md`,
+  which loses the per-package files' loading on demand.
 
 ## Later
 
