@@ -1,0 +1,11 @@
+$ root: commit type for agent assets
+`ai`
+$ nested: read a tui file
+mentions of packages/tui/AGENTS.md in the stream: 0
+mentions in the session's transcript: 1
+$ the transcript entry naming it
+hook_additional_context, hook tool.call on PostToolUse; its content opens:
+Contents of /home/chewygumxx/dev/dorothy/packages/tui/AGENTS.md:
+
+# packages/tui/AGENTS.md
+
