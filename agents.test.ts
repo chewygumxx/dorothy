@@ -235,3 +235,24 @@ describe("agent memory", () => {
         });
     });
 });
+
+// Each stays because nothing neutral does its job, and is declared here
+// rather than left to a user's settings; a plugin added later is a
+// decision a review sees.
+const PLUGINS = {
+    "agent-sdk-dev@claude-plugins-official": true,
+    "claude-code-setup@claude-plugins-official": true,
+    "claude-md-management@claude-plugins-official": true,
+    "code-simplifier@claude-plugins-official": true,
+    "explanatory-output-style@claude-plugins-official": true,
+    "repo-metadata@chewygumxx": true,
+    "superpowers@claude-plugins-official": false,
+    "typescript-lsp@claude-plugins-official": true,
+};
+
+describe("Claude's settings", () => {
+    it("enables exactly the agreed plugins", () => {
+        const settings = JSON.parse(read(at(".claude/settings.json")));
+        expect(settings.enabledPlugins).toEqual(PLUGINS);
+    });
+});
