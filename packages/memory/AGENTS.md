@@ -51,7 +51,8 @@ is the only file importing `@modelcontextprotocol/sdk`.
   (`review.ts`, `scheduler.ts`): one-shot calls that never block the chat.
   `track.ts`'s `trackMemory` decorates the `ChatSession`, so `App` sees
   only notices. `rank.ts`, `block.ts`, `edit-view.ts` and `list.ts` are
-  pure; `commands.ts` has `--list` and `--memory`.
+  pure; `commands.ts` has `--list`, `--memory`, `--tags` and
+  `--edit-tags`.
 - `memory/vocabulary.ts`, `tagging.ts`, `tags-view.ts`: tags, a SKOS-style
   vocabulary in `tags.json` (concepts with `prefLabel`, `altLabel`,
   `broader` and `scopeNote`, and the tombstones of deleted and merged
@@ -66,9 +67,10 @@ is the only file importing `@modelcontextprotocol/sdk`.
   into the sidecar, and `salience()` (`rank.ts`) weighs appraised reads
   with visits.
 - `compaction/`: past `[compaction] soft` tokens, at the next idle (past
-  `hard`, before the next message), `compact()` splits the turns before
-  the verbatim tail into topical clusters with an abstract each
-  (`clusters.ts`, `plan.ts`). `Compaction` (`session.ts`) wraps the
+  `hard`, before the next message), `compact()` (`compact.ts`) splits the
+  turns before the verbatim tail into topical clusters with an abstract
+  each: the prompt and its checks in `clusters.ts`, the turns' ranges and
+  pressure in `plan.ts`. `Compaction` (`session.ts`) wraps the
   session; a pass (`run.ts`, on `shared.ts`'s state) appends the clusters
   to the sidecar, writes a `compaction` transcript event, and swaps in a
   session seeded with the abstracts and the turns after them.
