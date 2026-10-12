@@ -16,10 +16,15 @@ import { describe, expect, it } from "bun:test";
 import {
     existsSync,
     lstatSync,
+    mkdtempSync,
     readdirSync,
     readFileSync,
     realpathSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import { withMemoryDirectory } from "./scripts/agent-memory.js";
 
@@ -72,7 +77,8 @@ const BUDGET = { docs: 60, package: 150, root: 100 };
 
 const lines = (path: string) => read(path).trimEnd().split("\n").length;
 
-// Every file beneath a directory, skipping dependencies, git and links.
+// Every file and link beneath a directory, skipping dependencies and git,
+// and never following a link into a directory.
 const walk = (dir: string, found: string[] = []): string[] => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
         if (entry.name === "node_modules" || entry.name === ".git") {
@@ -81,7 +87,7 @@ const walk = (dir: string, found: string[] = []): string[] => {
         const path = join(dir, entry.name);
         if (entry.isDirectory()) {
             walk(path, found);
-        } else if (entry.isFile()) {
+        } else if (entry.isFile() || entry.isSymbolicLink()) {
             found.push(path);
         }
     }
@@ -194,6 +200,20 @@ describe("the root's guidance", () => {
             ...brokenLinks(at("AGENTS.md")),
             ...brokenLinks(at("docs/AGENTS.md")),
         ]).toEqual([]);
+    });
+
+    // `ln -s AGENTS.md CLAUDE.md` is the usual way one comes back.
+    it("finds a CLAUDE.md that is a link", () => {
+        const dir = mkdtempSync(join(tmpdir(), "agents-walk-"));
+        try {
+            writeFileSync(join(dir, "AGENTS.md"), "# AGENTS.md\n");
+            symlinkSync("AGENTS.md", join(dir, "CLAUDE.md"));
+            expect(walk(dir).map((path) => basename(path))).toContain(
+                "CLAUDE.md",
+            );
+        } finally {
+            rmSync(dir, { recursive: true });
+        }
     });
 
     it("leaves no CLAUDE.md to switch them off", () => {
