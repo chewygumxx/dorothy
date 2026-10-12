@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-10-11
+mtime: 2026-10-12
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -53,9 +53,10 @@ In order; the first is next.
 Move the agent guidance into a root `AGENTS.md` and one per package, read
 on demand by every coding agent; declare third-party skills as
 dependencies linked for every agent; and move agent memory to `.agents/`.
-Spec: [agentic asset refactor](./specs/2026-10-11-agentic-asset-refactor-design.md).
+Spec: [agentic asset refactor](./specs/2026-10-11-agentic-asset-refactor-design.md),
+plan: [agentic asset refactor](./plans/2026-10-12-agentic-asset-refactor.md).
 
-- **Status**: Specified, Pending Plan
+- **Status**: Planned, Pending Execution
 - **Required**: Requisites Fulfilled
 - **Rationale**: Context window growth and token consumption rate are far too
   high with respect to the size of this repository and projected work
