@@ -35,10 +35,11 @@ from `.agents/`, and a session in it costs fewer input tokens than today.
 `AGENTS.md`, `docs/AGENTS.md` and one per package, which Claude Code and
 Codex read natively. Superpowers and herdr become dependencies that the
 `skills` CLI links into `.agents/skills/` and `.claude/skills/` on
-install. Agent memory moves to `.agents/memory/`. Claude's settings keep
-four plugins, and husky and `sync-header-metadata` take over what the
-others did. One root test, `agents.test.ts`, grows a section per task and
-pins the result.
+install. Agent memory moves to `.agents/memory/`, and `prepare` points
+Claude Code at it. Claude's settings keep only plugins with no neutral
+form, declared rather than left to a user's settings; husky and
+`sync-header-metadata` take over what the others did. One root test,
+`agents.test.ts`, grows a section per task and pins the result.
 
 **Tech Stack:** Bun 1.4 (`bun test`, isolated linker, lifecycle scripts),
 the `skills` CLI 1.7.2 (`experimental_sync`), superpowers 6.4.1, husky 9,
@@ -69,16 +70,17 @@ Biome 2.5, remark, `sync-header-metadata` 2.4.2, Claude Code 2.1.296.
 - Excluded skills, exactly: `using-git-worktrees`, `using-superpowers`,
   `diagnosing-superpowers`, `writing-skills`.
 - `.claude/settings.json`'s `enabledPlugins`, exactly:
-  `superpowers@claude-plugins-official: false`,
-  `typescript-lsp@claude-plugins-official: true`,
-  `agent-sdk-dev@claude-plugins-official: true`,
-  `repo-metadata@chewygumxx: true`.
+  `superpowers@claude-plugins-official: false`, and `true` for
+  `typescript-lsp`, `agent-sdk-dev`, `claude-code-setup`,
+  `claude-md-management`, `code-simplifier`, `explanatory-output-style`
+  (all `@claude-plugins-official`) and `repo-metadata@chewygumxx`.
 - `agents.test.ts` reads only the repository; it touches neither user
   data nor the network.
-- The user's own settings change only by the user's hand: they enable the
-  four workflow plugins at user scope (Task 1). The one setting this plan
-  writes outside the tracked tree is `autoMemoryDirectory` in the
-  gitignored `.claude/settings.local.json` (Task 5).
+- The agentic assets and utilities the repository employs are declared
+  in it; nothing relies on a user's own settings or a hand-made step. The
+  user's settings are never changed. The one file outside the tracked
+  tree this plan writes is the gitignored `.claude/settings.local.json`,
+  and only through `scripts/agent-memory.ts` (Task 5).
 - Do not save agent memories while executing this plan: the session's
   memory directory is fixed when it starts, and a write would recreate
   `.claude/memory/` after Task 5 moves it.
@@ -105,7 +107,7 @@ Biome 2.5, remark, `sync-header-metadata` 2.4.2, Claude Code 2.1.296.
 | --- | --- | --- |
 | `docs/reports/2026-10-12-agentic-asset-refactor.md` (+ dir) | 1, 2, 8 | Probes, measurements, rulings, verification |
 | `agents.test.ts` | 2 to 6 | Pins the layout, budgets, links, skills, memory, plugins |
-| `tsconfig.json` | 2 | Includes `agents.test.ts` |
+| `tsconfig.json` | 2, 5 | Includes `agents.test.ts` and `scripts/**/*.ts` |
 | `package.json`, `bun.lock` | 2, 6 | The skills, the sync, `prepare`, `lint:header` |
 | `skills-lock.json` | 2 | The skills CLI's lock, committed |
 | `.biome.json` | 2 | Leaves `skills-lock.json` out of formatting |
@@ -115,7 +117,8 @@ Biome 2.5, remark, `sync-header-metadata` 2.4.2, Claude Code 2.1.296.
 | `.claude/CLAUDE.md` | 4 | Deleted |
 | `README.md` | 4 | Points at `AGENTS.md` |
 | `.agents/memory/` | 5 | Agent memory, moved from `.claude/memory/` |
-| `.claude/settings.json` | 5, 6 | Four plugins |
+| `.claude/settings.json` | 5, 6 | Eight plugin entries |
+| `scripts/agent-memory.ts` | 5 | Writes `autoMemoryDirectory` on install |
 | `.husky/post-checkout`, `.husky/post-merge` | 6 | Reinstall on dependency changes |
 | `.worktreeinclude` | 6 | Deleted |
 | `docs/roadmap.md` | 7 | Revising step, phase to Done |
@@ -137,21 +140,7 @@ Biome 2.5, remark, `sync-header-metadata` 2.4.2, Claude Code 2.1.296.
   `## Verification`, `## Commits`, `## Known limitations`), which Tasks 2
   and 8 fill; `before-*.json` and `plugins-before.txt` in its directory.
 
-- [ ] **Step 1: Have the user enable the four workflow plugins**
-
-They are installed at user scope but disabled, and the spec has the user
-enable them before the baseline. Ask the user to run, as `!` commands:
-
-```sh
-claude plugin enable claude-code-setup@claude-plugins-official --scope user
-claude plugin enable claude-md-management@claude-plugins-official --scope user
-claude plugin enable code-simplifier@claude-plugins-official --scope user
-claude plugin enable explanatory-output-style@claude-plugins-official --scope user
-```
-
-Do not run them yourself, and do not enable `remember`.
-
-- [ ] **Step 2: Record the enabled plugins**
+- [ ] **Step 1: Record the enabled plugins**
 
 ```sh
 R=docs/reports/2026-10-12-agentic-asset-refactor
@@ -162,10 +151,11 @@ mkdir -p "$R"
 cat "$R/plugins-before.txt"
 ```
 
-Expected: the four above at user scope show `enabled`; `remember` does
-not. If a line is missing, return to Step 1.
+Expected: one line per plugin, scope and state. The user's own plugins
+are left as they are; the listing records them so Task 8 can show the
+two measurements ran under the same settings.
 
-- [ ] **Step 3: Measure from the root and from a package**
+- [ ] **Step 2: Measure from the root and from a package**
 
 ```sh
 R=docs/reports/2026-10-12-agentic-asset-refactor
@@ -188,7 +178,7 @@ Expected: each file holds `usage.input_tokens`,
 and `num_turns` is 1. If `num_turns` is above 1, note it: the usage then
 spans more than the first request.
 
-- [ ] **Step 4: Begin the report**
+- [ ] **Step 3: Begin the report**
 
 Write `docs/reports/2026-10-12-agentic-asset-refactor.md`:
 
@@ -253,10 +243,10 @@ Plugins enabled before: `plugins-before.txt`. Codex: not installed.
 
 Fill the two Before rows from `before-root.json` and `before-tui.json`
 (`input_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`,
-`wall_ms`). If Step 3 found Codex, replace "Codex: not installed" with its
+`wall_ms`). If Step 2 found Codex, replace "Codex: not installed" with its
 numbers, measured with `codex exec "hi"` from the same two directories.
 
-- [ ] **Step 5: Lint and commit**
+- [ ] **Step 4: Lint and commit**
 
 ```sh
 bunx --bun --no-install remark --frail --quiet --no-stdout \
@@ -1204,7 +1194,7 @@ Expected: FAIL: the budget tests with `ENOENT` for `AGENTS.md` and
 
 - [ ] **Step 3: Write the two files**
 
-Create each exactly as below (root 97 lines, docs 43; linted).
+Create each exactly as below (root 99 lines, docs 43; linted).
 
 `AGENTS.md`:
 
@@ -1269,6 +1259,8 @@ SDK's single holder, `agent`.
   never `gh repo edit`.
 - New subsystems stay independent of any model provider's SDK, speaking
   standard protocols, with SDK types at a thin edge.
+- Declare in this repository every agentic asset and utility it employs;
+  never leave one to a user's own settings or a hand-made step.
 - Every new file carries the house header, copied from a sibling;
   `lint:header` keeps headers in sync but only warns of a missing one.
 - A change to a package's architecture updates its `AGENTS.md` in the
@@ -1421,13 +1413,21 @@ EOF
 - Modify: `.agents/memory/MEMORY.md`,
   `.agents/memory/maintenance-design-agreed.md` (breadcrumb),
   `.claude/settings.json` (`repo-memory` out), `agents.test.ts`
-- Modify, not committed: `.claude/settings.local.json`
+- Create: `scripts/agent-memory.ts`
+- Modify: `package.json` (`prepare`), `tsconfig.json` (`include`)
+- Written by the script, never committed: `.claude/settings.local.json`
 
 **Interfaces:**
 
 - Consumes: `at`, `read` from Task 2.
 
 - [ ] **Step 1: Write the failing test**
+
+Add to `agents.test.ts`'s imports:
+
+```ts
+import { withMemoryDirectory } from "./scripts/agent-memory.js";
+```
 
 At the end of `agents.test.ts`, add:
 
@@ -1451,13 +1451,25 @@ describe("agent memory", () => {
             .sort();
         expect(indexed).toEqual(memories);
     });
+
+    it("points auto memory at .agents/memory, keeping other settings", () => {
+        const settings = {
+            autoMemoryDirectory: "/checkout/.claude/memory",
+            enabledMcpjsonServers: ["github"],
+        };
+        expect(withMemoryDirectory(settings, "/checkout")).toEqual({
+            autoMemoryDirectory: "/checkout/.agents/memory",
+            enabledMcpjsonServers: ["github"],
+        });
+    });
 });
 ```
 
 - [ ] **Step 2: Run it to see it fail**
 
 Run: `bun test agents.test.ts`
-Expected: FAIL in both memory tests (`ENOENT` for the index).
+Expected: FAIL: the file does not load, as `./scripts/agent-memory.js`
+does not exist yet.
 
 - [ ] **Step 3: Move the memory and retire three**
 
@@ -1492,22 +1504,79 @@ Expected: only `.agents/memory/maintenance-design-agreed.md` changes, its
 files change, revert them (`git checkout -- <file>`) and note them in the
 report.
 
-- [ ] **Step 5: Stop repo-memory, and repoint the memory directory**
+- [ ] **Step 5: Stop repo-memory, and declare the memory directory**
 
 `repo-memory` rewrites `autoMemoryDirectory` to `.claude/memory` at
 every session start, so it leaves with the move. In
 `.claude/settings.json`, delete the line
-`"repo-memory@chewygumxx": true,`. Then:
+`"repo-memory@chewygumxx": true,`.
 
-```sh
-f=.claude/settings.local.json
-jq --arg d "$PWD/.agents/memory" '.autoMemoryDirectory = $d' "$f" >"$f.tmp"
-mv "$f.tmp" "$f"
-jq .autoMemoryDirectory "$f"
-git check-ignore -q "$f" && echo ignored
+The setting must be absolute, so it can live only in the gitignored
+`.claude/settings.local.json`; a tracked script writes it there on every
+install, so no one sets it by hand. Create `scripts/agent-memory.ts`:
+
+```ts
+// vim:set expandtab shiftwidth=4 filetype=typescript:
+// SPDX-License-Identifier: GPL-3.0-only
+
+//
+//
+// ~chewygumxx/dorothy.git
+// ::: :/scripts/agent-memory.ts
+//
+//
+
+// Points Claude Code's auto memory at .agents/memory/. The setting must be
+// absolute, so it can live only in the gitignored settings.local.json;
+// `prepare` runs this on every install, from the checkout's own path, so
+// no one sets it by hand.
+
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+type Settings = Record<string, unknown>;
+
+// The settings with auto memory pointed at the checkout's .agents/memory/,
+// every other setting left as it was.
+export const withMemoryDirectory = (
+    settings: Settings,
+    root: string,
+): Settings => ({
+    ...settings,
+    autoMemoryDirectory: join(root, ".agents", "memory"),
+});
+
+if (import.meta.main) {
+    const root = join(import.meta.dir, "..");
+    const path = join(root, ".claude", "settings.local.json");
+    const settings: Settings = existsSync(path)
+        ? JSON.parse(readFileSync(path, "utf8"))
+        : {};
+    const next = withMemoryDirectory(settings, root);
+    if (next.autoMemoryDirectory !== settings.autoMemoryDirectory) {
+        writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`);
+    }
+}
 ```
 
-Expected: the absolute path ending `/.agents/memory`, then `ignored`.
+In `tsconfig.json`'s `include`, add `"scripts/**/*.ts"` after
+`"scripts/**/*.mjs"`. In `package.json`, append the script to `prepare`:
+
+```json
+"prepare": "{ test -d node_modules/husky && husky || true; } && bun run skills --no-remote && bun scripts/agent-memory.ts",
+```
+
+Then run it as an install would, and look:
+
+```sh
+bun run prepare
+jq '{autoMemoryDirectory, keys: keys}' .claude/settings.local.json
+git check-ignore -q .claude/settings.local.json && echo ignored
+```
+
+Expected: `autoMemoryDirectory` is the checkout's absolute path ending
+`/.agents/memory`; `keys` still holds `enableAllProjectMcpServers`,
+`enabledMcpjsonServers` and `permissions`; then `ignored`.
 
 - [ ] **Step 6: Run the test to see it pass**
 
@@ -1518,13 +1587,15 @@ Expected: PASS.
 
 ```sh
 bun run check
-git add .agents/memory .claude/settings.json agents.test.ts
+git add .agents/memory .claude/settings.json agents.test.ts \
+    scripts/agent-memory.ts package.json tsconfig.json
 git commit -F - <<'EOF'
 ai: Move agent memory under .agents
 
 Three memories became rules in the root AGENTS.md and are retired.
-repo-memory, which pointed the memory directory back at .claude/memory
-at every session start, leaves with the move.
+prepare now points auto memory at .agents/memory from the checkout's
+path, and repo-memory, which pointed it back at .claude/memory at
+every session start, leaves with the move.
 EOF
 ```
 
@@ -1549,10 +1620,15 @@ EOF
 At the end of `agents.test.ts`, add:
 
 ```ts
-// Each stays because nothing neutral does its job; a plugin added later
-// is a decision a review sees.
+// Each stays because nothing neutral does its job, and is declared here
+// rather than left to a user's settings; a plugin added later is a
+// decision a review sees.
 const PLUGINS = {
     "agent-sdk-dev@claude-plugins-official": true,
+    "claude-code-setup@claude-plugins-official": true,
+    "claude-md-management@claude-plugins-official": true,
+    "code-simplifier@claude-plugins-official": true,
+    "explanatory-output-style@claude-plugins-official": true,
     "repo-metadata@chewygumxx": true,
     "superpowers@claude-plugins-official": false,
     "typescript-lsp@claude-plugins-official": true,
@@ -1675,9 +1751,13 @@ Replace `.claude/settings.json` with:
         "sessionUrl": false
     },
     "enabledPlugins": {
+        "claude-code-setup@claude-plugins-official": true,
+        "claude-md-management@claude-plugins-official": true,
+        "code-simplifier@claude-plugins-official": true,
+        "explanatory-output-style@claude-plugins-official": true,
         "superpowers@claude-plugins-official": false,
-        "typescript-lsp@claude-plugins-official": true,
         "agent-sdk-dev@claude-plugins-official": true,
+        "typescript-lsp@claude-plugins-official": true,
 
         "repo-metadata@chewygumxx": true
     },
@@ -1695,8 +1775,10 @@ Replace `.claude/settings.json` with:
 
 `github-mcp` duplicates the tracked `.mcp.json`; `prohibit-em-dash` is
 the pre-commit hook and `lint:emdash`; `bun-install` is Step 2's hooks;
-`header-metadata` is Step 3; `remember` and the four workflow plugins are
-the user's (Task 1).
+`header-metadata` is Step 3; `remember` leaves with nothing in its place.
+The four workflow plugins stay: they are utilities with no neutral form,
+installed at user scope but enabled nowhere else, so this file is what
+turns them on here.
 
 - [ ] **Step 6: Drop the worktree leftovers**
 
@@ -1723,10 +1805,11 @@ git add .worktreeinclude .gitignore
 git commit -m "chore: Drop the worktree leftovers"
 git add .claude/settings.json agents.test.ts
 git commit -F - <<'EOF'
-ai: Keep four plugins in Claude's settings
+ai: Trim Claude's settings to eight plugins
 
-Husky, CI and the tests now enforce what the others did, and the
-workflow plugins are the user's. agents.test.ts pins the four.
+Husky, CI and the tests now enforce what the removed plugins did, and
+remember leaves. The four workflow utilities stay declared here, as
+nothing else enables them. agents.test.ts pins the eight.
 EOF
 ```
 
@@ -1793,8 +1876,8 @@ git commit -m "docs: Move the asset refactor to Done"
 
 - [ ] **Step 1: Measure again**
 
-Use Task 1 Step 3's `measure` function, unchanged, writing
-`after-root.json` and `after-tui.json`, and Task 1 Step 2's listing into
+Use Task 1 Step 2's `measure` function, unchanged, writing
+`after-root.json` and `after-tui.json`, and Task 1 Step 1's listing into
 `plugins-after.txt`. Then:
 
 ```sh
@@ -1802,8 +1885,9 @@ R=docs/reports/2026-10-12-agentic-asset-refactor
 diff "$R/plugins-before.txt" "$R/plugins-after.txt"
 ```
 
-Expected: no difference. The user settings are the same, so the two
-measurements compare. If they differ, ask the user before measuring.
+Expected: no difference. Run from `/tmp`, the listing shows the user's
+own plugin state, which this plan never changes. If they differ, ask the
+user before measuring, since the two measurements then do not compare.
 
 - [ ] **Step 2: Probe how Claude Code loads the guidance**
 
