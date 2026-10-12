@@ -25,6 +25,7 @@
         "remark-cli": "^12.0.1",
         "skills": "1.7.2",
         "superpowers": "github:obra/superpowers#v6.4.1",
+        "sync-header-metadata": "2.4.2",
         "typescript": "^7.0.2",
       },
     },
@@ -1222,6 +1223,8 @@
     "superpowers": ["superpowers@github:obra/superpowers#b92c4fa", {}, "obra-superpowers-b92c4fa", "sha512-vmnz2PLx0u9GeCGcVcGp6OiYoSN4V4w9+zbNdv2i9QPGXJq7jrpPB+JI8aaGj0URGLJT8ORgnhiiIlzO06I3EQ=="],
 
     "supports-color": ["supports-color@5.5.0", "", { "dependencies": { "has-flag": "^3.0.0" } }, "sha512-QjVjwdXIt408MIiAqCX4oUKsgU2EqAGzs2Ppkm4aQYbjm+ZEWEcW4SfFNTr4uMNZma0ey4f5lgLrkB0aX0QMow=="],
+
+    "sync-header-metadata": ["sync-header-metadata@2.4.2", "", { "bin": { "sync-header-metadata": "bin/sync-header-metadata.js" } }, "sha512-IeaG+qZGg4AEAtCAiyFWq+par2Vc9LLwU47SKTFsXKpe3S/0BOArOOj8JunbXiiwEPgW8CsIIS9mZndj8ZiiWA=="],
 
     "tagged-tag": ["tagged-tag@1.0.0", "", {}, "sha512-yEFYrVhod+hdNyx7g5Bnkkb0G6si8HJurOoOEgC8B/O0uXLHlaey/65KRv6cuWBNhBgHKAROVpc7QyYqE5gFng=="],
 
