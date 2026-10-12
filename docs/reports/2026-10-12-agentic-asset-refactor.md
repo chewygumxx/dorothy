@@ -32,7 +32,7 @@ are declared dependencies linked for every agent, agent memory lives in
 settings keep eight plugins instead of fourteen, all declared in the
 repository. A one-word session's prompt fell from 26,333 to 20,216 tokens
 from the root (23%) and from 23,287 to 20,278 from `packages/tui/src`
-(13%). `agents.test.ts` pins the layout in 35 tests.
+(13%). `agents.test.ts` pins the layout in 37 tests.
 
 ## The probes
 
@@ -161,18 +161,50 @@ Made while executing:
   so the deletion stayed out of the hooks' commit; the empty
   `.claude/worktrees/` went with it.
 
+### The final review
+
+A fresh reviewer read the whole branch and found nothing critical. Four
+findings were fixed, each in its own commit:
+
+- Claude Code's own memory instructions index a memory as `(file.md)`,
+  without `./`, with an em dash and past 80 columns, so its first saved
+  memory would have failed the index test, `lint:emdash` and remark. The
+  test now reads both link forms (a test of the reader failed first), and
+  the root's Memory section says how to write an entry; the root is now
+  at its 100-line budget.
+- `walk` listed only regular files, so a `CLAUDE.md` linked to
+  `AGENTS.md`, the usual way one returns, passed the test. It now lists
+  links, never following one into a directory (a test planting such a
+  link failed first).
+- `packages/memory/AGENTS.md` placed `compact()` in `clusters.ts` and
+  `plan.ts`; it is in `compact.ts`, and the notes' `commands.ts` also has
+  `--tags` and `--edit-tags`. Checked against the source.
+- No guidance named `agents.test.ts` or the budgets, as the spec's rules
+  ask; `docs/AGENTS.md` now does, with the way past a budget.
+
+The reviewer's minor findings are left for the next Revising pass:
+`scripts/agent-memory.ts` failing bare on a malformed or empty
+`settings.local.json`, creating it 0644 and writing in place; a sync that
+fails only to link one skill still exiting 0, caught later by the test
+rather than by `bun install`; `prepare`'s husky guard sparing no real
+install, as a production install lacks `skills` too; `brokenLinks`
+missing titled, angle-bracket and reference links, and reporting the root
+and docs files together; gaps in the memory and cli maps; a comment in
+`persona.ts` still citing the removed `bun-install` hook; and
+`post-merge` skipping a squash merge, whose `ORIG_HEAD` is `HEAD`.
+
 ## Verification
 
 `bun run check` on the final tree passes, ending:
 
 ```text
- 1154 pass
+ 1156 pass
  0 fail
- 134125 expect() calls
-Ran 1154 tests across 66 files.
+ 134127 expect() calls
+Ran 1156 tests across 66 files.
 ```
 
-`bun test agents.test.ts`: 35 pass, 0 fail. `bun run lint:header`:
+`bun test agents.test.ts`: 37 pass, 0 fail. `bun run lint:header`:
 verification passed, none out of sync.
 
 ## Commits
@@ -213,9 +245,14 @@ f1ac776 ai: Guide agents through each package            (Task 3)
 6aa70bf chore: Drop the worktree leftovers               (Task 6)
 2ba4351 ai: Trim Claude's settings to eight plugins      (Task 6)
 2600278 docs: Move the asset refactor to Done            (Task 7)
+afeff49 docs: Report the agentic asset refactor          (Task 8)
+529db54 ai: Accept Claude Code's memory index form       (review)
+13da2bd ai: Catch a CLAUDE.md that is a link             (review)
+b39aca3 ai: Place compact() and the commands correctly   (review)
+3094efc ai: Name agents.test.ts and the budgets          (review)
 ```
 
-This report's own commit follows.
+This report's update after the review follows.
 
 ## Known limitations
 
