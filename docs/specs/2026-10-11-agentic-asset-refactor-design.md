@@ -64,9 +64,10 @@ client runs them, so this phase writes them for any client and any model.
   root into `packages/<name>/AGENTS.md`, which costs nothing until an
   agent works in that package.
 - **Third-party skills are dependencies.** Superpowers and herdr are
-  declared in `package.json`, pinned by `bun.lock` and `skills-lock.json`,
-  and linked into `.agents/skills/` and `.claude/skills/` by the `skills`
-  CLI on every install. Nothing upstream is committed.
+  declared in `package.json`, recorded in `bun.lock` and
+  `skills-lock.json`, and linked into `.agents/skills/` and
+  `.claude/skills/` by the `skills` CLI on every install. Nothing
+  upstream is committed.
 - **Memory under `.agents/`.** Agent memory moves from `.claude/memory/`
   to `.agents/memory/`.
 - **Plugins only where nothing neutral exists.** A rule a plugin enforces
@@ -208,24 +209,39 @@ development dependencies, pinned, and herdr as a remote source in its
 "skills": [{ "source": "herdrdev/herdr", "skills": ["herdr"] }]
 ```
 
-`bun.lock` pins superpowers to its commit. A probe confirmed that bun's
-isolated linker installs it from GitHub and that the CLI discovers the
-`skills/` directory of every installed dependency.
+`bun.lock` pins superpowers to its commit. herdr is a remote source, so
+nothing pins it: the sync fetches its default branch and
+`skills-lock.json` records the hash it found. A probe confirmed that
+bun's isolated linker installs superpowers from GitHub and that the CLI
+discovers the `skills/` directory of every installed dependency.
 
 ### Sync
 
 A script links them:
 
 ```json
-"skills": "skills experimental_sync -y --agent claude-code codex --exclude 'superpowers#using-git-worktrees' --exclude 'superpowers#using-superpowers' --exclude 'superpowers#diagnosing-superpowers' --exclude 'superpowers#writing-skills'"
+"skills": "DO_NOT_TRACK=1 skills experimental_sync -y --agent claude-code codex --exclude 'superpowers#using-git-worktrees' --exclude 'superpowers#using-superpowers' --exclude 'superpowers#diagnosing-superpowers' --exclude 'superpowers#writing-skills'"
 ```
 
 The sync links each skill to `.agents/skills/<name>`, pointing into
 `node_modules`, links `.claude/skills/<name>` to that, records each
 skill's version and hash in `skills-lock.json`, and removes the links of
-skills no longer provided. `prepare` runs it after husky, so `bun install`
-sets up every agent's skills. The probe confirmed the links, the lock and
-the pruning of excluded skills.
+skills no longer provided. The probe confirmed the links, the lock and
+the pruning of excluded skills. `DO_NOT_TRACK=1` stops the CLI reporting
+each sync and install to `skills.sh`, which it does by default.
+
+`prepare` runs it after husky, with `--no-remote`, so `bun install` sets
+up every agent's skills from `node_modules` alone and never reaches the
+network beyond bun's own fetches. The CLI fetches a remote source only
+when its skill is not installed (read from the 1.7.2 source), and
+`--no-remote` keeps a remote skill's lock entry and links rather than
+pruning them; `bun run skills` without it fetches herdr, once per
+checkout. Only husky's step keeps `|| true`: a sync that fails fails
+`prepare`, and with it `bun install`, locally and in CI.
+
+CI's shared `lint.yaml` runs `bun install --frozen-lockfile` with
+lifecycle scripts, so the local sync runs there too and links
+superpowers; herdr, never fetched in CI, is absent.
 
 The four excluded skills:
 
@@ -319,9 +335,11 @@ It pins, failing with what to fix:
 - the line budgets;
 - every relative link in an `AGENTS.md` resolves, which remark does not
   check;
-- every skill in `skills-lock.json` linked at `.agents/skills/<name>` and
-  `.claude/skills/<name>`, resolving to a `SKILL.md` whose `name` is the
-  directory's, and no excluded skill linked;
+- every skill `skills-lock.json` records from `node_modules` linked at
+  `.agents/skills/<name>` and `.claude/skills/<name>`, resolving to a
+  `SKILL.md` whose `name` is the directory's, and no excluded skill
+  linked; a remote skill (herdr) is checked the same way only where it is
+  installed, so CI needs no fetch;
 - no `[[...]]` wiki link in `.agents/memory/`;
 - `.claude/settings.json`'s `enabledPlugins`, exactly, so a plugin added
   later is a decision a review sees.
@@ -384,9 +402,10 @@ Revised with this spec:
 - **The sync is experimental.** The `skills` CLI names it
   `experimental_sync`. It is pinned exactly and upgraded on purpose, and
   `agents.test.ts` fails if its links ever stop matching the lock.
-- **Remote sources on every install.** Whether the sync fetches herdr
-  from GitHub on each run is unverified; the plan probes it first, and if
-  so `prepare` passes `--no-remote` and `bun run skills` fetches.
+- **An unpinned remote.** herdr follows its upstream's default branch
+  whenever `bun run skills` fetches it, and a fresh checkout has none
+  until then. Should that bite, herdr moves to a pinned dependency like
+  superpowers.
 - **Losing `using-superpowers`.** The plugin's hook made skill use the
   first thing in every session. The root's Process section is shorter and
   softer; if agents skip the process without it, the skill comes back.
