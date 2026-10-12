@@ -1,0 +1,16 @@
+#!/usr/bin/env sh
+# vim:set expandtab shiftwidth=4 filetype=sh:
+# SPDX-License-Identifier: GPL-3.0-only
+
+#
+#
+# ~chewygumxx/dorothy.git
+# ::: :/.husky/post-merge
+#
+#
+
+# A merge or pull that changes the dependencies reinstalls them, and
+# prepare relinks the skills. ORIG_HEAD is the head before it.
+
+git diff --quiet ORIG_HEAD HEAD -- package.json bun.lock && exit 0
+bun install
