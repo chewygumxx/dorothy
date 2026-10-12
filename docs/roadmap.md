@@ -39,6 +39,8 @@ After a phase merges:
    leave it in Candidates.
 4. Reorder Ahead if a phase's reasons have changed, and add a line to
    Revisions saying what moved and why.
+5. Check the root and each package's `AGENTS.md` against what merged,
+   and correct any that no longer describe the code.
 
 Each phase in Ahead gives its **Status**, the phases it has as
 **Required**, and its **Rationale** for where it sits. It carries no dates
@@ -47,20 +49,6 @@ or estimates.
 ## Ahead
 
 In order; the first is next.
-
-### Agentic Asset Refactor
-
-Move the agent guidance into a root `AGENTS.md` and one per package, read
-on demand by every coding agent; declare third-party skills as
-dependencies linked for every agent; and move agent memory to `.agents/`.
-Spec: [agentic asset refactor](./specs/2026-10-11-agentic-asset-refactor-design.md),
-plan: [agentic asset refactor](./plans/2026-10-12-agentic-asset-refactor.md).
-
-- **Status**: Planned, Pending Execution
-- **Required**: Requisites Fulfilled
-- **Rationale**: Context window growth and token consumption rate are far too
-  high with respect to the size of this repository and projected work
-  immediately foreseeable.
 
 ### Model Providers
 
@@ -192,6 +180,10 @@ In order of completion.
   [diagram](./specs/2026-10-09-workspace-modularity-packages.html),
   [plan](./plans/2026-10-09-workspace-modularity.md),
   [report](./reports/2026-10-09-workspace-modularity.md).
+- **Agentic asset refactor**:
+  [spec](./specs/2026-10-11-agentic-asset-refactor-design.md),
+  [plan](./plans/2026-10-12-agentic-asset-refactor.md),
+  [report](./reports/2026-10-12-agentic-asset-refactor.md).
 
 ## Revisions
 
@@ -212,3 +204,6 @@ In order of completion.
   goes ahead of Cyclical Maintenance, so maintenance runs on a cheaper
   model; Dorothy's Gateway absorbs Token Budgets and a Gateway, serving
   her as the model behind existing clients.
+- 2026-10-12: The Agentic Asset Refactor is done, so Model Providers is
+  next. Revising gains a step that checks the `AGENTS.md` files against
+  what merged.
