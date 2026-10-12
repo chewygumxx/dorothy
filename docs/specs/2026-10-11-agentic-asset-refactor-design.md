@@ -76,9 +76,14 @@ client runs them, so this phase writes them for any client and any model.
   committed.
 - **Memory under `.agents/`.** Agent memory moves from `.claude/memory/`
   to `.agents/memory/`.
+- **Declared in the repository.** The agentic assets and utilities this
+  repository employs are declared in it, as far as is feasible: its
+  guidance, skills, memory, plugins and the settings they need. Nothing
+  relies on a user's own settings or a hand-made step.
 - **Plugins only where nothing neutral exists.** A rule a plugin enforces
   is enforced where commits happen, by husky, CI or a test; a plugin may
-  remain as a courtesy on top, never as the only guard.
+  remain as a courtesy on top, never as the only guard. A utility with no
+  neutral form stays, declared in `.claude/settings.json`.
 - **One check.** `agents.test.ts`, beside `workspace.test.ts`, pins the
   layout, the budgets, the skill links and the plugin list.
 
@@ -97,6 +102,7 @@ packages/cli/AGENTS.md         ┘
 .claude/settings.json          Claude-only settings, reduced
 .claude/skills/<name>          linked by the skills CLI, gitignored
 skills-lock.json               the skills CLI's lock, committed
+scripts/agent-memory.ts        points auto memory at .agents/memory/
 ```
 
 `.claude/CLAUDE.md` and `.claude/memory/` go, and so do the worktree
@@ -150,6 +156,8 @@ In this order:
      through `.repo-metadata.jsonc`, never `gh repo edit`;
    - new subsystems stay independent of any provider's SDK, speaking
      standard protocols, with SDK types at a thin edge;
+   - the agentic assets and utilities the repository employs are declared
+     in it, never left to a user's own settings;
    - every new file carries the house header, copied from a sibling;
      `lint:header` keeps headers in sync but only warns of a missing
      one.
@@ -300,30 +308,35 @@ skill twice here.
   to any provider).
 - `bg-session-force-color` and `maintenance-design-agreed` move; the
   second stays until the cyclical maintenance spec replaces it.
-- `autoMemoryDirectory` must be absolute, so it stays in the gitignored
-  `.claude/settings.local.json`, set once to `.agents/memory/`'s absolute
-  path. The repo-memory plugin, which rewrote it to `.claude/memory` at
-  every session start, is disabled here.
+- `autoMemoryDirectory` must be absolute, so it can live only in the
+  gitignored `.claude/settings.local.json`. `scripts/agent-memory.ts`,
+  which `prepare` runs after the sync, writes it there from the
+  checkout's own path, leaving the file's other settings alone, so every
+  install sets it and no one sets it by hand. The repo-memory plugin,
+  which rewrote it to `.claude/memory` at every session start, is
+  disabled here.
 
 ## Claude's settings
 
 `.claude/settings.json` keeps `attribution`, the `chewygumxx` marketplace,
-and four plugin entries:
+and eight plugin entries:
 
-| Plugin                                   | Enabled | Why it stays                     |
-| ---------------------------------------- | ------- | -------------------------------- |
-| `superpowers@claude-plugins-official`    | false   | the skills are declared instead  |
-| `typescript-lsp@claude-plugins-official` | true    | a capability, not a rule         |
-| `agent-sdk-dev@claude-plugins-official`  | true    | until Model Providers            |
-| `repo-metadata@chewygumxx`               | true    | blocks `gh repo edit` before it  |
+| Plugin                                             | Enabled | Why it stays                       |
+| -------------------------------------------------- | ------- | ---------------------------------- |
+| `superpowers@claude-plugins-official`              | false   | the skills are declared instead    |
+| `typescript-lsp@claude-plugins-official`           | true    | a capability, not a rule           |
+| `agent-sdk-dev@claude-plugins-official`            | true    | until Model Providers              |
+| `claude-code-setup@claude-plugins-official`        | true    | a utility with no neutral form     |
+| `claude-md-management@claude-plugins-official`     | true    | a utility with no neutral form     |
+| `code-simplifier@claude-plugins-official`          | true    | a utility with no neutral form     |
+| `explanatory-output-style@claude-plugins-official` | true    | a utility with no neutral form     |
+| `repo-metadata@chewygumxx`                         | true    | blocks `gh repo edit` before it    |
+
+The four utilities are installed at user scope but enabled nowhere else,
+so declaring them here is what turns them on in this repository.
 
 The other plugins come out:
 
-- `claude-code-setup`, `claude-md-management`, `code-simplifier` and
-  `explanatory-output-style` are the user's workflow rather than the
-  repository's. None is enabled at user scope today, so the user enables
-  the four in their own settings before the baseline; removing them here
-  then changes nothing.
 - `remember` comes out with nothing in its place: agent memory carries
   what persists. Its buffers in the root `/.remember/` stay as they are,
   gitignored and no longer written in this repository.
@@ -407,7 +420,8 @@ One branch, in this order, each step a commit or a few:
    root `AGENTS.md`. The test gains the `AGENTS.md`, `CLAUDE.md`, budget
    and link assertions.
 4. Memory: move to `.agents/memory/`, retire the three, update the index;
-   repoint `autoMemoryDirectory`.
+   add `scripts/agent-memory.ts` to `prepare`, which repoints
+   `autoMemoryDirectory`.
 5. Settings: reduce `.claude/settings.json`; add the husky hooks; add
    `sync-header-metadata` and its scripts; delete the worktree
    leftovers. The test gains the `enabledPlugins` assertion.
@@ -471,7 +485,7 @@ Revised with this spec:
 
 - Dorothy's own guidance in development mode: she reads these files once
   the gateway puts her behind a client.
-- The user's own settings and plugins, beyond enabling the four workflow
-  plugins at user scope and setting `autoMemoryDirectory`.
+- The user's own settings and plugins: the repository relies on none of
+  them.
 - The remember plugin, which this repository no longer enables.
 - Upgrading superpowers to v7.
