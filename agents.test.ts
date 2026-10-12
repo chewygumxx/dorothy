@@ -16,17 +16,23 @@ import { describe, expect, it } from "bun:test";
 import {
     existsSync,
     lstatSync,
+    mkdirSync,
     mkdtempSync,
     readdirSync,
     readFileSync,
     realpathSync,
     rmSync,
+    statSync,
     symlinkSync,
     writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
-import { withMemoryDirectory } from "./scripts/agent-memory.js";
+import {
+    parseSettings,
+    pointMemoryDirectory,
+    withMemoryDirectory,
+} from "./scripts/agent-memory.js";
 
 const ROOT = import.meta.dir;
 const at = (...parts: string[]) => join(ROOT, ...parts);
@@ -250,6 +256,54 @@ describe("agent memory", () => {
             .filter((name) => name.endsWith(".md") && name !== "MEMORY.md")
             .sort();
         expect(indexed).toEqual(memories);
+    });
+
+    it("reads an empty local settings file as no settings", () => {
+        expect(parseSettings("", "/x/settings.local.json")).toEqual({});
+        expect(parseSettings(" \n", "/x/settings.local.json")).toEqual({});
+    });
+
+    it("names the file when its settings are not a JSON object", () => {
+        for (const text of ["{oops", "[]", "null"]) {
+            expect(() => parseSettings(text, "/x/settings.local.json")).toThrow(
+                "/x/settings.local.json is not a JSON object",
+            );
+        }
+    });
+
+    it("writes the setting privately and whole, keeping the others", () => {
+        const root = mkdtempSync(join(tmpdir(), "agent-memory-"));
+        try {
+            mkdirSync(join(root, ".claude"));
+            const path = join(root, ".claude", "settings.local.json");
+            writeFileSync(path, '{ "enabledMcpjsonServers": ["github"] }\n');
+            pointMemoryDirectory(root, () => true);
+            expect(JSON.parse(read(path))).toEqual({
+                autoMemoryDirectory: join(root, ".agents", "memory"),
+                enabledMcpjsonServers: ["github"],
+            });
+            expect(statSync(path).mode & 0o777).toBe(0o600);
+            expect(readdirSync(join(root, ".claude"))).toEqual([
+                "settings.local.json",
+            ]);
+        } finally {
+            rmSync(root, { recursive: true });
+        }
+    });
+
+    it("leaves a settings file git would commit alone", () => {
+        const root = mkdtempSync(join(tmpdir(), "agent-memory-"));
+        try {
+            mkdirSync(join(root, ".claude"));
+            expect(() => pointMemoryDirectory(root, () => false)).toThrow(
+                "is not gitignored",
+            );
+            expect(
+                existsSync(join(root, ".claude", "settings.local.json")),
+            ).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true });
+        }
     });
 
     it("points auto memory at .agents/memory, keeping other settings", () => {
