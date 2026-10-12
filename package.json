@@ -53,7 +53,7 @@
         "lint:env": "git ls-files -z -- ':(glob)**/.env*' ':(glob)**/*.env' | xargs -0 -r -n1 sh -c 'dotenvx protect --git-file \"$1\" <\"$1\" >/dev/null' sh",
         "lint:md": "git ls-files -z '*.md' | xargs -0 remark --frail --quiet --no-stdout",
         "lint:yaml": "git ls-files -z '*.yaml' '*.yml' | xargs -0 -r prettier --check && git ls-files -z '*.yaml' '*.yml' | YAMLLINT_CONFIG_FILE=node_modules/@chewygumxx/yamllint-config/config.yaml xargs -0 -r yamllint --strict",
-        "prepare": "{ test -d node_modules/husky && husky || true; } && bun run skills --no-remote",
+        "prepare": "{ test -d node_modules/husky && husky || true; } && bun run skills --no-remote && bun scripts/agent-memory.ts",
         "skills": "DO_NOT_TRACK=1 skills experimental_sync -y --agent claude-code codex --exclude 'superpowers#using-git-worktrees' --exclude 'superpowers#using-superpowers' --exclude 'superpowers#diagnosing-superpowers' --exclude 'superpowers#writing-skills'",
         "start": "bun packages/cli/src/index.ts",
         "test": "bun test",

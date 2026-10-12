@@ -17,7 +17,6 @@
 
         "prohibit-em-dash@chewygumxx": true,
         "bun-install@chewygumxx": true,
-        "repo-memory@chewygumxx": true,
         "repo-metadata@chewygumxx": true,
         "header-metadata@chewygumxx": true,
         "github-mcp@chewygumxx": true

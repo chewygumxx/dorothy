@@ -21,6 +21,7 @@ import {
     realpathSync,
 } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
+import { withMemoryDirectory } from "./scripts/agent-memory.js";
 
 const ROOT = import.meta.dir;
 const at = (...parts: string[]) => join(ROOT, ...parts);
@@ -200,5 +201,37 @@ describe("the root's guidance", () => {
             .filter((path) => CLAUDE_FILES.includes(basename(path)))
             .map((path) => relative(ROOT, path));
         expect(found).toEqual([]);
+    });
+});
+
+const MEMORY = at(".agents/memory");
+
+describe("agent memory", () => {
+    it("lives in .agents/memory, not .claude/memory", () => {
+        expect(existsSync(join(MEMORY, "MEMORY.md"))).toBe(true);
+        expect(existsSync(at(".claude/memory"))).toBe(false);
+    });
+
+    it("indexes every memory there, and nothing else", () => {
+        const indexed = [
+            ...read(join(MEMORY, "MEMORY.md")).matchAll(/\]\(\.\/([^)]+)\)/g),
+        ]
+            .map((match) => match[1] as string)
+            .sort();
+        const memories = readdirSync(MEMORY)
+            .filter((name) => name.endsWith(".md") && name !== "MEMORY.md")
+            .sort();
+        expect(indexed).toEqual(memories);
+    });
+
+    it("points auto memory at .agents/memory, keeping other settings", () => {
+        const settings = {
+            autoMemoryDirectory: "/checkout/.claude/memory",
+            enabledMcpjsonServers: ["github"],
+        };
+        expect(withMemoryDirectory(settings, "/checkout")).toEqual({
+            autoMemoryDirectory: "/checkout/.agents/memory",
+            enabledMcpjsonServers: ["github"],
+        });
     });
 });
