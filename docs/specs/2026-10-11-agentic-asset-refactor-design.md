@@ -371,22 +371,24 @@ settings. The same is noted for Codex if it is installed.
 One branch, in this order, each step a commit or a few:
 
 1. Measure the baseline.
-2. `agents.test.ts`, failing.
-3. Skills: the dependencies, the `"skills"` field, the script, `prepare`,
+2. Skills: the dependencies, the `"skills"` field, the script, `prepare`,
    the ignores, `skills-lock.json`; the untracked herdr install is
-   replaced by the declared one.
-4. Guidance: the five package files, `docs/AGENTS.md`, the root; delete
+   replaced by the declared one. `agents.test.ts` begins here, with the
+   skill-link assertions.
+3. Guidance: the five package files, `docs/AGENTS.md`, the root; delete
    `.claude/CLAUDE.md`, and point `README.md`'s mention of it at the
-   root `AGENTS.md`.
-5. Memory: move to `.agents/memory/`, retire the three, update the index;
+   root `AGENTS.md`. The test gains the `AGENTS.md`, `CLAUDE.md`, budget
+   and link assertions.
+4. Memory: move to `.agents/memory/`, retire the three, update the index;
    repoint `autoMemoryDirectory`.
-6. Settings: reduce `.claude/settings.json`; add the husky hooks; add
+5. Settings: reduce `.claude/settings.json`; add the husky hooks; add
    `sync-header-metadata` and its scripts; delete the worktree
-   leftovers.
-7. The roadmap's Revising step, and the phase moved to Done.
-8. Measure again, and write the report.
+   leftovers. The test gains the `enabledPlugins` assertion.
+6. The roadmap's Revising step, and the phase moved to Done.
+7. Measure again, and write the report.
 
-`agents.test.ts` passes from step 6 on.
+Each assertion lands failing and passes within its own step, so
+`bun run check` passes at the end of every step.
 
 ## Roadmap
 
