@@ -41,3 +41,13 @@ tags:
 - A spec says what and why; a plan says how, task by task, with the code.
 - A report records each probe and how it was run, the rulings made on the
   spec, and the verification, with commands and their output.
+
+## The AGENTS.md files
+
+`agents.test.ts` pins them: the root at most 100 lines, this file 60 and
+each package's 150, header included; every relative link resolves; and no
+`CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` exists anywhere, as
+one switches Claude Code's `AGENTS.md` off. A package's file that
+outgrows its budget gains a nested `src/<subdir>/AGENTS.md`, read on
+demand; the root moves detail into the file where it is needed. No
+budget grows.
