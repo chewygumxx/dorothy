@@ -20,7 +20,7 @@ import {
     readFileSync,
     realpathSync,
 } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 
 const ROOT = import.meta.dir;
 const at = (...parts: string[]) => join(ROOT, ...parts);
@@ -64,6 +64,40 @@ const linked = (dir: string): string[] =>
 
 const skillName = (dir: string): string | undefined =>
     read(join(dir, "SKILL.md")).match(/^name:\s*["']?([^"'\s]+)/m)?.[1];
+
+// Lines, header included, each kind of guidance file may run to. A
+// package that outgrows its budget gains a nested AGENTS.md instead.
+const BUDGET = { docs: 60, package: 150, root: 100 };
+
+const lines = (path: string) => read(path).trimEnd().split("\n").length;
+
+// Every file beneath a directory, skipping dependencies, git and links.
+const walk = (dir: string, found: string[] = []): string[] => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name === "node_modules" || entry.name === ".git") {
+            continue;
+        }
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) {
+            walk(path, found);
+        } else if (entry.isFile()) {
+            found.push(path);
+        }
+    }
+    return found;
+};
+
+const guidanceUnder = (dir: string): string[] =>
+    walk(dir).filter((path) => basename(path) === "AGENTS.md");
+
+// Relative links that resolve to nothing; remark checks none of them.
+const brokenLinks = (path: string): string[] =>
+    [...read(path).matchAll(/\]\(([^)\s]+)\)/g)]
+        .map((match) => (match[1] as string).split("#")[0] as string)
+        .filter((target) => target !== "" && !/^[a-z]+:/i.test(target))
+        .filter((target) => !existsSync(join(dirname(path), target)));
+
+const PACKAGES = at("packages");
 
 describe("the skills", () => {
     it("records superpowers' skills less the excluded four", () => {
@@ -118,4 +152,25 @@ describe("the skills", () => {
             ).toEqual([]);
         }
     });
+});
+
+describe("the packages' guidance", () => {
+    it("gives every package an AGENTS.md", () => {
+        const missing = readdirSync(PACKAGES).filter(
+            (name) => !existsSync(join(PACKAGES, name, "AGENTS.md")),
+        );
+        expect(missing).toEqual([]);
+    });
+
+    for (const path of guidanceUnder(PACKAGES)) {
+        const shown = relative(ROOT, path);
+
+        it(`keeps ${shown} within ${BUDGET.package} lines`, () => {
+            expect(lines(path)).toBeLessThanOrEqual(BUDGET.package);
+        });
+
+        it(`resolves every link in ${shown}`, () => {
+            expect(brokenLinks(path)).toEqual([]);
+        });
+    }
 });
