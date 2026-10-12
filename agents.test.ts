@@ -174,3 +174,31 @@ describe("the packages' guidance", () => {
         });
     }
 });
+
+// Claude Code reads AGENTS.md only where the project has no instruction
+// file of its own by these names, ignored or not.
+const CLAUDE_FILES = ["CLAUDE.md", "CLAUDE.local.md"];
+
+describe("the root's guidance", () => {
+    it(`keeps AGENTS.md within ${BUDGET.root} lines`, () => {
+        expect(lines(at("AGENTS.md"))).toBeLessThanOrEqual(BUDGET.root);
+    });
+
+    it(`keeps docs/AGENTS.md within ${BUDGET.docs} lines`, () => {
+        expect(lines(at("docs/AGENTS.md"))).toBeLessThanOrEqual(BUDGET.docs);
+    });
+
+    it("resolves every link in them", () => {
+        expect([
+            ...brokenLinks(at("AGENTS.md")),
+            ...brokenLinks(at("docs/AGENTS.md")),
+        ]).toEqual([]);
+    });
+
+    it("leaves no CLAUDE.md to switch them off", () => {
+        const found = walk(ROOT)
+            .filter((path) => CLAUDE_FILES.includes(basename(path)))
+            .map((path) => relative(ROOT, path));
+        expect(found).toEqual([]);
+    });
+});
