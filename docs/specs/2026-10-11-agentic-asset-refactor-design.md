@@ -364,7 +364,23 @@ Before any change, and again at the end, a one-word prompt runs through
 records the input and cache tokens of the first request, beside the
 session start's wall time and the plugins `claude plugin list` shows
 enabled, since two measurements compare only under the same user
-settings. The same is noted for Codex if it is installed.
+settings. The same is noted for Codex if it is installed. The phase
+succeeds if the first request's input tokens fall from both directories;
+a rise in either is a finding the report explains.
+
+The report is `docs/reports/YYYY-MM-DD-agentic-asset-refactor.md`, dated
+when it is begun. Before the measurements it records, rerun on the
+branch, the probes this spec rests on:
+
+- bun's isolated linker installs superpowers from GitHub, and the CLI
+  discovers its `skills/`;
+- the sync's links, lock and pruning of excluded skills, `--no-remote`
+  keeping herdr's entry, and `bun run skills` fetching herdr only when
+  it is absent;
+- `sync-header-metadata`'s verify mode on the repository;
+- Claude Code reading the root `AGENTS.md` at launch and
+  `packages/tui/AGENTS.md` once a file there is opened, with the user's
+  own `CLAUDE.md` in their configuration directory.
 
 ## Migration
 
@@ -425,7 +441,7 @@ Revised with this spec:
   and worktrees in places. The root's rules say they win, as the skills
   themselves defer to user instructions.
 - **Older Claude Code.** Before v2.1.277, and in some sessions it lists,
-  Claude Code reads no `AGENTS.md`. The user runs 2.1.292.
+  Claude Code reads no `AGENTS.md`. The user runs 2.1.296.
 
 ## Later
 
