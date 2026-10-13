@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-10-12
+mtime: 2026-10-13
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -183,7 +183,8 @@ In order of completion.
 - **Agentic asset refactor**:
   [spec](./specs/2026-10-11-agentic-asset-refactor-design.md),
   [plan](./plans/2026-10-12-agentic-asset-refactor.md),
-  [report](./reports/2026-10-12-agentic-asset-refactor.md).
+  [probes](./reports/2026-10-12-agentic-asset-refactor.md),
+  [report](./reports/2026-10-13-agentic-asset-refactor-implementation.md).
 
 ## Revisions
 
