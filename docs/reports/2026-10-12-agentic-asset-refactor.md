@@ -1,12 +1,12 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-12
+mtime: 2026-10-13
 spdx: GPL-3.0-only
-title: Agentic asset refactor report
+title: Agentic asset refactor probes
 description: >-
-  How the agent guidance, skills and memory moved into conventions every
-  coding agent reads: the probes, the measurements, the rulings and what
-  is left.
+  The probes the agentic asset refactor rests on, the skills sync, how
+  Claude Code loads the guidance and the reworked prepare, and the
+  session's prompt measured before and after.
 tags:
   - dorothy
   - agents
@@ -20,19 +20,25 @@ tags:
    -
    -->
 
-# Agentic asset refactor report
+# Agentic asset refactor probes
 
 ## Summary
 
-The 15 KB `.claude/CLAUDE.md` is now a root `AGENTS.md` of 99 lines,
-`docs/AGENTS.md` and one per package, which Claude Code loads natively,
-the package's own only once a file there is read. Superpowers and herdr
-are declared dependencies linked for every agent, agent memory lives in
-`.agents/memory/` with `prepare` pointing Claude Code at it, and Claude's
-settings keep eight plugins instead of fourteen, all declared in the
-repository. A one-word session's prompt fell from 26,333 to 20,216 tokens
-from the root (23%) and from 23,287 to 20,278 from `packages/tui/src`
-(13%). `agents.test.ts` pins the layout in 37 tests.
+These are the probes and measurements of the agentic asset refactor; how
+it was built, its rulings, its reviews and its commits are in the
+[implementation report](2026-10-13-agentic-asset-refactor-implementation.md).
+
+- `sync-header-metadata` verified the repository's headers before any
+  change.
+- The `skills` CLI linked superpowers' eleven skills from `node_modules`
+  and fetched herdr only when it was absent; a stale lock entry from the
+  hand-made install had to go first.
+- Claude Code loaded the root `AGENTS.md` at launch, and a package's own
+  once a file beneath it was read, with the files' headers stripped.
+- The reworked `prepare` fails an install that leaves a skill unlinked,
+  and does nothing on an install without development dependencies.
+- A one-word session's prompt fell from 26,333 to 20,216 tokens from the
+  root (23%), and from 23,287 to 20,278 from `packages/tui/src` (13%).
 
 ## The probes
 
@@ -71,9 +77,33 @@ allows none:
 - Run again with herdr present, it fetched nothing: the eleven synced,
   and no clone.
 
-`prepare` with its sync replaced by `false` exits 1, so a failing sync
-fails `bun install`; with husky's directory absent and the sync replaced
-by `true` it exits 0, so a missing husky does not.
+`prepare` as first written, with its sync replaced by `false`, exits 1,
+so a sync that fails outright fails `bun install`; with husky's directory
+absent and the sync replaced by `true` it exits 0, so a missing husky
+does not. The review then showed both guarantees fall short, as the next
+section probes.
+
+### The reworked prepare
+
+`prepare` became `scripts/prepare.sh`. Each case ran against the old
+`prepare` first, then the new:
+
+| Case                                                        | Before | After |
+| ----------------------------------------------------------- | ------ | ----- |
+| `.claude/skills/brainstorming` a link to a directory elsewhere | 0   | 1     |
+| A copy of `package.json` with no `node_modules`, as a production install | 127 | 0 |
+
+- The sync skipped the linked skill ("Skipped brainstorming from
+  superpowers: ... is a symlink to /tmp/elsewhere/brainstorming") and
+  exited 0, so the old `prepare` passed with the skill unlinked. The new
+  one runs the skills' own checks after the sync (16 tests, 25 filtered
+  out) and failed on "links brainstorming for every agent".
+- Without development dependencies, the old `prepare` failed on the
+  missing `skills` command (127); the new one finds no husky and does
+  nothing.
+- A real directory put in place of `.agents/skills/brainstorming` is not
+  such a case: the sync replaced it with the link, as the lock records the
+  skill as its own.
 
 ### How the guidance loads
 
@@ -129,150 +159,13 @@ plugin state (every plugin disabled outside a project that enables it).
 They are identical, so the two measurements ran under the same user
 settings. Codex: not installed.
 
-## Rulings made during execution
-
-The plan's rulings on the spec held:
-
-1. `repo-memory` left with the memory (Task 5), not with the other
-   plugins, as it rewrote `autoMemoryDirectory` at every session start.
-2. The test pins superpowers' eleven skills by name.
-3. The test pins memory's index.
-4. The `CLAUDE.md` search walks the filesystem, so a gitignored
-   `CLAUDE.local.md` is caught (planted in Task 4, it failed the test).
-5. The `AGENTS.md` files carry the house header within their budgets,
-   without the vim modeline.
-6. `DO_NOT_TRACK=1` is asserted by the test.
-7. The husky hooks were probed by hand: the same heads and a file
-   checkout installed nothing, and a checkout against `main` ran
-   `bun install`.
-
-Made while executing:
-
-- The prompt is judged on its Total, input plus cache write plus cache
-  read, as `input_tokens` is 2 with caching.
-- The stale herdr entry in the untracked `skills-lock.json` was deleted
-  before the sync, which otherwise refused herdr as installed by
-  `skills add`.
-- The captured sync output is stripped of the CLI's spinner and colour
-  codes, and its em dashes made hyphens, for `lint:emdash`.
-- Captured JSON is formatted by Biome before commit.
-- The three retired memories needed `git rm -f`, being staged as renames.
-- `.worktreeinclude` was deleted with `rm` and staged for its own commit,
-  so the deletion stayed out of the hooks' commit; the empty
-  `.claude/worktrees/` went with it.
-
-### The final review
-
-A fresh reviewer read the whole branch and found nothing critical. Four
-findings were fixed, each in its own commit:
-
-- Claude Code's own memory instructions index a memory as `(file.md)`,
-  without `./`, with an em dash and past 80 columns, so its first saved
-  memory would have failed the index test, `lint:emdash` and remark. The
-  test now reads both link forms (a test of the reader failed first), and
-  the root's Memory section says how to write an entry; the root is now
-  at its 100-line budget.
-- `walk` listed only regular files, so a `CLAUDE.md` linked to
-  `AGENTS.md`, the usual way one returns, passed the test. It now lists
-  links, never following one into a directory (a test planting such a
-  link failed first).
-- `packages/memory/AGENTS.md` placed `compact()` in `clusters.ts` and
-  `plan.ts`; it is in `compact.ts`, and the notes' `commands.ts` also has
-  `--tags` and `--edit-tags`. Checked against the source.
-- No guidance named `agents.test.ts` or the budgets, as the spec's rules
-  ask; `docs/AGENTS.md` now does, with the way past a budget.
-
-The reviewer's minor findings are left for the next Revising pass:
-`scripts/agent-memory.ts` failing bare on a malformed or empty
-`settings.local.json`, creating it 0644 and writing in place; a sync that
-fails only to link one skill still exiting 0, caught later by the test
-rather than by `bun install`; `prepare`'s husky guard sparing no real
-install, as a production install lacks `skills` too; `brokenLinks`
-missing titled, angle-bracket and reference links, and reporting the root
-and docs files together; gaps in the memory and cli maps; a comment in
-`persona.ts` still citing the removed `bun-install` hook; and
-`post-merge` skipping a squash merge, whose `ORIG_HEAD` is `HEAD`.
-
-## Verification
-
-`bun run check` on the final tree passes, ending:
-
-```text
- 1156 pass
- 0 fail
- 134127 expect() calls
-Ran 1156 tests across 66 files.
-```
-
-`bun test agents.test.ts`: 37 pass, 0 fail. `bun run lint:header`:
-verification passed, none out of sync.
-
-## Commits
-
-The spec and the plan:
-
-```text
-cd46f5c docs: Specify the agentic asset refactor
-1888a31 docs: Revise the roadmap for model providers
-cd6f10b docs: Keep remember out of the asset refactor
-e0b41d5 docs: Specify the skills sync on install and in CI
-bebcaba docs: Name notes and deferred files as they are
-74d531f docs: Leave wiki links in memory to remark
-f52756c docs: Migrate the README and worktree leftovers
-0c6cffe docs: Land each asset check with its own step
-385df56 docs: Name the asset refactor report and probes
-be470c7 docs: Keep the skills lock out of formatting
-66d45cd docs: Link herdr only when it is fetched
-20e30c5 docs: Reflow the docs conventions paragraph
-505f15c docs: Say lint:header only syncs headers
-501315f docs: Ground AGENTS.md loading in the binary
-4e8c31a docs: Plan the agentic asset refactor
-1980cc6 docs: Mark the asset refactor planned
-fe11a74 docs: Declare agentic assets in the repository
-0e8ca2c docs: Declare the plan's plugins and memory path
-```
-
-The tasks:
-
-```text
-b9c8d62 docs: Begin the asset refactor report            (Task 1)
-8d60424 ai: Declare the skills as dependencies           (Task 2)
-f1ac776 ai: Guide agents through each package            (Task 3)
-9aac691 ai: Move the guidance into AGENTS.md             (Task 4)
-993a173 ai: Move agent memory under .agents              (Task 5)
-013f0dd build: Reinstall when the dependencies change    (Task 6)
-9f4d2f3 build: Check headers with sync-header-metadata   (Task 6)
-6aa70bf chore: Drop the worktree leftovers               (Task 6)
-2ba4351 ai: Trim Claude's settings to eight plugins      (Task 6)
-2600278 docs: Move the asset refactor to Done            (Task 7)
-afeff49 docs: Report the agentic asset refactor          (Task 8)
-529db54 ai: Accept Claude Code's memory index form       (review)
-13da2bd ai: Catch a CLAUDE.md that is a link             (review)
-b39aca3 ai: Place compact() and the commands correctly   (review)
-3094efc ai: Name agents.test.ts and the budgets          (review)
-```
-
-This report's update after the review follows.
-
 ## Known limitations
 
-- **herdr is unpinned.** A remote source, it follows its upstream's
-  default branch whenever `bun run skills` fetches it, and a fresh
-  checkout has none until then; CI never has it.
-- **The sync is experimental.** `skills experimental_sync` is pinned at
-  1.7.2 and upgraded on purpose; `agents.test.ts` fails if its links stop
-  matching the lock.
-- **A remote switch.** Claude Code's `AGENTS.md` loading is the built-in
-  `cc-plugin-agents-md`, available behind the feature flag
-  `tengu_agents_md_mod`. Were it turned off, sessions here would load no
-  guidance; the fallback is a root `CLAUDE.md` importing `@AGENTS.md`.
-- **Losing `using-superpowers`.** Nothing now makes skill use the first
-  thing in a session; the root's Process section names when each skill
-  applies. Whether agents follow it is for later sessions to show.
-- **The skills' own text** still names `docs/superpowers/` and worktrees
-  in places; the root's rules say they win.
+- **One prompt per directory.** A few hundred tokens either way are
+  noise, and the root's and the package's unequal totals before the
+  change are not explained.
 - **Codex** was not installed, so its loading and its numbers are
   unmeasured.
-- **The measurement is one prompt per directory**, so a few hundred
-  tokens either way are noise; the root's and the package's unequal
-  totals before the change are not explained.
+- **Memory loading is not probed.** That a new session reads
+  `.agents/memory/MEMORY.md` rests on `autoMemoryDirectory`, which the
+  review found read from the local settings in Claude Code's binary.
