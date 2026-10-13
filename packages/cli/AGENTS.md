@@ -52,9 +52,10 @@ Agent SDK. Keep every new mode's import lazy.
 - Auth comes from `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` in
   `.env`; the entry guard calls dotenvx's `config()` to decrypt it with
   the private key from Dotenvx Armor or a gitignored `.env.keys`.
-- `@dotenvx/dotenvx` is declared here and again in the root's development
-  dependencies, which the root's `lint:env` script and the pre-commit hook
-  need.
+- `@dotenvx/dotenvx` is declared here, by `memory`, whose history commands
+  save the mirror's key with its `set`, and in the root's development
+  dependencies, which the root's `lint:env` script and the pre-commit
+  hook need.
 - The CLI passes `commandHistory()` to memory's commands, and
   `editInEditor` to `--memory` and `--edit-tags`.
 

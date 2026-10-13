@@ -45,6 +45,9 @@ is the only file importing `@modelcontextprotocol/sdk`.
   and recorded by `sessionRecorder` (`record.ts`). Each starts from the
   `SessionStart` values memory renders, handed to the `connect` the CLI
   passes. `preview.ts` gives `--dump-context` a start without history.
+  `catalogue.ts`'s `indexCatalogue` loads each conversation's sidecar,
+  visits and reads from the recall index, for `openMemory`,
+  `previewStart` and `--list`.
 - `memory/sidecar.ts`: the notes, kept in `<phrase>.meta.json` beside the
   transcript. `service.ts`'s `MemoryService` builds the memory block each
   session starts with, frozen for the session, and schedules reviews
@@ -83,6 +86,9 @@ is the only file importing `@modelcontextprotocol/sdk`.
   `broken/`. `mirror.ts` seals new commits as AES-256-GCM bundles
   (`seal.ts`) on the orphan branch `sealed` and pushes it to the remote
   `mirror` under `DOROTHY_MIRROR_KEY`; `--recover` rebuilds from it.
+  `commands.ts` has `commandHistory` and `--history`, `--restore`,
+  `--rollback`, `--check`, `--mirror` and `--recover`, saving the
+  mirror's key with dotenvx's `set`; `lock.ts` is the `FileLock`.
 - `sqlite-lock.ts`: `exclusiveLock`, a SQLite `BEGIN IMMEDIATE` write
   lock.
 
