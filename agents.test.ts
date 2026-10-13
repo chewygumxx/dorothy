@@ -103,12 +103,36 @@ const walk = (dir: string, found: string[] = []): string[] => {
 const guidanceUnder = (dir: string): string[] =>
     walk(dir).filter((path) => basename(path) === "AGENTS.md");
 
-// Relative links that resolve to nothing; remark checks none of them.
+// The relative link targets in Markdown, without their fragments: inline
+// links, titled or in angle brackets, and reference definitions. Code is
+// skipped, as a link there is only an example.
+const linkTargets = (markdown: string): string[] => {
+    const prose = markdown
+        .replace(/^(```|~~~)[^\n]*\n[\s\S]*?^\1[^\n]*$/gm, "")
+        .replace(/`[^`\n]*`/g, "");
+    const inline = [...prose.matchAll(/\]\(\s*(?:<([^>\n]*)>|([^)\s]+))/g)];
+    const defined = [
+        ...prose.matchAll(/^ {0,3}\[[^\]\n]+\]:\s*(?:<([^>\n]*)>|(\S+))/gm),
+    ];
+    return [...inline, ...defined]
+        .map(
+            (match) =>
+                ((match[1] ?? match[2]) as string).split("#")[0] as string,
+        )
+        .filter((target) => target !== "" && !/^[a-z][a-z+.-]*:/i.test(target));
+};
+
+// Relative links that resolve to nothing, a leading slash meaning the
+// repository's root; remark checks none of them.
 const brokenLinks = (path: string): string[] =>
-    [...read(path).matchAll(/\]\(([^)\s]+)\)/g)]
-        .map((match) => (match[1] as string).split("#")[0] as string)
-        .filter((target) => target !== "" && !/^[a-z]+:/i.test(target))
-        .filter((target) => !existsSync(join(dirname(path), target)));
+    linkTargets(read(path)).filter(
+        (target) =>
+            !existsSync(
+                target.startsWith("/")
+                    ? join(ROOT, target)
+                    : join(dirname(path), target),
+            ),
+    );
 
 const PACKAGES = at("packages");
 
@@ -167,6 +191,40 @@ describe("the skills", () => {
     });
 });
 
+describe("the link check", () => {
+    it("reads every form of relative link, outside code", () => {
+        const markdown = [
+            '[a](./a.md) [b](./b.md "Title") [c](<./c d.md>)',
+            "[e](https://example.com) [f](#here) [g](./g.md#part)",
+            "Not a link: `[h](./h.md)`.",
+            "```",
+            "[i](./i.md)",
+            "```",
+            "[j]: ./j.md",
+            '[k]: <./k.md> "Title"',
+        ].join("\n");
+        expect(linkTargets(markdown)).toEqual([
+            "./a.md",
+            "./b.md",
+            "./c d.md",
+            "./g.md",
+            "./j.md",
+            "./k.md",
+        ]);
+    });
+
+    it("resolves a repository-absolute link from the root", () => {
+        const dir = mkdtempSync(join(tmpdir(), "agents-links-"));
+        try {
+            const path = join(dir, "AGENTS.md");
+            writeFileSync(path, "[r](/README.md) [s](/no-such-file.md)\n");
+            expect(brokenLinks(path)).toEqual(["/no-such-file.md"]);
+        } finally {
+            rmSync(dir, { recursive: true });
+        }
+    });
+});
+
 describe("the packages' guidance", () => {
     it("gives every package an AGENTS.md", () => {
         const missing = readdirSync(PACKAGES).filter(
@@ -201,12 +259,11 @@ describe("the root's guidance", () => {
         expect(lines(at("docs/AGENTS.md"))).toBeLessThanOrEqual(BUDGET.docs);
     });
 
-    it("resolves every link in them", () => {
-        expect([
-            ...brokenLinks(at("AGENTS.md")),
-            ...brokenLinks(at("docs/AGENTS.md")),
-        ]).toEqual([]);
-    });
+    for (const file of ["AGENTS.md", "docs/AGENTS.md"]) {
+        it(`resolves every link in ${file}`, () => {
+            expect(brokenLinks(at(file))).toEqual([]);
+        });
+    }
 
     // `ln -s AGENTS.md CLAUDE.md` is the usual way one comes back.
     it("finds a CLAUDE.md that is a link", () => {
