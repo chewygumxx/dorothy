@@ -395,3 +395,130 @@ describe("Claude's settings", () => {
         expect(settings.enabledPlugins).toEqual(PLUGINS);
     });
 });
+
+// A scratch repository for the install hooks, its git shut out of the
+// user's configuration, and a stand-in `bun` that records each install
+// instead of running it.
+const scratchRepository = () => {
+    const dir = mkdtempSync(join(tmpdir(), "agents-hooks-"));
+    const bin = join(dir, "bin");
+    const repo = join(dir, "repo");
+    const log = join(dir, "installs");
+    mkdirSync(bin);
+    mkdirSync(repo);
+    writeFileSync(join(bin, "bun"), `#!/bin/sh\necho "$*" >>"${log}"\n`, {
+        mode: 0o755,
+    });
+    const env = {
+        GIT_AUTHOR_EMAIL: "test@example.com",
+        GIT_AUTHOR_NAME: "test",
+        GIT_COMMITTER_EMAIL: "test@example.com",
+        GIT_COMMITTER_NAME: "test",
+        GIT_CONFIG_GLOBAL: "/dev/null",
+        GIT_CONFIG_NOSYSTEM: "1",
+        HOME: dir,
+        PATH: `${bin}:${process.env.PATH}`,
+    };
+    const git = (...args: string[]): string => {
+        const run = Bun.spawnSync(["git", ...args], { cwd: repo, env });
+        if (run.exitCode !== 0) {
+            throw new Error(`git ${args.join(" ")}: ${run.stderr}`);
+        }
+        return run.stdout.toString().trim();
+    };
+    const commit = (file: string, text: string): string => {
+        writeFileSync(join(repo, file), text);
+        git("add", file);
+        git("commit", "-q", "-m", file);
+        return git("rev-parse", "HEAD");
+    };
+    git("init", "-q", "-b", "main");
+    return {
+        commit,
+        git,
+        hook: (name: string, ...args: string[]) =>
+            Bun.spawnSync(["sh", at(".husky", name), ...args], {
+                cwd: repo,
+                env,
+            }).exitCode,
+        installs: (): string[] =>
+            existsSync(log) ? read(log).trim().split("\n") : [],
+        remove: () => rmSync(dir, { recursive: true }),
+    };
+};
+
+describe("the install hooks", () => {
+    it("reinstall after a branch checkout changing the dependencies", () => {
+        const repo = scratchRepository();
+        try {
+            const one = repo.commit("package.json", "{}\n");
+            const two = repo.commit("bun.lock", "{}\n");
+            expect(repo.hook("post-checkout", one, two, "1")).toBe(0);
+            expect(repo.installs()).toEqual(["install"]);
+        } finally {
+            repo.remove();
+        }
+    });
+
+    it("leave file checkouts and unchanged dependencies alone", () => {
+        const repo = scratchRepository();
+        try {
+            const one = repo.commit("package.json", "{}\n");
+            const two = repo.commit("README.md", "# Readme\n");
+            const three = repo.commit("bun.lock", "{}\n");
+            expect(repo.hook("post-checkout", one, two, "1")).toBe(0);
+            expect(repo.hook("post-checkout", one, three, "0")).toBe(0);
+            expect(repo.installs()).toEqual([]);
+        } finally {
+            repo.remove();
+        }
+    });
+
+    it("reinstall after a merge changing the dependencies", () => {
+        const repo = scratchRepository();
+        try {
+            repo.commit("package.json", "{}\n");
+            repo.git("checkout", "-q", "-b", "feature");
+            repo.commit("package.json", '{ "name": "x" }\n');
+            repo.git("checkout", "-q", "main");
+            repo.git("merge", "-q", "feature");
+            expect(repo.hook("post-merge", "0")).toBe(0);
+            expect(repo.installs()).toEqual(["install"]);
+        } finally {
+            repo.remove();
+        }
+    });
+
+    it("reinstall after a squash merge changing the dependencies", () => {
+        const repo = scratchRepository();
+        try {
+            repo.commit("package.json", "{}\n");
+            repo.git("checkout", "-q", "-b", "feature");
+            repo.commit("package.json", '{ "name": "x" }\n');
+            repo.git("checkout", "-q", "main");
+            repo.git("merge", "-q", "--squash", "feature");
+            expect(repo.git("rev-parse", "ORIG_HEAD")).toBe(
+                repo.git("rev-parse", "HEAD"),
+            );
+            expect(repo.hook("post-merge", "1")).toBe(0);
+            expect(repo.installs()).toEqual(["install"]);
+        } finally {
+            repo.remove();
+        }
+    });
+
+    it("leave a merge with unchanged dependencies alone", () => {
+        const repo = scratchRepository();
+        try {
+            repo.commit("package.json", "{}\n");
+            repo.git("checkout", "-q", "-b", "feature");
+            repo.commit("README.md", "# Readme\n");
+            repo.git("checkout", "-q", "main");
+            repo.git("merge", "-q", "feature");
+            expect(repo.hook("post-merge", "0")).toBe(0);
+            expect(repo.installs()).toEqual([]);
+        } finally {
+            repo.remove();
+        }
+    });
+});

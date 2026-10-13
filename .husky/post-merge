@@ -10,7 +10,9 @@
 #
 
 # A merge or pull that changes the dependencies reinstalls them, and
-# prepare relinks the skills. ORIG_HEAD is the head before it.
+# prepare relinks the skills. ORIG_HEAD is the head before it, compared
+# with the working tree, as a squash merge changes only the files and
+# leaves HEAD where ORIG_HEAD is.
 
-git diff --quiet ORIG_HEAD HEAD -- package.json bun.lock && exit 0
+git diff --quiet ORIG_HEAD -- package.json bun.lock && exit 0
 bun install
