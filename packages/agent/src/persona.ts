@@ -148,9 +148,10 @@ export const baseOptions = {
     // Dorothy only chats, so drop the built-in tools; their definitions
     // otherwise add roughly 32k input tokens to every request.
     tools: [],
-    // Skip ~/.claude and .claude/ settings: loading them runs this repo's
-    // SessionStart hook (a full bun install) and every enabled plugin on
-    // each start, which accounted for most of the startup delay.
+    // Skip ~/.claude and .claude/ settings: loading them runs every enabled
+    // plugin and hook on each start. When measured, this repository's (a
+    // full bun install among them) were most of the startup delay, and
+    // Dorothy needs none of them.
     settingSources: [],
     persistSession: false,
     // Emit token deltas so the reply streams as it is generated instead of
