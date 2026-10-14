@@ -177,6 +177,20 @@ describe("reviewPrompt", () => {
         expect(prompt.match(/<\/conversation>/g)).toHaveLength(1);
     });
 
+    it("gives each of consecutive replies its own line", () => {
+        const prompt = reviewPrompt(
+            [
+                { role: "user", text: "fix it" },
+                { role: "assistant", text: "Looking." },
+                { role: "assistant", text: "Fixed." },
+            ],
+            null,
+        );
+        expect(prompt).toContain(
+            "User: fix it\n\nDorothy: Looking.\n\nDorothy: Fixed.",
+        );
+    });
+
     it("marks the user's notes as fixed and a provisional title", () => {
         const current = mergeEdit(
             withProvisional(null, "Hey there", AT),

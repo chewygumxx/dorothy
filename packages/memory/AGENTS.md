@@ -39,7 +39,9 @@ is the only file importing `@modelcontextprotocol/sdk`.
 ## Files
 
 - `transcript.ts`: transcripts, private JSONL under
-  `$XDG_DATA_HOME/dorothy/`.
+  `$XDG_DATA_HOME/dorothy/`. A `tool` event keeps a body's call, run
+  through `scrub.ts` and trimmed to 2,000 characters a side; a session
+  event may name its `source`.
 - `memory/open.ts`: `openMemory` opens a chat's memory and returns its
   `createSession(turns)`, whose sessions are compacting, tracked by memory
   and recorded by `sessionRecorder` (`record.ts`). Each starts from the

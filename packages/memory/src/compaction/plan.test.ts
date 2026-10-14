@@ -72,6 +72,18 @@ describe("outgoing", () => {
         const waiting = [user(), reply(), user(), reply(), user()];
         expect(outgoing(waiting, [], 1)).toEqual({ from: 1, through: 4 });
     });
+
+    it("treats consecutive assistant turns as any other turns", () => {
+        const turns: Turn[] = [
+            { role: "user", text: "a ".repeat(400) },
+            { role: "assistant", text: "b ".repeat(400) },
+            { role: "assistant", text: "c ".repeat(400) },
+            { role: "user", text: "next" },
+            { role: "assistant", text: "d" },
+            { role: "assistant", text: "e" },
+        ];
+        expect(outgoing(turns, [], 10)).toEqual({ from: 1, through: 3 });
+    });
 });
 
 describe("callCap", () => {

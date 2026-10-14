@@ -23,7 +23,9 @@ import { describeLookup } from "@dorothy/core";
 import {
     parseTranscript,
     readTranscript,
+    sourceOf,
     TranscriptWriter,
+    toolEntry,
     toRecall,
     toTurn,
     transcriptDir,
@@ -586,5 +588,118 @@ describe("recollect events", () => {
                 turns: null,
             });
         }
+    });
+});
+
+describe("toolEntry", () => {
+    it("scrubs each side, then trims it to 2,000 characters and counts the cut", () => {
+        expect(
+            toolEntry({
+                name: "Bash",
+                input: '{"command":"export API_KEY=abc123"}',
+                output: "x".repeat(2500),
+                ok: true,
+            }),
+        ).toEqual({
+            kind: "tool",
+            name: "Bash",
+            input: '{"command":"export API_KEY=[secret]"}',
+            output: "x".repeat(2000),
+            ok: true,
+            cut: { input: 0, output: 500 },
+        });
+    });
+
+    it("counts code points, so a trim never splits a character", () => {
+        const entry = toolEntry({
+            name: "Read",
+            input: "{}",
+            output: "😀".repeat(2001),
+            ok: true,
+        });
+        expect([...entry.output]).toHaveLength(2000);
+        expect(entry.cut.output).toBe(1);
+    });
+
+    it("marks a call to Dorothy's own memory tools, and only those", () => {
+        const call = { name: "search", input: "{}", output: "", ok: true };
+        expect(toolEntry({ ...call, memory: true }).memory).toBe(true);
+        expect("memory" in toolEntry(call)).toBe(false);
+    });
+
+    it("is written with v and at like any event", async () => {
+        const path = join(dir, "t.jsonl");
+        const writer = await TranscriptWriter.open(path, clock);
+        await writer.append(
+            toolEntry({ name: "Bash", input: "{}", output: "", ok: false }),
+        );
+        await writer.close();
+        expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
+            v: 1,
+            kind: "tool",
+            at: AT.toISOString(),
+            name: "Bash",
+            input: "{}",
+            output: "",
+            ok: false,
+            cut: { input: 0, output: 0 },
+        });
+    });
+});
+
+describe("tool events in a transcript", () => {
+    const at = "2026-10-15T09:00:00.000Z";
+    const line = (fields: object) => JSON.stringify({ v: 1, at, ...fields });
+    const tool = line({
+        kind: "tool",
+        name: "Bash",
+        input: "{}",
+        output: "",
+        ok: true,
+        cut: { input: 0, output: 0 },
+    });
+
+    it("are neither turns nor skipped", () => {
+        expect(toTurn(JSON.parse(tool))).toBe("ignore");
+        const read = parseTranscript(
+            [
+                line({ kind: "user", text: "hi" }),
+                tool,
+                line({ kind: "assistant", text: "done", interrupted: false }),
+            ].join("\n"),
+        );
+        expect(read.skipped).toBe(0);
+        expect(read.turns.map((turn) => turn.role)).toEqual([
+            "user",
+            "assistant",
+        ]);
+    });
+
+    it("leave consecutive assistant turns as they are", () => {
+        const read = parseTranscript(
+            [
+                line({ kind: "user", text: "fix it" }),
+                line({
+                    kind: "assistant",
+                    text: "Looking.",
+                    interrupted: false,
+                }),
+                tool,
+                line({ kind: "assistant", text: "Fixed.", interrupted: false }),
+            ].join("\n"),
+        );
+        expect(read.turns.map((turn) => [turn.role, turn.text])).toEqual([
+            ["user", "fix it"],
+            ["assistant", "Looking."],
+            ["assistant", "Fixed."],
+        ]);
+    });
+});
+
+describe("sourceOf", () => {
+    it("reads chat when a session event names no source, or one unknown", () => {
+        expect(sourceOf({})).toBe("chat");
+        expect(sourceOf({ source: "telegram" })).toBe("chat");
+        expect(sourceOf({ source: "claude-code" })).toBe("claude-code");
     });
 });
