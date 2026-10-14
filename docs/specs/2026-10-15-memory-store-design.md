@@ -202,8 +202,9 @@ provenance:
 The fact itself, in Markdown.
 ```
 
-- `name`: kebab-case, at most 64 characters, and the file's stem, so
-  unique within its scope.
+- `name`: kebab-case, at most 64 characters, beginning with a letter and
+  not `null`, `true` or `false` (written plain, it must read back as
+  text), and the file's stem, so unique within its scope.
 - `title`: at most 60 characters; `description`: one line of at most
   160, as a conversation's notes are limited.
 - `metadata.type`: `user`, `feedback`, `project` or `reference`. Other
@@ -232,9 +233,16 @@ The fact itself, in Markdown.
 - A link to another fact is relative, `[text](./<name>.md)`, and only
   within its scope, so an exported fact's links resolve and a project
   fact never points at a personal one.
-- No control character but newline and tab, and no invisible or
-  bidirectional Unicode, appears anywhere in the file: a known way of
-  hiding instructions in text a model will read.
+- No control character but newline and tab, no format character
+  (Unicode category Cf: zero widths, joiners, the soft hyphen,
+  bidirectional controls, tags), no default ignorable code point
+  (variation selectors, the Hangul filler) and neither U+2028 nor
+  U+2029 appears anywhere in the file, nor in any value its YAML
+  decodes, an escape included: a known way of hiding instructions in
+  text a model will read. There is no allow-list, so emoji joined by
+  U+200D are refused too.
+- A time, `at` or `created`, is an ISO 8601 UTC timestamp as
+  `Date#toISOString` writes it, `2026-10-15T09:30:00.000Z`.
 
 The store's lint checks all of it. A file that fails is restored from
 history, or kept aside in `broken/`, as transcripts and notes are.
