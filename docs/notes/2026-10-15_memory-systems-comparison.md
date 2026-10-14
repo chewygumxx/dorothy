@@ -273,6 +273,16 @@ little of it. The other gaps belong to the two specs still to come.
 - **Bootstrapping a project's memory** from its repository and past
   sessions (Letta's `/init`).
 
+## What was taken
+
+All of the above, but for expiry and forgetting. The user ruled that a
+memory may fade but must always remain possible to query: the spec drops
+`expires` and replaces forgetting with retiring, which takes a fact out
+of the always-present layer and the repository's copy and ranks it below
+live facts, while it stays in the store, in search and in history.
+`importance` stays, for ranking. Forgetting a conversation's
+contributions became retiring them.
+
 ## Where the spec differs on purpose
 
 - **Partitioned by path.** OpenClaw scopes by annotation and ranks; the
