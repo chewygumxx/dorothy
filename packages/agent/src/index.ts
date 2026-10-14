@@ -12,7 +12,11 @@
 // the Agent SDK. A session, a structured call, her persona's prompts,
 // the one-shot reply, and the request capture behind --dump-context.
 
-export { type CaptureQueryFn, dumpRequest } from "./capture.js";
+export {
+    type CaptureQueryFn,
+    captureServer,
+    dumpRequest,
+} from "./capture.js";
 export {
     Conversation,
     conversationOptions,

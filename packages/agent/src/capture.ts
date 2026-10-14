@@ -18,13 +18,16 @@ export type CaptureQueryFn = (params: {
 // A stand-in for the Messages API on a loopback port: it records each
 // request body and answers every call with an error, so nothing reaches the
 // API and no tokens are spent. Headers, which carry the credentials, are
-// never read.
+// never read. first resolves with the first body, for a caller that stops
+// its client there.
 export function captureServer(): {
     url: string;
     bodies: unknown[];
+    first: Promise<unknown>;
     stop: () => void;
 } {
     const bodies: unknown[] = [];
+    const first = Promise.withResolvers<unknown>();
     const server = Bun.serve({
         hostname: "127.0.0.1",
         port: 0,
@@ -33,7 +36,9 @@ export function captureServer(): {
                 request.method === "POST" &&
                 new URL(request.url).pathname.endsWith("/messages")
             ) {
-                bodies.push(await request.json().catch(() => null));
+                const body = await request.json().catch(() => null);
+                bodies.push(body);
+                first.resolve(body);
             }
             return Response.json(
                 {
@@ -50,6 +55,7 @@ export function captureServer(): {
     return {
         url: `http://127.0.0.1:${server.port}`,
         bodies,
+        first: first.promise,
         stop: () => {
             server.stop(true);
         },

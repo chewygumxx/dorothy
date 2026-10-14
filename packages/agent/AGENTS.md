@@ -29,9 +29,10 @@ streams the `text_delta` events of `stream_event` messages
 
 One entry point, `"."` (`src/index.ts`): `Conversation`,
 `conversationOptions`, `runOneShot`, `structuredCall`, `dumpRequest`,
-`personaPrompt`, `systemPrompt`, `promptHash` and `prepareCliHome`. Of the
-`@dorothy` packages it depends on `core` and `identity`. It declares `zod`
-because the Agent SDK takes it as a peer; never prune it as unused.
+`captureServer`, `personaPrompt`, `systemPrompt`, `promptHash` and
+`prepareCliHome`. Of the `@dorothy` packages it depends on `core` and
+`identity`. It declares `zod` because the Agent SDK takes it as a peer;
+never prune it as unused.
 
 ## Files
 
@@ -50,8 +51,10 @@ because the Agent SDK takes it as a peer; never prune it as unused.
   component, and Dorothy describes her context); `baseOptions` and
   `cliOptions`; `promptHash` (`xxh3:<hex>`), which transcripts record and
   nothing reads back.
-- `capture.ts`: `dumpRequest` sends a chat's first request to a loopback
-  stand-in for the API and returns the body, for `--dump-context`.
+- `capture.ts`: `captureServer`, a loopback stand-in for the API that
+  records request bodies and answers with an error; `dumpRequest` sends a
+  chat's first request to it and returns the body, for `--dump-context`.
+  The CLI's `--claude --dump-context` puts it behind the gateway.
 
 ## Invariants
 
