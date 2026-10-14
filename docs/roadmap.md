@@ -50,29 +50,68 @@ or estimates.
 
 In order; the first is next.
 
+### Dorothy's Memory
+
+One memory wherever Dorothy goes: in chat, in Claude Code and in any body
+she takes later. Recall over MCP, persistent context and progressive
+disclosure let her remember and recollect efficiently and well, and a
+memory of facts and lessons joins the conversations she remembers. The
+memory system as it stands may be reworked rather than extended.
+Findings: [objectives](./reports/2026-10-15-objectives.md).
+
+- **Status**: Pending Design
+- **Required**: Requisites Fulfilled
+- **Rationale**: Wherever she goes, her memory follows with her. In
+  Claude Code she has her identity but none of her memory, and every
+  objective after this one builds on what she remembers.
+
 ### Model Providers
 
 A provider contract in `core`, with the Messages API and an
 OpenAI-compatible implementation, and per-role routing in `config.toml`,
 so chat, reviews, compaction and maintenance each take a model fit for
-them. Replaces the move to the Messages API alone (the `api` commit
-scope). Findings: [context leak](./reports/2026-10-07-context-leak.md).
+them. When Anthropic's usage runs out, requests fall back to another
+provider, such as featherless.ai or OpenRouter. Replaces the move to the
+Messages API alone (the `api` commit scope). Findings:
+[context leak](./reports/2026-10-07-context-leak.md),
+[objectives](./reports/2026-10-15-objectives.md).
 
 - **Status**: Pending Design
 - **Required**: Requisites Fulfilled
 - **Rationale**: Anthropic's models are too costly for every purpose, and
-  modularity keeps the Agent SDK inside `agent`. It goes ahead of
+  modularity keeps the Agent SDK inside `agent`. Resilience to upstream
+  hindrance is the first objective after memory. It goes ahead of
   maintenance, whose background passes are where a cheaper model pays
   most.
+
+### Dorothy's Gateway
+
+An endpoint speaking the Anthropic and OpenAI protocols that adds
+Dorothy's persona and memory to each request and routes it through Model
+Providers, so she can be the model behind Claude Code, Codex, OpenCode and
+the like, with recall offered to them over MCP, and Claude Code keeps
+working when Anthropic's usage runs out. It enforces the budgets that
+shape her context in one module. It grows from the `gateway` package
+Dorothy's Identity built, which already serves her identity to Claude
+Code; Dorothy's Memory may bring her memory to it first. Notes:
+[budgets and a gateway](./notes/2026-10-07_budgets-gateway.md).
+
+- **Status**: Idea
+- **Required**: Model Providers
+- **Rationale**: Clients already supply the tools and the loop; Dorothy
+  supplies the persona, the memory and the choice of model. It carries
+  Model Providers' fallback to Claude Code, so it goes ahead of
+  maintenance, resilience coming before learning.
 
 ### Cyclical Maintenance (4a)
 
 Dorothy revises, merges and prunes the tag vocabulary and deep-tags
 conversations from their notes, in background passes that can be undone.
-Its undo and log are to be revisited against memory history.
+Its undo and log are to be revisited against memory history, and what it
+maintains against Dorothy's Memory.
 
 - **Status**: Design Agreed, Pending Specification
-- **Required**: Model Providers
+- **Required**: Dorothy's Memory, Model Providers
 - **Rationale**: A vocabulary without upkeep drifts. Memory history, now
   done, recovers from a wrong pass, and it is to be built inside the
   `memory` package.
@@ -84,23 +123,43 @@ the conversations that carry it. Split from 4a.
 
 - **Status**: Pending Design
 - **Required**: Cyclical Maintenance
-- **Rationale**: Maintenance keeps the concepts worth an overview.
+- **Rationale**: Maintenance keeps the concepts worth an overview. An
+  overview is a layer of progressive disclosure, which Dorothy's Memory
+  may claim.
 
-### Dorothy's Gateway
+### Learning
 
-An endpoint speaking the Anthropic and OpenAI protocols that adds
-Dorothy's persona and memory to each request and routes it through Model
-Providers, so she can be the model behind Claude Code, Codex, OpenCode and
-the like, with recall offered to them over MCP. It enforces the budgets
-that shape her context in one module. It grows from the `gateway`
-package Dorothy's Identity built, which already serves her identity to
-Claude Code. Notes:
-[budgets and a gateway](./notes/2026-10-07_budgets-gateway.md).
+Dorothy turns experience into lasting instruction: a background pass,
+undoable through memory history, that distils what worked into her memory
+or into skills declared in this repository, in the spirit of Hermes
+Agent's loop.
 
 - **Status**: Idea
-- **Required**: Model Providers
-- **Rationale**: Clients already supply the tools and the loop; Dorothy
-  supplies the persona, the memory and the choice of model.
+- **Required**: Cyclical Maintenance
+- **Rationale**: Maintenance is where background passes run and are
+  undone, and learning is one more.
+
+### Extensions
+
+A catalogue of skills and tools Dorothy grows by: `SKILL.md` skills and
+MCP servers from ClawHub, Anthropic's marketplace and elsewhere, vetted
+and declared in this repository.
+
+- **Status**: Idea
+- **Required**: Requisites Fulfilled
+- **Rationale**: Claude Code already loads both, so the work is choosing
+  and vetting them; ClawHub has carried hundreds of malicious skills. It
+  follows learning in the objectives' order.
+
+### Reach
+
+Dorothy reached away from the terminal, through chat apps and scheduled
+runs, with the same memory.
+
+- **Status**: Idea
+- **Required**: Dorothy's Memory
+- **Rationale**: Second to the catalogue in the user's wishes, and
+  wherever she is reached, her memory must follow.
 
 ### Relations and Embeddings (5)
 
@@ -109,7 +168,7 @@ Links between conversations and semantic search beside FTS5.
 - **Status**: Conditional
 - **Required**: Requisites Fulfilled
 - **Rationale**: Only worth building once recall shows FTS5 falling short;
-  there is no such evidence yet.
+  there is no such evidence yet. Dorothy's Memory may take it up.
 
 ## Candidates
 
@@ -148,6 +207,12 @@ Found but not scheduled, each with its source.
   `--opencode` launchers beside `--claude` (identity spec, Later).
 - Checking that Claude Code's forks keep the identity marker, which the
   probes could not observe without a model reply (Dorothy's identity).
+- Probing how open models from featherless.ai or OpenRouter do behind
+  Claude Code's prompt and tool schemas, before fallback leans on them
+  (objectives).
+- Testing whether the identity's place in Claude Code's prompt costs her
+  any of its agentic ability, against plain `claude` (Dorothy's
+  identity).
 
 ## Done
 
@@ -225,3 +290,10 @@ In order of completion.
   provider contract. Model Providers is next again, and Dorothy's Gateway
   grows from that gateway. Candidates gain an OpenAI adapter with more
   launchers, and a check on forks.
+- 2026-10-15: The [objectives](./reports/2026-10-15-objectives.md) rule
+  that neither OpenClaw nor Hermes Agent hosts Dorothy and put her memory
+  first, so Dorothy's Memory goes ahead of Model Providers, which gains
+  fallback. Dorothy's Gateway moves ahead of maintenance to carry that
+  fallback to Claude Code, and Learning, Extensions and Reach follow
+  Topic Overviews. Candidates gain a probe of open models behind Claude
+  Code, and a test of what the identity costs her agentic ability.

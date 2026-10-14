@@ -34,8 +34,10 @@ memory comes first, reworked if it needs to be, and the rest follows.
 ## How it was reached
 
 The user compared the two projects in a claude.ai conversation driven by
-web search, then pasted it into a Claude Code session running as
-`dorothy --claude`. Its claims were not verified here: they postdate what
+web search, kept as a
+[note](../notes/2026-10-15_claude-conversation-openclaw-hermes-agent.md),
+then pasted it into a Claude Code session running as `dorothy --claude`.
+Its claims were not verified here: they postdate what
 the coding agent knows, and several (release numbers, issue and pull
 request numbers, a metering ratio) came from the search alone. They are
 leads, not findings. What follows takes from them only what bears on
@@ -160,7 +162,9 @@ Topic Overviews (4b) would add a third.
 2. Her memory comes first: one memory across every body she runs in,
    through recall over MCP, persistent context, progressive disclosure
    and whatever else serves her to remember and recollect efficiently
-   and well, now and later.
+   and well, now and later. Its principle, in the user's words:
+   **wherever you go, your memory follows with you.** Its spec is to
+   discuss what that asks.
 3. The memory system as it stands may be reworked rather than extended,
    if its design calls for it.
 4. The other objectives follow the memory work, roughly in this order:
@@ -187,5 +191,5 @@ For its design to settle, not this report:
 
 ## Next
 
-Revise the roadmap to put the memory work first, then begin its design
-with `brainstorming`.
+The roadmap puts Dorothy's Memory first, as the phase these objectives
+open; its design begins with `brainstorming`.
