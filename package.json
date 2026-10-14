@@ -22,7 +22,7 @@
         "@dorothy/cli": "workspace:*"
     },
     "devDependencies": {
-        "@biomejs/biome": "2.5.14",
+        "@biomejs/biome": "2.5.15",
         "markdownlint-cli2": "^0.23.3",
         "@chewygumxx/biome-config": "^1.0.0",
         "@chewygumxx/commitlint-config": "^1.1.0",
