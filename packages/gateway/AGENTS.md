@@ -27,8 +27,9 @@ and model routing.
 
 ## Entry points and imports
 
-One entry point, `"."` (`src/index.ts`): `MARKER`, `injectIdentity`,
-`rewriteRequest` and `Rewritten`. It depends on `core` and `identity`,
+One entry point, `"."` (`src/index.ts`): `startGateway`, `upstreamFrom`,
+`DEFAULT_UPSTREAM`, `MARKER`, `injectIdentity`, `rewriteRequest` and
+their types. It depends on `core` and `identity`,
 never on a model provider's SDK.
 
 ## Files
@@ -38,6 +39,10 @@ never on a model provider's SDK.
   marker and the space around it gone, an emptied block's
   `cache_control` moved to the block before) and `rewriteRequest` (gzip,
   parsing, drift). An OpenAI adapter would sit beside it.
+- `server.ts`: `startGateway` on `127.0.0.1`, port `0`, `idleTimeout: 0`;
+  `POST .../v1/messages` and `.../count_tokens` go to `rewriteRequest`,
+  everything else through byte for byte; 502 in the API's shape when the
+  upstream cannot be reached.
 
 ## Invariants
 
@@ -45,14 +50,16 @@ never on a model provider's SDK.
   identity line, the rest of its text, messages and headers stay as
   sent.
 - Never record or log a header or a body; write nothing to the terminal,
-  which the client owns.
+  which the client owns. `stats` counts injections and drift instead.
 - A request without the marker passes byte for byte, so a client that
   changes fails safe, and drift tells of it.
 
 ## Tests
 
 `anthropic.test.ts` covers the rewrite on fixtures, one of them the
-shape the probe found. No test reaches the API.
+shape the probe found; `server.test.ts` runs the gateway against a
+stand-in upstream on loopback, including an 11-second pause in a stream.
+No test reaches the API.
 
 ## See also
 

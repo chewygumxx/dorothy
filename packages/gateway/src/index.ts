@@ -17,3 +17,10 @@ export {
     type Rewritten,
     rewriteRequest,
 } from "./anthropic.js";
+export {
+    DEFAULT_UPSTREAM,
+    type Gateway,
+    type GatewayStats,
+    startGateway,
+    upstreamFrom,
+} from "./server.js";

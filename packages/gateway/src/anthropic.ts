@@ -21,7 +21,7 @@ type Fields = Record<string, unknown>;
 
 export type Rewritten =
     | { kind: "unmarked" }
-    | { kind: "injected"; bytes: Uint8Array }
+    | { kind: "injected"; bytes: Uint8Array<ArrayBuffer> }
     | { kind: "drift" };
 
 const isRecord = (value: unknown): value is Fields =>
