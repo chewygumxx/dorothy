@@ -181,8 +181,10 @@ tool output is noise to search and the likeliest place for a secret.
 ```markdown
 ---
 name: dorothy-ambition
-title: Dorothy's ambition
-description: One adaptable Dorothy, extensible and remembering
+title: >-
+  Dorothy's ambition
+description: >-
+  One adaptable Dorothy, extensible and remembering
 metadata:
   type: project
 tags:
@@ -191,10 +193,10 @@ importance: 7
 provenance:
   origin: user
   by: dorothy
-  at: 2026-10-15T09:30:00.000Z
-  created: 2026-10-15T09:30:00.000Z
-  model: claude-opus-5-5
-  from: bingo-overabundance-mazer-kasha#12
+  at: "2026-10-15T09:30:00.000Z"
+  created: "2026-10-15T09:30:00.000Z"
+  model: "claude-opus-5-5"
+  from: "bingo-overabundance-mazer-kasha#12"
 ---
 
 The fact itself, in Markdown.
@@ -221,7 +223,9 @@ The fact itself, in Markdown.
 - `provenance`, besides: who wrote this version (`dorothy`, `user`,
   `review` or `repo`), when, when the fact was first written, with which
   model, and the conversation and turn it came from, where known.
-- `retired`: present on a retired fact, with when, by whom and why.
+- `retired`: present on a retired fact, with when (`at`), by whom
+  (`by`) and why (`why`, one line of at most 160 characters).
+- `metadata` keys beyond `type` hold a string, a number or a boolean.
 - The body is at most 2,000 characters. Dorothy writes lines of at
   most 80, but the lint does not require it, so a repository's own
   style imports.
@@ -234,6 +238,48 @@ The fact itself, in Markdown.
 
 The store's lint checks all of it. A file that fails is restored from
 history, or kept aside in `broken/`, as transcripts and notes are.
+
+### Frontmatter
+
+Frontmatter is YAML, and YAML coerces. Bun's parser, `Bun.YAML.parse`,
+reads YAML 1.2's core schema, so `no` and timestamps stay strings, but
+an unquoted `~` or `null` is null and `1e3` or `0o17` a number; a `: `
+or ` #` inside a plain value ends it early; and a leading `*`, `&`, `!`,
+`[`, `{`, `|` or `>` changes what follows. Every value is therefore
+written in a form with one reading, and checked for its type once read.
+
+Only Dorothy's code renders frontmatter, from a fact's fields, with its
+keys in a fixed order: `name`, `title`, `description`, `metadata`,
+`tags`, `importance`, `provenance`, `retired`.
+
+- **Free text** (`title`, `description` and `retired.why`) is a chomped
+  folded block scalar, `>-`, its words wrapped at 80 columns and indented
+  two spaces. A block scalar is always a string and needs no escaping.
+  Free text is normalised before it is written: no newline, no leading
+  or trailing space, and no run of spaces, since a wrapped line that
+  began with a space would be read as more indented and keep its line
+  break. So normalised, folding gives back exactly the text written.
+- **Closed sets and patterns** (`metadata.type`, `provenance.origin`,
+  `provenance.by`, `retired.by`, `name` and the tags' concept ids) are
+  plain: every value the lint allows reads as the same string.
+- **`importance`** is a plain integer.
+- **Everything else** (times, the model, `from`, and the values of
+  `metadata`'s other keys) is written with `JSON.stringify`: a string as
+  a double-quoted scalar, which YAML 1.2 reads as the same string, a
+  number or boolean as itself.
+
+Read, a fact is parsed and then checked against the schema: no key
+outside it but in `metadata`, and every value of the type and pattern
+its key expects. A value that parsed as something else, such as a title
+written `null` or `1e3` by hand or in a repository, fails rather than
+being coerced back; in the store the file is restored or kept aside, and
+from a repository it is not imported.
+
+A fact in the store that passes the check but is not in this canonical
+form, after a hand edit, is rewritten in it in the commit that sweeps
+the edit up. Export writes the canonical form too. Sync compares parsed
+forms, so a repository file written another way registers no change,
+and is rewritten only when its content changes.
 
 ### Writing
 
@@ -466,6 +512,11 @@ same branch.
 Every root, repository, key and environment is passed in, as the working
 rules require; nothing touches the user's data.
 
+- **Frontmatter**: render then parse gives back every field, in a
+  property test over text with quotes, colons, `#`, leading YAML
+  indicators, the words `null`, `~`, `no`, `1e3` and `0o17`, runs of
+  spaces, and non-ASCII; each trap written by hand fails the check; a
+  hand edit that passes is rewritten canonically.
 - **Facts**: parse and render round-trip; the lint's cases, one by one,
   invisible characters and a missing origin among them; write, move,
   retire, retire by conversation and revive, with their commits; origin
