@@ -39,6 +39,61 @@ describe("parseArgs", () => {
         expect(USAGE).toContain("dorothy --claude [args...] ");
     });
 
+    it("dumps claude's request, its args before -- and the message after", () => {
+        expect(parseArgs(["--claude", "--dump-context"], true)).toEqual({
+            kind: "claude-dump",
+            args: [],
+            message: "hi",
+        });
+        expect(
+            parseArgs(
+                [
+                    "--claude",
+                    "--dump-context",
+                    "--model",
+                    "sonnet",
+                    "--",
+                    "Who",
+                    "are",
+                    "you?",
+                ],
+                false,
+            ),
+        ).toEqual({
+            kind: "claude-dump",
+            args: ["--model", "sonnet"],
+            message: "Who are you?",
+        });
+        expect(
+            parseArgs(["--claude", "--dump-context", "--", "--", "-v"], false),
+        ).toEqual({ kind: "claude-dump", args: [], message: "-- -v" });
+        expect(
+            parseArgs(
+                ["--claude", "--dump-context", "--model", "x", "--"],
+                false,
+            ),
+        ).toEqual({
+            kind: "claude-dump",
+            args: ["--model", "x"],
+            message: "hi",
+        });
+    });
+
+    it("refuses --dev before --claude --dump-context", () => {
+        expect(
+            parseArgs(["--dev", "--claude", "--dump-context"], true),
+        ).toEqual({
+            kind: "usage",
+            message: "--dev applies only to chat, a prompt or --dump-context",
+        });
+    });
+
+    it("lists --claude --dump-context in the usage", () => {
+        expect(USAGE).toContain(
+            "dorothy --claude --dump-context [args...] [-- message...]",
+        );
+    });
+
     it("joins argv into a one-shot prompt, terminal or not", () => {
         expect(parseArgs(["What", "is", "your", "name?"], false)).toEqual({
             kind: "oneshot",

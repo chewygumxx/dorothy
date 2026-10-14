@@ -103,19 +103,29 @@ const spawnInherited = (cmd: string[], env: Env, cwd?: string): Spawned =>
 // The user's own Claude Code, with Dorothy as its main agent: the gateway
 // replaces the marker appended to its system prompt with her identity.
 // Dorothy's .env is not loaded; claude signs in as it always does.
-export async function runClaude(
+export type Launch = {
+    cmd: string[];
+    env: Env;
+    cwd?: string;
+    gateway: Gateway;
+};
+
+// What running claude through the gateway needs, for --claude and its
+// dump alike: claude from the user's PATH, the marker in its arguments,
+// and a gateway in front of the upstream. A number is the exit code of a
+// failure already reported.
+export function launchClaude(
     args: readonly string[],
+    upstream: string,
     {
         env = process.env,
         which = (command, options) => Bun.which(command, options),
         startGateway: start = startGateway,
-        spawn = spawnInherited,
         write = (text) => {
             process.stderr.write(text);
         },
-        signals = process,
     }: ClaudeDeps = {},
-): Promise<number> {
+): Launch | number {
     const shell = userShell(env);
     const claude = which("claude", { PATH: shell.env.PATH ?? "" });
     if (claude === null) {
@@ -124,23 +134,54 @@ export async function runClaude(
     }
     let gateway: Gateway;
     try {
-        gateway = start({ upstream: upstreamFrom(env) });
+        gateway = start({ upstream });
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         write(`dorothy: the gateway could not start: ${reason}\n`);
         return 1;
     }
-    const child = spawn(
-        [claude, ...claudeArgs(args)],
-        {
+    const launch: Launch = {
+        cmd: [claude, ...claudeArgs(args)],
+        env: {
             ...shell.env,
             ANTHROPIC_BASE_URL: gateway.url,
             // Claude Code turns tool search off for a base URL not
             // Anthropic's; a user's own choice stands.
             ENABLE_TOOL_SEARCH: env.ENABLE_TOOL_SEARCH ?? "1",
         },
-        shell.cwd,
-    );
+        gateway,
+    };
+    return shell.cwd === undefined ? launch : { ...launch, cwd: shell.cwd };
+}
+
+export function warnDrift(
+    { drift }: Gateway["stats"],
+    write: (text: string) => void,
+): void {
+    if (drift > 0) {
+        write(
+            `dorothy: ${drift} ${drift === 1 ? "request" : "requests"} carried the identity marker but could not be rewritten; Claude Code may have changed how it sends its prompt\n`,
+        );
+    }
+}
+
+export async function runClaude(
+    args: readonly string[],
+    deps: ClaudeDeps = {},
+): Promise<number> {
+    const {
+        env = process.env,
+        spawn = spawnInherited,
+        write = (text) => {
+            process.stderr.write(text);
+        },
+        signals = process,
+    } = deps;
+    const launch = launchClaude(args, upstreamFrom(env), { ...deps, write });
+    if (typeof launch === "number") {
+        return launch;
+    }
+    const child = spawn(launch.cmd, launch.env, launch.cwd);
     const ignore = () => {};
     const handlers = FORWARDED.map(
         (signal) => [signal, () => child.kill(signal)] as const,
@@ -156,12 +197,7 @@ export async function runClaude(
         for (const [signal, handler] of handlers) {
             signals.off(signal, handler);
         }
-        gateway.stop();
-        const { drift } = gateway.stats;
-        if (drift > 0) {
-            write(
-                `dorothy: ${drift} ${drift === 1 ? "request" : "requests"} carried the identity marker but could not be rewritten; Claude Code may have changed how it sends its prompt\n`,
-            );
-        }
+        launch.gateway.stop();
+        warnDrift(launch.gateway.stats, write);
     }
 }

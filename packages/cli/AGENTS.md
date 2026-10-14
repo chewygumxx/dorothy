@@ -44,15 +44,21 @@ Agent SDK. Keep every new mode's import lazy.
   terminal.
 - `dump.ts`: `runDump` composes `previewStart` with `dumpRequest` for
   `--dump-context`.
-- `claude.ts`: `runClaude` for `--claude`: starts the gateway, runs
-  `claude` from `PATH` with `ANTHROPIC_BASE_URL` at it,
-  `ENABLE_TOOL_SEARCH=1` unless the user set it, and the marker appended
-  to its prompt (with the user's own `--append-system-prompt`, as Claude
-  Code keeps only the last; `claudeArgs`), forwards `SIGTERM` and
-  `SIGHUP`, ignores `SIGINT` (the terminal sends it to `claude` too), and
-  exits with `claude`'s code. From a package script (`bun run dev`),
-  `userShell` gives `claude` the directory it was run from and the
-  `PATH` before Bun prepended its `node_modules/.bin` entries.
+- `claude.ts`: `launchClaude`, for `--claude` and its dump, starts the
+  gateway and readies `claude` from `PATH` with `ANTHROPIC_BASE_URL` at
+  it, `ENABLE_TOOL_SEARCH=1` unless the user set it, and the marker
+  appended to its prompt (with the user's own `--append-system-prompt`,
+  as Claude Code keeps only the last; `claudeArgs`). `runClaude` runs it
+  for `--claude`, forwards `SIGTERM` and `SIGHUP`, ignores `SIGINT` (the
+  terminal sends it to `claude` too), and exits with `claude`'s code. From
+  a package script (`bun run dev`), `userShell` gives `claude` the
+  directory it was run from and the `PATH` before Bun prepended its
+  `node_modules/.bin` entries.
+- `claude-dump.ts`: `runClaudeDump` for `--claude --dump-context`: the
+  gateway's upstream is `captureServer` from `@dorothy/agent`, `claude`
+  runs quietly in print mode without saving its session, and is stopped
+  at the first request, which is printed with a warning if the gateway
+  injected nothing. Imported lazily, so `--claude` never loads the SDK.
 - `recall-launch.ts`: `recallLaunch` launches this program again as the
   recall server, leaving out the conversation it serves.
 

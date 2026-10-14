@@ -52,6 +52,22 @@ describe("captureServer", () => {
             server.stop();
         }
     });
+
+    it("resolves first with the first body, and only the first", async () => {
+        const server = captureServer();
+        try {
+            for (const n of [1, 2]) {
+                await fetch(`${server.url}/v1/messages`, {
+                    method: "POST",
+                    body: JSON.stringify({ n }),
+                });
+            }
+            expect(await server.first).toEqual({ n: 1 });
+            expect(server.bodies).toHaveLength(2);
+        } finally {
+            server.stop();
+        }
+    });
 });
 
 describe("dumpRequest", () => {

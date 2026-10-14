@@ -34,6 +34,7 @@ export type Mode =
     | { kind: "recover"; url: string }
     | { kind: "recall-server"; exclude: string | null; recollect: boolean }
     | { kind: "claude"; args: string[] }
+    | { kind: "claude-dump"; args: string[]; message: string }
     | { kind: "help" }
     | { kind: "usage"; message: string };
 
@@ -59,6 +60,9 @@ export const USAGE = [
     "                                  print the request a chat would send",
     "       dorothy --claude [args...] Claude Code, with Dorothy as its",
     "                                  agent; args go to claude",
+    "       dorothy --claude --dump-context [args...] [-- message...]",
+    "                                  print the request claude would send",
+    "                                  in print mode, through the gateway",
     "       dorothy --dev ...          development mode, before a chat, a",
     "                                  prompt or --dump-context",
 ].join("\n");
@@ -110,6 +114,16 @@ export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
     }
     if (first === "--dump-context") {
         return parseDump(rest);
+    }
+    if (first === "--claude" && rest[0] === "--dump-context") {
+        const words = rest.slice(1);
+        const end = words.indexOf("--");
+        const message = end === -1 ? [] : words.slice(end + 1);
+        return {
+            kind: "claude-dump",
+            args: end === -1 ? words : words.slice(0, end),
+            message: message.length > 0 ? message.join(" ") : "hi",
+        };
     }
     if (first === "--claude") {
         return { kind: "claude", args: rest };
@@ -333,6 +347,10 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
         // No config(): claude signs in as the user's own Claude Code does.
         const { runClaude } = await import("./claude.js");
         process.exitCode = await runClaude(mode.args);
+    } else if (mode.kind === "claude-dump") {
+        // No config(), as for --claude.
+        const { runClaudeDump } = await import("./claude-dump.js");
+        process.exitCode = await runClaudeDump(mode.args, mode.message);
     } else if (mode.kind === "recall-server") {
         const { runRecallServer } = await import(
             "@dorothy/memory/recall-server"
