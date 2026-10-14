@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 7799bd91-7490-4c5f-acc5-387e592c63f5
-  modified: 2026-10-14T20:48:44.585Z
+  modified: 2026-10-14T21:10:22.279Z
 ---
 
 Stated 2026-10-15, after comparing OpenClaw and Hermes Agent as hosts:
@@ -22,10 +22,12 @@ Stated 2026-10-15, after comparing OpenClaw and Hermes Agent as hosts:
   OpenRouter when usage runs out or a different model suits the task.
 - Sceptical of Hermes's self-improvement loop over a scheduled run of
   the claude-md-management or claude-code-setup plugins.
+- Memory comes first, and may be reworked whole. Its principle: "Wherever
+  you go, your memory follows with you." To be discussed in its spec.
 
 **Why:** the user wants the best for Dorothy without being hosted by
-either project; the roadmap's Model Providers and Dorothy's Gateway
-phases already lean this way.
+either project. The objectives report,
+`docs/reports/2026-10-15-objectives.md`, records it all.
 
 **How to apply:** weigh designs against these aims, prefer Dorothy as
 the core borrowing open formats (SKILL.md, MCP), and treat provider
