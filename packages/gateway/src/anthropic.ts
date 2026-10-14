@@ -111,9 +111,11 @@ export function injectIdentity(
 }
 
 // A request body as it arrived, rewritten if its system prompt carries
-// the marker. What cannot be read, or carries the marker elsewhere, is
-// drift: forwarded as it is, and counted, so a client that changes how
-// it sends its prompt is noticed.
+// the marker. What cannot be read, or carries the marker in its system
+// prompt where it cannot be placed, is drift: forwarded as it is, and
+// counted, so a client that changes how it sends its prompt is noticed.
+// A marker only in the messages is a conversation quoting it, such as a
+// subagent reading this code, and passes as unmarked.
 export function rewriteRequest(
     bytes: Uint8Array<ArrayBuffer>,
     encoding: string | null,
@@ -141,10 +143,14 @@ export function rewriteRequest(
         return { kind: "drift" };
     }
     const injected = injectIdentity(body);
-    return injected === null
+    if (injected !== null) {
+        return {
+            kind: "injected",
+            bytes: new TextEncoder().encode(JSON.stringify(injected)),
+        };
+    }
+    const system = isRecord(body) ? body.system : undefined;
+    return JSON.stringify(system ?? null).includes(MARKER)
         ? { kind: "drift" }
-        : {
-              kind: "injected",
-              bytes: new TextEncoder().encode(JSON.stringify(injected)),
-          };
+        : { kind: "unmarked" };
 }

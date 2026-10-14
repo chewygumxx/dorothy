@@ -96,6 +96,16 @@ describe("injectIdentity", () => {
         ]);
     });
 
+    it("gives the identity an emptied first block's breakpoint", () => {
+        const body = {
+            system: [{ type: "text", text: MARKER, cache_control: ttl }, HOST],
+        };
+        expect(injectIdentity(body, ME)?.system).toEqual([
+            HOST,
+            { ...mine, cache_control: ttl },
+        ]);
+    });
+
     it("turns a string system into blocks", () => {
         expect(injectIdentity({ system: `Rules. ${MARKER}` }, ME)).toEqual({
             system: [{ type: "text", text: "Rules." }, mine],
@@ -168,10 +178,27 @@ describe("rewriteRequest", () => {
         expect(rewriteRequest(encode({ system: MARKER }), "br")).toEqual({
             kind: "drift",
         });
-        const inMessages = encode({
-            system: "Rules.",
-            messages: [{ role: "user", content: MARKER }],
+        const unplaceable = encode({
+            system: [{ type: "image", note: MARKER }],
         });
-        expect(rewriteRequest(inMessages, null)).toEqual({ kind: "drift" });
+        expect(rewriteRequest(unplaceable, null)).toEqual({ kind: "drift" });
+    });
+
+    it("passes a conversation that only quotes the marker", () => {
+        const quoted = encode({
+            system: "Rules.",
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        {
+                            type: "tool_result",
+                            content: `const M = "${MARKER}";`,
+                        },
+                    ],
+                },
+            ],
+        });
+        expect(rewriteRequest(quoted, null)).toEqual({ kind: "unmarked" });
     });
 });
