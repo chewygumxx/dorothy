@@ -1,11 +1,11 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-12
+mtime: 2026-10-15
 spdx: GPL-3.0-only
 title: packages/cli/AGENTS.md
 description: >-
   The CLI package's guide: the dorothy program, which wires memory, the
-  agent and the TUI together, and auth.
+  agent, the TUI and the gateway together, and auth.
 tags:
   - agents
 ---
@@ -20,8 +20,8 @@ tags:
 # packages/cli/AGENTS.md
 
 `@dorothy/cli` is the `dorothy` program. It is run, not imported: it
-exports nothing, and depends on all four other packages, wiring memory,
-the agent and the TUI together.
+exports nothing, and depends on every other package but `identity`,
+wiring memory, the agent, the TUI and the gateway together.
 
 ## Entry points and imports
 
@@ -44,6 +44,12 @@ Agent SDK. Keep every new mode's import lazy.
   terminal.
 - `dump.ts`: `runDump` composes `previewStart` with `dumpRequest` for
   `--dump-context`.
+- `claude.ts`: `runClaude` for `--claude`: starts the gateway, runs
+  `claude` from `PATH` with `ANTHROPIC_BASE_URL` at it,
+  `ENABLE_TOOL_SEARCH=1` and the marker appended to its prompt (with the
+  user's own `--append-system-prompt`, as Claude Code keeps only the last;
+  `claudeArgs`), forwards `SIGTERM` and `SIGHUP`, ignores `SIGINT` (the
+  terminal sends it to `claude` too), and exits with `claude`'s code.
 - `recall-launch.ts`: `recallLaunch` launches this program again as the
   recall server, leaving out the conversation it serves.
 
@@ -52,6 +58,8 @@ Agent SDK. Keep every new mode's import lazy.
 - Auth comes from `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` in
   `.env`; the entry guard calls dotenvx's `config()` to decrypt it with
   the private key from Dotenvx Armor or a gitignored `.env.keys`.
+- `--claude` loads no `.env`: `claude` signs in as the user's own Claude
+  Code does.
 - `@dotenvx/dotenvx` is declared here, by `memory`, whose history commands
   save the mirror's key with its `set`, and in the root's development
   dependencies, which the root's `lint:env` script and the pre-commit

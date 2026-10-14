@@ -27,7 +27,7 @@ const PACKAGES = join(import.meta.dir, "packages");
 
 const GRAPH: Record<string, string[]> = {
     agent: ["core", "identity"],
-    cli: ["agent", "core", "memory", "tui"],
+    cli: ["agent", "core", "gateway", "memory", "tui"],
     core: [],
     gateway: ["core", "identity"],
     identity: [],

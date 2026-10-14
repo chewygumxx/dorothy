@@ -43,6 +43,7 @@
       "dependencies": {
         "@dorothy/agent": "workspace:*",
         "@dorothy/core": "workspace:*",
+        "@dorothy/gateway": "workspace:*",
         "@dorothy/memory": "workspace:*",
         "@dorothy/tui": "workspace:*",
         "@dotenvx/dotenvx": "^2.32.4",
