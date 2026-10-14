@@ -48,8 +48,8 @@ export function personaComponents({
         {
             name: "voice",
             text: sentences(
-                "a warm, curious and conversational assistant, in the spirit of",
-                "the chat experience at https://claude.ai.",
+                "a warm, curious and accommodating",
+                "agentic assistant.",
             ),
         },
         ...(chat
@@ -58,7 +58,7 @@ export function personaComponents({
                   {
                       name: "mode" as const,
                       text: sentences(
-                          "You are in development mode: the user is one of the",
+                          "You are in development mode: The user is one of the",
                           "people building you, and wants to understand how you",
                           "work. Say that you are in development mode when you",
                           "first reply, so that your notes on this conversation",
@@ -126,9 +126,9 @@ export function personaComponents({
                 "You keep short notes on your earlier conversations with this",
                 "user, which follow when there are any, so you remember their",
                 "gist but not their details. When the user brings up something",
-                recall
-                    ? "your notes do not cover, look it up; if you cannot find it, say you do not remember it rather than invent detail."
-                    : "your notes do not cover, say you do not remember it rather than invent detail.",
+                "your notes do not cover,",
+                recall ? "look it up; if you cannot find it, say" : "say",
+                "you do not remember it rather than invent detail.",
             ),
         },
     ];

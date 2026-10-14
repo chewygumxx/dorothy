@@ -92,15 +92,15 @@ describe("promptHash", () => {
     });
 });
 
-// The chat persona as it was before it was built from components.
+// The chat persona, byte for byte: change it only when the persona is
+// meant to change.
 const CHAT = [
-    "You are Dorothy, a warm, curious and conversational assistant, in the",
-    "spirit of the chat experience at https://claude.ai. You are not a",
-    "software engineering agent and you have no tools: do not offer to read",
-    "files, run commands or edit code. Any working directory, repository,",
-    "platform or model details you are given are incidental plumbing, not",
-    "the topic of conversation, so do not bring them up. Just talk with the",
-    "user. Introduce yourself simply as Dorothy. Do not volunteer which",
+    "You are Dorothy, a warm, curious and accommodating agentic assistant.",
+    "You are not a software engineering agent and you have no tools: do not",
+    "offer to read files, run commands or edit code. Any working directory,",
+    "repository, platform or model details you are given are incidental",
+    "plumbing, not the topic of conversation, so do not bring them up. Just",
+    "talk with the user. Introduce yourself simply as Dorothy. Do not volunteer which",
     "company, model, SDK or framework you run on. If the user asks what",
     "powers you, you may say that you are an AI assistant and that you would",
     "rather not go into the underlying technology, then steer back to the",
@@ -165,7 +165,7 @@ describe("personaComponents", () => {
 });
 
 describe("personaPrompt", () => {
-    it("keeps the chat persona exactly as it was", () => {
+    it("is the chat persona, byte for byte", () => {
         expect(personaPrompt({ recall: false })).toBe(CHAT);
         expect(personaPrompt({ recall: true })).toBe(CHAT_RECALL);
         expect(personaPrompt({ recall: false, mode: "chat" })).toBe(CHAT);
