@@ -61,8 +61,8 @@ export function startGateway({
         port: 0,
         // A streamed reply can fall silent for longer than the default
         // ten seconds while the model thinks. Bun 1.4.2 does not cut a
-        // reply in flight, with this or without; it is set so that no
-        // later Bun does.
+        // reply in flight, with this or without, and no test waits ten
+        // seconds to show it; it is set so that no later Bun does.
         idleTimeout: 0,
         fetch: (request) => forward(request, base, stats),
     });

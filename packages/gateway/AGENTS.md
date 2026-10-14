@@ -62,7 +62,7 @@ never on a model provider's SDK.
 
 `anthropic.test.ts` covers the rewrite on fixtures, one of them the
 shape the probe found; `server.test.ts` runs the gateway against a
-stand-in upstream on loopback, including an 11-second pause in a stream.
+stand-in upstream on loopback, streams and dropped replies among them.
 No test reaches the API.
 
 ## See also
