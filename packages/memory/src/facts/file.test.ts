@@ -10,6 +10,7 @@
 
 import { describe, expect, it } from "bun:test";
 import {
+    FACT_NAME,
     type Fact,
     handEdited,
     hiddenCharacter,
@@ -153,6 +154,49 @@ const PIECES = [
     "",
 ];
 
+const NAMES = [
+    "likes-tea",
+    "a",
+    "x1",
+    "tea-2",
+    "nullable",
+    "true-story",
+    "falsehood",
+    "a-1-b-2",
+    "z".repeat(64),
+];
+const TAGS = ["k1a2b3c4d", "k00000000", "kffffffff", "k1e300000"];
+const KEYS = ["node_type", "_x", "A-b", "source", "k1", "null", "true"];
+
+describe("FACT_NAME", () => {
+    it.each(["123", "0", "1e3", "0x1f", "0o17", "null", "true", "false"])(
+        "refuses %s, which YAML would not read as text",
+        (name) => {
+            expect(FACT_NAME.test(name)).toBe(false);
+            const text = renderFact(fact({ name }));
+            expect(parseFact(text, name).kind).toBe("unparseable");
+        },
+    );
+
+    it.each(["a", "likes-tea", "null-pointer", "x1", "a-1"])(
+        "reads %s back whole",
+        (name) => {
+            expect(FACT_NAME.test(name)).toBe(true);
+            expect(parseFact(renderFact(fact({ name })), name)).toEqual({
+                kind: "ok",
+                fact: fact({ name }),
+            });
+        },
+    );
+
+    it.each(["1a", "-a", "a-", "a--b", "A", "a_b", ""])(
+        "refuses %s",
+        (name) => {
+            expect(FACT_NAME.test(name)).toBe(false);
+        },
+    );
+});
+
 describe("parseFact", () => {
     it("reads back every field it renders, whatever the text", () => {
         const next = random(42);
@@ -165,9 +209,16 @@ describe("parseFact", () => {
             const normal = (text: string, limit: number) =>
                 clip(text.replace(/\s+/g, " ").trim(), limit);
             const written = fact({
+                name: NAMES[run % NAMES.length] as string,
+                tags: TAGS.slice(0, run % (TAGS.length + 1)),
                 title: normal(phrase(8), 60),
                 description: normal(phrase(30), 160),
-                extra: { note: phrase(5), count: run, flag: run % 2 === 0 },
+                extra: {
+                    note: phrase(5),
+                    count: run,
+                    flag: run % 2 === 0,
+                    [KEYS[run % KEYS.length] as string]: "v",
+                },
                 provenance: {
                     origin: "dorothy",
                     by: "review",
@@ -183,7 +234,7 @@ describe("parseFact", () => {
                     .join("\n")
                     .trim(),
             });
-            const read = parseFact(renderFact(written), "likes-tea");
+            const read = parseFact(renderFact(written), written.name);
             expect(read).toEqual({ kind: "ok", fact: written });
         }
     });
@@ -261,6 +312,51 @@ describe("parseFact", () => {
         }
     });
 
+    it("refuses hidden characters spelled as YAML escapes", () => {
+        const escapes: [string, string, string][] = [
+            ["title", "title: >-\n  Likes tea", 'title: "Likes\\u202etea"'],
+            [
+                "description",
+                "description: >-\n  Prefers tea to coffee in the afternoon.",
+                'description: "Prefers\\u200btea"',
+            ],
+            ["extra", '  node_type: "memory"', '  node_type: "a\\u0007b"'],
+            ["model", '  model: "claude-opus-5-5"', '  model: "m\\u2028"'],
+        ];
+        for (const [, from, to] of escapes) {
+            const text = CANONICAL.replace(from, to);
+            expect(text).not.toBe(CANONICAL);
+            expect(text).not.toContain("\u202e");
+            expect(parseFact(text, "likes-tea").kind).toBe("unparseable");
+            expect(handEdited(text, "likes-tea", new Date(AT))).toBeNull();
+        }
+        const retired = renderFact(
+            fact({ retired: { at: AT, by: "user", why: "No longer true." } }),
+        ).replace("why: >-\n    No longer true.", 'why: "No\\u202elonger"');
+        expect(parseFact(retired, "likes-tea").kind).toBe("unparseable");
+    });
+
+    it("refuses a time that is not the form the store writes", () => {
+        for (const at of [
+            "1",
+            "2026",
+            "May 5",
+            "2026-10-15",
+            "2026-10-15T09:30:00Z",
+        ]) {
+            const text = CANONICAL.replace(`  at: "${AT}"`, `  at: "${at}"`);
+            expect(parseFact(text, "likes-tea").kind).toBe("unparseable");
+        }
+    });
+
+    it("refuses a metadata key of __proto__", () => {
+        const text = CANONICAL.replace(
+            '  node_type: "memory"',
+            '  __proto__: "x"',
+        );
+        expect(parseFact(text, "likes-tea").kind).toBe("unparseable");
+    });
+
     it("refuses a body over 8,000 characters", () => {
         const text = renderFact(fact({ body: "x".repeat(8001) }));
         expect(parseFact(text, "likes-tea")).toEqual({
@@ -285,6 +381,29 @@ describe("parseFact", () => {
 });
 
 describe("hiddenCharacter", () => {
+    it.each([
+        ["a control", "\u0007", "U+0007"],
+        ["a carriage return", "\r", "U+000D"],
+        ["a zero width space", "\u200b", "U+200B"],
+        ["a joiner", "\u200d", "U+200D"],
+        ["a non-joiner", "\u200c", "U+200C"],
+        ["a soft hyphen", "\u00ad", "U+00AD"],
+        ["a bidirectional override", "\u202e", "U+202E"],
+        ["a tag", "\u{e0041}", "U+E0041"],
+        ["a variation selector", "\ufe0f", "U+FE0F"],
+        ["a supplementary variation selector", "\u{e0100}", "U+E0100"],
+        ["the Hangul filler", "\u3164", "U+3164"],
+        ["a line separator", "\u2028", "U+2028"],
+        ["a paragraph separator", "\u2029", "U+2029"],
+        ["a byte order mark", "\ufeff", "U+FEFF"],
+    ])("names %s", (_, character, name) => {
+        expect(hiddenCharacter(`a${character}b`)).toBe(name);
+    });
+
+    it("lets ordinary and non-Latin text through", () => {
+        expect(hiddenCharacter("tea é 日本 😀 \u00a0")).toBeNull();
+    });
+
     it("names the first hidden character, and allows tab and newline", () => {
         expect(hiddenCharacter("a\tb\nc")).toBeNull();
         expect(hiddenCharacter("a\u200bb")).toBe("U+200B");

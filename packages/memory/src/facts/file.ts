@@ -32,7 +32,10 @@ export const FACT_LIMITS = {
     why: 160,
     body: 8000,
 } as const;
-export const FACT_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+// Written plain, so it must read back as text: it starts with a letter
+// (no number, `0x1f` or `1e3`) and is neither `null`, `true` nor `false`.
+export const FACT_NAME =
+    /^(?!(?:null|true|false)$)[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const EXTRA_KEY = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 
 export type Extra = string | number | boolean;
@@ -69,9 +72,12 @@ export class Problem extends Error {}
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
 
-// Controls but tab and newline, and the format characters text can hide
-// instructions in: zero widths, bidirectional overrides, tags.
-const HIDDEN = /(?![\t\n])[\p{Cc}\p{Cf}]/u;
+// Controls but tab and newline, every format character (zero widths,
+// bidirectional overrides, tags, joiners, the soft hyphen), the default
+// ignorables (variation selectors, the Hangul filler) and the line and
+// paragraph separators: text a model reads but a person does not see.
+const HIDDEN =
+    /(?![\t\n])[\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}\u2028\u2029]/u;
 
 export function hiddenCharacter(text: string): string | null {
     const found = HIDDEN.exec(text)?.[0];
@@ -173,10 +179,19 @@ export function renderFact(fact: Fact): string {
     ].join("\n");
 }
 
+// A decoded value may hold a character the source spelled as an escape.
+function visible(value: string, key: string): void {
+    const hidden = hiddenCharacter(value);
+    if (hidden !== null) {
+        throw new Problem(`${key} holds a hidden character, ${hidden}`);
+    }
+}
+
 function text(value: unknown, key: string, limit: number): string {
     if (typeof value !== "string") {
         throw new Problem(`${key} is not text`);
     }
+    visible(value, key);
     const normal = normalise(value);
     if (normal === "") {
         throw new Problem(`${key} is empty`);
@@ -203,8 +218,15 @@ function oneOf<T extends string>(
     return value as T;
 }
 
+// The form Date#toISOString writes.
+const TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
 function time(value: unknown, key: string): string {
-    if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) {
+    if (
+        typeof value !== "string" ||
+        !TIME.test(value) ||
+        !Number.isFinite(Date.parse(value))
+    ) {
         throw new Problem(`${key} is not a time`);
     }
     return value;
@@ -222,7 +244,7 @@ function only(
 }
 
 const LINK = /\]\(([^)\s]*\.md(?:#[^)\s]*)?)\)/g;
-const SIBLING = /^\.\/[a-z0-9]+(?:-[a-z0-9]+)*\.md(?:#[^)\s]*)?$/;
+const SIBLING = /^\.\/([^#]*)\.md(?:#[^)\s]*)?$/;
 
 export function checkBody(body: string): string {
     if (characters(body) > FACT_LIMITS.body) {
@@ -231,7 +253,8 @@ export function checkBody(body: string): string {
         );
     }
     for (const [, target] of body.matchAll(LINK)) {
-        if (!SIBLING.test(target as string)) {
+        const stem = SIBLING.exec(target as string)?.[1];
+        if (stem === undefined || !FACT_NAME.test(stem)) {
             throw new Problem(`it links to ${target}, not a fact beside it`);
         }
     }
@@ -265,6 +288,7 @@ export function readCommon(
             continue;
         }
         if (
+            key === "__proto__" ||
             !EXTRA_KEY.test(key) ||
             !(
                 typeof value === "string" ||
@@ -275,6 +299,9 @@ export function readCommon(
             throw new Problem(
                 `metadata.${key} is not text, a number or a boolean`,
             );
+        }
+        if (typeof value === "string") {
+            visible(value, `metadata.${key}`);
         }
         extra[key] = value;
     }
@@ -312,6 +339,7 @@ function readProvenance(value: unknown): FactProvenance {
         if (typeof value.model !== "string" || value.model === "") {
             throw new Problem("provenance.model is not text");
         }
+        visible(value.model, "provenance.model");
         provenance.model = value.model;
     }
     if (value.from !== undefined) {
