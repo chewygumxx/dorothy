@@ -34,6 +34,7 @@
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.3.283",
         "@dorothy/core": "workspace:*",
+        "@dorothy/identity": "workspace:*",
         "zod": "^4.6.5",
       },
     },
@@ -52,6 +53,9 @@
       "dependencies": {
         "niceware": "^4.0.0",
       },
+    },
+    "packages/identity": {
+      "name": "@dorothy/identity",
     },
     "packages/memory": {
       "name": "@dorothy/memory",
@@ -183,6 +187,8 @@
     "@dorothy/cli": ["@dorothy/cli@workspace:packages/cli"],
 
     "@dorothy/core": ["@dorothy/core@workspace:packages/core"],
+
+    "@dorothy/identity": ["@dorothy/identity@workspace:packages/identity"],
 
     "@dorothy/memory": ["@dorothy/memory@workspace:packages/memory"],
 

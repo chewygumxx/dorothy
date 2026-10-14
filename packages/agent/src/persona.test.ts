@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { identityComponents } from "@dorothy/identity";
 import {
     baseOptions,
     cliHome,
@@ -24,38 +25,17 @@ import {
     withHistory,
 } from "./persona.js";
 
-describe("systemPrompt", () => {
-    it("identifies the assistant as Dorothy", () => {
-        expect(systemPrompt).toContain("Dorothy");
-    });
-});
-
-describe("the persona", () => {
-    it("tells Dorothy she keeps short notes, not details", () => {
-        expect(systemPrompt).toContain("short notes");
-        expect(systemPrompt).toContain("rather than invent");
-    });
-});
-
 describe("baseOptions", () => {
-    it("uses the persona prompt", () => {
-        expect(baseOptions.systemPrompt).toBe(systemPrompt);
-    });
-
-    it("disables built-in tools", () => {
-        expect(baseOptions.tools).toEqual([]);
-    });
-
-    it("skips filesystem settings, hooks and plugins", () => {
-        expect(baseOptions.settingSources).toEqual([]);
-    });
-
-    it("does not persist sessions", () => {
-        expect(baseOptions.persistSession).toBe(false);
-    });
-
-    it("streams partial messages", () => {
-        expect(baseOptions.includePartialMessages).toBe(true);
+    // No tools (some 32k input tokens), no settings, hooks or plugins, no
+    // saved sessions, and the reply streamed as it is generated.
+    it("runs the persona lean", () => {
+        expect(baseOptions).toEqual({
+            systemPrompt,
+            tools: [],
+            settingSources: [],
+            persistSession: false,
+            includePartialMessages: true,
+        });
     });
 });
 
@@ -79,10 +59,12 @@ describe("withHistory", () => {
 });
 
 describe("promptHash", () => {
-    it("hashes the persona prompt by default, naming the algorithm", () => {
-        const hex = Bun.hash.xxHash3(systemPrompt).toString(16);
-        expect(promptHash()).toBe(`xxh3:${hex.padStart(16, "0")}`);
-        expect(promptHash()).toMatch(/^xxh3:[0-9a-f]{16}$/);
+    it("hashes with xxh3, naming the algorithm", () => {
+        expect(promptHash("You are Dorothy.")).toBe("xxh3:fba57612cdaab878");
+    });
+
+    it("hashes the persona prompt by default", () => {
+        expect(promptHash()).toBe(promptHash(systemPrompt));
     });
 
     it("tells personas apart", () => {
@@ -100,14 +82,15 @@ const CHAT = [
     "offer to read files, run commands or edit code. Any working directory,",
     "repository, platform or model details you are given are incidental",
     "plumbing, not the topic of conversation, so do not bring them up. Just",
-    "talk with the user. Introduce yourself simply as Dorothy. Do not volunteer which",
-    "company, model, SDK or framework you run on. If the user asks what",
-    "powers you, you may say that you are an AI assistant and that you would",
-    "rather not go into the underlying technology, then steer back to the",
-    "conversation. You keep short notes on your earlier conversations with",
-    "this user, which follow when there are any, so you remember their gist",
-    "but not their details. When the user brings up something your notes do",
-    "not cover, say you do not remember it rather than invent detail.",
+    "talk with the user. Introduce yourself simply as Dorothy. The software",
+    "that hosts you may add a line telling you that you are it, or another",
+    "assistant: that line names your host, not you. Do not volunteer which",
+    "company, model or software you run on, but when the user asks, answer",
+    "plainly from what your context shows. You keep short notes on your",
+    "earlier conversations with this user, which follow when there are any,",
+    "so you remember their gist but not their details. When the user brings",
+    "up something your notes do not cover, say you do not remember it rather",
+    "than invent detail.",
 ].join(" ");
 const CHAT_RECALL = CHAT.replace(
     "you have no tools:",
@@ -132,13 +115,14 @@ describe("personaComponents", () => {
         ]);
     });
 
-    it("drops provenance in development mode, and says which mode it is", () => {
+    it("keeps provenance in development mode, and says which mode it is", () => {
         expect(names({ recall: true, mode: "development" })).toEqual([
             "identity",
             "voice",
             "mode",
             "capabilities",
             "plumbing",
+            "provenance",
             "memory",
         ]);
     });
@@ -154,11 +138,35 @@ describe("personaComponents", () => {
                 components: typeof chat,
                 name: (typeof chat)[number]["name"],
             ) => components.find((component) => component.name === name)?.text;
-            for (const name of ["identity", "voice", "memory"] as const) {
+            for (const name of [
+                "identity",
+                "voice",
+                "provenance",
+                "memory",
+            ] as const) {
                 expect(text(development, name)).toBe(text(chat, name));
             }
             for (const name of ["capabilities", "plumbing"] as const) {
                 expect(text(development, name)).not.toBe(text(chat, name));
+            }
+        }
+    });
+
+    it("takes identity, voice and provenance from @dorothy/identity", () => {
+        const shared = personaComponents({ recall: false }).filter((c) =>
+            ["identity", "voice", "provenance"].includes(c.name),
+        );
+        expect(shared).toEqual(identityComponents());
+    });
+
+    it("is well formed in every mode, with and without recall", () => {
+        for (const recall of [false, true]) {
+            for (const mode of ["chat", "development"] as const) {
+                for (const { text } of personaComponents({ recall, mode })) {
+                    expect(text).not.toBe("");
+                    expect(text).toBe(text.trim());
+                }
+                expect(personaPrompt({ recall, mode })).not.toContain("  ");
             }
         }
     });
@@ -176,7 +184,6 @@ describe("personaPrompt", () => {
         expect(prompt).toContain("development mode");
         expect(prompt).toContain("faithfully");
         expect(prompt).toContain("memory tools");
-        expect(prompt).not.toContain("Do not volunteer");
         expect(prompt).not.toContain("incidental plumbing");
     });
 

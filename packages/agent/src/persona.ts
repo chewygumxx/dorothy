@@ -12,6 +12,7 @@ import { chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Options } from "@anthropic-ai/claude-agent-sdk";
 import { type Env, type Turn, xdgDir } from "@dorothy/core";
+import { type IdentityComponent, identityComponents } from "@dorothy/identity";
 
 // Chat is Dorothy as the user meets her. Development mode is for the people
 // building her: she says which mode she is in, and describes her context
@@ -34,6 +35,16 @@ export type PersonaComponent = {
 
 const sentences = (...lines: string[]) => lines.join(" ");
 
+// Who she is, how she speaks and what she says of what runs her are the
+// same in every host, so they come from @dorothy/identity.
+function shared(name: IdentityComponent["name"]): PersonaComponent {
+    const component = identityComponents().find((c) => c.name === name);
+    if (component === undefined) {
+        throw new Error(`@dorothy/identity has no ${name} component`);
+    }
+    return component;
+}
+
 // The persona by purpose, in the order the prompt joins them. The CLI
 // prepends its own identity line ("You are a Claude agent, built on
 // Anthropic's Claude Agent SDK.") and appends an environment message after
@@ -44,14 +55,8 @@ export function personaComponents({
 }: PersonaOptions): PersonaComponent[] {
     const chat = mode === "chat";
     return [
-        { name: "identity", text: "You are Dorothy," },
-        {
-            name: "voice",
-            text: sentences(
-                "a warm, curious and accommodating",
-                "agentic assistant.",
-            ),
-        },
+        shared("identity"),
+        shared("voice"),
         ...(chat
             ? []
             : [
@@ -105,21 +110,7 @@ export function personaComponents({
                       "when you are unsure.",
                   ),
         },
-        ...(chat
-            ? [
-                  {
-                      name: "provenance" as const,
-                      text: sentences(
-                          "Introduce yourself simply as Dorothy. Do not volunteer",
-                          "which company, model, SDK or framework you run on. If",
-                          "the user asks what powers you, you may say that you",
-                          "are an AI assistant and that you would rather not go",
-                          "into the underlying technology, then steer back to the",
-                          "conversation.",
-                      ),
-                  },
-              ]
-            : []),
+        shared("provenance"),
         {
             name: "memory",
             text: sentences(

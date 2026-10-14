@@ -26,9 +26,10 @@ type Manifest = {
 const PACKAGES = join(import.meta.dir, "packages");
 
 const GRAPH: Record<string, string[]> = {
-    agent: ["core"],
+    agent: ["core", "identity"],
     cli: ["agent", "core", "memory", "tui"],
     core: [],
+    identity: [],
     memory: ["core"],
     tui: ["core"],
 };
@@ -37,6 +38,7 @@ const ENTRIES: Record<string, string[]> = {
     agent: ["."],
     cli: [],
     core: ["."],
+    identity: ["."],
     memory: [".", "./commands", "./recall-server"],
     tui: ["."],
 };
@@ -109,6 +111,13 @@ describe("the workspace", () => {
         ).toThrow();
         expect(() =>
             Bun.resolveSync("@dorothy/cli/src/run-tui.ts", from("memory")),
+        ).toThrow();
+        expect(() =>
+            Bun.resolveSync("@dorothy/identity", from("agent")),
+        ).not.toThrow();
+        expect(() => Bun.resolveSync(SDK, from("identity"))).toThrow();
+        expect(() =>
+            Bun.resolveSync("@dorothy/core", from("identity")),
         ).toThrow();
     });
 });
