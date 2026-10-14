@@ -54,11 +54,14 @@ as its main agent:
 - Branch: `feat/identity-gateway`, from `main` at `942cdfa`
 
 The probes changed the launcher, and a fresh reviewer of the whole
-branch found three faults worth fixing before merge, all fixed. Before
-spending a token, `dorothy --claude` ran through the built gateway to a
-stand-in and sent the identity as planned. At the head of the branch
-`bun run check` passes with 1,224 tests across 70 files, up from 1,168
-on `main`.
+branch found three faults worth fixing before merge, all fixed. End to
+end against the API, she introduced herself as Dorothy, a second turn
+read its prompt from the cache, and a subagent stayed Claude; the first
+attempt at those runs, made inside a Claude Code session, wrote into
+that session, and the plan's cleanup would have deleted the project's
+transcripts (see [Verification](#verification)). At the head of the
+branch `bun run check` passes with 1,224 tests across 70 files, up from
+1,168 on `main`, in 18 seconds.
 
 ## How it was built
 
@@ -133,10 +136,12 @@ branch.
 - **Only the whitespace next to the marker goes**, not the block's own
   leading and trailing whitespace, so Claude Code's text reaches the API
   as it sent it.
-- **`idleTimeout: 0` is kept but does not show.** The 11-second pause
-  test passes with it and without it: Bun 1.4.2 does not cut a reply in
-  flight. The test still pins the behaviour, a stream surviving a long
-  silence, and costs 11 seconds of every test run.
+- **`idleTimeout: 0` is kept but no test shows it.** The plan's
+  11-second pause passed with it and without it, as Bun 1.4.2 does not
+  cut a reply in flight, and cost every test run 11 seconds; the user
+  ruled that excessive. The streaming test holds the second event until
+  the client has read the first, which fails a buffering gateway, and
+  waits for nothing.
 - **Commit headers stay within 50 characters**, which commitlint
   enforces; four of the plan's messages were shortened.
 - **The core package's guide** said every other package depends on
@@ -165,12 +170,18 @@ bodies passing byte for byte, replies streaming unbuffered, and
   its messages. Only a marker in `system` that cannot be placed is drift
   now; one in the messages alone passes as unmarked.
 - **`bun run dev -- --claude` would open Claude Code on Dorothy.**
-  `bun run` starts a script in this checkout, with its `node_modules`
-  first on `PATH` and no record of where it was run from but
-  `npm_config_local_prefix`. Stripping `PATH` was ruled out, since a
-  user's own `PATH` may hold a `node_modules/.bin` (this user's does);
-  `--claude` instead refuses to run from a package script, and the README
-  shows an alias that runs it directly.
+  `bun run` starts a script in this checkout, with the script's `npm_`
+  variables set and `node_modules/.bin` entries first on `PATH`. The
+  first fix refused a package script; the user pointed out that
+  `bun run dev` is how Dorothy is run, so it was made to work instead.
+  Bun records the directory it was run from in
+  `npm_config_local_prefix`, and prepends its node shim or the project's
+  root, then one `node_modules/.bin` for each directory from there up to
+  `/node_modules/.bin`. `userShell` gives `claude` that directory, the
+  `PATH` after `/node_modules/.bin`, and none of the `npm_` variables, so
+  a `node_modules/.bin` of the user's own, later on `PATH`, stays. Run
+  from `docs/`, Claude Code started in `docs/` and loaded its
+  `AGENTS.md`.
 
 ### The minors
 
@@ -215,22 +226,25 @@ d95b4d2 feat(agent): Make Dorothy an agentic assistant
 fd866f6 docs: Amend the identity spec with what was found
 ```
 
-### Review fixes
+### Review fixes, and the user's corrections
 
 ```text
 2c0aef8 fix(gateway): Count drift only in system
 0de2653 fix(gateway): Keep a dropped reply off the screen
 ef6a65f fix(cli): Refuse --claude from a package script
 8fb3f49 docs: Explain dorothy --claude in the README
+f8be710 test(gateway): Stream without an 11-second pause
+d5e7394 fix(cli): Run --claude where bun run was run
 ```
 
-This report and the roadmap follow in one more commit.
+This report and the roadmap came in `docs: Report Dorothy's identity`,
+and were revised for the end-to-end runs in one more commit.
 
 ## Verification
 
 - `bun run check` at the head: typecheck, format, lint, Markdown, YAML,
   env, em dash and header checks, and 1,224 tests across 70 files, none
-  failing. The long-pause test takes 11 seconds of that.
+  failing, in 18 seconds.
 - Without tokens, through the real chain: `claude` 2.1.296 run by
   `dorothy --claude -p --no-session-persistence hi` from an empty
   directory, with `ANTHROPIC_BASE_URL` at a stand-in the gateway took as
@@ -241,10 +255,31 @@ This report and the roadmap follow in one more commit.
   [probes](2026-10-15-identity-gateway.md#through-the-gateway).
 - `dorothy --claude --version` printed Claude Code's version and exited
   0; with no `claude` on `PATH`, it said so and exited 127.
-- End to end against the API, which spends tokens on the user's login:
-  not run, awaiting the user's go-ahead. The plan's three runs ask who
-  she is, whether a second turn reads the cache, and whether a subagent
-  stays Claude Code.
+- End to end against the API, on the user's login, from an empty
+  directory; the answers and token counts are in the
+  [probes](2026-10-15-identity-gateway.md#end-to-end). She introduced
+  herself as Dorothy; asked what runs her, she answered plainly; the
+  second turn read 15,131 tokens from the cache and wrote 298; a
+  general-purpose subagent called itself Claude. No drift warning.
+
+### The end-to-end runs went wrong first
+
+The first attempt ran inside this session's own shell, whose
+`CLAUDE_CODE_PROJECT_DIR_NAME` and `CLAUDE_CODE_SESSION_ID` every child
+inherits. Its first run's transcript went into the repository's own
+project, and the plan's `-c` then continued the most recent session
+there: the live session building this branch. It answered from that
+conversation, wrote 215,115 tokens to the cache, and appended a turn
+to that session's transcript, which is the user's to keep or trim. It
+did show the spec's resumed-session risk: a session started without
+the marker and resumed through the gateway has no identity.
+
+The plan's cleanup, `claude purge "$D" --yes`, would have been worse.
+Its dry run, inheriting the same variable, listed the repository's
+whole project, every Dorothy session's transcripts, for deletion. It
+was not run. The runs were repeated with the session's `CLAUDE_CODE_`
+variables unset and `--resume <id>` in place of `-c`, and only the
+test runs' own transcripts were removed, by hand.
 
 ## Known limitations
 
@@ -262,8 +297,10 @@ This report and the roadmap follow in one more commit.
   prompt; provenance tells her it names her host.
 - **A user's `HTTP_PROXY`** may carry Claude Code's requests to the
   loopback gateway through the proxy; not verified.
-- **The long-pause test** adds 11 seconds to every test run, and passes
-  with or without `idleTimeout: 0`.
+- **Run from inside a Claude Code session**, as from its Bash tool,
+  `claude` inherits that session's `CLAUDE_CODE_` variables, and its
+  sessions land in the outer session's project. `--claude` passes them
+  on, as `claude` would be run there anyway.
 - **Claude Code's requests may change.** The marker fails safe, without
   the identity and with nothing broken, and the drift warning after
   `claude` exits reports a marked request the gateway could not rewrite.

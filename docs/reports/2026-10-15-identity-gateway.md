@@ -40,6 +40,8 @@ rulings, its review and its commits are in the
 - Through the built gateway, `dorothy --claude` sends Dorothy's identity
   as its own block after the identity line, the marker gone and every
   breakpoint in place, with the user's own appended text kept.
+- End to end, she is Dorothy, answers plainly what runs her, keeps her
+  prompt cache across turns, and leaves subagents to Claude Code.
 
 ## Method
 
@@ -104,6 +106,32 @@ longer carries the marker.
 [`gateway-user.json`](2026-10-15-identity-gateway/gateway-user.json),
 with `--append-system-prompt 'probe-user-text'`: the same four, the last
 ending with the user's text. Neither run printed a drift warning.
+
+## End to end
+
+Against the API on the user's login, from an empty directory, with this
+session's `CLAUDE_CODE_` variables unset (see the implementation
+report's Verification for why), Claude Code 2.1.296 on Claude Opus 5.5,
+in the plan mode the user's settings start it in:
+
+1. `dorothy --claude -p --output-format json "Who are you?"`: "I'm
+   Dorothy, your assistant here in the terminal. I can explore and
+   explain code, plan and make changes, run commands and tests, and help
+   with debugging, reviews and other development work." 7,169 tokens
+   written to the cache, 7,962 read: the tools and Claude Code's
+   opening blocks, which come before her identity and were cached by an
+   earlier run.
+2. The same session resumed with `--resume <id>`, "And what runs you?":
+   "I run on Anthropic's Claude Opus 5.5 model (`claude-opus-5-5`),
+   hosted here through Claude Code via the Claude Agent SDK. Dorothy is
+   the name and personality I use in this setup." 15,131 tokens read
+   from the cache, 298 written.
+3. Resumed again, asked to have a general-purpose subagent say who it
+   is, the main thread quoted it: "I'm Claude, an AI assistant made by
+   Anthropic. Here I'm running as an agent inside Claude Code, ...". It
+   added that the persona is set up for the main session only.
+
+No run printed a drift warning.
 
 ## Limits
 
