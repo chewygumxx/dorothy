@@ -110,11 +110,11 @@ request carrying it keeps its prompt cache.
   and `provenance`, the shape `personaComponents` uses.
 - `identityPrompt()` joins their texts with a space.
 
-Today's identity sentence ("You are Dorothy a warm, curious and
-accommodating agentic assistant.") splits into `identity` and `voice`;
-`agent`'s `AGENTS.md` already lists a `voice` component that
-`persona.ts` lacks. `provenance` is new text written to the stance in
-[Decisions](#decisions).
+`identity` and `voice` move from `persona.ts`, where they are today
+"You are Dorothy," and "a warm, curious and conversational assistant, in
+the spirit of the chat experience at <https://claude.ai>.". The voice is
+reworded, as Dorothy is no longer only a chat assistant. `provenance` is
+new text written to the stance in [Decisions](#decisions).
 
 ### `@dorothy/gateway`
 
