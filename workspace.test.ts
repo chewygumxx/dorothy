@@ -29,6 +29,7 @@ const GRAPH: Record<string, string[]> = {
     agent: ["core", "identity"],
     cli: ["agent", "core", "memory", "tui"],
     core: [],
+    gateway: ["core", "identity"],
     identity: [],
     memory: ["core"],
     tui: ["core"],
@@ -38,6 +39,7 @@ const ENTRIES: Record<string, string[]> = {
     agent: ["."],
     cli: [],
     core: ["."],
+    gateway: ["."],
     identity: ["."],
     memory: [".", "./commands", "./recall-server"],
     tui: ["."],
@@ -118,6 +120,10 @@ describe("the workspace", () => {
         expect(() => Bun.resolveSync(SDK, from("identity"))).toThrow();
         expect(() =>
             Bun.resolveSync("@dorothy/core", from("identity")),
+        ).toThrow();
+        expect(() => Bun.resolveSync(SDK, from("gateway"))).toThrow();
+        expect(() =>
+            Bun.resolveSync("@dorothy/agent", from("gateway")),
         ).toThrow();
     });
 });

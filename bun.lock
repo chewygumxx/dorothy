@@ -54,6 +54,13 @@
         "niceware": "^4.0.0",
       },
     },
+    "packages/gateway": {
+      "name": "@dorothy/gateway",
+      "dependencies": {
+        "@dorothy/core": "workspace:*",
+        "@dorothy/identity": "workspace:*",
+      },
+    },
     "packages/identity": {
       "name": "@dorothy/identity",
     },
@@ -187,6 +194,8 @@
     "@dorothy/cli": ["@dorothy/cli@workspace:packages/cli"],
 
     "@dorothy/core": ["@dorothy/core@workspace:packages/core"],
+
+    "@dorothy/gateway": ["@dorothy/gateway@workspace:packages/gateway"],
 
     "@dorothy/identity": ["@dorothy/identity@workspace:packages/identity"],
 
