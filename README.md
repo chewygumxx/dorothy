@@ -261,6 +261,20 @@ gateway adds Dorothy's identity to the main thread's requests and forwards
 everything else untouched; subagents stay Claude Code's own. Claude Code
 signs in as it always does: `--claude` reads none of Dorothy's `.env`.
 
+To see what it sends, `--claude --dump-context` prints, as JSON, the first
+request Claude Code makes, with the gateway's rewrite applied. Arguments
+before `--` go to `claude`, the message after it (`hi` if none):
+
+```sh
+bun run dev -- --claude --dump-context
+bun run dev -- --claude --dump-context --model sonnet -- "Who are you?"
+```
+
+`claude` runs in print mode without saving its session, and the gateway's
+upstream is a stand-in on a local port, so nothing reaches the API. Print
+mode's request can differ a little from an interactive session's. A
+warning on stderr says if the gateway found no marker to replace.
+
 ### Development mode
 
 For the people building her, `--dev` goes before a chat, a `--resume` or a
