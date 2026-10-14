@@ -36,7 +36,9 @@ export const FACT_LIMITS = {
 // (no number, `0x1f` or `1e3`) and is neither `null`, `true` nor `false`.
 export const FACT_NAME =
     /^(?!(?:null|true|false)$)[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-const EXTRA_KEY = /^[A-Za-z_][A-Za-z0-9_-]*$/;
+// Written plain, so a key must read back as itself: YAML reads `Null`,
+// `TRUE` and the like as null and booleans, whatever their case.
+const EXTRA_KEY = /^(?!(?:null|true|false)$)[A-Za-z_][A-Za-z0-9_-]*$/i;
 
 export type Extra = string | number | boolean;
 export type FactProvenance = {

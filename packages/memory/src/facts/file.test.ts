@@ -166,7 +166,17 @@ const NAMES = [
     "z".repeat(64),
 ];
 const TAGS = ["k1a2b3c4d", "k00000000", "kffffffff", "k1e300000"];
-const KEYS = ["node_type", "_x", "A-b", "source", "k1", "null", "true"];
+const KEYS = [
+    "node_type",
+    "_x",
+    "A-b",
+    "source",
+    "k1",
+    "Nullable",
+    "trueish",
+    "falsey",
+    "NULLS",
+];
 
 describe("FACT_NAME", () => {
     it.each(["123", "0", "1e3", "0x1f", "0o17", "null", "true", "false"])(
@@ -348,6 +358,17 @@ describe("parseFact", () => {
             expect(parseFact(text, "likes-tea").kind).toBe("unparseable");
         }
     });
+
+    it.each(["null", "Null", "NULL", "true", "TRUE", "False", "false"])(
+        "refuses a metadata key of %s, which YAML would not read as itself",
+        (key) => {
+            const text = CANONICAL.replace(
+                '  node_type: "memory"',
+                `  ${key}: "memory"`,
+            );
+            expect(parseFact(text, "likes-tea").kind).toBe("unparseable");
+        },
+    );
 
     it("refuses a metadata key of __proto__", () => {
         const text = CANONICAL.replace(
