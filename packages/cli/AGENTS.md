@@ -46,10 +46,13 @@ Agent SDK. Keep every new mode's import lazy.
   `--dump-context`.
 - `claude.ts`: `runClaude` for `--claude`: starts the gateway, runs
   `claude` from `PATH` with `ANTHROPIC_BASE_URL` at it,
-  `ENABLE_TOOL_SEARCH=1` and the marker appended to its prompt (with the
-  user's own `--append-system-prompt`, as Claude Code keeps only the last;
-  `claudeArgs`), forwards `SIGTERM` and `SIGHUP`, ignores `SIGINT` (the
-  terminal sends it to `claude` too), and exits with `claude`'s code.
+  `ENABLE_TOOL_SEARCH=1` unless the user set it, and the marker appended
+  to its prompt (with the user's own `--append-system-prompt`, as Claude
+  Code keeps only the last; `claudeArgs`), forwards `SIGTERM` and
+  `SIGHUP`, ignores `SIGINT` (the terminal sends it to `claude` too), and
+  exits with `claude`'s code. It refuses to run from a package script,
+  which would start `claude` in this checkout with its `node_modules` on
+  `PATH`.
 - `recall-launch.ts`: `recallLaunch` launches this program again as the
   recall server, leaving out the conversation it serves.
 

@@ -32,7 +32,9 @@ export type ClaudeDeps = {
 
 // The terminal sends SIGINT to the whole foreground group, claude
 // included: forwarding it would send claude a second, which it reads as
-// a request to quit. These reach dorothy alone, so claude is told.
+// a request to quit. TERM, and HUP from anything but a hangup, can reach
+// dorothy alone, so claude is told; after a hangup it gets HUP twice,
+// which does no harm.
 const FORWARDED = ["SIGTERM", "SIGHUP"] as const;
 
 const APPEND = "--append-system-prompt";
@@ -88,6 +90,14 @@ export async function runClaude(
         signals = process,
     }: ClaudeDeps = {},
 ): Promise<number> {
+    // A package script runs in Dorothy's checkout with her node_modules
+    // first on PATH, and claude would start there too.
+    if (env.npm_lifecycle_event !== undefined) {
+        write(
+            "dorothy: run --claude directly, not through bun run, so that claude starts where you are\n",
+        );
+        return 2;
+    }
     const claude = which("claude", { PATH: env.PATH ?? "" });
     if (claude === null) {
         write("dorothy: claude is not on PATH\n");
@@ -104,7 +114,9 @@ export async function runClaude(
     const child = spawn([claude, ...claudeArgs(args)], {
         ...env,
         ANTHROPIC_BASE_URL: gateway.url,
-        ENABLE_TOOL_SEARCH: "1",
+        // Claude Code turns tool search off for a base URL not Anthropic's;
+        // a user's own choice stands.
+        ENABLE_TOOL_SEARCH: env.ENABLE_TOOL_SEARCH ?? "1",
     });
     const ignore = () => {};
     const handlers = FORWARDED.map(

@@ -88,7 +88,28 @@ describe("runClaude", () => {
 
     it("exits as claude did, a signal's code included", async () => {
         expect(await runClaude([], harness(3).deps)).toBe(3);
-        expect(await runClaude([], harness(143).deps)).toBe(143);
+        // A real child killed by TERM, in claude's place.
+        const { deps } = harness();
+        deps.spawn = (_, env) =>
+            Bun.spawn(["sh", "-c", "kill -TERM $$"], { env });
+        expect(await runClaude([], deps)).toBe(143);
+    });
+
+    it("leaves a user's own ENABLE_TOOL_SEARCH alone", async () => {
+        const { calls, deps } = harness();
+        deps.env = { ...deps.env, ENABLE_TOOL_SEARCH: "0" };
+        await runClaude([], deps);
+        expect(calls.env.ENABLE_TOOL_SEARCH).toBe("0");
+    });
+
+    it("refuses to run from a package script", async () => {
+        const { calls, deps } = harness();
+        deps.env = { ...deps.env, npm_lifecycle_event: "dev" };
+        expect(await runClaude([], deps)).toBe(2);
+        expect(calls.err).toBe(
+            "dorothy: run --claude directly, not through bun run, so that claude starts where you are\n",
+        );
+        expect(calls.cmd).toEqual([]);
     });
 
     it("says so, and exits 127, when claude is not on PATH", async () => {
