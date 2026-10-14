@@ -1,4 +1,7 @@
 {
     "$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
-    "extends": ["@chewygumxx/biome-config"]
+    "extends": ["@chewygumxx/biome-config"],
+    "files": {
+        "includes": ["**", "!skills-lock.json"]
+    }
 }

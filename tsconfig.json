@@ -17,8 +17,10 @@
     "include": [
         ".commitlintrc.mts",
         "scripts/**/*.mjs",
+        "scripts/**/*.ts",
         "packages/*/src",
         "test-setup.ts",
+        "agents.test.ts",
         "workspace.test.ts"
     ]
 }

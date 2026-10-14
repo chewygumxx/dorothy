@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-10-09
+mtime: 2026-10-13
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -39,6 +39,8 @@ After a phase merges:
    leave it in Candidates.
 4. Reorder Ahead if a phase's reasons have changed, and add a line to
    Revisions saying what moved and why.
+5. Check the root and each package's `AGENTS.md` against what merged,
+   and correct any that no longer describe the code.
 
 Each phase in Ahead gives its **Status**, the phases it has as
 **Required**, and its **Rationale** for where it sits. It carries no dates
@@ -48,17 +50,20 @@ or estimates.
 
 In order; the first is next.
 
-### Agentic Asset Refactor
+### Model Providers
 
-Revise Claude assets for compartmentalisation into specialised modules and
-components. Generalisation of assets from `.claude/CLAUDE.md` to
-`.agents/AGENTS.md` for broader compatibility with alternative models.
+A provider contract in `core`, with the Messages API and an
+OpenAI-compatible implementation, and per-role routing in `config.toml`,
+so chat, reviews, compaction and maintenance each take a model fit for
+them. Replaces the move to the Messages API alone (the `api` commit
+scope). Findings: [context leak](./reports/2026-10-07-context-leak.md).
 
-- **Status**: Pending Specification
+- **Status**: Pending Design
 - **Required**: Requisites Fulfilled
-- **Rationale**: Context window growth and token consumption rate are far too
-  high with respect to the size of this repository and projected work
-  immediately foreseeable.
+- **Rationale**: Anthropic's models are too costly for every purpose, and
+  modularity keeps the Agent SDK inside `agent`. It goes ahead of
+  maintenance, whose background passes are where a cheaper model pays
+  most.
 
 ### Cyclical Maintenance (4a)
 
@@ -67,7 +72,7 @@ conversations from their notes, in background passes that can be undone.
 Its undo and log are to be revisited against memory history.
 
 - **Status**: Design Agreed, Pending Specification
-- **Required**: Requisites Fulfilled
+- **Required**: Model Providers
 - **Rationale**: A vocabulary without upkeep drifts. Memory history, now
   done, recovers from a wrong pass, and it is to be built inside the
   `memory` package.
@@ -81,28 +86,19 @@ the conversations that carry it. Split from 4a.
 - **Required**: Cyclical Maintenance
 - **Rationale**: Maintenance keeps the concepts worth an overview.
 
-### The Messages API
+### Dorothy's Gateway
 
-Move from the Agent SDK to Anthropic's Messages API, the only way to fully
-control the system prompt (the `api` commit scope). Findings:
-[context leak](./reports/2026-10-07-context-leak.md).
-
-- **Status**: Pending Design
-- **Required**: Requisites Fulfilled
-- **Rationale**: Modularity keeps the SDK inside one package, `agent`, and
-  coming after maintenance, its calls through `StructuredCall` move with the
-  rest.
-
-### Token Budgets and a Gateway
-
-One module for the budgets that shape Dorothy's context, enforced by a
-proxy that every request passes through. Notes:
+An endpoint speaking the Anthropic and OpenAI protocols that adds
+Dorothy's persona and memory to each request and routes it through Model
+Providers, so she can be the model behind Claude Code, Codex, OpenCode and
+the like, with recall offered to them over MCP. It enforces the budgets
+that shape her context in one module. Notes:
 [budgets and a gateway](./notes/2026-10-07_budgets-gateway.md).
 
 - **Status**: Idea
-- **Required**: Requisites Fulfilled
-- **Rationale**: Simpler once requests are Dorothy's own, after the
-  Messages API.
+- **Required**: Model Providers
+- **Rationale**: Clients already supply the tools and the loop; Dorothy
+  supplies the persona, the memory and the choice of model.
 
 ### Relations and Embeddings (5)
 
@@ -140,6 +136,12 @@ Found but not scheduled, each with its source.
   that a package cannot import something only the root declares: the
   isolated linker leaves the root's declarations visible to every package
   (workspace modularity, final review).
+- Dorothy's own tool loop, should serving behind clients fall short
+  (agentic asset refactor).
+- Checking that every file of a headed type carries the house header, not
+  only that existing headers are in sync (agentic asset refactor).
+- `repo-memory` preferring `.agents/memory/` upstream, so other
+  repositories can move their memory too (agentic asset refactor).
 
 ## Done
 
@@ -178,6 +180,11 @@ In order of completion.
   [diagram](./specs/2026-10-09-workspace-modularity-packages.html),
   [plan](./plans/2026-10-09-workspace-modularity.md),
   [report](./reports/2026-10-09-workspace-modularity.md).
+- **Agentic asset refactor**:
+  [spec](./specs/2026-10-11-agentic-asset-refactor-design.md),
+  [plan](./plans/2026-10-12-agentic-asset-refactor.md),
+  [probes](./reports/2026-10-12-agentic-asset-refactor.md),
+  [report](./reports/2026-10-13-agentic-asset-refactor-implementation.md).
 
 ## Revisions
 
@@ -193,3 +200,11 @@ In order of completion.
   Maintenance is built inside `memory`, and the Messages API move replaces
   `agent`. Candidates gain injected history commands, a compiled binary
   and a split of `memory`.
+- 2026-10-11: The Agentic Asset Refactor is specified, widened to serve
+  any client and any model. Model Providers replaces the Messages API and
+  goes ahead of Cyclical Maintenance, so maintenance runs on a cheaper
+  model; Dorothy's Gateway absorbs Token Budgets and a Gateway, serving
+  her as the model behind existing clients.
+- 2026-10-12: The Agentic Asset Refactor is done, so Model Providers is
+  next. Revising gains a step that checks the `AGENTS.md` files against
+  what merged.

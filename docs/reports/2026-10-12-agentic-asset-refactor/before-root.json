@@ -1,0 +1,27 @@
+{
+    "wall_ms": 9500,
+    "duration_ms": 7026,
+    "num_turns": 1,
+    "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 17981,
+        "cache_read_input_tokens": 8350,
+        "output_tokens": 663,
+        "output_tokens_details": {
+            "thinking_tokens": 276
+        },
+        "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+            "ephemeral_1h_input_tokens": 17981,
+            "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard",
+        "fallback_credit": null
+    }
+}

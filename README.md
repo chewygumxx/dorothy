@@ -265,8 +265,8 @@ sync pushed.
 ## Development
 
 The code is five Bun workspace packages under `packages/` (`core`, `memory`,
-`agent`, `tui` and `cli`), linked by Bun's isolated linker; `.claude/CLAUDE.md`
-describes them.
+`agent`, `tui` and `cli`), linked by Bun's isolated linker;
+[`AGENTS.md`](./AGENTS.md) and each package's own describe them.
 
 - `bun run dev` and `bun run start` run the CLI from source
   (`packages/cli/src/index.ts`).

@@ -18,7 +18,8 @@ node_modules/
 /coverage/
 
 /.herdr/
-/.claude/worktrees/
 /.superpowers/
 /.remember/
+/.agents/skills/
+/.claude/skills/
 
