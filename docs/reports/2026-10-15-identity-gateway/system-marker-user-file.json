@@ -1,0 +1,35 @@
+[
+    {
+        "type": "text",
+        "head": "x-anthropic-billing-header: cc_version=2.1.296.406; cc_entry",
+        "chars": 74,
+        "marker": false,
+        "marker_at_end": false,
+        "user_text": false,
+        "cache_control": null
+    },
+    {
+        "type": "text",
+        "head": "You are Claude Code, Anthropic's official CLI for Claude, ru",
+        "chars": 94,
+        "marker": false,
+        "marker_at_end": false,
+        "user_text": false,
+        "cache_control": {
+            "type": "ephemeral",
+            "ttl": "1h"
+        }
+    },
+    {
+        "type": "text",
+        "head": "\nYou are an agent working with the user toward their goals, ",
+        "chars": 5696,
+        "marker": true,
+        "marker_at_end": true,
+        "user_text": true,
+        "cache_control": {
+            "type": "ephemeral",
+            "ttl": "1h"
+        }
+    }
+]
