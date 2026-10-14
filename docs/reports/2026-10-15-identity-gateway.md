@@ -36,6 +36,9 @@ rulings, its review and its commits are in the implementation report.
   and the marker into one flag.
 - `--append-system-prompt-file` stacks with `--append-system-prompt`,
   the file's text first, so a user's file needs no merging.
+- Through the built gateway, `dorothy --claude` sends Dorothy's identity
+  as its own block after the identity line, the marker gone and every
+  breakpoint in place, with the user's own appended text kept.
 
 ## Method
 
@@ -84,6 +87,22 @@ the last block:
 The flag keeps its last value whichever comes first, so neither order
 keeps both. The file's text comes before the flag's, both in the last
 block, separated by a blank line.
+
+## Through the gateway
+
+Once built, `dorothy --claude -p --no-session-persistence hi` ran from
+the same empty directory with `ANTHROPIC_BASE_URL` at the stand-in,
+which the gateway took as its upstream: the real chain, from Claude Code
+through the gateway, spending no token.
+
+[`gateway.json`](2026-10-15-identity-gateway/gateway.json): four
+blocks, the billing header, the identity line (one-hour breakpoint),
+Dorothy's identity (368 characters, no breakpoint) and the rest of the
+prompt (one-hour breakpoint), which still opens with its newline and no
+longer carries the marker.
+[`gateway-user.json`](2026-10-15-identity-gateway/gateway-user.json),
+with `--append-system-prompt 'probe-user-text'`: the same four, the last
+ending with the user's text. Neither run printed a drift warning.
 
 ## Limits
 

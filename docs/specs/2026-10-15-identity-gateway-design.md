@@ -118,15 +118,17 @@ new text written to the stance in [Decisions](#decisions).
 
 ### `@dorothy/gateway`
 
-- `startGateway({ upstream?, log? })` serves on `127.0.0.1`, port `0`,
-  and returns `{ url, stats, stop }`. `stats` counts requests injected
-  and requests that carried the marker but could not be rewritten.
+- `startGateway({ upstream? })` serves on `127.0.0.1`, port `0`, with
+  `idleTimeout: 0`, and returns `{ url, stats, stop }`. `stats` counts
+  requests injected and requests that carried the marker but could not
+  be rewritten. It logs nothing: `stats` carries what a log would.
 - The upstream defaults to `https://api.anthropic.com`. The launcher
   passes the user's own `ANTHROPIC_BASE_URL` when one is set, so the
   gateway chains onto an existing proxy.
 - It imports `identityPrompt()` itself.
-- The Anthropic protocol lives in `src/anthropic.ts`: the pure
-  `rewrite(body)` and the marker. The server in `src/server.ts` knows
+- The Anthropic protocol lives in `src/anthropic.ts`: the marker, the
+  pure `injectIdentity(body)`, and `rewriteRequest(bytes, encoding)`,
+  which decodes, parses and counts drift. The server in `src/server.ts` knows
   only which paths to hand it. An OpenAI-protocol adapter for Codex can
   later sit beside `anthropic.ts`.
 
@@ -150,9 +152,12 @@ goes to `claude` untouched; `--dev` does not apply to it.
    `ANTHROPIC_BASE_URL` set to the gateway's URL and
    `ENABLE_TOOL_SEARCH=1`, which Claude Code otherwise turns off for a
    base URL that is not Anthropic's. Its arguments are
-   `--append-system-prompt <marker>` followed by the user's.
-3. Inherit stdin, stdout and stderr, and forward `SIGINT`, `SIGTERM` and
-   `SIGHUP` to the child.
+   `--append-system-prompt <marker>` followed by the user's. Claude Code
+   keeps only the last `--append-system-prompt`, so a user's own (the
+   last, spaced or with `=`, before any `--`) is taken out of their
+   arguments and goes in the same flag, before the marker.
+3. Inherit stdin, stdout and stderr; forward `SIGTERM` and `SIGHUP` to
+   the child, and ignore `SIGINT`, which the terminal already sends it.
 4. When `claude` exits, stop the gateway, print the warning described
    under [Failures](#failures) if it applies, and exit with `claude`'s
    code, or `128 + n` for a signal.
@@ -172,7 +177,9 @@ prompt carries by accident. Only `system` is searched for it, never
 **Rewrite,** for a candidate whose `system` carries the marker:
 
 1. Decompress a `gzip` body, then parse it. If either fails, forward the
-   original bytes and count the request as drift.
+   original bytes and count the request as drift. A body whose marker is
+   outside `system`, or whose `content-encoding` is neither absent,
+   `identity` nor `gzip`, is forwarded unchanged and counted as drift.
 2. Remove the marker and the whitespace around it from the block, or
    string, holding it. A block left empty is dropped, and its
    `cache_control`, if any, moves to the block before it, so the number
@@ -190,13 +197,17 @@ prompt carries by accident. Only `system` is searched for it, never
 
 **Responses.** Status and headers, less the hop-by-hop ones, are
 returned as received, and the body is streamed through unchanged, so
-server-sent events arrive as the upstream sends them.
+server-sent events arrive as the upstream sends them. The gateway strips
+`accept-encoding` from requests and `content-encoding` and
+`content-length` from replies, which Bun's `fetch` has decoded.
 
-**The probe fixes the details.** Where Claude Code puts appended text in
-`system`, whether that block carries `cache_control`, and whether forks
-keep it have not been observed. The first task of the plan captures them
-(see [Testing](#testing)), and steps 2 and 3 are adjusted to what it
-shows before any code depends on them.
+**The probe fixed the details.** Claude Code 2.1.296 puts appended text
+at the end of its last `system` block, after a blank line, under that
+block's one-hour `cache_control`, and never in `messages`; steps 2 and 3
+hold as written. Only the marker and the whitespace next to it go, so
+the rest of the block, its leading newline included, stays as sent.
+Whether forks keep the marker was not observed. See the
+[probes](../reports/2026-10-15-identity-gateway.md).
 
 ## Failures
 
