@@ -9,6 +9,6 @@
         "@dorothy/gateway": "workspace:*",
         "@dorothy/memory": "workspace:*",
         "@dorothy/tui": "workspace:*",
-        "@dotenvx/dotenvx": "^2.32.4"
+        "@dotenvx/dotenvx": "^2.34.2"
     }
 }
