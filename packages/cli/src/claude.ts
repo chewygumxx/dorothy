@@ -25,7 +25,7 @@ export type ClaudeDeps = {
     env?: Env;
     which?: (command: string, options: { PATH: string }) => string | null;
     startGateway?: (options: { upstream: string }) => Gateway;
-    spawn?: (cmd: string[], env: Env) => Spawned;
+    spawn?: (cmd: string[], env: Env, cwd?: string) => Spawned;
     write?: (text: string) => void;
     signals?: Pick<NodeJS.EventEmitter, "on" | "off">;
 };
@@ -66,9 +66,35 @@ export function claudeArgs(args: readonly string[]): string[] {
     return [APPEND, text, ...rest];
 }
 
-const spawnInherited = (cmd: string[], env: Env): Spawned =>
+// Where claude runs and with what environment. A package script, such as
+// `bun run dev -- --claude`, starts in this checkout with the script's
+// variables set and node_modules/.bin first on PATH, for the directory
+// it was run from and each above it down to /node_modules/.bin, behind
+// Bun's node shim or the project's root. claude gets the directory and
+// the PATH the user ran it from.
+export function userShell(env: Env): { env: Env; cwd?: string } {
+    if (env.npm_lifecycle_event === undefined) {
+        return { env };
+    }
+    const shell: Env = {};
+    for (const [name, value] of Object.entries(env)) {
+        if (!name.startsWith("npm_")) {
+            shell[name] = value;
+        }
+    }
+    const path = (env.PATH ?? "").split(":");
+    const end = path.indexOf("/node_modules/.bin");
+    if (end !== -1) {
+        shell.PATH = path.slice(end + 1).join(":");
+    }
+    const cwd = env.npm_config_local_prefix;
+    return cwd === undefined ? { env: shell } : { env: shell, cwd };
+}
+
+const spawnInherited = (cmd: string[], env: Env, cwd?: string): Spawned =>
     Bun.spawn(cmd, {
         env,
+        cwd,
         stdin: "inherit",
         stdout: "inherit",
         stderr: "inherit",
@@ -90,15 +116,8 @@ export async function runClaude(
         signals = process,
     }: ClaudeDeps = {},
 ): Promise<number> {
-    // A package script runs in Dorothy's checkout with her node_modules
-    // first on PATH, and claude would start there too.
-    if (env.npm_lifecycle_event !== undefined) {
-        write(
-            "dorothy: run --claude directly, not through bun run, so that claude starts where you are\n",
-        );
-        return 2;
-    }
-    const claude = which("claude", { PATH: env.PATH ?? "" });
+    const shell = userShell(env);
+    const claude = which("claude", { PATH: shell.env.PATH ?? "" });
     if (claude === null) {
         write("dorothy: claude is not on PATH\n");
         return 127;
@@ -111,13 +130,17 @@ export async function runClaude(
         write(`dorothy: the gateway could not start: ${reason}\n`);
         return 1;
     }
-    const child = spawn([claude, ...claudeArgs(args)], {
-        ...env,
-        ANTHROPIC_BASE_URL: gateway.url,
-        // Claude Code turns tool search off for a base URL not Anthropic's;
-        // a user's own choice stands.
-        ENABLE_TOOL_SEARCH: env.ENABLE_TOOL_SEARCH ?? "1",
-    });
+    const child = spawn(
+        [claude, ...claudeArgs(args)],
+        {
+            ...shell.env,
+            ANTHROPIC_BASE_URL: gateway.url,
+            // Claude Code turns tool search off for a base URL not
+            // Anthropic's; a user's own choice stands.
+            ENABLE_TOOL_SEARCH: env.ENABLE_TOOL_SEARCH ?? "1",
+        },
+        shell.cwd,
+    );
     const ignore = () => {};
     const handlers = FORWARDED.map(
         (signal) => [signal, () => child.kill(signal)] as const,

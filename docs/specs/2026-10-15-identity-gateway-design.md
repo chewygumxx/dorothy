@@ -156,9 +156,11 @@ goes to `claude` untouched; `--dev` does not apply to it.
    keeps only the last `--append-system-prompt`, so a user's own (the
    last, spaced or with `=`, before any `--`) is taken out of their
    arguments and goes in the same flag, before the marker.
-   `ENABLE_TOOL_SEARCH` keeps a value the user set. Run from a package
-   script, which would start `claude` in Dorothy's checkout with its
-   `node_modules` on `PATH`, the launcher refuses, exiting 2.
+   `ENABLE_TOOL_SEARCH` keeps a value the user set. From a package
+   script (`bun run dev -- --claude`), which runs in Dorothy's checkout
+   with `node_modules/.bin` entries first on `PATH`, `claude` gets the
+   directory the script was run from (`npm_config_local_prefix`), the
+   `PATH` before Bun's entries, and none of the `npm_` variables.
 3. Inherit stdin, stdout and stderr; forward `SIGTERM` and `SIGHUP` to
    the child, and ignore `SIGINT`, which the terminal already sends it.
 4. When `claude` exits, stop the gateway, print the warning described

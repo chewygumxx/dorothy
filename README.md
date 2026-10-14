@@ -240,15 +240,19 @@ push-seconds = 60  # at most one push per this many seconds, 10 to 86400
 
 `--claude` runs your own Claude Code with Dorothy as its main agent: her
 identity, voice and manner, with Claude Code's tools. Everything after it
-goes to `claude`. Run it directly, from the directory Claude Code should
-open in, rather than through `bun run`, which would start it in this
-checkout:
+goes to `claude`, which starts in the directory you ran it from:
+
+```sh
+bun run dev -- --claude                    # Claude Code on this checkout
+bun run dev -- --claude -p "Who are you?"
+```
+
+Bun runs `dev` only from a directory within this checkout, so for another
+project, call the entry point itself:
 
 ```sh
 alias dorothy="bun $PWD/packages/cli/src/index.ts"  # from this checkout
-cd ~/some/project
-dorothy --claude
-dorothy --claude -p "Who are you?"
+cd ~/some/project && dorothy --claude
 ```
 
 It starts a gateway on a local port and points Claude Code at it with

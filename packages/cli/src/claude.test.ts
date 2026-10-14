@@ -17,6 +17,7 @@ function harness(exit: number | Promise<number> = 0) {
     const calls = {
         cmd: [] as string[],
         env: {} as Record<string, string | undefined>,
+        cwd: undefined as string | undefined,
         upstream: "",
         stopped: false,
         killed: [] as string[],
@@ -38,9 +39,10 @@ function harness(exit: number | Promise<number> = 0) {
                 },
             };
         },
-        spawn: (cmd, env) => {
+        spawn: (cmd, env, cwd) => {
             calls.cmd = cmd;
             calls.env = env;
+            calls.cwd = cwd;
             return {
                 exited: Promise.resolve(exit),
                 kill: (signal) => {
@@ -74,6 +76,7 @@ describe("runClaude", () => {
             ENABLE_TOOL_SEARCH: "1",
         });
         expect(calls.upstream).toBe("https://api.anthropic.com");
+        expect(calls.cwd).toBeUndefined();
         expect(calls.stopped).toBe(true);
         expect(calls.err).toBe("");
     });
@@ -102,14 +105,31 @@ describe("runClaude", () => {
         expect(calls.env.ENABLE_TOOL_SEARCH).toBe("0");
     });
 
-    it("refuses to run from a package script", async () => {
+    it("runs claude where a package script was run, with its PATH", async () => {
         const { calls, deps } = harness();
-        deps.env = { ...deps.env, npm_lifecycle_event: "dev" };
-        expect(await runClaude([], deps)).toBe(2);
-        expect(calls.err).toBe(
-            "dorothy: run --claude directly, not through bun run, so that claude starts where you are\n",
-        );
-        expect(calls.cmd).toEqual([]);
+        deps.which = (_, { PATH }) =>
+            PATH === "/bin:/opt/tool/node_modules/.bin" ? "/bin/claude" : null;
+        deps.env = {
+            HOME: "/home/u",
+            PATH: [
+                "/tmp/bun-node-1",
+                "/repo/docs/node_modules/.bin",
+                "/repo/node_modules/.bin",
+                "/node_modules/.bin",
+                "/bin",
+                "/opt/tool/node_modules/.bin",
+            ].join(":"),
+            npm_lifecycle_event: "dev",
+            npm_config_local_prefix: "/repo/docs",
+        };
+        expect(await runClaude([], deps)).toBe(0);
+        expect(calls.cwd).toBe("/repo/docs");
+        expect(calls.env).toEqual({
+            HOME: "/home/u",
+            PATH: "/bin:/opt/tool/node_modules/.bin",
+            ANTHROPIC_BASE_URL: "http://127.0.0.1:4321",
+            ENABLE_TOOL_SEARCH: "1",
+        });
     });
 
     it("says so, and exits 127, when claude is not on PATH", async () => {
