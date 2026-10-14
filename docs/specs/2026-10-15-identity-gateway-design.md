@@ -156,6 +156,9 @@ goes to `claude` untouched; `--dev` does not apply to it.
    keeps only the last `--append-system-prompt`, so a user's own (the
    last, spaced or with `=`, before any `--`) is taken out of their
    arguments and goes in the same flag, before the marker.
+   `ENABLE_TOOL_SEARCH` keeps a value the user set. Run from a package
+   script, which would start `claude` in Dorothy's checkout with its
+   `node_modules` on `PATH`, the launcher refuses, exiting 2.
 3. Inherit stdin, stdout and stderr; forward `SIGTERM` and `SIGHUP` to
    the child, and ignore `SIGINT`, which the terminal already sends it.
 4. When `claude` exits, stop the gateway, print the warning described
@@ -178,8 +181,10 @@ prompt carries by accident. Only `system` is searched for it, never
 
 1. Decompress a `gzip` body, then parse it. If either fails, forward the
    original bytes and count the request as drift. A body whose marker is
-   outside `system`, or whose `content-encoding` is neither absent,
-   `identity` nor `gzip`, is forwarded unchanged and counted as drift.
+   in `system` but cannot be placed, or whose `content-encoding` is
+   neither absent, `identity` nor `gzip`, is forwarded unchanged and
+   counted as drift. A marker only in `messages` is a conversation
+   quoting it, such as a subagent reading this code, and is not drift.
 2. Remove the marker and the whitespace around it from the block, or
    string, holding it. A block left empty is dropped, and its
    `cache_control`, if any, moves to the block before it, so the number
@@ -199,7 +204,11 @@ prompt carries by accident. Only `system` is searched for it, never
 returned as received, and the body is streamed through unchanged, so
 server-sent events arrive as the upstream sends them. The gateway strips
 `accept-encoding` from requests and `content-encoding` and
-`content-length` from replies, which Bun's `fetch` has decoded.
+`content-length` from replies, which Bun's `fetch` has decoded. A
+client's abort reaches the upstream. A reply the upstream drops ends
+quietly, an event stream with the API's `error` event, as Bun would
+otherwise print the failure over the client's screen; a 502 names the
+upstream's origin only, never credentials in its URL.
 
 **The probe fixed the details.** Claude Code 2.1.296 puts appended text
 at the end of its last `system` block, after a blank line, under that
