@@ -93,6 +93,14 @@ other two land.
 - **Conversations take a source.** Chat's sessions and Claude Code's
   are one kind, told apart by a source on the session event; a body's
   tool calls are kept, their large output trimmed.
+- **Nothing is forgotten.** A fact that no longer serves is retired: it
+  leaves the repository's copy and sinks below live facts, but stays in
+  the store, in search and in history, and can be revived. Memories fade
+  by ranking, never by deletion or expiry.
+- **Where a fact came from is the code's to say.** Each fact records its
+  origin, `user`, `dorothy`, `external` or `repo`, set by the writer
+  from the session it came from and never read from its text, so text
+  claiming to be the user's does not make it so.
 - **Migration is lazy.** Today's files are valid as they stand: a
   session event without a source is chat's, and nothing is rewritten.
 
@@ -108,7 +116,6 @@ marked.
 | Generated, authored | concepts and tombstones                         | `tags.json`                                  |
 | Authored (new)      | personal facts                                  | `facts/personal/<name>.md`                   |
 | Authored (new)      | a project's facts                               | `facts/projects/<project id>/<name>.md`      |
-| Authored (new)      | forgotten facts' tombstones                     | `facts/forgotten.json`                       |
 | Generated (new)     | projects, their roots and their sync state      | `projects.json`                              |
 | History             | every committed version of the files above      | `.git/` in the data directory, branch `main` |
 | History, sealed     | encrypted bundles of `main`                     | branch `sealed`, and the mirror              |
@@ -150,8 +157,14 @@ A new event records a body's tool call:
 }
 ```
 
-`input` and `output` are text, each trimmed to its first 2,000
-characters; `cut` counts the characters dropped. Tool events are not
+`input` and `output` are text. Before they are trimmed, known shapes of
+secret are replaced with `[secret]`: a `key=value` or `key: value` whose
+key names one (`token`, `key`, `secret`, `password`, `auth`), `Bearer`
+tokens, private key blocks, and the prefixes of common provider keys.
+Each is then trimmed to its first 2,000 characters, and `cut` counts the
+characters dropped. A call to one of Dorothy's own memory tools carries
+`"memory": true`, so that no review learns as new what memory itself
+supplied. Tool events are not
 turns: turns stay the user and assistant events, numbered as today, and
 tool events sit between them. The store accepts consecutive assistant
 events, as an agent writes text between tool calls; the plan checks that
@@ -174,7 +187,9 @@ metadata:
   type: project
 tags:
   - k1a2b3c4d
+importance: 7
 provenance:
+  origin: user
   by: dorothy
   at: 2026-10-15T09:30:00.000Z
   created: 2026-10-15T09:30:00.000Z
@@ -193,15 +208,29 @@ The fact itself, in Markdown.
   `metadata` keys, such as those Claude Code's auto-memory adds, are
   kept as they are.
 - `tags`: concept ids from `tags.json`, optional.
-- `provenance`: who wrote this version (`dorothy`, `user`, `review` or
-  `repo`), when, when the fact was first written, with which model, and
-  the conversation and turn it came from, where known.
+- `importance`: 1 to 10, optional, set by a writer with a model in the
+  loop; the Layers and learning spec ranks by it. A fact without it
+  ranks neutrally.
+- `provenance.origin`: where the fact's content came from. `user`: the
+  user said or wrote it. `dorothy`: she derived it from the user's words
+  or her own work. `external`: it came from tool output, the web or
+  another person's text. `repo`: it was imported from a repository.
+  Every write names it, and the store has no default. A later version
+  may lower a fact's origin; only a version the user writes raises it,
+  to `user`.
+- `provenance`, besides: who wrote this version (`dorothy`, `user`,
+  `review` or `repo`), when, when the fact was first written, with which
+  model, and the conversation and turn it came from, where known.
+- `retired`: present on a retired fact, with when, by whom and why.
 - The body is at most 2,000 characters. Dorothy writes lines of at
   most 80, but the lint does not require it, so a repository's own
   style imports.
 - A link to another fact is relative, `[text](./<name>.md)`, and only
   within its scope, so an exported fact's links resolve and a project
   fact never points at a personal one.
+- No control character but newline and tab, and no invisible or
+  bidirectional Unicode, appears anywhere in the file: a known way of
+  hiding instructions in text a model will read.
 
 The store's lint checks all of it. A file that fails is restored from
 history, or kept aside in `broken/`, as transcripts and notes are.
@@ -209,22 +238,37 @@ history, or kept aside in `broken/`, as transcripts and notes are.
 ### Writing
 
 Facts are written through the module API (`writeFact`, `moveFact`,
-`forgetFact`) under the sidecar lock, atomically, and committed by
+`retireFact`, `reviveFact`) under the sidecar lock, atomically, and committed by
 history. A write names its scope; there is no default, so every writer
 decides where a fact belongs. `moveFact` changes a fact's scope, and is
 how a fact written to the wrong one is put right.
 
+A fact rewritten in place keeps its earlier versions in history, where
+`--history` and `--restore` reach them.
+
 The user may edit or add a fact by hand in the data directory: history
 sweeps up outside changes before its next commit, and the lint heals a
-broken edit.
+broken edit. A fact the user adds or edits by hand is `origin: user`.
 
-### Forgetting
+### Retiring
 
-`forgetFact` deletes the file and adds a tombstone to
-`facts/forgotten.json`: the scope, name, title and description, when and
-by whom. Reviews consult the tombstones so that what was forgotten is
-not learnt again; the Layers and learning spec decides how. History
-keeps the file's last version.
+Nothing in the store deletes a fact. `retireFact` adds `retired` to its
+frontmatter and leaves the file where it is, so it stays indexed,
+searchable and versioned. A retired fact is never exported, so the next
+sync removes it from the repository, and it ranks below every live fact;
+the Layers and learning spec keeps it out of the always-present layer.
+`reviveFact` removes `retired`.
+
+`retireFacts({ from })` retires every fact whose provenance names a
+conversation, for when a conversation turns out to have been wrong.
+
+Reviews see retired facts, so that what was retired is not learnt again
+as new: learning it again revives it rather than writing a second fact.
+The Layers and learning spec decides how.
+
+Erasing a fact for good, as a leaked secret needs, must reach history
+and the mirror; it stays with the roadmap's candidate for forgetting a
+conversation.
 
 ## Projects
 
@@ -268,12 +312,13 @@ it.
 
 `syncProject(root)` reconciles a project's facts with its repository's
 memory directory, under the sidecar lock. For each name in the store's
-facts, the repository's files and the registry's `synced` map:
+live facts, the repository's files and the registry's `synced` map, a
+retired fact counting as absent from the store:
 
 | Store (exported form)  | Repository             | Then                                       |
 | ---------------------- | ---------------------- | ------------------------------------------ |
 | equal to the repo's    | equal to the store's   | record the hash; nothing else              |
-| changed since sync     | unchanged since sync   | export: write, or delete if forgotten      |
+| changed since sync     | unchanged since sync   | export: write, or remove if retired        |
 | unchanged since sync   | changed since sync     | import: the repo's version, `by: repo`     |
 | changed since sync     | changed since sync     | conflict: import the repo's, and notice it |
 | absent, never synced   | present                | import: adopt the repository's fact        |
@@ -283,15 +328,22 @@ facts, the repository's files and the registry's `synced` map:
 hash is of the normalised form, the parsed fields and body, not the
 bytes, so a repository that formats frontmatter its own way, or a client
 that rewrites it, does not register as a change. The first sync of a
-project with existing memory adopts it whole. A
-fact deleted in the repository is forgotten in the store, `by: repo`.
+project with existing memory adopts it whole. A fact deleted in the
+repository is retired in the store, `by: repo`; a retired fact the
+repository changes is imported and revived. An imported fact is
+`origin: repo`.
 
 The exported form keeps `name`, `description` and `metadata`, and the
-body; title, tags and provenance stay in the store. Export also
-regenerates the directory's `MEMORY.md`: one list item per fact,
-`[title](./<name>.md)`, its description on the next line wrapped to 80
-columns, in the order the facts were created. On import, a fact's title
-comes from its `MEMORY.md` entry if there is one, else its name.
+body; title, tags, importance and provenance stay in the store. Export
+also regenerates the directory's `MEMORY.md`: one list item per live
+fact, `[title](./<name>.md)`, its description on the next line wrapped
+to 80 columns, in the order the facts were created. Claude Code loads
+only the first 200 lines or 25 KB of `MEMORY.md` and drops the rest
+silently, so the index stays within both: if the facts would not fit,
+it lists them by importance, then recency, up to the limit, and sync
+warns of how many it left out. Their files are exported all the same.
+On import, a fact's title comes from its `MEMORY.md` entry if there is
+one, else its name.
 
 Export writes atomically, only inside `<root>/<memoryDir>`, and refuses
 a memory directory that resolves outside the root or through a symlink.
@@ -305,8 +357,8 @@ command.
 ## Writers in parallel
 
 Chat, several Claude Code sessions and a background review may write at
-once. Every write of a sidecar, a fact, `forgotten.json` or
-`projects.json`, and every sync, takes the sidecar lock: the recall
+once. Every write of a sidecar, a fact or `projects.json`, and every
+sync, takes the sidecar lock: the recall
 index's `exclusiveLock`, or history's `FileLock` without an index, as
 today. A transcript has one writer, the session that owns it. History
 commits a change inside the lock it was written under, as today.
@@ -315,17 +367,18 @@ commits a change inside the lock it was written under, as today.
 
 The index stays derived. `conversations` gains `source` and `project`,
 from each transcript's first session event. A `facts` table holds each
-fact's scope, name, title, description, type, body and creation time,
-with `facts_fts` over title, description and body, and `fact_tags` its
-concepts. Sync reads `facts/` as it reads `transcripts/`. A change of
-schema rebuilds the index from the files.
+fact's scope, name, title, description, type, body, origin,
+importance, creation time and whether it is retired, with `facts_fts`
+over title, description and body, and `fact_tags` its concepts. Retired
+facts are indexed like the rest. Sync reads `facts/` as it reads
+`transcripts/`. A change of schema rebuilds the index from the files.
 
 Which tools search facts, and how, is the Bodies spec's.
 
 ## History and the mirror
 
-The lint gains facts, `forgotten.json` and `projects.json`. Everything
-under `facts/` and both JSON files are committed and sealed like the
+The lint gains facts and `projects.json`. Everything under `facts/` and
+`projects.json` are committed and sealed like the
 rest; the mirror carries personal and project facts alike, encrypted.
 
 ## Migration
@@ -339,32 +392,38 @@ store.
 ## Commands
 
 - `dorothy --facts`: lists facts, by scope, with type, name, title and
-  description, as `--list` lists conversations.
-- `dorothy --forget <scope>/<name>`: forgets a fact, where scope is
-  `personal` or a project id, so `personal/likes-tea` or
+  description, as `--list` lists conversations; a retired fact's row
+  says so.
+- `dorothy --retire <scope>/<name>` and `dorothy --revive
+  <scope>/<name>`: retire or revive a fact, where scope is `personal` or
+  a project id, so `personal/likes-tea` or
   `github.com/chewygumxx/dorothy/dorothy-ambition`.
+- `dorothy --retire --from <phrase>`: retires every fact that came from
+  a conversation.
 - `dorothy --sync [<path>]`: syncs the project at the path, by default
   the working directory, and prints what moved and any conflict.
 - `dorothy --projects`: lists the registered projects, their roots and
   memory directories.
 
 Each takes no other arguments and runs with or without a terminal.
+`--restore` is history's, so reviving is `--revive`.
 
 ## Modules
 
 All in `@dorothy/memory`, which still depends on `core` alone:
 
-- `transcript.ts`: the session event's new fields and the tool event.
+- `transcript.ts`: the session event's new fields and the tool event;
+  `scrub.ts` replaces the shapes of secrets in a tool call's text.
 - `facts/`: `file.ts` parses and renders a fact; `store.ts` has
-  `writeFact`, `moveFact`, `forgetFact` and `listFacts`; `lint.ts` checks
-  a fact and `forgotten.json`.
+  `writeFact`, `moveFact`, `retireFact`, `retireFacts`, `reviveFact` and
+  `listFacts`; `lint.ts` checks a fact.
 - `projects/`: `identify.ts` finds a path's repository root and id;
   `registry.ts` reads and writes `projects.json`; `sync.ts` has
   `syncProject`; `export.ts` renders a fact and `MEMORY.md` in their
   exported forms.
 - `recall/`: the new columns and tables, and syncing `facts/`.
 - `history/lint.ts`: the new file kinds.
-- `commands.ts`: the four commands; `cli` parses and dispatches them.
+- `commands.ts`: the commands; `cli` parses and dispatches them.
 
 `packages/memory/AGENTS.md` and `packages/cli/AGENTS.md` change in the
 same branch.
@@ -389,27 +448,40 @@ same branch.
   0700, and the sealed mirror; export reads only `facts/projects/<id>/`.
 - Export stays inside the repository's memory directory, never follows
   a symlink out, and never commits or pushes.
-- An imported fact is a contributor's text that will reach a model. It
-  is background, never instruction, as the memory block's preamble
-  already says of notes; the Layers and learning spec renders it so.
-- The lint's caps keep a repository from flooding the store.
+- Origin is structural. It is set by the code that writes a fact, from
+  where the content came from, and no fact's text can change it. The
+  Layers and learning spec keeps `external` facts out of the
+  always-present layer, reachable only by search, and renders every
+  fact, an imported one above all, as background, never instruction, as
+  the memory block's preamble already says of notes.
+- The lint refuses invisible and control characters, and its caps keep
+  a repository from flooding the store.
+- Tool events are scrubbed of the shapes of secrets before they are
+  written. A secret with no recognisable shape is not caught; tool
+  events are still never indexed or exported, and the mirror is
+  sealed.
 
 ## Testing
 
 Every root, repository, key and environment is passed in, as the working
 rules require; nothing touches the user's data.
 
-- **Facts**: parse and render round-trip; the lint's cases, one by one;
-  write, move and forget, with their commits and tombstones.
+- **Facts**: parse and render round-trip; the lint's cases, one by one,
+  invisible characters and a missing origin among them; write, move,
+  retire, retire by conversation and revive, with their commits; origin
+  lowered by a later writer and raised only by the user; retired facts
+  still searchable.
 - **Projects**: remote normalisation across URL forms; the local id;
   the memory directory's choice.
 - **Sync**: one test per row of the table, in fixture repositories,
-  plus first sync adopting, `MEMORY.md` regenerated, a deletion on each
-  side, path containment and symlinks refused, and a property test that
-  no personal fact is ever written into a repository.
-- **Transcripts**: tool events trimmed and counted, linted, and left out
-  of the index; sessions without `source` read as chat's; consecutive
-  assistant events through compaction, reviews and recall.
+  plus first sync adopting, `MEMORY.md` regenerated and held within 200
+  lines and 25 KB, a retirement in the store and a deletion in the
+  repository, path containment and symlinks refused, and a property test
+  that no personal fact is ever written into a repository.
+- **Transcripts**: tool events scrubbed, trimmed and counted, marked
+  when they are memory's own, linted, and left out of the index;
+  sessions without `source` read as chat's; consecutive assistant events
+  through compaction, reviews and recall.
 - **Parallel writers**: two processes writing facts and syncing at once,
   each change committed once.
 - **Index**: rebuilt for the new schema; facts searchable by their
@@ -425,6 +497,10 @@ rules require; nothing touches the user's data.
   the next export; edits to the facts themselves are not.
 - **Consecutive assistant events** may meet code that assumed turns
   alternate; the plan checks before the Bodies spec relies on it.
+- **Retired facts accumulate.** They cost search a little noise and
+  nothing else; ranking keeps them below live facts.
+- **The scrub is by shape.** It misses a password with no telling key
+  beside it.
 - **One remote, one project.** Forks with different remotes are
   different projects; a repository whose `origin` changes becomes a new
   one until the user edits `projects.json`.
@@ -436,8 +512,10 @@ rules require; nothing touches the user's data.
   and a `remember` tool; delivering memory into Claude Code; when sync
   runs; keeping Claude Code's auto-memory from writing beside the store.
 - **Layers and learning**: the always-present section and its budget,
-  progressive disclosure, reviews that write and correct facts, and the
-  tombstones' use.
+  progressive disclosure, ranking by relevance, recency, use and
+  importance, keeping `external` facts out of the layer, reviews that
+  write, correct and retire facts, and how a retired fact is revived
+  rather than learnt again.
 - A `--fact` editor like `--memory`, should hand edits in the data
   directory prove awkward.
 
@@ -445,5 +523,9 @@ rules require; nothing touches the user's data.
 
 - Embeddings and links between entries (Relations and Embeddings).
 - Model choice for reviews (Model Providers).
+- Expiry: no fact lapses on a date. A fact fades by ranking and leaves
+  the always-present layer by retiring.
+- Erasing a fact or a conversation for good, through history and the
+  mirror (the roadmap's candidate).
 - Sharing personal memory across users or machines other than through
   the mirror.
