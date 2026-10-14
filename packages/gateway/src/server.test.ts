@@ -50,7 +50,9 @@ function standIn(
     return {
         url: `http://127.0.0.1:${server.port}`,
         seen,
-        stop: () => server.stop(true),
+        stop: () => {
+            server.stop(true);
+        },
     };
 }
 
@@ -173,6 +175,114 @@ describe("startGateway", () => {
         expect(upstream.seen[0]?.path).toBe("/proxy/v1/messages");
     });
 
+    it("joins the upstream's query with the request's", async () => {
+        upstream = standIn();
+        gateway = startGateway({ upstream: `${upstream.url}/proxy?key=1` });
+        await fetch(`${gateway.url}/v1/messages?beta=true`, {
+            method: "POST",
+            body: "{}",
+        });
+        expect(upstream.seen[0]?.path).toBe(
+            "/proxy/v1/messages?key=1&beta=true",
+        );
+    });
+
+    it("passes HEAD through, and drops the hop's headers", async () => {
+        upstream = standIn();
+        gateway = startGateway({ upstream: upstream.url });
+        await fetch(`${gateway.url}/v1/models`, { method: "HEAD" });
+        await fetch(`${gateway.url}/v1/messages`, {
+            method: "POST",
+            headers: { "accept-encoding": "x-test", te: "trailers" },
+            body: marked,
+        });
+        expect(upstream.seen.map((s) => [s.method, s.path])).toEqual([
+            ["HEAD", "/v1/models"],
+            ["POST", "/v1/messages"],
+        ]);
+        const headers = upstream.seen[1]?.headers;
+        expect(headers?.get("accept-encoding")).not.toBe("x-test");
+        expect(headers?.get("te")).toBeNull();
+        expect(headers?.get("content-length")).toBe(
+            String(Buffer.byteLength(upstream.seen[1]?.body ?? "")),
+        );
+    });
+
+    it("stops the upstream's work when the client gives up", async () => {
+        let aborted = (_: boolean) => {};
+        const seen = new Promise<boolean>((resolve) => {
+            aborted = resolve;
+        });
+        const server = Bun.serve({
+            hostname: "127.0.0.1",
+            port: 0,
+            fetch: (request) =>
+                new Promise<Response>((resolve) => {
+                    request.signal.addEventListener("abort", () => {
+                        aborted(true);
+                        resolve(new Response("late"));
+                    });
+                }),
+        });
+        upstream = {
+            url: `http://127.0.0.1:${server.port}`,
+            seen: [],
+            stop: () => {
+                server.stop(true);
+            },
+        };
+        gateway = startGateway({ upstream: upstream.url });
+        const client = new AbortController();
+        const reply = fetch(`${gateway.url}/v1/messages`, {
+            method: "POST",
+            body: "{}",
+            signal: client.signal,
+        }).catch(() => null);
+        await Bun.sleep(100);
+        client.abort();
+        await reply;
+        expect(
+            await Promise.race([seen, Bun.sleep(2_000).then(() => false)]),
+        ).toBe(true);
+    });
+
+    it("ends a stream the upstream drops with the API's error event", async () => {
+        // Headers and one event, then the connection closes mid-body.
+        const listener = Bun.listen({
+            hostname: "127.0.0.1",
+            port: 0,
+            socket: {
+                data(socket) {
+                    socket.write(
+                        "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n" +
+                            "transfer-encoding: chunked\r\n\r\n" +
+                            "a\r\nevent: a\n\n\r\n",
+                    );
+                    setTimeout(() => socket.end(), 50);
+                },
+            },
+        });
+        const url = `http://127.0.0.1:${listener.port}`;
+        upstream = {
+            url,
+            seen: [],
+            stop: () => {
+                listener.stop(true);
+            },
+        };
+        gateway = startGateway({ upstream: url });
+        const reply = await fetch(`${gateway.url}/v1/messages`, {
+            method: "POST",
+            body: "{}",
+        });
+        const text = await reply.text();
+        expect(text.startsWith("event: a\n\nevent: error\ndata: ")).toBe(true);
+        expect(JSON.parse(text.split("data: ")[1] ?? "")).toMatchObject({
+            type: "error",
+            error: { type: "api_error" },
+        });
+    });
+
     it("streams a reply as it comes, through a long pause", async () => {
         let release = () => {};
         const held = new Promise<void>((resolve) => {
@@ -256,6 +366,19 @@ describe("startGateway", () => {
             type: "error",
             error: { type: "api_error" },
         });
+    });
+
+    it("keeps a base URL's credentials out of the 502", async () => {
+        upstream = standIn();
+        const gone = upstream.url.replace("http://", "http://me:secret@");
+        upstream.stop();
+        gateway = startGateway({ upstream: gone });
+        const reply = await fetch(`${gateway.url}/v1/messages`, {
+            method: "POST",
+            body: "{}",
+        });
+        expect(reply.status).toBe(502);
+        expect(await reply.text()).not.toContain("secret");
     });
 
     it("counts what it could not rewrite", async () => {

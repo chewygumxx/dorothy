@@ -38,11 +38,15 @@ never on a model provider's SDK.
   identity after the first block that is not the billing header, the
   marker and the space around it gone, an emptied block's
   `cache_control` moved to the block before) and `rewriteRequest` (gzip,
-  parsing, drift). An OpenAI adapter would sit beside it.
+  parsing, drift; a marker only in the messages is a quotation, not
+  drift). An OpenAI adapter would sit beside it.
 - `server.ts`: `startGateway` on `127.0.0.1`, port `0`, `idleTimeout: 0`;
   `POST .../v1/messages` and `.../count_tokens` go to `rewriteRequest`,
-  everything else through byte for byte; 502 in the API's shape when the
-  upstream cannot be reached.
+  everything else through byte for byte, to the upstream's path and
+  query joined with the request's. A client's abort reaches the
+  upstream; an upstream that cannot be reached gets a 502 in the API's
+  shape (its origin only, never credentials), and one that drops a
+  reply ends it quietly, an event stream with the API's `error` event.
 
 ## Invariants
 

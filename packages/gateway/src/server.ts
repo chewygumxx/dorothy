@@ -21,12 +21,18 @@ export type Gateway = {
     stop: () => void;
 };
 
-// Headers that describe one hop rather than the request. The client's
-// accept-encoding goes too: Bun's fetch negotiates and decodes its own.
+// Headers that describe one hop rather than the request, besides any the
+// connection header names. The client's accept-encoding goes too: Bun's
+// fetch negotiates and decodes its own.
 const HOP = [
     "host",
     "connection",
     "keep-alive",
+    "proxy-connection",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "upgrade",
     "transfer-encoding",
     "content-length",
     "accept-encoding",
@@ -48,7 +54,7 @@ export function startGateway({
 }: {
     upstream?: string;
 } = {}): Gateway {
-    const base = upstream.replace(/\/+$/, "");
+    const base = new URL(upstream);
     const stats: GatewayStats = { injected: 0, drift: 0 };
     const server = Bun.serve({
         hostname: "127.0.0.1",
@@ -69,16 +75,84 @@ export function startGateway({
     };
 }
 
+// The upstream's path, then the request's, and both queries, kept as
+// they were written.
+function target(base: URL, url: URL): string {
+    const path = `${base.pathname.replace(/\/+$/, "")}${url.pathname}`;
+    const query = [base.search, url.search]
+        .map((search) => search.slice(1))
+        .filter((search) => search !== "")
+        .join("&");
+    const out = new URL(base);
+    out.pathname = path;
+    out.search = query;
+    return out.href;
+}
+
+function withoutHop(received: Headers): Headers {
+    const headers = new Headers(received);
+    const named = (received.get("connection") ?? "")
+        .split(",")
+        .map((name) => name.trim())
+        .filter((name) => name !== "");
+    for (const name of [...HOP, ...named]) {
+        headers.delete(name);
+    }
+    return headers;
+}
+
+const encoder = new TextEncoder();
+
+// What a stream cut off upstream ends with: the API's own error event,
+// so the client treats it as an error rather than a finished reply.
+const CUT = encoder.encode(
+    `event: error\ndata: ${JSON.stringify({
+        type: "error",
+        error: {
+            type: "api_error",
+            message: "dorothy's gateway lost the upstream mid-reply",
+        },
+    })}\n\n`,
+);
+
+// The reply's body, passed on as it comes. If the upstream drops it, the
+// body ends quietly (an event stream with CUT) instead of failing, which
+// Bun would report over the client's screen.
+function guarded(
+    body: ReadableStream<Uint8Array> | null,
+    events: boolean,
+): ReadableStream<Uint8Array> | null {
+    if (body === null) {
+        return null;
+    }
+    const reader = body.getReader();
+    return new ReadableStream<Uint8Array>({
+        async pull(controller) {
+            try {
+                const { done, value } = await reader.read();
+                if (done) {
+                    controller.close();
+                } else {
+                    controller.enqueue(value);
+                }
+            } catch {
+                if (events) {
+                    controller.enqueue(CUT);
+                }
+                controller.close();
+            }
+        },
+        cancel: (reason) => reader.cancel(reason).catch(() => {}),
+    });
+}
+
 async function forward(
     request: Request,
-    base: string,
+    base: URL,
     stats: GatewayStats,
 ): Promise<Response> {
     const url = new URL(request.url);
-    const headers = new Headers(request.headers);
-    for (const name of HOP) {
-        headers.delete(name);
-    }
+    const headers = withoutHop(request.headers);
     let body: Uint8Array<ArrayBuffer> | undefined;
     if (request.method !== "GET" && request.method !== "HEAD") {
         body = new Uint8Array(await request.arrayBuffer());
@@ -98,20 +172,23 @@ async function forward(
     }
     let reply: Response;
     try {
-        reply = await fetch(`${base}${url.pathname}${url.search}`, {
+        reply = await fetch(target(base, url), {
             method: request.method,
             headers,
             body,
             redirect: "manual",
+            // A client that gives up stops the upstream's work too.
+            signal: request.signal,
         });
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
+        // The origin alone: a base URL's credentials stay off the screen.
         return Response.json(
             {
                 type: "error",
                 error: {
                     type: "api_error",
-                    message: `dorothy's gateway cannot reach ${base}: ${reason}`,
+                    message: `dorothy's gateway cannot reach ${base.origin}: ${reason}`,
                 },
             },
             { status: 502 },
@@ -119,11 +196,12 @@ async function forward(
     }
     // Bun's fetch has decoded the body, so the encoding and length the
     // upstream gave no longer describe it.
-    const out = new Headers(reply.headers);
-    for (const name of [...HOP, "content-encoding"]) {
-        out.delete(name);
-    }
-    return new Response(reply.body, {
+    const out = withoutHop(reply.headers);
+    out.delete("content-encoding");
+    const events = (reply.headers.get("content-type") ?? "").startsWith(
+        "text/event-stream",
+    );
+    return new Response(guarded(reply.body, events), {
         status: reply.status,
         statusText: reply.statusText,
         headers: out,
