@@ -226,9 +226,9 @@ The fact itself, in Markdown.
 - `retired`: present on a retired fact, with when (`at`), by whom
   (`by`) and why (`why`, one line of at most 160 characters).
 - `metadata` keys beyond `type` hold a string, a number or a boolean.
-- The body is at most 2,000 characters. Dorothy writes lines of at
-  most 80, but the lint does not require it, so a repository's own
-  style imports.
+- The body is at most 8,000 characters: this repository's own memory
+  has a fact of 2,638. Dorothy writes lines of at most 80, but the lint
+  does not require it, so a repository's own style imports.
 - A link to another fact is relative, `[text](./<name>.md)`, and only
   within its scope, so an exported fact's links resolve and a project
   fact never points at a personal one.
