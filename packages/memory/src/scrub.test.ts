@@ -18,6 +18,10 @@ const CASES: [string, string][] = [
         "curl -H 'Authorization: Bearer abcdefgh12345678'",
         "curl -H 'Authorization: Bearer [secret]'",
     ],
+    [
+        "curl -H 'Authorization: token abc123xyz'",
+        "curl -H 'Authorization: token [secret]'",
+    ],
     ["token: ghp_abcdefghijklmnopqrstuvwxyz0123", "token: [secret]"],
     ["key sk-ant-api03-abcdefghij", "key [secret]"],
     ["AKIAABCDEFGHIJKLMNOP", "[secret]"],
@@ -35,6 +39,14 @@ describe("scrub", () => {
     it("leaves text with no secret's shape alone", () => {
         const text = "git status --short\n M docs/roadmap.md\n";
         expect(scrub(text)).toBe(text);
+    });
+
+    it("takes linear time on long runs that name no secret", () => {
+        for (const text of ["a-".repeat(50000), "pkg.sub.mod.".repeat(10000)]) {
+            const start = performance.now();
+            expect(scrub(text)).toBe(text);
+            expect(performance.now() - start).toBeLessThan(200);
+        }
     });
 
     it("gives the same text when run twice", () => {

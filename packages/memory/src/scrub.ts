@@ -16,14 +16,16 @@ const SECRET = "[secret]";
 
 const PRIVATE_KEY =
     /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g;
-const BEARER = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/g;
+// GitHub's API takes `Authorization: token <credential>`.
+const BEARER = /\b(Bearer|Basic|[Tt]oken)\s+[A-Za-z0-9._~+/=-]{8,}/g;
 // The prefixes providers give their keys.
 const PREFIXED =
     /\b(?:sk-ant-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,})/g;
 // key=value or key: value, quoted or not, where the key names a secret.
-// A value that is a Bearer or Basic scheme was handled above.
+// A value that is a scheme was handled above. The runs round the key word
+// are bounded, as an unbounded pair backtracks quadratically on long text.
 const NAMED =
-    /\b([\w.-]*(?:token|key|secret|password|passwd|auth)[\w.-]*)(["']?\s*[=:]\s*)(["']?)(?!(?:Bearer|Basic)\s)([^\s"'&,;]+)/gi;
+    /\b([\w.-]{0,64}(?:token|key|secret|password|passwd|auth)[\w.-]{0,64})(["']?\s*[=:]\s*)(["']?)(?!(?:Bearer|Basic|token)\s)([^\s"'&,;]+)/gi;
 
 export function scrub(text: string): string {
     return text
