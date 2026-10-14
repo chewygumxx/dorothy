@@ -33,6 +33,7 @@ export type Mode =
     | { kind: "mirror"; url: string | null }
     | { kind: "recover"; url: string }
     | { kind: "recall-server"; exclude: string | null; recollect: boolean }
+    | { kind: "claude"; args: string[] }
     | { kind: "help" }
     | { kind: "usage"; message: string };
 
@@ -56,6 +57,8 @@ export const USAGE = [
     "       dorothy -- <prompt...>     a prompt that starts with -",
     "       dorothy --dump-context [--resume <phrase>] [message...]",
     "                                  print the request a chat would send",
+    "       dorothy --claude [args...] Claude Code, with Dorothy as its",
+    "                                  agent; args go to claude",
     "       dorothy --dev ...          development mode, before a chat, a",
     "                                  prompt or --dump-context",
 ].join("\n");
@@ -107,6 +110,9 @@ export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
     }
     if (first === "--dump-context") {
         return parseDump(rest);
+    }
+    if (first === "--claude") {
+        return { kind: "claude", args: rest };
     }
     if (first === "--help" || first === "-h") {
         return { kind: "help" };
@@ -323,6 +329,10 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     } else if (mode.kind === "recover") {
         const { runRecover } = await import("@dorothy/memory/commands");
         process.exitCode = await runRecover(mode.url);
+    } else if (mode.kind === "claude") {
+        // No config(): claude signs in as the user's own Claude Code does.
+        const { runClaude } = await import("./claude.js");
+        process.exitCode = await runClaude(mode.args);
     } else if (mode.kind === "recall-server") {
         const { runRecallServer } = await import(
             "@dorothy/memory/recall-server"

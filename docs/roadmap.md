@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-10-13
+mtime: 2026-10-15
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -92,7 +92,9 @@ An endpoint speaking the Anthropic and OpenAI protocols that adds
 Dorothy's persona and memory to each request and routes it through Model
 Providers, so she can be the model behind Claude Code, Codex, OpenCode and
 the like, with recall offered to them over MCP. It enforces the budgets
-that shape her context in one module. Notes:
+that shape her context in one module. It grows from the `gateway`
+package Dorothy's Identity built, which already serves her identity to
+Claude Code. Notes:
 [budgets and a gateway](./notes/2026-10-07_budgets-gateway.md).
 
 - **Status**: Idea
@@ -142,6 +144,10 @@ Found but not scheduled, each with its source.
   only that existing headers are in sync (agentic asset refactor).
 - `repo-memory` preferring `.agents/memory/` upstream, so other
   repositories can move their memory too (agentic asset refactor).
+- An OpenAI-protocol adapter for the gateway, and `--codex` and
+  `--opencode` launchers beside `--claude` (identity spec, Later).
+- Checking that Claude Code's forks keep the identity marker, which the
+  probes could not observe without a model reply (Dorothy's identity).
 
 ## Done
 
@@ -185,6 +191,11 @@ In order of completion.
   [plan](./plans/2026-10-12-agentic-asset-refactor.md),
   [probes](./reports/2026-10-12-agentic-asset-refactor.md),
   [report](./reports/2026-10-13-agentic-asset-refactor-implementation.md).
+- **Dorothy's identity**:
+  [spec](./specs/2026-10-15-identity-gateway-design.md),
+  [plan](./plans/2026-10-15-identity-gateway.md),
+  [probes](./reports/2026-10-15-identity-gateway.md),
+  [report](./reports/2026-10-15-identity-gateway-implementation.md).
 
 ## Revisions
 
@@ -208,3 +219,9 @@ In order of completion.
 - 2026-10-12: The Agentic Asset Refactor is done, so Model Providers is
   next. Revising gains a step that checks the `AGENTS.md` files against
   what merged.
+- 2026-10-15: Dorothy's Identity went ahead of Model Providers and is
+  done: an identity package, a gateway that applies it, and
+  `dorothy --claude` make Dorothy the agent in Claude Code without a
+  provider contract. Model Providers is next again, and Dorothy's Gateway
+  grows from that gateway. Candidates gain an OpenAI adapter with more
+  launchers, and a check on forks.

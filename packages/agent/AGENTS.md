@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-12
+mtime: 2026-10-15
 spdx: GPL-3.0-only
 title: packages/agent/AGENTS.md
 description: >-
@@ -30,8 +30,8 @@ streams the `text_delta` events of `stream_event` messages
 One entry point, `"."` (`src/index.ts`): `Conversation`,
 `conversationOptions`, `runOneShot`, `structuredCall`, `dumpRequest`,
 `personaPrompt`, `systemPrompt`, `promptHash` and `prepareCliHome`. Of the
-`@dorothy` packages it depends on `core` alone. It declares `zod` because
-the Agent SDK takes it as a peer; never prune it as unused.
+`@dorothy` packages it depends on `core` and `identity`. It declares `zod`
+because the Agent SDK takes it as a peer; never prune it as unused.
 
 ## Files
 
@@ -45,10 +45,11 @@ the Agent SDK takes it as a peer; never prune it as unused.
 - `structured.ts`: `structuredCall`, the `StructuredCall` reviews and
   compaction take.
 - `persona.ts`: the persona, composed from `personaComponents` (identity,
-  voice, capabilities, plumbing, provenance, memory) in chat mode or
-  development mode (`--dev`: a mode component, no provenance, and Dorothy
-  describes her context); `baseOptions` and `cliOptions`; `promptHash`
-  (`xxh3:<hex>`), which transcripts record and nothing reads back.
+  voice and provenance from `@dorothy/identity`; capabilities, plumbing
+  and memory its own) in chat mode or development mode (`--dev`: a mode
+  component, and Dorothy describes her context); `baseOptions` and
+  `cliOptions`; `promptHash` (`xxh3:<hex>`), which transcripts record and
+  nothing reads back.
 - `capture.ts`: `dumpRequest` sends a chat's first request to a loopback
   stand-in for the API and returns the body, for `--dump-context`.
 
@@ -74,8 +75,9 @@ the Agent SDK takes it as a peer; never prune it as unused.
 
 ## Tests
 
-- `persona.test.ts` pins the chat prompt byte for byte: change it only
-  when the persona is meant to change.
+- `persona.test.ts` pins the chat prompt byte for byte, and that every
+  persona is well formed: change the pin only when the persona is meant
+  to change.
 - Inject `query()` (`QueryFn`, `StructuredQueryFn`, `CaptureQueryFn`);
   no test reaches the API.
 

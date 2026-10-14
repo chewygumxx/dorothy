@@ -2,3 +2,5 @@
   `--bg` sessions export FORCE_COLOR=3, the user's shell doesn't
 - [Maintenance design agreed](./maintenance-design-agreed.md)
   sub-project 4a decisions, queued after workspace modularity
+- [Nested claude inherits the session](./nested-claude-session-env.md)
+  `-c` and `purge` from a session's Bash hit its live project

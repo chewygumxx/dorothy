@@ -47,6 +47,17 @@ export default defineConfig({
             description: "Shared contracts and basics, ie. packages/core/",
         },
         {
+            name: "identity",
+            fullName: "Identity",
+            description: "Who Dorothy is, ie. packages/identity/",
+        },
+        {
+            name: "gateway",
+            fullName: "Gateway",
+            description:
+                "The local stand-in for the API, ie. packages/gateway/",
+        },
+        {
             name: "memory",
             fullName: "Memory",
             description: "Her memory database, ie. packages/memory/",

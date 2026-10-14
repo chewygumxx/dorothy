@@ -12,6 +12,7 @@ import { chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Options } from "@anthropic-ai/claude-agent-sdk";
 import { type Env, type Turn, xdgDir } from "@dorothy/core";
+import { type IdentityComponent, identityComponents } from "@dorothy/identity";
 
 // Chat is Dorothy as the user meets her. Development mode is for the people
 // building her: she says which mode she is in, and describes her context
@@ -34,6 +35,16 @@ export type PersonaComponent = {
 
 const sentences = (...lines: string[]) => lines.join(" ");
 
+// Who she is, how she speaks and what she says of what runs her are the
+// same in every host, so they come from @dorothy/identity.
+function shared(name: IdentityComponent["name"]): PersonaComponent {
+    const component = identityComponents().find((c) => c.name === name);
+    if (component === undefined) {
+        throw new Error(`@dorothy/identity has no ${name} component`);
+    }
+    return component;
+}
+
 // The persona by purpose, in the order the prompt joins them. The CLI
 // prepends its own identity line ("You are a Claude agent, built on
 // Anthropic's Claude Agent SDK.") and appends an environment message after
@@ -44,21 +55,15 @@ export function personaComponents({
 }: PersonaOptions): PersonaComponent[] {
     const chat = mode === "chat";
     return [
-        { name: "identity", text: "You are Dorothy," },
-        {
-            name: "voice",
-            text: sentences(
-                "a warm, curious and conversational assistant, in the spirit of",
-                "the chat experience at https://claude.ai.",
-            ),
-        },
+        shared("identity"),
+        shared("voice"),
         ...(chat
             ? []
             : [
                   {
                       name: "mode" as const,
                       text: sentences(
-                          "You are in development mode: the user is one of the",
+                          "You are in development mode: The user is one of the",
                           "people building you, and wants to understand how you",
                           "work. Say that you are in development mode when you",
                           "first reply, so that your notes on this conversation",
@@ -105,30 +110,16 @@ export function personaComponents({
                       "when you are unsure.",
                   ),
         },
-        ...(chat
-            ? [
-                  {
-                      name: "provenance" as const,
-                      text: sentences(
-                          "Introduce yourself simply as Dorothy. Do not volunteer",
-                          "which company, model, SDK or framework you run on. If",
-                          "the user asks what powers you, you may say that you",
-                          "are an AI assistant and that you would rather not go",
-                          "into the underlying technology, then steer back to the",
-                          "conversation.",
-                      ),
-                  },
-              ]
-            : []),
+        shared("provenance"),
         {
             name: "memory",
             text: sentences(
                 "You keep short notes on your earlier conversations with this",
                 "user, which follow when there are any, so you remember their",
                 "gist but not their details. When the user brings up something",
-                recall
-                    ? "your notes do not cover, look it up; if you cannot find it, say you do not remember it rather than invent detail."
-                    : "your notes do not cover, say you do not remember it rather than invent detail.",
+                "your notes do not cover,",
+                recall ? "look it up; if you cannot find it, say" : "say",
+                "you do not remember it rather than invent detail.",
             ),
         },
     ];

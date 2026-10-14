@@ -1,6 +1,6 @@
 ---
 ctime: 2026-09-29
-mtime: 2026-10-05
+mtime: 2026-10-15
 spdx: GPL-3.0-only
 title: "dorothy"
 description: "Conversational LLM interface"
@@ -236,12 +236,36 @@ enabled = true     # false: no history, no mirror
 push-seconds = 60  # at most one push per this many seconds, 10 to 86400
 ```
 
+### Claude Code as Dorothy
+
+`--claude` runs your own Claude Code with Dorothy as its main agent: her
+identity, voice and manner, with Claude Code's tools. Everything after it
+goes to `claude`, which starts in the directory you ran it from:
+
+```sh
+bun run dev -- --claude                    # Claude Code on this checkout
+bun run dev -- --claude -p "Who are you?"
+```
+
+Bun runs `dev` only from a directory within this checkout, so for another
+project, call the entry point itself:
+
+```sh
+alias dorothy="bun $PWD/packages/cli/src/index.ts"  # from this checkout
+cd ~/some/project && dorothy --claude
+```
+
+It starts a gateway on a local port and points Claude Code at it with
+`ANTHROPIC_BASE_URL`, passing your own as the gateway's upstream. The
+gateway adds Dorothy's identity to the main thread's requests and forwards
+everything else untouched; subagents stay Claude Code's own. Claude Code
+signs in as it always does: `--claude` reads none of Dorothy's `.env`.
+
 ### Development mode
 
 For the people building her, `--dev` goes before a chat, a `--resume` or a
 prompt. Dorothy then says she is in development mode, so her notes on the
-chat record it, and describes her context and what she runs on when asked,
-rather than keeping quiet about it.
+chat record it, and describes her context in full when asked.
 
 ```sh
 bun run dev -- --dev "What is in your context?"

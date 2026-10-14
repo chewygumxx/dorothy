@@ -10,11 +10,35 @@
 
 import { describe, expect, it } from "bun:test";
 import { newPhrase } from "@dorothy/core";
-import { parseArgs } from "./index.js";
+import { parseArgs, USAGE } from "./index.js";
 
 const phrase = newPhrase(() => Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]));
 
 describe("parseArgs", () => {
+    it("hands everything after --claude to claude, terminal or not", () => {
+        expect(parseArgs(["--claude"], true)).toEqual({
+            kind: "claude",
+            args: [],
+        });
+        expect(
+            parseArgs(["--claude", "-p", "--resume", "x", "hi"], false),
+        ).toEqual({
+            kind: "claude",
+            args: ["-p", "--resume", "x", "hi"],
+        });
+    });
+
+    it("refuses --dev before --claude", () => {
+        expect(parseArgs(["--dev", "--claude"], true)).toEqual({
+            kind: "usage",
+            message: "--dev applies only to chat, a prompt or --dump-context",
+        });
+    });
+
+    it("lists --claude in the usage", () => {
+        expect(USAGE).toContain("dorothy --claude [args...] ");
+    });
+
     it("joins argv into a one-shot prompt, terminal or not", () => {
         expect(parseArgs(["What", "is", "your", "name?"], false)).toEqual({
             kind: "oneshot",

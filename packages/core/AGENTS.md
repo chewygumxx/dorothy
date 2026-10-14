@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-12
+mtime: 2026-10-15
 spdx: GPL-3.0-only
 title: packages/core/AGENTS.md
 description: >-
@@ -20,7 +20,8 @@ tags:
 # packages/core/AGENTS.md
 
 `@dorothy/core` holds the contracts the other packages meet on and the
-basics they share. Every other package depends on it; it depends on none.
+basics they share. Every other package but `identity` depends on it; it
+depends on none.
 
 ## Entry points and imports
 
