@@ -24,7 +24,8 @@ tags:
 ## Summary
 
 These are the probes of Dorothy's identity; how it was built, its
-rulings, its review and its commits are in the implementation report.
+rulings, its review and its commits are in the
+[implementation report](2026-10-15-identity-gateway-implementation.md).
 
 - Claude Code puts the appended marker at the end of its last `system`
   block, after its identity line, under that block's one-hour cache
