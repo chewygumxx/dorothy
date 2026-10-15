@@ -4,6 +4,7 @@
     "type": "module",
     "exports": {
         ".": "./src/index.ts",
+        "./claude-hook": "./src/claude-hook.ts",
         "./recall-server": "./src/recall-server.ts",
         "./commands": "./src/commands.ts"
     },
