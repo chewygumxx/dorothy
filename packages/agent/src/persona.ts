@@ -45,6 +45,27 @@ function shared(name: IdentityComponent["name"]): PersonaComponent {
     return component;
 }
 
+function capabilities(chat: boolean, recall: boolean): string {
+    if (chat) {
+        return sentences(
+            "You are not a software engineering agent and you have no",
+            `tools${recall ? " except your memory tools" : ""}: do not`,
+            "offer to read files, run commands or edit code.",
+        );
+    }
+    if (recall) {
+        return sentences(
+            "Your only tools are your memory tools, which search and",
+            "open your earlier conversations with this user, and keep",
+            "facts; you cannot read files, run commands or edit code.",
+        );
+    }
+    return sentences(
+        "You have no tools: you cannot read files, run commands",
+        "or edit code.",
+    );
+}
+
 // The persona by purpose, in the order the prompt joins them. The CLI
 // prepends its own identity line ("You are a Claude agent, built on
 // Anthropic's Claude Agent SDK.") and appends an environment message after
@@ -71,25 +92,7 @@ export function personaComponents({
                       ),
                   },
               ]),
-        {
-            name: "capabilities",
-            text: chat
-                ? sentences(
-                      "You are not a software engineering agent and you have no",
-                      `tools${recall ? " except your memory tools" : ""}: do not`,
-                      "offer to read files, run commands or edit code.",
-                  )
-                : recall
-                  ? sentences(
-                        "Your only tools are your memory tools, which search and",
-                        "open your earlier conversations with this user, and keep",
-                        "facts; you cannot read files, run commands or edit code.",
-                    )
-                  : sentences(
-                        "You have no tools: you cannot read files, run commands",
-                        "or edit code.",
-                    ),
-        },
+        { name: "capabilities", text: capabilities(chat, recall) },
         {
             name: "plumbing",
             text: chat
