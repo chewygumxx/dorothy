@@ -630,6 +630,16 @@ describe("syncProject", () => {
         expect(await readFile(memory("MEMORY.md"), "utf8")).toBe(kept);
     });
 
+    it("takes an adopted fact's title from Claude Code's one-line entry", async () => {
+        await putRepo("a.md", repoFact("a", "First fact."));
+        await putRepo(
+            "MEMORY.md",
+            "- [Ay, titled](a.md) \u2014 the first fact\n",
+        );
+        await sync();
+        expect((await facts())[0]?.title).toBe("Ay, titled");
+    });
+
     it("takes an imported fact's title from its index entry, else the store's", async () => {
         await putFact(data, SCOPE, storeFact("a", { title: "Old" }));
         await sync();

@@ -20,9 +20,8 @@ import {
     frontmatterOf,
     Problem,
     readCommon,
-    wrap,
 } from "../facts/file.js";
-import { normalise } from "../memory/sidecar.js";
+import { characters, normalise } from "../memory/sidecar.js";
 
 export type ExportedFact = Pick<
     Fact,
@@ -107,9 +106,36 @@ export type IndexEntry = {
 };
 
 const escapeLink = (text: string) => text.replace(/[\\[\]]/g, (c) => `\\${c}`);
+// A word that would open a line as a list marker, `-` or `1.`, escaped:
+// under an entry it would read as a nested list, to Markdown and to
+// isGeneratedIndex alike.
+const unlisted = (word: string) =>
+    /^[-*+]$/.test(word)
+        ? `\\${word}`
+        : /^\d{1,9}[.)]$/.test(word)
+          ? `${word.slice(0, -1)}\\${word.slice(-1)}`
+          : word;
+// A description wrapped to width, as wrap does, escaping a marker that
+// would open a line.
+function described(text: string, width: number): string[] {
+    const lines: string[] = [];
+    let line = "";
+    for (const word of text.split(" ")) {
+        if (line === "") {
+            line = unlisted(word);
+        } else if (characters(line) + 1 + characters(word) <= width) {
+            line += ` ${word}`;
+        } else {
+            lines.push(line);
+            line = unlisted(word);
+        }
+    }
+    lines.push(line);
+    return lines;
+}
 const entryLines = (entry: IndexEntry) => [
     `- [${escapeLink(entry.title)}](./${entry.name}.md)`,
-    ...wrap(entry.description, 78).map((line) => `  ${line}`),
+    ...described(entry.description, 78).map((line) => `  ${line}`),
 ];
 const render = (entries: readonly IndexEntry[]) =>
     entries.length === 0 ? "" : `${entries.flatMap(entryLines).join("\n")}\n`;
@@ -149,14 +175,23 @@ export function renderIndex(entries: readonly IndexEntry[]): {
     return { text: render(kept), omitted: entries.length - kept.length };
 }
 
+// An entry as renderIndex writes it.
 const ENTRY =
     /^- \[((?:\\.|[^\]\\])*)\]\(\.\/([a-z0-9]+(?:-[a-z0-9]+)*)\.md\)\s*$/;
+// An entry as a hand or Claude Code writes one: either bullet, the link
+// with or without `./`, and anything after it on the line, such as a dash
+// and the fact's hook.
+const ANY_ENTRY =
+    /^[-*] \[((?:\\.|[^\]\\])*)\]\((?:\.\/)?([a-z0-9]+(?:-[a-z0-9]+)*)\.md\).*$/;
+// A line of an entry's description: indented as renderIndex indents it,
+// and no list item of its own.
+const DESCRIPTION = /^ {2}(?![-*+](?:\s|$)|\d{1,9}[.)](?:\s|$))\S/;
 
 // Each entry's title, by its fact's name, in the index's order.
 export function indexTitles(text: string): Map<string, string> {
     const titles = new Map<string, string>();
     for (const line of text.split("\n")) {
-        const [, title, name] = ENTRY.exec(line) ?? [];
+        const [, title, name] = ANY_ENTRY.exec(line) ?? [];
         if (title !== undefined && name !== undefined && !titles.has(name)) {
             titles.set(name, normalise(title.replace(/\\(.)/g, "$1")));
         }
@@ -165,15 +200,15 @@ export function indexTitles(text: string): Map<string, string> {
 }
 
 // Whether every line of an index is one renderIndex writes: a blank line,
-// an entry, or an indented line of an entry's description. An index with
-// a heading, prose or a line of any other shape holds a hand's work.
+// an entry, or a line of the description beneath an entry. An index with
+// a heading, prose, a nested list or a paragraph after a blank line holds
+// a hand's work.
 export function isGeneratedIndex(text: string): boolean {
     let inEntry = false;
     for (const line of text.split("\n")) {
         if (line.trim() === "") {
-            continue;
-        }
-        if (/^\s/.test(line)) {
+            inEntry = false;
+        } else if (DESCRIPTION.test(line)) {
             if (!inEntry) {
                 return false;
             }

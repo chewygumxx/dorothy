@@ -217,6 +217,21 @@ describe("indexTitles", () => {
             ["b", "Bee [2]"],
         ]);
     });
+
+    it("reads Claude Code's one-line entries and either bullet", () => {
+        const titles = indexTitles(
+            [
+                "- [Testing feedback](feedback-testing.md) \u2014 run the suite",
+                "* [Starred](./starred.md): with a hook",
+                "- [Plain](plain.md)",
+            ].join("\n"),
+        );
+        expect([...titles]).toEqual([
+            ["feedback-testing", "Testing feedback"],
+            ["starred", "Starred"],
+            ["plain", "Plain"],
+        ]);
+    });
 });
 
 describe("isGeneratedIndex", () => {
@@ -237,5 +252,39 @@ describe("isGeneratedIndex", () => {
         expect(isGeneratedIndex(`${text}Some prose.\n`)).toBe(false);
         expect(isGeneratedIndex(`  orphan\n${text}`)).toBe(false);
         expect(isGeneratedIndex("- [A](./a.md) - and more\n")).toBe(false);
+    });
+
+    it("takes no paragraph after a blank line, nor a nested list", () => {
+        const entry = "- [A](./a.md)\n  First fact.\n";
+        expect(isGeneratedIndex(`${entry}\n  A hand's paragraph.\n`)).toBe(
+            false,
+        );
+        for (const nested of ["  - see also", "  * see also", "  1. step"]) {
+            expect(isGeneratedIndex(`${entry}${nested}\n`)).toBe(false);
+        }
+        expect(isGeneratedIndex(`${entry}    deeper\n`)).toBe(false);
+        expect(isGeneratedIndex(`${entry}\n- [B](./b.md)\n  Two.\n`)).toBe(
+            true,
+        );
+    });
+
+    it("takes back an index whose description wraps onto a marker", () => {
+        for (const marker of ["-", "+", "1.", "2)"]) {
+            const description = `${"x".repeat(77)} ${marker} more`;
+            const { text } = renderIndex([
+                {
+                    name: "a",
+                    title: "Ay",
+                    description,
+                    importance: null,
+                    created: "2026-10-15T09:30:00.000Z",
+                },
+            ]);
+            const lines = text.split("\n");
+            expect(lines[2]?.startsWith("  ")).toBe(true);
+            expect(lines[2]).toContain("\\");
+            expect(lines.every((line) => line.length <= 80)).toBe(true);
+            expect(isGeneratedIndex(text)).toBe(true);
+        }
     });
 });

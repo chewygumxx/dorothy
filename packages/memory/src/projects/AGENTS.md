@@ -48,10 +48,11 @@ memory directory, `.agents/memory/` by default.
 - A file is overwritten or removed only after sync reads it again and
   finds it as it first read it, so an edit made meanwhile survives.
 - `MEMORY.md` is rewritten only when it is absent or every line is one
-  sync writes (an entry or its indented description), a live fact
-  exists, and no skipped file is one it links; else it is left, and the
-  report says why. An imported fact's title is its entry's, else the
-  store's, else its name.
+  sync writes (an entry, or its description indented two spaces, no list
+  item and no blank line before it), a live fact exists, and no skipped
+  file is one it links; else it is left, and the report says why. An
+  imported fact's title is its entry's, in sync's form or Claude Code's
+  one-line one, else the store's, else its name.
 - Each root keeps its own record of what it last synced, so one remote's
   checkouts never undo each other. A record of another directory than
   `memoryDir`, after the user edits it, is none: a first sync, which

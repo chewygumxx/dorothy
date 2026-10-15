@@ -416,12 +416,18 @@ silently, so the index stays within both: if the facts would not fit,
 it lists them by importance, then recency, up to the limit, and sync
 warns of how many it left out. Their files are exported all the same.
 On import, a fact's title comes from its `MEMORY.md` entry if there is
-one, else the store's title for it, else its name.
+one, else the store's title for it, else its name. An entry is read in
+sync's form or Claude Code's, `- [title](name.md)` with or without `./`
+and with its hook after the link on the same line, under `-` or `*`.
 
 Sync rewrites `MEMORY.md` only when it is absent or every line is one
-sync writes, an entry or its indented description; a heading or prose
-means a hand kept it, and it is left, the report saying why. It is left
-too when no fact is live, or when a skipped file is one it links.
+sync writes, an entry or its description beneath it, indented two
+spaces and no list item, with no blank line between; a heading, prose,
+a nested list or a paragraph after a blank line means a hand kept it,
+and it is left, the report saying why. A description that would wrap
+onto a list marker has the marker escaped, `\-` or `1\.`, so that it
+reads as text. It is left too when no fact is live, or when a skipped
+file is one it links.
 
 Export writes atomically, only inside `<root>/<memoryDir>`, and refuses
 a memory directory that resolves outside the root or through a symlink.
