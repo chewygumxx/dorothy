@@ -15,7 +15,9 @@ import { FakeSession } from "./fake-session.js";
 import { EXPECTED, HASH, PHRASE, SCRIPT } from "./record.fixture.js";
 import { noticeChannel, sessionRecorder } from "./record.js";
 
-function recorded(options: { resumed?: boolean; fail?: boolean } = {}) {
+function recorded(
+    options: { resumed?: boolean; fail?: boolean; project?: string } = {},
+) {
     const entries: TranscriptEntry[] = [];
     const warnings: string[] = [];
     const wrap = sessionRecorder({
@@ -30,6 +32,7 @@ function recorded(options: { resumed?: boolean; fail?: boolean } = {}) {
         phrase: PHRASE,
         promptHash: HASH,
         resumed: options.resumed ?? false,
+        ...(options.project === undefined ? {} : { project: options.project }),
         warn: (message) => {
             warnings.push(message);
         },
@@ -98,6 +101,23 @@ describe("sessionRecorder", () => {
                 memory: true,
             },
         ]);
+    });
+
+    it("records the project chat started in on its session, if any", async () => {
+        for (const project of ["github.com/u/here", undefined]) {
+            const { entries, wrap } = recorded(
+                project === undefined ? {} : { project },
+            );
+            const inner = new FakeSession();
+            wrap(inner);
+            inner.emit({ type: "ready", model: "m", sdkSessionId: "s" });
+            await settle();
+            if (project === undefined) {
+                expect(entries[0]).not.toHaveProperty("project");
+            } else {
+                expect(entries[0]).toMatchObject({ kind: "session", project });
+            }
+        }
     });
 
     it("records a resumed chat's first session as resumed", async () => {

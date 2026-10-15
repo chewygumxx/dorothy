@@ -35,6 +35,7 @@ export function sessionRecorder({
     phrase,
     promptHash,
     resumed,
+    project,
     warn,
 }: {
     sink: TranscriptSink;
@@ -42,6 +43,8 @@ export function sessionRecorder({
     promptHash: string;
     // Whether the chat had turns before its first session.
     resumed: boolean;
+    // The project chat started in, if any.
+    project?: string;
     warn: (message: string) => void;
 }): (session: ChatSession) => ChatSession {
     let wasResumed = resumed;
@@ -59,6 +62,7 @@ export function sessionRecorder({
                 model: event.model,
                 promptHash,
                 resumed: wasResumed,
+                ...(project === undefined ? {} : { project }),
             });
             wasResumed = true;
         } else if (event.type === "lookup") {

@@ -48,7 +48,7 @@ export async function runDump(
 ): Promise<number> {
     const preview = await previewStart({
         resume: request.resume,
-        recallLaunch,
+        recallLaunch: (phrase) => recallLaunch(phrase, null),
         env,
     });
     if (!preview.ok) {

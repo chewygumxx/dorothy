@@ -45,6 +45,7 @@ import {
     openChatIndex,
     openIndex,
     openMemory,
+    projectSyncer,
     sessionMaker,
     turnCommitter,
     withTurnEnd,
@@ -404,6 +405,40 @@ describe("turnCommitter", () => {
         turns.ended();
         await turns.settled();
         expect(warnings).toEqual(["history: couldn't commit turn 1 (locked)"]);
+    });
+});
+
+describe("projectSyncer", () => {
+    it("runs one sync at a time, and once more for any asked meanwhile", async () => {
+        const gate = Promise.withResolvers<void>();
+        let runs = 0;
+        const syncer = projectSyncer(
+            async () => {
+                runs += 1;
+                if (runs === 1) {
+                    await gate.promise;
+                }
+                return { kind: "not-a-repository" };
+            },
+            () => {},
+        );
+        syncer.run();
+        syncer.run();
+        syncer.run();
+        gate.resolve();
+        await syncer.settled();
+        expect(runs).toBe(2);
+    });
+
+    it("warns of a failure, never throwing", async () => {
+        const warned: string[] = [];
+        const syncer = projectSyncer(
+            async () => ({ kind: "failed", reason: "a conflict" }),
+            (message) => warned.push(message),
+        );
+        syncer.run();
+        await syncer.settled();
+        expect(warned).toEqual(["sync: a conflict"]);
     });
 });
 

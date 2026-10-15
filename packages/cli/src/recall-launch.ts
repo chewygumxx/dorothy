@@ -9,13 +9,16 @@
 //
 
 // Dorothy's memory tools: this program again, as an MCP server, leaving
-// out the conversation it serves. The flags are the CLI's, parsed in
-// index.ts.
+// out the conversation it serves, in the project chat started in. The
+// flags are the CLI's, parsed in index.ts.
 
 import { resolve } from "node:path";
 import type { RecallLaunch } from "@dorothy/core";
 
-export function recallLaunch(phrase: string): RecallLaunch {
+export function recallLaunch(
+    phrase: string,
+    project: string | null,
+): RecallLaunch {
     return {
         command: process.execPath,
         args: [
@@ -23,6 +26,7 @@ export function recallLaunch(phrase: string): RecallLaunch {
             "--recall-server",
             "--exclude",
             phrase,
+            ...(project === null ? [] : ["--project", project]),
         ],
     };
 }
