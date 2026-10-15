@@ -102,6 +102,22 @@ function withCursor(row: DraftRow, cursor: number): ReactNode {
     );
 }
 
+// A row's gutter: an arrow where the window hides rows above or below,
+// else the prompt on the draft's first row.
+function gutterOf(
+    index: number,
+    { first, last }: { first: number; last: number },
+    total: number,
+): string {
+    if (index === first && first > 0) {
+        return "↑";
+    }
+    if (index === last - 1 && last < total) {
+        return "↓";
+    }
+    return index === 0 ? "›" : "";
+}
+
 export function Input({
     draft,
     messages,
@@ -286,14 +302,11 @@ export function Input({
         <Box flexDirection="column">
             {layout.rows.slice(first, last).map((row, offset) => {
                 const index = first + offset;
-                const gutter =
-                    index === first && first > 0
-                        ? "↑"
-                        : index === last - 1 && last < layout.rows.length
-                          ? "↓"
-                          : index === 0
-                            ? "›"
-                            : "";
+                const gutter = gutterOf(
+                    index,
+                    { first, last },
+                    layout.rows.length,
+                );
                 return (
                     <Box key={row.start}>
                         <Box width={PROMPT_WIDTH} flexShrink={0}>
