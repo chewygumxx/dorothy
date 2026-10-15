@@ -19,7 +19,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseFact } from "./file.js";
+import { type Fact, parseFact } from "./file.js";
 import {
     type FactInput,
     type FactStore,
@@ -86,6 +86,20 @@ const read = async (scope: Scope, name: string) => {
 };
 
 describe("writeFact", () => {
+    it("refuses a write its guard refuses, checked under the lock", async () => {
+        const seen: (Fact | null)[] = [];
+        const result = await writeFact(
+            store(),
+            input({ name: "tea" }),
+            (current) => {
+                seen.push(current);
+                return "not now";
+            },
+        );
+        expect(result).toEqual({ kind: "refused", reason: "not now" });
+        expect(seen).toEqual([null]);
+    });
+
     it("writes a personal fact and records it", async () => {
         const result = await writeFact(store(), input());
         expect(result.kind).toBe("written");
