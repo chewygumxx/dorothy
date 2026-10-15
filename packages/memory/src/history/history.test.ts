@@ -20,6 +20,7 @@ import {
     appendFileSync,
     chmodSync,
     existsSync,
+    readdirSync,
     readFileSync,
     statSync,
     utimesSync,
@@ -276,6 +277,134 @@ describe("adopting", () => {
         expect((await messages(history))[0]).toBe(
             "broken: facts/personal/likes-tea.md kept, no good version",
         );
+    });
+});
+
+const TEA = {
+    name: "likes-tea",
+    title: "Likes tea",
+    description: "Prefers tea.",
+    type: "user" as const,
+    extra: {},
+    tags: [],
+    importance: null,
+    provenance: {
+        origin: "dorothy" as const,
+        by: "review" as const,
+        at: "2026-10-01T00:00:00.000Z",
+        created: "2026-10-01T00:00:00.000Z",
+        model: "m",
+    },
+    retired: null,
+    body: "Tea.",
+};
+const TEA_PATH = "facts/personal/likes-tea.md";
+const provenanceOf = (path: string) => {
+    const read = parseFact(readFileSync(join(root, path), "utf8"), "likes-tea");
+    return read.kind === "ok" ? read.fact.provenance : null;
+};
+
+describe("facts in the sweep and in a record", () => {
+    it("commits Dorothy's own uncommitted facts as they are", async () => {
+        const history = await open();
+        const repo = {
+            ...TEA,
+            name: "from-repo",
+            provenance: {
+                origin: "repo" as const,
+                by: "repo" as const,
+                at: "2026-10-02T00:00:00.000Z",
+                created: "2026-10-02T00:00:00.000Z",
+            },
+        };
+        put(root, TEA_PATH, renderFact(TEA));
+        put(root, "facts/personal/from-repo.md", renderFact(repo));
+        await history.sweep();
+        expect(readFileSync(join(root, TEA_PATH), "utf8")).toBe(
+            renderFact(TEA),
+        );
+        expect(
+            readFileSync(join(root, "facts/personal/from-repo.md"), "utf8"),
+        ).toBe(renderFact(repo));
+        expect((await messages(history)).slice(0, 2).sort()).toEqual([
+            "outside: facts/personal/from-repo.md",
+            `outside: ${TEA_PATH}`,
+        ]);
+        expect(await history.repo.changed()).toEqual([]);
+    });
+
+    it("takes a canonical hand edit keeping its provenance as the user's", async () => {
+        put(root, TEA_PATH, renderFact(TEA));
+        const history = await open();
+        put(root, TEA_PATH, renderFact({ ...TEA, body: "Coffee." }));
+        await history.sweep();
+        const read = parseFact(
+            readFileSync(join(root, TEA_PATH), "utf8"),
+            "likes-tea",
+        );
+        expect(read.kind === "ok" && read.fact.body).toBe("Coffee.");
+        expect(provenanceOf(TEA_PATH)).toEqual({
+            origin: "user",
+            by: "user",
+            at: NOW.toISOString(),
+            created: TEA.provenance.created,
+        });
+    });
+
+    it("keeps a hand-made fact under no project id as it was written", async () => {
+        const history = await open();
+        const path = "facts/projects/nohost/likes-tea.md";
+        const text =
+            "---\nname: likes-tea\ntitle: Likes tea\ndescription: Prefers tea.\nmetadata:\n  type: user\n---\n\nTea.\n";
+        put(root, path, text);
+        await history.sweep();
+        const folder = join(root, "broken", "facts/projects/nohost");
+        const copies = readdirSync(folder);
+        expect(copies).toHaveLength(1);
+        expect(readFileSync(join(folder, copies[0] as string), "utf8")).toBe(
+            text,
+        );
+        expect(warnings[0]).toContain(
+            "is broken (it is not under a project id)",
+        );
+    });
+
+    it("leaves Dorothy's own fact in a record as she wrote it", async () => {
+        const history = await open();
+        const text = renderFact({
+            ...TEA,
+            provenance: { ...TEA.provenance, origin: "repo", by: "repo" },
+        }).replace("title: >-\n  Likes tea", 'title: "Likes tea"');
+        put(root, TEA_PATH, text);
+        await history.lock(() =>
+            history.record([TEA_PATH], "write: likes-tea"),
+        );
+        expect(readFileSync(join(root, TEA_PATH), "utf8")).toBe(text);
+        expect((await messages(history))[0]).toBe("write: likes-tea");
+        expect(provenanceOf(TEA_PATH)?.origin).toBe("repo");
+    });
+
+    it("rewrites a fact edited by hand during a record", async () => {
+        put(root, TEA_PATH, renderFact(TEA));
+        const history = await open();
+        put(
+            root,
+            TEA_PATH,
+            renderFact(TEA).replace(
+                "title: >-\n  Likes tea",
+                'title: "Likes coffee"',
+            ),
+        );
+        put(root, "tags.json", vocabulary(1));
+        await history.lock(() => history.record(["tags.json"], "tags: one"));
+        expect(provenanceOf(TEA_PATH)?.by).toBe("user");
+        expect(readFileSync(join(root, TEA_PATH), "utf8")).toContain(
+            "title: >-\n  Likes coffee",
+        );
+        expect((await messages(history)).slice(0, 2)).toEqual([
+            "tags: one",
+            `outside: ${TEA_PATH}`,
+        ]);
     });
 });
 
