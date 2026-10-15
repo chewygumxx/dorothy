@@ -62,6 +62,15 @@ describe("xdgDir", () => {
         );
     });
 
+    it("takes the state directory, falling back under HOME", () => {
+        expect(
+            xdgDir({ XDG_STATE_HOME: "/s" }, "XDG_STATE_HOME", ".local/state"),
+        ).toBe("/s");
+        expect(xdgDir({ HOME: "/h" }, "XDG_STATE_HOME", ".local/state")).toBe(
+            "/h/.local/state",
+        );
+    });
+
     it("uses the user's home directory when HOME is empty", () => {
         expect(xdgDir({ HOME: "" }, "XDG_CONFIG_HOME", ".config")).toBe(
             join(homedir(), ".config"),

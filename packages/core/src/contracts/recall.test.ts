@@ -12,6 +12,8 @@ import { describe, expect, it } from "bun:test";
 import {
     ALLOWED_TOOLS,
     CLAUDE_ALLOWED_TOOLS,
+    CLAUDE_REMEMBER_TOOL,
+    CLAUDE_SERVER_NAME,
     describeLookup,
     type OpenResult,
     RECOLLECT_TOOL,
@@ -40,6 +42,16 @@ describe("toolOf", () => {
         expect(toolOf("mcp__other__search")).toBeNull();
         expect(toolOf("mcp__memory__delete")).toBeNull();
         expect(toolOf("Read")).toBeNull();
+    });
+
+    it("names a lookup on another server when asked", () => {
+        expect(toolOf("mcp__dorothy-memory__search", CLAUDE_SERVER_NAME)).toBe(
+            "search",
+        );
+        expect(toolOf("mcp__dorothy-memory__search")).toBeNull();
+        expect(toolOf("mcp__memory__search", CLAUDE_SERVER_NAME)).toBeNull();
+        expect(toolOf(CLAUDE_REMEMBER_TOOL, CLAUDE_SERVER_NAME)).toBeNull();
+        expect(CLAUDE_REMEMBER_TOOL).toBe("mcp__dorothy-memory__remember");
     });
 
     it("lists the tools the CLI must allow", () => {

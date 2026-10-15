@@ -32,13 +32,16 @@ export const CLAUDE_ALLOWED_TOOLS = EXTERNAL.map((tool) =>
 // session seeded with clusters.
 export const RECOLLECT_TOOL = named(SERVER_NAME, "recollect");
 export const REMEMBER_TOOL = named(SERVER_NAME, REMEMBER);
+export const CLAUDE_REMEMBER_TOOL = named(CLAUDE_SERVER_NAME, REMEMBER);
 
-const PREFIX = `mcp__${SERVER_NAME}__`;
-
-// A lookup's name as the model calls it, or null for any other tool,
-// remember among them.
-export function toolOf(name: string): Tool | null {
-    const tool = name.startsWith(PREFIX) ? name.slice(PREFIX.length) : "";
+// A lookup's name as the model calls it on a server, chat's unless
+// another is named, or null for any other tool, remember among them.
+export function toolOf(
+    name: string,
+    server: string = SERVER_NAME,
+): Tool | null {
+    const prefix = `mcp__${server}__`;
+    const tool = name.startsWith(prefix) ? name.slice(prefix.length) : "";
     return (TOOLS as readonly string[]).includes(tool) ? (tool as Tool) : null;
 }
 
@@ -159,6 +162,8 @@ export type TagObject = {
     broader?: string[];
     narrower?: string[];
     conversations: number;
+    // The facts that carry it, when any do.
+    facts?: number;
     dateCreated?: string;
     dateModified?: string;
 };

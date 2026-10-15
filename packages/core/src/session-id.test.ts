@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "bun:test";
 import niceware from "niceware";
-import { isPhrase, newPhrase } from "./session-id.js";
+import { isPhrase, isUuid, newPhrase } from "./session-id.js";
 
 const BYTES = [0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0];
 const fixed = () => Uint8Array.from(BYTES);
@@ -61,5 +61,15 @@ describe("isPhrase", () => {
         const phrase = newPhrase(fixed);
         expect(isPhrase(`${phrase}-${phrase.split("-")[0]}`)).toBe(false);
         expect(isPhrase(phrase.toUpperCase())).toBe(false);
+    });
+});
+
+describe("isUuid", () => {
+    it("takes a uuid in either case and nothing path-like", () => {
+        expect(isUuid("0f8fad5b-d9cb-469f-a165-70867728950e")).toBe(true);
+        expect(isUuid("0F8FAD5B-D9CB-469F-A165-70867728950E")).toBe(true);
+        expect(isUuid("../0f8fad5b-d9cb-469f-a165-70867728950e")).toBe(false);
+        expect(isUuid("0f8fad5b-d9cb-469f-a165-70867728950")).toBe(false);
+        expect(isUuid("")).toBe(false);
     });
 });
