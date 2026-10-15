@@ -17,3 +17,4 @@ export {
     type HookMode,
     runClaudeHook,
 } from "./bodies/hook.js";
+export { type HookLog, hookLog } from "./bodies/log.js";

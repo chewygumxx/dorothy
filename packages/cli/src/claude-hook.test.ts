@@ -9,7 +9,13 @@
 //
 
 import { describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+    existsSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Env, StructuredCall } from "@dorothy/core";
@@ -142,6 +148,150 @@ describe("runHook", () => {
             ok: false,
             reason: "the agent could not load (no sdk)",
             costUsd: 0,
+        });
+    });
+});
+
+describe("a hook that goes wrong", () => {
+    const logOf = (cache: string) =>
+        readFileSync(join(cache, "dorothy", "claude-hook.log"), "utf8");
+    const withCache = async (
+        body: (env: Env, cache: string) => Promise<void>,
+    ) => {
+        const cache = mkdtempSync(join(tmpdir(), "dorothy-hooklog-"));
+        try {
+            await body({ ...fromClaude(), XDG_CACHE_HOME: cache }, cache);
+        } finally {
+            rmSync(cache, { recursive: true, force: true });
+        }
+    };
+
+    it("logs a run that throws, and exits 0", async () => {
+        await withCache(async (env, cache) => {
+            const code = await runHook(
+                { kind: "hook" },
+                {
+                    env,
+                    root: "/d",
+                    load: () => null,
+                    agent: async () => ({
+                        call: async () => ({
+                            ok: false,
+                            reason: "x",
+                            costUsd: 0,
+                        }),
+                        persona: "",
+                    }),
+                    run: async () => {
+                        throw new Error("boom");
+                    },
+                },
+            );
+            expect(code).toBe(0);
+            expect(logOf(cache)).toMatch(
+                / error \d+ the hook could not run \(boom\)/,
+            );
+        });
+    });
+
+    it("logs memory failing to import, and exits 0", async () => {
+        await withCache(async (env, cache) => {
+            const code = await runHook(
+                { kind: "catch-up", launch: LAUNCH, session: null },
+                {
+                    env,
+                    root: "/d",
+                    load: () => null,
+                    agent: async () => {
+                        throw new Error("no sdk");
+                    },
+                    memory: async () => {
+                        throw new Error("no memory");
+                    },
+                },
+            );
+            expect(code).toBe(0);
+            expect(logOf(cache)).toContain(
+                "the hook could not run (no memory)",
+            );
+        });
+    });
+
+    it("lets the other modes throw", async () => {
+        const run = runHook(
+            { kind: "reread" },
+            {
+                env: fromClaude(),
+                root: "/d",
+                load: () => null,
+                run: async () => {
+                    throw new Error("boom");
+                },
+            },
+        );
+        await expect(run).rejects.toThrow("boom");
+    });
+
+    it("logs a .env that cannot be decrypted by its code, and prints nothing", async () => {
+        await withCache(async (env, cache) => {
+            const dir = mkdtempSync(join(tmpdir(), "dorothy-dotenv-"));
+            const printed: string[] = [];
+            const spy = (...args: unknown[]) =>
+                void printed.push(args.join(" "));
+            const { error, log, warn, info } = console;
+            const stderrWrite = process.stderr.write;
+            const stdoutWrite = process.stdout.write;
+            try {
+                writeFileSync(
+                    join(dir, ".env"),
+                    'DOTENV_PUBLIC_KEY="03abc"\nSECRET="encrypted:BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"\n',
+                );
+                writeFileSync(
+                    join(dir, ".env.keys"),
+                    'DOTENV_PRIVATE_KEY="0123456789abcdef0123456789abcdef"\n',
+                );
+                Object.assign(console, {
+                    error: spy,
+                    log: spy,
+                    warn: spy,
+                    info: spy,
+                });
+                const capture = ((text: unknown) => {
+                    printed.push(String(text));
+                    return true;
+                }) as typeof process.stderr.write;
+                process.stderr.write = capture;
+                process.stdout.write = capture;
+                const code = await runHook(
+                    { kind: "hook" },
+                    {
+                        env,
+                        root: dir,
+                        agent: async () => ({
+                            call: async () => ({
+                                ok: false,
+                                reason: "x",
+                                costUsd: 0,
+                            }),
+                            persona: "",
+                        }),
+                        run: async () => 0,
+                    },
+                );
+                expect(code).toBe(0);
+            } finally {
+                Object.assign(console, { error, log, warn, info });
+                process.stderr.write = stderrWrite;
+                process.stdout.write = stdoutWrite;
+                rmSync(dir, { recursive: true, force: true });
+            }
+            expect(printed).toEqual([]);
+            const text = logOf(cache);
+            expect(text).toContain(
+                "Dorothy's .env could not be loaded (DECRYPTION_FAILED)",
+            );
+            expect(text).not.toContain("0123456");
+            expect(console.error).toBe(error);
         });
     });
 });
