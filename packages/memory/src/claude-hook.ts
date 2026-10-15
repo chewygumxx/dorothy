@@ -12,4 +12,8 @@
 // Code's hooks run after each reply, loading the reader, the store and
 // reviews alone.
 
-export { type HookMode, runClaudeHook } from "./bodies/hook.js";
+export {
+    type HookDeps,
+    type HookMode,
+    runClaudeHook,
+} from "./bodies/hook.js";

@@ -17,6 +17,9 @@ const phrase = newPhrase(() => Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]));
 const RECALL_USAGE =
     "--recall-server takes [--exclude <phrase> [--recollect]] [--project <root>]";
 
+const HOOK_USAGE =
+    "--claude-hook takes [--catch-up <launch> [--session <id>]], --reread or --dismiss <session>";
+
 describe("parseArgs", () => {
     it("hands everything after --claude to claude, terminal or not", () => {
         expect(parseArgs(["--claude"], true)).toEqual({
@@ -436,6 +439,46 @@ describe("parseArgs", () => {
             kind: "usage",
             message: "--dump-context takes [--resume <phrase>] [message...]",
         });
+    });
+
+    it("runs Claude Code's hooks, catches up, rereads and dismisses", () => {
+        const L = "6c84fb90-12c4-11e1-840d-7b25c5ee775a";
+        const S = "0f8fad5b-d9cb-469f-a165-70867728950e";
+        const hook = (argv: string[]) =>
+            parseArgs(["--claude-hook", ...argv], false);
+        expect(hook([])).toEqual({
+            kind: "claude-hook",
+            hook: { kind: "hook" },
+        });
+        expect(hook(["--catch-up", L])).toEqual({
+            kind: "claude-hook",
+            hook: { kind: "catch-up", launch: L, session: null },
+        });
+        expect(hook(["--catch-up", L, "--session", S])).toEqual({
+            kind: "claude-hook",
+            hook: { kind: "catch-up", launch: L, session: S },
+        });
+        expect(hook(["--reread"])).toEqual({
+            kind: "claude-hook",
+            hook: { kind: "reread" },
+        });
+        expect(hook(["--dismiss", S])).toEqual({
+            kind: "claude-hook",
+            hook: { kind: "dismiss", session: S },
+        });
+        for (const rest of [
+            ["--catch-up"],
+            ["--catch-up", "../x"],
+            ["--catch-up", L, "--session"],
+            ["--catch-up", L, "--session", "x"],
+            ["--catch-up", L, "--other", S],
+            ["--dismiss"],
+            ["--dismiss", "x"],
+            ["--reread", "x"],
+            ["--other"],
+        ]) {
+            expect(hook(rest)).toEqual({ kind: "usage", message: HOOK_USAGE });
+        }
     });
 
     it("refuses anything else after --recall-server", () => {
