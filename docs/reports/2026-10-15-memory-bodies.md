@@ -62,10 +62,10 @@ that under `claude -p` the `SessionEnd` catch-up records the last turn.
 Delivery's checks passed (`bun run check`, 1615 tests after the final
 review's fixes), its end-to-end run on temporary data behaved as
 expected, and the user's own check in `dorothy --claude` passed (see
-Verification, By hand). Recording's pass at its last commit (`bun run
-check`, 1711 tests), and its run through the stand-in recorded a
-session whole and reviewed it on Dorothy's own credentials, no review
-reaching the gateway (see Verification, Recording).
+Verification, By hand). Recording's checks passed at its last commit
+(`bun run check`, 1711 tests), and its run through the stand-in
+recorded a session whole and reviewed it on Dorothy's own credentials,
+no review reaching the gateway (see Verification, Recording).
 
 Claude Code version for the probes and the verification: 2.1.300.
 
@@ -594,10 +594,11 @@ first run:
 
 - **Armor's session.** The first run's log said `Dorothy's .env could
   not be loaded (DECRYPTION_FAILED)` from each process, and its review
-  failed (`401 Invalid bearer token`), leaving the conversation without
-  notes. dotenvx keeps the Dotenvx Armor session that holds the private
-  key in its own configuration directory, `$XDG_CONFIG_HOME/dotenvx`,
-  which the temporary `XDG_CONFIG_HOME` hid. The run sets
+  failed with a 401 (`Invalid bearer token`), spending no tokens and
+  leaving the conversation without notes. dotenvx keeps the Dotenvx
+  Armor session that holds the private key in its own configuration
+  directory, `$XDG_CONFIG_HOME/dotenvx`, which the temporary
+  `XDG_CONFIG_HOME` hid. The run sets
   `DOTENVX_CONFIG` to the real one, which `claude` and the hooks
   inherit; Dorothy's own configuration stays temporary.
 - **The wait.** In the first run the launch's notes were gone after a
@@ -763,3 +764,13 @@ launch's notes gone.
 - Under `claude -p` the last `Stop` is terminated as `claude` exits, so
   that reply is recorded and reviewed by the `SessionEnd` catch-up, not
   the `Stop` hook.
+- Reviews drop `ANTHROPIC_BASE_URL`, so a user who reaches the API only
+  through their own proxy has the hook's reviews fail, logged.
+- Launch notes live in `$XDG_RUNTIME_DIR`, cleared at reboot or logout,
+  so a launch killed by a crash or a power-off is not caught up.
+- A recorded session resumed in plain `claude` between her launches has
+  those plain turns recorded as hers when it is next resumed in her
+  launch.
+- A session resumed by id can appear in recall until its first reply.
+- `dorothy --resume` of a Claude Code conversation is not refused: chat
+  would write to it, and compact it.

@@ -17,7 +17,6 @@ tags:
    -
    -->
 
-
 # packages/memory/src/bodies/AGENTS.md
 
 Dorothy's bodies other than chat. Chat opens memory with `openMemory`;
