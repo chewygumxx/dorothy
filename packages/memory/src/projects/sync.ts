@@ -302,7 +302,7 @@ async function reconcile(
     const dir = await safeDir(project.root, memoryDir);
     const scope: Scope = { kind: "project", id: project.id };
     const synced: Record<string, string> = {
-        ...(known?.synced ?? {}),
+        ...(known?.synced[project.root] ?? {}),
     };
 
     const repo = await readRepo(dir);

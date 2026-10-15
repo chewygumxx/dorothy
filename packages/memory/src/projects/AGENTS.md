@@ -30,7 +30,7 @@ memory directory, `.agents/memory/` by default.
   drops scheme, credentials, port and `.git`. No `origin`, or a local
   one, is `local-` and the root's hash.
 - `registry.ts`: `projects.json`, each project's roots, memory directory
-  and the hash of each fact as both sides last held it.
+  and, root by root, the hash of each fact as both sides last held it.
 - `export.ts`: the exported form Claude Code's auto-memory reads, its
   hash by content, and `MEMORY.md` within 200 lines and 25,000 bytes.
 - `sync.ts`: `syncProject`, the reconciliation.
@@ -51,6 +51,8 @@ memory directory, `.agents/memory/` by default.
   exists, and no skipped file is one it links; else it is left, and the
   report says why. An imported fact's title is its entry's, else the
   store's, else its name.
+- Each root keeps its own record of what it last synced, so one remote's
+  checkouts never undo each other.
 - Sync never commits or pushes, never writes outside the memory
   directory, and refuses a memory directory that escapes by `..` or
   through a symlink at any step from the root down.

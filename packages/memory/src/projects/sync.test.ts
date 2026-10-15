@@ -128,6 +128,13 @@ const moved = (report: SyncReport) => ({
     retired: report.retired,
     conflicts: report.conflicts,
 });
+const ok = async (result: Promise<SyncResult>): Promise<SyncReport> => {
+    const done = await result;
+    if (done.kind !== "ok") {
+        throw new Error(JSON.stringify(done));
+    }
+    return done.report;
+};
 const NOTHING = {
     imported: [],
     exported: [],
@@ -641,6 +648,42 @@ describe("syncProject", () => {
             description: "Edited twice.",
             title: "Store's",
         });
+    });
+
+    it("keeps each checkout's own record, so a stale one is brought up to date", async () => {
+        const second = join(base, "second");
+        await mkdir(join(second, ".git"), { recursive: true });
+        await writeFile(
+            join(second, ".git", "config"),
+            await readFile(join(repo, ".git", "config")),
+        );
+        await putRepo("a.md", repoFact("a", "First fact."));
+        await sync();
+        expect(moved(await ok(syncProject(second, options())))).toEqual({
+            ...NOTHING,
+            exported: ["a"],
+        });
+        const [a] = await facts();
+        await putFact(data, SCOPE, {
+            ...(a as Fact),
+            description: "Newer, in the store.",
+        });
+        expect(moved(await sync())).toEqual({ ...NOTHING, exported: ["a"] });
+        // The second checkout last synced the old version: it is brought
+        // up to date, and its old version is not imported over the new.
+        expect(moved(await ok(syncProject(second, options())))).toEqual({
+            ...NOTHING,
+            exported: ["a"],
+        });
+        expect(
+            await readFile(join(second, ".agents", "memory", "a.md"), "utf8"),
+        ).toContain("Newer, in the store.");
+        expect((await facts())[0]?.description).toBe("Newer, in the store.");
+        const registry = JSON.parse(await readFile(projectsPath(data), "utf8"));
+        expect(Object.keys(registry.projects[ID].synced).sort()).toEqual(
+            [repo, second].sort(),
+        );
+        expect(Object.keys(registry.projects[ID].synced[repo])).toEqual(["a"]);
     });
 
     it("skips and names a directory called like a fact, and retires nothing", async () => {

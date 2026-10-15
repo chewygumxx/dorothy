@@ -32,7 +32,7 @@ const registry = (fields: object = {}): Registry => ({
             name: "dorothy",
             roots: ["/home/u/dev/dorothy"],
             memoryDir: ".agents/memory",
-            synced: { "likes-tea": HASH },
+            synced: { "/home/u/dev/dorothy": { "likes-tea": HASH } },
             ...fields,
         },
     },
@@ -67,10 +67,25 @@ describe("parseRegistry", () => {
         ],
         ["an absolute memory directory", registry({ memoryDir: "/etc" })],
         ["a relative root", registry({ roots: ["dev/dorothy"] })],
-        ["a hash that is none", registry({ synced: { "likes-tea": "x" } })],
+        [
+            "a hash that is none",
+            registry({
+                synced: { "/home/u/dev/dorothy": { "likes-tea": "x" } },
+            }),
+        ],
         [
             "a synced name that is no fact's",
-            registry({ synced: { "Bad Name": HASH } }),
+            registry({
+                synced: { "/home/u/dev/dorothy": { "Bad Name": HASH } },
+            }),
+        ],
+        [
+            "hashes not kept by root",
+            registry({ synced: { "likes-tea": HASH } }),
+        ],
+        [
+            "hashes of a relative root",
+            registry({ synced: { dorothy: { "likes-tea": HASH } } }),
         ],
     ])("refuses %s", (_, value) => {
         expect(parseRegistry(JSON.stringify(value)).kind).toBe("unparseable");
@@ -132,10 +147,27 @@ describe("withProject", () => {
                     name: "dorothy",
                     roots: ["/home/u/dev/dorothy"],
                     memoryDir: ".agents/memory",
-                    synced: { a: HASH, b: HASH },
+                    synced: { "/home/u/dev/dorothy": { a: HASH, b: HASH } },
                 },
             },
         });
+    });
+
+    it("sets only this root's hashes, and keeps the others'", () => {
+        const other = { ...project, root: "/home/u/work/dorothy" };
+        const next = withProject(registry(), other, ".agents/memory", {
+            a: HASH,
+        });
+        expect(next.projects[ID]?.synced).toEqual({
+            "/home/u/dev/dorothy": { "likes-tea": HASH },
+            "/home/u/work/dorothy": { a: HASH },
+        });
+        expect(
+            Object.keys(
+                withProject(next, project, ".agents/memory", {}).projects[ID]
+                    ?.synced ?? {},
+            ),
+        ).toEqual(["/home/u/dev/dorothy", "/home/u/work/dorothy"]);
     });
 
     it("adds a root it has not seen, once", () => {

@@ -10,7 +10,7 @@
 
 // projects.json: each project Dorothy has synced, its roots on this
 // machine, its repository's memory directory and the hash of each fact
-// as both sides last held it.
+// as both sides last held it, root by root.
 
 import { lstat, readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
@@ -23,7 +23,9 @@ export type ProjectEntry = {
     name: string;
     roots: string[];
     memoryDir: string;
-    synced: Record<string, string>;
+    // Each root's hash of every fact as both sides last held it, by the
+    // fact's name: two checkouts of one remote sync at their own pace.
+    synced: Record<string, Record<string, string>>;
 };
 export type Registry = { v: 1; projects: Record<string, ProjectEntry> };
 export type RegistryRead =
@@ -83,13 +85,18 @@ function entryProblem(id: string, entry: unknown): string | null {
     if (
         !isRecord(entry.synced) ||
         !Object.entries(entry.synced).every(
-            ([name, hash]) =>
-                FACT_NAME.test(name) &&
-                typeof hash === "string" &&
-                HASH.test(hash),
+            ([root, hashes]) =>
+                isAbsolute(root) &&
+                isRecord(hashes) &&
+                Object.entries(hashes).every(
+                    ([name, hash]) =>
+                        FACT_NAME.test(name) &&
+                        typeof hash === "string" &&
+                        HASH.test(hash),
+                ),
         )
     ) {
-        return `${id}'s synced hashes are not facts' hashes`;
+        return `${id}'s synced hashes are not facts' hashes by root`;
     }
     return null;
 }
@@ -153,9 +160,11 @@ export async function chooseMemoryDir(root: string): Promise<string> {
         : ".agents/memory";
 }
 
-const sorted = (synced: Record<string, string>) =>
+const sorted = <T>(entries: Record<string, T>) =>
     Object.fromEntries(
-        Object.entries(synced).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+        Object.entries(entries).sort(([a], [b]) =>
+            a < b ? -1 : a > b ? 1 : 0,
+        ),
     );
 
 export function withProject(
@@ -176,7 +185,10 @@ export function withProject(
                     ? roots
                     : [...roots, project.root],
                 memoryDir,
-                synced: sorted(synced),
+                synced: sorted({
+                    ...known?.synced,
+                    [project.root]: sorted(synced),
+                }),
             },
         },
     };
