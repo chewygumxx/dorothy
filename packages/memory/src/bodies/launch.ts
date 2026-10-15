@@ -27,15 +27,16 @@ const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
 
 // Chat's block, its preamble and budget from config.toml, leaving out
-// no conversation: no Claude Code session is recorded yet.
+// no conversation: no Claude Code session is recorded yet. Its warnings
+// are its own; the caller reads and reports config.toml's.
 export async function claudeBlock({
     env = process.env,
 }: {
     env?: Env;
 } = {}): Promise<{ block: string; warnings: string[] }> {
-    const { config, warnings } = await readConfig(env);
+    const { config } = await readConfig(env);
     if (!config.memory.enabled) {
-        return { block: "", warnings };
+        return { block: "", warnings: [] };
     }
     const index = RecallIndex.open(indexPath(env));
     try {
@@ -52,7 +53,7 @@ export async function claudeBlock({
         });
         return {
             block: built.block,
-            warnings: [...warnings, ...loaded.warnings, ...built.warnings],
+            warnings: [...loaded.warnings, ...built.warnings],
         };
     } finally {
         index.close();

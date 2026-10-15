@@ -69,6 +69,15 @@ describe("claudeBlock", () => {
     });
 });
 
+describe("claudeBlock warnings", () => {
+    it("leaves config.toml's warnings to the caller, which reads them", async () => {
+        await config("[memory]\nbogus = 1\n");
+        expect((await claudeBlock({ env })).warnings).toEqual([]);
+        await config("[memory]\nenabled = false\nbogus = 1\n");
+        expect((await claudeBlock({ env })).warnings).toEqual([]);
+    });
+});
+
 describe("syncDirectory", () => {
     it("says nothing outside a repository", async () => {
         await mkdir(join(home, "plain"));
