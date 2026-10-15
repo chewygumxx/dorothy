@@ -13,5 +13,5 @@
 # --require-include`. bun install links the skills from node_modules;
 # those installed with `skills add` exist only here, so the skills come
 # whole, and a copy skips whatever install already made.
-.agents/skills/
-.claude/skills/
+.agents/skills/*
+.claude/skills/*
