@@ -22,4 +22,6 @@ node_modules/
 /.remember/
 /.agents/skills/
 /.claude/skills/
+# Claude Code's own worktrees, where no hook puts them elsewhere.
+/.claude/worktrees/
 
