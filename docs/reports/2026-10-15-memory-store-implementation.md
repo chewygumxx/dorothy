@@ -5,7 +5,7 @@ spdx: GPL-3.0-only
 title: Memory store implementation report
 description: >-
   How Dorothy's memory store was built: the plan's tasks, the rulings made,
-  what the probe and the review changed, every commit and what is left.
+  what the probe and the reviews changed, every commit and what is left.
 tags:
   - dorothy
   - memory
@@ -38,14 +38,15 @@ with its repository:
   only by the user.
 - **Projects.** A project is a git repository named by its `origin`,
   read from `.git/config` (`projects/identify.ts`), kept in
-  `projects.json` with the hash of each fact as each checkout last held
-  it. Sync reconciles a project's facts with the repository's
-  `.agents/memory/`, the form Claude Code's auto-memory reads, and
-  regenerates its `MEMORY.md`. It never commits and never writes outside
-  the memory directory.
+  `projects.json` with the memory directory each checkout last synced and
+  the hash of each fact as it last held it there. Sync reconciles a
+  project's facts with the repository's `.agents/memory/`, the form
+  Claude Code's auto-memory reads, and regenerates its `MEMORY.md`. It
+  never commits and never writes outside the memory directory.
 - **History and recall.** The sweep adopts hand-written facts, the lint
-  knows facts and the registry, and the recall index carries facts and
-  where each chat began.
+  knows facts and the registry, and the recall index carries facts,
+  synced from the data directory by every caller, and where each chat
+  began.
 - **Commands.** `--facts`, `--retire`, `--revive`, `--sync` and
   `--projects`, parsed by the CLI.
 
@@ -60,8 +61,9 @@ found a dozen faults the plan had mandated, all fixed in rounds of
 their own. The probe adopted this repository's own
 `.agents/memory/` into a scratch store and went through every row of the
 sync it was written to check, and every step read as expected. At the
-head of the branch `bun run check` passes with 1,484 tests across 80
-files, up from 1,234.
+head of the branch `bun run check` passes with 1,512 tests across 80
+files, up from 1,234. A final whole-branch review found fourteen more
+faults, all fixed in one wave (see Final review).
 
 ## The probe
 
@@ -165,7 +167,9 @@ Every expectation held:
   `other`: the commands ran outside a chat.
 
 The "no mirror" notice on each line is the launch reminder, which the
-scratch store rightly shows.
+scratch store rightly shows. The probe predates the final review: since
+then `--sync` also prints a line for each way something moved, such as
+`imported: bg-session-force-color`.
 
 ## Rulings
 
@@ -275,7 +279,8 @@ the reason and what it costs if wrong.
 - On import (adopt, change, conflict and revive) a fact's title is its
   `MEMORY.md` entry's when there is one, else the store's, else its
   name, as the spec says.
-- `synced` is keyed by root within a project, `{ root: { name: hash } }`.
+- `synced` is keyed by root within a project, `{ root: { name: hash } }`,
+  since become `{ root: { dir, facts } }` (see Final review).
   One map per project let two checkouts of one remote ping-pong and a
   stale clone silently roll the store back. The spec's example and text
   changed to match; `projects.json` is unreleased, so there is no
@@ -307,6 +312,44 @@ each was fixed in a round of its own:
 The probe also ran in Task 8, on a copy of this repository's
 `.agents/memory/`: it first-synced four facts in and wrote the index.
 
+## Final review
+
+A review of the whole branch, `6acc261..525f69d`, found eight important
+faults and six minor ones. The controller ruled on each, and one wave
+fixed them all, each with a regression test:
+
+1. **Private key blocks.** The pattern was quadratic over repeated
+   `BEGIN` headers with no `END` (1.4 MB took over 6 seconds) and missed
+   a truncated block. It now redacts to the end of the text, linearly.
+2. **Quoted values.** `password: "correct horse battery"` leaked after
+   its first word; a quoted value is now redacted to its closing quote,
+   at most 512 characters.
+3. **Provenance on every write.** A retirement, revival, move or sync's
+   retirement kept the old provenance, so when left uncommitted the
+   sweep made the fact the user's. Every write now sets `provenance.at`,
+   and `by` where the write names a writer.
+4. **An edited memory directory.** Changing `memoryDir` retired every
+   fact. Each root's record now names the directory it synced, and a
+   record of another directory counts as none: a first sync, retiring
+   nothing.
+5. **Claude Code's index entries.** `indexTitles` reads the one-line
+   `- [T](name.md)` form with a hook after it, under `-` or `*`.
+6. **A hand's lines in the index.** `isGeneratedIndex` ends an entry at a
+   blank line and takes only a two-space line that is no list item as a
+   description. A description wrapping onto a list marker escapes it.
+7. **Secrets in registry reasons.** A bad project is named by its place,
+   never its key, and a memory directory with a control character or NUL
+   is refused without repeating it.
+8. **Facts never indexed.** No caller passed the data directory; the
+   catalogue, `--tags`, `--edit-tags` and the recall server now do.
+9. **`--sync`'s report** says "1 fact" in the singular,
+10. says a missing path does not exist,
+11. and lists the names that moved.
+12. A test pins a first sync whose two sides differ: a conflict, the
+    repository's version kept and reported.
+13. The spec's known risks name snake-case files and lost hooks.
+14. This report, made true of the scrub and the index.
+
 ## Verification
 
 - `bun run check` at the head: typecheck, format, lint, Markdown, YAML,
@@ -321,13 +364,13 @@ The probe also ran in Task 8, on a copy of this repository's
 $ bun test
 bun test v1.4.2 (744846f84)
 
- 1484 pass
+ 1512 pass
  0 fail
- 135316 expect() calls
-Ran 1484 tests across 80 files. [17.17s]
+ 135409 expect() calls
+Ran 1512 tests across 80 files. [17.67s]
 ```
 
-- The tests numbered 1,234 before this branch and 1,484 now.
+- The tests numbered 1,234 before this branch and 1,512 now.
 - The probe above, against this repository's own memory, in scratch
   directories only.
 
@@ -362,7 +405,18 @@ a6f70df feat(memory): Sync a project's facts with its repo
 5e50687 docs(memory): Sync per root, and the index's rules
 2fbb174 feat(memory): List, retire and sync facts
 abba2df feat(cli): Parse the fact commands
-(this commit) docs: Report the memory store
+bdf0d83 docs: Report the memory store
+525f69d docs: Describe the sweep as it is
+2241880 fix(memory): Scrub cut keys and quoted values
+63c615f fix(memory): Stamp provenance on every fact write
+b29a049 fix(memory): Tie each root's sync record to a dir
+1610e8d fix(memory): Keep registry keys out of reasons
+888bd87 fix(memory): Read and guard MEMORY.md entries
+d1f44b9 fix(memory): Index the store's facts on every sync
+7f947c6 fix(memory): Say what --sync moved, and plainly
+752939c test(memory): Pin first-sync conflicts, snake case
+d3abdd5 docs: Name snake case and lost hooks as risks
+(this commit) docs: Report the final review's fixes
 ```
 
 ## Known limitations
@@ -394,10 +448,7 @@ leaves the index alone when no fact is live.
 Minors set aside by the reviews, for the final review to triage; none
 changes behaviour the specs pin:
 
-- **Scrub.** The private key block pattern is quadratic with many
-  `BEGIN` headers and no `END` (1.7 MB took 24 seconds), the same class
-  as the fixed key pattern; a key name matches loosely (`author`,
-  `monkey`), and a multi-word quoted value leaks after its first word.
+- **Scrub.** A key name matches loosely (`author`, `monkey`).
 - **Fact file.** The link check can be bypassed through titles, `<..>`,
   `.MD` and reference links; duplicate YAML keys resolve last-wins
   silently; wrapping counts code points and not columns; times check
@@ -406,21 +457,18 @@ changes behaviour the specs pin:
 - **Store.** A partial failure of `retireFacts` or `moveFact` reports a
   plain failure without the paths written; a read error such as
   `EACCES` is reported as unparseable.
-- **Registry.** `memoryDirProblem` admits control characters, which fail
-  later with a `TypeError`, and `parseRegistry` echoes a hand-edited id
-  in its reason, which could hold a token. Both should be fixed.
 - **Recall.** A transient read error drops a fact's indexed row until
   the next readable sync, and change detection is by mtime.
-- **Export.** `MEMORY.md` titles are read from `- [T](./name.md)` alone
-  on a line; Claude Code's usual one-line `- [T](name.md) - hook` form
-  falls back to the store's titles silently. `isGeneratedIndex` does not
-  reset on a blank line, so an entry, a blank line and a hand's indented
-  paragraph are overwritten; this should be fixed.
+- **Export.** Claude Code's auto-memory often names files in snake
+  case, `feedback_testing.md`, which a fact's name refuses: such a file
+  is skipped and named, not lost, and a `MEMORY.md` linking it is left.
+  A regenerated `MEMORY.md` replaces each entry's hook line with the
+  fact's description.
 - **Sync.** A store-retired fact's `synced` row is deleted, so the file
   reappearing on a branch switch revives it; a recorder that throws
   after writes reports a failure and loses the report; per-root `synced`
   maps of deleted checkouts are never pruned.
-- **Commands.** "leaves out 1 facts"; `--retire --from` with no match
+- **Commands.** `--retire --from` with no match
   exits 0 silently; `--sync -x` takes `-x` as a path; `--sync` on a
   regular file errors as "sync failed"; `--facts` sweeps history for a
   read-only listing.
