@@ -387,4 +387,31 @@ describe("spoken", () => {
         }
         expect(spoken("plain words")).toBe("plain words");
     });
+
+    it("keeps markup in her words, and no command without its name", () => {
+        const asked =
+            "Why does the reader turn a line like <command-name>/compact</command-name> into a command?";
+        expect(spoken(asked)).toBe(asked);
+        expect(spoken("see <command-name></command-name> here")).toBe(
+            "see <command-name></command-name> here",
+        );
+        expect(
+            spoken(
+                "<command-name></command-name>\n<command-args>x</command-args>",
+            ),
+        ).toBeNull();
+        expect(
+            spoken(
+                "<command-message>m</command-message>\n<command-name> </command-name>",
+            ),
+        ).toBeNull();
+    });
+
+    it("emits no event for a command without its name", () => {
+        const read = readLines([
+            userLine("u1", 0, "<command-name></command-name>"),
+        ]);
+        expect(read.events).toEqual([]);
+        expect(read.halt).toBeNull();
+    });
 });

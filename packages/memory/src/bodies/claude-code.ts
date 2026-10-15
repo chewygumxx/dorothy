@@ -99,12 +99,16 @@ class Unreadable extends Error {}
 const OWN_OUTPUT =
     /^<(local-command-stdout|local-command-stderr|local-command-caveat|bash-stdout|bash-stderr|task-notification)>/;
 const INTERRUPTED = /^\[Request interrupted by user[^\]]*\]$/;
+// Claude Code's two shapes of a command as typed: its name first, or
+// its message first. Markup inside her prose is her words.
+const COMMAND_START = /^<command-(name|message)>/;
 const COMMAND = /<command-name>([^<]*)<\/command-name>/;
 const ARGS = /<command-args>([\s\S]*?)<\/command-args>/;
 const BASH = /^<bash-input>([\s\S]*)<\/bash-input>$/;
 
 // What the user said in a user text: a command as typed, or the text;
-// null for Claude Code's own output and markers.
+// null for Claude Code's own output and markers, and a command without
+// its name.
 export function spoken(text: string): string | null {
     const trimmed = text.trim();
     if (
@@ -114,10 +118,14 @@ export function spoken(text: string): string | null {
     ) {
         return null;
     }
-    const command = COMMAND.exec(trimmed);
+    const command = COMMAND_START.test(trimmed) ? COMMAND.exec(trimmed) : null;
     if (command !== null) {
+        const name = (command[1] ?? "").trim();
+        if (name === "") {
+            return null;
+        }
         const args = ARGS.exec(trimmed)?.[1]?.trim() ?? "";
-        return `${(command[1] ?? "").trim()} ${args}`.trim();
+        return `${name} ${args}`.trim();
     }
     const bash = BASH.exec(trimmed);
     return bash === null ? text : `! ${bash[1]}`;
