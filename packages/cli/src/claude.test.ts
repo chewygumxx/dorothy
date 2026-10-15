@@ -10,6 +10,16 @@
 
 import { describe, expect, it } from "bun:test";
 import { EventEmitter } from "node:events";
+import {
+    existsSync,
+    mkdtempSync,
+    readdirSync,
+    readFileSync,
+    rmSync,
+    statSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { type Config, DEFAULT_CONFIG } from "@dorothy/core";
 import { MARKER } from "@dorothy/gateway";
 import {
@@ -17,6 +27,7 @@ import {
     claudeArgs,
     dorothyFlags,
     mergeJson,
+    privateWriter,
     runClaude,
 } from "./claude.js";
 
@@ -83,6 +94,9 @@ function harness(exit: number | Promise<number> = 0, memoryOn = false) {
         self: ["/bin/bun", "/d/index.ts"],
         read: () => {
             throw new Error("no such file");
+        },
+        writePrivate: () => {
+            throw new Error("no private file expected");
         },
     };
     return { calls, deps, memory, signals, stats };
@@ -352,9 +366,104 @@ describe("dorothy --claude with memory", () => {
     });
 });
 
+describe("dorothy --claude with the user's own settings file", () => {
+    const withRuntime = async (
+        name: string,
+        run: (runtime: string) => Promise<void>,
+    ) => {
+        const runtime = mkdtempSync(join(tmpdir(), `${name}-`));
+        try {
+            await run(runtime);
+        } finally {
+            rmSync(runtime, { recursive: true, force: true });
+        }
+    };
+
+    it("merges it into a private file, removed once claude exits", async () => {
+        await withRuntime("dorothy-settings", async (runtime) => {
+            const { calls, deps } = harness(0, true);
+            deps.env = { ...deps.env, XDG_RUNTIME_DIR: runtime };
+            deps.read = (path) => {
+                expect(path).toBe("/work/mine.json");
+                return '{"env":{"TOKEN":"secret"}}';
+            };
+            deps.writePrivate = privateWriter(
+                deps.env as Record<string, string>,
+            );
+            let during:
+                | { path: string; text: string; mode: number }
+                | undefined;
+            const spawn = deps.spawn as NonNullable<ClaudeDeps["spawn"]>;
+            deps.spawn = (cmd, env, cwd) => {
+                const flag = cmd.find((arg) => arg.startsWith("--settings="));
+                const path = (flag ?? "").slice("--settings=".length);
+                during = {
+                    path,
+                    text: readFileSync(path, "utf8"),
+                    mode: statSync(path).mode & 0o777,
+                };
+                return spawn(cmd, env, cwd);
+            };
+            expect(await runClaude(["--settings", "mine.json"], deps)).toBe(0);
+            expect(calls.cmd.join(" ")).not.toContain("secret");
+            expect(
+                during?.path.startsWith(join(runtime, "dorothy", "settings-")),
+            ).toBe(true);
+            expect(JSON.parse(during?.text ?? "")).toEqual({
+                env: { TOKEN: "secret" },
+                permissions: {
+                    allow: [
+                        "mcp__dorothy-memory__search",
+                        "mcp__dorothy-memory__open",
+                        "mcp__dorothy-memory__tags",
+                        "mcp__dorothy-memory__remember",
+                    ],
+                },
+            });
+            expect(during?.mode).toBe(0o600);
+            expect(statSync(join(runtime, "dorothy")).mode & 0o777).toBe(0o700);
+            expect(existsSync(during?.path ?? "")).toBe(false);
+        });
+    });
+
+    it("keeps inline settings in argv, writing no file", async () => {
+        await withRuntime("dorothy-inline", async (runtime) => {
+            const { calls, deps } = harness(0, true);
+            deps.env = { ...deps.env, XDG_RUNTIME_DIR: runtime };
+            deps.writePrivate = privateWriter(
+                deps.env as Record<string, string>,
+            );
+            await runClaude(["--settings", '{"model":"y"}'], deps);
+            expect(calls.cmd.some((arg) => arg.includes('"model":"y"'))).toBe(
+                true,
+            );
+            expect(readdirSync(runtime)).toEqual([]);
+        });
+    });
+
+    it("falls back to a directory of its own in the temporary directory", async () => {
+        await withRuntime("dorothy-tmp", async (tmp) => {
+            const path = privateWriter({ TMPDIR: tmp })("{}");
+            const uid = process.getuid?.() ?? 0;
+            expect(
+                path.startsWith(join(tmp, `dorothy-${uid}`, "settings-")),
+            ).toBe(true);
+            expect(statSync(path).mode & 0o777).toBe(0o600);
+            expect(statSync(join(tmp, `dorothy-${uid}`)).mode & 0o777).toBe(
+                0o700,
+            );
+        });
+    });
+});
+
 describe("dorothyFlags", () => {
+    const written: string[] = [];
     const io = (files: Record<string, string> = {}) => ({
         cwd: "/work",
+        writePrivate: (text: string) => {
+            written.push(text);
+            return `/run/dorothy/s${written.length}.json`;
+        },
         read: (path: string) => {
             const text = files[path];
             if (text === undefined) {
@@ -368,28 +477,54 @@ describe("dorothyFlags", () => {
         mcpConfig: null,
     };
 
-    it("merges the user's own settings, a file or inline, into Dorothy's", () => {
-        const fromFile = dorothyFlags(
-            ["--settings", "mine.json", "-p", "hi"],
-            ours,
-            io({
-                "/work/mine.json":
-                    '{"permissions":{"allow":["b"]},"model":"x"}',
-            }),
-        );
-        expect(fromFile).toEqual({
+    it("merges a settings file into a private file, passed by path", () => {
+        const merged = { permissions: { allow: ["b", "a"] }, model: "x" };
+        expect(
+            dorothyFlags(
+                ["--settings", "mine.json", "-p", "hi"],
+                ours,
+                io({
+                    "/work/mine.json":
+                        '{"permissions":{"allow":["b"]},"model":"x"}',
+                }),
+            ),
+        ).toEqual({
+            args: ["--settings=/run/dorothy/s1.json", "-p", "hi"],
+            warnings: [],
+            files: ["/run/dorothy/s1.json"],
+        });
+        expect(written).toEqual([JSON.stringify(merged)]);
+    });
+
+    it("keeps inline settings inline, with no file", () => {
+        written.length = 0;
+        expect(dorothyFlags([`--settings={"model":"y"}`], ours, io())).toEqual({
             args: [
-                `--settings=${JSON.stringify({ permissions: { allow: ["b", "a"] }, model: "x" })}`,
-                "-p",
-                "hi",
+                `--settings=${JSON.stringify({ model: "y", permissions: { allow: ["a"] } })}`,
             ],
             warnings: [],
+            files: [],
         });
-        expect(
-            dorothyFlags([`--settings={"model":"y"}`], ours, io()).args,
-        ).toEqual([
-            `--settings=${JSON.stringify({ model: "y", permissions: { allow: ["a"] } })}`,
-        ]);
+        expect(written).toEqual([]);
+    });
+
+    it("passes a file on as given, saying so, if the private file fails", () => {
+        const failing = {
+            ...io({ "/work/mine.json": '{"model":"x"}' }),
+            writePrivate: () => {
+                throw new Error("EACCES");
+            },
+        };
+        expect(dorothyFlags(["--settings=mine.json"], ours, failing)).toEqual({
+            args: [
+                `--settings=${JSON.stringify(ours.settings)}`,
+                "--settings=mine.json",
+            ],
+            warnings: [
+                "a private settings file could not be written (EACCES); your --settings is passed on as given, and may override Dorothy's",
+            ],
+            files: [],
+        });
     });
 
     it("passes on settings it cannot read, warning that they may override hers", () => {
@@ -402,6 +537,7 @@ describe("dorothyFlags", () => {
             warnings: [
                 "your --settings could not be read (ENOENT: /work/gone.json); it is passed on as given, and may override Dorothy's",
             ],
+            files: [],
         });
     });
 

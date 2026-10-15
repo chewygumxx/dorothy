@@ -54,11 +54,16 @@ Agent SDK. Keep every new mode's import lazy.
   `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`; with `recall` too, `--mcp-config=`
   offers the recall server as `dorothy-memory` with `--project`, and
   `--settings=` allows its tools, a user's own `--settings` merged in
-  (`dorothyFlags`). `runClaude` runs it for `--claude`, forwards `SIGTERM`
-  and `SIGHUP`, ignores `SIGINT` (the terminal sends it to `claude` too),
-  and exits with `claude`'s code. From a package script (`bun run dev`),
-  `userShell` gives `claude` the directory it was run from and the `PATH`
-  before Bun prepended its `node_modules/.bin` entries.
+  (`dorothyFlags`). A merged settings file may hold secrets and argv is
+  world-readable, so the merge goes to a private file (mode 0600, in
+  `$XDG_RUNTIME_DIR/dorothy` or a 0700 `dorothy-<uid>` under the temporary
+  directory; `privateWriter`) passed by path, removed by `Launch.cleanup`
+  when `claude` exits; inline JSON stays inline. `runClaude` runs it for
+  `--claude`, forwards `SIGTERM` and `SIGHUP`, ignores `SIGINT` (the
+  terminal sends it to `claude` too), and exits with `claude`'s code.
+  From a package script (`bun run dev`), `userShell` gives `claude` the
+  directory it was run from and the `PATH` before Bun prepended its
+  `node_modules/.bin` entries.
 - `claude-dump.ts`: `runClaudeDump` for `--claude --dump-context`: the
   gateway's upstream is `captureServer` from `@dorothy/agent`, `claude`
   runs quietly in print mode without saving its session, and is stopped

@@ -45,6 +45,8 @@ function harness(send: unknown[] = [{ system: "S" }]) {
         killed: false,
         out: "",
         err: "",
+        written: [] as string[],
+        removed: [] as string[],
     };
     const memory = { synced: [] as string[], blocks: 0 };
     const memoryOn: Config = {
@@ -104,8 +106,13 @@ function harness(send: unknown[] = [{ system: "S" }]) {
         },
         cwd: "/work",
         self: ["/bin/bun", "/d/index.ts"],
-        read: () => {
-            throw new Error("no such file");
+        read: () => '{"model":"x"}',
+        writePrivate: (text) => {
+            calls.written.push(text);
+            return "/run/dorothy/s.json";
+        },
+        remove: (path) => {
+            calls.removed.push(path);
         },
     };
     return { calls, capture, deps, memory, stats };
@@ -149,6 +156,16 @@ describe("runClaudeDump", () => {
                     arg.startsWith("--mcp-config"),
             ),
         ).toBe(false);
+    });
+
+    it("passes the user's own --settings on untouched, writing no file", async () => {
+        const { calls, deps } = harness();
+        expect(
+            await runClaudeDump(["--settings", "mine.json"], "hi", deps),
+        ).toBe(0);
+        expect(calls.cmd).toContain("mine.json");
+        expect(calls.written).toEqual([]);
+        expect(calls.removed).toEqual([]);
     });
 
     it("warns when the gateway put no identity in", async () => {

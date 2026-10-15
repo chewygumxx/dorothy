@@ -8,8 +8,15 @@
 //
 //
 
-import { readFileSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import {
+    chmodSync,
+    lstatSync,
+    mkdirSync,
+    readFileSync,
+    rmSync,
+    writeFileSync,
+} from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 import {
     CLAUDE_ALLOWED_TOOLS,
     CLAUDE_SERVER_NAME,
@@ -45,7 +52,32 @@ export type ClaudeDeps = {
     self?: readonly string[];
     // Reads a file the user's own --settings names.
     read?: (path: string) => string;
+    // Writes text to a new file only the user can read, and says where.
+    writePrivate?: (text: string) => string;
+    // Removes a file writePrivate made.
+    remove?: (path: string) => void;
 };
+
+// A new file of mode 0600 in $XDG_RUNTIME_DIR/dorothy, or else in a
+// directory of mode 0700 of the user's own under the temporary directory.
+export function privateWriter(env: Env): (text: string) => string {
+    return (text) => {
+        const uid = process.getuid?.() ?? 0;
+        const dir =
+            env.XDG_RUNTIME_DIR === undefined || env.XDG_RUNTIME_DIR === ""
+                ? join(env.TMPDIR || "/tmp", `dorothy-${uid}`)
+                : join(env.XDG_RUNTIME_DIR, "dorothy");
+        mkdirSync(dir, { recursive: true, mode: 0o700 });
+        const info = lstatSync(dir);
+        if (!info.isDirectory() || info.uid !== uid) {
+            throw new Error(`${dir} is not a directory of your own`);
+        }
+        chmodSync(dir, 0o700);
+        const path = join(dir, `settings-${crypto.randomUUID()}.json`);
+        writeFileSync(path, text, { mode: 0o600, flag: "wx" });
+        return path;
+    };
+}
 
 // The terminal sends SIGINT to the whole foreground group, claude
 // included: forwarding it would send claude a second, which it reads as
@@ -155,8 +187,20 @@ export type DorothyFlags = { settings: Json | null; mcpConfig: Json | null };
 export function dorothyFlags(
     args: readonly string[],
     flags: DorothyFlags,
-    { cwd, read }: { cwd: string; read: (path: string) => string },
-): { args: string[]; warnings: string[] } {
+    {
+        cwd,
+        read,
+        writePrivate,
+    }: {
+        cwd: string;
+        read: (path: string) => string;
+        writePrivate: (text: string) => string;
+    },
+): { args: string[]; warnings: string[]; files: string[] } {
+    // What the user's --settings files held may be secret (an env block
+    // of tokens), and argv is readable by other users: a merge that
+    // includes a file goes to a private file, passed by path.
+    const filed: string[][] = [];
     const values: Record<string, Json | null> = {
         [SETTINGS]: flags.settings,
         [MCP_CONFIG]: flags.mcpConfig,
@@ -196,14 +240,34 @@ export function dorothyFlags(
             continue;
         }
         values[name] = mergeJson(theirs as Json, ours);
+        if (!value.trimStart().startsWith("{")) {
+            filed.push(arg === name ? [arg, value] : [arg]);
+        }
     }
+    const files: string[] = [];
     const front = [SETTINGS, MCP_CONFIG].flatMap((name) => {
         const value = values[name];
-        return value === null || value === undefined
-            ? []
-            : [`${name}=${JSON.stringify(value)}`];
+        if (value === null || value === undefined) {
+            return [];
+        }
+        if (name === SETTINGS && filed.length > 0) {
+            try {
+                const path = writePrivate(JSON.stringify(value));
+                files.push(path);
+                return [`${name}=${path}`];
+            } catch (error) {
+                // Without a private file the secrets stay with the user's
+                // own flags; Dorothy's settings go in alone.
+                rest.push(...filed.flat());
+                warnings.push(
+                    `a private settings file could not be written (${describeError(error)}); your --settings is passed on as given, and may override Dorothy's`,
+                );
+                return [`${name}=${JSON.stringify(flags.settings)}`];
+            }
+        }
+        return [`${name}=${JSON.stringify(value)}`];
     });
-    return { args: [...front, ...rest], warnings };
+    return { args: [...front, ...rest], warnings, files };
 }
 
 // Where claude runs and with what environment. A package script, such as
@@ -248,6 +312,9 @@ export type Launch = {
     env: Env;
     cwd?: string;
     gateway: Gateway;
+    // Removes the private files the launch wrote; call it once claude
+    // has exited.
+    cleanup: () => void;
 };
 
 // --claude runs claude with everything; its dump takes the block alone,
@@ -276,6 +343,8 @@ export async function launchClaude(
         cwd = process.cwd(),
         self = [process.execPath, resolve(process.argv[1] ?? "")],
         read = (path) => readFileSync(path, "utf8"),
+        writePrivate = privateWriter(env),
+        remove = (path) => rmSync(path, { force: true }),
     }: ClaudeDeps = {},
     purpose: LaunchPurpose = "run",
 ): Promise<Launch | number> {
@@ -345,7 +414,7 @@ export async function launchClaude(
                   }
                 : null,
         },
-        { cwd: dir, read },
+        { cwd: dir, read, writePrivate },
     );
     for (const warning of flagged.warnings) {
         write(`dorothy: ${warning}\n`);
@@ -362,6 +431,15 @@ export async function launchClaude(
             ...(on ? { CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" } : {}),
         },
         gateway,
+        cleanup: () => {
+            for (const path of flagged.files) {
+                try {
+                    remove(path);
+                } catch {
+                    // A file already gone needs no removing.
+                }
+            }
+        },
     };
     return shell.cwd === undefined ? launch : { ...launch, cwd: shell.cwd };
 }
@@ -413,6 +491,7 @@ export async function runClaude(
             signals.off(signal, handler);
         }
         launch.gateway.stop();
+        launch.cleanup();
         warnDrift(launch.gateway.stats, write);
     }
 }

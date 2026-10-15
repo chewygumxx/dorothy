@@ -76,6 +76,7 @@ export async function runClaudeDump(
             child.kill();
             code = await child.exited;
             launch.gateway.stop();
+            launch.cleanup();
         }
         const [body] = capture.bodies;
         if (body === undefined) {
