@@ -458,14 +458,14 @@ const scratchRepository = () => {
         return git("rev-parse", "HEAD");
     };
     git("init", "-q", "-b", "main");
+    const run = (name: string, args: string[]) =>
+        Bun.spawnSync(["sh", at(".husky", name), ...args], { cwd: repo, env });
     return {
         commit,
         git,
-        hook: (name: string, ...args: string[]) =>
-            Bun.spawnSync(["sh", at(".husky", name), ...args], {
-                cwd: repo,
-                env,
-            }).exitCode,
+        hook: (name: string, ...args: string[]) => run(name, args).exitCode,
+        hookErrors: (name: string, ...args: string[]) =>
+            run(name, args).stderr.toString(),
         installs: (): string[] =>
             existsSync(log) ? read(log).trim().split("\n") : [],
         remove: () => rmSync(dir, { recursive: true }),
@@ -480,6 +480,23 @@ describe("the install hooks", () => {
             const two = repo.commit("bun.lock", "{}\n");
             expect(repo.hook("post-checkout", one, two, "1")).toBe(0);
             expect(repo.installs()).toEqual(["install"]);
+        } finally {
+            repo.remove();
+        }
+    });
+
+    it("install on a new worktree's checkout, from the null commit", () => {
+        const repo = scratchRepository();
+        try {
+            const head = repo.commit("README.md", "# Readme\n");
+            // SHA-1's null id and SHA-256's.
+            for (const length of [40, 64]) {
+                const none = "0".repeat(length);
+                expect(repo.hookErrors("post-checkout", none, head, "1")).toBe(
+                    "",
+                );
+            }
+            expect(repo.installs()).toEqual(["install", "install"]);
         } finally {
             repo.remove();
         }
