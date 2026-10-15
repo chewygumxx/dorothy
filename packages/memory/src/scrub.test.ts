@@ -67,13 +67,52 @@ describe("scrub", () => {
         expect(performance.now() - start).toBeLessThan(200);
     });
 
-    it("bounds a quoted value with no closing quote", () => {
-        const text = `password: "${"a ".repeat(1000)}`;
+    it("redacts a long quoted secret whole", () => {
+        const text = `password: "${"a".repeat(2000)}" && ls`;
+        expect(scrub(text)).toBe('password: "[secret]" && ls');
+    });
+
+    it("runs a quoted value with no closing quote to the line's end", () => {
+        const text = `password: "${"a ".repeat(1000)}\nnext`;
+        expect(scrub(text)).toBe('password: "[secret]\nnext');
+        expect(scrub(scrub(text))).toBe(scrub(text));
+    });
+
+    // Several megabytes each, every one redacted, not given up on.
+    it.each([
+        [
+            "openings with no closing quote",
+            'password: "'.repeat(300000),
+            'password: "[secret]"'.repeat(150000),
+        ],
+        [
+            "keys inside one unclosed value",
+            `password: "${"a token= key: secret ".repeat(150000)}`,
+            'password: "[secret]',
+        ],
+        ["quotes and backslashes", '"\\'.repeat(1500000), null],
+        [
+            "backslashes in a value",
+            `password: "${"\\".repeat(3000000)}`,
+            'password: "[secret]',
+        ],
+        [
+            "escaped quotes in a value",
+            `password: "${'\\"'.repeat(1500000)}`,
+            'password: "[secret]',
+        ],
+        [
+            "a value with no escape",
+            `password: "${"a".repeat(3000000)}" && ls`,
+            'password: "[secret]" && ls',
+        ],
+    ])("takes linear time on %s", (_, text, expected) => {
+        expect(text.length).toBeGreaterThan(2_900_000);
         const start = performance.now();
         const scrubbed = scrub(text);
         expect(performance.now() - start).toBeLessThan(200);
-        expect(scrubbed.startsWith('password: "[secret]')).toBe(true);
-        expect(scrubbed.length).toBe(text.length - 512 + "[secret]".length);
+        expect(scrubbed).toBe(expected ?? text);
+        expect(scrub(scrubbed)).toBe(scrubbed);
     });
 
     it("gives the same text when run twice", () => {
