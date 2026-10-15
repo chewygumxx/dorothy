@@ -9,8 +9,9 @@
 //
 
 // projects.json: each project Dorothy has synced, its roots on this
-// machine, its repository's memory directory and the hash of each fact
-// as both sides last held it, root by root.
+// machine, its repository's memory directory and, root by root, the
+// directory last synced and the hash of each fact as both sides last held
+// it there.
 
 import { lstat, readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
@@ -19,13 +20,16 @@ import { isProjectId } from "../facts/store.js";
 import { writeAtomic } from "../memory/sidecar.js";
 import type { Project } from "./identify.js";
 
+// What a root last synced: the memory directory it synced with, and the
+// hash of every fact as both sides last held it, by the fact's name. A
+// record of another directory than the project's is none.
+export type SyncRecord = { dir: string; facts: Record<string, string> };
 export type ProjectEntry = {
     name: string;
     roots: string[];
     memoryDir: string;
-    // Each root's hash of every fact as both sides last held it, by the
-    // fact's name: two checkouts of one remote sync at their own pace.
-    synced: Record<string, Record<string, string>>;
+    // By root: two checkouts of one remote sync at their own pace.
+    synced: Record<string, SyncRecord>;
 };
 export type Registry = { v: 1; projects: Record<string, ProjectEntry> };
 export type RegistryRead =
@@ -85,10 +89,13 @@ function entryProblem(id: string, entry: unknown): string | null {
     if (
         !isRecord(entry.synced) ||
         !Object.entries(entry.synced).every(
-            ([root, hashes]) =>
+            ([root, record]) =>
                 isAbsolute(root) &&
-                isRecord(hashes) &&
-                Object.entries(hashes).every(
+                isRecord(record) &&
+                typeof record.dir === "string" &&
+                memoryDirProblem(record.dir) === null &&
+                isRecord(record.facts) &&
+                Object.entries(record.facts).every(
                     ([name, hash]) =>
                         FACT_NAME.test(name) &&
                         typeof hash === "string" &&
@@ -96,7 +103,7 @@ function entryProblem(id: string, entry: unknown): string | null {
                 ),
         )
     ) {
-        return `${id}'s synced hashes are not facts' hashes by root`;
+        return `${id}'s synced records are not a directory and facts' hashes by root`;
     }
     return null;
 }
@@ -187,7 +194,7 @@ export function withProject(
                 memoryDir,
                 synced: sorted({
                     ...known?.synced,
-                    [project.root]: sorted(synced),
+                    [project.root]: { dir: memoryDir, facts: sorted(synced) },
                 }),
             },
         },

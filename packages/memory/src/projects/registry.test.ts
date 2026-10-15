@@ -25,6 +25,11 @@ import {
 
 const ID = "github.com/chewygumxx/dorothy";
 const HASH = "a".repeat(64);
+const ROOT = "/home/u/dev/dorothy";
+const record = (facts: Record<string, string>, dir = ".agents/memory") => ({
+    dir,
+    facts,
+});
 const registry = (fields: object = {}): Registry => ({
     v: 1,
     projects: {
@@ -32,7 +37,12 @@ const registry = (fields: object = {}): Registry => ({
             name: "dorothy",
             roots: ["/home/u/dev/dorothy"],
             memoryDir: ".agents/memory",
-            synced: { "/home/u/dev/dorothy": { "likes-tea": HASH } },
+            synced: {
+                "/home/u/dev/dorothy": {
+                    dir: ".agents/memory",
+                    facts: { "likes-tea": HASH },
+                },
+            },
             ...fields,
         },
     },
@@ -69,15 +79,11 @@ describe("parseRegistry", () => {
         ["a relative root", registry({ roots: ["dev/dorothy"] })],
         [
             "a hash that is none",
-            registry({
-                synced: { "/home/u/dev/dorothy": { "likes-tea": "x" } },
-            }),
+            registry({ synced: { [ROOT]: record({ "likes-tea": "x" }) } }),
         ],
         [
             "a synced name that is no fact's",
-            registry({
-                synced: { "/home/u/dev/dorothy": { "Bad Name": HASH } },
-            }),
+            registry({ synced: { [ROOT]: record({ "Bad Name": HASH }) } }),
         ],
         [
             "hashes not kept by root",
@@ -85,7 +91,19 @@ describe("parseRegistry", () => {
         ],
         [
             "hashes of a relative root",
-            registry({ synced: { dorothy: { "likes-tea": HASH } } }),
+            registry({ synced: { dorothy: record({ "likes-tea": HASH }) } }),
+        ],
+        [
+            "hashes with no directory",
+            registry({ synced: { [ROOT]: { "likes-tea": HASH } } }),
+        ],
+        [
+            "hashes of a directory that escapes",
+            registry({
+                synced: {
+                    [ROOT]: { dir: "../x", facts: { "likes-tea": HASH } },
+                },
+            }),
         ],
     ])("refuses %s", (_, value) => {
         expect(parseRegistry(JSON.stringify(value)).kind).toBe("unparseable");
@@ -147,7 +165,7 @@ describe("withProject", () => {
                     name: "dorothy",
                     roots: ["/home/u/dev/dorothy"],
                     memoryDir: ".agents/memory",
-                    synced: { "/home/u/dev/dorothy": { a: HASH, b: HASH } },
+                    synced: { [ROOT]: record({ a: HASH, b: HASH }) },
                 },
             },
         });
@@ -159,8 +177,8 @@ describe("withProject", () => {
             a: HASH,
         });
         expect(next.projects[ID]?.synced).toEqual({
-            "/home/u/dev/dorothy": { "likes-tea": HASH },
-            "/home/u/work/dorothy": { a: HASH },
+            [ROOT]: record({ "likes-tea": HASH }),
+            "/home/u/work/dorothy": record({ a: HASH }),
         });
         expect(
             Object.keys(
@@ -168,6 +186,16 @@ describe("withProject", () => {
                     ?.synced ?? {},
             ),
         ).toEqual(["/home/u/dev/dorothy", "/home/u/work/dorothy"]);
+    });
+
+    it("records the directory this root synced with", () => {
+        const next = withProject(registry(), project, "docs/memory", {
+            a: HASH,
+        });
+        expect(next.projects[ID]?.memoryDir).toBe("docs/memory");
+        expect(next.projects[ID]?.synced[ROOT]).toEqual(
+            record({ a: HASH }, "docs/memory"),
+        );
     });
 
     it("adds a root it has not seen, once", () => {

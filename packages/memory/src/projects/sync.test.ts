@@ -683,7 +683,62 @@ describe("syncProject", () => {
         expect(Object.keys(registry.projects[ID].synced).sort()).toEqual(
             [repo, second].sort(),
         );
-        expect(Object.keys(registry.projects[ID].synced[repo])).toEqual(["a"]);
+        expect(registry.projects[ID].synced[repo]).toMatchObject({
+            dir: ".agents/memory",
+        });
+        expect(Object.keys(registry.projects[ID].synced[repo].facts)).toEqual([
+            "a",
+        ]);
+    });
+
+    it("takes an edited memory directory as a first sync, retiring nothing", async () => {
+        await putRepo("a.md", repoFact("a", "First fact."));
+        await putFact(data, SCOPE, storeFact("b"));
+        expect(moved(await sync())).toEqual({
+            ...NOTHING,
+            imported: ["a"],
+            exported: ["b"],
+        });
+        const registry = JSON.parse(await readFile(projectsPath(data), "utf8"));
+        registry.projects[ID].memoryDir = "docs/memory";
+        await writeFile(projectsPath(data), JSON.stringify(registry));
+        await mkdir(join(repo, "docs", "memory"), { recursive: true });
+        await writeFile(
+            join(repo, "docs", "memory", "c.md"),
+            repoFact("c", "Third fact."),
+        );
+        const report = await sync();
+        expect(report.memoryDir).toBe("docs/memory");
+        expect(moved(report)).toEqual({
+            ...NOTHING,
+            imported: ["c"],
+            exported: ["a", "b"],
+        });
+        expect((await facts()).map((fact) => fact.retired)).toEqual([
+            null,
+            null,
+            null,
+        ]);
+        expect((await readdir(join(repo, "docs", "memory"))).sort()).toEqual([
+            "MEMORY.md",
+            "a.md",
+            "b.md",
+            "c.md",
+        ]);
+        const after = JSON.parse(await readFile(projectsPath(data), "utf8"));
+        expect(after.projects[ID].synced[repo].dir).toBe("docs/memory");
+        expect(moved(await sync())).toEqual(NOTHING);
+    });
+
+    it("retires every fact when the memory directory it synced is gone", async () => {
+        await putRepo("a.md", repoFact("a", "First fact."));
+        await putRepo("b.md", repoFact("b", "Second fact."));
+        await sync();
+        await rm(join(repo, ".agents", "memory"), { recursive: true });
+        expect(moved(await sync())).toEqual({
+            ...NOTHING,
+            retired: ["a", "b"],
+        });
     });
 
     it("skips and names a directory called like a fact, and retires nothing", async () => {

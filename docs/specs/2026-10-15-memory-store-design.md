@@ -356,7 +356,10 @@ path. Every checkout of one remote is one project; its facts live under
       "memoryDir": ".agents/memory",
       "synced": {
         "/home/chewygumxx/dev/dorothy": {
-          "dorothy-ambition": "sha256 of the form both sides last held"
+          "dir": ".agents/memory",
+          "facts": {
+            "dorothy-ambition": "sha256 of the form both sides last held"
+          }
         }
       }
     }
@@ -370,7 +373,13 @@ the repository's memory directory: `.agents/memory` if it exists, else
 `.claude/memory` if that does, else `.agents/memory`. The user may edit
 it.
 `synced` is kept by root, so two checkouts of one remote each compare
-against what they last synced and never undo one another.
+against what they last synced and never undo one another. Each root's
+record names the memory directory it was synced with, `dir`, beside the
+hashes, `facts`. Once the user edits `memoryDir`, a root's record is of
+another directory and counts as none: its next sync is its first with
+the new one, adopting and exporting, and retires nothing. A memory
+directory deleted whole, with its record its own, retires every fact as
+any deletion does.
 
 ## Sync
 

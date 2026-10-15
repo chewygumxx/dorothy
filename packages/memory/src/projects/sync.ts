@@ -301,9 +301,14 @@ async function reconcile(
     const memoryDir = known?.memoryDir ?? (await chooseMemoryDir(project.root));
     const dir = await safeDir(project.root, memoryDir);
     const scope: Scope = { kind: "project", id: project.id };
-    const synced: Record<string, string> = {
-        ...(known?.synced[project.root] ?? {}),
-    };
+    // A record of another memory directory, the user having edited it,
+    // describes files no longer here: the sync is this root's first, and
+    // adopts and exports rather than retiring everything.
+    const record = known?.synced[project.root];
+    const synced: Record<string, string> =
+        record !== undefined && record.dir === memoryDir
+            ? { ...record.facts }
+            : {};
 
     const repo = await readRepo(dir);
     const listed = await listFacts(root, scope);
