@@ -20,6 +20,11 @@ node_modules/
 /.herdr/
 /.superpowers/
 /.remember/
-/.agents/skills/
-/.claude/skills/
+# The skills CLI's links; the repository's own skills are committed.
+/.agents/skills/*
+!/.agents/skills/worktrees/
+/.claude/skills/*
+!/.claude/skills/worktrees
+# Claude Code's own worktrees, where no hook puts them elsewhere.
+/.claude/worktrees/
 

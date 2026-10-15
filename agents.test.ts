@@ -64,6 +64,10 @@ const EXCLUDED = [
     "writing-skills",
 ];
 
+// The repository's own skills: committed beside the links, as
+// `.gitignore` negates them, and never recorded in the lock.
+const OWN = ["worktrees"];
+
 const LINKS = [".agents/skills", ".claude/skills"];
 
 const lock = (): Lock => JSON.parse(read(at("skills-lock.json")));
@@ -164,8 +168,9 @@ describe("the skills", () => {
     });
 
     for (const [name, entry] of Object.entries(lock().skills)) {
-        // A remote skill (herdr) arrives with `bun run skills`, never in
-        // CI, so it is checked only where it is installed.
+        // A remote skill (herdr) arrives with `skills add`, which the
+        // sync skips, or in a worktree's copy of the main checkout's;
+        // never in CI, so it is checked only where it is installed.
         const fromPackage = entry.sourceType === "node_modules";
         const present = fromPackage || existsSync(at(".agents/skills", name));
         it.if(present)(`links ${name} for every agent`, () => {
@@ -182,11 +187,31 @@ describe("the skills", () => {
     }
 
     it("links nothing the lock does not record", () => {
-        const recorded = Object.keys(lock().skills);
+        const recorded = [...Object.keys(lock().skills), ...OWN];
         for (const dir of LINKS) {
             expect(
                 linked(dir).filter((name) => !recorded.includes(name)),
             ).toEqual([]);
+        }
+    });
+
+    it("commits its own skills, linked for every agent", () => {
+        const tracked = Bun.spawnSync(["git", "ls-files", ...LINKS], {
+            cwd: ROOT,
+        })
+            .stdout.toString()
+            .trim()
+            .split("\n");
+        for (const name of OWN) {
+            const dir = at(".agents/skills", name);
+            expect(lstatSync(dir).isDirectory()).toBe(true);
+            expect(skillName(dir)).toBe(name);
+            expect(tracked).toContain(`.agents/skills/${name}/SKILL.md`);
+            expect(tracked).toContain(`.claude/skills/${name}`);
+            expect(realpathSync(at(".claude/skills", name))).toBe(
+                realpathSync(dir),
+            );
+            expect(Object.keys(lock().skills)).not.toContain(name);
         }
     });
 });
@@ -433,14 +458,14 @@ const scratchRepository = () => {
         return git("rev-parse", "HEAD");
     };
     git("init", "-q", "-b", "main");
+    const run = (name: string, args: string[]) =>
+        Bun.spawnSync(["sh", at(".husky", name), ...args], { cwd: repo, env });
     return {
         commit,
         git,
-        hook: (name: string, ...args: string[]) =>
-            Bun.spawnSync(["sh", at(".husky", name), ...args], {
-                cwd: repo,
-                env,
-            }).exitCode,
+        hook: (name: string, ...args: string[]) => run(name, args).exitCode,
+        hookErrors: (name: string, ...args: string[]) =>
+            run(name, args).stderr.toString(),
         installs: (): string[] =>
             existsSync(log) ? read(log).trim().split("\n") : [],
         remove: () => rmSync(dir, { recursive: true }),
@@ -455,6 +480,23 @@ describe("the install hooks", () => {
             const two = repo.commit("bun.lock", "{}\n");
             expect(repo.hook("post-checkout", one, two, "1")).toBe(0);
             expect(repo.installs()).toEqual(["install"]);
+        } finally {
+            repo.remove();
+        }
+    });
+
+    it("install on a new worktree's checkout, from the null commit", () => {
+        const repo = scratchRepository();
+        try {
+            const head = repo.commit("README.md", "# Readme\n");
+            // SHA-1's null id and SHA-256's.
+            for (const length of [40, 64]) {
+                const none = "0".repeat(length);
+                expect(repo.hookErrors("post-checkout", none, head, "1")).toBe(
+                    "",
+                );
+            }
+            expect(repo.installs()).toEqual(["install", "install"]);
         } finally {
             repo.remove();
         }

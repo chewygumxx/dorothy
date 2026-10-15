@@ -22,6 +22,12 @@
       "version": "6.4.1",
       "computedHash": "5d587b5a8ed12c3d6808bce1561d9a72eab37a9b44d51d9dff99232decaae78e"
     },
+    "find-skills": {
+      "source": "vercel-labs/skills",
+      "sourceType": "github",
+      "skillPath": "skills/find-skills/SKILL.md",
+      "computedHash": "b146008599c31057cef1c145774cea5d5afb30e8f43fa802e47a4b461419aaaf"
+    },
     "finishing-a-development-branch": {
       "source": "superpowers",
       "sourceType": "node_modules",
@@ -33,8 +39,7 @@
       "source": "herdrdev/herdr",
       "sourceType": "github",
       "skillPath": "skills/herdr/SKILL.md",
-      "computedHash": "66715d76e5947497431ec0db32f2693b9c916ad799c3f32b99e6174b4b9c607f",
-      "via": "."
+      "computedHash": "72177e911f55467de8737174072ec6bb08e30bbf62bceabcb69678e944398b18"
     },
     "receiving-code-review": {
       "source": "superpowers",
