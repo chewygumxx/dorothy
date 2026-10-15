@@ -67,6 +67,65 @@ describe("claudeBlock", () => {
         await config("[memory]\nenabled = false\n");
         expect((await claudeBlock({ env })).block).toBe("");
     });
+    it("leaves out the conversation of a session the arguments resume", async () => {
+        const dir = join(home, "data", "dorothy", "transcripts");
+        await mkdir(dir, { recursive: true });
+        const S = "0f8fad5b-d9cb-469f-a165-70867728950e";
+        const at = new Date().toISOString();
+        const resumed = newPhrase();
+        const other = newPhrase();
+        const lines = (events: object[]) =>
+            events.map((event) => `${JSON.stringify(event)}\n`).join("");
+        await writeFile(
+            join(dir, `${resumed}.jsonl`),
+            lines([
+                {
+                    v: 1,
+                    kind: "session",
+                    at,
+                    phrase: resumed,
+                    sdkSessionId: "",
+                    model: "m",
+                    promptHash: "",
+                    resumed: false,
+                    source: "claude-code",
+                    sourceSession: S,
+                },
+                { v: 1, kind: "user", at, text: "hello" },
+            ]),
+        );
+        await writeFile(
+            join(dir, `${other}.jsonl`),
+            lines([{ v: 1, kind: "user", at, text: "hi" }]),
+        );
+        for (const [phrase, title] of [
+            [resumed, "Resumed"],
+            [other, "Other"],
+        ] as const) {
+            await writeFile(
+                sidecarPath(dir, phrase),
+                JSON.stringify({
+                    ...EMPTY_SIDECAR,
+                    title,
+                    description: "A chat.",
+                }),
+            );
+        }
+        expect((await claudeBlock({ env })).block).toContain(
+            "<title>Resumed</title>",
+        );
+        const { block } = await claudeBlock({ env, session: S });
+        expect(block).not.toContain("<title>Resumed</title>");
+        expect(block).toContain("<title>Other</title>");
+        expect(
+            (
+                await claudeBlock({
+                    env,
+                    session: "1a9fbe6c-eadc-4a7f-b276-81978839a61f",
+                })
+            ).block,
+        ).toContain("<title>Resumed</title>");
+    });
 });
 
 describe("claudeBlock warnings", () => {

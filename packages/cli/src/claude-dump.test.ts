@@ -103,6 +103,15 @@ function harness(send: unknown[] = [{ system: "S" }]) {
                 memory.synced.push(dir);
                 return null;
             },
+            note: async () => {
+                throw new Error("not in a dump");
+            },
+            stale: async () => {
+                throw new Error("not in a dump");
+            },
+            notices: async () => {
+                throw new Error("not in a dump");
+            },
         },
         cwd: "/work",
         self: ["/bin/bun", "/d/index.ts"],
@@ -156,6 +165,8 @@ describe("runClaudeDump", () => {
                     arg.startsWith("--mcp-config"),
             ),
         ).toBe(false);
+        expect(calls.cmd.join(" ")).not.toContain("--claude-hook");
+        expect(calls.cmd.join(" ")).not.toContain("--session-id");
     });
 
     it("passes the user's own --settings on untouched, writing no file", async () => {

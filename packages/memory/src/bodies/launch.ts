@@ -21,18 +21,22 @@ import type { OpenHistory } from "../memory/sidecar.js";
 import { vocabularyPath } from "../memory/vocabulary.js";
 import { syncProject } from "../projects/sync.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
+import { sessionPhrase } from "../recall/sync.js";
 import { transcriptDir } from "../transcript.js";
 
 const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
 
 // Chat's block, its preamble and budget from config.toml, leaving out
-// no conversation: no Claude Code session is recorded yet. Its warnings
-// are its own; the caller reads and reports config.toml's.
+// the conversation of session, the Claude Code session the arguments
+// resume by id, as chat leaves out the live one. Its warnings are its
+// own; the caller reads and reports config.toml's.
 export async function claudeBlock({
     env = process.env,
+    session = null,
 }: {
     env?: Env;
+    session?: string | null;
 } = {}): Promise<{ block: string; warnings: string[] }> {
     const { config } = await readConfig(env);
     if (!config.memory.enabled) {
@@ -49,7 +53,7 @@ export async function claudeBlock({
         const built = buildMemory(loaded.entries, {
             now: Date.now(),
             config: config.memory,
-            exclude: null,
+            exclude: session === null ? null : sessionPhrase(index, session),
         });
         return {
             block: built.block,
