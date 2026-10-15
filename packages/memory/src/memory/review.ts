@@ -131,6 +131,8 @@ export type PendingRead = {
     name: string;
     purpose: string;
     turns: [number, number] | null;
+    // Whether it read a fact, whose name is its title, not a conversation.
+    fact: boolean;
 };
 
 export function pendingReads(
@@ -141,15 +143,18 @@ export function pendingReads(
     return turns.flatMap((turn) =>
         (turn.lookups ?? []).flatMap((lookup) =>
             lookup.tool === "open" &&
-            "conversation" in lookup &&
             lookup.ok &&
             !Object.hasOwn(appraised, lookup.id)
                 ? [
                       {
                           id: lookup.id,
-                          name: nameOf(lookup.conversation),
+                          name:
+                              "fact" in lookup
+                                  ? lookup.name
+                                  : nameOf(lookup.conversation),
                           purpose: lookup.purpose,
                           turns: lookup.turns,
+                          fact: "fact" in lookup,
                       },
                   ]
                 : [],
@@ -271,7 +276,7 @@ export function reviewPrompt(
                   "<reads>",
                   ...reads.map(
                       (read) =>
-                          `<read id="${escapeAttribute(read.id)}" conversation="${escapeAttribute(read.name)}"${
+                          `<read id="${escapeAttribute(read.id)}" ${read.fact ? "fact" : "conversation"}="${escapeAttribute(read.name)}"${
                               read.turns === null
                                   ? ""
                                   : ` turns="${read.turns[0]}-${read.turns[1]}"`

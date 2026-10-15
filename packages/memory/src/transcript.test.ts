@@ -430,6 +430,35 @@ describe("recall events", () => {
         expect(toRecall({ ...JSON.parse(search), offset: -1 })).toBeNull();
     });
 
+    it("reads a fact's open and a search's facts", () => {
+        const base = {
+            v: 1,
+            kind: "recall",
+            at: "2026-10-15T00:00:00.000Z",
+            id: "r1",
+            ok: true,
+            offset: 0,
+        } as const;
+        const fact = {
+            ...base,
+            tool: "open",
+            fact: "personal/tea",
+            name: "Tea",
+            purpose: "p",
+            turns: null,
+        } as const;
+        expect(toRecall(fact)).toEqual(fact);
+        const search = {
+            ...base,
+            tool: "search",
+            query: "q",
+            searched: "facts",
+            hits: 0,
+            facts: 2,
+        } as const;
+        expect(toRecall(search)).toEqual(search);
+    });
+
     it("reads back tag lookups and searches by tag", () => {
         const base = {
             v: 1,

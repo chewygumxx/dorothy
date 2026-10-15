@@ -8,28 +8,40 @@
 //
 //
 
-import type {
-    ConversationObject,
-    Match,
-    OpenInput,
-    OpenResult,
-    RecollectInput,
-    RecollectResult,
-    SearchInput,
-    SearchResult,
-    TagObject,
-    TagsInput,
-    TagsResult,
-    WindowTurn,
+import {
+    type ConversationObject,
+    type FactHit,
+    type Match,
+    type OpenFactResult,
+    type OpenInput,
+    type OpenResult,
+    type RecollectInput,
+    type RecollectResult,
+    SEARCH_KINDS,
+    type SearchInput,
+    type SearchResult,
+    type TagObject,
+    type TagsInput,
+    type TagsResult,
+    type WindowTurn,
 } from "@dorothy/core";
+import {
+    factPath,
+    parseTarget,
+    readFactFile,
+    scopeLabel,
+} from "../facts/store.js";
 import { salience, tokens } from "../memory/rank.js";
 import { characters, normalise } from "../memory/sidecar.js";
 import { byLabel } from "../memory/vocabulary.js";
 import type { RecallIndex } from "./store.js";
 import { readsByTarget, visitsByPhrase } from "./sync.js";
 import {
+    type CarrierRow,
     carriers,
     conceptByLabel,
+    conceptLabels,
+    factCarriers,
     keywordsOf,
     listedConcepts,
     narrowerThan,
@@ -40,6 +52,7 @@ import {
 export class RecallError extends Error {}
 
 export const NOT_FOUND = "No conversation by that name.";
+export const NO_FACT = "No fact by that name.";
 export const NO_CLUSTER = "No cluster by that number.";
 export const NO_TAG = "No tag by that name";
 export const TAGS_UNAVAILABLE = "Tags are unavailable at the moment.";
@@ -59,6 +72,7 @@ export type QueryOptions = {
     exclude: string | null;
     now: number;
     halfLifeDays: number;
+    project?: string | null;
 };
 
 type ConversationRow = {
@@ -196,35 +210,41 @@ function findHits(
     return hits;
 }
 
-// The visible conversations that carry every concept named, or
-// something narrower. A label naming no concept she may see is a
-// mistake to relay.
-function taggedWith(
+// Each label's concept, a mistake to relay unless she may see it: a
+// visible conversation or a fact carries it, or nothing does yet.
+function conceptsOf(
     index: RecallIndex,
     labels: readonly string[],
     exclude: string,
-): Set<string> {
-    const rows = carriers(index);
+    rows: readonly CarrierRow[],
+    facts: readonly { id: string }[],
+): string[] {
     const listed = listedConcepts(index, exclude, rows);
-    let allowed = null as Set<string> | null;
-    for (const label of labels) {
+    const ofFacts = new Set(facts.map((row) => row.id));
+    return labels.map((label) => {
         const id = conceptByLabel(index, label);
-        if (id === null || !listed.has(id)) {
+        if (id === null || !(listed.has(id) || ofFacts.has(id))) {
             throw new RecallError(`${NO_TAG}: ${label}.`);
         }
-        const phrases = new Set(
-            rows
-                .filter(
-                    (row) =>
-                        row.id === id && !row.hidden && row.phrase !== exclude,
-                )
-                .map((row) => row.phrase),
+        return id;
+    });
+}
+
+// What carries every one of the concepts, from [concept, carrier] pairs.
+function carryingAll(
+    pairs: readonly (readonly [string, string])[],
+    ids: readonly string[],
+): Set<string> {
+    let allowed = null as Set<string> | null;
+    for (const id of ids) {
+        const keys = new Set(
+            pairs.filter(([of]) => of === id).map(([, key]) => key),
         );
         const before: Set<string> | null = allowed;
         allowed =
             before === null
-                ? phrases
-                : new Set([...before].filter((phrase) => phrases.has(phrase)));
+                ? keys
+                : new Set([...before].filter((key) => keys.has(key)));
     }
     return allowed ?? new Set();
 }
@@ -253,42 +273,107 @@ function activeIn(
     return hits;
 }
 
-export function search(
+type FactRow = {
+    path: string;
+    scope: string;
+    name: string;
+    title: string;
+    description: string;
+    type: string;
+    origin: string;
+    retired: number;
+    score: number;
+    snippet: string;
+};
+const FACT_COLUMNS =
+    "f.path AS path, f.scope AS scope, f.name AS name, f.title AS title, f.description AS description, f.type AS type, f.origin AS origin, f.retired AS retired";
+
+// BM25 is lower for a better match; the snippet is from whichever of
+// title, description and body matched best.
+function findFacts(
     index: RecallIndex,
-    input: SearchInput,
-    options: QueryOptions,
-): SearchResult {
-    const terms = termsOf(input.query ?? "");
-    const labels = (input.tags ?? [])
-        .map(normalise)
-        .filter((label) => label !== "");
-    if (terms.length === 0 && labels.length === 0) {
-        throw new RecallError("Give some words or tags to search for.");
-    }
-    if (labels.length > MAX_TAG_FILTERS) {
-        throw new RecallError(`Give at most ${MAX_TAG_FILTERS} tags.`);
-    }
-    const broken = vocabularyBroken(index) !== null;
-    if (labels.length > 0 && broken) {
-        throw new RecallError(TAGS_UNAVAILABLE);
-    }
-    const from = dayBound(input.after, "after");
-    const to = dayBound(input.before, "before");
-    const limit = clamp(input.limit, DEFAULT_LIMIT, MAX_LIMIT);
-    const exclude = options.exclude ?? "";
-    const allowed =
-        labels.length === 0 ? null : taggedWith(index, labels, exclude);
-    const within = (found: Map<string, Hit>) =>
-        allowed === null
-            ? found
-            : new Map([...found].filter(([phrase]) => allowed.has(phrase)));
-    let hits =
+    expression: string,
+    from: number,
+    to: number,
+): FactRow[] {
+    return index.db
+        .query(
+            `SELECT ${FACT_COLUMNS}, bm25(facts_fts) AS score,
+                snippet(facts_fts, -1, '«', '»', '…', ${SNIPPET_TOKENS}) AS snippet
+             FROM facts_fts JOIN facts f ON f.rowid = facts_fts.rowid
+             WHERE facts_fts MATCH ? AND f.created BETWEEN ? AND ?`,
+        )
+        .all(expression, from, to) as FactRow[];
+}
+
+// Facts found by tags alone, created within the dates.
+function factsAt(
+    index: RecallIndex,
+    paths: ReadonlySet<string>,
+    from: number,
+    to: number,
+): FactRow[] {
+    const row = index.db.query(
+        `SELECT ${FACT_COLUMNS}, 0 AS score, '' AS snippet FROM facts f
+         WHERE f.path = ? AND f.created BETWEEN ? AND ?`,
+    );
+    return [...paths].flatMap((path) => {
+        const found = row.get(path, from, to) as FactRow | null;
+        return found === null ? [] : [found];
+    });
+}
+
+const factHit = (row: FactRow): FactHit => ({
+    id: `${row.scope}/${row.name}`,
+    scope: row.scope,
+    type: row.type,
+    title: row.title,
+    description: row.description,
+    origin: row.origin,
+    snippet: row.snippet,
+    ...(row.retired !== 0 ? { retired: true as const } : {}),
+});
+
+// Live facts before retired ones, personal and this project's before
+// other projects', then by match.
+function searchFacts(
+    index: RecallIndex,
+    terms: readonly string[],
+    allowed: ReadonlySet<string> | null,
+    span: { from: number; to: number; limit: number },
+    project: string | null,
+): Pick<SearchResult, "facts" | "moreFacts"> {
+    const within = (rows: FactRow[]) =>
+        allowed === null ? rows : rows.filter((row) => allowed.has(row.path));
+    let rows =
         terms.length === 0
-            ? activeIn(index, allowed ?? new Set(), from, to)
-            : within(findHits(index, terms.join(" "), from, to, exclude));
-    if (hits.size === 0 && terms.length > 1) {
-        hits = within(findHits(index, terms.join(" OR "), from, to, exclude));
+            ? factsAt(index, allowed ?? new Set(), span.from, span.to)
+            : within(findFacts(index, terms.join(" "), span.from, span.to));
+    if (rows.length === 0 && terms.length > 1) {
+        rows = within(findFacts(index, terms.join(" OR "), span.from, span.to));
     }
+    const far = (scope: string) =>
+        scope === "personal" || scope === project ? 0 : 1;
+    rows.sort(
+        (a, b) =>
+            a.retired - b.retired ||
+            far(a.scope) - far(b.scope) ||
+            a.score - b.score ||
+            a.path.localeCompare(b.path),
+    );
+    return {
+        facts: rows.slice(0, span.limit).map(factHit),
+        moreFacts: Math.max(0, rows.length - span.limit),
+    };
+}
+
+function rankConversations(
+    index: RecallIndex,
+    hits: Map<string, Hit>,
+    limit: number,
+    broken: boolean,
+    options: QueryOptions,
+): Pick<SearchResult, "results" | "more"> {
     const visits = visitsByPhrase(index);
     const reads = readsByTarget(index);
     const scored = [...hits.values()].map((hit) => ({
@@ -310,8 +395,6 @@ export function search(
         "SELECT phrase, title, description, abstract, first_at, last_at FROM conversations WHERE phrase = ?",
     );
     return {
-        facts: [],
-        moreFacts: 0,
         results: scored.slice(0, limit).map((hit) => ({
             ...objectOf(
                 row.get(hit.phrase) as ConversationRow,
@@ -320,6 +403,76 @@ export function search(
             matches: hit.matches,
         })),
         more: Math.max(0, scored.length - limit),
+    };
+}
+
+export function search(
+    index: RecallIndex,
+    input: SearchInput,
+    options: QueryOptions,
+): SearchResult {
+    const terms = termsOf(input.query ?? "");
+    const labels = (input.tags ?? [])
+        .map(normalise)
+        .filter((label) => label !== "");
+    if (terms.length === 0 && labels.length === 0) {
+        throw new RecallError("Give some words or tags to search for.");
+    }
+    if (labels.length > MAX_TAG_FILTERS) {
+        throw new RecallError(`Give at most ${MAX_TAG_FILTERS} tags.`);
+    }
+    const kind = input.kind;
+    if (
+        kind !== undefined &&
+        !(SEARCH_KINDS as readonly string[]).includes(kind)
+    ) {
+        throw new RecallError("kind must be conversations or facts.");
+    }
+    const broken = vocabularyBroken(index) !== null;
+    if (labels.length > 0 && broken) {
+        throw new RecallError(TAGS_UNAVAILABLE);
+    }
+    const from = dayBound(input.after, "after");
+    const to = dayBound(input.before, "before");
+    const limit = clamp(input.limit, DEFAULT_LIMIT, MAX_LIMIT);
+    const exclude = options.exclude ?? "";
+    const rows = labels.length === 0 ? [] : carriers(index);
+    const factRows = labels.length === 0 ? [] : factCarriers(index);
+    const ids = conceptsOf(index, labels, exclude, rows, factRows);
+    const tagged = (pairs: (readonly [string, string])[]) =>
+        labels.length === 0 ? null : carryingAll(pairs, ids);
+    const facts =
+        kind === "conversations"
+            ? { facts: [], moreFacts: 0 }
+            : searchFacts(
+                  index,
+                  terms,
+                  tagged(factRows.map((row) => [row.id, row.path] as const)),
+                  { from, to, limit },
+                  options.project ?? null,
+              );
+    if (kind === "facts") {
+        return { ...facts, results: [], more: 0 };
+    }
+    const allowed = tagged(
+        rows
+            .filter((row) => !row.hidden && row.phrase !== exclude)
+            .map((row) => [row.id, row.phrase] as const),
+    );
+    const within = (found: Map<string, Hit>) =>
+        allowed === null
+            ? found
+            : new Map([...found].filter(([phrase]) => allowed.has(phrase)));
+    let hits =
+        terms.length === 0
+            ? activeIn(index, allowed ?? new Set(), from, to)
+            : within(findHits(index, terms.join(" "), from, to, exclude));
+    if (hits.size === 0 && terms.length > 1) {
+        hits = within(findHits(index, terms.join(" OR "), from, to, exclude));
+    }
+    return {
+        ...facts,
+        ...rankConversations(index, hits, limit, broken, options),
     };
 }
 
@@ -392,12 +545,8 @@ const isoWindow = (
         at: new Date(row.at).toISOString(),
     }));
 
-export function openConversation(
-    index: RecallIndex,
-    input: OpenInput & { conversation: string },
-    options: { exclude: string | null },
-): OpenResult {
-    const purpose = normalise(input.purpose);
+function checkPurpose(text: string): void {
+    const purpose = normalise(text);
     if (purpose === "") {
         throw new RecallError("Say in purpose what you hope to find.");
     }
@@ -407,6 +556,14 @@ export function openConversation(
             `purpose is ${length} characters, over ${PURPOSE_LIMIT}.`,
         );
     }
+}
+
+export function openConversation(
+    index: RecallIndex,
+    input: OpenInput & { conversation: string },
+    options: { exclude: string | null },
+): OpenResult {
+    checkPurpose(input.purpose);
     const row = index.db
         .query(
             `SELECT phrase, title, description, abstract, first_at, last_at
@@ -436,6 +593,46 @@ export function openConversation(
         ...(row.abstract !== null ? { abstract: row.abstract } : {}),
         turns: turns.length,
         window: isoWindow(turns, input.turn),
+    };
+}
+
+export async function openFact(
+    index: RecallIndex,
+    input: OpenInput,
+    root: string,
+): Promise<OpenFactResult> {
+    checkPurpose(input.purpose);
+    const target = parseTarget(input.fact ?? "");
+    if (target === null) {
+        throw new RecallError(NO_FACT);
+    }
+    const read = await readFactFile(
+        factPath(root, target.scope, target.name),
+        target.name,
+    );
+    if (read.kind === "none") {
+        throw new RecallError(NO_FACT);
+    }
+    if (read.kind === "unparseable") {
+        throw new RecallError(`That fact cannot be read: ${read.reason}`);
+    }
+    const { fact } = read;
+    const scope = scopeLabel(target.scope);
+    return {
+        id: `${scope}/${fact.name}`,
+        scope,
+        name: fact.name,
+        type: fact.type,
+        title: fact.title,
+        description: fact.description,
+        keywords:
+            vocabularyBroken(index) === null
+                ? conceptLabels(index, fact.tags)
+                : [],
+        importance: fact.importance,
+        provenance: fact.provenance,
+        retired: fact.retired,
+        body: fact.body,
     };
 }
 

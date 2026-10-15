@@ -210,23 +210,33 @@ export function toRecall(event: unknown): RecallEvent | null {
                 ? { before: event.before }
                 : {}),
             ...(isStringList(event.tags) ? { tags: event.tags } : {}),
+            ...(event.searched === "conversations" || event.searched === "facts"
+                ? { searched: event.searched }
+                : {}),
+            ...(Number.isInteger(event.facts)
+                ? { facts: event.facts as number }
+                : {}),
         };
     }
     if (
         event.tool === "open" &&
-        typeof event.conversation === "string" &&
         typeof event.name === "string" &&
         typeof event.purpose === "string" &&
         (event.turns === null || isTurnRange(event.turns))
     ) {
-        return {
+        const open = {
             ...base,
-            tool: "open",
-            conversation: event.conversation,
+            tool: "open" as const,
             name: event.name,
             purpose: event.purpose,
             turns: event.turns,
         };
+        if (typeof event.conversation === "string") {
+            return { ...open, conversation: event.conversation };
+        }
+        if (typeof event.fact === "string") {
+            return { ...open, fact: event.fact };
+        }
     }
     if (
         event.tool === "recollect" &&

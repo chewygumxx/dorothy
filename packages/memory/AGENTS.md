@@ -75,10 +75,10 @@ is the only file importing `@modelcontextprotocol/sdk`.
   transcripts and sidecars before every query, taking each conversation's
   source and project from its first session, and `facts.ts` syncs the
   store's facts by mtime from the data directory every caller passes;
-  `query.ts` has `search` and `open`; `tags.ts` mirrors the vocabulary;
-  `server.ts` serves them over MCP on stdio as `dorothy --recall-server`.
-  Reviews appraise each read into the sidecar, and `salience()`
-  (`rank.ts`) weighs appraised reads with visits.
+  `query.ts` has `search` and `open` of conversations and facts; `tags.ts`
+  mirrors the vocabulary; `server.ts` serves them over MCP on stdio as
+  `dorothy --recall-server`. Reviews appraise each read, of a fact too,
+  into the sidecar, and `salience()` (`rank.ts`) weighs them with visits.
 - `compaction/`: past `[compaction] soft` tokens, at the next idle (past
   `hard`, before the next message), `compact()` splits the turns before
   the verbatim tail into topical clusters with an abstract each; read
