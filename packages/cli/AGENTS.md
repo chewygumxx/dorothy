@@ -36,7 +36,9 @@ Agent SDK. Keep every new mode's import lazy.
 
 - `index.ts`: the entry guard, the flags (`parseArgs`, `USAGE`) and the
   modes.
-- `run-tui.ts`: `runTui` connects memory, the agent and `runApp`.
+- `run-tui.ts`: `runTui` connects memory, the agent and `runApp`, with
+  the directory the user ran it from (`userShell`), whose project chat
+  records and syncs.
   `openMemory` gets `structuredCall`, the persona's prompts as text and a
   `connect` that starts a `Conversation`, and the screen runs over its
   `createSession`. Once `runTui` resolves, everything is closed and the
@@ -48,19 +50,31 @@ Agent SDK. Keep every new mode's import lazy.
   gateway and readies `claude` from `PATH` with `ANTHROPIC_BASE_URL` at
   it, `ENABLE_TOOL_SEARCH=1` unless the user set it, and the marker
   appended to its prompt (with the user's own `--append-system-prompt`,
-  as Claude Code keeps only the last; `claudeArgs`). `runClaude` runs it
-  for `--claude`, forwards `SIGTERM` and `SIGHUP`, ignores `SIGINT` (the
-  terminal sends it to `claude` too), and exits with `claude`'s code. From
-  a package script (`bun run dev`), `userShell` gives `claude` the
+  as Claude Code keeps only the last; `claudeArgs`). With
+  `[memory] enabled` it syncs the project `claude` starts in, gives the
+  gateway chat's memory block as its section, and sets
+  `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`; with `recall` too, `--mcp-config=`
+  offers the recall server as `dorothy-memory` with `--project`, and
+  `--settings=` allows its tools, a user's own `--settings` merged in
+  (`dorothyFlags`). A merged settings file may hold secrets and argv is
+  world-readable, so the merge goes to a private file (mode 0600, in
+  `$XDG_RUNTIME_DIR/dorothy` or a 0700 `dorothy-<uid>` under the temporary
+  directory; `privateWriter`) passed by path, removed by `Launch.cleanup`
+  when `claude` exits; inline JSON stays inline. `runClaude` runs it for
+  `--claude`, forwards `SIGTERM` and `SIGHUP`, ignores `SIGINT` (the
+  terminal sends it to `claude` too), and exits with `claude`'s code.
+  From a package script (`bun run dev`), `userShell` gives `claude` the
   directory it was run from and the `PATH` before Bun prepended its
   `node_modules/.bin` entries.
 - `claude-dump.ts`: `runClaudeDump` for `--claude --dump-context`: the
   gateway's upstream is `captureServer` from `@dorothy/agent`, `claude`
   runs quietly in print mode without saving its session, and is stopped
   at the first request, which is printed with a warning if the gateway
-  injected nothing. Imported lazily, so `--claude` never loads the SDK.
+  injected nothing, with the block alone: no sync, recall or
+  permissions. Imported lazily, so `--claude` never loads the SDK.
 - `recall-launch.ts`: `recallLaunch` launches this program again as the
-  recall server, leaving out the conversation it serves.
+  recall server, leaving out the conversation it serves and, with
+  `--project`, naming the directory chat started in.
 
 ## Invariants
 
@@ -68,7 +82,7 @@ Agent SDK. Keep every new mode's import lazy.
   `.env`; the entry guard calls dotenvx's `config()` to decrypt it with
   the private key from Dotenvx Armor or a gitignored `.env.keys`.
 - `--claude` loads no `.env`: `claude` signs in as the user's own Claude
-  Code does.
+  Code does, and memory is read without credentials.
 - `@dotenvx/dotenvx` is declared here, by `memory`, whose history commands
   save the mirror's key with its `set`, and in the root's development
   dependencies, which the root's `lint:env` script and the pre-commit

@@ -41,7 +41,9 @@ below. It declares `niceware` alone, and never imports another
 - `contracts/notices.ts`: `Notice` and `NoticeSource`, what memory and
   history show on screen.
 - `contracts/editor.ts`: `Editor`, the external editor's contract.
-- `contracts/recall.ts`: the recall tools' names and shapes.
+- `contracts/recall.ts`: the memory tools' names and shapes: chat's server
+  and Claude Code's, the lookups, `remember`, and search and open over
+  facts.
 - `config.ts`: `config.toml` (`readConfig`, `parseConfig`).
 - `xdg.ts`: the XDG directories (`xdgDir`).
 - `session-id.ts`: session phrases; `timers.ts`: injectable timers.

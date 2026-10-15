@@ -15,7 +15,9 @@ import { FakeSession } from "./fake-session.js";
 import { EXPECTED, HASH, PHRASE, SCRIPT } from "./record.fixture.js";
 import { noticeChannel, sessionRecorder } from "./record.js";
 
-function recorded(options: { resumed?: boolean; fail?: boolean } = {}) {
+function recorded(
+    options: { resumed?: boolean; fail?: boolean; project?: string } = {},
+) {
     const entries: TranscriptEntry[] = [];
     const warnings: string[] = [];
     const wrap = sessionRecorder({
@@ -30,6 +32,7 @@ function recorded(options: { resumed?: boolean; fail?: boolean } = {}) {
         phrase: PHRASE,
         promptHash: HASH,
         resumed: options.resumed ?? false,
+        ...(options.project === undefined ? {} : { project: options.project }),
         warn: (message) => {
             warnings.push(message);
         },
@@ -72,6 +75,49 @@ describe("sessionRecorder", () => {
         }
         await settle();
         expect(entries).toEqual(EXPECTED);
+    });
+
+    it("records a remember as her own memory tool entry", async () => {
+        const { entries, wrap } = recorded();
+        const inner = new FakeSession();
+        wrap(inner);
+        inner.emit({
+            type: "remember",
+            id: "t1",
+            ok: true,
+            offset: 0,
+            input: { action: "write", name: "tea" },
+            output: '{"action":"written","id":"personal/tea"}',
+        });
+        await settle();
+        expect(entries).toEqual([
+            {
+                kind: "tool",
+                name: "mcp__memory__remember",
+                input: '{"action":"write","name":"tea"}',
+                output: '{"action":"written","id":"personal/tea"}',
+                ok: true,
+                cut: { input: 0, output: 0 },
+                memory: true,
+            },
+        ]);
+    });
+
+    it("records the project chat started in on its session, if any", async () => {
+        for (const project of ["github.com/u/here", undefined]) {
+            const { entries, wrap } = recorded(
+                project === undefined ? {} : { project },
+            );
+            const inner = new FakeSession();
+            wrap(inner);
+            inner.emit({ type: "ready", model: "m", sdkSessionId: "s" });
+            await settle();
+            if (project === undefined) {
+                expect(entries[0]).not.toHaveProperty("project");
+            } else {
+                expect(entries[0]).toMatchObject({ kind: "session", project });
+            }
+        }
     });
 
     it("records a resumed chat's first session as resumed", async () => {

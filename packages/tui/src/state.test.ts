@@ -16,6 +16,7 @@ import {
     lookupLine,
     RAW_LIMIT,
     reduce,
+    rememberLine,
 } from "./state.js";
 
 const stats: TurnStats = {
@@ -332,6 +333,16 @@ describe("lookupLine", () => {
         );
     });
 
+    it("counts the facts a search found", () => {
+        const search = { tool: "search" as const, query: "tea" };
+        expect(lookupLine(true, { ...search, hits: 2, facts: 1 })).toEqual({
+            text: '⌕ searched "tea" · 1 fact, 2 conversations',
+        });
+        expect(lookupLine(true, { ...search, hits: 0, facts: 0 })).toEqual({
+            text: '⌕ searched "tea" · nothing found',
+        });
+    });
+
     it("keeps what the model wrote to one row of printable text", () => {
         expect(
             lookupLine(true, { ...searched, query: "a\nb\x1b[31m\tc \u202e" })
@@ -357,6 +368,61 @@ describe("lookupLine", () => {
         expect(
             lookupLine(false, { ...opened, name: opened.conversation }),
         ).toEqual({ text: "⌕ couldn't open amber-otter-quietly-sings" });
+    });
+});
+
+describe("rememberLine", () => {
+    it("names what she kept or retired, and why she could not", () => {
+        expect(
+            rememberLine(
+                true,
+                { action: "write", name: "tea" },
+                '{"action":"written","id":"personal/tea"}',
+            ),
+        ).toEqual({ text: "✎ remembered personal/tea" });
+        expect(
+            rememberLine(
+                true,
+                { action: "retire", name: "tea" },
+                '{"action":"retired","id":"personal/tea"}',
+            ),
+        ).toEqual({ text: "✎ retired personal/tea" });
+        expect(
+            rememberLine(
+                false,
+                { action: "write", name: "tea" },
+                "personal/tea is the user's:\nyou cannot",
+            ),
+        ).toEqual({
+            text: "✎ couldn't remember tea",
+            detail: "personal/tea is the user's: you cannot",
+        });
+    });
+});
+
+describe("a remember in a live reply", () => {
+    it("splits the live text around its line, as a lookup does", () => {
+        const state = run(
+            streaming(),
+            deltaOf("Noting that."),
+            event({
+                type: "remember",
+                id: "t1",
+                ok: true,
+                offset: 12,
+                input: { action: "write", name: "tea" },
+                output: '{"action":"written","id":"personal/tea"}',
+            }),
+            deltaOf("\n\nDone."),
+            endOf("Noting that.\n\nDone."),
+        );
+        expect(
+            state.lines.slice(1).map((line) => [line.role, line.text]),
+        ).toEqual([
+            ["dorothy", "Noting that."],
+            ["lookup", "✎ remembered personal/tea"],
+            ["dorothy", "Done."],
+        ]);
     });
 });
 

@@ -308,9 +308,48 @@ describe("pendingReads", () => {
                 name: "Terminal rendering chaos",
                 purpose: "why toolu_1",
                 turns: [3, 5],
+                fact: false,
             },
         ]);
         expect(pendingReads(READ_TURNS, { toolu_1: {} }, String)).toEqual([]);
+    });
+
+    it("awaits the appraisal of a fact's read, named by its title", () => {
+        const turns: ResumedTurn[] = [
+            { role: "user", text: "tea?" },
+            {
+                role: "assistant",
+                text: "Yes.",
+                lookups: [
+                    {
+                        v: 1,
+                        kind: "recall",
+                        at: "2026-10-15T00:00:00.000Z",
+                        id: "r1",
+                        ok: true,
+                        offset: 0,
+                        tool: "open",
+                        fact: "personal/tea",
+                        name: "Tea at four",
+                        purpose: "her tea",
+                        turns: null,
+                    },
+                ],
+            },
+        ];
+        const reads = pendingReads(turns, {}, () => "unused");
+        expect(reads).toEqual([
+            {
+                id: "r1",
+                name: "Tea at four",
+                purpose: "her tea",
+                turns: null,
+                fact: true,
+            },
+        ]);
+        expect(reviewPrompt(turns, null, reads)).toContain(
+            '<read id="r1" fact="Tea at four">her tea</read>',
+        );
     });
 });
 
@@ -322,6 +361,7 @@ describe("reviewPrompt with reads", () => {
                 name: 'The "<render>" bug',
                 purpose: "a & b",
                 turns: [3, 5],
+                fact: false,
             },
         ]);
         expect(prompt).toContain(

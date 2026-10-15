@@ -90,12 +90,15 @@ export function lookupLine(
         if (!ok) {
             return { text: `⌕ couldn't search ${subject}` };
         }
-        const found =
-            lookup.hits === 0
-                ? "nothing found"
-                : lookup.hits === 1
-                  ? "1 conversation"
-                  : `${lookup.hits} conversations`;
+        const plural = (count: number, noun: string) =>
+            `${count} ${noun}${count === 1 ? "" : "s"}`;
+        const counts = [
+            ...((lookup.facts ?? 0) > 0
+                ? [plural(lookup.facts as number, "fact")]
+                : []),
+            ...(lookup.hits > 0 ? [plural(lookup.hits, "conversation")] : []),
+        ];
+        const found = counts.length === 0 ? "nothing found" : counts.join(", ");
         return { text: `⌕ searched ${subject} · ${found}` };
     }
     if (lookup.tool === "tags") {
@@ -133,6 +136,39 @@ export function lookupLine(
               detail: `for: ${oneRow(lookup.purpose)}`,
           }
         : { text: `⌕ couldn't open ${name}` };
+}
+
+// A remember call as a dim line: what she kept or retired, or why she
+// could not.
+export function rememberLine(
+    ok: boolean,
+    input: unknown,
+    output: string,
+): { text: string; detail?: string } {
+    const fields =
+        typeof input === "object" && input !== null
+            ? (input as Record<string, unknown>)
+            : {};
+    const name = oneRow(typeof fields.name === "string" ? fields.name : "");
+    const retiring = fields.action === "retire";
+    if (!ok) {
+        const why = oneRow(output);
+        return {
+            text: `✎ couldn't ${retiring ? "retire" : "remember"} ${name}`,
+            ...(why === "" ? {} : { detail: why }),
+        };
+    }
+    let id = name;
+    try {
+        const parsed: unknown = JSON.parse(output);
+        const named = (parsed as { id?: unknown } | null)?.id;
+        if (typeof named === "string") {
+            id = oneRow(named);
+        }
+    } catch {
+        // The name she gave stands.
+    }
+    return { text: `✎ ${retiring ? "retired" : "remembered"} ${id}` };
 }
 
 // A resumed reply, split where its lookups happened, as it was shown live.
@@ -212,6 +248,32 @@ function append(lines: Line[], line: Omit<Line, "id">): Line[] {
     return [...lines, { id: lines.length, ...line }];
 }
 
+// A dim memory line where a lookup or a remember happened: the live text
+// so far moves above it, and the reply goes on below.
+function memoryLine(
+    state: ChatState,
+    line: { text: string; detail?: string },
+    offset: number,
+): ChatState {
+    const segment = state.live.trim();
+    const lines =
+        segment === ""
+            ? state.lines
+            : append(state.lines, {
+                  role: "dorothy",
+                  text: segment,
+                  continued: state.continued,
+              });
+    return {
+        ...state,
+        lines: append(lines, { role: "lookup", ...line }),
+        live: "",
+        split: true,
+        continued: state.continued || segment !== "",
+        replyOffset: offset,
+    };
+}
+
 function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
     switch (event.type) {
         case "ready":
@@ -287,28 +349,18 @@ function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
             };
         case "memory-cost":
             return reduce(state, { type: "memory-cost", usd: event.usd });
-        case "lookup": {
-            const segment = state.live.trim();
-            const lines =
-                segment === ""
-                    ? state.lines
-                    : append(state.lines, {
-                          role: "dorothy",
-                          text: segment,
-                          continued: state.continued,
-                      });
-            return {
-                ...state,
-                lines: append(lines, {
-                    role: "lookup",
-                    ...lookupLine(event.ok, event.lookup),
-                }),
-                live: "",
-                split: true,
-                continued: state.continued || segment !== "",
-                replyOffset: event.offset,
-            };
-        }
+        case "lookup":
+            return memoryLine(
+                state,
+                lookupLine(event.ok, event.lookup),
+                event.offset,
+            );
+        case "remember":
+            return memoryLine(
+                state,
+                rememberLine(event.ok, event.input, event.output),
+                event.offset,
+            );
         case "error": {
             // With nothing live, a lookup pending at the failure may just
             // have flushed the reply's text; that line carries the marker.

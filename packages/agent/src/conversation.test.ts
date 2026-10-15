@@ -576,6 +576,7 @@ describe("Conversation with recall", () => {
             "mcp__memory__search",
             "mcp__memory__open",
             "mcp__memory__tags",
+            "mcp__memory__remember",
             "mcp__memory__recollect",
         ]);
     });
@@ -619,6 +620,7 @@ describe("Conversation with recall", () => {
             "mcp__memory__search",
             "mcp__memory__open",
             "mcp__memory__tags",
+            "mcp__memory__remember",
         ]);
         expect(fake.options?.systemPrompt).toBe(
             withHistory(withSection(personaPrompt({ recall: true }), ""), []),
@@ -743,6 +745,52 @@ describe("Conversation with recall", () => {
         expect(
             events.findIndex((event) => event.type === "lookup"),
         ).toBeLessThan(events.findIndex((event) => event.type === "turn-end"));
+    });
+
+    it("emits a call to remember as a remember event, not a lookup", async () => {
+        const input = { action: "write", name: "tea" };
+        const output = '{"action":"written","id":"personal/tea"}';
+        const fake = fakeQuery([
+            [
+                toolUse("t1", "mcp__memory__remember", input),
+                toolResult("t1", output),
+                result(0.01),
+            ],
+        ]);
+        const { conversation, events } = startedWithRecall(fake);
+        conversation.send("I like tea");
+        await until(() => of(events, "turn-end").length === 1);
+        expect(of(events, "remember")).toEqual([
+            { type: "remember", id: "t1", ok: true, offset: 0, input, output },
+        ]);
+        expect(events.some((event) => event.type === "lookup")).toBe(false);
+    });
+
+    it("reports a remember the turn ended without answering", async () => {
+        const input = { action: "write", name: "tea" };
+        const fake = fakeQuery([
+            [
+                delta("Noting."),
+                toolUse("t1", "mcp__memory__remember", input),
+                WAIT_FOR_INTERRUPT,
+                result(0.01),
+            ],
+        ]);
+        const { conversation, events } = startedWithRecall(fake);
+        conversation.send("I like tea");
+        await until(() => of(events, "delta").length === 1);
+        await conversation.interrupt();
+        await until(() => of(events, "turn-end").length === 1);
+        expect(of(events, "remember")).toEqual([
+            {
+                type: "remember",
+                id: "t1",
+                ok: false,
+                offset: 7,
+                input,
+                output: "",
+            },
+        ]);
     });
 
     it("warns once when the recall server failed", async () => {

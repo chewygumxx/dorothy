@@ -95,10 +95,15 @@ const CHAT = [
 const CHAT_RECALL = CHAT.replace(
     "you have no tools:",
     "you have no tools except your memory tools:",
-).replace(
-    "not cover, say",
-    "not cover, look it up; if you cannot find it, say",
-);
+)
+    .replace(
+        "not cover, say",
+        "not cover, look it up; if you cannot find it, say",
+    )
+    .replace(
+        "rather than invent detail.",
+        "rather than invent detail. When you learn something lasting about the user or their work, keep it with your remember tool, and correct or retire what you kept when it changes.",
+    );
 
 describe("personaComponents", () => {
     const names = (options: Parameters<typeof personaComponents>[0]) =>
@@ -184,6 +189,9 @@ describe("personaPrompt", () => {
         expect(prompt).toContain("development mode");
         expect(prompt).toContain("faithfully");
         expect(prompt).toContain("memory tools");
+        expect(prompt).toContain(
+            "open your earlier conversations with this user, and keep facts; you",
+        );
         expect(prompt).not.toContain("incidental plumbing");
     });
 

@@ -12,39 +12,62 @@ import { type Env, readConfig, SERVER_NAME } from "@dorothy/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { dataRoot } from "../facts/store.js";
+import { FACT_TYPES } from "../facts/file.js";
+import { dataRoot, type FactStore } from "../facts/store.js";
+import type { HistoryHandle, OpenHistory } from "../memory/sidecar.js";
 import { vocabularyPath } from "../memory/vocabulary.js";
+import { identify } from "../projects/identify.js";
 import { transcriptDir } from "../transcript.js";
 import {
     listTags,
+    NO_FACT,
     openConversation,
+    openFact,
     RecallError,
     recollect,
     search,
 } from "./query.js";
+import { remember } from "./remember.js";
 import { indexPath, RecallIndex } from "./store.js";
 import { syncIndex } from "./sync.js";
 
 // The guidance on when to look things up lives here: it always reaches the
 // model with the tools.
 export const SEARCH_DESCRIPTION = [
-    "Search your past conversations with this user by the words they",
-    "contain, by tags, or both. Your notes on earlier conversations give",
-    "their gist; when the notes or the user point at detail you lack,",
-    "search, then open what matched. tags are labels from the tags tool;",
-    "a result carries every one of them, or a narrower tag. Each result",
-    "names a conversation, with its description, its tags as keywords,",
-    "dates and up to three snippets, matched words marked with « and ».",
-    "after and before are dates like 2026-10-05; limit is 1 to 10, 5 by",
-    "default.",
+    "Search your memory by the words it contains, by tags, or both: the",
+    "facts you and the user have kept, and your past conversations with",
+    "this user. Your notes on earlier conversations give their gist; when",
+    "they or the user point at detail you lack, search, then open what",
+    "matched. Facts come first, live before retired, each with its id,",
+    "scope, type, title, description, origin and a snippet; then",
+    "conversations, each with its description, its tags as keywords,",
+    "dates and up to three snippets. Matched words are marked with « and",
+    "». kind limits the search to conversations or facts. tags are labels",
+    "from the tags tool; a result carries every one of them, or a",
+    "narrower tag. after and before are dates like 2026-10-05, a fact's",
+    "by when it was created; limit is 1 to 10 for each, 5 by default.",
 ].join(" ");
 
 export const OPEN_DESCRIPTION = [
-    "Open one past conversation to read what was said, usually at a turn a",
-    "search matched. Say honestly in purpose what you hope to find; later",
-    "you will judge whether it served. Returns the conversation's notes and",
-    "the turns around the one asked for; open again at another turn to read",
-    "further.",
+    "Open one past conversation, usually at a turn a search matched, or",
+    "one fact by its id. Give conversation or fact, not both. Say",
+    "honestly in purpose what you hope to find; later you will judge",
+    "whether it served. A conversation returns its notes and the turns",
+    "around the one asked for; open again at another turn to read",
+    "further. A fact returns whole, with who wrote it and from where.",
+].join(" ");
+
+export const REMEMBER_DESCRIPTION = [
+    "Keep a fact for later conversations, in Claude Code and in chat:",
+    "something lasting about the user, their work or how they want you",
+    "to work, not what this conversation already holds. action write",
+    "takes name (lower case words joined by hyphens), scope (personal,",
+    "or project for this session's repository), type (user, feedback,",
+    "project or reference), title (at most 60 characters), description",
+    "(one sentence, at most 160) and body. Writing a name that exists",
+    "corrects that fact. action retire takes name, scope and why. You",
+    "cannot change a fact the user or a repository wrote, nor revive a",
+    "retired one: tell the user what you would change instead.",
 ].join(" ");
 
 export const RECOLLECT_DESCRIPTION = [
@@ -80,6 +103,12 @@ export type RecallServerOptions = {
     recollect?: boolean;
     halfLifeDays: number;
     now?: () => number;
+    // The server's project id: search ranks its facts with personal
+    // ones, and remember writes scope "project" there. null outside one.
+    project?: string | null;
+    // History for remember's commits, opened at its first call, never
+    // pushing; null commits nothing.
+    openHistory?: OpenHistory | null;
 };
 
 const describeError = (error: unknown) =>
@@ -122,12 +151,50 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
             };
         }
     };
+    const project = options.project ?? null;
+    const root = options.facts ?? null;
+    let versions: HistoryHandle | null | undefined;
+    // remember writes under the store's lock, which is the index's: it
+    // never runs inside exclusive, and the next query syncs what it wrote.
+    const write = async (work: (store: FactStore) => Promise<unknown>) => {
+        try {
+            if (root === null) {
+                throw new RecallError("Facts are unavailable.");
+            }
+            index ??= options.openIndex();
+            // Opened once: null (history off or broken) is kept too.
+            if (versions === undefined) {
+                versions = (await options.openHistory?.(index)) ?? null;
+            }
+            const result = await work({
+                root,
+                lock: index.lock,
+                recorder: versions?.recorder ?? null,
+                now: () => new Date(now()),
+            });
+            return {
+                content: [
+                    { type: "text" as const, text: JSON.stringify(result) },
+                ],
+            };
+        } catch (error) {
+            const text =
+                error instanceof RecallError
+                    ? error.message
+                    : `Memory could not be written: ${describeError(error)}`;
+            return {
+                isError: true,
+                content: [{ type: "text" as const, text }],
+            };
+        }
+    };
     server.registerTool(
         "search",
         {
             description: SEARCH_DESCRIPTION,
             inputSchema: {
                 query: z.string().optional(),
+                kind: z.enum(["conversations", "facts"]).optional(),
                 tags: z.array(z.string()).optional(),
                 after: z.string().optional(),
                 before: z.string().optional(),
@@ -140,6 +207,7 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
                     exclude: options.exclude,
                     now: now(),
                     halfLifeDays: options.halfLifeDays,
+                    project,
                 }),
             ),
     );
@@ -148,15 +216,34 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
         {
             description: OPEN_DESCRIPTION,
             inputSchema: {
-                conversation: z.string(),
+                conversation: z.string().optional(),
+                fact: z.string().optional(),
                 purpose: z.string(),
                 turn: z.number().optional(),
             },
         },
         (input) =>
-            answer((index) =>
-                openConversation(index, input, { exclude: options.exclude }),
-            ),
+            answer((index) => {
+                const { conversation, fact } = input;
+                if ((conversation === undefined) === (fact === undefined)) {
+                    throw new RecallError(
+                        conversation === undefined
+                            ? "Give a conversation or a fact to open."
+                            : "Give a conversation or a fact to open, not both.",
+                    );
+                }
+                if (fact !== undefined) {
+                    if (root === null) {
+                        throw new RecallError(NO_FACT);
+                    }
+                    return openFact(index, input, root);
+                }
+                return openConversation(
+                    index,
+                    { ...input, conversation: conversation as string },
+                    { exclude: options.exclude },
+                );
+            }),
     );
     server.registerTool(
         "tags",
@@ -192,17 +279,46 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
                 answer((index) => recollect(index, input, { phrase: live })),
         );
     }
+    if (root !== null) {
+        server.registerTool(
+            "remember",
+            {
+                description: REMEMBER_DESCRIPTION,
+                inputSchema: {
+                    action: z.enum(["write", "retire"]),
+                    name: z.string(),
+                    scope: z.enum(["personal", "project"]),
+                    type: z.enum(FACT_TYPES).optional(),
+                    title: z.string().optional(),
+                    description: z.string().optional(),
+                    body: z.string().optional(),
+                    why: z.string().optional(),
+                },
+            },
+            (input) =>
+                write((store) =>
+                    remember(store, input, { project, from: options.exclude }),
+                ),
+        );
+    }
     return server;
 }
 
 // dorothy --recall-server: an MCP server on stdin and stdout until stdin
-// closes. It talks to no model, so it needs no credentials.
+// closes. It talks to no model, so it needs no credentials. History is
+// opened for remember's commits alone, never to push the mirror: chat's
+// launch does that.
 export async function runRecallServer(
-    exclude: string | null,
-    serveRecollect: boolean,
+    {
+        exclude,
+        recollect: serveRecollect,
+        project,
+    }: { exclude: string | null; recollect: boolean; project: string | null },
     env: Env = process.env,
 ): Promise<number> {
     const { config } = await readConfig(env);
+    const found =
+        project === null ? null : await identify(project).catch(() => null);
     const server = createRecallServer({
         openIndex: () => RecallIndex.open(indexPath(env)),
         dir: transcriptDir(env),
@@ -211,6 +327,11 @@ export async function runRecallServer(
         exclude,
         recollect: serveRecollect,
         halfLifeDays: config.memory.halfLifeDays,
+        project: found?.id ?? null,
+        openHistory: async (index) => {
+            const { commandHistory } = await import("../history/commands.js");
+            return commandHistory({ env, remindMirror: false })(index);
+        },
     });
     const closed = new Promise<void>((resolve) => {
         process.stdin.once("end", resolve);

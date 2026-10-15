@@ -8,7 +8,22 @@
 //
 //
 
-import type { Env } from "@dorothy/core";
+import {
+    chmodSync,
+    lstatSync,
+    mkdirSync,
+    readFileSync,
+    rmSync,
+    writeFileSync,
+} from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
+import {
+    CLAUDE_ALLOWED_TOOLS,
+    CLAUDE_SERVER_NAME,
+    type Config,
+    type Env,
+    readConfig,
+} from "@dorothy/core";
 import {
     type Gateway,
     MARKER,
@@ -24,11 +39,45 @@ export type Spawned = {
 export type ClaudeDeps = {
     env?: Env;
     which?: (command: string, options: { PATH: string }) => string | null;
-    startGateway?: (options: { upstream: string }) => Gateway;
+    startGateway?: (options: { upstream: string; section: string }) => Gateway;
     spawn?: (cmd: string[], env: Env, cwd?: string) => Spawned;
     write?: (text: string) => void;
     signals?: Pick<NodeJS.EventEmitter, "on" | "off">;
+    config?: (env: Env) => Promise<{ config: Config; warnings: string[] }>;
+    memory?: ClaudeMemory;
+    // Where dorothy runs; claude starts there unless a package script
+    // says otherwise.
+    cwd?: string;
+    // This program as a command, as claude starts the recall server.
+    self?: readonly string[];
+    // Reads a file the user's own --settings names.
+    read?: (path: string) => string;
+    // Writes text to a new file only the user can read, and says where.
+    writePrivate?: (text: string) => string;
+    // Removes a file writePrivate made.
+    remove?: (path: string) => void;
 };
+
+// A new file of mode 0600 in $XDG_RUNTIME_DIR/dorothy, or else in a
+// directory of mode 0700 of the user's own under the temporary directory.
+export function privateWriter(env: Env): (text: string) => string {
+    return (text) => {
+        const uid = process.getuid?.() ?? 0;
+        const dir =
+            env.XDG_RUNTIME_DIR === undefined || env.XDG_RUNTIME_DIR === ""
+                ? join(env.TMPDIR || "/tmp", `dorothy-${uid}`)
+                : join(env.XDG_RUNTIME_DIR, "dorothy");
+        mkdirSync(dir, { recursive: true, mode: 0o700 });
+        const info = lstatSync(dir);
+        if (!info.isDirectory() || info.uid !== uid) {
+            throw new Error(`${dir} is not a directory of your own`);
+        }
+        chmodSync(dir, 0o700);
+        const path = join(dir, `settings-${crypto.randomUUID()}.json`);
+        writeFileSync(path, text, { mode: 0o600, flag: "wx" });
+        return path;
+    };
+}
 
 // The terminal sends SIGINT to the whole foreground group, claude
 // included: forwarding it would send claude a second, which it reads as
@@ -36,6 +85,22 @@ export type ClaudeDeps = {
 // dorothy alone, so claude is told; after a hangup it gets HUP twice,
 // which does no harm.
 const FORWARDED = ["SIGTERM", "SIGHUP"] as const;
+
+// What --claude asks of memory, loaded only when memory is on.
+export type ClaudeMemory = {
+    // Chat's memory block, rendered by chat's code; "" for none.
+    block(env: Env): Promise<{ block: string; warnings: string[] }>;
+    // Syncs the project of a directory, if it is in one: null, or why
+    // the sync failed.
+    sync(dir: string, env: Env): Promise<string | null>;
+};
+
+const MEMORY: ClaudeMemory = {
+    block: async (env) =>
+        (await import("@dorothy/memory")).claudeBlock({ env }),
+    sync: async (dir, env) =>
+        (await import("@dorothy/memory")).syncDirectory(dir, { env }),
+};
 
 const APPEND = "--append-system-prompt";
 
@@ -64,6 +129,145 @@ export function claudeArgs(args: readonly string[]): string[] {
     }
     const text = appended === undefined ? MARKER : `${appended}\n\n${MARKER}`;
     return [APPEND, text, ...rest];
+}
+
+const SETTINGS = "--settings";
+const MCP_CONFIG = "--mcp-config";
+// The flags of which Claude Code keeps only the last it is given, as the
+// delivery probe found: a user's own is merged into Dorothy's. Repeated
+// --mcp-config flags accumulate, so the user's are passed as given.
+const MERGED: ReadonlySet<string> = new Set([SETTINGS]);
+
+type Json = Record<string, unknown>;
+const isJson = (value: unknown): value is Json =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+const describeError = (error: unknown) =>
+    error instanceof Error ? error.message : String(error);
+
+// b merged into a: objects key by key, arrays joined without repeats,
+// anything else b's.
+export function mergeJson(a: Json, b: Json): Json {
+    const out: Json = { ...a };
+    for (const [key, value] of Object.entries(b)) {
+        const before = out[key];
+        out[key] =
+            isJson(before) && isJson(value)
+                ? mergeJson(before, value)
+                : Array.isArray(before) && Array.isArray(value)
+                  ? [...new Set([...before, ...value])]
+                  : value;
+    }
+    return out;
+}
+
+// A flag's value as JSON: inline, or the file it names.
+function jsonOf(
+    value: string,
+    cwd: string,
+    read: (path: string) => string,
+): Json | { problem: string } {
+    try {
+        const text = value.trimStart().startsWith("{")
+            ? value
+            : read(isAbsolute(value) ? value : resolve(cwd, value));
+        const parsed: unknown = JSON.parse(text);
+        return isJson(parsed) ? parsed : { problem: "it is not a JSON object" };
+    } catch (error) {
+        return { problem: describeError(error) };
+    }
+}
+
+export type DorothyFlags = { settings: Json | null; mcpConfig: Json | null };
+
+// Dorothy's --settings and --mcp-config, each in its = form so that a
+// variadic flag never takes the user's prompt, before the user's
+// arguments. A user's own value of a flag in MERGED is merged into it,
+// Dorothy's keys winning; one that cannot be read is passed on after
+// hers, with a warning. Anything after -- is the user's alone.
+export function dorothyFlags(
+    args: readonly string[],
+    flags: DorothyFlags,
+    {
+        cwd,
+        read,
+        writePrivate,
+    }: {
+        cwd: string;
+        read: (path: string) => string;
+        writePrivate: (text: string) => string;
+    },
+): { args: string[]; warnings: string[]; files: string[] } {
+    // What the user's --settings files held may be secret (an env block
+    // of tokens), and argv is readable by other users: a merge that
+    // includes a file goes to a private file, passed by path.
+    const filed: string[][] = [];
+    const values: Record<string, Json | null> = {
+        [SETTINGS]: flags.settings,
+        [MCP_CONFIG]: flags.mcpConfig,
+    };
+    const warnings: string[] = [];
+    const rest: string[] = [];
+    for (let index = 0; index < args.length; index += 1) {
+        const arg = args[index] as string;
+        if (arg === "--") {
+            rest.push(...args.slice(index));
+            break;
+        }
+        const name = [SETTINGS, MCP_CONFIG].find(
+            (flag) => arg === flag || arg.startsWith(`${flag}=`),
+        );
+        const ours = name === undefined ? null : (values[name] ?? null);
+        const value =
+            arg === name ? args[index + 1] : arg.slice((name ?? "").length + 1);
+        if (
+            name === undefined ||
+            ours === null ||
+            !MERGED.has(name) ||
+            value === undefined
+        ) {
+            rest.push(arg);
+            continue;
+        }
+        if (arg === name) {
+            index += 1;
+        }
+        const theirs = jsonOf(value, cwd, read);
+        if ("problem" in theirs && typeof theirs.problem === "string") {
+            rest.push(...(arg === name ? [arg, value] : [arg]));
+            warnings.push(
+                `your ${name} could not be read (${theirs.problem}); it is passed on as given, and may override Dorothy's`,
+            );
+            continue;
+        }
+        values[name] = mergeJson(theirs as Json, ours);
+        if (!value.trimStart().startsWith("{")) {
+            filed.push(arg === name ? [arg, value] : [arg]);
+        }
+    }
+    const files: string[] = [];
+    const front = [SETTINGS, MCP_CONFIG].flatMap((name) => {
+        const value = values[name];
+        if (value === null || value === undefined) {
+            return [];
+        }
+        if (name === SETTINGS && filed.length > 0) {
+            try {
+                const path = writePrivate(JSON.stringify(value));
+                files.push(path);
+                return [`${name}=${path}`];
+            } catch (error) {
+                // Without a private file the secrets stay with the user's
+                // own flags; Dorothy's settings go in alone.
+                rest.push(...filed.flat());
+                warnings.push(
+                    `a private settings file could not be written (${describeError(error)}); your --settings is passed on as given, and may override Dorothy's`,
+                );
+                return [`${name}=${JSON.stringify(flags.settings)}`];
+            }
+        }
+        return [`${name}=${JSON.stringify(value)}`];
+    });
+    return { args: [...front, ...rest], warnings, files };
 }
 
 // Where claude runs and with what environment. A package script, such as
@@ -108,13 +312,23 @@ export type Launch = {
     env: Env;
     cwd?: string;
     gateway: Gateway;
+    // Removes the private files the launch wrote; call it once claude
+    // has exited.
+    cleanup: () => void;
 };
+
+// --claude runs claude with everything; its dump takes the block alone,
+// so it records nothing and starts no server.
+export type LaunchPurpose = "run" | "dump";
 
 // What running claude through the gateway needs, for --claude and its
 // dump alike: claude from the user's PATH, the marker in its arguments,
-// and a gateway in front of the upstream. A number is the exit code of a
-// failure already reported.
-export function launchClaude(
+// and a gateway in front of the upstream. With [memory] enabled, the
+// project claude starts in is synced first, the memory block goes after
+// her identity, and auto memory is off; with recall too, the recall
+// server is offered as dorothy-memory, its tools allowed. A number is
+// the exit code of a failure already reported.
+export async function launchClaude(
     args: readonly string[],
     upstream: string,
     {
@@ -124,32 +338,108 @@ export function launchClaude(
         write = (text) => {
             process.stderr.write(text);
         },
+        config: loadConfig = readConfig,
+        memory = MEMORY,
+        cwd = process.cwd(),
+        self = [process.execPath, resolve(process.argv[1] ?? "")],
+        read = (path) => readFileSync(path, "utf8"),
+        writePrivate = privateWriter(env),
+        remove = (path) => rmSync(path, { force: true }),
     }: ClaudeDeps = {},
-): Launch | number {
+    purpose: LaunchPurpose = "run",
+): Promise<Launch | number> {
     const shell = userShell(env);
     const claude = which("claude", { PATH: shell.env.PATH ?? "" });
     if (claude === null) {
         write("dorothy: claude is not on PATH\n");
         return 127;
     }
+    const dir = shell.cwd ?? cwd;
+    const { config, warnings } = await loadConfig(env);
+    for (const warning of warnings) {
+        write(`dorothy: ${warning}\n`);
+    }
+    const on = config.memory.enabled;
+    const run = purpose === "run";
+    if (on && run) {
+        const failed = await memory.sync(dir, env).catch(describeError);
+        if (failed !== null) {
+            write(`dorothy: sync failed: ${failed}\n`);
+        }
+    }
+    let section = "";
+    if (on) {
+        try {
+            const built = await memory.block(env);
+            for (const warning of built.warnings) {
+                write(`dorothy: ${warning}\n`);
+            }
+            section = built.block;
+        } catch (error) {
+            write(
+                `dorothy: the memory block could not be built (${describeError(error)}); starting without it\n`,
+            );
+        }
+    }
     let gateway: Gateway;
     try {
-        gateway = start({ upstream });
+        gateway = start({ upstream, section });
     } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-        write(`dorothy: the gateway could not start: ${reason}\n`);
+        write(
+            `dorothy: the gateway could not start: ${describeError(error)}\n`,
+        );
         return 1;
     }
+    const recall = on && run && config.memory.recall;
+    const flagged = dorothyFlags(
+        args,
+        {
+            settings: recall
+                ? { permissions: { allow: [...CLAUDE_ALLOWED_TOOLS] } }
+                : null,
+            mcpConfig: recall
+                ? {
+                      mcpServers: {
+                          [CLAUDE_SERVER_NAME]: {
+                              type: "stdio",
+                              command: self[0],
+                              args: [
+                                  ...self.slice(1),
+                                  "--recall-server",
+                                  "--project",
+                                  dir,
+                              ],
+                          },
+                      },
+                  }
+                : null,
+        },
+        { cwd: dir, read, writePrivate },
+    );
+    for (const warning of flagged.warnings) {
+        write(`dorothy: ${warning}\n`);
+    }
     const launch: Launch = {
-        cmd: [claude, ...claudeArgs(args)],
+        cmd: [claude, ...claudeArgs(flagged.args)],
         env: {
             ...shell.env,
             ANTHROPIC_BASE_URL: gateway.url,
             // Claude Code turns tool search off for a base URL not
             // Anthropic's; a user's own choice stands.
             ENABLE_TOOL_SEARCH: env.ENABLE_TOOL_SEARCH ?? "1",
+            // remember is her one way to write a memory in her sessions.
+            ...(on ? { CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" } : {}),
         },
         gateway,
+        cleanup: () => {
+            for (const path of flagged.files) {
+                try {
+                    remove(path);
+                } catch {
+                    // A file already gone needs no removing.
+                }
+            }
+        },
     };
     return shell.cwd === undefined ? launch : { ...launch, cwd: shell.cwd };
 }
@@ -177,7 +467,10 @@ export async function runClaude(
         },
         signals = process,
     } = deps;
-    const launch = launchClaude(args, upstreamFrom(env), { ...deps, write });
+    const launch = await launchClaude(args, upstreamFrom(env), {
+        ...deps,
+        write,
+    });
     if (typeof launch === "number") {
         return launch;
     }
@@ -198,6 +491,7 @@ export async function runClaude(
             signals.off(signal, handler);
         }
         launch.gateway.stop();
+        launch.cleanup();
         warnDrift(launch.gateway.stats, write);
     }
 }

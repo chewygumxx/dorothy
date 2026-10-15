@@ -280,7 +280,7 @@ function applyLines(index: RecallIndex, row: Row, text: string): void {
                     [
                         recall.id,
                         row.phrase,
-                        recall.conversation,
+                        "fact" in recall ? recall.fact : recall.conversation,
                         at ?? row.last_at ?? 0,
                     ],
                 );

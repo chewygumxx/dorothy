@@ -42,6 +42,8 @@ import {
 import { Mirror } from "../history/mirror.js";
 import { type MemoryRepo, MIRROR, NO_MIRROR } from "../history/repo.js";
 import { parseKey } from "../history/seal.js";
+import { identify } from "../projects/identify.js";
+import { type SyncResult, syncProject } from "../projects/sync.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import {
     readTranscript,
@@ -144,6 +146,44 @@ export function turnCommitter(
             });
         },
         settled: () => chain,
+    };
+}
+
+// Syncs chat's project in the background, one run at a time: a run asked
+// for while one is under way runs once after it. Never awaited by the
+// chat; settled() is for quitting.
+export function projectSyncer(
+    sync: () => Promise<SyncResult>,
+    warn: (message: string) => void,
+): { run(): void; settled(): Promise<void> } {
+    let running: Promise<void> | null = null;
+    let again = false;
+    const once = async () => {
+        try {
+            const result = await sync();
+            if (result.kind === "failed") {
+                warn(`sync: ${result.reason}`);
+            }
+        } catch (error) {
+            warn(`sync: ${describeError(error)}`);
+        }
+    };
+    const loop = async () => {
+        do {
+            again = false;
+            await once();
+        } while (again);
+        running = null;
+    };
+    return {
+        run: () => {
+            if (running !== null) {
+                again = true;
+                return;
+            }
+            running = loop();
+        },
+        settled: () => running ?? Promise.resolve(),
     };
 }
 
@@ -433,6 +473,8 @@ export type OpenMemoryOptions = {
     // A new session from memory's start, untracked and unrecorded.
     connect(start: SessionStart): ChatSession;
     recallLaunch(phrase: string): RecallLaunch;
+    // The directory chat started in; its project, if any, is recorded and synced.
+    cwd?: string | null;
     env?: Env;
 };
 
@@ -461,6 +503,7 @@ export async function openMemory({
     prompts,
     connect,
     recallLaunch,
+    cwd = null,
     env = process.env,
 }: OpenMemoryOptions): Promise<OpenedMemory> {
     const phrase = resume ?? newPhrase();
@@ -482,6 +525,17 @@ export async function openMemory({
         warnings.push(opened.warning);
     }
     const launched = await launchHistory({ config, index, warnings, env });
+
+    let project: string | null = null;
+    if (cwd !== null) {
+        try {
+            project = (await identify(cwd))?.id ?? null;
+        } catch (error) {
+            warnings.push(
+                `project: ${cwd} can't be identified (${describeError(error)})`,
+            );
+        }
+    }
 
     // A resumed conversation starts from its clusters. Notes that cannot be
     // read are never written, so compaction stays off for this chat.
@@ -569,6 +623,25 @@ export async function openMemory({
     // Writes outside memory's service take the index's lock, or
     // history's own without it.
     const writeLock = claims?.lock ?? launched?.history.lock;
+    const channel = noticeChannel();
+    // Chat syncs its project at its start and after each turn; with
+    // memory off, or without a lock to sync under, it does not.
+    const syncer =
+        !config.memory.enabled ||
+        project === null ||
+        cwd === null ||
+        writeLock === undefined
+            ? null
+            : projectSyncer(
+                  () =>
+                      syncProject(cwd, {
+                          root: dataRoot(env),
+                          lock: writeLock,
+                          recorder: launched?.history.recorder ?? null,
+                      }),
+                  (message) => channel.warn(message),
+              );
+    syncer?.run();
     const committer =
         launched === null || transcript === null
             ? null
@@ -616,7 +689,6 @@ export async function openMemory({
     // reply is appended before memory's turn-end hook asks for the flush
     // holds in either order, as the recorder records an event before
     // passing it on and trackMemory (track.ts) calls its hooks after.
-    const channel = noticeChannel();
     const record =
         transcript === null
             ? null
@@ -625,6 +697,7 @@ export async function openMemory({
                   phrase,
                   promptHash: prompts.hash(recall !== null),
                   resumed: history.length > 0,
+                  ...(project === null ? {} : { project }),
                   warn: (message) => channel.warn(message),
               });
     const make = sessionMaker({
@@ -632,7 +705,13 @@ export async function openMemory({
         connect: (seed) => connect(startOf(seed)),
         clusters,
         memory: service,
-        turnEnded: committer?.ended ?? null,
+        turnEnded:
+            committer === null && syncer === null
+                ? null
+                : () => {
+                      committer?.ended();
+                      syncer?.run();
+                  },
     });
 
     return {
@@ -653,6 +732,7 @@ export async function openMemory({
                     () => compaction?.stop(),
                     () => service?.stop(),
                     () => committer?.settled(),
+                    () => syncer?.settled(),
                     () => launched?.close(),
                     () => index?.close(),
                     () => writer?.close(),

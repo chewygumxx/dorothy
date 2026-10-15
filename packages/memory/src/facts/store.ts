@@ -222,10 +222,15 @@ export type FactInput = {
     from?: string;
 };
 
+// A check on the fact as it stands (null: there is none), made under
+// the lock with the write it guards; a reason refuses the write.
+export type Guard = (current: Fact | null) => string | null;
+
 export type FactResult =
     | { kind: "written"; fact: Fact }
     | { kind: "unchanged" }
     | { kind: "missing" }
+    | { kind: "refused"; reason: string }
     | { kind: "failed"; reason: string };
 
 type Target = { scope: Scope; name: string };
@@ -278,11 +283,16 @@ async function existing(
 export function writeFact(
     store: FactStore,
     input: FactInput,
+    guard?: Guard,
 ): Promise<FactResult> {
     return held(store, async (): Promise<FactResult> => {
         const found = await existing(store, input);
         if ("kind" in found) {
             return found;
+        }
+        const refusal = guard?.(found.fact) ?? null;
+        if (refusal !== null) {
+            return { kind: "refused", reason: refusal };
         }
         const before = found.fact;
         const now = at(store);
@@ -355,7 +365,7 @@ export function moveFact(
 export function retireFact(
     store: FactStore,
     target: Target,
-    { by, why }: { by: Writer; why: string },
+    { by, why, guard }: { by: Writer; why: string; guard?: Guard },
 ): Promise<FactResult> {
     return held(store, async (): Promise<FactResult> => {
         const found = await existing(store, target);
@@ -364,6 +374,10 @@ export function retireFact(
         }
         if (found.fact === null) {
             return { kind: "missing" };
+        }
+        const refusal = guard?.(found.fact) ?? null;
+        if (refusal !== null) {
+            return { kind: "refused", reason: refusal };
         }
         if (found.fact.retired !== null) {
             return { kind: "unchanged" };

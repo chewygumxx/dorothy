@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
     newPhrase,
+    type OpenFactResult,
     type OpenResult,
     type RecollectResult,
     type SearchResult,
@@ -21,6 +22,7 @@ import {
 } from "@dorothy/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { factPath, PERSONAL, putFact, readFactFile } from "../facts/store.js";
 import { EMPTY_SIDECAR, sidecarPath } from "../memory/sidecar.js";
 import { createRecallServer, type RecallServerOptions } from "./server.js";
 import { RecallIndex } from "./store.js";
@@ -317,4 +319,137 @@ describe("recollect on the server", () => {
             expect(opened.isError).toBeFalsy();
         },
     );
+});
+
+describe("the recall server's facts", () => {
+    const tea = {
+        name: "tea",
+        title: "Tea at four",
+        description: "She takes tea at four.",
+        type: "user" as const,
+        extra: {},
+        tags: [],
+        importance: null,
+        provenance: {
+            origin: "dorothy" as const,
+            by: "dorothy" as const,
+            at: "2026-10-04T12:00:00.000Z",
+            created: "2026-10-04T12:00:00.000Z",
+        },
+        retired: null,
+        body: "Every day at four.",
+    };
+
+    it("offers remember beside the lookups", async () => {
+        const client = await connect({ facts: dir });
+        const { tools } = await client.listTools();
+        expect(tools.map((tool) => tool.name).sort()).toEqual([
+            "open",
+            "remember",
+            "search",
+            "tags",
+        ]);
+    });
+
+    it("finds a fact and opens it", async () => {
+        await putFact(dir, PERSONAL, tea);
+        const client = await connect({ facts: dir });
+        const found = JSON.parse(
+            textOf(
+                await client.callTool({
+                    name: "search",
+                    arguments: { query: "tea" },
+                }),
+            ),
+        ) as SearchResult;
+        expect(found.facts.map((hit) => hit.id)).toEqual(["personal/tea"]);
+        const opened = JSON.parse(
+            textOf(
+                await client.callTool({
+                    name: "open",
+                    arguments: { fact: "personal/tea", purpose: "her tea" },
+                }),
+            ),
+        ) as OpenFactResult;
+        expect(opened.body).toBe("Every day at four.");
+        const both = await client.callTool({
+            name: "open",
+            arguments: { fact: "personal/tea", conversation: A, purpose: "p" },
+        });
+        expect(both.isError).toBe(true);
+        expect(textOf(both)).toBe(
+            "Give a conversation or a fact to open, not both.",
+        );
+    });
+
+    it("remembers in its project, from the conversation it serves, committed once opened", async () => {
+        const committed: string[] = [];
+        let opened = 0;
+        const client = await connect({
+            facts: dir,
+            project: "github.com/u/here",
+            openHistory: async () => {
+                opened += 1;
+                return {
+                    recorder: async (_paths, message) => {
+                        committed.push(message);
+                    },
+                    lock: async (work) => work(),
+                    sweep: async () => {},
+                    heal: async () => false,
+                    close: () => {},
+                };
+            },
+        });
+        const call = (name: string) =>
+            client.callTool({
+                name: "remember",
+                arguments: {
+                    action: "write",
+                    name,
+                    scope: "project",
+                    type: "project",
+                    title: "The gateway",
+                    description: "How the gateway runs.",
+                    body: "On loopback.",
+                },
+            });
+        expect(JSON.parse(textOf(await call("gateway")))).toEqual({
+            action: "written",
+            id: "github.com/u/here/gateway",
+        });
+        await call("render");
+        expect(opened).toBe(1);
+        expect(committed).toEqual([
+            "fact: github.com/u/here/gateway",
+            "fact: github.com/u/here/render",
+        ]);
+        const read = await readFactFile(
+            factPath(
+                dir,
+                { kind: "project", id: "github.com/u/here" },
+                "gateway",
+            ),
+            "gateway",
+        );
+        expect(read.kind === "ok" && read.fact.provenance.from).toBe(LIVE);
+    });
+
+    it("relays a refusal as a tool error", async () => {
+        const client = await connect({ facts: dir });
+        const result = await client.callTool({
+            name: "remember",
+            arguments: {
+                action: "write",
+                name: "x",
+                scope: "project",
+                type: "user",
+                title: "t",
+                description: "d",
+                body: "b",
+            },
+        });
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toStartWith("There is no project here");
+    });
 });

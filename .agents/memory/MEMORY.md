@@ -6,3 +6,7 @@
   `-c` and `purge` from a session's Bash hit its live project
 - [Dorothy's ambition](./dorothy-ambition.md)
   one adaptable Dorothy: extensible, remembering, Anthropic first
+- [Recording plan carry-overs](./recording-plan-carry-overs.md)
+  what delivery left for the bodies spec's recording plan
+- [Plan commit headers](./plan-commit-headers.md)
+  commitlint: headers at most 50, body lines 72; plans must comply

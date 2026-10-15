@@ -45,6 +45,44 @@ export function carriers(index: RecallIndex): CarrierRow[] {
     return rows.map((row) => ({ ...row, hidden: row.hidden !== 0 }));
 }
 
+// Each live concept with every fact that carries it or anything
+// narrower, merged ids followed, as carriers walks conversations.
+export function factCarriers(
+    index: RecallIndex,
+): { id: string; path: string }[] {
+    return index.db
+        .query(
+            `WITH RECURSIVE under (ancestor, id) AS (
+                SELECT id, id FROM concepts
+                UNION
+                SELECT u.ancestor, b.id FROM under u
+                JOIN broader b ON b.parent = u.id
+            )
+            SELECT DISTINCT u.ancestor AS id, ft.path AS path
+            FROM fact_tags ft
+            LEFT JOIN merged m ON m.id = ft.id
+            JOIN under u ON u.id = coalesce(m.into_id, ft.id)`,
+        )
+        .all() as { id: string; path: string }[];
+}
+
+// The preferred labels of concepts by id, in order, merges followed; an
+// id naming no live concept is left out.
+export function conceptLabels(
+    index: RecallIndex,
+    ids: readonly string[],
+): string[] {
+    const label = index.db.query(
+        `SELECT c.label AS label FROM concepts c
+         WHERE c.id = coalesce((SELECT into_id FROM merged WHERE id = ?), ?)`,
+    );
+    const labels = ids.flatMap((id) => {
+        const row = label.get(id, id) as { label: string } | null;
+        return row === null ? [] : [row.label];
+    });
+    return [...new Set(labels)];
+}
+
 // The concepts Dorothy may see: all but those whose every carrier is
 // hidden or the excluded conversation. One nobody carries is listed.
 export function listedConcepts(

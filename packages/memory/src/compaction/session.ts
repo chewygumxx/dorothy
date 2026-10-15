@@ -55,11 +55,12 @@ type Phase =
     | { kind: "handing"; stale: boolean }
     | { kind: "closed" };
 
-// The reply to a message sent has started: its text, a lookup, or the
-// API's stream.
+// The reply to a message sent has started: its text, a lookup or a
+// remember, or the API's stream.
 const streams = (event: ConversationEvent) =>
     event.type === "delta" ||
     event.type === "lookup" ||
+    event.type === "remember" ||
     (event.type === "sdk" && event.message.type === "stream_event");
 
 // A launch's compaction. It outlives each session, so that reconnecting

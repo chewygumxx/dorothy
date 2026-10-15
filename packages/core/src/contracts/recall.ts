@@ -8,43 +8,76 @@
 //
 //
 
-// The server's name; the CLI calls its tools mcp__memory__search,
-// mcp__memory__open, mcp__memory__recollect and mcp__memory__tags.
+// Chat's server, whose tools the model calls as mcp__memory__search and
+// so on. Claude Code's has a name of its own, so that a user's own
+// server called memory, as the reference MCP memory server is, does not
+// collide.
 export const SERVER_NAME = "memory";
+export const CLAUDE_SERVER_NAME = "dorothy-memory";
+// The lookups: tools that read memory, recorded as recall events.
 export const TOOLS = ["search", "open", "recollect", "tags"] as const;
 export type Tool = (typeof TOOLS)[number];
-// The external tools, over other conversations, allowed in every session
-// with recall: every tool but recollect.
-export const ALLOWED_TOOLS = TOOLS.filter((tool) => tool !== "recollect").map(
-    (tool) => `mcp__${SERVER_NAME}__${tool}`,
+// The one tool that writes memory, recorded as a tool event.
+export const REMEMBER = "remember";
+
+const named = (server: string, tool: string) => `mcp__${server}__${tool}`;
+// The tools allowed in every session with recall: every one but
+// recollect, which reads only the live conversation's clusters.
+const EXTERNAL = [...TOOLS.filter((tool) => tool !== "recollect"), REMEMBER];
+export const ALLOWED_TOOLS = EXTERNAL.map((tool) => named(SERVER_NAME, tool));
+export const CLAUDE_ALLOWED_TOOLS = EXTERNAL.map((tool) =>
+    named(CLAUDE_SERVER_NAME, tool),
 );
 // The internal tool, over this conversation's clusters, allowed only in a
 // session seeded with clusters.
-export const RECOLLECT_TOOL = `mcp__${SERVER_NAME}__recollect`;
+export const RECOLLECT_TOOL = named(SERVER_NAME, "recollect");
+export const REMEMBER_TOOL = named(SERVER_NAME, REMEMBER);
 
 const PREFIX = `mcp__${SERVER_NAME}__`;
 
-// A tool's name as the model calls it, or null for any other tool.
+// A lookup's name as the model calls it, or null for any other tool,
+// remember among them.
 export function toolOf(name: string): Tool | null {
     const tool = name.startsWith(PREFIX) ? name.slice(PREFIX.length) : "";
     return (TOOLS as readonly string[]).includes(tool) ? (tool as Tool) : null;
 }
 
+export const SEARCH_KINDS = ["conversations", "facts"] as const;
+export type SearchKind = (typeof SEARCH_KINDS)[number];
 export type SearchInput = {
     query?: string | undefined;
     tags?: string[] | undefined;
     after?: string | undefined;
     before?: string | undefined;
     limit?: number | undefined;
+    kind?: SearchKind | undefined;
 };
 export type TagsInput = {
     under?: string | undefined;
     limit?: number | undefined;
 };
+// Exactly one of conversation and fact.
 export type OpenInput = {
-    conversation: string;
+    conversation?: string | undefined;
+    fact?: string | undefined;
     purpose: string;
     turn?: number | undefined;
+};
+// remember: write takes name, scope, type, title, description and body;
+// retire takes name, scope and why.
+export type RememberInput = {
+    action: "write" | "retire";
+    name: string;
+    scope: "personal" | "project";
+    type?: string | undefined;
+    title?: string | undefined;
+    description?: string | undefined;
+    body?: string | undefined;
+    why?: string | undefined;
+};
+export type RememberResult = {
+    action: "written" | "corrected" | "retired" | "unchanged";
+    id: string;
 };
 export type RecollectInput = {
     cluster: number;
@@ -64,7 +97,26 @@ export type ConversationObject = {
     dateModified: string;
 };
 export type SearchHit = ConversationObject & { matches: Match[] };
-export type SearchResult = { results: SearchHit[]; more: number };
+// A fact as search finds it; id is how open takes it, personal/<name>
+// or <project id>/<name>.
+export type FactHit = {
+    id: string;
+    scope: string;
+    type: string;
+    title: string;
+    description: string;
+    origin: string;
+    snippet: string;
+    retired?: true;
+};
+// Two groups, each ranked and capped at the limit: FTS5's scores from
+// two tables do not compare.
+export type SearchResult = {
+    facts: FactHit[];
+    moreFacts: number;
+    results: SearchHit[];
+    more: number;
+};
 export type WindowTurn = {
     turn: number;
     role: "user" | "assistant";
@@ -75,6 +127,28 @@ export type OpenResult = ConversationObject & {
     abstract?: string;
     turns: number;
     window: WindowTurn[];
+};
+// The whole fact: its fields, its provenance and its body. keywords
+// are its concepts' labels.
+export type OpenFactResult = {
+    id: string;
+    scope: string;
+    name: string;
+    type: string;
+    title: string;
+    description: string;
+    keywords: string[];
+    importance: number | null;
+    provenance: {
+        origin: string;
+        by: string;
+        at: string;
+        created: string;
+        model?: string;
+        from?: string;
+    };
+    retired: { at: string; by: string; why: string } | null;
+    body: string;
 };
 // A concept, under schema.org's name for a term in a vocabulary.
 export type TagObject = {
@@ -101,22 +175,29 @@ export type RecollectResult = {
 
 // What the transcript keeps of a lookup: its input and a summary of what
 // came back, never the results, which can be found again.
+// hits counts conversations; facts counts facts, when facts were
+// searched.
 export type SearchLookup = {
     tool: "search";
     query: string;
     tags?: string[];
     after?: string;
     before?: string;
+    // Not kind: a recall event's kind is "recall".
+    searched?: SearchKind;
     hits: number;
+    facts?: number;
 };
-export type OpenLookup = {
+type OpenBase = {
     tool: "open";
-    conversation: string;
-    // The conversation's title when it was opened, else its identifier.
+    // The title when it was opened, else what was asked for.
     name: string;
     purpose: string;
     turns: [number, number] | null;
 };
+export type OpenLookup =
+    | (OpenBase & { conversation: string })
+    | (OpenBase & { fact: string });
 export type RecollectLookup = {
     tool: "recollect";
     cluster: number;
@@ -184,9 +265,19 @@ export function describeLookup(
                 lookup.tags = tags;
             }
         }
+        if (fields.kind === "conversations" || fields.kind === "facts") {
+            lookup.searched = fields.kind;
+        }
         const found = parse<SearchResult>(result);
         if (Array.isArray(found?.results) && typeof found.more === "number") {
             lookup.hits = found.results.length + found.more;
+        }
+        if (
+            lookup.searched !== "conversations" &&
+            Array.isArray(found?.facts) &&
+            typeof found.moreFacts === "number"
+        ) {
+            lookup.facts = found.facts.length + found.moreFacts;
         }
         return lookup;
     }
@@ -218,20 +309,27 @@ export function describeLookup(
         }
         return lookup;
     }
+    const purpose = textOf(fields.purpose);
+    if (typeof fields.fact === "string") {
+        const fact = fields.fact;
+        const opened = parse<OpenFactResult>(result);
+        return {
+            tool,
+            fact,
+            name: typeof opened?.title === "string" ? opened.title : fact,
+            purpose,
+            turns: null,
+        };
+    }
     const conversation = textOf(fields.conversation);
-    const lookup: OpenLookup = {
+    const opened = parse<OpenResult>(result);
+    return {
         tool,
         conversation,
-        name: conversation,
-        purpose: textOf(fields.purpose),
-        turns: null,
+        name: typeof opened?.name === "string" ? opened.name : conversation,
+        purpose,
+        turns: windowRange(opened?.window),
     };
-    const opened = parse<OpenResult>(result);
-    if (typeof opened?.name === "string") {
-        lookup.name = opened.name;
-    }
-    lookup.turns = windowRange(opened?.window);
-    return lookup;
 }
 
 // A lookup Dorothy made mid-reply. offset is where in the reply's text it

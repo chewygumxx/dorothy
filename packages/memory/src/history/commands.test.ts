@@ -112,6 +112,17 @@ describe("commandHistory", () => {
         );
     });
 
+    it("never reminds of the mirror when asked not to", async () => {
+        const handle = await commandHistory({
+            env,
+            err,
+            hook: null,
+            remindMirror: false,
+        })(null);
+        handle?.close();
+        expect(err.text).toBe("");
+    });
+
     it("is off when the config says so", async () => {
         put(home, "dorothy/config.toml", "[history]\nenabled = false\n");
         expect(await commandHistory({ env, hook: null })(null)).toBeNull();

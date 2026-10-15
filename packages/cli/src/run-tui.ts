@@ -22,12 +22,15 @@ import {
 } from "@dorothy/agent";
 import { openMemory } from "@dorothy/memory";
 import { runApp } from "@dorothy/tui";
+import { userShell } from "./claude.js";
 import { recallLaunch } from "./recall-launch.js";
 
 export async function runTui(
     resume: string | null,
     persona: PersonaMode = "chat",
 ): Promise<number> {
+    // The directory the user ran dorothy from, under bun run dev too.
+    const cwd = userShell(process.env).cwd ?? process.cwd();
     const opened = await openMemory({
         resume,
         call: structuredCall(),
@@ -44,7 +47,8 @@ export async function runTui(
             conversation.start();
             return conversation;
         },
-        recallLaunch,
+        recallLaunch: (phrase) => recallLaunch(phrase, cwd),
+        cwd,
     });
     if (!opened.ok) {
         process.stderr.write(`dorothy: ${opened.message}\n`);

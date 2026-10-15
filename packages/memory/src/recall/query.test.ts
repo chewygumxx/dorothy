@@ -13,11 +13,16 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { newPhrase } from "@dorothy/core";
+import type { Fact } from "../facts/file.js";
+import { PERSONAL, putFact, type Scope } from "../facts/store.js";
 import { EMPTY_SIDECAR, type Sidecar, sidecarPath } from "../memory/sidecar.js";
 import {
     NO_CLUSTER,
+    NO_FACT,
+    NO_TAG,
     NOT_FOUND,
     openConversation,
+    openFact,
     RecallError,
     recollect,
     search,
@@ -459,5 +464,230 @@ describe("recollect", () => {
         });
         await syncIndex(index, dir);
         expect(opened({ cluster: 1 }).window[0]?.text).toBe("the cat sat");
+    });
+});
+
+const PROJECT: Scope = { kind: "project", id: "github.com/u/here" };
+const OTHER: Scope = { kind: "project", id: "github.com/u/there" };
+const fact = (name: string, fields: Partial<Fact> = {}): Fact => ({
+    name,
+    title: `About ${name}`,
+    description: `What she knows of ${name}.`,
+    type: "user",
+    extra: {},
+    tags: [],
+    importance: null,
+    provenance: {
+        origin: "dorothy",
+        by: "dorothy",
+        at: day(5),
+        created: day(5),
+    },
+    retired: null,
+    body: "Body.",
+    ...fields,
+});
+const syncFactsToo = () =>
+    syncIndex(index, dir, Date.parse(day(20)), null, dir);
+const withProject = { ...OPTIONS, project: PROJECT.id };
+
+describe("search over facts", () => {
+    beforeEach(async () => {
+        await putFact(
+            dir,
+            PERSONAL,
+            fact("tea", { body: "She drinks render tea." }),
+        );
+        await putFact(
+            dir,
+            PROJECT,
+            fact("gateway", { type: "project", body: "The render gateway." }),
+        );
+        await putFact(
+            dir,
+            OTHER,
+            fact("cache", { body: "A render cache elsewhere." }),
+        );
+        await putFact(
+            dir,
+            PERSONAL,
+            fact("coffee", {
+                body: "Render coffee, given up.",
+                retired: { at: day(6), by: "user", why: "Stopped." },
+            }),
+        );
+        await syncFactsToo();
+    });
+
+    it("finds facts first, live ones, then personal and this project's", () => {
+        const found = search(index, { query: "render" }, withProject);
+        const ids = found.facts.map((hit) => [hit.id, hit.retired ?? false]);
+        // The two near ones rank by match, which this does not pin.
+        expect(ids.slice(0, 2).sort()).toEqual([
+            ["github.com/u/here/gateway", false],
+            ["personal/tea", false],
+        ]);
+        expect(ids.slice(2)).toEqual([
+            ["github.com/u/there/cache", false],
+            ["personal/coffee", true],
+        ]);
+        expect(found.results.map((hit) => hit.identifier)).toContain(A);
+        expect(Object.keys(found)).toEqual([
+            "facts",
+            "moreFacts",
+            "results",
+            "more",
+        ]);
+    });
+
+    it("gives a fact's fields and a snippet", () => {
+        const [hit] = search(
+            index,
+            { query: "tea", kind: "facts" },
+            withProject,
+        ).facts;
+        expect(hit).toEqual({
+            id: "personal/tea",
+            scope: "personal",
+            type: "user",
+            title: "About tea",
+            description: "What she knows of tea.",
+            origin: "dorothy",
+            snippet: expect.stringContaining("«tea»"),
+        });
+    });
+
+    it("searches one group alone by kind, and caps each at the limit", () => {
+        expect(
+            search(
+                index,
+                { query: "render", kind: "conversations" },
+                withProject,
+            ).facts,
+        ).toEqual([]);
+        expect(
+            search(index, { query: "render", kind: "facts" }, withProject)
+                .results,
+        ).toEqual([]);
+        const capped = search(
+            index,
+            { query: "render", limit: 1 },
+            withProject,
+        );
+        expect([capped.facts.length, capped.moreFacts]).toEqual([1, 3]);
+        expect(() =>
+            search(
+                index,
+                { query: "x", kind: "notes" as "facts" },
+                withProject,
+            ),
+        ).toThrow("kind must be conversations or facts.");
+    });
+
+    it("bounds facts by their creation", () => {
+        const found = search(
+            index,
+            { query: "render", kind: "facts", after: "2026-10-06" },
+            withProject,
+        );
+        expect(found.facts).toEqual([]);
+    });
+});
+
+describe("search by a tag facts carry", () => {
+    beforeEach(async () => {
+        await writeFile(
+            join(dir, "tags.json"),
+            JSON.stringify({
+                v: 1,
+                rev: 1,
+                concepts: {
+                    k00000001: {
+                        prefLabel: "drinks",
+                        scopeNote: "What she drinks.",
+                        by: "dorothy",
+                        at: day(1),
+                    },
+                    k00000002: {
+                        prefLabel: "secret",
+                        scopeNote: "Hidden only.",
+                        by: "dorothy",
+                        at: day(1),
+                    },
+                },
+            }),
+        );
+        await putFact(dir, PERSONAL, fact("tea", { tags: ["k00000001"] }));
+        await conversation(
+            C,
+            [session(day(12)), user(day(12), "render me a poem")],
+            {
+                title: "Poetry",
+                hidden: true,
+                tags: ["k00000002"],
+            },
+        );
+        await syncIndex(
+            index,
+            dir,
+            Date.parse(day(20)),
+            join(dir, "tags.json"),
+            dir,
+        );
+    });
+
+    it("finds the facts a tag only facts carry", () => {
+        const found = search(index, { tags: ["drinks"] }, withProject);
+        expect(found.facts.map((hit) => hit.id)).toEqual(["personal/tea"]);
+        expect(found.results).toEqual([]);
+    });
+
+    it("still knows no tag only hidden conversations carry", () => {
+        expect(() => search(index, { tags: ["secret"] }, withProject)).toThrow(
+            `${NO_TAG}: secret.`,
+        );
+    });
+});
+
+describe("openFact", () => {
+    it("opens the whole fact", async () => {
+        await putFact(dir, PERSONAL, fact("tea", { body: "Four o'clock." }));
+        await syncFactsToo();
+        expect(
+            await openFact(
+                index,
+                { fact: "personal/tea", purpose: "her tea" },
+                dir,
+            ),
+        ).toEqual({
+            id: "personal/tea",
+            scope: "personal",
+            name: "tea",
+            type: "user",
+            title: "About tea",
+            description: "What she knows of tea.",
+            keywords: [],
+            importance: null,
+            provenance: {
+                origin: "dorothy",
+                by: "dorothy",
+                at: day(5),
+                created: day(5),
+            },
+            retired: null,
+            body: "Four o'clock.",
+        });
+    });
+
+    it("relays a fact that is not there, and asks for a purpose", async () => {
+        await expect(
+            openFact(index, { fact: "personal/none", purpose: "p" }, dir),
+        ).rejects.toThrow(NO_FACT);
+        await expect(
+            openFact(index, { fact: "nonsense", purpose: "p" }, dir),
+        ).rejects.toThrow(NO_FACT);
+        await expect(
+            openFact(index, { fact: "personal/tea", purpose: " " }, dir),
+        ).rejects.toThrow("Say in purpose what you hope to find.");
     });
 });

@@ -1,0 +1,34 @@
+{
+    "both": {
+        "servers": ["dorothy-memory", "probe-b"],
+        "prompt_kept": true,
+        "results": [
+            {
+                "id": "toolu_1",
+                "is_error": false,
+                "denied": false
+            },
+            {
+                "id": "toolu_0",
+                "is_error": true,
+                "denied": true
+            }
+        ]
+    },
+    "one": {
+        "servers": ["dorothy-memory"],
+        "prompt_kept": true,
+        "results": [
+            {
+                "id": "toolu_0",
+                "is_error": false,
+                "denied": false
+            },
+            {
+                "id": "toolu_1",
+                "is_error": true,
+                "denied": false
+            }
+        ]
+    }
+}

@@ -14,13 +14,14 @@
 // has been closed records nothing more, as App stopped hearing a session
 // once it had moved on.
 
-import type {
-    ChatSession,
-    ConversationEvent,
-    Notice,
-    NoticeSource,
+import {
+    type ChatSession,
+    type ConversationEvent,
+    type Notice,
+    type NoticeSource,
+    REMEMBER_TOOL,
 } from "@dorothy/core";
-import type { TranscriptEntry } from "../transcript.js";
+import { type TranscriptEntry, toolEntry } from "../transcript.js";
 
 export type TranscriptSink = {
     append(entry: TranscriptEntry): Promise<void>;
@@ -34,6 +35,7 @@ export function sessionRecorder({
     phrase,
     promptHash,
     resumed,
+    project,
     warn,
 }: {
     sink: TranscriptSink;
@@ -41,6 +43,8 @@ export function sessionRecorder({
     promptHash: string;
     // Whether the chat had turns before its first session.
     resumed: boolean;
+    // The project chat started in, if any.
+    project?: string;
     warn: (message: string) => void;
 }): (session: ChatSession) => ChatSession {
     let wasResumed = resumed;
@@ -58,6 +62,7 @@ export function sessionRecorder({
                 model: event.model,
                 promptHash,
                 resumed: wasResumed,
+                ...(project === undefined ? {} : { project }),
             });
             wasResumed = true;
         } else if (event.type === "lookup") {
@@ -68,6 +73,17 @@ export function sessionRecorder({
                 offset: event.offset,
                 ...event.lookup,
             });
+        } else if (event.type === "remember") {
+            // What she wrote herself, marked so no review learns it as new.
+            record(
+                toolEntry({
+                    name: REMEMBER_TOOL,
+                    input: JSON.stringify(event.input ?? null),
+                    output: event.output,
+                    ok: event.ok,
+                    memory: true,
+                }),
+            );
         } else if (event.type === "turn-end") {
             record({
                 kind: "assistant",
