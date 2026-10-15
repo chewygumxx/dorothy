@@ -210,9 +210,15 @@ export async function runRetireFrom(
     }
 }
 
+// What moved, a line for each way that holds a name.
+const MOVES = ["imported", "exported", "retired", "removed"] as const;
+
 export function formatReport(report: SyncReport): string {
     const lines = [
         `${report.project.id}: ${report.imported.length + report.retired.length} in, ${report.exported.length + report.removed.length} out (${report.memoryDir})`,
+        ...MOVES.filter((way) => report[way].length > 0).map(
+            (way) => `${way}: ${report[way].join(", ")}`,
+        ),
         ...report.conflicts.map(
             (name) => `conflict: ${name}; the repository's version was kept`,
         ),
@@ -227,7 +233,7 @@ export function formatReport(report: SyncReport): string {
     }
     if (report.omitted > 0) {
         lines.push(
-            `MEMORY.md leaves out ${report.omitted} facts, past what Claude Code loads`,
+            `MEMORY.md leaves out ${report.omitted} ${report.omitted === 1 ? "fact" : "facts"}, past what Claude Code loads`,
         );
     }
     return `${lines.join("\n")}\n`;
@@ -244,7 +250,7 @@ export async function runSync(
     } = options;
     const target = resolve(cwd, path ?? ".");
     if (!existsSync(target)) {
-        err.write(`dorothy: ${target} is not in a git repository\n`);
+        err.write(`dorothy: ${target} does not exist\n`);
         return 1;
     }
     const opened = await openStore(options);

@@ -214,7 +214,7 @@ describe("runSync and runProjects", () => {
         );
         expect(await runSync(null, { ...options(), cwd: repo })).toBe(0);
         expect(out.text).toBe(
-            "github.com/chewygumxx/dorothy: 1 in, 0 out (.agents/memory)\n",
+            "github.com/chewygumxx/dorothy: 1 in, 0 out (.agents/memory)\nimported: a\n",
         );
         expect(commits).toEqual([
             "sync: github.com/chewygumxx/dorothy: 1 in, 0 out",
@@ -227,9 +227,14 @@ describe("runSync and runProjects", () => {
     });
 
     it("says when the path is in no repository", async () => {
+        expect(await runSync(null, { ...options(), cwd: dir })).toBe(1);
+        expect(err.text).toBe(`dorothy: ${dir} is not in a git repository\n`);
+    });
+
+    it("says when the path does not exist", async () => {
         expect(await runSync("elsewhere", { ...options(), cwd: dir })).toBe(1);
         expect(err.text).toBe(
-            `dorothy: ${join(dir, "elsewhere")} is not in a git repository\n`,
+            `dorothy: ${join(dir, "elsewhere")} does not exist\n`,
         );
     });
 
@@ -254,10 +259,13 @@ describe("formatReport", () => {
         omitted: 2,
     };
 
-    it("names conflicts, skips, why MEMORY.md was left and what it omits", () => {
+    it("names what moved, conflicts, skips, why MEMORY.md was left and what it omits", () => {
         expect(formatReport(report)).toBe(
             [
                 "github.com/o/r: 3 in, 1 out (.agents/memory)",
+                "imported: a, b",
+                "exported: c",
+                "retired: d",
                 "conflict: a; the repository's version was kept",
                 "skipped: x (it has no frontmatter)",
                 "MEMORY.md left as it is: it holds lines sync did not write",
@@ -276,6 +284,31 @@ describe("formatReport", () => {
             index: "written",
             indexReason: undefined,
         });
-        expect(text).toBe("github.com/o/r: 3 in, 1 out (.agents/memory)\n");
+        expect(text).toBe(
+            "github.com/o/r: 3 in, 1 out (.agents/memory)\nimported: a, b\nexported: c\nretired: d\n",
+        );
+    });
+
+    it("names what was removed, and leaves out one fact in the singular", () => {
+        const text = formatReport({
+            ...report,
+            imported: [],
+            exported: [],
+            retired: [],
+            removed: ["e", "f"],
+            conflicts: [],
+            skipped: [],
+            index: "written",
+            indexReason: undefined,
+            omitted: 1,
+        });
+        expect(text).toBe(
+            [
+                "github.com/o/r: 0 in, 2 out (.agents/memory)",
+                "removed: e, f",
+                "MEMORY.md leaves out 1 fact, past what Claude Code loads",
+                "",
+            ].join("\n"),
+        );
     });
 });
