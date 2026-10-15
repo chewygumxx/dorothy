@@ -57,9 +57,12 @@ she takes later. Recall over MCP, persistent context and progressive
 disclosure let her remember and recollect efficiently and well, and a
 memory of facts and lessons joins the conversations she remembers. The
 memory system as it stands may be reworked rather than extended.
-Findings: [objectives](./reports/2026-10-15-objectives.md).
+Findings: [objectives](./reports/2026-10-15-objectives.md). The store:
+[spec](./specs/2026-10-15-memory-store-design.md),
+[plan](./plans/2026-10-15-memory-store.md),
+[report](./reports/2026-10-15-memory-store-implementation.md).
 
-- **Status**: Pending Design
+- **Status**: Store Built; Bodies Pending Design
 - **Required**: Requisites Fulfilled
 - **Rationale**: Wherever she goes, her memory follows with her. In
   Claude Code she has her identity but none of her memory, and every

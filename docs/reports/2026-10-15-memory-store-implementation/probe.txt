@@ -1,0 +1,71 @@
+$ bun $REPO/packages/cli/src/index.ts --sync $P/dorothy
+dorothy: memory has no mirror · dorothy --mirror <url>
+github.com/chewygumxx/dorothy: 4 in, 0 out (.agents/memory)
+[exit 0]
+$ bun $REPO/packages/cli/src/index.ts --facts
+dorothy: memory has no mirror · dorothy --mirror <url>
+github.com/chewygumxx/dorothy
+  reference  bg-session-force-color  Background sessions force colour
+             Claude Code background sessions export FORCE_COLOR=3; the user's own shell does not
+  project    dorothy-ambition  Dorothy's ambition
+             One adaptable Dorothy: extensible, remembering, Anthropic first
+  project    maintenance-design-agreed  Maintenance design agreed
+             Agreed design for cyclical maintenance (sub-project 4a), queued after workspace modularity on docs/roadmap.md
+  feedback   nested-claude-session-env  Nested claude inherits the session
+             claude run from a session's Bash inherits its project and session; -c and purge then hit the live session
+[exit 0]
+$ bun $REPO/packages/cli/src/index.ts --projects
+github.com/chewygumxx/dorothy  .agents/memory  $P/dorothy
+[exit 0]
+$ git -C $P/dorothy diff --stat
+ .agents/memory/MEMORY.md | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+[exit 0]
+$ bun $REPO/packages/cli/src/index.ts --sync $P/dorothy
+dorothy: memory has no mirror · dorothy --mirror <url>
+github.com/chewygumxx/dorothy: 0 in, 0 out (.agents/memory)
+[exit 0]
+$ bun $REPO/packages/cli/src/index.ts --retire github.com/chewygumxx/dorothy/bg-session-force-color
+dorothy: memory has no mirror · dorothy --mirror <url>
+Retired github.com/chewygumxx/dorothy/bg-session-force-color.
+[exit 0]
+$ bun $REPO/packages/cli/src/index.ts --sync $P/dorothy
+dorothy: memory has no mirror · dorothy --mirror <url>
+github.com/chewygumxx/dorothy: 0 in, 1 out (.agents/memory)
+[exit 0]
+$ ls $P/dorothy/.agents/memory
+dorothy-ambition.md
+maintenance-design-agreed.md
+MEMORY.md
+nested-claude-session-env.md
+[exit 0]
+$ bun $REPO/packages/cli/src/index.ts --revive github.com/chewygumxx/dorothy/bg-session-force-color
+dorothy: memory has no mirror · dorothy --mirror <url>
+Revived github.com/chewygumxx/dorothy/bg-session-force-color.
+[exit 0]
+$ bun $REPO/packages/cli/src/index.ts --sync $P/dorothy
+dorothy: memory has no mirror · dorothy --mirror <url>
+github.com/chewygumxx/dorothy: 0 in, 1 out (.agents/memory)
+[exit 0]
+$ ls $P/dorothy/.agents/memory
+bg-session-force-color.md
+dorothy-ambition.md
+maintenance-design-agreed.md
+MEMORY.md
+nested-claude-session-env.md
+[exit 0]
+$ sed -i 's/FORCE_COLOR=3/FORCE_COLOR=3 (probed)/' <clone>/.agents/memory/bg-session-force-color.md
+$ bun $REPO/packages/cli/src/index.ts --sync $P/dorothy
+dorothy: memory has no mirror · dorothy --mirror <url>
+github.com/chewygumxx/dorothy: 1 in, 0 out (.agents/memory)
+[exit 0]
+$ bun $REPO/packages/cli/src/index.ts --history -n 12
+dorothy: memory has no mirror · dorothy --mirror <url>
+000c972  2026-10-15 11:42  other    sync: github.com/chewygumxx/dorothy: 1 in, 0 out
+8555364  2026-10-15 11:42  other    sync: github.com/chewygumxx/dorothy: 0 in, 1 out
+1d2ae2d  2026-10-15 11:42  other    revive: github.com/chewygumxx/dorothy/bg-session-force-color
+7ca41a5  2026-10-15 11:42  other    sync: github.com/chewygumxx/dorothy: 0 in, 1 out
+63fb225  2026-10-15 11:42  other    retire: github.com/chewygumxx/dorothy/bg-session-force-color
+1f255b4  2026-10-15 11:42  other    sync: github.com/chewygumxx/dorothy: 4 in, 0 out
+8c67b56  2026-10-15 11:42  adopt    adopt: 1 files
+[exit 0]

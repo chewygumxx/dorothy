@@ -18,7 +18,10 @@ import {
     type TurnStats,
     xdgDir,
 } from "@dorothy/core";
+import { scrub } from "./scrub.js";
 
+// The body a session ran in. A session event without one is chat's.
+export type Source = "chat" | "claude-code";
 export type SessionEvent = {
     v: 1;
     kind: "session";
@@ -28,6 +31,26 @@ export type SessionEvent = {
     model: string;
     promptHash: string;
     resumed: boolean;
+    source?: Source;
+    // The body's own session id, so a resumed session continues its
+    // conversation.
+    sourceSession?: string;
+    // The project the session ran in; none for chat.
+    project?: string;
+};
+// A body's tool call, its text scrubbed of secrets and trimmed. memory
+// marks a call to Dorothy's own memory tools, so that no review learns as
+// new what memory supplied.
+export type ToolEvent = {
+    v: 1;
+    kind: "tool";
+    at: string;
+    name: string;
+    input: string;
+    output: string;
+    ok: boolean;
+    cut: { input: number; output: number };
+    memory?: true;
 };
 export type UserEvent = { v: 1; kind: "user"; at: string; text: string };
 export type AssistantEvent = {
@@ -65,11 +88,57 @@ export type TranscriptEvent =
     | AssistantEvent
     | StatsEvent
     | CompactionEvent
+    | ToolEvent
     | RecallEvent;
 
 // An event as callers write it; the writer stamps `v` and `at`.
 type Unstamped<E> = E extends unknown ? Omit<E, "v" | "at"> : never;
 export type TranscriptEntry = Unstamped<TranscriptEvent>;
+
+export const sourceOf = (event: { source?: unknown }): Source =>
+    event.source === "claude-code" ? "claude-code" : "chat";
+
+// Each side of a tool call keeps this many characters, counted in code
+// points.
+export const TOOL_TEXT_LIMIT = 2000;
+
+function trimmed(text: string): { text: string; cut: number } {
+    const points = [...text];
+    return points.length <= TOOL_TEXT_LIMIT
+        ? { text, cut: 0 }
+        : {
+              text: points.slice(0, TOOL_TEXT_LIMIT).join(""),
+              cut: points.length - TOOL_TEXT_LIMIT,
+          };
+}
+
+// A tool call as a transcript entry: scrubbed first, so a secret is never
+// half kept by the trim.
+export function toolEntry({
+    name,
+    input,
+    output,
+    ok,
+    memory = false,
+}: {
+    name: string;
+    input: string;
+    output: string;
+    ok: boolean;
+    memory?: boolean;
+}): Extract<TranscriptEntry, { kind: "tool" }> {
+    const inside = trimmed(scrub(input));
+    const outside = trimmed(scrub(output));
+    return {
+        kind: "tool",
+        name,
+        input: inside.text,
+        output: outside.text,
+        ok,
+        cut: { input: inside.cut, output: outside.cut },
+        ...(memory ? { memory: true as const } : {}),
+    };
+}
 
 export function transcriptDir(env: Env = process.env): string {
     return join(
@@ -91,7 +160,10 @@ export function toTurn(event: unknown): Turn | "ignore" | "malformed" {
     if ((kind === "user" || kind === "assistant") && typeof text === "string") {
         return { role: kind, text };
     }
-    return kind === "session" || kind === "stats" || kind === "compaction"
+    return kind === "session" ||
+        kind === "stats" ||
+        kind === "compaction" ||
+        kind === "tool"
         ? "ignore"
         : "malformed";
 }

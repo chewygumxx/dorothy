@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 7799bd91-7490-4c5f-acc5-387e592c63f5
-  modified: 2026-10-14T21:10:22.279Z
+  modified: 2026-10-14T22:05:02.463Z
 ---
 
 Stated 2026-10-15, after comparing OpenClaw and Hermes Agent as hosts:
@@ -24,6 +24,8 @@ Stated 2026-10-15, after comparing OpenClaw and Hermes Agent as hosts:
   the claude-md-management or claude-code-setup plugins.
 - Memory comes first, and may be reworked whole. Its principle: "Wherever
   you go, your memory follows with you." To be discussed in its spec.
+- Nothing is forgotten: a memory may fade in prominence (ranking,
+  retiring) but must always remain possible to query. No expiry.
 
 **Why:** the user wants the best for Dorothy without being hosted by
 either project. The objectives report,

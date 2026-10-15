@@ -23,6 +23,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { newPhrase } from "@dorothy/core";
+import { PERSONAL, putFact } from "../facts/store.js";
 import { EMPTY_SIDECAR, type Sidecar, sidecarPath } from "../memory/sidecar.js";
 import type { Concept } from "../memory/vocabulary.js";
 import { RecallIndex } from "./store.js";
@@ -293,6 +294,71 @@ describe("syncIndex", () => {
         const warnings = await syncIndex(index, dir);
         expect(warnings).toHaveLength(1);
         expect(turns(A)).toEqual([{ n: 1, role: "user", text: "old" }]);
+    });
+
+    it("takes a conversation's source and project from its first session", async () => {
+        await writeFile(
+            transcript(A),
+            [
+                event("session", 0, {
+                    phrase: "p",
+                    sdkSessionId: "",
+                    model: "m",
+                    promptHash: "",
+                    resumed: false,
+                    source: "claude-code",
+                    project: "github.com/chewygumxx/dorothy",
+                }),
+                user(1, "fix it"),
+                reply(2, "Looking."),
+                event("tool", 2, {
+                    name: "Bash",
+                    input: "{}",
+                    output: "secret-free output",
+                    ok: true,
+                    cut: { input: 0, output: 0 },
+                }),
+                reply(3, "Fixed."),
+                session(4),
+            ].join(""),
+        );
+        await writeFile(transcript(B), [session(0), user(1, "hi")].join(""));
+        await syncIndex(index, dir);
+        // Tool output is never indexed; consecutive replies are turns.
+        expect(turns(A)).toEqual([
+            { n: 1, role: "user", text: "fix it" },
+            { n: 2, role: "assistant", text: "Looking." },
+            { n: 3, role: "assistant", text: "Fixed." },
+        ]);
+        expect(row(A)).toMatchObject({
+            source: "claude-code",
+            project: "github.com/chewygumxx/dorothy",
+        });
+        expect(row(B)).toMatchObject({ source: "chat", project: null });
+    });
+
+    it("syncs facts too when given the data directory", async () => {
+        await putFact(dir, PERSONAL, {
+            name: "tea",
+            title: "Tea",
+            description: "Likes tea.",
+            type: "user",
+            extra: {},
+            tags: [],
+            importance: null,
+            provenance: {
+                origin: "user",
+                by: "dorothy",
+                at: T(0),
+                created: T(0),
+            },
+            retired: null,
+            body: "Tea.",
+        });
+        await syncIndex(index, dir, Date.now(), null, dir);
+        expect(index.db.query("SELECT name FROM facts").all()).toEqual([
+            { name: "tea" },
+        ]);
     });
 });
 

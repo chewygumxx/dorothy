@@ -8,15 +8,34 @@
 //
 //
 
+import { basename } from "node:path";
+import { parseFact } from "../facts/file.js";
+import { isProjectId } from "../facts/store.js";
 import { parseSidecar } from "../memory/sidecar.js";
 import { parseVocabulary } from "../memory/vocabulary.js";
+import { parseRegistry } from "../projects/registry.js";
 
 // What a path in the data directory holds, by where it sits.
-export type FileKind = "vocabulary" | "sidecar" | "transcript" | "other";
+export type FileKind =
+    | "vocabulary"
+    | "sidecar"
+    | "transcript"
+    | "fact"
+    | "projects"
+    | "other";
+
+const PERSONAL_FACT = /^facts\/personal\/[^/]+\.md$/;
+const PROJECT_FACT = /^facts\/projects\/(.+)\/[^/]+\.md$/;
 
 export function fileKind(path: string): FileKind {
     if (path === "tags.json") {
         return "vocabulary";
+    }
+    if (path === "projects.json") {
+        return "projects";
+    }
+    if (PERSONAL_FACT.test(path) || PROJECT_FACT.test(path)) {
+        return "fact";
     }
     if (/^transcripts\/[^/]+\.meta\.json$/.test(path)) {
         return "sidecar";
@@ -100,6 +119,18 @@ export function lint(
         text = utf8.decode(bytes);
     } catch {
         return "it is not UTF-8";
+    }
+    if (kind === "fact") {
+        const id = PROJECT_FACT.exec(path)?.[1];
+        if (id !== undefined && !isProjectId(id)) {
+            return "it is not under a project id";
+        }
+        const read = parseFact(text, basename(path, ".md"));
+        return read.kind === "ok" ? null : read.reason;
+    }
+    if (kind === "projects") {
+        const read = parseRegistry(text);
+        return read.kind === "unparseable" ? read.reason : null;
     }
     const read =
         kind === "vocabulary" ? parseVocabulary(text) : parseSidecar(text);

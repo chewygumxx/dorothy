@@ -20,8 +20,15 @@ import {
     writeFile,
 } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import type { Env } from "@dorothy/core";
-import type { HistoryHandle, Lock, Recorder } from "../memory/sidecar.js";
+import { handEdited, parseFact, renderFact } from "../facts/file.js";
+import {
+    type HistoryHandle,
+    type Lock,
+    type Recorder,
+    writeAtomic,
+} from "../memory/sidecar.js";
 import { transcriptDir } from "../transcript.js";
 import { recoverFile, stamp } from "./heal.js";
 import { fileKind, lint } from "./lint.js";
@@ -345,6 +352,9 @@ export class MemoryHistory {
             if (except.has(path)) {
                 continue;
             }
+            if (fileKind(path) === "fact") {
+                await this.#canonicalise(path);
+            }
             const problem = await this.#problem(path);
             if (problem !== null) {
                 await this.#recover(path, problem);
@@ -357,6 +367,66 @@ export class MemoryHistory {
                     : `outside: ${path}`,
             );
         }
+    }
+
+    // A fact added or edited by hand is rewritten as Dorothy writes one,
+    // and made the user's, before it is linted. One that is no fact, is
+    // not UTF-8, or whose rewrite would fail the lint is left as it is
+    // for the lint to restore and keep. A file that can't be read throws,
+    // to be warned of, never taken for broken content.
+    async #canonicalise(path: string): Promise<void> {
+        const full = join(this.root, path);
+        if (!existsSync(full)) {
+            return;
+        }
+        let text: string;
+        try {
+            text = new TextDecoder("utf-8", { fatal: true }).decode(
+                await readFile(full),
+            );
+        } catch (error) {
+            if (error instanceof TypeError) {
+                return;
+            }
+            throw error;
+        }
+        const stem = basename(path, ".md");
+        if (await this.#dorothys(path, text, stem)) {
+            return;
+        }
+        const canonical = handEdited(text, stem, this.#now());
+        if (
+            canonical !== null &&
+            canonical !== text &&
+            lint(path, new TextEncoder().encode(canonical), null) === null
+        ) {
+            await writeAtomic(full, canonical);
+        }
+    }
+
+    // Whether a changed fact is Dorothy's own uncommitted write, which a
+    // crash, a lost catch-up or a session with no history leaves behind:
+    // canonical to the byte, and either new or with a provenance other
+    // than the committed one's, as every write of hers sets a new time. A
+    // hand edit leaves the provenance as it was.
+    async #dorothys(
+        path: string,
+        text: string,
+        stem: string,
+    ): Promise<boolean> {
+        const read = parseFact(text, stem);
+        if (read.kind !== "ok" || renderFact(read.fact) !== text) {
+            return false;
+        }
+        const head = await this.repo.show(path, "HEAD");
+        if (head === null) {
+            return true;
+        }
+        const before = parseFact(new TextDecoder().decode(head), stem);
+        return (
+            before.kind !== "ok" ||
+            !isDeepStrictEqual(before.fact.provenance, read.fact.provenance)
+        );
     }
 
     async #recover(path: string, reason: string): Promise<boolean> {

@@ -12,6 +12,7 @@ import { type Env, readConfig, SERVER_NAME } from "@dorothy/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { dataRoot } from "../facts/store.js";
 import { vocabularyPath } from "../memory/vocabulary.js";
 import { transcriptDir } from "../transcript.js";
 import {
@@ -69,6 +70,9 @@ export type RecallServerOptions = {
     // tags.json, synced with the transcripts; null leaves tags as the
     // index last saw them.
     vocabulary?: string | null;
+    // The data directory, whose facts/ is synced with the transcripts;
+    // null leaves facts as the index last saw them.
+    facts?: string | null;
     // The live conversation, never among the results.
     exclude: string | null;
     // Serve recollect over the live conversation's clusters; the session
@@ -99,6 +103,7 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
                 options.dir,
                 now(),
                 options.vocabulary ?? null,
+                options.facts ?? null,
             );
             const result = await ready.exclusive(() => work(ready));
             return {
@@ -202,6 +207,7 @@ export async function runRecallServer(
         openIndex: () => RecallIndex.open(indexPath(env)),
         dir: transcriptDir(env),
         vocabulary: vocabularyPath(env),
+        facts: dataRoot(env),
         exclude,
         recollect: serveRecollect,
         halfLifeDays: config.memory.halfLifeDays,
