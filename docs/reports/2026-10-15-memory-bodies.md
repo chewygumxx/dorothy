@@ -37,9 +37,10 @@ The probes decided that repeated `--settings` last-wins, so a user's own
 is merged into Dorothy's (as a private file by path, so no secret reaches
 `claude`'s command line), that repeated `--mcp-config` accumulates, and
 that `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` beats a settings file. The
-automated checks pass (`bun run check`, 1611 tests) and the end-to-end
-run on temporary data behaved as expected. The user's own check in
-`dorothy --claude` is pending (see Verification, By hand).
+automated checks pass (`bun run check`, 1615 tests after the final
+review's fixes), the end-to-end run on temporary data behaved as
+expected, and the user's own check in `dorothy --claude` passed (see
+Verification, By hand).
 
 Claude Code version for the probes and the verification: 2.1.300.
 
@@ -275,9 +276,28 @@ personal
 
 ### By hand
 
-Pending: the user's interactive check in `dorothy --claude` (no
-permission prompt for her tools, remember then found from chat, auto
-memory off).
+The user ran `dorothy --claude` in this repository on 2026-10-15, in a
+Herdr pane the controller read without sending input:
+
+- **No prompts.** She found an earlier conversation with `search`, then
+  `open` at the matching turn, and said no permission prompt appeared.
+- **remember.** Told the user is in Melbourne, she called
+  `dorothy-memory`'s `remember` and saved `personal/user-in-melbourne`.
+- **Found again elsewhere.** In a new Claude Code session, asked where
+  the user lives, she searched and found that fact first, ahead of
+  repository facts matching only on common words. The fact was not in
+  the memory block, as facts reach her only through recall until
+  Layers. She could not say which conversation saved it: Claude Code's
+  `remember` has no `from` until Recording.
+- **Auto memory off.** `/memory` showed `Auto-memory false`.
+
+The check found the fact again from Claude Code, not from chat; chat's
+`remember` and search over facts are covered by the automated tests.
+
+She also noticed that turn times are stored in UTC while `dateCreated`
+and the `after` and `before` filters use the local date, so a chat
+begun just after local midnight shows turns dated the day before. That
+is outside delivery and left for a follow-up.
 
 ## Known limitations
 
