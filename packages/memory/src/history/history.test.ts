@@ -20,15 +20,28 @@ import {
     appendFileSync,
     chmodSync,
     existsSync,
+    mkdirSync,
     readdirSync,
     readFileSync,
+    realpathSync,
+    rmSync,
     statSync,
     utimesSync,
     writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { parseFact, renderFact } from "../facts/file.js";
+import { type Fact, parseFact, renderFact } from "../facts/file.js";
+import {
+    type FactStore,
+    moveFact,
+    PERSONAL,
+    retireFact,
+    retireFacts,
+    reviveFact,
+} from "../facts/store.js";
 import { EMPTY_SIDECAR, type Lock } from "../memory/sidecar.js";
+import { exportedForm, renderExported } from "../projects/export.js";
+import { syncProject } from "../projects/sync.js";
 import { binaryRepo } from "./binary.js";
 import {
     HOOK_MARK,
@@ -659,6 +672,115 @@ describe("a lock that fails", () => {
             "history: couldn't commit (busy); it will be committed with the next change",
             "history: couldn't restore tags.json (busy)",
         ]);
+    });
+});
+
+describe("a store write left uncommitted", () => {
+    // An external fact written with no recorder, as history off, a crash
+    // or a recorder that threw leaves it, is still hers to the sweep.
+    const FROM = "bingo-overabundance-mazer-kasha";
+    const EXTERNAL: Fact = {
+        ...TEA,
+        provenance: {
+            ...TEA.provenance,
+            origin: "external",
+            from: `${FROM}#1`,
+        },
+    };
+    const TARGET = { scope: PERSONAL, name: "likes-tea" };
+    const unrecorded = (): FactStore => ({
+        root,
+        lock: (work) => work(),
+        recorder: null,
+        now: () => NOW,
+    });
+    const swept = async (fact: Fact, write: () => Promise<unknown>) => {
+        put(root, TEA_PATH, renderFact(fact));
+        const history = await open();
+        await write();
+        await history.sweep();
+        expect(await history.repo.changed()).toEqual([]);
+        return provenanceOf(TEA_PATH);
+    };
+
+    it.each([
+        [
+            "retireFact",
+            () =>
+                retireFact(unrecorded(), TARGET, {
+                    by: "user",
+                    why: "stale",
+                }),
+        ],
+        [
+            "retireFacts",
+            () => retireFacts(unrecorded(), FROM, { by: "user", why: "x" }),
+        ],
+    ])("keeps the origin after %s", async (_, write) => {
+        const provenance = await swept(EXTERNAL, write);
+        expect(provenance?.origin).toBe("external");
+        expect(provenance?.by).toBe("user");
+        expect(provenance?.at).toBe(NOW.toISOString());
+    });
+
+    it("keeps the origin after reviveFact", async () => {
+        const retired: Fact = {
+            ...EXTERNAL,
+            retired: { at: TEA.provenance.at, by: "user", why: "stale" },
+        };
+        const provenance = await swept(retired, () =>
+            reviveFact(unrecorded(), TARGET),
+        );
+        expect(provenance?.origin).toBe("external");
+        expect(provenance?.at).toBe(NOW.toISOString());
+    });
+
+    it("keeps the origin after moveFact there and back", async () => {
+        const project = { kind: "project" as const, id: "github.com/a/b" };
+        const provenance = await swept(EXTERNAL, async () => {
+            await moveFact(unrecorded(), TARGET, project);
+            await moveFact(
+                unrecorded(),
+                { scope: project, name: "likes-tea" },
+                PERSONAL,
+            );
+        });
+        expect(provenance?.origin).toBe("external");
+        expect(provenance?.at).toBe(NOW.toISOString());
+    });
+
+    it("keeps the origin of a fact sync retired", async () => {
+        const repo = realpathSync(tempRoot());
+        mkdirSync(join(repo, ".git"));
+        writeFileSync(
+            join(repo, ".git", "config"),
+            '[remote "origin"]\n\turl = https://github.com/a/b\n',
+        );
+        const file = join(repo, ".agents", "memory", "likes-tea.md");
+        mkdirSync(join(repo, ".agents", "memory"), { recursive: true });
+        writeFileSync(file, renderExported(exportedForm(TEA)));
+        const options = {
+            root,
+            lock: unrecorded().lock,
+            recorder: null,
+            now: () => NOW,
+        };
+        expect((await syncProject(repo, options)).kind).toBe("ok");
+        const history = await open();
+        rmSync(file);
+        const result = await syncProject(repo, {
+            ...options,
+            now: () => new Date(NOW.getTime() + 1000),
+        });
+        expect(result.kind === "ok" && result.report.retired).toEqual([
+            "likes-tea",
+        ]);
+        await history.sweep();
+        const path = "facts/projects/github.com/a/b/likes-tea.md";
+        expect(provenanceOf(path)).toMatchObject({
+            origin: "repo",
+            by: "repo",
+        });
     });
 });
 

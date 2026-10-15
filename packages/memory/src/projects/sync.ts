@@ -405,6 +405,7 @@ async function reconcile(
                     written.push(
                         await putFact(root, scope, {
                             ...held,
+                            provenance: { ...held.provenance, by: "repo", at },
                             retired: {
                                 at,
                                 by: "repo",

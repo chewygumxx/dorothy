@@ -305,8 +305,10 @@ sweeps up outside changes before its next commit, and the lint heals a
 broken edit. A fact the user adds or edits by hand is `origin: user`: the
 sweep keeps a changed fact as Dorothy's own write only when it is in
 canonical form and its provenance differs from the committed version's,
-as every write of hers makes it, and otherwise makes it the user's. A
-broken file kept in `broken/` keeps the user's bytes.
+and otherwise makes it the user's. Every write of the store's, a move,
+retirement or revival and sync's own included, sets `provenance.at`, and
+`by` where the write names a writer, so one left uncommitted is still
+hers. A broken file kept in `broken/` keeps the user's bytes.
 
 ### Retiring
 

@@ -231,6 +231,17 @@ export type FactResult =
 type Target = { scope: Scope; name: string };
 
 const at = (store: FactStore) => (store.now?.() ?? new Date()).toISOString();
+// Every write gives the fact a new provenance time, and the writer where
+// the write names one, so that the sweep knows an uncommitted write as
+// Dorothy's own rather than a hand edit.
+const stamped = (fact: Fact, now: string, by?: Writer): Fact => ({
+    ...fact,
+    provenance: {
+        ...fact.provenance,
+        ...(by === undefined ? {} : { by }),
+        at: now,
+    },
+});
 const label = ({ scope, name }: Target) => `${scopeLabel(scope)}/${name}`;
 
 // Runs work under the store's lock; a throw becomes a failure.
@@ -330,13 +341,14 @@ export function moveFact(
                 reason: `there is already a fact ${label({ scope: to, name: from.name })}`,
             };
         }
-        const path = await putFact(store.root, to, found.fact);
+        const fact = stamped(found.fact, at(store));
+        const path = await putFact(store.root, to, fact);
         await rm(found.path);
         await store.recorder?.(
             [found.path, path],
             `move: ${label(from)} to ${scopeLabel(to)}`,
         );
-        return { kind: "written", fact: found.fact };
+        return { kind: "written", fact };
     });
 }
 
@@ -356,9 +368,10 @@ export function retireFact(
         if (found.fact.retired !== null) {
             return { kind: "unchanged" };
         }
+        const now = at(store);
         const fact = {
-            ...found.fact,
-            retired: { at: at(store), by, why: normalise(why) },
+            ...stamped(found.fact, now, by),
+            retired: { at: now, by, why: normalise(why) },
         };
         const path = await putFact(store.root, target.scope, fact);
         await store.recorder?.([path], `retire: ${label(target)}`);
@@ -381,7 +394,7 @@ export function reviveFact(
         if (found.fact.retired === null) {
             return { kind: "unchanged" };
         }
-        const fact = { ...found.fact, retired: null };
+        const fact = { ...stamped(found.fact, at(store)), retired: null };
         const path = await putFact(store.root, target.scope, fact);
         await store.recorder?.([path], `revive: ${label(target)}`);
         return { kind: "written", fact };
@@ -410,7 +423,7 @@ export function retireFacts(
                 continue;
             }
             const next = {
-                ...fact,
+                ...stamped(fact, now, by),
                 retired: { at: now, by, why: normalise(why) },
             };
             paths.push(await putFact(store.root, scope, next));
