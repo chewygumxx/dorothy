@@ -154,9 +154,16 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
             },
         },
         (input) =>
-            answer((index) =>
-                openConversation(index, input, { exclude: options.exclude }),
-            ),
+            answer((index) => {
+                if (input.conversation === undefined) {
+                    throw new RecallError("Give a conversation to open.");
+                }
+                return openConversation(
+                    index,
+                    { ...input, conversation: input.conversation },
+                    { exclude: options.exclude },
+                );
+            }),
     );
     server.registerTool(
         "tags",

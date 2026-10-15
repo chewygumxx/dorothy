@@ -141,6 +141,7 @@ export function pendingReads(
     return turns.flatMap((turn) =>
         (turn.lookups ?? []).flatMap((lookup) =>
             lookup.tool === "open" &&
+            "conversation" in lookup &&
             lookup.ok &&
             !Object.hasOwn(appraised, lookup.id)
                 ? [

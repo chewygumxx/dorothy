@@ -309,6 +309,8 @@ function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
                 replyOffset: event.offset,
             };
         }
+        case "remember":
+            return state;
         case "error": {
             // With nothing live, a lookup pending at the failure may just
             // have flushed the reply's text; that line carries the marker.

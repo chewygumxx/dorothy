@@ -57,6 +57,16 @@ export type ConversationEvent =
           offset: number;
           lookup: Lookup;
       }
+    // A call to remember: its input as the model gave it and the tool's
+    // text, the reason when it failed; offset as a lookup's.
+    | {
+          type: "remember";
+          id: string;
+          ok: boolean;
+          offset: number;
+          input: unknown;
+          output: string;
+      }
     | { type: "warning"; message: string }
     // Compaction is under way and the next message waits for it.
     | { type: "compacting" }

@@ -274,7 +274,11 @@ function applyLines(index: RecallIndex, row: Row, text: string): void {
         }
         if (kind === "recall") {
             const recall = toRecall(event);
-            if (recall?.tool === "open" && recall.ok) {
+            if (
+                recall?.tool === "open" &&
+                recall.ok &&
+                "conversation" in recall
+            ) {
                 index.db.run(
                     "INSERT OR IGNORE INTO reads (id, reader, target, at) VALUES (?, ?, ?, ?)",
                     [

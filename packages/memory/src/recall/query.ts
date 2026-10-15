@@ -310,6 +310,8 @@ export function search(
         "SELECT phrase, title, description, abstract, first_at, last_at FROM conversations WHERE phrase = ?",
     );
     return {
+        facts: [],
+        moreFacts: 0,
         results: scored.slice(0, limit).map((hit) => ({
             ...objectOf(
                 row.get(hit.phrase) as ConversationRow,
@@ -392,7 +394,7 @@ const isoWindow = (
 
 export function openConversation(
     index: RecallIndex,
-    input: OpenInput,
+    input: OpenInput & { conversation: string },
     options: { exclude: string | null },
 ): OpenResult {
     const purpose = normalise(input.purpose);

@@ -11,9 +11,11 @@
 import { describe, expect, it } from "bun:test";
 import {
     ALLOWED_TOOLS,
+    CLAUDE_ALLOWED_TOOLS,
     describeLookup,
     type OpenResult,
     RECOLLECT_TOOL,
+    REMEMBER_TOOL,
     type RecollectResult,
     type SearchHit,
     type SearchResult,
@@ -45,13 +47,19 @@ describe("toolOf", () => {
             "mcp__memory__search",
             "mcp__memory__open",
             "mcp__memory__tags",
+            "mcp__memory__remember",
         ]);
     });
 });
 
 describe("describeLookup", () => {
     it("counts a search's hits, those past the limit too", () => {
-        const result: SearchResult = { results: [hit("a"), hit("b")], more: 3 };
+        const result: SearchResult = {
+            facts: [],
+            moreFacts: 0,
+            results: [hit("a"), hit("b")],
+            more: 3,
+        };
         expect(
             describeLookup(
                 "search",
@@ -63,6 +71,7 @@ describe("describeLookup", () => {
             query: "render",
             after: "2026-10-01",
             hits: 5,
+            facts: 0,
         });
     });
 
@@ -224,5 +233,101 @@ describe("recollect's vocabulary", () => {
                 turns: null,
             });
         }
+    });
+});
+
+describe("the memory tools' names", () => {
+    it("gives chat remember, and Claude Code a server of its own", () => {
+        expect(ALLOWED_TOOLS).toEqual([
+            "mcp__memory__search",
+            "mcp__memory__open",
+            "mcp__memory__tags",
+            "mcp__memory__remember",
+        ]);
+        expect(CLAUDE_ALLOWED_TOOLS).toEqual([
+            "mcp__dorothy-memory__search",
+            "mcp__dorothy-memory__open",
+            "mcp__dorothy-memory__tags",
+            "mcp__dorothy-memory__remember",
+        ]);
+        expect(REMEMBER_TOOL).toBe("mcp__memory__remember");
+    });
+
+    it("never takes remember for a lookup", () => {
+        expect(toolOf(REMEMBER_TOOL)).toBeNull();
+    });
+});
+
+describe("describeLookup over facts", () => {
+    it("counts a search's facts apart, and keeps its kind", () => {
+        const result = JSON.stringify({
+            facts: [{ id: "personal/tea" }],
+            moreFacts: 2,
+            results: [],
+            more: 0,
+        });
+        expect(
+            describeLookup("search", { query: "tea", kind: "facts" }, result),
+        ).toEqual({
+            tool: "search",
+            query: "tea",
+            searched: "facts",
+            hits: 0,
+            facts: 3,
+        });
+    });
+
+    it("records no facts for a search of conversations alone", () => {
+        const result = JSON.stringify({
+            facts: [],
+            moreFacts: 0,
+            results: [],
+            more: 0,
+        });
+        expect(
+            describeLookup(
+                "search",
+                { query: "x", kind: "conversations" },
+                result,
+            ),
+        ).toEqual({
+            tool: "search",
+            query: "x",
+            searched: "conversations",
+            hits: 0,
+        });
+    });
+
+    it("names an opened fact by its title", () => {
+        const result = JSON.stringify({
+            id: "personal/tea",
+            title: "Tea at four",
+        });
+        expect(
+            describeLookup(
+                "open",
+                { fact: "personal/tea", purpose: "her tea" },
+                result,
+            ),
+        ).toEqual({
+            tool: "open",
+            fact: "personal/tea",
+            name: "Tea at four",
+            purpose: "her tea",
+            turns: null,
+        });
+        expect(
+            describeLookup(
+                "open",
+                { fact: "personal/tea", purpose: "p" },
+                null,
+            ),
+        ).toEqual({
+            tool: "open",
+            fact: "personal/tea",
+            name: "personal/tea",
+            purpose: "p",
+            turns: null,
+        });
     });
 });
