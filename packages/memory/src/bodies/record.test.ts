@@ -184,6 +184,30 @@ describe("recordSession", () => {
         ).toEqual(["session", "after"]);
     });
 
+    it("passes over a line of an unexpected shape from before the launch", async () => {
+        await write([
+            assistantLine("a1", 0, [], {
+                message: { role: "assistant", content: "plain" },
+            }),
+            userLine("u1", 1, "before"),
+            userLine("u2", 5, "after"),
+        ]);
+        const recorded = await recordSession(
+            report({ since: Date.parse(at(3)) }),
+            deps(),
+        );
+        if (recorded.kind !== "recorded") {
+            throw new Error(recorded.kind);
+        }
+        expect(recorded).toMatchObject({ appended: 1, halted: false });
+        expect(
+            (await events(recorded.phrase)).map(
+                (event) => event.text ?? event.kind,
+            ),
+        ).toEqual(["session", "after"]);
+        expect(await readRecord(env, SESSION)).toBeNull();
+    });
+
     it("appends each event once when two hooks record at once", async () => {
         await write([
             userLine("u1", 0, "a"),

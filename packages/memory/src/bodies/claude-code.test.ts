@@ -260,6 +260,28 @@ describe("readLines", () => {
         ).toEqual([{ kind: "user", text: "newer" }]);
     });
 
+    it("passes over a line of an unexpected shape from before the launch", () => {
+        const bad = (uuid: string, minute: number) =>
+            assistantLine(uuid, minute, [], {
+                message: { role: "assistant", content: "plain" },
+            });
+        const since = Date.parse(at(3));
+        const before = readLines([bad("a1", 0), userLine("u2", 5, "new")], {
+            since,
+        });
+        expect(before.halt).toBeNull();
+        expect(before.events.map((event) => event.entry)).toEqual([
+            { kind: "user", text: "new" },
+        ]);
+        const after = readLines([userLine("u2", 5, "new"), bad("a2", 6)], {
+            since,
+        });
+        expect(after.halt).toMatchObject({
+            line: 1,
+            reason: "an assistant line without its content",
+        });
+    });
+
     it("names the model of the first assistant line that is not synthetic", () => {
         const read = readLines([
             assistantLine("a1", 0, [text("x")], {

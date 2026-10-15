@@ -282,6 +282,13 @@ export function readLines(
         ) {
             return true;
         }
+        // What came before the launch is never read, whatever its shape.
+        if (since !== null && typeof line.timestamp === "string") {
+            const stamped = Date.parse(line.timestamp);
+            if (Number.isFinite(stamped) && stamped < since) {
+                return true;
+            }
+        }
         let words: string | null = null;
         let content: Json[] | string = [];
         if (type === "attachment") {
