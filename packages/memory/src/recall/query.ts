@@ -655,7 +655,28 @@ export function listTags(
     }
     const exclude = options.exclude ?? "";
     const rows = carriers(index);
-    const listed = listedConcepts(index, exclude, rows);
+    // A concept a live fact carries is hers to see, as search finds it,
+    // and its tag counts those facts. fact_tags holds retired facts'
+    // tags too, which search wants and the tags list does not.
+    const live = new Set(
+        (
+            index.db
+                .query("SELECT path FROM facts WHERE retired = 0")
+                .all() as {
+                path: string;
+            }[]
+        ).map((row) => row.path),
+    );
+    const factCount = new Map<string, number>();
+    for (const row of factCarriers(index)) {
+        if (live.has(row.path)) {
+            factCount.set(row.id, (factCount.get(row.id) ?? 0) + 1);
+        }
+    }
+    const listed = new Set([
+        ...listedConcepts(index, exclude, rows),
+        ...factCount.keys(),
+    ]);
     let scope = listed;
     if (input.under !== undefined) {
         const label = normalise(input.under);
@@ -754,6 +775,9 @@ export function listTags(
                 ...(broader.length > 0 ? { broader } : {}),
                 ...(narrower.length > 0 ? { narrower } : {}),
                 conversations: phrases.length,
+                ...(factCount.has(c.id)
+                    ? { facts: factCount.get(c.id) as number }
+                    : {}),
                 ...(active.length > 0
                     ? {
                           dateCreated: localDate(

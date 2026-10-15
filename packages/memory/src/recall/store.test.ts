@@ -85,10 +85,25 @@ describe("RecallIndex", () => {
         index.close();
     });
 
-    it("is at schema version 4, with clusters, vocabulary and facts tables", () => {
+    it("keeps each body's session with its conversation", () => {
+        const index = RecallIndex.open(path);
+        index.db.run(
+            "INSERT INTO conversation_sessions (session, phrase) VALUES (?, ?)",
+            ["s-1", "a-b-c-d"],
+        );
+        expect(() =>
+            index.db.run(
+                "INSERT INTO conversation_sessions (session, phrase) VALUES (?, ?)",
+                ["s-1", "e-f-g-h"],
+            ),
+        ).toThrow();
+        index.close();
+    });
+
+    it("is at schema version 5, with clusters, vocabulary and facts tables", () => {
         const index = RecallIndex.open(path);
         try {
-            expect(SCHEMA_VERSION).toBe(4);
+            expect(SCHEMA_VERSION).toBe(5);
             const tables = (
                 index.db
                     .query(

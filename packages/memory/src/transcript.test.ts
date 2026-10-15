@@ -92,6 +92,37 @@ describe("TranscriptWriter", () => {
         );
     });
 
+    it("takes an event's own time and source uuid where given", async () => {
+        const path = join(dir, "stamped.jsonl");
+        const writer = await TranscriptWriter.open(
+            path,
+            () => new Date("2026-10-15T10:00:00.000Z"),
+        );
+        await writer.append(
+            { kind: "user", text: "hi" },
+            { at: "2026-10-15T09:00:00.000Z", sourceUuid: "u-1" },
+        );
+        await writer.append({ kind: "user", text: "now" });
+        await writer.close();
+        const [first, second] = (await readFile(path, "utf8"))
+            .trim()
+            .split("\n")
+            .map((line) => JSON.parse(line));
+        expect(first).toEqual({
+            v: 1,
+            kind: "user",
+            at: "2026-10-15T09:00:00.000Z",
+            text: "hi",
+            sourceUuid: "u-1",
+        });
+        expect(second).toEqual({
+            v: 1,
+            kind: "user",
+            at: "2026-10-15T10:00:00.000Z",
+            text: "now",
+        });
+    });
+
     it("creates the transcript and its directory private to the user", async () => {
         const path = join(dir, "nested", "a-b-c-d.jsonl");
         const writer = await TranscriptWriter.open(path, clock);

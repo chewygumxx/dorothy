@@ -364,6 +364,11 @@ export function parseTranscript(text: string): TranscriptRead {
 // Chats are private: new transcripts are the user's alone.
 const openAppend = (path: string) => open(path, "a", 0o600);
 
+// An event's own time, where it is not the moment it is written, and
+// the uuid of the Claude Code line it was recorded from, by which the
+// next reading knows where to take up.
+export type Stamp = { at?: string; sourceUuid?: string };
+
 export class TranscriptWriter {
     readonly #path: string;
     #handle: FileHandle;
@@ -387,9 +392,17 @@ export class TranscriptWriter {
 
     // Appends are chained so un-awaited calls still land in call order, and a
     // failed write does not block the ones after it.
-    append(entry: TranscriptEntry): Promise<void> {
+    append(entry: TranscriptEntry, stamp: Stamp = {}): Promise<void> {
         const { kind, ...fields } = entry;
-        const event = { v: 1, kind, at: this.#now().toISOString(), ...fields };
+        const event = {
+            v: 1,
+            kind,
+            at: stamp.at ?? this.#now().toISOString(),
+            ...fields,
+            ...(stamp.sourceUuid === undefined
+                ? {}
+                : { sourceUuid: stamp.sourceUuid }),
+        };
         const line = `${JSON.stringify(event)}\n`;
         const write = this.#pending.then(async () => {
             await this.#follow();

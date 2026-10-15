@@ -27,7 +27,12 @@ import { PERSONAL, putFact } from "../facts/store.js";
 import { EMPTY_SIDECAR, type Sidecar, sidecarPath } from "../memory/sidecar.js";
 import type { Concept } from "../memory/vocabulary.js";
 import { RecallIndex } from "./store.js";
-import { readsByTarget, syncIndex, visitsByPhrase } from "./sync.js";
+import {
+    readsByTarget,
+    sessionPhrase,
+    syncIndex,
+    visitsByPhrase,
+} from "./sync.js";
 
 const phrase = (seed: number) =>
     newPhrase(() => Uint8Array.from([seed, 1, 2, 3, 4, 5, 6, 7]));
@@ -523,5 +528,37 @@ describe("the vocabulary", () => {
         await rm(transcript(A));
         await syncIndex(index, dir);
         expect(rows("SELECT id FROM tagged")).toEqual([]);
+    });
+});
+
+describe("conversation_sessions", () => {
+    it("is filled from session events naming a body's session, and forgotten with them", async () => {
+        const body = (
+            minute: number,
+            sourceSession: string,
+            resumed: boolean,
+        ) =>
+            event("session", minute, {
+                phrase: A,
+                sdkSessionId: "",
+                model: "m",
+                promptHash: "",
+                resumed,
+                source: "claude-code",
+                sourceSession,
+            });
+        await writeFile(
+            transcript(A),
+            [body(0, "s-1", false), user(1, "hi"), body(2, "s-2", true)].join(
+                "",
+            ),
+        );
+        await syncIndex(index, dir);
+        expect(sessionPhrase(index, "s-1")).toBe(A);
+        expect(sessionPhrase(index, "s-2")).toBe(A);
+        expect(sessionPhrase(index, "s-3")).toBeNull();
+        await rm(transcript(A));
+        await syncIndex(index, dir);
+        expect(sessionPhrase(index, "s-1")).toBeNull();
     });
 });
