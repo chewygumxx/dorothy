@@ -67,7 +67,7 @@ is the only file importing `@modelcontextprotocol/sdk`.
   coins concepts inside the sidecar's lock.
 - `facts/`: facts, Markdown in one canonical form (`file.ts`), personal
   or a project's, written, moved, retired and revived under the sidecar
-  lock (`store.ts`); `commands.ts` has the fact and project commands.
+  lock (`store.ts`); `facts/commands.ts` has the fact and project commands.
 - `projects/`: a project's identity, registry, exported form and sync
   with its repository; read [its own guide](./src/projects/AGENTS.md).
 - `recall/`: search over past conversations. `store.ts` is a derived
@@ -89,8 +89,9 @@ is the only file importing `@modelcontextprotocol/sdk`.
   once per process (`open.ts`). `MemoryHistory` (`history.ts`) commits
   each logical change, sweeps up outside changes first, and restores a
   file that fails `lint.ts` (`heal.ts`), keeping its bytes under
-  `broken/`. The lint knows facts and `projects.json`; the sweep rewrites
-  a hand-edited fact canonically, as the user's, before linting it.
+  `broken/`. The lint knows facts and `projects.json`. The sweep keeps a
+  canonical changed fact whose provenance differs from HEAD's as hers;
+  else it is the user's, rewritten canonically only if that lints.
   `mirror.ts` seals new commits as AES-256-GCM bundles (`seal.ts`) on the
   orphan branch `sealed` and pushes it to the remote
   `mirror` under `DOROTHY_MIRROR_KEY`; `--recover` rebuilds from it.

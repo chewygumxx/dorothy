@@ -51,13 +51,13 @@ with its repository:
 
 - Spec: [`docs/specs/2026-10-15-memory-store-design.md`](../specs/2026-10-15-memory-store-design.md)
 - Plan: [`docs/plans/2026-10-15-memory-store.md`](../plans/2026-10-15-memory-store.md)
-- Probe output: [`2026-10-15-memory-store-implementation/`](2026-10-15-memory-store-implementation/probe.txt)
+- Probe output: [`2026-10-15-memory-store-implementation/probe.txt`](2026-10-15-memory-store-implementation/probe.txt)
 - Roadmap: [`docs/roadmap.md`](../roadmap.md)
 - Branch: `docs/memory-spec`, from `main` at `7e2e31a`
 
-Each of the plan's ten tasks was built, then read by a fresh reviewer;
-the reviews found a dozen faults the plan had mandated, all fixed in
-rounds of their own. The probe adopted this repository's own
+Each of the plan's tasks was reviewed by a fresh reviewer; the reviews
+found a dozen faults the plan had mandated, all fixed in rounds of
+their own. The probe adopted this repository's own
 `.agents/memory/` into a scratch store and went through every row of the
 sync it was written to check, and every step read as expected. At the
 head of the branch `bun run check` passes with 1,484 tests across 80
@@ -285,8 +285,7 @@ the reason and what it costs if wrong.
   skipped and named, never taken for a deletion: before, its fact was
   retired silently, which the review focus forbids.
 - A failed import is listed once, as skipped, not also as a conflict;
-  the compaction and projects guides take their headers from siblings
-  with their own dates.
+  the projects guide takes its header from a sibling with its own date.
 
 ## Review
 
