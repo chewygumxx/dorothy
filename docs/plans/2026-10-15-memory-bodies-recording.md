@@ -99,7 +99,9 @@ sections; Delivery is done, in
   at most 150 (`memory`'s is at 150, so detail goes in
   `src/bodies/AGENTS.md`), `docs/AGENTS.md` 60; `agents.test.ts`
   enforces them.
-- Every commit passes `bun run check`.
+- Every commit passes `bun run check`, which checks Biome's format:
+  run `bun run format` before it, as the plan's code is not
+  formatted.
 
 ## Review Focus
 
@@ -165,8 +167,12 @@ spec.
   The block leaves out the conversation of `--resume <id>`, `-r <id>`
   or `--resume=<id>` when the id is a recorded session's.
 - **`listTags` sees facts** (a carry-over from delivery): a concept a
-  fact carries is listed, and its tag gains `facts`, the count of live
-  facts carrying it.
+  live fact carries is listed, and its tag gains `facts`, the count of
+  live facts carrying it; a retired fact's tags count for nothing.
+- **This program runs again as `bun --no-env-file`** for hooks,
+  catch-ups and the recall server: Claude Code runs them in the user's
+  project, and Bun loads the `.env` of the working directory, whose
+  keys dotenvx would then keep over Dorothy's.
 - **The review function is a `Reviewer`** (`memory/reviewer.ts`), which
   `MemoryService` and the hook share; claims stay with each caller.
 
@@ -465,7 +471,9 @@ time "$P/run.sh" "$P/out/new" "${FLAGS[@]}" --session-id="$S" "use tools"
 "$P/run.sh" "$P/out/compact" "${FLAGS[@]}" --resume "$S" "/compact"
 echo "$S" >"$P/session"
 for name in clear exit kill; do
-    "$P/tty.sh" "$name" "--settings=$(cat "$P/settings.json")"
+    # By path: tty.sh's command is parsed again by a shell, which would
+    # take inline JSON apart.
+    "$P/tty.sh" "$name" "--settings=$P/settings.json"
     sleep 5
 done
 ```
@@ -847,8 +855,14 @@ with `writeFile(join(dir, `${A}.jsonl`), lines.map(...).join("\n") +
 (import `listTags`):
 
 ```ts
-    it("lists a tag a fact carries, though only hidden conversations do besides", async () => {
+    it("lists a tag a live fact carries, though only hidden conversations do besides", async () => {
         await putFact(dir, PERSONAL, fact("poem", { tags: ["k00000002"] }));
+        // A retired fact's tags count for nothing here.
+        await putFact(
+            dir,
+            PERSONAL,
+            fact("old", { tags: ["k00000002"], retired: { at: day(6), by: "user", why: "Stopped." } }),
+        );
         await syncIndex(index, dir, Date.parse(day(20)), join(dir, "tags.json"), dir);
         const tags = listTags(index, {}, withProject).results;
         expect(tags.map((tag) => [tag.name, tag.conversations, tag.facts])).toEqual([
@@ -945,11 +959,21 @@ In `recall/query.ts`'s `listTags`, import `factCarriers` beside
 `const listed = listedConcepts(index, exclude, rows);` with:
 
 ```ts
-    // A concept a fact carries is hers to see, as search finds it, and
-    // its tag counts the facts.
+    // A concept a live fact carries is hers to see, as search finds it,
+    // and its tag counts those facts. fact_tags holds retired facts'
+    // tags too, which search wants and the tags list does not.
+    const live = new Set(
+        (
+            index.db.query("SELECT path FROM facts WHERE retired = 0").all() as {
+                path: string;
+            }[]
+        ).map((row) => row.path),
+    );
     const factCount = new Map<string, number>();
     for (const row of factCarriers(index)) {
-        factCount.set(row.id, (factCount.get(row.id) ?? 0) + 1);
+        if (live.has(row.path)) {
+            factCount.set(row.id, (factCount.get(row.id) ?? 0) + 1);
+        }
     }
     const listed = new Set([
         ...listedConcepts(index, exclude, rows),
@@ -966,7 +990,8 @@ and in the returned `TagObject`, after `conversations: phrases.length,`:
 ```
 
 `factCarriers` follows `broader`, so a fact's narrower concept counts
-toward its broader ones, as conversations' do in search. If an existing
+toward its broader ones, as conversations' do in search; its rows are
+distinct by concept and fact, so each fact counts once a tag. If an existing
 `tags.test.ts` expectation now shows a fact-carried tag it did not
 before, the fixture carries a fact: add the `facts` field to the
 expectation.
@@ -1858,7 +1883,7 @@ describe("launch notes", () => {
 
 ```ts
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { appendFile, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hookLog } from "./log.js";
@@ -3418,7 +3443,8 @@ export class Reviewer {
         // - `this.#dir` is `this.#options.dir`, `this.#versions` is
         //   `this.#options.versions`, `this.#call` is `this.#options.call`,
         //   `this.#persona` is `this.#options.persona`, `this.#now` is
-        //   `this.#options.now`, `this.#readVocabulary()` is
+        //   `this.#options.now`, `this.#vocabulary` is
+        //   `this.#options.vocabulary`, `this.#readVocabulary()` is
         //   `this.readVocabulary()`, `this.#warn` is `this.#options.warn`,
         //   and `this.#build(phrase).block` is `this.#block(phrase)`;
         // - the cost notice, `this.#emit({ type: "memory-cost", usd })`,
@@ -3454,7 +3480,7 @@ In `service.ts`:
   `READS_INSTRUCTION`, `REVIEW_INSTRUCTIONS`, `reviewPrompt`,
   `reviewSchema`, `runReview`, `TAGS_INSTRUCTION`, `markFailed`,
   `markReviewed`, `mergeReview`, `ownsAll`, `readSidecar`,
-  `sidecarPath`, `untagged`, `applyTagging`, `reviewConcepts`,
+  `sidecarPath`, `applyTagging`, `reviewConcepts`,
   `TagOutput`, `EMPTY_VOCABULARY`, `readVocabulary`, `resolveTags`,
   `Vocabulary`, `vocabularyProblem`, `writeVocabulary`,
   `withSection`, `ResumedTurn`, and `#vocabularyWarned`), keeping
@@ -4145,7 +4171,7 @@ async function stepsFor(held: Held, report: Omit<SessionReport, "ended">): Promi
             }
         },
         activity: (size) => activitySince(report.transcript, size),
-        sleep: (ms) => sleep(timers, ms),
+        sleep: (ms) => sleep(timers, ms, new AbortController().signal),
     };
 }
 
@@ -4726,7 +4752,13 @@ export async function runHook(
         env: given,
         call: agent.call,
         persona: agent.persona,
-        self: deps.self ?? [process.execPath, resolve(process.argv[1] ?? "")],
+        // As --claude passes it: Bun would otherwise load the .env of the
+        // directory the catch-up starts in, the user's project.
+        self: deps.self ?? [
+            process.execPath,
+            "--no-env-file",
+            resolve(process.argv[1] ?? ""),
+        ],
     });
 }
 ```
@@ -5259,8 +5291,15 @@ export const claudeConfigDir = (env: Env) =>
     env.CLAUDE_CONFIG_DIR || join(env.HOME || homedir(), ".claude");
 
 // This program as a command: the interpreter and the entry script it
-// was started with, so bun run dev records too.
-const selfCommand = () => [process.execPath, resolve(process.argv[1] ?? "")];
+// was started with, so bun run dev records too. Claude Code runs hooks
+// and servers in the user's project, whose .env Bun would load into
+// their environment, a key of the project's among it, kept over
+// Dorothy's by dotenvx: --no-env-file, for the recall server too.
+const selfCommand = () => [
+    process.execPath,
+    "--no-env-file",
+    resolve(process.argv[1] ?? ""),
+];
 
 // A process of its own session, which outlives dorothy and a terminal
 // that hangs up.
@@ -5285,7 +5324,9 @@ function spawnDetached(cmd: string[]): void {
 
 In `launchClaude`, the destructured deps gain `newId = () =>
 crypto.randomUUID()` and `now = () => new Date()`, and `self`'s
-default becomes `selfCommand()`. The block's call becomes:
+default becomes `selfCommand()`. The tests pass `self`, so none pins
+`--no-env-file`; Task 12's run through the stand-in does. The block's
+call becomes:
 
 ```ts
     const session = claudeSession(args);
@@ -5823,8 +5864,7 @@ without adding a line net.
 
 ```markdown
   session starts with, frozen for the session, and schedules reviews
-  (`scheduler.ts`) that never block the chat; `reviewer.ts`'s `Reviewer`
-  runs one (`review.ts`), for chat and for Claude Code's hooks alike.
+  (`scheduler.ts`; `reviewer.ts`, also the hooks'), never blocking chat.
 ```
 
 Run `wc -l packages/memory/AGENTS.md`; expect at most 150.
@@ -5842,7 +5882,9 @@ Run `wc -l packages/memory/AGENTS.md`; expect at most 150.
   (`claudeSession`); the block leaves out a session resumed by id.
 ```
 
-  and after "exits with `claude`'s code.": "Before `claude` starts it
+  and after "exits with `claude`'s code.": "This program runs again as
+  `bun --no-env-file`, so a project's `.env` never reaches a hook, a
+  catch-up or the recall server. Before `claude` starts it
   starts a detached catch-up of each launch a killed `dorothy` left
   behind, memory off or on, and says what hooks left to tell; once
   `claude` exits, a catch-up of its own launch."
@@ -5920,8 +5962,10 @@ belongs to:
 - Modules, Recording: `memory/src/memory/reviewer.ts` in place of
   `service.ts` and `review.ts`; `bodies/launches.ts`, `unread.ts` and
   `log.ts`; `cli/src/claude-hook.ts`.
-- Search: `tags` lists a concept a fact carries, its tag counting the
-  facts.
+- Search: `tags` lists a concept a live fact carries, its tag counting
+  the live facts.
+- Credentials: the hook runs as `bun --no-env-file`, so the project's
+  `.env`, which Bun loads from the working directory, never reaches it.
 
 Run: `bun run lint:md`
 Expected: no warnings.
@@ -5944,6 +5988,9 @@ R=$PWD
 rm -rf "$V" && mkdir -p "$V/out" "$V/xdg/run" && chmod 700 "$V/xdg/run"
 bash "$P/setup.sh"
 jq -n --arg key "$P/key" '{apiKeyHelper: "cat \($key)"}' >"$P/cfg/settings.json"
+# A project's own .env, which Bun would load into a hook started there:
+# a review on this key fails.
+echo 'ANTHROPIC_API_KEY=sk-ant-project-not-a-key' >"$P/cwd/.env"
 bun "$P/standin.ts" "$V/out" >"$V/port" & standin=$!
 sleep 1
 (
@@ -5953,11 +6000,15 @@ sleep 1
         XDG_RUNTIME_DIR="$V/xdg/run" CLAUDE_CONFIG_DIR="$P/cfg" \
         ANTHROPIC_BASE_URL="http://127.0.0.1:$(cat "$V/port")"
     cd "$P/cwd" &&
-        timeout 120 bun "$R/packages/cli/src/index.ts" --claude \
+        timeout 120 bun --no-env-file "$R/packages/cli/src/index.ts" --claude \
             --allowedTools=Bash,Agent -p "use tools"
-    sleep 20
-    bun "$R/packages/cli/src/index.ts" --claude-hook --reread
-    bun "$R/packages/cli/src/index.ts" --check
+    # The catch-up and its review: done once the launch's notes go.
+    for _ in $(seq 120); do
+        [ -z "$(ls -A "$V/xdg/run/dorothy/launches" 2>/dev/null)" ] && break
+        sleep 1
+    done
+    bun --no-env-file "$R/packages/cli/src/index.ts" --claude-hook --reread
+    bun --no-env-file "$R/packages/cli/src/index.ts" --check
 )
 kill "$standin"
 T=$(ls "$V"/xdg/data/dorothy/transcripts/*.jsonl)
@@ -5977,7 +6028,11 @@ launches directory empty once the catch-up is done; `none` for the
 review's prompt among the stand-in's requests, so no review reached the
 gateway; `0` lines of the log holding the prompt's words; the log's
 lines naming sessions, counts and the review's outcome, `reviewed`;
-the conversation's notes holding a title and description; `--reread`
+the conversation's notes holding a title and description, so the
+review ran on Dorothy's token and not the project's `.env`, which
+`--no-env-file` kept out of the hook (`bun --no-env-file` starts
+`dorothy` here as `bun run dev` does from the checkout, where
+`bunfig.toml` loads no `.env`); `--reread`
 saying no unreadable lines are kept; `--check` passing with no
 `unread:` line. The `SessionEnd` hook's catch-up and the one at exit
 may both run: a warning that a launch had no notes left to catch up is
