@@ -397,6 +397,27 @@ describe("runClaudeHook", () => {
         expect(await conversations()).toHaveLength(1);
         const [told] = await startNotices(env);
         expect(told).toContain("ran no hooks");
+        expect(told).toContain("recorded at the catch-up instead");
+        expect(told).not.toContain("reviewed");
+    });
+
+    it("records a session no hook ran for though its notice can't be kept", async () => {
+        // The notices' file a directory: adding a notice throws.
+        await mkdir(join(home, "state", "dorothy", "notices.jsonl"), {
+            recursive: true,
+        });
+        expect(
+            await runClaudeHook(
+                { kind: "catch-up", launch: LAUNCH, session: null },
+                deps(""),
+            ),
+        ).toBe(0);
+        expect(await conversations()).toHaveLength(1);
+        expect(reviews).toHaveLength(1);
+        expect(await readLaunch(env, LAUNCH)).toBeNull();
+        expect(await readFile(hookLogPath(env), "utf8")).toContain(
+            "can't be kept",
+        );
     });
 
     it("reads a halted session again once it can, and dismisses one", async () => {

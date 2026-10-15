@@ -506,7 +506,11 @@ async function catchUp(
             );
             await addNotice(
                 env,
-                `memory: Claude Code ran no hooks in session ${launch.session} (disableAllHooks, an untrusted folder, --bare or --safe-mode turn them off); it was recorded and reviewed when claude exited`,
+                `memory: Claude Code ran no hooks in session ${launch.session} (disableAllHooks, an untrusted folder, --bare or --safe-mode turn them off); it is recorded at the catch-up instead`,
+            ).catch((error: unknown) =>
+                log.warn(
+                    `session ${launch.session}: its notice can't be kept (${describeError(error)})`,
+                ),
             );
         }
     }
