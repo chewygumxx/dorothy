@@ -26,6 +26,7 @@ import {
     writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { parseFact, renderFact } from "../facts/file.js";
 import { EMPTY_SIDECAR, type Lock } from "../memory/sidecar.js";
 import { binaryRepo } from "./binary.js";
 import {
@@ -184,6 +185,97 @@ describe("adopting", () => {
             "exec '/usr/bin/bun' '/it'\\''s/index.ts' --check --staged",
         );
         expect(script).toContain("if [ ! -f '/it'\\''s/index.ts' ]; then");
+    });
+
+    it("rewrites a fact edited by hand as Dorothy writes one, and makes it the user's", async () => {
+        const path = "facts/personal/likes-tea.md";
+        const fact = {
+            name: "likes-tea",
+            title: "Likes tea",
+            description: "Prefers tea.",
+            type: "user" as const,
+            extra: {},
+            tags: [],
+            importance: null,
+            provenance: {
+                origin: "dorothy" as const,
+                by: "review" as const,
+                at: "2026-10-01T00:00:00.000Z",
+                created: "2026-10-01T00:00:00.000Z",
+                model: "m",
+            },
+            retired: null,
+            body: "Tea.",
+        };
+        put(root, path, renderFact(fact));
+        const history = await open();
+        put(
+            root,
+            path,
+            renderFact(fact).replace(
+                "title: >-\n  Likes tea",
+                'title: "Likes  coffee"',
+            ),
+        );
+        await history.sweep();
+        const read = parseFact(
+            readFileSync(join(root, path), "utf8"),
+            "likes-tea",
+        );
+        expect(read).toEqual({
+            kind: "ok",
+            fact: {
+                ...fact,
+                title: "Likes coffee",
+                provenance: {
+                    origin: "user",
+                    by: "user",
+                    at: NOW.toISOString(),
+                    created: "2026-10-01T00:00:00.000Z",
+                },
+            },
+        });
+        expect((await messages(history))[0]).toBe(`outside: ${path}`);
+    });
+
+    it("takes a fact added by hand without provenance as the user's", async () => {
+        const history = await open();
+        const path = "facts/personal/likes-tea.md";
+        put(
+            root,
+            path,
+            "---\nname: likes-tea\ntitle: Likes tea\ndescription: Prefers tea.\nmetadata:\n  type: user\n---\n\nTea.\n",
+        );
+        await history.sweep();
+        const read = parseFact(
+            readFileSync(join(root, path), "utf8"),
+            "likes-tea",
+        );
+        expect(read.kind === "ok" && read.fact.provenance.by).toBe("user");
+        expect((await messages(history))[0]).toBe(`outside: ${path}`);
+    });
+
+    it("leaves a fact that is not UTF-8 to the lint, unrewritten", async () => {
+        const history = await open();
+        const path = "facts/personal/likes-tea.md";
+        const bytes = Buffer.from([0x2d, 0x2d, 0x2d, 0x0a, 0xff, 0x0a]);
+        put(root, path, "");
+        writeFileSync(join(root, path), bytes);
+        await history.sweep();
+        expect(readFileSync(join(root, path))).toEqual(bytes);
+        expect((await messages(history))[0]).toBe(
+            `broken: ${path} kept, no good version`,
+        );
+    });
+
+    it("keeps a copy of a fact edited into something that is no fact", async () => {
+        const history = await open();
+        put(root, "facts/personal/likes-tea.md", "title: null\n");
+        await history.sweep();
+        expect(warnings[0]).toContain("facts/personal/likes-tea.md is broken");
+        expect((await messages(history))[0]).toBe(
+            "broken: facts/personal/likes-tea.md kept, no good version",
+        );
     });
 });
 

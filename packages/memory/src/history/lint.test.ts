@@ -9,6 +9,7 @@
 //
 
 import { describe, expect, it } from "bun:test";
+import { renderFact } from "../facts/file.js";
 import { EMPTY_SIDECAR } from "../memory/sidecar.js";
 import { fileKind, lint } from "./lint.js";
 
@@ -115,5 +116,57 @@ describe("lint on transcripts", () => {
                 bytes(torn),
             ),
         ).toBe("line 3 is not JSON");
+    });
+});
+
+const FACT = renderFact({
+    name: "likes-tea",
+    title: "Likes tea",
+    description: "Prefers tea.",
+    type: "user",
+    extra: {},
+    tags: [],
+    importance: null,
+    provenance: {
+        origin: "user",
+        by: "dorothy",
+        at: "2026-10-15T00:00:00.000Z",
+        created: "2026-10-15T00:00:00.000Z",
+    },
+    retired: null,
+    body: "Tea.",
+});
+
+describe("facts and projects", () => {
+    it("knows facts and the registry by where they sit", () => {
+        expect(fileKind("facts/personal/likes-tea.md")).toBe("fact");
+        expect(fileKind("facts/projects/github.com/a/b/likes-tea.md")).toBe(
+            "fact",
+        );
+        expect(fileKind("projects.json")).toBe("projects");
+        expect(fileKind("facts/likes-tea.md")).toBe("other");
+        expect(fileKind("facts/personal/sub/likes-tea.md")).toBe("other");
+    });
+
+    it("lints a fact against its file's name and scope", () => {
+        expect(
+            lint("facts/personal/likes-tea.md", bytes(FACT), null),
+        ).toBeNull();
+        expect(lint("facts/personal/other.md", bytes(FACT), null)).toBe(
+            "its name is likes-tea, not its file's, other",
+        );
+        expect(
+            lint("facts/projects/nohost/likes-tea.md", bytes(FACT), null),
+        ).toBe("it is not under a project id");
+        expect(lint("facts/personal/likes-tea.md", bytes("x\n"), null)).toBe(
+            "it has no frontmatter",
+        );
+    });
+
+    it("lints the registry", () => {
+        expect(
+            lint("projects.json", bytes('{"v":1,"projects":{}}'), null),
+        ).toBeNull();
+        expect(lint("projects.json", bytes("{"), null)).toBe("it is not JSON");
     });
 });

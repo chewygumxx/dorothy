@@ -21,7 +21,13 @@ import {
 } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import type { Env } from "@dorothy/core";
-import type { HistoryHandle, Lock, Recorder } from "../memory/sidecar.js";
+import { handEdited } from "../facts/file.js";
+import {
+    type HistoryHandle,
+    type Lock,
+    type Recorder,
+    writeAtomic,
+} from "../memory/sidecar.js";
 import { transcriptDir } from "../transcript.js";
 import { recoverFile, stamp } from "./heal.js";
 import { fileKind, lint } from "./lint.js";
@@ -345,6 +351,9 @@ export class MemoryHistory {
             if (except.has(path)) {
                 continue;
             }
+            if (fileKind(path) === "fact") {
+                await this.#canonicalise(path);
+            }
             const problem = await this.#problem(path);
             if (problem !== null) {
                 await this.#recover(path, problem);
@@ -356,6 +365,32 @@ export class MemoryHistory {
                     ? `turn: ${basename(path, ".jsonl")}`
                     : `outside: ${path}`,
             );
+        }
+    }
+
+    // A fact added or edited by hand is rewritten as Dorothy writes one,
+    // and made the user's, before it is linted; one that is no fact is
+    // left for the lint to restore, as is one that is not UTF-8. A file that can't be read throws, to
+    // be warned of, never taken for broken content.
+    async #canonicalise(path: string): Promise<void> {
+        const full = join(this.root, path);
+        if (!existsSync(full)) {
+            return;
+        }
+        let text: string;
+        try {
+            text = new TextDecoder("utf-8", { fatal: true }).decode(
+                await readFile(full),
+            );
+        } catch (error) {
+            if (error instanceof TypeError) {
+                return;
+            }
+            throw error;
+        }
+        const canonical = handEdited(text, basename(path, ".md"), this.#now());
+        if (canonical !== null && canonical !== text) {
+            await writeAtomic(full, canonical);
         }
     }
 

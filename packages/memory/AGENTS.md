@@ -85,8 +85,10 @@ is the only file importing `@modelcontextprotocol/sdk`.
   once per process (`open.ts`). `MemoryHistory` (`history.ts`) commits
   each logical change, sweeps up outside changes first, and restores a
   file that fails `lint.ts` (`heal.ts`), keeping its bytes under
-  `broken/`. `mirror.ts` seals new commits as AES-256-GCM bundles
-  (`seal.ts`) on the orphan branch `sealed` and pushes it to the remote
+  `broken/`. The lint knows facts and `projects.json`; the sweep rewrites
+  a hand-edited fact canonically, as the user's, before linting it.
+  `mirror.ts` seals new commits as AES-256-GCM bundles (`seal.ts`) on the
+  orphan branch `sealed` and pushes it to the remote
   `mirror` under `DOROTHY_MIRROR_KEY`; `--recover` rebuilds from it.
   `commands.ts` has `commandHistory` and `--history`, `--restore`,
   `--rollback`, `--check`, `--mirror` and `--recover`, saving the
