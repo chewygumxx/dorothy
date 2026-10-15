@@ -26,11 +26,12 @@ const PREFIXED =
     /\b(?:sk-ant-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,})/g;
 // key=value or key: value, quoted or not, where the key names a secret.
 // A value that is a scheme was handled above. A quoted value runs to its
-// closing quote, spaces and all, for at most 512 characters on its line.
+// closing quote, spaces and all, for at most 512 characters on its line,
+// stepping over a backslash's escape.
 // The runs round the key word are bounded, as an unbounded pair
 // backtracks quadratically on long text.
 const NAMED =
-    /\b([\w.-]{0,64}(?:token|key|secret|password|passwd|auth)[\w.-]{0,64})(["']?\s*[=:]\s*)(["']?)(?!(?:Bearer|Basic|token)\s)((?<=")[^"\n]{1,512}|(?<=')[^'\n]{1,512}|[^\s"'&,;]+)/gi;
+    /\b([\w.-]{0,64}(?:token|key|secret|password|passwd|auth)[\w.-]{0,64})(["']?\s*[=:]\s*)(["']?)(?!(?:Bearer|Basic|token)\s)((?<=")(?:\\.|[^"\\\n]){1,512}|(?<=')(?:\\.|[^'\\\n]){1,512}|[^\s"'&,;]+)/gi;
 
 export function scrub(text: string): string {
     return text

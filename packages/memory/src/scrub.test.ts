@@ -32,6 +32,8 @@ const CASES: [string, string][] = [
     ['password: "correct horse battery"', 'password: "[secret]"'],
     ['GITHUB_TOKEN="abc def"', 'GITHUB_TOKEN="[secret]"'],
     ["secret='two words' && ls", "secret='[secret]' && ls"],
+    ['password: "abc\\"def ghi"', 'password: "[secret]"'],
+    ["password: 'abc\\'def ghi' && ls", "password: '[secret]' && ls"],
     [
         "$ head -3 id_rsa\n-----BEGIN RSA PRIVATE KEY-----\nMIIEow\nAAAA",
         "$ head -3 id_rsa\n[secret]",
