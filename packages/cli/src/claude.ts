@@ -273,6 +273,20 @@ export function dorothyFlags(
     return { args: [...front, ...rest], warnings, files };
 }
 
+// The recall server as claude starts it: this program again, in the
+// project claude starts in.
+function recallServer(self: readonly string[], dir: string): Json {
+    return {
+        mcpServers: {
+            [CLAUDE_SERVER_NAME]: {
+                type: "stdio",
+                command: self[0],
+                args: [...self.slice(1), "--recall-server", "--project", dir],
+            },
+        },
+    };
+}
+
 // Where claude runs and with what environment. A package script, such as
 // `bun run dev -- --claude`, starts in this checkout with the script's
 // variables set and node_modules/.bin first on PATH, for the directory
@@ -400,22 +414,7 @@ export async function launchClaude(
             settings: recall
                 ? { permissions: { allow: [...CLAUDE_ALLOWED_TOOLS] } }
                 : null,
-            mcpConfig: recall
-                ? {
-                      mcpServers: {
-                          [CLAUDE_SERVER_NAME]: {
-                              type: "stdio",
-                              command: self[0],
-                              args: [
-                                  ...self.slice(1),
-                                  "--recall-server",
-                                  "--project",
-                                  dir,
-                              ],
-                          },
-                      },
-                  }
-                : null,
+            mcpConfig: recall ? recallServer(self, dir) : null,
         },
         { cwd: dir, read, writePrivate },
     );
