@@ -71,10 +71,13 @@ export function commandHistory({
     env = process.env,
     err = process.stderr,
     hook = entryHook(),
+    // false for a short-lived process, which leaves the mirror to chat's launch.
+    remindMirror = true,
 }: {
     env?: Env;
     err?: Output;
     hook?: HookCommand | null;
+    remindMirror?: boolean;
 } = {}): OpenHistory {
     return async (index) => {
         const { config } = await readConfig(env);
@@ -93,7 +96,10 @@ export function commandHistory({
             return null;
         }
         await opened.history.sweep();
-        if ((await opened.history.repo.remote(MIRROR)) === null) {
+        if (
+            remindMirror &&
+            (await opened.history.repo.remote(MIRROR)) === null
+        ) {
             warn(NO_MIRROR);
         }
         return opened.history.handle(opened.close);

@@ -14,6 +14,9 @@ import { parseArgs, USAGE } from "./index.js";
 
 const phrase = newPhrase(() => Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]));
 
+const RECALL_USAGE =
+    "--recall-server takes [--exclude <phrase> [--recollect]] [--project <root>]";
+
 describe("parseArgs", () => {
     it("hands everything after --claude to claude, terminal or not", () => {
         expect(parseArgs(["--claude"], true)).toEqual({
@@ -302,6 +305,7 @@ describe("parseArgs", () => {
             kind: "recall-server",
             exclude: null,
             recollect: false,
+            project: null,
         });
         expect(
             parseArgs(["--recall-server", "--exclude", phrase], true),
@@ -309,6 +313,7 @@ describe("parseArgs", () => {
             kind: "recall-server",
             exclude: phrase,
             recollect: false,
+            project: null,
         });
     });
 
@@ -318,7 +323,12 @@ describe("parseArgs", () => {
                 ["--recall-server", "--exclude", phrase, "--recollect"],
                 false,
             ),
-        ).toEqual({ kind: "recall-server", exclude: phrase, recollect: true });
+        ).toEqual({
+            kind: "recall-server",
+            exclude: phrase,
+            recollect: true,
+            project: null,
+        });
         for (const rest of [
             ["--recollect"],
             ["--exclude", phrase, "--other"],
@@ -326,10 +336,38 @@ describe("parseArgs", () => {
         ]) {
             expect(parseArgs(["--recall-server", ...rest], false)).toEqual({
                 kind: "usage",
-                message:
-                    "--recall-server takes only --exclude <phrase> [--recollect]",
+                message: RECALL_USAGE,
             });
         }
+    });
+
+    it("takes the recall server's flags in any order", () => {
+        expect(
+            parseArgs(
+                [
+                    "--recall-server",
+                    "--project",
+                    "/r",
+                    "--exclude",
+                    phrase,
+                    "--recollect",
+                ],
+                false,
+            ),
+        ).toEqual({
+            kind: "recall-server",
+            exclude: phrase,
+            recollect: true,
+            project: "/r",
+        });
+        expect(
+            parseArgs(["--recall-server", "--project", "/r"], false),
+        ).toEqual({
+            kind: "recall-server",
+            exclude: null,
+            recollect: false,
+            project: "/r",
+        });
     });
 
     it("puts chat, a resumed chat or one reply in development mode", () => {
@@ -401,11 +439,16 @@ describe("parseArgs", () => {
     });
 
     it("refuses anything else after --recall-server", () => {
-        for (const rest of [["x"], ["--exclude"], ["--exclude", "nope"]]) {
+        for (const rest of [
+            ["x"],
+            ["--exclude"],
+            ["--exclude", "nope"],
+            ["--project"],
+            ["--project", "/a", "--project", "/b"],
+        ]) {
             expect(parseArgs(["--recall-server", ...rest], false)).toEqual({
                 kind: "usage",
-                message:
-                    "--recall-server takes only --exclude <phrase> [--recollect]",
+                message: RECALL_USAGE,
             });
         }
     });

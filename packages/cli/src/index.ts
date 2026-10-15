@@ -38,7 +38,12 @@ export type Mode =
     | { kind: "revive"; target: string }
     | { kind: "sync"; path: string | null }
     | { kind: "projects" }
-    | { kind: "recall-server"; exclude: string | null; recollect: boolean }
+    | {
+          kind: "recall-server";
+          exclude: string | null;
+          recollect: boolean;
+          project: string | null;
+      }
     | { kind: "claude"; args: string[] }
     | { kind: "claude-dump"; args: string[]; message: string }
     | { kind: "help" }
@@ -67,7 +72,7 @@ export const USAGE = [
     "                                  bring a retired fact back",
     "       dorothy --sync [<path>]    sync a project's facts with its repo",
     "       dorothy --projects         the projects Dorothy knows",
-    "       dorothy --recall-server    memory search for MCP clients (stdio)",
+    "       dorothy --recall-server    memory tools for MCP clients (stdio)",
     "       dorothy -- <prompt...>     a prompt that starts with -",
     "       dorothy --dump-context [--resume <phrase>] [message...]",
     "                                  print the request a chat would send",
@@ -202,21 +207,42 @@ export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
             : { kind: "usage", message: "--sync takes [<path>]" };
     }
     if (first === "--recall-server") {
-        if (rest.length === 0) {
-            return { kind: "recall-server", exclude: null, recollect: false };
+        const usage = {
+            kind: "usage" as const,
+            message:
+                "--recall-server takes [--exclude <phrase> [--recollect]] [--project <root>]",
+        };
+        let exclude: string | null = null;
+        let project: string | null = null;
+        let recollect = false;
+        for (let index = 0; index < rest.length; index += 1) {
+            const word = rest[index];
+            const value = rest[index + 1];
+            if (
+                word === "--exclude" &&
+                exclude === null &&
+                value !== undefined &&
+                isPhrase(value)
+            ) {
+                exclude = value;
+                index += 1;
+            } else if (
+                word === "--project" &&
+                project === null &&
+                value !== undefined &&
+                value !== ""
+            ) {
+                project = value;
+                index += 1;
+            } else if (word === "--recollect" && !recollect) {
+                recollect = true;
+            } else {
+                return usage;
+            }
         }
-        const [flag, phrase, extra] = rest;
-        const recollect = extra === "--recollect";
-        return (rest.length === 2 || (rest.length === 3 && recollect)) &&
-            flag === "--exclude" &&
-            phrase !== undefined &&
-            isPhrase(phrase)
-            ? { kind: "recall-server", exclude: phrase, recollect }
-            : {
-                  kind: "usage",
-                  message:
-                      "--recall-server takes only --exclude <phrase> [--recollect]",
-              };
+        return recollect && exclude === null
+            ? usage
+            : { kind: "recall-server", exclude, recollect, project };
     }
     if (first === "--history") {
         const usage = {
@@ -434,7 +460,11 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
         const { runRecallServer } = await import(
             "@dorothy/memory/recall-server"
         );
-        process.exitCode = await runRecallServer(mode.exclude, mode.recollect);
+        process.exitCode = await runRecallServer({
+            exclude: mode.exclude,
+            recollect: mode.recollect,
+            project: mode.project,
+        });
     } else {
         // Loaded only for chat, so one-shot replies never pay for React.
         const { runTui } = await import("./run-tui.js");
