@@ -33,13 +33,12 @@ const PREFIXED =
 // The runs round the key word are bounded, as an unbounded pair
 // backtracks quadratically on long text.
 const NAMED =
-    /\b([\w.-]{0,64}(?:token|key|secret|password|passwd|auth)[\w.-]{0,64})(["']?\s*[=:]\s*)(["']?)(?!(?:Bearer|Basic|token)\s)((?<=")(?:\\.|[^"\\\n])|(?<=')(?:\\.|[^'\\\n])|[^\s"'&,;]+)/gi;
-// What a regular expression's dot does not match.
-const LINE_END = /[\n\r\u2028\u2029]/;
+    /\b([\w.-]{0,64}(?:token|key|secret|password|passwd|auth)[\w.-]{0,64})(["']?\s*[=:]\s*)(["']?)(?!(?:Bearer|Basic|token)\s)((?<=")(?:\\[^\n]|[^"\\\n])|(?<=')(?:\\[^\n]|[^'\\\n])|[^\s"'&,;]+)/gi;
 
 // Where a quoted value ends: before its closing quote, a line feed or a
-// backslash with nothing it can escape, whichever comes first. The value
-// may hold spaces and any number of escaped quotes.
+// backslash with nothing after it on its line, whichever comes first.
+// The value may hold spaces and any number of escaped quotes, and a
+// backslash escapes a carriage return or a Unicode line separator.
 function quotedEnd(text: string, from: number, quote: string): number {
     let at = from;
     while (at < text.length) {
@@ -49,7 +48,7 @@ function quotedEnd(text: string, from: number, quote: string): number {
         }
         if (character === "\\") {
             const next = text[at + 1];
-            if (next === undefined || LINE_END.test(next)) {
+            if (next === undefined || next === "\n") {
                 break;
             }
             at += 2;

@@ -61,7 +61,7 @@ found a dozen faults the plan had mandated, all fixed in rounds of
 their own. The probe adopted this repository's own
 `.agents/memory/` into a scratch store and went through every row of the
 sync it was written to check, and every step read as expected. At the
-head of the branch `bun run check` passes with 1,533 tests across 80
+head of the branch `bun run check` passes with 1,542 tests across 80
 files, up from 1,234. A final whole-branch review found fourteen more
 faults, all fixed in one wave (see Final review), and five follow-ups
 closed the gaps it left (see Follow-up).
@@ -357,7 +357,9 @@ The last review's gaps, approved by the user and fixed each in its own
 commit with a regression test written to fail first:
 
 1. **Escaped quotes.** `password: "abc\"def ghi"` leaked `def ghi`. A
-   quoted value now steps over a backslash and what it escapes.
+   quoted value now steps over a backslash and what it escapes, a
+   carriage return or Unicode line separator too: only a line feed or
+   the text's end stops it.
 2. **Long quoted values.** The 512-character cap leaked a longer
    secret's tail, and a second scrub of an unclosed quote redacted more.
    A quoted value now runs to its closing quote or its line's end. A
@@ -400,13 +402,13 @@ commit with a regression test written to fail first:
 $ bun test
 bun test v1.4.2 (744846f84)
 
- 1533 pass
+ 1542 pass
  0 fail
- 135470 expect() calls
-Ran 1533 tests across 80 files. [20.36s]
+ 135492 expect() calls
+Ran 1542 tests across 80 files. [20.54s]
 ```
 
-- The tests numbered 1,234 before this branch and 1,533 now.
+- The tests numbered 1,234 before this branch and 1,542 now.
 - The probe above, against this repository's own memory, in scratch
   directories only.
 
@@ -458,7 +460,9 @@ e55585a fix(memory): Redact a quoted secret to its end
 08d4be8 fix(memory): Redact PGP private key blocks
 19a6914 fix(memory): Refuse hidden characters in memoryDir
 3d4391a fix(memory): Keep a sync record per directory
-(this commit) docs: Report the follow-up fixes
+a7c1e68 docs: Report the follow-up fixes
+6078ca8 fix(memory): Retire only for the dir synced last
+(this commit) fix(memory): Escape any line end but a line feed
 ```
 
 ## Known limitations

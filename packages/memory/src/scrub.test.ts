@@ -34,6 +34,10 @@ const CASES: [string, string][] = [
     ["secret='two words' && ls", "secret='[secret]' && ls"],
     ['password: "abc\\"def ghi"', 'password: "[secret]"'],
     ["password: 'abc\\'def ghi' && ls", "password: '[secret]' && ls"],
+    ['password: "abc\\\rdef ghi" && ls', 'password: "[secret]" && ls'],
+    ['password: "abc\\\u2028def ghi"', 'password: "[secret]"'],
+    ["password: '\\\u2029def ghi'", "password: '[secret]'"],
+    ['password: "abc\\\ndef ghi"', 'password: "[secret]\\\ndef ghi"'],
     [
         "$ head -3 id_rsa\n-----BEGIN RSA PRIVATE KEY-----\nMIIEow\nAAAA",
         "$ head -3 id_rsa\n[secret]",
