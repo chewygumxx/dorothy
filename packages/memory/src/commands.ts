@@ -12,6 +12,14 @@
 // its history, each run once by a process of its own.
 
 export {
+    runFacts,
+    runProjects,
+    runRetire,
+    runRetireFrom,
+    runRevive,
+    runSync,
+} from "./facts/commands.js";
+export {
     commandHistory,
     runCheck,
     runHistory,
