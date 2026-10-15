@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-15
+mtime: 2026-10-16
 spdx: GPL-3.0-only
 title: packages/memory/AGENTS.md
 description: >-
@@ -27,13 +27,13 @@ text (`MemoryPrompts`).
 
 ## Entry points and imports
 
-- `"."` (`src/index.ts`): `openMemory`, `previewStart`, and `--claude`'s
-  `claudeBlock` and `syncDirectory`; read [its guide](./src/bodies/AGENTS.md).
+- `"."` (`src/index.ts`): `openMemory`, `previewStart`, and what
+  `--claude` asks of memory; `"./claude-hook"` (`src/claude-hook.ts`):
+  `runClaudeHook`, for its hooks. Read [their guide](./src/bodies/AGENTS.md).
 - `"./commands"` (`src/commands.ts`): `--list`, `--memory`, `--tags`,
   `--edit-tags`, `--facts`, `--retire`, `--revive`, `--sync`,
   `--projects`, the history commands and `commandHistory()`.
-- `"./recall-server"` (`src/recall-server.ts`): `runRecallServer`, loaded
-  without the rest of memory.
+- `"./recall-server"` (`src/recall-server.ts`): `runRecallServer` alone.
 
 Of the `@dorothy` packages it depends on `core` alone. `recall/server.ts`
 is the only file importing `@modelcontextprotocol/sdk`.
@@ -42,8 +42,8 @@ is the only file importing `@modelcontextprotocol/sdk`.
 
 - `transcript.ts`: transcripts, private JSONL under
   `$XDG_DATA_HOME/dorothy/`, of any body's sessions; a session event may
-  name its `source`. A tool call is scrubbed of secrets (`scrub.ts`) and
-  trimmed to 2,000 characters a side.
+  name its `source`, an event its `sourceUuid`. A tool call is scrubbed
+  of secrets (`scrub.ts`) and trimmed to 2,000 characters a side.
 - `memory/open.ts`: `openMemory` opens a chat's memory and returns its
   `createSession(turns)`, whose sessions are compacting, tracked by memory
   and recorded by `sessionRecorder` (`record.ts`). Each starts from the
@@ -56,7 +56,7 @@ is the only file importing `@modelcontextprotocol/sdk`.
 - `memory/sidecar.ts`: the notes, kept in `<phrase>.meta.json` beside the
   transcript. `service.ts`'s `MemoryService` builds the memory block each
   session starts with, frozen for the session, and schedules reviews
-  (`review.ts`, `scheduler.ts`): one-shot calls that never block the chat.
+  (`scheduler.ts`; `reviewer.ts`, also the hooks'), never blocking chat.
   `track.ts`'s `trackMemory` decorates the `ChatSession`, so `App` sees
   only notices. `rank.ts`, `block.ts`, `edit-view.ts` and `list.ts` are
   pure; `commands.ts` has `--list`, `--memory`, `--tags`, `--edit-tags`.
@@ -75,11 +75,12 @@ is the only file importing `@modelcontextprotocol/sdk`.
   derived SQLite FTS5 index in the XDG cache; `sync.ts` syncs it from the
   transcripts and sidecars before every query, a conversation's source
   and project from its first session, its body sessions (`sessionPhrase`)
-  and `facts.ts` the store's facts by mtime; `query.ts` has `search` and
-  `open`, of either; `tags.ts` mirrors the vocabulary; `remember.ts`
+  too, and `facts.ts` the store's facts by mtime; `query.ts` has `search`
+  and `open`, of either; `tags.ts` mirrors the vocabulary; `remember.ts`
   writes her own facts; `server.ts` serves them over MCP on stdio as
   `dorothy --recall-server`, history opened without the mirror. Reviews
-  appraise each read into the sidecar; `salience()` (`rank.ts`) weighs them.
+  appraise each read into the sidecar, and `salience()` (`rank.ts`)
+  weighs appraised reads with visits.
 - `compaction/`: past `[compaction] soft` tokens, at the next idle (past
   `hard`, before the next message), `compact()` splits the turns before
   the verbatim tail into topical clusters with an abstract each; read
@@ -99,8 +100,7 @@ is the only file importing `@modelcontextprotocol/sdk`.
   `commands.ts` has `commandHistory` and `--history`, `--restore`,
   `--rollback`, `--check`, `--mirror` and `--recover`, saving the
   mirror's key with dotenvx's `set`; `lock.ts` is the `FileLock`.
-- `sqlite-lock.ts`: `exclusiveLock`, a SQLite `BEGIN IMMEDIATE` write
-  lock.
+- `sqlite-lock.ts`: `exclusiveLock`, a SQLite `BEGIN IMMEDIATE` lock.
 
 ## Invariants
 

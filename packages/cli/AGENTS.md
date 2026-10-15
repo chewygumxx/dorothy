@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-15
+mtime: 2026-10-16
 spdx: GPL-3.0-only
 title: packages/cli/AGENTS.md
 description: >-
@@ -26,11 +26,12 @@ wiring memory, the agent, the TUI and the gateway together.
 ## Entry points and imports
 
 No entry points. `src/index.ts` parses the flags and loads each mode's
-package lazily (`await import(...)`): memory's commands and recall server
-through their own entry points (`@dorothy/memory/commands`,
-`@dorothy/memory/recall-server`), and even `prepareCliHome` only for the
-model modes, so `--help`, `--list` and `--recall-server` never load the
-Agent SDK. Keep every new mode's import lazy.
+package lazily (`await import(...)`): memory's commands, recall server
+and hooks through their own entry points (`@dorothy/memory/commands`,
+`@dorothy/memory/recall-server`, `@dorothy/memory/claude-hook`), and even
+`prepareCliHome` only for the model modes, so `--help`, `--list` and
+`--recall-server` never load the Agent SDK. Keep every new mode's import
+lazy.
 
 ## Files
 
@@ -60,9 +61,18 @@ Agent SDK. Keep every new mode's import lazy.
   world-readable, so the merge goes to a private file (mode 0600, in
   `$XDG_RUNTIME_DIR/dorothy` or a 0700 `dorothy-<uid>` under the temporary
   directory; `privateWriter`) passed by path, removed by `Launch.cleanup`
-  when `claude` exits; inline JSON stays inline. `runClaude` runs it for
-  `--claude`, forwards `SIGTERM` and `SIGHUP`, ignores `SIGINT` (the
-  terminal sends it to `claude` too), and exits with `claude`'s code.
+  when `claude` exits; inline JSON stays inline.
+  With `[memory] enabled` it also notes the launch (`DOROTHY_LAUNCH`),
+  passes `Stop` and `SessionEnd` hooks running `dorothy --claude-hook`
+  (`hookSettings`) and, for a new session, `--session-id`
+  (`claudeSession`); the block leaves out a session resumed by id.
+  `runClaude` runs it for `--claude`, forwards `SIGTERM` and `SIGHUP`,
+  ignores `SIGINT` (the terminal sends it to `claude` too), and exits
+  with `claude`'s code. This program runs again as `bun --no-env-file`,
+  so a project's `.env` never reaches a hook, a catch-up or the recall
+  server. Before `claude` starts it starts a detached catch-up of each
+  launch a killed `dorothy` left behind, memory off or on, and says what
+  hooks left to tell; once `claude` exits, a catch-up of its own launch.
   From a package script (`bun run dev`), `userShell` gives `claude` the
   directory it was run from and the `PATH` before Bun prepended its
   `node_modules/.bin` entries.
@@ -72,6 +82,15 @@ Agent SDK. Keep every new mode's import lazy.
   at the first request, which is printed with a warning if the gateway
   injected nothing, with the block alone: no sync, recall or
   permissions. Imported lazily, so `--claude` never loads the SDK.
+- `claude-hook.ts`: `runHook`, for `--claude-hook`, gives memory's
+  `runClaudeHook` the environment `claude` gave the hook, in which it
+  finds the launch, and reviews: `process.env` loses the gateway's URL,
+  `ENABLE_TOOL_SEARCH`, `DOROTHY_LAUNCH`, `CLAUDECODE` and every
+  `CLAUDE_CODE_` variable (`reviewEnv`), then Dorothy's `.env` is loaded
+  by path from this checkout (`loadDotenv`), the console silenced around
+  the load and a failure logged by its code alone, and the agent only
+  for a hook or a catch-up. A hook and a catch-up log whatever fails,
+  through memory's `hookLog`, and always exit 0.
 - `recall-launch.ts`: `recallLaunch` launches this program again as the
   recall server, leaving out the conversation it serves and, with
   `--project`, naming the directory chat started in.
@@ -82,7 +101,9 @@ Agent SDK. Keep every new mode's import lazy.
   `.env`; the entry guard calls dotenvx's `config()` to decrypt it with
   the private key from Dotenvx Armor or a gitignored `.env.keys`.
 - `--claude` loads no `.env`: `claude` signs in as the user's own Claude
-  Code does, and memory is read without credentials.
+  Code does, and memory is read without credentials. `--claude-hook`
+  loads the checkout's `.env` by path for reviews, once `claude`'s
+  variables are gone, never the working directory's.
 - `@dotenvx/dotenvx` is declared here, by `memory`, whose history commands
   save the mirror's key with its `set`, and in the root's development
   dependencies, which the root's `lint:env` script and the pre-commit
