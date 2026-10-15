@@ -29,6 +29,13 @@ const CASES: [string, string][] = [
         "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----",
         "[secret]",
     ],
+    ['password: "correct horse battery"', 'password: "[secret]"'],
+    ['GITHUB_TOKEN="abc def"', 'GITHUB_TOKEN="[secret]"'],
+    ["secret='two words' && ls", "secret='[secret]' && ls"],
+    [
+        "$ head -3 id_rsa\n-----BEGIN RSA PRIVATE KEY-----\nMIIEow\nAAAA",
+        "$ head -3 id_rsa\n[secret]",
+    ],
 ];
 
 describe("scrub", () => {
@@ -47,6 +54,24 @@ describe("scrub", () => {
             expect(scrub(text)).toBe(text);
             expect(performance.now() - start).toBeLessThan(200);
         }
+    });
+
+    it("crosses repeated key headers with no end in linear time", () => {
+        const line = `-----BEGIN OPENSSH PRIVATE KEY-----${"A".repeat(35)}\n`;
+        const text = line.repeat(20000);
+        expect(text.length).toBeGreaterThan(1_400_000);
+        const start = performance.now();
+        expect(scrub(text)).toBe("[secret]");
+        expect(performance.now() - start).toBeLessThan(200);
+    });
+
+    it("bounds a quoted value with no closing quote", () => {
+        const text = `password: "${"a ".repeat(1000)}`;
+        const start = performance.now();
+        const scrubbed = scrub(text);
+        expect(performance.now() - start).toBeLessThan(200);
+        expect(scrubbed.startsWith('password: "[secret]')).toBe(true);
+        expect(scrubbed.length).toBe(text.length - 512 + "[secret]".length);
     });
 
     it("gives the same text when run twice", () => {
