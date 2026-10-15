@@ -1,6 +1,6 @@
 ---
-ctime: 2026-10-12
-mtime: 2026-10-12
+ctime: 2026-10-15
+mtime: 2026-10-15
 spdx: GPL-3.0-only
 title: packages/memory/src/projects/AGENTS.md
 description: >-
@@ -42,11 +42,15 @@ memory directory, `.agents/memory/` by default.
 - A fact changed in both places takes the repository's version; a file
   is overwritten only when its content still matches the last sync.
 - A repository file that is no fact, a symlink, unreadable or over
-  64 KiB is skipped and named, never imported, overwritten or retired.
+  64 KiB, or no regular file, is skipped and named, never imported,
+  overwritten or retired.
 - A file is overwritten or removed only after sync reads it again and
   finds it as it first read it, so an edit made meanwhile survives.
-- `MEMORY.md` is regenerated only when nothing was skipped and a live
-  fact exists.
+- `MEMORY.md` is rewritten only when it is absent or every line is one
+  sync writes (an entry or its indented description), a live fact
+  exists, and no skipped file is one it links; else it is left, and the
+  report says why. An imported fact's title is its entry's, else the
+  store's, else its name.
 - Sync never commits or pushes, never writes outside the memory
   directory, and refuses a memory directory that escapes by `..` or
   through a symlink at any step from the root down.

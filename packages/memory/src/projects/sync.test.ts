@@ -29,10 +29,16 @@ import {
     PERSONAL,
     putFact,
     type Scope,
+    scopeDir,
 } from "../facts/store.js";
 import { RecallIndex } from "../recall/store.js";
 import { projectsPath } from "./registry.js";
-import { type SyncOptions, type SyncReport, syncProject } from "./sync.js";
+import {
+    type SyncOptions,
+    type SyncReport,
+    type SyncResult,
+    syncProject,
+} from "./sync.js";
 
 const NOW = new Date("2026-10-15T09:30:00.000Z");
 const ID = "github.com/chewygumxx/dorothy";
@@ -577,5 +583,97 @@ describe("syncProject", () => {
         expect(report.skipped).toEqual([
             { name: "a?[31mb", reason: "its name is not a fact's" },
         ]);
+    });
+
+    it("leaves a MEMORY.md with a hand's lines, and names why", async () => {
+        const kept = "# Memory\n\nSome prose.\n- [Ay](./a.md)\n  first\n";
+        await putRepo("a.md", repoFact("a", "First fact."));
+        await putRepo("MEMORY.md", kept);
+        const report = await sync();
+        expect(report.imported).toEqual(["a"]);
+        expect(report.index).toBe("left");
+        expect(report.indexReason).toBe("it holds lines sync did not write");
+        expect(await readFile(memory("MEMORY.md"), "utf8")).toBe(kept);
+    });
+
+    it("regenerates MEMORY.md past a skipped file it does not link", async () => {
+        await putRepo("a.md", repoFact("a", "First fact."));
+        await putRepo("README.md", "Read me.\n");
+        await putRepo("feedback_testing.md", "---\nname: x\n---\nNotes\n");
+        await putRepo("MEMORY.md", "- [Ay](./a.md)\n  old\n");
+        const report = await sync();
+        expect(report.skipped.map(({ name }) => name)).toEqual([
+            "README",
+            "feedback_testing",
+        ]);
+        expect(report.index).toBe("written");
+        expect(await readFile(memory("MEMORY.md"), "utf8")).toBe(
+            "- [Ay](./a.md)\n  First fact.\n",
+        );
+    });
+
+    it("leaves MEMORY.md when it links a skipped file", async () => {
+        const kept = "- [Ay](./a.md)\n  first\n- [Trap](./trap.md)\n  hidden\n";
+        await putRepo("a.md", repoFact("a", "First fact."));
+        await putRepo("trap.md", "---\nname: trap\ndescription: 1e3\n---\nx\n");
+        await putRepo("MEMORY.md", kept);
+        const report = await sync();
+        expect(report.index).toBe("left");
+        expect(report.indexReason).toBe("it links trap, which was skipped");
+        expect(await readFile(memory("MEMORY.md"), "utf8")).toBe(kept);
+    });
+
+    it("takes an imported fact's title from its index entry, else the store's", async () => {
+        await putFact(data, SCOPE, storeFact("a", { title: "Old" }));
+        await sync();
+        await putRepo("a.md", repoFact("a", "Edited once."));
+        await putRepo("MEMORY.md", "- [New title](./a.md)\n  hand\n");
+        await sync();
+        expect((await facts())[0]?.title).toBe("New title");
+        await rm(memory("MEMORY.md"));
+        await putFact(data, SCOPE, {
+            ...((await facts())[0] as Fact),
+            title: "Store's",
+        });
+        await putRepo("a.md", repoFact("a", "Edited twice."));
+        await sync();
+        expect((await facts())[0]).toMatchObject({
+            description: "Edited twice.",
+            title: "Store's",
+        });
+    });
+
+    it("skips and names a directory called like a fact, and retires nothing", async () => {
+        await putRepo("a.md", repoFact("a", "First fact."));
+        await sync();
+        await rm(memory("a.md"));
+        await mkdir(memory("a.md"));
+        const report = await sync();
+        expect(moved(report)).toEqual(NOTHING);
+        expect(report.skipped).toEqual([
+            { name: "a", reason: "it is not a regular file" },
+        ]);
+        expect((await facts())[0]?.retired).toBeNull();
+    });
+
+    it("lists a failed import as skipped, not as a conflict", async () => {
+        await putRepo("a.md", repoFact("a", "First fact."));
+        await sync();
+        const [a] = await facts();
+        await putFact(data, SCOPE, {
+            ...(a as Fact),
+            description: "Changed in the store.",
+        });
+        await putRepo("a.md", repoFact("a", "Changed in the working tree."));
+        const store = scopeDir(data, SCOPE);
+        await chmod(store, 0o500);
+        try {
+            const report = await sync();
+            expect(report.conflicts).toEqual([]);
+            expect(report.imported).toEqual([]);
+            expect(report.skipped.map(({ name }) => name)).toEqual(["a"]);
+        } finally {
+            await chmod(store, 0o700);
+        }
     });
 });

@@ -44,6 +44,7 @@ import {
     exportedForm,
     formHash,
     indexTitles,
+    isGeneratedIndex,
     parseExported,
     renderExported,
     renderIndex,
@@ -81,6 +82,8 @@ export type SyncReport = {
     conflicts: string[];
     skipped: { name: string; reason: string }[];
     index: "written" | "unchanged" | "left";
+    // Why MEMORY.md was left, when it was.
+    indexReason?: string;
     // Live facts MEMORY.md had no room for.
     omitted: number;
 };
@@ -171,7 +174,12 @@ async function readRepo(dir: string): Promise<RepoSide> {
             }
             if (info.isSymbolicLink()) {
                 side.skipped.push({ name: shown, reason: "it is a symlink" });
-            } else if (info.isFile()) {
+            } else if (!info.isFile()) {
+                side.skipped.push({
+                    name: shown,
+                    reason: "it is not a regular file",
+                });
+            } else {
                 if (!FACT_NAME.test(name)) {
                     side.skipped.push({
                         name: shown,
@@ -293,7 +301,9 @@ async function reconcile(
     const memoryDir = known?.memoryDir ?? (await chooseMemoryDir(project.root));
     const dir = await safeDir(project.root, memoryDir);
     const scope: Scope = { kind: "project", id: project.id };
-    const synced: Record<string, string> = { ...(known?.synced ?? {}) };
+    const synced: Record<string, string> = {
+        ...(known?.synced ?? {}),
+    };
 
     const repo = await readRepo(dir);
     const listed = await listFacts(root, scope);
@@ -329,11 +339,12 @@ async function reconcile(
         new Date(
             now.getTime() + Math.max(0, order.indexOf(name)),
         ).toISOString();
-    const titleFor = (name: string) => {
+    // The index's entry, else the store's title, else the name.
+    const titleFor = (name: string, held: Fact | null) => {
         const title = normalise(repo.titles.get(name) ?? "");
         return title !== "" && characters(title) <= FACT_LIMITS.title
             ? title
-            : [...name].slice(0, FACT_LIMITS.title).join("");
+            : (held?.title ?? [...name].slice(0, FACT_LIMITS.title).join(""));
     };
 
     const names = new Set([
@@ -388,9 +399,6 @@ async function reconcile(
         }
         // The repository changed, alone or with the store: its version
         // wins, and the store's stays in history.
-        if (oursChanged) {
-            report.conflicts.push(name);
-        }
         try {
             if (theirs === null) {
                 if (held !== null && held.retired === null) {
@@ -406,12 +414,15 @@ async function reconcile(
                     );
                     report.retired.push(name);
                 }
+                if (oursChanged) {
+                    report.conflicts.push(name);
+                }
                 delete synced[name];
                 continue;
             }
             const fact: Fact = {
                 ...theirs,
-                title: held?.title ?? titleFor(name),
+                title: titleFor(name, held),
                 tags: held?.tags ?? [],
                 importance: held?.importance ?? null,
                 provenance: {
@@ -431,27 +442,47 @@ async function reconcile(
             };
             written.push(await putFact(root, scope, fact));
             report.imported.push(name);
+            if (oursChanged) {
+                report.conflicts.push(name);
+            }
             synced[name] = their as string;
         } catch (error) {
             report.skipped.push({ name, reason: describeError(error) });
         }
     }
 
-    // MEMORY.md is regenerated only when everything was read and there is
-    // something to list, so a hand-kept index never loses what sync could
-    // not read.
+    // MEMORY.md is regenerated only when it holds nothing a hand wrote
+    // and nothing it links could not be read, and there is something to
+    // list, so a hand-kept index never loses an entry or a line.
     const lives = (await listFacts(root, scope)).facts
         .map(({ fact }) => fact)
         .filter((fact) => fact.retired === null);
-    if (report.skipped.length === 0 && lives.length > 0 && !repo.indexBlocked) {
+    const skippedNames = new Set(report.skipped.map(({ name }) => name));
+    const linked = report.skipped.find(({ name }) => repo.titles.has(name));
+    const reason =
+        lives.length === 0
+            ? "no fact is live"
+            : repo.indexBlocked
+              ? "it is a symlink or cannot be read"
+              : repo.index !== null && !isGeneratedIndex(repo.index)
+                ? "it holds lines sync did not write"
+                : linked !== undefined
+                  ? `it links ${linked.name}, which was skipped`
+                  : null;
+    if (reason !== null) {
+        report.indexReason = reason;
+    } else {
+        // A fact whose file could not be written is not listed.
         const { text, omitted } = renderIndex(
-            lives.map((fact) => ({
-                name: fact.name,
-                title: fact.title,
-                description: fact.description,
-                importance: fact.importance,
-                created: fact.provenance.created,
-            })),
+            lives
+                .filter((fact) => !skippedNames.has(fact.name))
+                .map((fact) => ({
+                    name: fact.name,
+                    title: fact.title,
+                    description: fact.description,
+                    importance: fact.importance,
+                    created: fact.provenance.created,
+                })),
         );
         report.omitted = omitted;
         if (text === repo.index) {
@@ -461,10 +492,7 @@ async function reconcile(
                 await writeRepoFile(join(dir, INDEX), text);
                 report.index = "written";
             } catch (error) {
-                report.skipped.push({
-                    name: INDEX,
-                    reason: describeError(error),
-                });
+                report.indexReason = describeError(error);
             }
         }
     }

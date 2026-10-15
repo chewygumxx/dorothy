@@ -163,3 +163,25 @@ export function indexTitles(text: string): Map<string, string> {
     }
     return titles;
 }
+
+// Whether every line of an index is one renderIndex writes: a blank line,
+// an entry, or an indented line of an entry's description. An index with
+// a heading, prose or a line of any other shape holds a hand's work.
+export function isGeneratedIndex(text: string): boolean {
+    let inEntry = false;
+    for (const line of text.split("\n")) {
+        if (line.trim() === "") {
+            continue;
+        }
+        if (/^\s/.test(line)) {
+            if (!inEntry) {
+                return false;
+            }
+        } else if (ENTRY.test(line)) {
+            inEntry = true;
+        } else {
+            return false;
+        }
+    }
+    return true;
+}

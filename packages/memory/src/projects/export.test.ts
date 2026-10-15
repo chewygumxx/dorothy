@@ -14,6 +14,7 @@ import {
     formHash,
     type IndexEntry,
     indexTitles,
+    isGeneratedIndex,
     parseExported,
     renderExported,
     renderIndex,
@@ -215,5 +216,26 @@ describe("indexTitles", () => {
             ["bg-session-force-color", "Background sessions force colour"],
             ["b", "Bee [2]"],
         ]);
+    });
+});
+
+describe("isGeneratedIndex", () => {
+    it("takes what renderIndex writes, and nothing a hand adds", () => {
+        const { text } = renderIndex([
+            {
+                name: "a",
+                title: "Ay",
+                description: "First fact.",
+                importance: null,
+                created: "2026-10-15T09:30:00.000Z",
+            },
+        ]);
+        expect(isGeneratedIndex(text)).toBe(true);
+        expect(isGeneratedIndex("")).toBe(true);
+        expect(isGeneratedIndex(`${text}\n\n`)).toBe(true);
+        expect(isGeneratedIndex(`# Memory\n${text}`)).toBe(false);
+        expect(isGeneratedIndex(`${text}Some prose.\n`)).toBe(false);
+        expect(isGeneratedIndex(`  orphan\n${text}`)).toBe(false);
+        expect(isGeneratedIndex("- [A](./a.md) - and more\n")).toBe(false);
     });
 });
