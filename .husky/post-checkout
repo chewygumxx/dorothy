@@ -10,9 +10,12 @@
 #
 
 # A branch checkout ($3 is 1) that changes the dependencies reinstalls
-# them, and prepare relinks the skills. A file checkout, or a branch
-# checkout leaving package.json and bun.lock alone, does nothing.
+# them, and prepare relinks the skills. So does a new worktree's first
+# checkout, from the null commit, as its node_modules, hooks and links
+# are not shared. A file checkout, or a branch checkout leaving
+# package.json and bun.lock alone, does nothing.
 
 [ "$3" = 1 ] || exit 0
+case $1 in *[!0]*) ;; *) exec bun install ;; esac
 git diff --quiet "$1" "$2" -- package.json bun.lock && exit 0
 bun install
