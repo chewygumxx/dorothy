@@ -51,6 +51,11 @@ const codeOf = (error: unknown) => (error as { code?: unknown }).code;
 
 // Null when dir is a relative path that stays inside the repository.
 export function memoryDirProblem(dir: string): string | null {
+    // Said without the path, which would carry the character to a
+    // terminal.
+    if (/\p{Cc}/u.test(dir)) {
+        return "the path holds a control character";
+    }
     if (dir === "" || isAbsolute(dir) || dir.includes("\\")) {
         return `${dir || "an empty path"} is not a relative path`;
     }
@@ -64,12 +69,20 @@ export function memoryDirProblem(dir: string): string | null {
     return null;
 }
 
-function entryProblem(id: string, entry: unknown): string | null {
+// A project is named by its place in the file, never by its id: a hand
+// may have keyed it by a URL with a token in it, and the reason reaches a
+// terminal.
+function entryProblem(
+    place: number,
+    id: string,
+    entry: unknown,
+): string | null {
+    const it = `project ${place}`;
     if (!isProjectId(id)) {
-        return `${id} is not a project id`;
+        return `${it}'s id is not a project id`;
     }
     if (!isRecord(entry) || typeof entry.name !== "string") {
-        return `${id} has no name`;
+        return `${it} has no name`;
     }
     if (
         !Array.isArray(entry.roots) ||
@@ -77,14 +90,14 @@ function entryProblem(id: string, entry: unknown): string | null {
             (root) => typeof root === "string" && isAbsolute(root),
         )
     ) {
-        return `${id}'s roots are not absolute paths`;
+        return `${it}'s roots are not absolute paths`;
     }
     if (typeof entry.memoryDir !== "string") {
-        return `${id} has no memory directory`;
+        return `${it} has no memory directory`;
     }
     const dir = memoryDirProblem(entry.memoryDir);
     if (dir !== null) {
-        return `${id}'s memory directory: ${dir}`;
+        return `${it}'s memory directory: ${dir}`;
     }
     if (
         !isRecord(entry.synced) ||
@@ -103,7 +116,7 @@ function entryProblem(id: string, entry: unknown): string | null {
                 ),
         )
     ) {
-        return `${id}'s synced records are not a directory and facts' hashes by root`;
+        return `${it}'s synced records are not a directory and facts' hashes by root`;
     }
     return null;
 }
@@ -121,8 +134,10 @@ export function parseRegistry(text: string): RegistryRead {
             reason: "it is not a version 1 registry",
         };
     }
-    for (const [id, entry] of Object.entries(value.projects)) {
-        const problem = entryProblem(id, entry);
+    for (const [place, [id, entry]] of Object.entries(
+        value.projects,
+    ).entries()) {
+        const problem = entryProblem(place + 1, id, entry);
         if (problem !== null) {
             return { kind: "unparseable", reason: problem };
         }

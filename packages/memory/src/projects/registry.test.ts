@@ -108,6 +108,27 @@ describe("parseRegistry", () => {
     ])("refuses %s", (_, value) => {
         expect(parseRegistry(JSON.stringify(value)).kind).toBe("unparseable");
     });
+
+    it("names a bad project by its place, never by its key", () => {
+        const key = "https://user:ghp_secret0123456789@github.com/o/r";
+        const value = {
+            v: 1,
+            projects: {
+                ...registry().projects,
+                [key]: registry().projects[ID],
+            },
+        };
+        const read = parseRegistry(JSON.stringify(value));
+        expect(read).toEqual({
+            kind: "unparseable",
+            reason: "project 2's id is not a project id",
+        });
+        const named = parseRegistry(JSON.stringify(registry({ name: 1 })));
+        expect(named).toEqual({
+            kind: "unparseable",
+            reason: "project 1 has no name",
+        });
+    });
 });
 
 describe("memoryDirProblem", () => {
@@ -128,6 +149,25 @@ describe("memoryDirProblem", () => {
         ]) {
             expect(memoryDirProblem(dir)).not.toBeNull();
         }
+    });
+
+    it("refuses a control character or NUL, without repeating the path", () => {
+        for (const dir of [
+            "a\u0000b",
+            "docs/\u001b[2Jmemory",
+            "a\nb",
+            "a\u0085",
+        ]) {
+            expect(memoryDirProblem(dir)).toBe(
+                "the path holds a control character",
+            );
+        }
+        const read = parseRegistry(
+            JSON.stringify(registry({ memoryDir: "docs/\u001b[2Jm" })),
+        );
+        expect(read.kind === "unparseable" && read.reason).toBe(
+            "project 1's memory directory: the path holds a control character",
+        );
     });
 });
 

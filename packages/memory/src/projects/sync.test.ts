@@ -397,7 +397,7 @@ describe("syncProject", () => {
         );
         expect(await syncProject(repo, options())).toEqual({
             kind: "failed",
-            reason: `${projectsPath(data)}: ${ID}'s memory directory: ../outside leaves the repository or names it oddly`,
+            reason: `${projectsPath(data)}: project 1's memory directory: ../outside leaves the repository or names it oddly`,
         });
         expect((await readdir(base)).sort()).toEqual(["data", "repo"]);
         expect(commits).toEqual([]);
