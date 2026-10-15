@@ -8,10 +8,11 @@
 //
 //
 
-import { type Env, readConfig, SERVER_NAME } from "@dorothy/core";
+import { type Env, isUuid, readConfig, SERVER_NAME } from "@dorothy/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { liveSession } from "../bodies/launches.js";
 import { FACT_TYPES } from "../facts/file.js";
 import { dataRoot, type FactStore } from "../facts/store.js";
 import type { HistoryHandle, OpenHistory } from "../memory/sidecar.js";
@@ -29,7 +30,7 @@ import {
 } from "./query.js";
 import { remember } from "./remember.js";
 import { indexPath, RecallIndex } from "./store.js";
-import { syncIndex } from "./sync.js";
+import { sessionPhrase, syncIndex } from "./sync.js";
 
 // The guidance on when to look things up lives here: it always reaches the
 // model with the tools.
@@ -98,6 +99,11 @@ export type RecallServerOptions = {
     facts?: string | null;
     // The live conversation, never among the results.
     exclude: string | null;
+    // In Claude Code: the session live in the launch, read at each call,
+    // whose conversation is left out and named as remember's from. A
+    // hook records it only after its first reply, and /clear replaces
+    // it. exclude, chat's, comes first.
+    liveSession?: (() => Promise<string | null>) | null;
     // Serve recollect over the live conversation's clusters; the session
     // was seeded with them.
     recollect?: boolean;
@@ -118,12 +124,21 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
     const server = new McpServer({ name: SERVER_NAME, version: "1.0.0" });
     const now = options.now ?? Date.now;
     let index: RecallIndex | null = null;
+    const excluded = async (index: RecallIndex): Promise<string | null> => {
+        if (options.exclude !== null || !options.liveSession) {
+            return options.exclude;
+        }
+        const session = await options.liveSession();
+        return session === null ? null : sessionPhrase(index, session);
+    };
     // Every call syncs first, so results are never stale. The sync holds the
     // write lock across awaits, and MCP may deliver calls concurrently, so
     // the query waits its turn in the index's queue rather than reading
     // rows a sync for another call has half written. work must not call
     // exclusive or syncIndex: that would wait on itself.
-    const answer = async (work: (index: RecallIndex) => unknown) => {
+    const answer = async (
+        work: (index: RecallIndex, exclude: string | null) => unknown,
+    ) => {
         try {
             index ??= options.openIndex();
             const ready = index;
@@ -134,7 +149,8 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
                 options.vocabulary ?? null,
                 options.facts ?? null,
             );
-            const result = await ready.exclusive(() => work(ready));
+            const exclude = await excluded(ready);
+            const result = await ready.exclusive(() => work(ready, exclude));
             return {
                 content: [
                     { type: "text" as const, text: JSON.stringify(result) },
@@ -156,7 +172,9 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
     let versions: HistoryHandle | null | undefined;
     // remember writes under the store's lock, which is the index's: it
     // never runs inside exclusive, and the next query syncs what it wrote.
-    const write = async (work: (store: FactStore) => Promise<unknown>) => {
+    const write = async (
+        work: (store: FactStore, from: string | null) => Promise<unknown>,
+    ) => {
         try {
             if (root === null) {
                 throw new RecallError("Facts are unavailable.");
@@ -166,12 +184,15 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
             if (versions === undefined) {
                 versions = (await options.openHistory?.(index)) ?? null;
             }
-            const result = await work({
-                root,
-                lock: index.lock,
-                recorder: versions?.recorder ?? null,
-                now: () => new Date(now()),
-            });
+            const result = await work(
+                {
+                    root,
+                    lock: index.lock,
+                    recorder: versions?.recorder ?? null,
+                    now: () => new Date(now()),
+                },
+                await excluded(index),
+            );
             return {
                 content: [
                     { type: "text" as const, text: JSON.stringify(result) },
@@ -202,9 +223,9 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
             },
         },
         (input) =>
-            answer((index) =>
+            answer((index, exclude) =>
                 search(index, input, {
-                    exclude: options.exclude,
+                    exclude,
                     now: now(),
                     halfLifeDays: options.halfLifeDays,
                     project,
@@ -223,7 +244,7 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
             },
         },
         (input) =>
-            answer((index) => {
+            answer((index, exclude) => {
                 const { conversation, fact } = input;
                 if ((conversation === undefined) === (fact === undefined)) {
                     throw new RecallError(
@@ -241,7 +262,7 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
                 return openConversation(
                     index,
                     { ...input, conversation: conversation as string },
-                    { exclude: options.exclude },
+                    { exclude },
                 );
             }),
     );
@@ -255,9 +276,9 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
             },
         },
         (input) =>
-            answer((index) =>
+            answer((index, exclude) =>
                 listTags(index, input, {
-                    exclude: options.exclude,
+                    exclude,
                     now: now(),
                     halfLifeDays: options.halfLifeDays,
                 }),
@@ -296,8 +317,8 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
                 },
             },
             (input) =>
-                write((store) =>
-                    remember(store, input, { project, from: options.exclude }),
+                write((store, from) =>
+                    remember(store, input, { project, from }),
                 ),
         );
     }
@@ -319,12 +340,16 @@ export async function runRecallServer(
     const { config } = await readConfig(env);
     const found =
         project === null ? null : await identify(project).catch(() => null);
+    // Claude Code's server inherits its launch; chat's, which names its
+    // conversation, may too when chat runs inside her Claude Code.
+    const launch = env.DOROTHY_LAUNCH ?? "";
     const server = createRecallServer({
         openIndex: () => RecallIndex.open(indexPath(env)),
         dir: transcriptDir(env),
         vocabulary: vocabularyPath(env),
         facts: dataRoot(env),
         exclude,
+        liveSession: isUuid(launch) ? () => liveSession(env, launch) : null,
         recollect: serveRecollect,
         halfLifeDays: config.memory.halfLifeDays,
         project: found?.id ?? null,
