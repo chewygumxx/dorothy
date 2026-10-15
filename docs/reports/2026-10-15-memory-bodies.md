@@ -366,8 +366,9 @@ Made while planning, as carried out; the spec now says each:
   `sessions/<session>.json`, one a session, written by its hooks. The
   merged settings files beside them are never scanned, and no two
   processes rewrite one file.
-- **The live session of a launch** is the one a hook noted last, else
-  the session `--session-id` named.
+- **The live session of a launch** is the one a hook noted last,
+  unless that session has ended; else the session `--session-id`
+  named.
 - **`SessionEnd` hands its work** to a detached
   `dorothy --claude-hook --catch-up <launch> --session <id>`, which does
   for one session what the launch's catch-up does for all, and keeps

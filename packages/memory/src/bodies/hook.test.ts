@@ -32,6 +32,7 @@ import {
 } from "./hook.js";
 import {
     launchesDir,
+    liveSession,
     noteLaunch,
     noteSession,
     readLaunch,
@@ -324,6 +325,13 @@ describe("runClaudeHook", () => {
             ],
         ]);
         expect(await conversations()).toEqual([]);
+    });
+
+    it("leaves no live session once a SessionEnd has come", async () => {
+        await runClaudeHook({ kind: "hook" }, deps(input("Stop")));
+        expect(await liveSession(env, LAUNCH)).toBe(SESSION);
+        await runClaudeHook({ kind: "hook" }, deps(input("SessionEnd")));
+        expect(await liveSession(env, LAUNCH)).toBeNull();
     });
 
     it("logs what it cannot do, and still exits 0", async () => {

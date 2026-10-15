@@ -104,6 +104,31 @@ describe("launch notes", () => {
         expect(await liveSession(env, LAUNCH)).toBe(S2);
     });
 
+    it("have no live session once the one noted last has ended", async () => {
+        await noteLaunch(env, note(LAUNCH));
+        await noteSession(env, LAUNCH, {
+            session: S1,
+            transcript: "/t/1.jsonl",
+            cwd: "/work",
+            seen: "2026-10-15T09:01:00.000Z",
+        });
+        await noteSession(env, LAUNCH, {
+            session: S2,
+            transcript: "/t/2.jsonl",
+            cwd: "/work",
+            seen: "2026-10-15T09:02:00.000Z",
+            ended: true,
+        });
+        expect(await liveSession(env, LAUNCH)).toBeNull();
+        await noteSession(env, LAUNCH, {
+            session: S2,
+            transcript: "/t/2.jsonl",
+            cwd: "/work",
+            seen: "2026-10-15T09:03:00.000Z",
+        });
+        expect(await liveSession(env, LAUNCH)).toBe(S2);
+    });
+
     it("find the launches whose dorothy is gone, and remove one", async () => {
         await noteLaunch(env, note(LAUNCH, 1));
         await noteLaunch(env, note(OTHER, 2));

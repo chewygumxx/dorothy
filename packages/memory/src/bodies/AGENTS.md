@@ -40,9 +40,9 @@ reader, the store and reviews alone. The CLI loads both lazily.
 - `launches.ts`: a launch's notes in the runtime directory's
   `launches/<launch>/`: `launch.json`, written once by
   `dorothy --claude`, and `sessions/<session>.json`, one a session,
-  written by its hooks. `liveSession` is the one noted last, else the
-  one `--session-id` named; `staleLaunches` are those whose `dorothy`
-  is gone.
+  written by its hooks. `liveSession` is the one noted last, unless
+  it has ended; else the one `--session-id` named; `staleLaunches` are
+  those whose `dorothy` is gone.
 - `record.ts`: `recordSession` records a session into its conversation
   under the store's lock: found by the index's `conversation_sessions`,
   or by a scan without the index; read from the line after the last

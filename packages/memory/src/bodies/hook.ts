@@ -440,6 +440,7 @@ async function onHook(env: Env, log: HookLog, deps: HookDeps): Promise<void> {
         transcript: input.transcript,
         cwd: input.cwd,
         seen: now().toISOString(),
+        ...(input.event === "SessionEnd" ? { ended: true } : {}),
     });
     if (input.event === "SessionEnd") {
         (deps.spawnDetached ?? spawnDetached)([

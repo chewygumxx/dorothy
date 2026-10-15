@@ -454,11 +454,12 @@ notice, and then cleared.
 
 The recall server inherits `DOROTHY_LAUNCH`, and reads the launch's
 notes to find the live session's conversation, the live session being
-the one a hook noted last, else the one `--session-id` named: it
-leaves that out of
-`search`, as chat's `--exclude` does, and names it as `from` in
-`remember`'s writes. Before the first `Stop` there is no conversation
-yet, so nothing is left out and `from` is omitted.
+the one a hook noted last, unless that session has ended; else the one
+`--session-id` named: it leaves that out of `search`, as chat's
+`--exclude` does, and names it as `from` in `remember`'s writes. Before
+the first `Stop` there is no conversation yet, and after a
+`SessionEnd` (as at `/clear`) no live session until the next one's
+hook, so nothing is left out and `from` is omitted.
 
 ### Its log
 

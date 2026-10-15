@@ -46,6 +46,8 @@ export type SessionNote = {
     transcript: string;
     cwd: string;
     seen: string;
+    // Noted by its SessionEnd: the session is over, live no longer.
+    ended?: boolean;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -71,7 +73,8 @@ function isSessionNote(value: unknown): value is SessionNote {
         typeof value.session === "string" &&
         typeof value.transcript === "string" &&
         typeof value.cwd === "string" &&
-        typeof value.seen === "string"
+        typeof value.seen === "string" &&
+        (value.ended === undefined || typeof value.ended === "boolean")
     );
 }
 
@@ -171,8 +174,9 @@ export async function launchSessions(
     return notes.sort((a, b) => a.seen.localeCompare(b.seen));
 }
 
-// The session live in a launch: the one a hook noted last, else the one
-// --session-id named. Null for a launch it cannot read.
+// The session live in a launch: the one a hook noted last, unless that
+// session has ended; else the one --session-id named. Null for a launch
+// it cannot read, and between a session's end and the next one's hook.
 export async function liveSession(
     env: Env,
     launch: string,
@@ -180,8 +184,11 @@ export async function liveSession(
     if (!isUuid(launch)) {
         return null;
     }
-    const noted = (await launchSessions(env, launch)).at(-1)?.session;
-    return noted ?? (await readLaunch(env, launch))?.session ?? null;
+    const noted = (await launchSessions(env, launch)).at(-1);
+    if (noted !== undefined) {
+        return noted.ended === true ? null : noted.session;
+    }
+    return (await readLaunch(env, launch))?.session ?? null;
 }
 
 const pidAlive = (pid: number) => {
