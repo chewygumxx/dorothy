@@ -356,8 +356,7 @@ path. Every checkout of one remote is one project; its facts live under
       "memoryDir": ".agents/memory",
       "synced": {
         "/home/chewygumxx/dev/dorothy": {
-          "dir": ".agents/memory",
-          "facts": {
+          ".agents/memory": {
             "dorothy-ambition": "sha256 of the form both sides last held"
           }
         }
@@ -373,13 +372,17 @@ the repository's memory directory: `.agents/memory` if it exists, else
 `.claude/memory` if that does, else `.agents/memory`. The user may edit
 it.
 `synced` is kept by root, so two checkouts of one remote each compare
-against what they last synced and never undo one another. Each root's
-record names the memory directory it was synced with, `dir`, beside the
-hashes, `facts`. Once the user edits `memoryDir`, a root's record is of
-another directory and counts as none: its next sync is its first with
-the new one, adopting and exporting, and retires nothing. A memory
-directory deleted whole, with its record its own, retires every fact as
-any deletion does.
+against what they last synced and never undo one another, and within a
+root by memory directory. A sync reads and writes only the record of
+its root and the current `memoryDir`. With none, after the user edits
+`memoryDir`, its next sync is its first with that directory, adopting
+and exporting, and retires nothing. The records of other directories
+are kept as they are, so a root switched to another directory and back
+compares against what it last held there: the store's changes made
+meanwhile are exported, and a file edited there meanwhile is a
+conflict. Like the records of roots no longer used, they are never
+pruned. A memory directory deleted whole, with its record its own,
+retires every fact as any deletion does.
 
 ## Sync
 

@@ -56,6 +56,8 @@ import {
     memoryDirProblem,
     projectsPath,
     readRegistry,
+    type SyncRecord,
+    syncRecord,
     withProject,
     writeRegistry,
 } from "./registry.js";
@@ -301,14 +303,13 @@ async function reconcile(
     const memoryDir = known?.memoryDir ?? (await chooseMemoryDir(project.root));
     const dir = await safeDir(project.root, memoryDir);
     const scope: Scope = { kind: "project", id: project.id };
-    // A record of another memory directory, the user having edited it,
-    // describes files no longer here: the sync is this root's first, and
-    // adopts and exports rather than retiring everything.
-    const record = known?.synced[project.root];
-    const synced: Record<string, string> =
-        record !== undefined && record.dir === memoryDir
-            ? { ...record.facts }
-            : {};
+    // Each memory directory keeps its own record, so one switched away
+    // from and back is synced from what it last held there. With none,
+    // the sync is this root and directory's first, and adopts and exports
+    // rather than retiring everything.
+    const synced: SyncRecord = {
+        ...syncRecord(known, project.root, memoryDir),
+    };
 
     const repo = await readRepo(dir);
     const listed = await listFacts(root, scope);

@@ -9,8 +9,8 @@
 //
 
 // projects.json: each project Dorothy has synced, its roots on this
-// machine, its repository's memory directory and, root by root, the
-// directory last synced and the hash of each fact as both sides last held
+// machine, its repository's memory directory and, root by root and
+// directory by directory, the hash of each fact as both sides last held
 // it there.
 
 import { lstat, readFile } from "node:fs/promises";
@@ -20,16 +20,17 @@ import { isProjectId } from "../facts/store.js";
 import { writeAtomic } from "../memory/sidecar.js";
 import type { Project } from "./identify.js";
 
-// What a root last synced: the memory directory it synced with, and the
-// hash of every fact as both sides last held it, by the fact's name. A
-// record of another directory than the project's is none.
-export type SyncRecord = { dir: string; facts: Record<string, string> };
+// What a root last synced with one memory directory: the hash of every
+// fact as both sides last held it, by the fact's name.
+export type SyncRecord = Record<string, string>;
 export type ProjectEntry = {
     name: string;
     roots: string[];
     memoryDir: string;
-    // By root: two checkouts of one remote sync at their own pace.
-    synced: Record<string, SyncRecord>;
+    // By root, as two checkouts of one remote sync at their own pace, then
+    // by memory directory, as one switched away from and back is synced
+    // from what it last held.
+    synced: Record<string, Record<string, SyncRecord>>;
 };
 export type Registry = { v: 1; projects: Record<string, ProjectEntry> };
 export type RegistryRead =
@@ -106,21 +107,23 @@ function entryProblem(
     if (
         !isRecord(entry.synced) ||
         !Object.entries(entry.synced).every(
-            ([root, record]) =>
+            ([root, dirs]) =>
                 isAbsolute(root) &&
-                isRecord(record) &&
-                typeof record.dir === "string" &&
-                memoryDirProblem(record.dir) === null &&
-                isRecord(record.facts) &&
-                Object.entries(record.facts).every(
-                    ([name, hash]) =>
-                        FACT_NAME.test(name) &&
-                        typeof hash === "string" &&
-                        HASH.test(hash),
+                isRecord(dirs) &&
+                Object.entries(dirs).every(
+                    ([dir, record]) =>
+                        memoryDirProblem(dir) === null &&
+                        isRecord(record) &&
+                        Object.entries(record).every(
+                            ([name, hash]) =>
+                                FACT_NAME.test(name) &&
+                                typeof hash === "string" &&
+                                HASH.test(hash),
+                        ),
                 ),
         )
     ) {
-        return `${it}'s synced records are not a directory and facts' hashes by root`;
+        return `${it}'s synced records are not facts' hashes by root and directory`;
     }
     return null;
 }
@@ -193,11 +196,25 @@ const sorted = <T>(entries: Record<string, T>) =>
         ),
     );
 
+const own = <T>(entries: Record<string, T> | undefined, key: string) =>
+    entries !== undefined && Object.hasOwn(entries, key)
+        ? entries[key]
+        : undefined;
+
+// The record a root last synced with a memory directory, or none.
+export const syncRecord = (
+    entry: ProjectEntry | undefined,
+    root: string,
+    memoryDir: string,
+): SyncRecord | undefined => own(own(entry?.synced, root), memoryDir);
+
+// Sets the record of this root and memory directory alone; every other,
+// of a root or directory no longer used, is kept as it was.
 export function withProject(
     registry: Registry,
     project: Project,
     memoryDir: string,
-    synced: Record<string, string>,
+    synced: SyncRecord,
 ): Registry {
     const known = registry.projects[project.id];
     const roots = known?.roots ?? [];
@@ -213,7 +230,10 @@ export function withProject(
                 memoryDir,
                 synced: sorted({
                     ...known?.synced,
-                    [project.root]: { dir: memoryDir, facts: sorted(synced) },
+                    [project.root]: sorted({
+                        ...own(known?.synced, project.root),
+                        [memoryDir]: sorted(synced),
+                    }),
                 }),
             },
         },

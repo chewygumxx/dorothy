@@ -731,12 +731,12 @@ describe("syncProject", () => {
         expect(Object.keys(registry.projects[ID].synced).sort()).toEqual(
             [repo, second].sort(),
         );
-        expect(registry.projects[ID].synced[repo]).toMatchObject({
-            dir: ".agents/memory",
-        });
-        expect(Object.keys(registry.projects[ID].synced[repo].facts)).toEqual([
-            "a",
+        expect(Object.keys(registry.projects[ID].synced[repo])).toEqual([
+            ".agents/memory",
         ]);
+        expect(
+            Object.keys(registry.projects[ID].synced[repo][".agents/memory"]),
+        ).toEqual(["a"]);
     });
 
     it("takes an edited memory directory as a first sync, retiring nothing", async () => {
@@ -774,8 +774,90 @@ describe("syncProject", () => {
             "c.md",
         ]);
         const after = JSON.parse(await readFile(projectsPath(data), "utf8"));
-        expect(after.projects[ID].synced[repo].dir).toBe("docs/memory");
+        expect(Object.keys(after.projects[ID].synced[repo])).toEqual([
+            ".agents/memory",
+            "docs/memory",
+        ]);
         expect(moved(await sync())).toEqual(NOTHING);
+    });
+
+    describe("switching the memory directory away and back", () => {
+        const useMemoryDir = async (dir: string) => {
+            const registry = JSON.parse(
+                await readFile(projectsPath(data), "utf8"),
+            );
+            registry.projects[ID].memoryDir = dir;
+            await writeFile(projectsPath(data), JSON.stringify(registry));
+        };
+        const describeInStore = async (name: string, description: string) => {
+            const held = (await facts()).find((fact) => fact.name === name);
+            await putFact(data, SCOPE, { ...(held as Fact), description });
+        };
+        // Synced with .agents/memory, then with docs/memory, the store's
+        // a and b changed meanwhile, and back to .agents/memory.
+        const awayAndBack = async (whileAway: () => Promise<void>) => {
+            await putRepo("a.md", repoFact("a", "First fact."));
+            await putFact(data, SCOPE, storeFact("b"));
+            await sync();
+            await useMemoryDir("docs/memory");
+            await mkdir(join(repo, "docs", "memory"), { recursive: true });
+            expect(moved(await sync())).toEqual({
+                ...NOTHING,
+                exported: ["a", "b"],
+            });
+            await describeInStore("a", "Newer a, in the store.");
+            await describeInStore("b", "Newer b, in the store.");
+            expect(moved(await sync())).toEqual({
+                ...NOTHING,
+                exported: ["a", "b"],
+            });
+            await whileAway();
+            await useMemoryDir(".agents/memory");
+            return sync();
+        };
+
+        it("exports the store's newer facts to files left untouched", async () => {
+            const report = await awayAndBack(async () => {});
+            expect(moved(report)).toEqual({
+                ...NOTHING,
+                exported: ["a", "b"],
+            });
+            expect(await readFile(memory("a.md"), "utf8")).toContain(
+                "Newer a, in the store.",
+            );
+            expect(
+                (await facts()).map(({ description, retired }) => [
+                    description,
+                    retired,
+                ]),
+            ).toEqual([
+                ["Newer a, in the store.", null],
+                ["Newer b, in the store.", null],
+            ]);
+            const registry = JSON.parse(
+                await readFile(projectsPath(data), "utf8"),
+            );
+            expect(Object.keys(registry.projects[ID].synced[repo])).toEqual([
+                ".agents/memory",
+                "docs/memory",
+            ]);
+            expect(moved(await sync())).toEqual(NOTHING);
+        });
+
+        it("takes a file edited while away as a conflict it wins", async () => {
+            const report = await awayAndBack(() =>
+                putRepo("a.md", repoFact("a", "Edited in the checkout.")),
+            );
+            expect(moved(report)).toEqual({
+                ...NOTHING,
+                imported: ["a"],
+                exported: ["b"],
+                conflicts: ["a"],
+            });
+            expect(
+                (await facts()).map(({ description }) => description),
+            ).toEqual(["Edited in the checkout.", "Newer b, in the store."]);
+        });
     });
 
     it("retires every fact when the memory directory it synced is gone", async () => {

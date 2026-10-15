@@ -19,6 +19,7 @@ import {
     parseRegistry,
     type Registry,
     readRegistry,
+    syncRecord,
     withProject,
     writeRegistry,
 } from "./registry.js";
@@ -27,8 +28,7 @@ const ID = "github.com/chewygumxx/dorothy";
 const HASH = "a".repeat(64);
 const ROOT = "/home/u/dev/dorothy";
 const record = (facts: Record<string, string>, dir = ".agents/memory") => ({
-    dir,
-    facts,
+    [dir]: facts,
 });
 const registry = (fields: object = {}): Registry => ({
     v: 1,
@@ -39,8 +39,7 @@ const registry = (fields: object = {}): Registry => ({
             memoryDir: ".agents/memory",
             synced: {
                 "/home/u/dev/dorothy": {
-                    dir: ".agents/memory",
-                    facts: { "likes-tea": HASH },
+                    ".agents/memory": { "likes-tea": HASH },
                 },
             },
             ...fields,
@@ -100,8 +99,23 @@ describe("parseRegistry", () => {
         [
             "hashes of a directory that escapes",
             registry({
+                synced: { [ROOT]: record({ "likes-tea": HASH }, "../x") },
+            }),
+        ],
+        [
+            "hashes of a directory with a hidden character",
+            registry({
+                synced: { [ROOT]: record({ "likes-tea": HASH }, "a\u202eb") },
+            }),
+        ],
+        [
+            "the record of the old shape",
+            registry({
                 synced: {
-                    [ROOT]: { dir: "../x", facts: { "likes-tea": HASH } },
+                    [ROOT]: {
+                        dir: ".agents/memory",
+                        facts: { "likes-tea": HASH },
+                    },
                 },
             }),
         ],
@@ -199,6 +213,22 @@ describe("chooseMemoryDir", () => {
     });
 });
 
+describe("syncRecord", () => {
+    it("finds the record of a root and directory, and none for another", () => {
+        const entry = registry().projects[ID];
+        expect(syncRecord(entry, ROOT, ".agents/memory")).toEqual({
+            "likes-tea": HASH,
+        });
+        for (const dir of ["docs/memory", "constructor", "__proto__"]) {
+            expect(syncRecord(entry, ROOT, dir)).toBeUndefined();
+        }
+        expect(
+            syncRecord(entry, "/home/u/work/dorothy", ".agents/memory"),
+        ).toBeUndefined();
+        expect(syncRecord(undefined, ROOT, ".agents/memory")).toBeUndefined();
+    });
+});
+
 describe("withProject", () => {
     const project = { root: "/home/u/dev/dorothy", id: ID, name: "dorothy" };
 
@@ -238,14 +268,27 @@ describe("withProject", () => {
         ).toEqual(["/home/u/dev/dorothy", "/home/u/work/dorothy"]);
     });
 
-    it("records the directory this root synced with", () => {
+    it("sets only this directory's record, and keeps the others'", () => {
         const next = withProject(registry(), project, "docs/memory", {
             a: HASH,
         });
         expect(next.projects[ID]?.memoryDir).toBe("docs/memory");
-        expect(next.projects[ID]?.synced[ROOT]).toEqual(
-            record({ a: HASH }, "docs/memory"),
-        );
+        expect(next.projects[ID]?.synced[ROOT]).toEqual({
+            ".agents/memory": { "likes-tea": HASH },
+            "docs/memory": { a: HASH },
+        });
+        const back = withProject(next, project, ".agents/memory", {
+            b: HASH,
+        });
+        expect(back.projects[ID]?.memoryDir).toBe(".agents/memory");
+        expect(back.projects[ID]?.synced[ROOT]).toEqual({
+            ".agents/memory": { b: HASH },
+            "docs/memory": { a: HASH },
+        });
+        expect(Object.keys(back.projects[ID]?.synced[ROOT] ?? {})).toEqual([
+            ".agents/memory",
+            "docs/memory",
+        ]);
     });
 
     it("adds a root it has not seen, once", () => {
