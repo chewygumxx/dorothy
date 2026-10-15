@@ -594,6 +594,13 @@ rules require; nothing touches the user's data.
   nothing else; ranking keeps them below live facts.
 - **The scrub is by shape.** It misses a password with no telling key
   beside it.
+- **Snake-case names.** Claude Code's auto-memory often names its files
+  in snake case, `feedback_testing.md`, which a fact's name refuses:
+  such a file is skipped and named in the report, never lost, and a
+  `MEMORY.md` that links it is left as it is.
+- **Hooks give way to descriptions.** A `MEMORY.md` in sync's own form
+  is regenerated from the facts, so each entry's hook line, where a
+  hand wrote one, is replaced by its fact's description.
 - **One remote, one project.** Forks with different remotes are
   different projects; a repository whose `origin` changes becomes a new
   one until the user edits `projects.json`.
