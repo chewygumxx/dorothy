@@ -1,0 +1,1 @@
+{ "server": { "launch": "probe-launch" }, "hooks": ["probe-launch"] }

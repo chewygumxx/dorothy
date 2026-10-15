@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-15
-mtime: 2026-10-15
+mtime: 2026-10-16
 spdx: GPL-3.0-only
 title: Dorothy's memory in her bodies report
 description: >-
@@ -132,6 +132,149 @@ variable is handed through after the unset, as `PROBE_ENV`.)
 
 Decision: the variable wins over a settings file, and Task 8 needs no
 `"autoMemoryEnabled": false` in Dorothy's settings object.
+
+## Recording probes
+
+The probes ran the real `claude` 2.1.300 against a loopback stand-in,
+as the delivery probes did, but on a temporary `CLAUDE_CONFIG_DIR` that
+trusts the probe's directory and the stand-in's fake key, with
+`DOROTHY_LAUNCH=probe-launch` on `claude`. Its hooks stood in for
+`dorothy --claude-hook` and logged what they saw; a stdio MCP server
+that never answers logged its environment. Print-mode runs passed
+Dorothy's hooks in `--settings` beside a project's own `Stop` hook,
+and three interactive runs drove `claude` under `script`.
+
+What the plan's scripts needed, found by reading the runs:
+
+- The stand-in looks at the last `user`-role message, and for a
+  `tool_result` anywhere: as in the delivery probes, Claude Code ends
+  the messages with a `system`-role reminder, so the first run was
+  answered with the compaction summary and never called a tool.
+- The runner passes `--permission-mode default`. Auto mode is Claude
+  Code's default in 2.1.300; its classifier sent its own request to
+  the stand-in, failed on the reply and refused the `Agent` call.
+- The runners also unset `CLAUDE_PID`, `CLAUDE_EFFORT`, `CLAUDE_ALT`
+  and `FORCE_COLOR`, inherited from the session running the probes,
+  and set `DISABLE_AUTOUPDATER=1` and
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` after the unset, so the
+  fresh configuration directory sends no update or telemetry traffic.
+- `keys-clear.sh` sends its two Ctrl-D 0.3 seconds apart. One second
+  apart, the second fell outside Claude Code's window, so `claude`
+  stayed open until the timeout.
+- The runs are driven by one script that logs `{"run": <name>}` to the
+  hooks' log before each interactive run, so `hooks.json` shows which
+  lines each run wrote.
+
+The MCP server that never answers holds each print-mode run about 30
+seconds before its first request, so every one took about 31.6 seconds.
+
+### Claude Code's lines
+
+Command: Steps 1 to 5 of the recording plan's Task 1. Step 6's survey of
+the user's own transcripts was not taken again: the auto mode classifier
+of the session running the probes refused the command as handling
+personal data, and the refusal was left standing.
+Output: [lines.json](./2026-10-15-memory-bodies/lines.json).
+
+The six sessions' main transcripts held, without a `uuid`,
+`api-request` (6), `api-request-blob` (12), `api-request-shape` (4),
+`atis-latch` (15), `cost-state` (12), `file-history-snapshot` (6),
+`last-prompt` (12), `mode` (12), `permission-mode` (6) and
+`queue-operation` (12), every one on the planning survey's list and
+in Task 4's `BOOKKEEPING`. The `api-request-blob` lines copy the
+requests' message content, the user's words included, so they are
+bookkeeping that is not empty: they are passed over and never stored.
+
+With a `uuid` were only `user`, `assistant`, `attachment` and `system`.
+The `system` subtypes were `compact_boundary`, `informational`,
+`local_command`, `stop_hook_summary` and `turn_duration`, all on the
+survey's list. The `attachment` subtypes were `agent_listing_delta`,
+`auto_mode`, `date`, `environment`, `model`, `prompt_snapshot`,
+`remote_session_change`, `session_context`, `skill_listing`,
+`total_tokens_reminder` and `queued_command`, the last twice with
+`commandMode` `task-notification` and a prompt opening
+`<task-notification>`, the background agent's report. None carried the
+user's words.
+
+Each assistant line held one content block (15 `text`, 4 `tool_use`):
+the stand-in's message of text and two calls became three lines. Two
+assistant lines named the model `<synthetic>`, the "No response
+requested." Claude Code writes on a resume. Of the user lines, 14 held
+a string, 4 a `tool_result` each, one string was the
+`isCompactSummary` summary and two strings were `isMeta`, the
+`<local-command-caveat>`. `/compact` was written as a user line of
+`<command-name>/compact</command-name>` markup and its output as one of
+`<local-command-stdout>`, as Task 4's `spoken` expects.
+
+The subagent wrote its own `subagents/agent-<id>.jsonl` beside a
+`.meta.json`, under a directory named for the session: its lines are
+all `isSidechain`, under the parent's `sessionId`.
+
+Decision: `BOOKKEEPING` gains nothing, no type with a `uuid` is new, and
+`spokenAttachment` stays `queued_command` with `commandMode` `prompt`
+alone. The planning survey stands as the plan recorded it; the user may
+take it again by hand.
+
+### Resuming
+
+Command: Step 4's resume, continue, fork and compact runs, and the
+clear run.
+Output: [resume.json](./2026-10-15-memory-bodies/resume.json).
+
+`--resume <id>` and `--continue` appended to the first session's file
+under its id: the file's 77 lines name that one session, and the hooks
+of both runs reported its id and its transcript. `/compact` through
+`--resume` did the same, appending a `compact_boundary` and the summary.
+`--fork-session` wrote a new file under a new id whose 31 lines from the
+first session repeat their `uuid`s and timestamps but name only the
+fork's id in `sessionId`; no field names the session forked from.
+`/clear` ran `SessionEnd` with
+reason `clear` and went on under a new id in a new file, with no
+repeated uuids.
+
+Decision: Task 6 stands as written; `/clear` starting a new session id
+under the same launch is as expected. A fork is new to Dorothy and its
+copied lines predate the launch, so it is recorded from the launch on as
+a conversation of its own, not joined to the one it forked from.
+
+### Hooks
+
+Command: Step 4's runs, and two checks by a hook that logs its start
+and the signal that ends it.
+Output: [hooks.json](./2026-10-15-memory-bodies/hooks.json).
+
+Dorothy's hooks from `--settings` ran beside the project's `Stop`: each
+interactive run logged both `slow` and `project` for each reply. In
+print mode `slow` never logged: the check showed Claude Code starting
+the async hook and sending it `SIGTERM` about 30 milliseconds later, as
+`claude -p` exits. Interactive, an async `Stop` outlives `/exit`: the
+check's hook finished 3.4 seconds after `SessionEnd`. The first run
+took 31.70 seconds against 31.49 to 31.64 for the others, so `async`
+kept the hook off the reply.
+
+`SessionEnd` ran on every exit tried: reason `other` for each print-mode
+run and for the hung-up terminal, `clear` for `/clear`, and
+`prompt_input_exit` for both Ctrl-D twice and `/exit`. Each of the nine
+was followed by `{"survived": true}`, written three seconds on by a
+process the hook spawned detached, once the hook (and, but for
+`/clear`, `claude`) had gone.
+
+Decisions: hooks from `--settings` add to the user's own and Task 10's
+merge stands; `async` stands. Task 8's detached `spawn` stands, with no
+`setsid -f`. `SessionEnd` ran for `/clear`, Ctrl-D, `/exit` and the
+hung-up terminal; the catch-up covers what it misses, a process killed
+outright, and the last `Stop` of a `claude -p`, which Claude Code
+terminates as it exits.
+
+### What hooks and servers inherit
+
+Output: [inherit.json](./2026-10-15-memory-bodies/inherit.json).
+
+`DOROTHY_LAUNCH` set on `claude` reached the MCP server and every hook:
+`server.launch` and the hooks' values are all `probe-launch`.
+
+Decision: Task 10 passes `DOROTHY_LAUNCH` in the environment alone, and
+no `--launch` flag is needed.
 
 ## Rulings
 
