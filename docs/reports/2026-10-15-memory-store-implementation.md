@@ -281,7 +281,7 @@ the reason and what it costs if wrong.
   `MEMORY.md` entry's when there is one, else the store's, else its
   name, as the spec says.
 - `synced` is keyed by root within a project, `{ root: { name: hash } }`,
-  since become `{ root: { dir: { name: hash } } }` (see Follow-up).
+  since become `{ root: { last, dirs } }` (see Follow-up).
   One map per project let two checkouts of one remote ping-pong and a
   stale clone silently roll the store back. The spec's example and text
   changed to match; `projects.json` is unreleased, so there is no
@@ -377,11 +377,14 @@ commit with a regression test written to fail first:
 5. **Switching `memoryDir` back.** A root's record named only its last
    directory, so going from A to B and back made A's out-of-date files
    win a first sync. `synced` is now
-   `{ root: { dir: { name: hash } } }`; a sync uses and replaces only
-   its root and current directory's record and keeps the rest, never
-   pruned. There is no migration from `{ dir, facts }`, which only this
-   branch wrote. The spec's example and text and the projects guide say
-   so.
+   `{ root: { last, dirs: { dir: { name: hash } } } }`; a sync uses and
+   replaces only its root and current directory's record and keeps the
+   rest, never pruned. A directory absent from disk keeps its record
+   only if it is `last`, the one the root synced last: else pointing
+   `memoryDir` back at a directory since moved away retired every fact,
+   and the switch back removed the files. There is no migration from
+   `{ dir, facts }`, which only this branch wrote. The spec's example
+   and text and the projects guide say so.
 
 ## Verification
 

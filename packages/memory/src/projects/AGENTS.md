@@ -31,7 +31,8 @@ memory directory, `.agents/memory/` by default.
   one, is `local-` and the root's hash.
 - `registry.ts`: `projects.json`, each project's roots, memory directory
   and, by root and then by memory directory, the hash of each fact as
-  both sides last held it there.
+  both sides last held it there, with the directory each root synced
+  last.
 - `export.ts`: the exported form Claude Code's auto-memory reads, its
   hash by content, and `MEMORY.md` within 200 lines and 25,000 bytes.
 - `sync.ts`: `syncProject`, the reconciliation.
@@ -58,7 +59,8 @@ memory directory, `.agents/memory/` by default.
   a directory switched away from and back is synced from what it last
   held. A sync touches only the record of its root and `memoryDir`;
   with none it is a first sync, which retires nothing. Others are kept,
-  never pruned.
+  never pruned. A directory absent from disk keeps its record only if
+  the root synced it last, so only a deletion retires, never a move.
 - Sync never commits or pushes, never writes outside the memory
   directory, and refuses a memory directory that escapes by `..` or
   through a symlink at any step from the root down.

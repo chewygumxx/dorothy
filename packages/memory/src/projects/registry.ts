@@ -23,14 +23,16 @@ import type { Project } from "./identify.js";
 // What a root last synced with one memory directory: the hash of every
 // fact as both sides last held it, by the fact's name.
 export type SyncRecord = Record<string, string>;
+// A root's records, by memory directory, so one switched away from and
+// back is synced from what it last held; and the directory it synced
+// last, whose absence alone is a deletion.
+export type RootSync = { last: string; dirs: Record<string, SyncRecord> };
 export type ProjectEntry = {
     name: string;
     roots: string[];
     memoryDir: string;
-    // By root, as two checkouts of one remote sync at their own pace, then
-    // by memory directory, as one switched away from and back is synced
-    // from what it last held.
-    synced: Record<string, Record<string, SyncRecord>>;
+    // By root: two checkouts of one remote sync at their own pace.
+    synced: Record<string, RootSync>;
 };
 export type Registry = { v: 1; projects: Record<string, ProjectEntry> };
 export type RegistryRead =
@@ -107,10 +109,13 @@ function entryProblem(
     if (
         !isRecord(entry.synced) ||
         !Object.entries(entry.synced).every(
-            ([root, dirs]) =>
+            ([root, sync]) =>
                 isAbsolute(root) &&
-                isRecord(dirs) &&
-                Object.entries(dirs).every(
+                isRecord(sync) &&
+                typeof sync.last === "string" &&
+                isRecord(sync.dirs) &&
+                Object.hasOwn(sync.dirs, sync.last) &&
+                Object.entries(sync.dirs).every(
                     ([dir, record]) =>
                         memoryDirProblem(dir) === null &&
                         isRecord(record) &&
@@ -123,7 +128,7 @@ function entryProblem(
                 ),
         )
     ) {
-        return `${it}'s synced records are not facts' hashes by root and directory`;
+        return `${it}'s synced records are not facts' hashes by root and directory, with the last synced`;
     }
     return null;
 }
@@ -201,12 +206,20 @@ const own = <T>(entries: Record<string, T> | undefined, key: string) =>
         ? entries[key]
         : undefined;
 
-// The record a root last synced with a memory directory, or none.
-export const syncRecord = (
+// The record a root last synced with a memory directory, or none. A
+// directory absent from disk keeps its record only if this root synced
+// it last, its absence then a deletion; one moved away since is none.
+export function syncRecord(
     entry: ProjectEntry | undefined,
     root: string,
     memoryDir: string,
-): SyncRecord | undefined => own(own(entry?.synced, root), memoryDir);
+    present: boolean,
+): SyncRecord | undefined {
+    const sync = own(entry?.synced, root);
+    return present || sync?.last === memoryDir
+        ? own(sync?.dirs, memoryDir)
+        : undefined;
+}
 
 // Sets the record of this root and memory directory alone; every other,
 // of a root or directory no longer used, is kept as it was.
@@ -230,10 +243,13 @@ export function withProject(
                 memoryDir,
                 synced: sorted({
                     ...known?.synced,
-                    [project.root]: sorted({
-                        ...own(known?.synced, project.root),
-                        [memoryDir]: sorted(synced),
-                    }),
+                    [project.root]: {
+                        last: memoryDir,
+                        dirs: sorted({
+                            ...own(known?.synced, project.root)?.dirs,
+                            [memoryDir]: sorted(synced),
+                        }),
+                    },
                 }),
             },
         },

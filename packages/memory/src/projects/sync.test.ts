@@ -16,6 +16,7 @@ import {
     readdir,
     readFile,
     realpath,
+    rename,
     rm,
     symlink,
     writeFile,
@@ -731,11 +732,13 @@ describe("syncProject", () => {
         expect(Object.keys(registry.projects[ID].synced).sort()).toEqual(
             [repo, second].sort(),
         );
-        expect(Object.keys(registry.projects[ID].synced[repo])).toEqual([
+        expect(Object.keys(registry.projects[ID].synced[repo].dirs)).toEqual([
             ".agents/memory",
         ]);
         expect(
-            Object.keys(registry.projects[ID].synced[repo][".agents/memory"]),
+            Object.keys(
+                registry.projects[ID].synced[repo].dirs[".agents/memory"],
+            ),
         ).toEqual(["a"]);
     });
 
@@ -774,10 +777,11 @@ describe("syncProject", () => {
             "c.md",
         ]);
         const after = JSON.parse(await readFile(projectsPath(data), "utf8"));
-        expect(Object.keys(after.projects[ID].synced[repo])).toEqual([
+        expect(Object.keys(after.projects[ID].synced[repo].dirs)).toEqual([
             ".agents/memory",
             "docs/memory",
         ]);
+        expect(after.projects[ID].synced[repo].last).toBe("docs/memory");
         expect(moved(await sync())).toEqual(NOTHING);
     });
 
@@ -837,10 +841,9 @@ describe("syncProject", () => {
             const registry = JSON.parse(
                 await readFile(projectsPath(data), "utf8"),
             );
-            expect(Object.keys(registry.projects[ID].synced[repo])).toEqual([
-                ".agents/memory",
-                "docs/memory",
-            ]);
+            expect(
+                Object.keys(registry.projects[ID].synced[repo].dirs),
+            ).toEqual([".agents/memory", "docs/memory"]);
             expect(moved(await sync())).toEqual(NOTHING);
         });
 
@@ -857,6 +860,57 @@ describe("syncProject", () => {
             expect(
                 (await facts()).map(({ description }) => description),
             ).toEqual(["Edited in the checkout.", "Newer b, in the store."]);
+        });
+
+        it("takes an old directory moved away as a first sync, retiring nothing", async () => {
+            const claude = join(repo, ".claude", "memory");
+            const agents = join(repo, ".agents", "memory");
+            await mkdir(claude, { recursive: true });
+            await writeFile(join(claude, "a.md"), repoFact("a", "First."));
+            await writeFile(join(claude, "b.md"), repoFact("b", "Second."));
+            expect(moved(await sync())).toEqual({
+                ...NOTHING,
+                imported: ["a", "b"],
+            });
+            await mkdir(join(repo, ".agents"));
+            await rename(claude, agents);
+            await useMemoryDir(".agents/memory");
+            expect(moved(await sync())).toEqual(NOTHING);
+            // Back to the directory moved away, which has a record but is
+            // not the one this root last synced: nothing was deleted.
+            await useMemoryDir(".claude/memory");
+            expect(moved(await sync())).toEqual({
+                ...NOTHING,
+                exported: ["a", "b"],
+            });
+            await useMemoryDir(".agents/memory");
+            expect(moved(await sync())).toEqual(NOTHING);
+            expect((await facts()).map(({ retired }) => retired)).toEqual([
+                null,
+                null,
+            ]);
+            expect((await readdir(agents)).sort()).toEqual([
+                "MEMORY.md",
+                "a.md",
+                "b.md",
+            ]);
+        });
+
+        it("retires every fact when the directory last synced is gone", async () => {
+            await putRepo("a.md", repoFact("a", "First fact."));
+            await putRepo("b.md", repoFact("b", "Second fact."));
+            await sync();
+            await useMemoryDir("docs/memory");
+            await mkdir(join(repo, "docs", "memory"), { recursive: true });
+            expect(moved(await sync())).toEqual({
+                ...NOTHING,
+                exported: ["a", "b"],
+            });
+            await rm(join(repo, "docs", "memory"), { recursive: true });
+            expect(moved(await sync())).toEqual({
+                ...NOTHING,
+                retired: ["a", "b"],
+            });
         });
     });
 

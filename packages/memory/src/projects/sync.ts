@@ -136,6 +136,8 @@ type RepoSide = {
     index: string | null;
     // MEMORY.md is a symlink, and never written.
     indexBlocked: boolean;
+    // The memory directory exists.
+    present: boolean;
 };
 
 async function readRepo(dir: string): Promise<RepoSide> {
@@ -145,13 +147,14 @@ async function readRepo(dir: string): Promise<RepoSide> {
         titles: new Map(),
         index: null,
         indexBlocked: false,
+        present: true,
     };
     let names: string[];
     try {
         names = (await readdir(dir)).sort();
     } catch (error) {
         if (codeOf(error) === "ENOENT") {
-            return side;
+            return { ...side, present: false };
         }
         throw error;
     }
@@ -303,15 +306,14 @@ async function reconcile(
     const memoryDir = known?.memoryDir ?? (await chooseMemoryDir(project.root));
     const dir = await safeDir(project.root, memoryDir);
     const scope: Scope = { kind: "project", id: project.id };
-    // Each memory directory keeps its own record, so one switched away
-    // from and back is synced from what it last held there. With none,
-    // the sync is this root and directory's first, and adopts and exports
-    // rather than retiring everything.
-    const synced: SyncRecord = {
-        ...syncRecord(known, project.root, memoryDir),
-    };
-
     const repo = await readRepo(dir);
+    // Each memory directory keeps its own record, so one switched away
+    // from and back is synced from what it last held there. With none, or
+    // for a directory moved away since, the sync is this root and
+    // directory's first, and adopts and exports rather than retiring.
+    const synced: SyncRecord = {
+        ...syncRecord(known, project.root, memoryDir, repo.present),
+    };
     const listed = await listFacts(root, scope);
     const store = new Map(listed.facts.map(({ fact }) => [fact.name, fact]));
     const report: SyncReport = {

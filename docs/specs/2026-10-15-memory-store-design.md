@@ -356,8 +356,11 @@ path. Every checkout of one remote is one project; its facts live under
       "memoryDir": ".agents/memory",
       "synced": {
         "/home/chewygumxx/dev/dorothy": {
-          ".agents/memory": {
-            "dorothy-ambition": "sha256 of the form both sides last held"
+          "last": ".agents/memory",
+          "dirs": {
+            ".agents/memory": {
+              "dorothy-ambition": "sha256 of the form both sides last held"
+            }
           }
         }
       }
@@ -373,16 +376,19 @@ the repository's memory directory: `.agents/memory` if it exists, else
 it.
 `synced` is kept by root, so two checkouts of one remote each compare
 against what they last synced and never undo one another, and within a
-root by memory directory. A sync reads and writes only the record of
-its root and the current `memoryDir`. With none, after the user edits
-`memoryDir`, its next sync is its first with that directory, adopting
-and exporting, and retires nothing. The records of other directories
-are kept as they are, so a root switched to another directory and back
-compares against what it last held there: the store's changes made
-meanwhile are exported, and a file edited there meanwhile is a
-conflict. Like the records of roots no longer used, they are never
-pruned. A memory directory deleted whole, with its record its own,
-retires every fact as any deletion does.
+root by memory directory, in `dirs`, with `last` the directory the root
+synced last. A sync reads and writes only the record of its root and
+the current `memoryDir`. With none, after the user edits `memoryDir`,
+its next sync is its first with that directory, adopting and exporting,
+and retires nothing. The records of other directories are kept as they
+are, so a root switched to another directory and back compares against
+what it last held there: the store's changes made meanwhile are
+exported, and a file edited there meanwhile is a conflict. Like the
+records of roots no longer used, they are never pruned. A memory
+directory absent from disk keeps its record only if it is `last`: so
+the directory last synced, deleted whole, retires every fact as any
+deletion does, while one moved away since, its record older, is a
+first sync again.
 
 ## Sync
 
