@@ -38,16 +38,25 @@ const describeError = (error: unknown) =>
 
 // Brings the index up to date, then reads every conversation the user spoke
 // in from it. Conversations the user never spoke in are left out.
+// facts is the data directory, whose facts/ is synced with the
+// transcripts; null leaves facts as the index last saw them.
 export function indexCatalogue(
     index: RecallIndex,
     dir: string,
     vocabulary: string | null = null,
+    facts: string | null = null,
 ): Catalogue {
     return {
         async load() {
             let synced: string[];
             try {
-                synced = await syncIndex(index, dir, Date.now(), vocabulary);
+                synced = await syncIndex(
+                    index,
+                    dir,
+                    Date.now(),
+                    vocabulary,
+                    facts,
+                );
             } catch (error) {
                 return {
                     entries: [],

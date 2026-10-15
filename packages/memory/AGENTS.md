@@ -74,11 +74,11 @@ is the only file importing `@modelcontextprotocol/sdk`.
   SQLite FTS5 index in the XDG cache; `sync.ts` syncs it from the
   transcripts and sidecars before every query, taking each conversation's
   source and project from its first session, and `facts.ts` syncs the
-  store's facts by mtime when given the data directory; `query.ts` has
-  `search` and `open`; `tags.ts` mirrors the vocabulary; `server.ts`
-  serves them over MCP on stdio as `dorothy --recall-server`. Reviews
-  appraise each read into the sidecar, and `salience()` (`rank.ts`) weighs
-  appraised reads with visits.
+  store's facts by mtime from the data directory every caller passes;
+  `query.ts` has `search` and `open`; `tags.ts` mirrors the vocabulary;
+  `server.ts` serves them over MCP on stdio as `dorothy --recall-server`.
+  Reviews appraise each read into the sidecar, and `salience()`
+  (`rank.ts`) weighs appraised reads with visits.
 - `compaction/`: past `[compaction] soft` tokens, at the next idle (past
   `hard`, before the next message), `compact()` splits the turns before
   the verbatim tail into topical clusters with an abstract each; read

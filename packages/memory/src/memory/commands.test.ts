@@ -13,6 +13,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type EditResult, newPhrase } from "@dorothy/core";
+import { renderFact } from "../facts/file.js";
+import { indexPath, RecallIndex } from "../recall/store.js";
 import { runList, runMemoryEdit, runTags, runTagsEdit } from "./commands.js";
 import {
     type HistoryHandle,
@@ -56,7 +58,59 @@ afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
 });
 
+// A personal fact in the store, and the facts the index then holds.
+async function putFact(): Promise<void> {
+    const facts = join(dir, "dorothy", "facts", "personal");
+    await mkdir(facts, { recursive: true });
+    await writeFile(
+        join(facts, "likes-tea.md"),
+        renderFact({
+            name: "likes-tea",
+            title: "Likes tea",
+            description: "Prefers tea to coffee.",
+            type: "user",
+            extra: {},
+            tags: [],
+            importance: null,
+            provenance: {
+                origin: "user",
+                by: "user",
+                at: NOW.toISOString(),
+                created: NOW.toISOString(),
+            },
+            retired: null,
+            body: "Asked for tea twice.",
+        }),
+    );
+}
+function indexedFacts(): { scope: string; name: string }[] {
+    const index = RecallIndex.open(indexPath(env));
+    try {
+        return index.db.query("SELECT scope, name FROM facts").all() as {
+            scope: string;
+            name: string;
+        }[];
+    } finally {
+        index.close();
+    }
+}
+
 describe("runList", () => {
+    it("indexes the store's facts as it syncs the index", async () => {
+        await putFact();
+        expect(
+            await runList({
+                env,
+                out: capture(),
+                err: capture(),
+                now: NOW.getTime(),
+            }),
+        ).toBe(0);
+        expect(indexedFacts()).toEqual([
+            { scope: "personal", name: "likes-tea" },
+        ]);
+    });
+
     it("prints the catalogue and names broken sidecars on stderr", async () => {
         const [a, b] = [phrase(1), phrase(2)];
         await writeFile(join(transcripts, `${a}.jsonl`), chat);
@@ -457,6 +511,16 @@ describe("runTags", () => {
         expect(await runTags({ env, out, err })).toBe(0);
         expect(out.text).toBe("memory (2)\n");
         expect(err.text).toBe("");
+    });
+
+    it("indexes the store's facts as it syncs the index", async () => {
+        await putFact();
+        const err = capture();
+        expect(await runTags({ env, out: capture(), err })).toBe(0);
+        expect(err.text).toBe("");
+        expect(indexedFacts()).toEqual([
+            { scope: "personal", name: "likes-tea" },
+        ]);
     });
 
     it("names a broken vocabulary and fails", async () => {

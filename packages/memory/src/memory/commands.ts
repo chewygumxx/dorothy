@@ -11,6 +11,7 @@
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { type Editor, type Env, readConfig } from "@dorothy/core";
+import { dataRoot } from "../facts/store.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { syncIndex } from "../recall/sync.js";
 import { carrierCounts } from "../recall/tags.js";
@@ -81,7 +82,12 @@ export async function runList({
     // before anything is read.
     const versions = (await openHistory?.(index)) ?? null;
     try {
-        const loaded = await indexCatalogue(index, transcriptDir(env)).load();
+        const loaded = await indexCatalogue(
+            index,
+            transcriptDir(env),
+            null,
+            dataRoot(env),
+        ).load();
         for (const warning of [...warnings, ...loaded.warnings]) {
             err.write(`dorothy: ${warning}\n`);
         }
@@ -139,6 +145,7 @@ export async function runTags({
             transcriptDir(env),
             now,
             path,
+            dataRoot(env),
         )) {
             err.write(`dorothy: ${warning}\n`);
         }
@@ -350,6 +357,7 @@ export async function runTagsEdit({
                     transcriptDir(env),
                     now().getTime(),
                     path,
+                    dataRoot(env),
                 );
                 counts = await opened.exclusive(() => carrierCounts(opened));
             } catch {

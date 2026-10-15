@@ -22,6 +22,7 @@ import {
     type Turn,
 } from "@dorothy/core";
 import { clusterTokens, seedTurns } from "../compaction/plan.js";
+import { dataRoot } from "../facts/store.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import {
     readTranscript,
@@ -90,6 +91,8 @@ export async function previewStart({
             const loaded = await indexCatalogue(
                 index,
                 transcriptDir(env),
+                null,
+                dataRoot(env),
             ).load();
             const built = buildMemory(loaded.entries, {
                 now: Date.now(),

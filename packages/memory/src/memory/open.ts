@@ -30,6 +30,7 @@ import {
     type SaveResult,
     type Seed,
 } from "../compaction/session.js";
+import { dataRoot } from "../facts/store.js";
 import { entryHook } from "../history/commands.js";
 import {
     type HookCommand,
@@ -525,7 +526,12 @@ export async function openMemory({
     let service: MemoryService | null = null;
     if (config.memory.enabled && index !== null) {
         const vocabulary = vocabularyPath(env);
-        const loaded = await indexCatalogue(index, dir, vocabulary).load();
+        const loaded = await indexCatalogue(
+            index,
+            dir,
+            vocabulary,
+            dataRoot(env),
+        ).load();
         warnings.push(...loaded.warnings);
         service = new MemoryService({
             dir,
