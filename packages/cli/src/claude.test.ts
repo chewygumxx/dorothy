@@ -559,6 +559,27 @@ describe("dorothyFlags", () => {
         ).toEqual(["--settings", "x"]);
     });
 
+    it("passes a user's --mcp-config on as given, after hers", () => {
+        const mcpConfig = { mcpServers: { dorothy: { type: "stdio" } } };
+        expect(
+            dorothyFlags(
+                ["--mcp-config", "mine.json", "-p", "hi"],
+                { settings: null, mcpConfig },
+                io(),
+            ),
+        ).toEqual({
+            args: [
+                `--mcp-config=${JSON.stringify(mcpConfig)}`,
+                "--mcp-config",
+                "mine.json",
+                "-p",
+                "hi",
+            ],
+            warnings: [],
+            files: [],
+        });
+    });
+
     it("merges objects key by key and joins arrays without repeats", () => {
         expect(
             mergeJson(

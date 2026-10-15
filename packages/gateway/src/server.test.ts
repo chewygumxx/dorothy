@@ -132,6 +132,7 @@ describe("startGateway", () => {
                 body: marked,
             });
         }
+        expect(upstream.seen).toHaveLength(2);
         for (const request of upstream.seen) {
             const identity = JSON.parse(request.body).system[1].text;
             expect(identity).toBe(`${identityPrompt()}\n\n<memory>m</memory>`);
