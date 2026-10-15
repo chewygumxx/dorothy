@@ -349,7 +349,9 @@ path. Every checkout of one remote is one project; its facts live under
       "roots": ["/home/chewygumxx/dev/dorothy"],
       "memoryDir": ".agents/memory",
       "synced": {
-        "dorothy-ambition": "sha256 of the form both sides last held"
+        "/home/chewygumxx/dev/dorothy": {
+          "dorothy-ambition": "sha256 of the form both sides last held"
+        }
       }
     }
   }
@@ -361,12 +363,14 @@ was synced from; later roots are added as they are seen. `memoryDir` is
 the repository's memory directory: `.agents/memory` if it exists, else
 `.claude/memory` if that does, else `.agents/memory`. The user may edit
 it.
+`synced` is kept by root, so two checkouts of one remote each compare
+against what they last synced and never undo one another.
 
 ## Sync
 
 `syncProject(root)` reconciles a project's facts with its repository's
 memory directory, under the sidecar lock. For each name in the store's
-live facts, the repository's files and the registry's `synced` map, a
+live facts, the repository's files and this root's `synced` map, a
 retired fact counting as absent from the store:
 
 | Store (exported form)  | Repository             | Then                                       |
@@ -397,7 +401,12 @@ silently, so the index stays within both: if the facts would not fit,
 it lists them by importance, then recency, up to the limit, and sync
 warns of how many it left out. Their files are exported all the same.
 On import, a fact's title comes from its `MEMORY.md` entry if there is
-one, else its name.
+one, else the store's title for it, else its name.
+
+Sync rewrites `MEMORY.md` only when it is absent or every line is one
+sync writes, an entry or its indented description; a heading or prose
+means a hand kept it, and it is left, the report saying why. It is left
+too when no fact is live, or when a skipped file is one it links.
 
 Export writes atomically, only inside `<root>/<memoryDir>`, and refuses
 a memory directory that resolves outside the root or through a symlink.
@@ -487,7 +496,8 @@ same branch.
 - **Not a git repository**: `--sync` says so and exits 1; a session
   outside one records no project.
 - **A repository file that fails the lint**: not imported; sync warns
-  and leaves it, and its row in `synced` unchanged.
+  and leaves it, and its row in `synced` unchanged. So does a directory
+  or other non-file called like a fact.
 - **A memory directory it cannot write**: sync warns, exports nothing
   for that project, and imports what it can read.
 - **A `name` that is not its file's stem**, after a hand edit or in a
@@ -552,8 +562,8 @@ rules require; nothing touches the user's data.
 - **Repository wins.** A conflict reverts the store's change in the
   store, though history keeps it; a notice that goes unread loses it
   from view.
-- **`MEMORY.md` is regenerated.** Hand edits to the index are lost at
-  the next export; edits to the facts themselves are not.
+- **`MEMORY.md` is regenerated.** An index sync wrote is rewritten at
+  every export; one with a hand's lines in it is left alone.
 - **Consecutive assistant events** may meet code that assumed turns
   alternate; the plan checks before the Bodies spec relies on it.
 - **Retired facts accumulate.** They cost search a little noise and
