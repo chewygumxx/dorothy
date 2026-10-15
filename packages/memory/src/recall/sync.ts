@@ -25,7 +25,8 @@ import {
     readVocabulary,
     type VocabularyRead,
 } from "../memory/vocabulary.js";
-import { toRecall, toTurn } from "../transcript.js";
+import { sourceOf, toRecall, toTurn } from "../transcript.js";
+import { syncFacts } from "./facts.js";
 import type { RecallIndex } from "./store.js";
 
 export type VisitRow = { userTurns: number; lastAt: number };
@@ -57,12 +58,14 @@ const describeError = (error: unknown) =>
 // transcript that cannot be synced keeps the rows it had and is reported in
 // the warnings, so one bad file does not take the rest of the index with it.
 // With a vocabulary path, tags.json is synced too; without, its tables
-// are left as they are.
+// are left as they are. With the data directory as facts, the store's facts
+// are synced too.
 export async function syncIndex(
     index: RecallIndex,
     dir: string,
     now: number = Date.now(),
     vocabulary: string | null = null,
+    facts: string | null = null,
 ): Promise<string[]> {
     const warnings: string[] = [];
     // Listed under the lock: another process may have indexed a new
@@ -117,6 +120,9 @@ export async function syncIndex(
         return listing;
     });
     await removeLeftovers(dir, names, now);
+    if (facts !== null) {
+        warnings.push(...(await syncFacts(index, facts)));
+    }
     return warnings;
 }
 
@@ -249,6 +255,20 @@ function applyLines(index: RecallIndex, row: Row, text: string): void {
         const at = Number.isFinite(parsed) ? parsed : null;
         const kind = isRecord(event) ? event.kind : undefined;
         if (kind === "session") {
+            // The first session says which body, and which project, the
+            // conversation began in.
+            if (row.sessions === 0 && isRecord(event)) {
+                index.db.run(
+                    "UPDATE conversations SET source = ?, project = ? WHERE phrase = ?",
+                    [
+                        sourceOf(event),
+                        typeof event.project === "string"
+                            ? event.project
+                            : null,
+                        row.phrase,
+                    ],
+                );
+            }
             row.sessions++;
             continue;
         }

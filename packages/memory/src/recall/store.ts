@@ -15,10 +15,10 @@ import { type Env, xdgDir } from "@dorothy/core";
 import type { Lock } from "../memory/sidecar.js";
 import { exclusiveLock } from "../sqlite-lock.js";
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
-// Times are milliseconds since the epoch. Both FTS tables take their text
-// from the table beside them, which triggers keep them in step with.
+// Times are milliseconds since the epoch. Each FTS table takes its text
+// from the table beside it, which triggers keep them in step with.
 const SCHEMA = [
     `CREATE TABLE conversations (
         phrase TEXT PRIMARY KEY,
@@ -32,6 +32,8 @@ const SCHEMA = [
         description TEXT,
         abstract TEXT,
         hidden INTEGER NOT NULL DEFAULT 0,
+        source TEXT NOT NULL DEFAULT 'chat',
+        project TEXT,
         first_at INTEGER,
         last_at INTEGER
     )`,
@@ -104,12 +106,38 @@ const SCHEMA = [
         id TEXT NOT NULL,
         PRIMARY KEY (phrase, id)
     )`,
+    // Every fact in the store, retired ones too; scope is "personal" or a
+    // project id, created milliseconds since the epoch.
+    `CREATE TABLE facts (
+        path TEXT PRIMARY KEY,
+        scope TEXT NOT NULL,
+        name TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        type TEXT NOT NULL,
+        body TEXT NOT NULL,
+        origin TEXT NOT NULL,
+        importance INTEGER,
+        created INTEGER NOT NULL,
+        retired INTEGER NOT NULL,
+        mtime REAL NOT NULL
+    )`,
+    `CREATE TABLE fact_tags (
+        path TEXT NOT NULL,
+        n INTEGER NOT NULL,
+        id TEXT NOT NULL,
+        PRIMARY KEY (path, id)
+    )`,
     `CREATE VIRTUAL TABLE turns_fts USING fts5(
         text, content=turns,
         tokenize='porter unicode61 remove_diacritics 2'
     )`,
     `CREATE VIRTUAL TABLE notes_fts USING fts5(
         title, description, abstract, content=conversations,
+        tokenize='porter unicode61 remove_diacritics 2'
+    )`,
+    `CREATE VIRTUAL TABLE facts_fts USING fts5(
+        title, description, body, content=facts,
         tokenize='porter unicode61 remove_diacritics 2'
     )`,
     `CREATE TRIGGER turns_ai AFTER INSERT ON turns BEGIN
@@ -133,6 +161,14 @@ const SCHEMA = [
         VALUES ('delete', old.rowid, old.title, old.description, old.abstract);
         INSERT INTO notes_fts (rowid, title, description, abstract)
         VALUES (new.rowid, new.title, new.description, new.abstract);
+    END`,
+    `CREATE TRIGGER facts_ai AFTER INSERT ON facts BEGIN
+        INSERT INTO facts_fts (rowid, title, description, body)
+        VALUES (new.rowid, new.title, new.description, new.body);
+    END`,
+    `CREATE TRIGGER facts_ad AFTER DELETE ON facts BEGIN
+        INSERT INTO facts_fts (facts_fts, rowid, title, description, body)
+        VALUES ('delete', old.rowid, old.title, old.description, old.body);
     END`,
 ];
 
