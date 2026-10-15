@@ -21,6 +21,7 @@ import {
     type ConversationEvent,
     describeLookup,
     RECOLLECT_TOOL,
+    REMEMBER_TOOL,
     SERVER_NAME,
     type SessionStart,
     type Tool,
@@ -48,6 +49,7 @@ export type QueryFn = (params: {
 type ResultMessage = Extract<SDKMessage, { type: "result" }>;
 
 type PendingCall = { tool: Tool; input: unknown; offset: number };
+type PendingRemember = { input: unknown; offset: number };
 
 // DISABLE_COMPACT keeps the CLI from compacting. If it ever does, the
 // conversation it summarised is no longer the one Dorothy's compaction
@@ -178,6 +180,8 @@ export class Conversation implements ChatSession {
     #recallWarned = false;
     // Tool calls awaiting their results, by id.
     readonly #calls = new Map<string, PendingCall>();
+    // Calls to remember awaiting their results, by id.
+    readonly #remembers = new Map<string, PendingRemember>();
     // The next text starts a new step of the reply.
     #afterLookup = false;
     #handle: QueryHandle | null = null;
@@ -336,11 +340,32 @@ export class Conversation implements ChatSession {
                         offset: this.#reply.length,
                     });
                 }
+                if (
+                    block.type === "tool_use" &&
+                    block.name === REMEMBER_TOOL &&
+                    !this.#remembers.has(block.id)
+                ) {
+                    this.#remembers.set(block.id, {
+                        input: block.input,
+                        offset: this.#reply.length,
+                    });
+                }
             }
         } else if (message.type === "user") {
             const { content } = message.message;
             for (const block of Array.isArray(content) ? content : []) {
                 if (block.type !== "tool_result") {
+                    continue;
+                }
+                const kept = this.#remembers.get(block.tool_use_id);
+                if (kept !== undefined) {
+                    this.#remembers.delete(block.tool_use_id);
+                    this.#remembered(
+                        block.tool_use_id,
+                        kept,
+                        block.is_error !== true,
+                        textOf(block.content),
+                    );
                     continue;
                 }
                 const call = this.#calls.get(block.tool_use_id);
@@ -409,12 +434,33 @@ export class Conversation implements ChatSession {
         });
     }
 
+    #remembered(
+        id: string,
+        call: PendingRemember,
+        ok: boolean,
+        output: string,
+    ): void {
+        this.#afterLookup = true;
+        this.#emit({
+            type: "remember",
+            id,
+            ok,
+            offset: call.offset,
+            input: call.input,
+            output,
+        });
+    }
+
     // Calls the turn ended without answering, as when it was interrupted.
     #settleCalls(): void {
         for (const [id, call] of this.#calls) {
             this.#lookup(id, call, false, null);
         }
         this.#calls.clear();
+        for (const [id, call] of this.#remembers) {
+            this.#remembered(id, call, false, "");
+        }
+        this.#remembers.clear();
         this.#afterLookup = false;
     }
 

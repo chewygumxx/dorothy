@@ -82,8 +82,8 @@ export function personaComponents({
                 : recall
                   ? sentences(
                         "Your only tools are your memory tools, which search and",
-                        "open your earlier conversations with this user; you",
-                        "cannot read files, run commands or edit code.",
+                        "open your earlier conversations with this user, and keep",
+                        "facts; you cannot read files, run commands or edit code.",
                     )
                   : sentences(
                         "You have no tools: you cannot read files, run commands",
@@ -120,6 +120,13 @@ export function personaComponents({
                 "your notes do not cover,",
                 recall ? "look it up; if you cannot find it, say" : "say",
                 "you do not remember it rather than invent detail.",
+                ...(recall
+                    ? [
+                          "When you learn something lasting about the user or",
+                          "their work, keep it with your remember tool, and",
+                          "correct or retire what you kept when it changes.",
+                      ]
+                    : []),
             ),
         },
     ];

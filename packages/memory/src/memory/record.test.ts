@@ -74,6 +74,32 @@ describe("sessionRecorder", () => {
         expect(entries).toEqual(EXPECTED);
     });
 
+    it("records a remember as her own memory tool entry", async () => {
+        const { entries, wrap } = recorded();
+        const inner = new FakeSession();
+        wrap(inner);
+        inner.emit({
+            type: "remember",
+            id: "t1",
+            ok: true,
+            offset: 0,
+            input: { action: "write", name: "tea" },
+            output: '{"action":"written","id":"personal/tea"}',
+        });
+        await settle();
+        expect(entries).toEqual([
+            {
+                kind: "tool",
+                name: "mcp__memory__remember",
+                input: '{"action":"write","name":"tea"}',
+                output: '{"action":"written","id":"personal/tea"}',
+                ok: true,
+                cut: { input: 0, output: 0 },
+                memory: true,
+            },
+        ]);
+    });
+
     it("records a resumed chat's first session as resumed", async () => {
         const { entries, wrap } = recorded({ resumed: true });
         const inner = new FakeSession();

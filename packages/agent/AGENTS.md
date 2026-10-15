@@ -38,19 +38,21 @@ never prune it as unused.
 
 - `conversation.ts`: `Conversation`, core's `ChatSession`, keeping one
   `query()` alive in streaming input mode and emitting `ready`, `delta`,
-  `turn-end`, `sdk`, `lookup` and `error`; recall's tool calls become
-  `lookup` events. `conversationOptions()` builds what a session starts
-  with from `SessionStart` and the persona, joining the memory block and
-  the earlier section with `withSection` and the turns with `withHistory`.
+  `turn-end`, `sdk`, `lookup`, `remember` and `error`; recall's lookups
+  become `lookup` events and a call to `remember` a `remember` event.
+  `conversationOptions()` builds what a session starts with from
+  `SessionStart` and the persona, joining the memory block and the
+  earlier section with `withSection` and the turns with `withHistory`.
 - `one-shot.ts`: `runOneShot`, a one-shot prompt streamed to stdout.
 - `structured.ts`: `structuredCall`, the `StructuredCall` reviews and
   compaction take.
 - `persona.ts`: the persona, composed from `personaComponents` (identity,
   voice and provenance from `@dorothy/identity`; capabilities, plumbing
-  and memory its own) in chat mode or development mode (`--dev`: a mode
-  component, and Dorothy describes her context); `baseOptions` and
-  `cliOptions`; `promptHash` (`xxh3:<hex>`), which transcripts record and
-  nothing reads back.
+  and memory its own, memory telling her to keep lasting facts with
+  `remember` when she has recall) in chat mode or development mode
+  (`--dev`: a mode component, and Dorothy describes her context);
+  `baseOptions` and `cliOptions`; `promptHash` (`xxh3:<hex>`), which
+  transcripts record and nothing reads back.
 - `capture.ts`: `captureServer`, a loopback stand-in for the API that
   records request bodies and answers with an error; `dumpRequest` sends a
   chat's first request to it and returns the body, for `--dump-context`.
