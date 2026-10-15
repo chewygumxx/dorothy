@@ -18,6 +18,7 @@ import {
     writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { keepHalt } from "../bodies/unread.js";
 import { EMPTY_SIDECAR } from "../memory/sidecar.js";
 import { binaryRepo } from "./binary.js";
 import {
@@ -301,6 +302,31 @@ describe("runCheck", () => {
         );
         expect(out.text).toMatch(/^tags\.json: /m);
         expect(read("tags.json")).toBe("{");
+    });
+
+    it("lists the lines recording kept aside, leaving the exit code alone", async () => {
+        const S = "0f8fad5b-d9cb-469f-a165-70867728950e";
+        write("tags.json", vocabulary(1));
+        await keepHalt(
+            env,
+            {
+                session: S,
+                conversation: null,
+                transcript: "/t.jsonl",
+                dir: "/w",
+                since: null,
+                line: 3,
+                type: "user",
+                uuid: "u3",
+                reason: "a user line without its content",
+                at: NOW.toISOString(),
+            },
+            ["{bad"],
+        );
+        expect(await runCheck(options())).toBe(0);
+        expect(out.text).toContain(
+            `unread: ${S} (no conversation yet), line 3: a user line without its content`,
+        );
     });
 
     it("lints a directory with no history yet", async () => {

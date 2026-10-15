@@ -14,6 +14,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { type Env, readConfig } from "@dorothy/core";
 import { set } from "@dotenvx/dotenvx";
+import { unreadReport } from "../bodies/unread.js";
 import { type OpenHistory, writeAtomic } from "../memory/sidecar.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { goodVersion, putBack, RECOVERY_DEPTH, type Version } from "./heal.js";
@@ -509,7 +510,16 @@ export async function runCheck(
             options.engine === undefined ? {} : { engine: options.engine },
         );
         const committed = repo.exists() && (await repo.resolve(MAIN)) !== null;
-        return report(await checkTree(root, committed ? repo : null), out);
+        const code = report(
+            await checkTree(root, committed ? repo : null),
+            out,
+        );
+        // What recording kept aside, and errors in its hook's log: not
+        // memory's files, so the exit code is the lint's alone.
+        for (const line of await unreadReport(env)) {
+            out.write(`${line}\n`);
+        }
+        return code;
     } catch (error) {
         err.write(`dorothy: couldn't check: ${describeError(error)}\n`);
         return 1;
