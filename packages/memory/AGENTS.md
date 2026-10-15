@@ -27,7 +27,8 @@ text (`MemoryPrompts`).
 
 ## Entry points and imports
 
-- `"."` (`src/index.ts`): `openMemory` and `previewStart`.
+- `"."` (`src/index.ts`): `openMemory`, `previewStart`, and `--claude`'s
+  `claudeBlock` and `syncDirectory`; read [its guide](./src/bodies/AGENTS.md).
 - `"./commands"` (`src/commands.ts`): `--list`, `--memory`, `--tags`,
   `--edit-tags`, `--facts`, `--retire`, `--revive`, `--sync`,
   `--projects`, the history commands and `commandHistory()`.
@@ -66,19 +67,19 @@ is the only file importing `@modelcontextprotocol/sdk`.
   checks a review's tags leniently, a bad tag never failing the notes, and
   coins concepts inside the sidecar's lock.
 - `facts/`: facts, Markdown in one canonical form (`file.ts`), personal
-  or a project's, written, moved, retired and revived under the sidecar
-  lock (`store.ts`); `facts/commands.ts` has the fact and project commands.
+  or a project's, a write guarded under the lock, retired and revived
+  (`store.ts`); `facts/commands.ts` has the fact and project commands.
 - `projects/`: a project's identity, registry, exported form and sync
   with its repository; read [its own guide](./src/projects/AGENTS.md).
-- `recall/`: search over past conversations. `store.ts` is a derived
-  SQLite FTS5 index in the XDG cache; `sync.ts` syncs it from the
-  transcripts and sidecars before every query, taking each conversation's
-  source and project from its first session, and `facts.ts` syncs the
-  store's facts by mtime from the data directory every caller passes;
-  `query.ts` has `search` and `open`, `remember.ts` her own facts' writes,
-  `tags.ts` mirrors the vocabulary; `server.ts` serves them and
-  `remember` as `dorothy --recall-server` in its `--project`. Reviews
-  appraise each read, of a fact too; `salience()` weighs them with visits.
+- `recall/`: search over past conversations and facts. `store.ts` is a
+  derived SQLite FTS5 index in the XDG cache; `sync.ts` syncs it from the
+  transcripts and sidecars before every query, a conversation's source
+  and project from its first session, and `facts.ts` the store's facts by
+  mtime; `query.ts` has `search` and `open`, of either; `tags.ts` mirrors
+  the vocabulary; `remember.ts` writes her own facts; `server.ts` serves
+  them over MCP on stdio as `dorothy --recall-server`, history opened
+  without the mirror. Reviews appraise each read into the sidecar, and
+  `salience()` (`rank.ts`) weighs appraised reads with visits.
 - `compaction/`: past `[compaction] soft` tokens, at the next idle (past
   `hard`, before the next message), `compact()` splits the turns before
   the verbatim tail into topical clusters with an abstract each; read
@@ -116,10 +117,8 @@ is the only file importing `@modelcontextprotocol/sdk`.
   `OpenHistory`, which the CLI passes from `commandHistory()`.
 - `openMemory` opens the index and history before it reads anything, and
   commits each turn once the transcript is flushed.
-- The memory block charges the earlier turns' abstracts to its budget
-  first.
-- `recollect` is registered only with `--recollect`, which the agent adds
-  when a chat has clusters.
+- The memory block charges the earlier turns' abstracts first.
+- `recollect` is served only with `--recollect`, for a chat with clusters.
 - A concept only hidden conversations carry is never shown to her.
 - Nothing deletes a fact: one retired stays indexed, searchable and in
   history. Its origin is set by the code that writes it, never read
@@ -143,7 +142,8 @@ is the only file importing `@modelcontextprotocol/sdk`.
   [compaction](../../docs/specs/2026-10-07-compaction-design.md),
   [tags](../../docs/specs/2026-10-07-tags-design.md),
   [history](../../docs/specs/2026-10-08-memory-history-design.md),
-  [memory store](../../docs/specs/2026-10-15-memory-store-design.md)
+  [memory store](../../docs/specs/2026-10-15-memory-store-design.md),
+  [bodies](../../docs/specs/2026-10-15-memory-bodies-design.md)
 - Reports: [recall](../../docs/reports/2026-10-06-recall.md),
   [compaction](../../docs/reports/2026-10-07-compaction.md),
   [tags](../../docs/reports/2026-10-08-tags.md),

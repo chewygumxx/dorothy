@@ -36,7 +36,9 @@ Agent SDK. Keep every new mode's import lazy.
 
 - `index.ts`: the entry guard, the flags (`parseArgs`, `USAGE`) and the
   modes.
-- `run-tui.ts`: `runTui` connects memory, the agent and `runApp`.
+- `run-tui.ts`: `runTui` connects memory, the agent and `runApp`, with
+  the directory the user ran it from (`userShell`), whose project chat
+  records and syncs.
   `openMemory` gets `structuredCall`, the persona's prompts as text and a
   `connect` that starts a `Conversation`, and the screen runs over its
   `createSession`. Once `runTui` resolves, everything is closed and the
@@ -71,7 +73,8 @@ Agent SDK. Keep every new mode's import lazy.
   injected nothing, with the block alone: no sync, recall or
   permissions. Imported lazily, so `--claude` never loads the SDK.
 - `recall-launch.ts`: `recallLaunch` launches this program again as the
-  recall server, leaving out the conversation it serves.
+  recall server, leaving out the conversation it serves and, with
+  `--project`, naming the directory chat started in.
 
 ## Invariants
 

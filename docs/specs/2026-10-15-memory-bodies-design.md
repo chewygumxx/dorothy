@@ -107,8 +107,9 @@ does today.
    her identity, on the main thread only, unchanged for the launch.
    Where the arguments resume a session by id that is already recorded,
    the block leaves its conversation out, as chat leaves out the live
-   one; `--continue`, `--resume` without an id, and a resume by name
-   name no id, and leave nothing out.
+   one, once the recording plan records sessions; `--continue`,
+   `--resume` without an id, and a resume by name name no id, and leave
+   nothing out.
 3. **Recall**, when `[memory] recall` is also true. `--mcp-config=` (the
    `=` form, as the flag takes several values and would otherwise take
    the user's prompt) names `dorothy --recall-server --project <root>`
@@ -129,10 +130,15 @@ given, and its guide says so. `--claude --dump-context` shares
 section in it, and passes no recall, permissions, hooks or sync, so it
 records nothing and starts no server.
 
-If Claude Code keeps only the last `--settings` or `--mcp-config` it is
-given, as it keeps only the last `--append-system-prompt`, a user's own
-flag of either is merged into Dorothy's, as `claudeArgs` already merges
-the system prompt; the probe decides.
+The delivery probe found that Claude Code keeps only the last
+`--settings` it is given, as it keeps only the last
+`--append-system-prompt`, and accumulates repeated `--mcp-config`. A
+user's own `--settings` is therefore merged into Dorothy's, as
+`claudeArgs` already merges the system prompt, and passed as a private
+file by path when the user's was a file, so no secret it holds reaches
+`claude`'s command line; inline JSON and Dorothy's own settings stay
+inline. A user's own `--mcp-config` is passed as given, beside
+Dorothy's.
 
 ### Search
 
