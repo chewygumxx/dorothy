@@ -58,6 +58,9 @@ distil facts are the third part's, Layers and learning.
   says so instead.
 - **No facts in the block yet.** Facts reach her through recall until
   Layers decides what is always present.
+- **An unreadable line is loud.** The transcript is kept as it was,
+  the reading halts at a malformed line rather than skip it, and the
+  user is told at every session start until it reads.
 - **One search.** `search` finds conversations and facts, and `open`
   opens either.
 - **Reviews follow chat's rule.** A Claude Code conversation is reviewed
@@ -109,12 +112,47 @@ Lines are read in file order, main thread only (`isSidechain` false):
 - `thinking` blocks are not kept, as chat keeps none.
 - A subagent is its `Agent` call's tool event, prompt and result; its
   own transcript, under the session's `subagents/`, is not read.
-- Any other line type is skipped and counted in the hook's log, never
-  an error.
+- A line of a type the first probe lists as bookkeeping, such as
+  `mode` or `file-history-snapshot`, is skipped.
+- Any other line is unreadable, below.
 
 Claude Code compacts its own context, so Dorothy's compaction does not
 run on a Claude Code conversation. A branch the user rewinds from stays
 in the record as it happened: nothing is forgotten.
+
+### Unreadable lines
+
+A format that changes under the reader must not lose a word or pass
+unnoticed. A line is **unreadable** when it is not JSON, has no `type`
+or `uuid`, is of a type the reader maps but not in the shape it expects,
+or is of a type neither mapped nor listed as bookkeeping.
+
+- **A malformed line halts the reading.** The lines before it are
+  recorded and the reading stops there: the conversation's last
+  `sourceUuid` stays before it, so its order is never broken and a
+  reader that knows the new shape takes up at that line.
+- **A new type alone does not halt it.** A line of an unlisted type
+  whose `type` and `uuid` are there is passed over, as Claude Code adds
+  bookkeeping often, and halting on each would stop all recording until
+  Dorothy is updated; it is still saved and told as below.
+- **The raw form is saved.** The whole transcript is copied to
+  `unread/<session id>.jsonl` in the data directory, and every later
+  hook of that session copies it again, so the copy outlives Claude
+  Code's own clean-up of old transcripts, after 30 days by default. The
+  copy is kept out of history and the mirror and readable by the user
+  alone (`0600`), as its tool output was never scrubbed.
+- **The user is told at the next session start.** A record of each,
+  `unread/<session id>.json`, gives the session, its conversation, the
+  line's number, type and uuid, why it could not be read, and whether
+  the reading halted. Every start of `dorothy --claude` says so on
+  stderr before `claude` takes the terminal, and every chat as a notice,
+  naming the saved copy and how to retry, until it is resolved; the
+  hook's log has it too.
+- **Resolved by reading it again.** `dorothy --claude-hook --reread`
+  reads each saved copy from its conversation's last `sourceUuid`, as a
+  hook would. Once a copy reads to its end with nothing unreadable, its
+  copy and record are deleted and the notice stops. A copy that still
+  fails keeps both, its record updated.
 
 How `--resume` writes its lines is the first probe's to find. If it
 starts a new session id whose file repeats lines already recorded, the
@@ -265,12 +303,13 @@ compaction are unchanged.
 
 New rows are marked.
 
-| Class           | What                                  | Where                                        |
-| --------------- | ------------------------------------- | -------------------------------------------- |
-| Canonical       | transcripts; events gain `sourceUuid` | `transcripts/<phrase>.jsonl`                 |
-| Derived         | the recall index, schema 5            | `$XDG_CACHE_HOME/dorothy/recall.sqlite`      |
-| Ephemeral (new) | a launch's sessions, for catch-up     | `$XDG_RUNTIME_DIR/dorothy/<launch>.sessions` |
-| Log (new)       | the hook's warnings                   | `$XDG_CACHE_HOME/dorothy/claude-hook.log`    |
+| Class            | What                                  | Where                                        |
+| ---------------- | ------------------------------------- | -------------------------------------------- |
+| Canonical        | transcripts; events gain `sourceUuid` | `transcripts/<phrase>.jsonl`                 |
+| Derived          | the recall index, schema 5            | `$XDG_CACHE_HOME/dorothy/recall.sqlite`      |
+| Ephemeral (new)  | a launch's sessions, for catch-up     | `$XDG_RUNTIME_DIR/dorothy/<launch>.sessions` |
+| Log (new)        | the hook's warnings                   | `$XDG_CACHE_HOME/dorothy/claude-hook.log`    |
+| Kept aside (new) | unreadable transcripts, as they were  | `unread/<session id>.jsonl` and `.json`      |
 
 The index gains `conversation_sessions`, each `sourceSession` any of a
 conversation's session events names, so a hook finds its conversation
@@ -285,8 +324,10 @@ none.
   memory off, as above.
 - `dorothy --claude-hook [--catch-up <launch>]`: the hooks' command,
   listed in usage as internal.
+- `dorothy --claude-hook --reread`: reads the unreadable transcripts
+  kept aside again, and says which now read and which still fail.
 - `dorothy --check` also says when the hook's log holds errors newer
-  than the last check.
+  than the last check, and lists the transcripts kept aside unread.
 - `dorothy --recall-server` gains `--project <root>`, and the server
   gains `remember`, facts in `search` and fact ids in `open`.
 
@@ -316,8 +357,9 @@ Each package's `AGENTS.md` changes with it, `memory`'s gaining a nested
 
 - A hook never blocks or fails Claude Code: it exits 0, and what went
   wrong is in its log.
-- An unreadable transcript, a missing one or a line that does not parse
-  is logged and left for the next hook or the catch-up.
+- A transcript that is missing or cannot be opened is logged and left
+  for the next hook or the catch-up. One with an unreadable line is kept
+  aside and told of, as in Unreadable lines.
 - Without the recall index, the hook records under history's
   `FileLock`, as the store allows, and skips reviews, whose claims
   need the index.
@@ -334,8 +376,10 @@ Each package's `AGENTS.md` changes with it, `memory`'s gaining a nested
 - Tool events are scrubbed by the store's `toolEntry` before they are
   trimmed or written, and recall does not index their text.
 - The block is escaped as chat's is, so nothing in a note closes it.
-- The hook's log holds types, uuids and errors, never a transcript's
-  text.
+- The hook's log and the records of unreadable lines hold types,
+  uuids and errors, never a transcript's text.
+- A transcript kept aside is unscrubbed, so it never enters history,
+  the mirror or the index, and only the user can read it.
 - `remember` writes with `dorothy` as the writer and never raises an
   origin; text claiming to be the user's does not make it so.
 
@@ -350,6 +394,10 @@ reaches the API.
   the next hook's lines, unknown types, a resumed session.
 - Recording resumed by uuid: a hook killed mid-way, two hooks
   overlapping, a lagging transcript.
+- Unreadable lines: not JSON, no uuid, a malformed user line, a new
+  type; the halt, the copy and its mode, the record, the notice in both
+  bodies, `--reread` succeeding and still failing, and the copy kept
+  out of history.
 - The cadence on a fake clock: first review, idle review superseded by a
   newer reply, end review, catch-up.
 - `remember`: writing, correcting, retiring, each refusal, the project
@@ -375,9 +423,11 @@ Run first, recorded in the report, each with its command and output:
 
 ## Known risks
 
-- **An undocumented format.** Claude Code's transcript may change; the
-  reader skips and counts what it does not know, and its log tells of
-  drift.
+- **An undocumented format.** Claude Code's transcript may change. A
+  malformed line halts the recording of that session until Dorothy's
+  reader is updated; the transcript is kept aside meanwhile and the
+  user told at every start, so nothing is lost, but the conversation is
+  absent from recall until it is read again.
 - **A process per reply.** Each `Stop` starts `dorothy`; `async` keeps
   it off the reply's path, but it costs a start each time.
 - **Origin is the session's, not the source's.** A fact she remembers
