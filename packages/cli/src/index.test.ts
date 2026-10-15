@@ -409,4 +409,70 @@ describe("parseArgs", () => {
             });
         }
     });
+
+    it("parses the fact commands, terminal or not", () => {
+        const RETIRE = "--retire takes <scope>/<name> or --from <phrase>";
+        expect(parseArgs(["--facts"], false)).toEqual({ kind: "facts" });
+        expect(parseArgs(["--facts", "x"], false)).toEqual({
+            kind: "usage",
+            message: "--facts takes no arguments",
+        });
+        expect(parseArgs(["--retire", "personal/likes-tea"], false)).toEqual({
+            kind: "retire",
+            target: "personal/likes-tea",
+        });
+        expect(parseArgs(["--retire", "--from", phrase], false)).toEqual({
+            kind: "retire-from",
+            phrase,
+        });
+        for (const rest of [
+            [],
+            ["--from"],
+            ["--from", "nope"],
+            ["a", "b"],
+            ["-x"],
+        ]) {
+            expect(parseArgs(["--retire", ...rest], false)).toEqual({
+                kind: "usage",
+                message: RETIRE,
+            });
+        }
+        expect(parseArgs(["--revive", "personal/likes-tea"], true)).toEqual({
+            kind: "revive",
+            target: "personal/likes-tea",
+        });
+        expect(parseArgs(["--revive"], true)).toEqual({
+            kind: "usage",
+            message: "--revive takes <scope>/<name>",
+        });
+        expect(parseArgs(["--sync"], false)).toEqual({
+            kind: "sync",
+            path: null,
+        });
+        expect(parseArgs(["--sync", "../repo"], false)).toEqual({
+            kind: "sync",
+            path: "../repo",
+        });
+        expect(parseArgs(["--sync", "a", "b"], false)).toEqual({
+            kind: "usage",
+            message: "--sync takes [<path>]",
+        });
+        expect(parseArgs(["--projects"], false)).toEqual({ kind: "projects" });
+        expect(parseArgs(["--projects", "x"], false)).toEqual({
+            kind: "usage",
+            message: "--projects takes no arguments",
+        });
+    });
+
+    it("lists the fact commands in the usage", () => {
+        for (const line of [
+            "dorothy --facts            what Dorothy knows, by scope",
+            "dorothy --retire <scope>/<name> | --from <phrase>",
+            "dorothy --revive <scope>/<name>",
+            "dorothy --sync [<path>]    sync a project's facts with its repo",
+            "dorothy --projects         the projects Dorothy knows",
+        ]) {
+            expect(USAGE).toContain(line);
+        }
+    });
 });

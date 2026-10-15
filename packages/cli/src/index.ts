@@ -32,6 +32,12 @@ export type Mode =
     | { kind: "check"; staged: boolean }
     | { kind: "mirror"; url: string | null }
     | { kind: "recover"; url: string }
+    | { kind: "facts" }
+    | { kind: "retire"; target: string }
+    | { kind: "retire-from"; phrase: string }
+    | { kind: "revive"; target: string }
+    | { kind: "sync"; path: string | null }
+    | { kind: "projects" }
     | { kind: "recall-server"; exclude: string | null; recollect: boolean }
     | { kind: "claude"; args: string[] }
     | { kind: "claude-dump"; args: string[]; message: string }
@@ -54,6 +60,13 @@ export const USAGE = [
     "       dorothy --check [--staged] lint memory's files",
     "       dorothy --mirror [<url>]   set or show the sealed mirror",
     "       dorothy --recover <url>    rebuild memory from the mirror",
+    "       dorothy --facts            what Dorothy knows, by scope",
+    "       dorothy --retire <scope>/<name> | --from <phrase>",
+    "                                  retire a fact, or what a chat gave",
+    "       dorothy --revive <scope>/<name>",
+    "                                  bring a retired fact back",
+    "       dorothy --sync [<path>]    sync a project's facts with its repo",
+    "       dorothy --projects         the projects Dorothy knows",
     "       dorothy --recall-server    memory search for MCP clients (stdio)",
     "       dorothy -- <prompt...>     a prompt that starts with -",
     "       dorothy --dump-context [--resume <phrase>] [message...]",
@@ -151,6 +164,42 @@ export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
         return isTTY
             ? { kind: "tags-edit" }
             : { kind: "usage", message: "--edit-tags needs a terminal" };
+    }
+    if (first === "--facts" || first === "--projects") {
+        return rest.length === 0
+            ? { kind: first === "--facts" ? "facts" : "projects" }
+            : { kind: "usage", message: `${first} takes no arguments` };
+    }
+    if (first === "--retire") {
+        const usage = {
+            kind: "usage" as const,
+            message: "--retire takes <scope>/<name> or --from <phrase>",
+        };
+        if (rest[0] === "--from") {
+            const phrase = rest[1];
+            return rest.length === 2 && phrase !== undefined && isPhrase(phrase)
+                ? { kind: "retire-from", phrase }
+                : usage;
+        }
+        const target = rest[0];
+        return rest.length === 1 &&
+            target !== undefined &&
+            !target.startsWith("-")
+            ? { kind: "retire", target }
+            : usage;
+    }
+    if (first === "--revive") {
+        const target = rest[0];
+        return rest.length === 1 &&
+            target !== undefined &&
+            !target.startsWith("-")
+            ? { kind: "revive", target }
+            : { kind: "usage", message: "--revive takes <scope>/<name>" };
+    }
+    if (first === "--sync") {
+        return rest.length <= 1
+            ? { kind: "sync", path: rest[0] ?? null }
+            : { kind: "usage", message: "--sync takes [<path>]" };
     }
     if (first === "--recall-server") {
         if (rest.length === 0) {
@@ -343,6 +392,36 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     } else if (mode.kind === "recover") {
         const { runRecover } = await import("@dorothy/memory/commands");
         process.exitCode = await runRecover(mode.url);
+    } else if (mode.kind === "facts") {
+        const { commandHistory, runFacts } = await import(
+            "@dorothy/memory/commands"
+        );
+        process.exitCode = await runFacts({ openHistory: commandHistory() });
+    } else if (mode.kind === "retire" || mode.kind === "revive") {
+        const { commandHistory, runRetire, runRevive } = await import(
+            "@dorothy/memory/commands"
+        );
+        const run = mode.kind === "retire" ? runRetire : runRevive;
+        process.exitCode = await run(mode.target, {
+            openHistory: commandHistory(),
+        });
+    } else if (mode.kind === "retire-from") {
+        const { commandHistory, runRetireFrom } = await import(
+            "@dorothy/memory/commands"
+        );
+        process.exitCode = await runRetireFrom(mode.phrase, {
+            openHistory: commandHistory(),
+        });
+    } else if (mode.kind === "sync") {
+        const { commandHistory, runSync } = await import(
+            "@dorothy/memory/commands"
+        );
+        process.exitCode = await runSync(mode.path, {
+            openHistory: commandHistory(),
+        });
+    } else if (mode.kind === "projects") {
+        const { runProjects } = await import("@dorothy/memory/commands");
+        process.exitCode = await runProjects();
     } else if (mode.kind === "claude") {
         // No config(): claude signs in as the user's own Claude Code does.
         const { runClaude } = await import("./claude.js");
