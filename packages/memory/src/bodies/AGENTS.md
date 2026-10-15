@@ -29,10 +29,15 @@ package's `"."` entry point, which the CLI loads lazily.
   code, preamble and budget, leaving no conversation out, and
   `syncDirectory` syncs the project of the directory `claude` starts
   in, under the index's lock, history committing without the mirror.
+- `claude-code.ts`: `readLines`, pure: Claude Code's transcript lines in,
+  Dorothy's events out, each with its line's uuid and time. A line of a
+  mapped type in a shape it does not expect halts the reading there; a
+  type it neither maps nor lists in `BOOKKEEPING` is passed over and
+  reported. `fixtures.ts` shapes the lines for tests.
 
 ## Invariants
 
 - Nothing here talks to a model or writes to the terminal but through
   what it returns: the CLI reports, before `claude` takes the terminal.
-- The recording plan adds the reader of Claude Code's transcripts and
-  the hook here.
+- The recording plan adds the hook here, which reads the transcript
+  files and appends what the reader returns.
