@@ -15,7 +15,7 @@
 
 import { lstat, readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
-import { FACT_NAME } from "../facts/file.js";
+import { FACT_NAME, hiddenCharacter } from "../facts/file.js";
 import { isProjectId } from "../facts/store.js";
 import { writeAtomic } from "../memory/sidecar.js";
 import type { Project } from "./identify.js";
@@ -52,9 +52,13 @@ const codeOf = (error: unknown) => (error as { code?: unknown }).code;
 // Null when dir is a relative path that stays inside the repository.
 export function memoryDirProblem(dir: string): string | null {
     // Said without the path, which would carry the character to a
-    // terminal.
+    // terminal. Facts allow a tab or a line feed; a path does not.
     if (/\p{Cc}/u.test(dir)) {
         return "the path holds a control character";
+    }
+    const hidden = hiddenCharacter(dir);
+    if (hidden !== null) {
+        return `the path holds a hidden character, ${hidden}`;
     }
     if (dir === "" || isAbsolute(dir) || dir.includes("\\")) {
         return `${dir || "an empty path"} is not a relative path`;

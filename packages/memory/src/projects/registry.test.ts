@@ -169,6 +169,16 @@ describe("memoryDirProblem", () => {
             "project 1's memory directory: the path holds a control character",
         );
     });
+
+    it.each([
+        ["a bidirectional override", "docs/\u202ememory", "U+202E"],
+        ["a zero width space", "docs/mem\u200bory", "U+200B"],
+        ["a line separator", "docs/\u2028memory", "U+2028"],
+    ])("refuses %s, naming it and not the path", (_, dir, code) => {
+        expect(memoryDirProblem(dir)).toBe(
+            `the path holds a hidden character, ${code}`,
+        );
+    });
 });
 
 describe("chooseMemoryDir", () => {
