@@ -266,6 +266,28 @@ describe("syncProject", () => {
         );
     });
 
+    it("takes the repository's version on a first sync where both differ, and says so", async () => {
+        await putFact(
+            data,
+            SCOPE,
+            storeFact("a", { description: "The store's version." }),
+        );
+        const text = repoFact("a", "The repository's version.");
+        await putRepo("a.md", text);
+        const report = await sync();
+        expect(moved(report)).toEqual({
+            ...NOTHING,
+            imported: ["a"],
+            conflicts: ["a"],
+        });
+        expect((await facts())[0]?.description).toBe(
+            "The repository's version.",
+        );
+        expect((await facts())[0]?.provenance.by).toBe("repo");
+        expect(await readFile(memory("a.md"), "utf8")).toBe(text);
+        expect(moved(await sync())).toEqual(NOTHING);
+    });
+
     it("removes a fact retired in the store from the repository, and keeps it in the store", async () => {
         await putRepo("a.md", repoFact("a", "First fact."));
         await putRepo("b.md", repoFact("b", "Second fact."));
@@ -628,6 +650,22 @@ describe("syncProject", () => {
         expect(report.index).toBe("left");
         expect(report.indexReason).toBe("it links trap, which was skipped");
         expect(await readFile(memory("MEMORY.md"), "utf8")).toBe(kept);
+    });
+
+    it("skips a snake-case file and leaves a MEMORY.md that links it", async () => {
+        await putRepo("a.md", repoFact("a", "First fact."));
+        await putRepo("feedback_testing.md", repoFact("a", "Snake."));
+        const index =
+            "- [Ay](./a.md)\n  First fact.\n- [Testing](./feedback_testing.md)\n  Snake.\n";
+        await putRepo("MEMORY.md", index);
+        const report = await sync();
+        expect(moved(report)).toEqual({ ...NOTHING, imported: ["a"] });
+        expect(report.skipped).toEqual([
+            { name: "feedback_testing", reason: "its name is not a fact's" },
+        ]);
+        expect(report.index).toBe("left");
+        expect(await readFile(memory("MEMORY.md"), "utf8")).toBe(index);
+        expect(await files()).toContain("feedback_testing.md");
     });
 
     it("takes an adopted fact's title from Claude Code's one-line entry", async () => {
