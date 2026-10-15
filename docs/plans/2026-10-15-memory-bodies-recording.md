@@ -5930,9 +5930,12 @@ Expected: no warnings.
 
 The stand-in from Task 1 answers `claude`; if `$P` is gone, run Task 1's
 Steps 1 to 3 again. The hook's review leaves through the real API, not
-the stand-in: on the stand-in's fake key, which `claude` passes on, it
-fails, or on Dorothy's own token it spends one review. Ask the user
-before running this step.
+the stand-in, and spends one review on Dorothy's own token. `claude`
+takes the stand-in's fake key from an `apiKeyHelper` in its temporary
+config rather than from `ANTHROPIC_API_KEY`, which the hook would
+inherit and dotenvx would keep over her `.env`, failing the review. If
+`claude` will not sign in that way, export the key instead and expect
+the review to fail for it: the rest of the step stands.
 
 ```sh
 P=/tmp/claude-1000/dorothy-recording-probe
@@ -5940,6 +5943,7 @@ V=/tmp/claude-1000/dorothy-recording-verify
 R=$PWD
 rm -rf "$V" && mkdir -p "$V/out" "$V/xdg/run" && chmod 700 "$V/xdg/run"
 bash "$P/setup.sh"
+jq -n --arg key "$P/key" '{apiKeyHelper: "cat \($key)"}' >"$P/cfg/settings.json"
 bun "$P/standin.ts" "$V/out" >"$V/port" & standin=$!
 sleep 1
 (
@@ -5947,7 +5951,6 @@ sleep 1
     export XDG_DATA_HOME="$V/xdg/data" XDG_CACHE_HOME="$V/xdg/cache" \
         XDG_CONFIG_HOME="$V/xdg/config" XDG_STATE_HOME="$V/xdg/state" \
         XDG_RUNTIME_DIR="$V/xdg/run" CLAUDE_CONFIG_DIR="$P/cfg" \
-        ANTHROPIC_API_KEY="$(cat "$P/key")" \
         ANTHROPIC_BASE_URL="http://127.0.0.1:$(cat "$V/port")"
     cd "$P/cwd" &&
         timeout 120 bun "$R/packages/cli/src/index.ts" --claude \
@@ -5963,6 +5966,7 @@ ls -A "$V/xdg/run/dorothy/launches"
 grep -lF 'This time you are not chatting' "$V"/out/request-*.json || echo none
 grep -c 'use tools' "$V/xdg/cache/dorothy/claude-hook.log" || true
 cat "$V/xdg/cache/dorothy/claude-hook.log"
+jq '{title, description, reviewedThrough}' "${T%.jsonl}.meta.json"
 ```
 
 Expected: one transcript, its first event a `session` with `source`
@@ -5972,7 +5976,8 @@ assistant's `done`, every one but the session event with a uuid; the
 launches directory empty once the catch-up is done; `none` for the
 review's prompt among the stand-in's requests, so no review reached the
 gateway; `0` lines of the log holding the prompt's words; the log's
-lines naming sessions, counts and the review's outcome; `--reread`
+lines naming sessions, counts and the review's outcome, `reviewed`;
+the conversation's notes holding a title and description; `--reread`
 saying no unreadable lines are kept; `--check` passing with no
 `unread:` line. The `SessionEnd` hook's catch-up and the one at exit
 may both run: a warning that a launch had no notes left to catch up is
