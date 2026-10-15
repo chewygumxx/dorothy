@@ -47,10 +47,11 @@ is the only file importing `@modelcontextprotocol/sdk`.
 - `memory/open.ts`: `openMemory` opens a chat's memory and returns its
   `createSession(turns)`, whose sessions are compacting, tracked by memory
   and recorded by `sessionRecorder` (`record.ts`). Each starts from the
-  `SessionStart` values memory renders, handed to the `connect` the CLI
-  passes. `preview.ts` gives `--dump-context` a start without history.
-  `catalogue.ts`'s `indexCatalogue` loads each conversation's sidecar,
-  visits and reads from the recall index, for `openMemory`,
+  `SessionStart` values memory renders, handed to the CLI's `connect`. It
+  records chat's project and, with memory on, syncs it at the start and
+  after each turn. `preview.ts` gives `--dump-context` a start without
+  history. `catalogue.ts`'s `indexCatalogue` loads each conversation's
+  sidecar, visits and reads from the recall index, for `openMemory`,
   `previewStart` and `--list`.
 - `memory/sidecar.ts`: the notes, kept in `<phrase>.meta.json` beside the
   transcript. `service.ts`'s `MemoryService` builds the memory block each
@@ -58,8 +59,7 @@ is the only file importing `@modelcontextprotocol/sdk`.
   (`review.ts`, `scheduler.ts`): one-shot calls that never block the chat.
   `track.ts`'s `trackMemory` decorates the `ChatSession`, so `App` sees
   only notices. `rank.ts`, `block.ts`, `edit-view.ts` and `list.ts` are
-  pure; `commands.ts` has `--list`, `--memory`, `--tags` and
-  `--edit-tags`.
+  pure; `commands.ts` has `--list`, `--memory`, `--tags`, `--edit-tags`.
 - `memory/vocabulary.ts`, `tagging.ts`, `tags-view.ts`: tags, a SKOS-style
   vocabulary in `tags.json` (concepts with `prefLabel`, `altLabel`,
   `broader` and `scopeNote`, and the tombstones of deleted and merged

@@ -31,6 +31,8 @@ import {
     withSection,
     xdgDir,
 } from "@dorothy/core";
+import { dataRoot, putFact } from "../facts/store.js";
+import { projectsPath } from "../projects/registry.js";
 import { transcriptDir, transcriptPath } from "../transcript.js";
 import { FakeSession } from "./fake-session.js";
 import {
@@ -751,6 +753,75 @@ describe("openMemory", () => {
         const text = await Bun.file(transcriptPath(memory.phrase, env)).text();
         expect(text).toContain('"kind":"user"');
         expect(text).toContain('"promptHash":"with"');
+    });
+
+    // Chat syncs the project it starts in, at its start, unless
+    // [memory] is off. A fact in the store shows it in the repository.
+    describe("project sync", () => {
+        let repo = "";
+        beforeEach(async () => {
+            repo = join(dir, "repo");
+            await mkdir(join(repo, ".git"), { recursive: true });
+            await writeFile(
+                join(repo, ".git", "config"),
+                '[remote "origin"]\n\turl = git@github.com:chewygumxx/dorothy.git\n',
+            );
+            await putFact(
+                dataRoot(env),
+                { kind: "project", id: "github.com/chewygumxx/dorothy" },
+                {
+                    name: "stack",
+                    title: "Stack",
+                    description: "What it is built on.",
+                    type: "project",
+                    extra: {},
+                    tags: [],
+                    importance: null,
+                    provenance: {
+                        origin: "dorothy",
+                        by: "dorothy",
+                        at: "2026-10-15T09:30:00.000Z",
+                        created: "2026-10-15T09:30:00.000Z",
+                    },
+                    retired: null,
+                    body: "Bun and TypeScript.",
+                },
+            );
+        });
+
+        const openIn = async () => {
+            const opened = await openMemory({
+                resume: null,
+                call: quiet,
+                prompts,
+                connect: () => new FakeSession(),
+                recallLaunch: (phrase) => ({ command: "x", args: [phrase] }),
+                cwd: repo,
+                env,
+            });
+            if (!opened.ok) {
+                throw new Error(opened.message);
+            }
+            return opened.memory;
+        };
+
+        it("syncs the project at its start, exporting its facts", async () => {
+            const memory = await openIn();
+            await memory.close();
+            expect(existsSync(projectsPath(dataRoot(env)))).toBe(true);
+            expect(
+                existsSync(join(repo, ".agents", "memory", "stack.md")),
+            ).toBe(true);
+        });
+
+        it("syncs nothing with [memory] off", async () => {
+            await mkdir(join(dir, "dorothy"), { recursive: true });
+            await writeFile(configPath(), "[memory]\nenabled = false\n");
+            const memory = await openIn();
+            await memory.close();
+            expect(existsSync(projectsPath(dataRoot(env)))).toBe(false);
+            expect(existsSync(join(repo, ".agents"))).toBe(false);
+        });
     });
 
     // The recorder's warning travels recorder, notice channel, merged

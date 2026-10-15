@@ -624,10 +624,13 @@ export async function openMemory({
     // history's own without it.
     const writeLock = claims?.lock ?? launched?.history.lock;
     const channel = noticeChannel();
-    // Chat syncs its project at its start and after each turn; without a
-    // lock to sync under, it does not.
+    // Chat syncs its project at its start and after each turn; with
+    // memory off, or without a lock to sync under, it does not.
     const syncer =
-        project === null || cwd === null || writeLock === undefined
+        !config.memory.enabled ||
+        project === null ||
+        cwd === null ||
+        writeLock === undefined
             ? null
             : projectSyncer(
                   () =>
