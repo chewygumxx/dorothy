@@ -120,6 +120,24 @@ describe("startGateway", () => {
         expect(gateway.stats).toEqual({ injected: 1, drift: 0 });
     });
 
+    it("places the section after her identity, the same every request", async () => {
+        upstream = standIn();
+        gateway = startGateway({
+            upstream: upstream.url,
+            section: "<memory>m</memory>",
+        });
+        for (let i = 0; i < 2; i++) {
+            await fetch(`${gateway.url}/v1/messages`, {
+                method: "POST",
+                body: marked,
+            });
+        }
+        for (const request of upstream.seen) {
+            const identity = JSON.parse(request.body).system[1].text;
+            expect(identity).toBe(`${identityPrompt()}\n\n<memory>m</memory>`);
+        }
+    });
+
     it("forwards an unmarked request byte for byte", async () => {
         upstream = standIn();
         gateway = startGateway({ upstream: upstream.url });

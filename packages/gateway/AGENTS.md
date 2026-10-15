@@ -35,12 +35,13 @@ never on a model provider's SDK.
 ## Files
 
 - `anthropic.ts`: the Anthropic protocol. `MARKER`, `injectIdentity` (the
-  identity after the first block that is not the billing header, the
-  marker and the space around it gone, an emptied block's
-  `cache_control` moved to the block before) and `rewriteRequest` (gzip,
-  parsing, drift; a marker only in the messages is a quotation, not
-  drift). An OpenAI adapter would sit beside it.
-- `server.ts`: `startGateway` on `127.0.0.1`, port `0`, `idleTimeout: 0`;
+  identity with a section after it, after the first block that is not
+  the billing header, the marker and the space around it gone, an
+  emptied block's `cache_control` moved to the block before) and
+  `rewriteRequest` (gzip, parsing, drift; a marker only in the messages
+  is a quotation, not drift). An OpenAI adapter would sit beside it.
+- `server.ts`: `startGateway`, and the section it is started with, on
+  `127.0.0.1`, port `0`, `idleTimeout: 0`;
   `POST .../v1/messages` and `.../count_tokens` go to `rewriteRequest`,
   everything else through byte for byte, to the upstream's path and
   query joined with the request's. A client's abort reaches the
@@ -57,6 +58,9 @@ never on a model provider's SDK.
   which the client owns. `stats` counts injections and drift instead.
 - A request without the marker passes byte for byte, so a client that
   changes fails safe, and drift tells of it.
+- The gateway learns nothing of memory: the section, the memory block
+  `dorothy --claude` renders, is opaque text it places as given, fixed
+  for the launch so the prompt cache holds.
 
 ## Tests
 

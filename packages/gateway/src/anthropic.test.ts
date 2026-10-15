@@ -137,6 +137,30 @@ describe("injectIdentity", () => {
     });
 });
 
+describe("the section", () => {
+    it("follows her identity in the marker's place, a blank line between", () => {
+        const body = { system: [{ type: "text", text: `Host.\n\n${MARKER}` }] };
+        expect(injectIdentity(body, "ID", "<memory>m</memory>")).toEqual({
+            system: [
+                { type: "text", text: "Host." },
+                { type: "text", text: "ID\n\n<memory>m</memory>" },
+            ],
+        });
+    });
+
+    it("leaves her identity alone when empty, and an unmarked request whole", () => {
+        const body = { system: [{ type: "text", text: MARKER }] };
+        expect(injectIdentity(body, "ID", "")).toEqual({
+            system: [{ type: "text", text: "ID" }],
+        });
+        expect(injectIdentity({ system: "plain" }, "ID", "S")).toBeNull();
+        const bytes = new TextEncoder().encode(
+            JSON.stringify({ system: "plain" }),
+        );
+        expect(rewriteRequest(bytes, null, "S")).toEqual({ kind: "unmarked" });
+    });
+});
+
 describe("rewriteRequest", () => {
     const encode = (value: unknown) =>
         new TextEncoder().encode(JSON.stringify(value));

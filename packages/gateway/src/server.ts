@@ -48,11 +48,14 @@ export function upstreamFrom(env: Env): string {
 }
 
 // A loopback stand-in for the API. It never records a header or a body,
-// and writes nothing: the client owns the terminal.
+// and writes nothing: the client owns the terminal. The section is placed
+// as given, the same for every request.
 export function startGateway({
     upstream = DEFAULT_UPSTREAM,
+    section = "",
 }: {
     upstream?: string;
+    section?: string;
 } = {}): Gateway {
     const base = new URL(upstream);
     const stats: GatewayStats = { injected: 0, drift: 0 };
@@ -64,7 +67,7 @@ export function startGateway({
         // reply in flight, with this or without, and no test waits ten
         // seconds to show it; it is set so that no later Bun does.
         idleTimeout: 0,
-        fetch: (request) => forward(request, base, stats),
+        fetch: (request) => forward(request, base, stats, section),
     });
     return {
         url: `http://127.0.0.1:${server.port}`,
@@ -150,6 +153,7 @@ async function forward(
     request: Request,
     base: URL,
     stats: GatewayStats,
+    section: string,
 ): Promise<Response> {
     const url = new URL(request.url);
     const headers = withoutHop(request.headers);
@@ -160,6 +164,7 @@ async function forward(
             const result = rewriteRequest(
                 body,
                 request.headers.get("content-encoding"),
+                section,
             );
             if (result.kind === "injected") {
                 stats.injected += 1;

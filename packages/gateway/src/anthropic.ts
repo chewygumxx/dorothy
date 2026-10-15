@@ -8,6 +8,7 @@
 //
 //
 
+import { withSection } from "@dorothy/core";
 import { identityPrompt } from "@dorothy/identity";
 
 // What `dorothy --claude` appends to Claude Code's system prompt, and the
@@ -48,15 +49,20 @@ function unmark(text: string): string {
 // The request with Dorothy's identity where its system prompt carried the
 // marker, or null when the system prompt carries none. Only the marker is
 // removed; the billing header, the host's identity line and everything
-// else stay as sent.
+// else stay as sent. The identity is given with the section, opaque text
+// such as the memory block, after her identity.
 export function injectIdentity(
     body: unknown,
     identity: string = identityPrompt(),
+    section = "",
 ): Fields | null {
     if (!isRecord(body)) {
         return null;
     }
-    const mine: Fields = { type: "text", text: identity };
+    const mine: Fields = {
+        type: "text",
+        text: withSection(identity, section),
+    };
     const { system } = body;
     if (typeof system === "string") {
         if (!system.includes(MARKER)) {
@@ -119,6 +125,7 @@ export function injectIdentity(
 export function rewriteRequest(
     bytes: Uint8Array<ArrayBuffer>,
     encoding: string | null,
+    section = "",
 ): Rewritten {
     let plain: Uint8Array;
     if (encoding === null || encoding === "identity") {
@@ -142,7 +149,7 @@ export function rewriteRequest(
     } catch {
         return { kind: "drift" };
     }
-    const injected = injectIdentity(body);
+    const injected = injectIdentity(body, identityPrompt(), section);
     if (injected !== null) {
         return {
             kind: "injected",
