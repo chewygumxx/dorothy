@@ -10,6 +10,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { captureServer } from "@dorothy/agent";
+import { type Config, DEFAULT_CONFIG } from "@dorothy/core";
 import { MARKER, startGateway } from "@dorothy/gateway";
 import { type ClaudeDumpDeps, runClaudeDump } from "./claude-dump.js";
 
@@ -39,17 +40,24 @@ function harness(send: unknown[] = [{ system: "S" }]) {
         cmd: [] as string[],
         env: {} as Record<string, string | undefined>,
         upstream: "",
+        section: "",
         stopped: false,
         killed: false,
         out: "",
         err: "",
     };
+    const memory = { synced: [] as string[], blocks: 0 };
+    const memoryOn: Config = {
+        ...DEFAULT_CONFIG,
+        memory: { ...DEFAULT_CONFIG.memory, enabled: true, recall: true },
+    };
     const deps: ClaudeDumpDeps = {
         env: { PATH: "/bin" },
         which: () => "/bin/claude",
         capture: () => capture,
-        startGateway: ({ upstream }) => {
+        startGateway: ({ upstream, section }) => {
             calls.upstream = upstream;
+            calls.section = section;
             return {
                 url: "http://127.0.0.1:4321",
                 stats,
@@ -83,8 +91,24 @@ function harness(send: unknown[] = [{ system: "S" }]) {
         write: (text) => {
             calls.err += text;
         },
+        config: async () => ({ config: memoryOn, warnings: [] }),
+        memory: {
+            block: async () => {
+                memory.blocks += 1;
+                return { block: "<memory>m</memory>", warnings: [] };
+            },
+            sync: async (dir) => {
+                memory.synced.push(dir);
+                return null;
+            },
+        },
+        cwd: "/work",
+        self: ["/bin/bun", "/d/index.ts"],
+        read: () => {
+            throw new Error("no such file");
+        },
     };
-    return { calls, capture, deps, stats };
+    return { calls, capture, deps, memory, stats };
 }
 
 describe("runClaudeDump", () => {
@@ -111,6 +135,20 @@ describe("runClaudeDump", () => {
         expect(calls.killed).toBe(true);
         expect(calls.stopped).toBe(true);
         expect(capture.stopped).toBe(true);
+    });
+
+    it("dumps with the block alone: no sync, recall or permissions", async () => {
+        const { calls, deps, memory } = harness();
+        expect(await runClaudeDump([], "hi", deps)).toBe(0);
+        expect(memory.synced).toEqual([]);
+        expect(calls.section).toBe("<memory>m</memory>");
+        expect(
+            calls.cmd.some(
+                (arg) =>
+                    arg.startsWith("--settings") ||
+                    arg.startsWith("--mcp-config"),
+            ),
+        ).toBe(false);
     });
 
     it("warns when the gateway put no identity in", async () => {
@@ -172,6 +210,14 @@ describe("runClaudeDump", () => {
         let err = "";
         const code = await runClaudeDump([], "Who are you?", {
             env: { PATH: process.env.PATH },
+            config: async () => ({
+                config: {
+                    ...DEFAULT_CONFIG,
+                    memory: { ...DEFAULT_CONFIG.memory, enabled: false },
+                },
+                warnings: [],
+            }),
+            cwd: "/work",
             which: () => process.execPath,
             capture: captureServer,
             startGateway,

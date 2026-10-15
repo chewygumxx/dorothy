@@ -10,27 +10,41 @@
 
 import { describe, expect, it } from "bun:test";
 import { EventEmitter } from "node:events";
+import { type Config, DEFAULT_CONFIG } from "@dorothy/core";
 import { MARKER } from "@dorothy/gateway";
-import { type ClaudeDeps, claudeArgs, runClaude } from "./claude.js";
+import {
+    type ClaudeDeps,
+    claudeArgs,
+    dorothyFlags,
+    mergeJson,
+    runClaude,
+} from "./claude.js";
 
-function harness(exit: number | Promise<number> = 0) {
+function harness(exit: number | Promise<number> = 0, memoryOn = false) {
     const calls = {
         cmd: [] as string[],
         env: {} as Record<string, string | undefined>,
         cwd: undefined as string | undefined,
         upstream: "",
+        section: "",
         stopped: false,
         killed: [] as string[],
         err: "",
     };
     const signals = new EventEmitter();
     const stats = { injected: 0, drift: 0 };
+    const memory = { synced: [] as string[], blocks: 0 };
+    const withMemory = (enabled: boolean, recall = true): Config => ({
+        ...DEFAULT_CONFIG,
+        memory: { ...DEFAULT_CONFIG.memory, enabled, recall },
+    });
     const deps: ClaudeDeps = {
         env: { PATH: "/bin", HOME: "/home/u" },
         which: (command, { PATH }) =>
             command === "claude" && PATH === "/bin" ? "/bin/claude" : null,
-        startGateway: ({ upstream }) => {
+        startGateway: ({ upstream, section }) => {
             calls.upstream = upstream;
+            calls.section = section;
             return {
                 url: "http://127.0.0.1:4321",
                 stats,
@@ -54,8 +68,24 @@ function harness(exit: number | Promise<number> = 0) {
             calls.err += text;
         },
         signals,
+        config: async () => ({ config: withMemory(memoryOn), warnings: [] }),
+        memory: {
+            block: async () => {
+                memory.blocks += 1;
+                return { block: "<memory>m</memory>", warnings: [] };
+            },
+            sync: async (dir) => {
+                memory.synced.push(dir);
+                return null;
+            },
+        },
+        cwd: "/work",
+        self: ["/bin/bun", "/d/index.ts"],
+        read: () => {
+            throw new Error("no such file");
+        },
     };
-    return { calls, deps, signals, stats };
+    return { calls, deps, memory, signals, stats };
 }
 
 describe("runClaude", () => {
@@ -223,5 +253,186 @@ describe("claudeArgs", () => {
             "x",
         ]);
         expect(claudeArgs(["-p", FLAG])).toEqual([FLAG, MARKER, "-p", FLAG]);
+    });
+});
+
+describe("dorothy --claude with memory", () => {
+    const SETTINGS = `--settings=${JSON.stringify({
+        permissions: {
+            allow: [
+                "mcp__dorothy-memory__search",
+                "mcp__dorothy-memory__open",
+                "mcp__dorothy-memory__tags",
+                "mcp__dorothy-memory__remember",
+            ],
+        },
+    })}`;
+    const MCP = `--mcp-config=${JSON.stringify({
+        mcpServers: {
+            "dorothy-memory": {
+                type: "stdio",
+                command: "/bin/bun",
+                args: ["/d/index.ts", "--recall-server", "--project", "/work"],
+            },
+        },
+    })}`;
+
+    it("syncs, places the block, serves recall and turns auto memory off", async () => {
+        const { calls, deps, memory } = harness(0, true);
+        expect(await runClaude(["-p", "hi"], deps)).toBe(0);
+        expect(memory.synced).toEqual(["/work"]);
+        expect(calls.section).toBe("<memory>m</memory>");
+        expect(calls.cmd).toEqual([
+            "/bin/claude",
+            "--append-system-prompt",
+            MARKER,
+            SETTINGS,
+            MCP,
+            "-p",
+            "hi",
+        ]);
+        expect(calls.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe("1");
+    });
+
+    it("goes on when sync fails, saying so", async () => {
+        const { calls, deps } = harness(0, true);
+        deps.memory = {
+            block: async () => ({ block: "", warnings: [] }),
+            sync: async () => "a conflict",
+        };
+        expect(await runClaude([], deps)).toBe(0);
+        expect(calls.err).toBe("dorothy: sync failed: a conflict\n");
+    });
+
+    it("starts without the block when it cannot be built, saying so", async () => {
+        const { calls, deps } = harness(0, true);
+        deps.memory = {
+            block: async () => {
+                throw new Error("index locked");
+            },
+            sync: async () => null,
+        };
+        expect(await runClaude([], deps)).toBe(0);
+        expect(calls.section).toBe("");
+        expect(calls.err).toBe(
+            "dorothy: the memory block could not be built (index locked); starting without it\n",
+        );
+    });
+
+    it("serves no recall with recall off, but keeps the block", async () => {
+        const { calls, deps } = harness(0, true);
+        deps.config = async () => ({
+            config: {
+                ...DEFAULT_CONFIG,
+                memory: { ...DEFAULT_CONFIG.memory, recall: false },
+            },
+            warnings: [],
+        });
+        await runClaude([], deps);
+        expect(calls.cmd).toEqual([
+            "/bin/claude",
+            "--append-system-prompt",
+            MARKER,
+        ]);
+        expect(calls.section).toBe("<memory>m</memory>");
+    });
+
+    it("runs claude as today with memory off", async () => {
+        const { calls, deps, memory } = harness(0, false);
+        await runClaude(["-p", "hi"], deps);
+        expect(memory).toEqual({ synced: [], blocks: 0 });
+        expect(calls.cmd).toEqual([
+            "/bin/claude",
+            "--append-system-prompt",
+            MARKER,
+            "-p",
+            "hi",
+        ]);
+        expect(calls.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBeUndefined();
+    });
+});
+
+describe("dorothyFlags", () => {
+    const io = (files: Record<string, string> = {}) => ({
+        cwd: "/work",
+        read: (path: string) => {
+            const text = files[path];
+            if (text === undefined) {
+                throw new Error(`ENOENT: ${path}`);
+            }
+            return text;
+        },
+    });
+    const ours = {
+        settings: { permissions: { allow: ["a"] } },
+        mcpConfig: null,
+    };
+
+    it("merges the user's own settings, a file or inline, into Dorothy's", () => {
+        const fromFile = dorothyFlags(
+            ["--settings", "mine.json", "-p", "hi"],
+            ours,
+            io({
+                "/work/mine.json":
+                    '{"permissions":{"allow":["b"]},"model":"x"}',
+            }),
+        );
+        expect(fromFile).toEqual({
+            args: [
+                `--settings=${JSON.stringify({ permissions: { allow: ["b", "a"] }, model: "x" })}`,
+                "-p",
+                "hi",
+            ],
+            warnings: [],
+        });
+        expect(
+            dorothyFlags([`--settings={"model":"y"}`], ours, io()).args,
+        ).toEqual([
+            `--settings=${JSON.stringify({ model: "y", permissions: { allow: ["a"] } })}`,
+        ]);
+    });
+
+    it("passes on settings it cannot read, warning that they may override hers", () => {
+        expect(dorothyFlags(["--settings", "gone.json"], ours, io())).toEqual({
+            args: [
+                `--settings=${JSON.stringify(ours.settings)}`,
+                "--settings",
+                "gone.json",
+            ],
+            warnings: [
+                "your --settings could not be read (ENOENT: /work/gone.json); it is passed on as given, and may override Dorothy's",
+            ],
+        });
+    });
+
+    it("leaves what follows -- alone, and the user's flags without hers", () => {
+        expect(
+            dorothyFlags(["--", "--settings", "x"], ours, io()).args,
+        ).toEqual([
+            `--settings=${JSON.stringify(ours.settings)}`,
+            "--",
+            "--settings",
+            "x",
+        ]);
+        expect(
+            dorothyFlags(
+                ["--settings", "x"],
+                { settings: null, mcpConfig: null },
+                io(),
+            ).args,
+        ).toEqual(["--settings", "x"]);
+    });
+
+    it("merges objects key by key and joins arrays without repeats", () => {
+        expect(
+            mergeJson(
+                { a: [1, 2], b: { c: 1 } },
+                { a: [2, 3], b: { d: 2 }, e: 1 },
+            ),
+        ).toEqual({
+            a: [1, 2, 3],
+            b: { c: 1, d: 2 },
+            e: 1,
+        });
     });
 });

@@ -55,7 +55,12 @@ export async function runClaudeDump(
     } = deps;
     const capture = startCapture();
     try {
-        const launch = launchClaude(args, capture.url, { ...deps, write });
+        const launch = await launchClaude(
+            args,
+            capture.url,
+            { ...deps, write },
+            "dump",
+        );
         if (typeof launch === "number") {
             return launch;
         }
