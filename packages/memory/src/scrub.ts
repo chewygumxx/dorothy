@@ -14,11 +14,12 @@
 
 const SECRET = "[secret]";
 
+// An OpenSSH, PEM or PGP private key's block; PGP's armour ends in BLOCK.
 // A block cut short, as `head` leaves one, is redacted to the end of the
 // text. Without the m flag `$` is the text's end alone, so a run of
 // headers with no end is crossed once, not once per header.
 const PRIVATE_KEY =
-    /-----BEGIN [A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]{0,40}PRIVATE KEY-----|$)/g;
+    /-----BEGIN [A-Z ]{0,40}PRIVATE KEY(?: BLOCK)?-----[\s\S]*?(?:-----END [A-Z ]{0,40}PRIVATE KEY(?: BLOCK)?-----|$)/g;
 // GitHub's API takes `Authorization: token <credential>`.
 const BEARER = /\b(Bearer|Basic|[Tt]oken)\s+[A-Za-z0-9._~+/=-]{8,}/g;
 // The prefixes providers give their keys.

@@ -38,6 +38,14 @@ const CASES: [string, string][] = [
         "$ head -3 id_rsa\n-----BEGIN RSA PRIVATE KEY-----\nMIIEow\nAAAA",
         "$ head -3 id_rsa\n[secret]",
     ],
+    [
+        "-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nlQOYBGXk\n=Ab12\n-----END PGP PRIVATE KEY BLOCK-----\nafter",
+        "[secret]\nafter",
+    ],
+    [
+        "$ head -3 key.asc\n-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nlQOYBGXk",
+        "$ head -3 key.asc\n[secret]",
+    ],
 ];
 
 describe("scrub", () => {
@@ -50,6 +58,12 @@ describe("scrub", () => {
         expect(scrub(text)).toBe(text);
     });
 
+    it("leaves a public key block alone", () => {
+        const text =
+            "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmQINBGXk\n-----END PGP PUBLIC KEY BLOCK-----\n";
+        expect(scrub(text)).toBe(text);
+    });
+
     it("takes linear time on long runs that name no secret", () => {
         for (const text of ["a-".repeat(50000), "pkg.sub.mod.".repeat(10000)]) {
             const start = performance.now();
@@ -58,14 +72,17 @@ describe("scrub", () => {
         }
     });
 
-    it("crosses repeated key headers with no end in linear time", () => {
-        const line = `-----BEGIN OPENSSH PRIVATE KEY-----${"A".repeat(35)}\n`;
-        const text = line.repeat(20000);
-        expect(text.length).toBeGreaterThan(1_400_000);
-        const start = performance.now();
-        expect(scrub(text)).toBe("[secret]");
-        expect(performance.now() - start).toBeLessThan(200);
-    });
+    it.each(["OPENSSH PRIVATE KEY", "PGP PRIVATE KEY BLOCK"])(
+        "crosses repeated %s headers with no end in linear time",
+        (kind) => {
+            const line = `-----BEGIN ${kind}-----${"A".repeat(35)}\n`;
+            const text = line.repeat(20000);
+            expect(text.length).toBeGreaterThan(1_400_000);
+            const start = performance.now();
+            expect(scrub(text)).toBe("[secret]");
+            expect(performance.now() - start).toBeLessThan(200);
+        },
+    );
 
     it("redacts a long quoted secret whole", () => {
         const text = `password: "${"a".repeat(2000)}" && ls`;
