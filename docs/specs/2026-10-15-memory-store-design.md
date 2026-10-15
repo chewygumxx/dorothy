@@ -159,15 +159,15 @@ A new event records a body's tool call:
 
 `input` and `output` are text. Before they are trimmed, known shapes of
 secret are replaced with `[secret]`: a `key=value` or `key: value` whose
-key names one (`token`, `key`, `secret`, `password`, `auth`), `Bearer`
-tokens, private key blocks, and the prefixes of common provider keys.
-Each is then trimmed to its first 2,000 characters, and `cut` counts the
-characters dropped. A call to one of Dorothy's own memory tools carries
-`"memory": true`, so that no review learns as new what memory itself
-supplied. Tool events are not
-turns: turns stay the user and assistant events, numbered as today, and
-tool events sit between them. The store accepts consecutive assistant
-events, as an agent writes text between tool calls; the plan checks that
+key names one (`token`, `key`, `secret`, `password`, `auth`), `Bearer`,
+`Basic` and `token` credentials, private key blocks, and the prefixes of
+common provider keys. Each is then trimmed to its first 2,000
+characters, and `cut` counts the characters dropped. A call to one of
+Dorothy's own memory tools carries `"memory": true`, so that no review
+learns as new what memory itself supplied. Tool events are not turns:
+turns stay the user and assistant events, numbered as today, and tool
+events sit between them. The store accepts consecutive assistant events,
+as an agent writes text between tool calls; the plan checks that
 compaction, reviews and recall tolerate them. How a body's session maps
 onto events is the Bodies spec's to settle.
 
@@ -302,7 +302,11 @@ A fact rewritten in place keeps its earlier versions in history, where
 
 The user may edit or add a fact by hand in the data directory: history
 sweeps up outside changes before its next commit, and the lint heals a
-broken edit. A fact the user adds or edits by hand is `origin: user`.
+broken edit. A fact the user adds or edits by hand is `origin: user`: the
+sweep keeps a changed fact as Dorothy's own write only when it is in
+canonical form and its provenance differs from the committed version's,
+as every write of hers makes it, and otherwise makes it the user's. A
+broken file kept in `broken/` keeps the user's bytes.
 
 ### Retiring
 
@@ -479,7 +483,7 @@ All in `@dorothy/memory`, which still depends on `core` alone:
   `scrub.ts` replaces the shapes of secrets in a tool call's text.
 - `facts/`: `file.ts` parses and renders a fact; `store.ts` has
   `writeFact`, `moveFact`, `retireFact`, `retireFacts`, `reviveFact` and
-  `listFacts`; `lint.ts` checks a fact.
+  `listFacts`; `history/lint.ts` checks a fact.
 - `projects/`: `identify.ts` finds a path's repository root and id;
   `registry.ts` reads and writes `projects.json`; `sync.ts` has
   `syncProject`; `export.ts` renders a fact and `MEMORY.md` in their
@@ -564,6 +568,9 @@ rules require; nothing touches the user's data.
   from view.
 - **`MEMORY.md` is regenerated.** An index sync wrote is rewritten at
   every export; one with a hand's lines in it is left alone.
+- **A stale checkout.** The first sync from an old clone of a remote
+  finds the repository's facts changed since the store's record and takes
+  them as a conflict; the store's newer version survives only in history.
 - **Consecutive assistant events** may meet code that assumed turns
   alternate; the plan checks before the Bodies spec relies on it.
 - **Retired facts accumulate.** They cost search a little noise and

@@ -1,11 +1,11 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-12
+mtime: 2026-10-15
 spdx: GPL-3.0-only
 title: packages/memory/AGENTS.md
 description: >-
-  The memory package's guide: transcripts, notes, recall, compaction, tags
-  and history, and the locks and wiring that hold them together.
+  The memory package's guide: transcripts, notes, facts, projects, recall,
+  compaction, tags and history, and the locks that hold them together.
 tags:
   - agents
 ---
@@ -20,16 +20,17 @@ tags:
 # packages/memory/AGENTS.md
 
 `@dorothy/memory` is Dorothy's memory database in all its parts:
-transcripts, the notes on each conversation, recall, compaction, tags and
-history. It never imports the agent or a model provider's SDK: reviews and
-compaction take core's `StructuredCall` and their prompts as text
-(`MemoryPrompts`).
+transcripts, the notes on each conversation, facts, recall, compaction,
+tags and history. It never imports the agent or a model provider's SDK:
+reviews and compaction take core's `StructuredCall` and their prompts as
+text (`MemoryPrompts`).
 
 ## Entry points and imports
 
 - `"."` (`src/index.ts`): `openMemory` and `previewStart`.
 - `"./commands"` (`src/commands.ts`): `--list`, `--memory`, `--tags`,
-  `--edit-tags`, the history commands and `commandHistory()`.
+  `--edit-tags`, `--facts`, `--retire`, `--revive`, `--sync`,
+  `--projects`, the history commands and `commandHistory()`.
 - `"./recall-server"` (`src/recall-server.ts`): `runRecallServer`, loaded
   without the rest of memory.
 
@@ -39,9 +40,9 @@ is the only file importing `@modelcontextprotocol/sdk`.
 ## Files
 
 - `transcript.ts`: transcripts, private JSONL under
-  `$XDG_DATA_HOME/dorothy/`. A `tool` event keeps a body's call, run
-  through `scrub.ts` and trimmed to 2,000 characters a side; a session
-  event may name its `source`.
+  `$XDG_DATA_HOME/dorothy/`, of any body's sessions; a session event may
+  name its `source`. A tool call is scrubbed of secrets (`scrub.ts`) and
+  trimmed to 2,000 characters a side.
 - `memory/open.ts`: `openMemory` opens a chat's memory and returns its
   `createSession(turns)`, whose sessions are compacting, tracked by memory
   and recorded by `sessionRecorder` (`record.ts`). Each starts from the
@@ -64,6 +65,11 @@ is the only file importing `@modelcontextprotocol/sdk`.
   ones). Each sidecar holds its conversation's concept ids. `applyTagging`
   checks a review's tags leniently, a bad tag never failing the notes, and
   coins concepts inside the sidecar's lock.
+- `facts/`: facts, Markdown in one canonical form (`file.ts`), personal
+  or a project's, written, moved, retired and revived under the sidecar
+  lock (`store.ts`); `commands.ts` has the fact and project commands.
+- `projects/`: a project's identity, registry, exported form and sync
+  with its repository; read [its own guide](./src/projects/AGENTS.md).
 - `recall/`: search over past conversations. `store.ts` is a derived
   SQLite FTS5 index in the XDG cache; `sync.ts` syncs it from the
   transcripts and sidecars before every query, taking each conversation's
@@ -74,13 +80,9 @@ is the only file importing `@modelcontextprotocol/sdk`.
   appraise each read into the sidecar, and `salience()` (`rank.ts`) weighs
   appraised reads with visits.
 - `compaction/`: past `[compaction] soft` tokens, at the next idle (past
-  `hard`, before the next message), `compact()` (`compact.ts`) splits the
-  turns before the verbatim tail into topical clusters with an abstract
-  each: the prompt and its checks in `clusters.ts`, the turns' ranges and
-  pressure in `plan.ts`. `Compaction` (`session.ts`) wraps the
-  session; a pass (`run.ts`, on `shared.ts`'s state) appends the clusters
-  to the sidecar, writes a `compaction` transcript event, and swaps in a
-  session seeded with the abstracts and the turns after them.
+  `hard`, before the next message), `compact()` splits the turns before
+  the verbatim tail into topical clusters with an abstract each; read
+  [its own guide](./src/compaction/AGENTS.md).
 - `history/`: the data directory as a git repository. `MemoryRepo`
   (`repo.ts`) has two engines, the git binary run isolated from the
   user's configuration (`binary.ts`) and isomorphic-git (`iso.ts`), chosen
@@ -118,6 +120,9 @@ is the only file importing `@modelcontextprotocol/sdk`.
 - `recollect` is registered only with `--recollect`, which the agent adds
   when a chat has clusters.
 - A concept only hidden conversations carry is never shown to her.
+- Nothing deletes a fact: one retired stays indexed, searchable and in
+  history. Its origin is set by the code that writes it, never read
+  from its text, and only the user raises it.
 - A key that does not open the newest sealed bundle seals nothing.
 - The vocabulary path is always passed (`vocabularyPath()`), never derived
   from the transcripts directory.
@@ -136,7 +141,8 @@ is the only file importing `@modelcontextprotocol/sdk`.
   [recall](../../docs/specs/2026-10-06-recall-design.md),
   [compaction](../../docs/specs/2026-10-07-compaction-design.md),
   [tags](../../docs/specs/2026-10-07-tags-design.md),
-  [history](../../docs/specs/2026-10-08-memory-history-design.md)
+  [history](../../docs/specs/2026-10-08-memory-history-design.md),
+  [memory store](../../docs/specs/2026-10-15-memory-store-design.md)
 - Reports: [recall](../../docs/reports/2026-10-06-recall.md),
   [compaction](../../docs/reports/2026-10-07-compaction.md),
   [tags](../../docs/reports/2026-10-08-tags.md),

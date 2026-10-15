@@ -73,8 +73,9 @@ Agent SDK. Keep every new mode's import lazy.
   save the mirror's key with its `set`, and in the root's development
   dependencies, which the root's `lint:env` script and the pre-commit
   hook need.
-- The CLI passes `commandHistory()` to memory's commands, and
-  `editInEditor` to `--memory` and `--edit-tags`.
+- The CLI passes `commandHistory()` to memory's commands, the fact and
+  project commands among them, and `editInEditor` to `--memory` and
+  `--edit-tags`.
 
 ## Tests
 

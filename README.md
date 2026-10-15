@@ -211,6 +211,29 @@ bun run dev -- --recover <url-or-path>     # rebuild an empty data dir
 Each `--history` line starts with the commit's short sha, which is what
 `--restore` and `--rollback` take as `<rev>`.
 
+Beside her notes on each chat, Dorothy keeps facts: what she knows of
+you, your work and what has worked, one Markdown file each under
+`facts/` in the data directory. A fact is personal or a project's, and a
+project is the git repository you are in, named by its `origin`. A
+project's facts are synced with its repository's `.agents/memory/`, the
+format Claude Code's auto-memory reads, so its other contributors' agents
+read them too; personal facts never leave her store. Nothing is
+forgotten: a fact you retire leaves the repository and her context but
+stays searchable, and can be revived.
+
+```sh
+bun run dev -- --facts                        # what she knows, by scope
+bun run dev -- --retire personal/<name>       # retire a fact
+bun run dev -- --retire --from <phrase>       # retire what a chat gave
+bun run dev -- --revive personal/<name>       # bring it back
+bun run dev -- --sync [<path>]                # sync a project with its repo
+bun run dev -- --projects                     # the projects she knows
+```
+
+Sync never commits: the files it writes are committed with your work.
+When a fact changed both in her store and in the repository, the
+repository's version is kept, and hers stays in her history.
+
 The history is pushed to a mirror off this machine, encrypted. The
 mirror must exist first: a private repository on a host, or for a local
 one `git init --bare /path/to/memory.git`. Then set it with `--mirror`,
