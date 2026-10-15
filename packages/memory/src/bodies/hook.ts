@@ -44,6 +44,7 @@ import { syncIndex } from "../recall/sync.js";
 import { readTranscript, transcriptDir } from "../transcript.js";
 import {
     type LaunchNote,
+    launchHolds,
     launchSessions,
     noteSession,
     readLaunch,
@@ -57,6 +58,7 @@ import {
     copyPath,
     dismissHalt,
     halts,
+    readRecord,
     unreadDir,
 } from "./unread.js";
 
@@ -544,10 +546,22 @@ async function reread(
                 dir: record.dir,
                 since: record.since,
             });
-            const recorded = await steps.record(false);
-            if (recorded.kind === "recorded" && !recorded.halted) {
+            // A session no launch holds is over: a call never answered
+            // is recorded failed, not waited for.
+            const recorded = await steps.record(
+                !(await launchHolds(env, record.session)),
+            );
+            // Nothing to record, and no halt kept: it read to its end.
+            const read =
+                recorded.kind === "recorded"
+                    ? !recorded.halted
+                    : recorded.kind === "nothing" &&
+                      (await readRecord(env, record.session)) === null;
+            if (read) {
                 out.write(`dorothy: read ${record.session} to its end\n`);
-                await steps.sync();
+                if (recorded.kind === "recorded") {
+                    await steps.sync();
+                }
             } else {
                 failed += 1;
                 const kept = await halts(env);

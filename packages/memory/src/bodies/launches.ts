@@ -191,6 +191,31 @@ export async function liveSession(
     return (await readLaunch(env, launch))?.session ?? null;
 }
 
+// Whether a launch's notes still hold the session: noted by a hook and
+// not ended, or named by --session-id and not yet noted. A session none
+// holds is over.
+export async function launchHolds(env: Env, session: string): Promise<boolean> {
+    let names: string[];
+    try {
+        names = await readdir(launchesDir(env));
+    } catch {
+        return false;
+    }
+    for (const name of names.filter(isUuid)) {
+        const noted = (await launchSessions(env, name)).find(
+            (note) => note.session === session,
+        );
+        if (
+            noted !== undefined
+                ? noted.ended !== true
+                : (await readLaunch(env, name))?.session === session
+        ) {
+            return true;
+        }
+    }
+    return false;
+}
+
 const pidAlive = (pid: number) => {
     try {
         process.kill(pid, 0);

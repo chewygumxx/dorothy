@@ -41,8 +41,9 @@ reader, the store and reviews alone. The CLI loads both lazily.
   `launches/<launch>/`: `launch.json`, written once by
   `dorothy --claude`, and `sessions/<session>.json`, one a session,
   written by its hooks. `liveSession` is the one noted last, unless
-  it has ended; else the one `--session-id` named; `staleLaunches` are
-  those whose `dorothy` is gone.
+  it has ended; else the one `--session-id` named; `launchHolds` says
+  whether a session is not yet over, for `--reread`; `staleLaunches`
+  are those whose `dorothy` is gone.
 - `record.ts`: `recordSession` records a session into its conversation
   under the store's lock: found by the index's `conversation_sessions`,
   or by a scan without the index; read from the line after the last

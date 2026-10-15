@@ -21,7 +21,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { StructuredCall } from "@dorothy/core";
 import { transcriptDir } from "../transcript.js";
-import { assistantLine, meta, SESSION, text, userLine } from "./fixtures.js";
+import {
+    assistantLine,
+    meta,
+    SESSION,
+    text,
+    use,
+    userLine,
+} from "./fixtures.js";
 import {
     activitySince,
     afterEnd,
@@ -36,6 +43,7 @@ import {
     noteLaunch,
     noteSession,
     readLaunch,
+    removeLaunch,
 } from "./launches.js";
 import { hookLogPath } from "./log.js";
 import type { Recorded } from "./record.js";
@@ -428,5 +436,37 @@ describe("runClaudeHook", () => {
             ),
         ).toBe(0);
         expect(await startNotices(env)).toEqual([]);
+    });
+
+    it("rereads a session whose launch is gone to its end, a call never answered failed", async () => {
+        await writeFile(claude, `${userLine("u1", 1, "hello")}\n{bad\n`);
+        await runClaudeHook({ kind: "hook" }, deps(input("Stop")));
+        await removeLaunch(env, LAUNCH);
+        await writeFile(
+            claude,
+            `${userLine("u1", 1, "hello")}\n${assistantLine("a1", 2, [use("t1", "Bash", { command: "ls" })])}\n`,
+        );
+        said = "";
+        expect(await runClaudeHook({ kind: "reread" }, deps(""))).toBe(0);
+        expect(said).toContain(`read ${SESSION} to its end`);
+        const [name] = await conversations();
+        const kept = await readFile(
+            join(transcriptDir(env), name ?? ""),
+            "utf8",
+        );
+        expect(kept).toContain('"kind":"tool"');
+        expect(kept).toContain('"sourceUuid":"a1"');
+    });
+
+    it("rereads a session with nothing to record as read to its end", async () => {
+        await writeFile(claude, "{bad\n");
+        await runClaudeHook({ kind: "hook" }, deps(input("Stop")));
+        expect(await readRecord(env, SESSION)).not.toBeNull();
+        await writeFile(claude, `${meta("custom-title")}\n`);
+        said = "";
+        expect(await runClaudeHook({ kind: "reread" }, deps(""))).toBe(0);
+        expect(said).toContain(`read ${SESSION} to its end`);
+        expect(said).not.toContain("still can't be read");
+        expect(await readRecord(env, SESSION)).toBeNull();
     });
 });

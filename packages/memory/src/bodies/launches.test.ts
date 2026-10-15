@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
     launchesDir,
+    launchHolds,
     launchSessions,
     liveSession,
     noteLaunch,
@@ -127,6 +128,30 @@ describe("launch notes", () => {
             seen: "2026-10-15T09:03:00.000Z",
         });
         expect(await liveSession(env, LAUNCH)).toBe(S2);
+    });
+
+    it("hold a session noted and not ended, or named and not noted", async () => {
+        expect(await launchHolds(env, S1)).toBe(false);
+        await noteLaunch(env, note(LAUNCH));
+        expect(await launchHolds(env, S1)).toBe(true);
+        expect(await launchHolds(env, S2)).toBe(false);
+        await noteSession(env, LAUNCH, {
+            session: S2,
+            transcript: "/t/2.jsonl",
+            cwd: "/work",
+            seen: "2026-10-15T09:01:00.000Z",
+        });
+        expect(await launchHolds(env, S2)).toBe(true);
+        await noteSession(env, LAUNCH, {
+            session: S1,
+            transcript: "/t/1.jsonl",
+            cwd: "/work",
+            seen: "2026-10-15T09:02:00.000Z",
+            ended: true,
+        });
+        expect(await launchHolds(env, S1)).toBe(false);
+        await removeLaunch(env, LAUNCH);
+        expect(await launchHolds(env, S2)).toBe(false);
     });
 
     it("find the launches whose dorothy is gone, and remove one", async () => {
