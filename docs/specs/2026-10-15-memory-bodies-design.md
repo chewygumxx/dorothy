@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-15
-mtime: 2026-10-15
+mtime: 2026-10-16
 spdx: GPL-3.0-only
 title: Dorothy's memory in her bodies design
 description: >-
@@ -105,9 +105,9 @@ does today.
    does. It starts the gateway with `startGateway({ upstream, section
    })`, and the gateway puts the section in the marker's place after
    her identity, on the main thread only, unchanged for the launch.
-   Where the arguments resume a session by id that is already recorded,
-   the block leaves its conversation out, as chat leaves out the live
-   one, once the recording plan records sessions; `--continue`,
+   Where the arguments resume a session by id that is already recorded
+   (`--resume <id>`, `-r <id>` or `--resume=<id>`), the block leaves its
+   conversation out, as chat leaves out the live one; `--continue`,
    `--resume` without an id, and a resume by name name no id, and leave
    nothing out.
 3. **Recall**, when `[memory] recall` is also true. `--mcp-config=` (the
@@ -154,6 +154,10 @@ retired. Live facts rank above retired ones, and personal facts and
 those of the server's project above other projects'; every scope is
 searched, as it is one memory. The result's count of hits counts each
 group apart.
+
+The `tags` tool lists a concept a live fact carries, as it lists one a
+conversation carries, and its tag gains `facts`, the count of live
+facts carrying it; a retired fact's tags count for nothing.
 
 ### Open
 
@@ -211,16 +215,28 @@ compaction are unchanged.
 ### Which sessions
 
 `launchClaude` gives `claude` a launch id, `DOROTHY_LAUNCH`, which hooks
-and MCP servers inherit, and notes the launch, its start time and its
-directory in Dorothy's runtime directory, `$XDG_RUNTIME_DIR/dorothy/`,
-or the cache directory without one. Where the arguments start a new
-session, it passes `--session-id <uuid>` and notes that id too.
+and MCP servers inherit, as the recording probe found, so no `--launch`
+flag is needed. It notes the launch, its start time and its directory
+under Dorothy's runtime directory, `$XDG_RUNTIME_DIR/dorothy/`, or the
+cache directory without one, in `launches/<launch>/`: `launch.json`,
+written once by `dorothy --claude`, and `sessions/<session>.json`, one a
+session, written by its hooks, so no two processes rewrite one file.
+The merged settings files beside them are never scanned.
+
+Where the arguments start a new session, it passes `--session-id
+<uuid>` and notes that id too. They start one unless, before any `--`,
+they hold `-c`, `--continue`, `-r`, `--resume`, `--session-id` or
+`--from-pr`; a user's own `--session-id <uuid>` is noted as the
+launch's session, as Dorothy's would be.
 
 A session a hook reports under a launch is recorded from the later of
 its first line and the launch's start, unless it already belongs to a
 conversation, which it continues. A new session, `/clear`'s included,
 is thereby recorded whole; a plain session resumed inside the launch
-only from the launch on.
+only from the launch on. A mapped line timestamped before the launch is
+passed over before its shape is checked, so an old line in a shape the
+reader no longer knows never halts a resumed session; one that is not
+JSON still does.
 
 ### One session, one conversation
 
@@ -251,13 +267,20 @@ Lines are read in file order, main thread only (`isSidechain` false).
 A line may hold several content blocks; each is mapped in order.
 
 - A user line whose content is text is a **user** event, a turn,
-  numbered as today.
-- An `attachment` line of a subtype that carries the user's words, such
-  as `queued_command`, typed while she was working, is a **user**
-  event too. The first probe lists the subtypes; the rest are
-  bookkeeping.
-- A line with `isMeta`, such as injected context or Claude Code's
-  summary after compacting, is skipped.
+  numbered as today. Text in Claude Code's command markup becomes the
+  command as typed (`/compact focus`, `! ls`); the command's output
+  (`<local-command-stdout>`, `<bash-stdout>` and the like),
+  `<task-notification>` and `[Request interrupted by user]` are
+  skipped, as Claude Code's own words and not the user's.
+- An `attachment` line of a subtype that carries the user's words is a
+  **user** event too: `queued_command`, typed while she was working,
+  unless its `commandMode` is other than `prompt`, as task
+  notifications use it too.
+  The recording probe found no other subtype carrying the user's words;
+  the rest are bookkeeping.
+- A line with `isMeta`, such as injected context, or with
+  `isCompactSummary`, Claude Code's summary after compacting, is
+  skipped.
 - An assistant `text` block is an **assistant** event; consecutive
   assistant events are kept as they come, as the store allows.
 - An assistant `tool_use` block and the `tool_result` that answers it,
@@ -271,19 +294,27 @@ A line may hold several content blocks; each is mapped in order.
 - `thinking` blocks are not kept, as chat keeps none.
 - A subagent is its `Agent` call's tool event, prompt and result; its
   own transcript, under the session's `subagents/`, is not read.
-- A `system` line is bookkeeping unless the first probe finds one that
-  carries the conversation.
-- A line of a bookkeeping type the first probe lists, such as `mode`,
-  `file-history-snapshot` or `last-prompt`, is skipped.
+- A `system` line is bookkeeping: the recording probe found none that
+  carries the conversation (`compact_boundary`, `informational`,
+  `local_command`, `stop_hook_summary`, `turn_duration`).
+- A line of a bookkeeping type the probe and the planning survey list,
+  such as `mode`, `file-history-snapshot` or `last-prompt`, is skipped.
+- An assistant line names its model; the session event takes the first
+  that is not `<synthetic>`, which Claude Code writes on a resume, else
+  `unknown`.
 
 Claude Code compacts its own context, so Dorothy's compaction does not
 run on a Claude Code conversation. A branch the user rewinds from stays
 in the record as it happened: nothing is forgotten.
 
-How `--resume` writes its lines is the recording plan's second probe's
-to find. If it starts a new session id whose file repeats lines already
-recorded, their uuids find the conversation, and the new session
-continues it with a session event naming the new id.
+The recording probe found that `--resume <id>` and `--continue` append
+to the session's own file under its own id, so the resumed session
+continues its conversation. `--fork-session` writes a new file under a
+new id, copying the old lines with their uuids and times but naming only
+the new id, and no field names the session forked from: a fork is new
+to Dorothy, recorded from the launch on as a conversation of its own.
+`/clear` ends the session and goes on under a new id in a new file,
+recorded as a conversation of its own.
 
 ### Unreadable lines
 
@@ -300,20 +331,23 @@ unnoticed.
 - **A new type is passed over.** A line with a `type` the reader neither
   maps nor lists, with or without a `uuid`, does not halt the reading,
   as Claude Code adds bookkeeping often and halting on each would stop
-  all recording until Dorothy is updated. The line itself is copied.
-- **Where copies go.** `$XDG_STATE_HOME/dorothy/unread/<session
-  id>.jsonl`, outside the data directory, so history's sweep, the
-  mirror and the index never see it, and readable by the user alone
-  (`0600`), as its tool output was never scrubbed. It outlives Claude
-  Code's own clean-up of old transcripts, after 30 days by default.
-- **The user is told at the next start.** A record beside each copy,
-  `<session id>.json`, gives the session, its conversation, the line's
-  number, type and uuid where it has one, why it could not be read, and
-  whether the reading halted. A halt is told at every start of
+  all recording until Dorothy is updated. One example line of each new
+  type is kept, once and not per session, in
+  `unread/types/<type>.jsonl`.
+- **Where copies go.** A halt's copy is
+  `$XDG_STATE_HOME/dorothy/unread/<session id>.jsonl`, outside the data
+  directory, so history's sweep, the mirror and the index never see it,
+  and readable by the user alone (`0600`, its directories `0700`), as
+  its tool output was never scrubbed. It outlives Claude Code's own
+  clean-up of old transcripts, after 30 days by default.
+- **The user is told at the next start.** A record exists only for a
+  halt, beside its copy, `<session id>.json`: the session, its
+  conversation, the line's number, type and uuid where it has one, and
+  why it could not be read. A halt is told at every start of
   `dorothy --claude`, on stderr before `claude` takes the terminal, and
   of chat, as a notice, naming the copy and how to retry, until it is
   resolved or dismissed. A new type is told once, at the first start
-  after it is seen; the types already told are kept in
+  of either body after it is seen; the types already told are kept in
   `unread/types.json`.
 - **Resolved by reading again.** `dorothy --claude-hook --reread` reads
   each halted session from its resume point, from Claude Code's
@@ -327,11 +361,22 @@ unnoticed.
 
 `launchClaude`'s `--settings` adds a `Stop` hook with `async: true`, so
 it never holds a reply back, and a `SessionEnd` hook with an explicit
-`timeout`, which hands its work to a detached process and exits; the
-recording plan's probes check that a detached process outlives an
-interactive session's teardown. Both run `dorothy --claude-hook` by
+`timeout`, which hands its session to a detached
+`dorothy --claude-hook --catch-up <launch> --session <id>` and exits.
+That catch-up does for one session what the launch's does for all, and
+keeps the launch's notes. Both hooks run `dorothy --claude-hook` by
 absolute path, the interpreter and entry script `dorothy` itself was
-started with, so `bun run dev -- --claude` records too.
+started with, as `bun --no-env-file`, so `bun run dev -- --claude`
+records too.
+
+The recording probe found that hooks from `--settings` add to the
+user's own, and that `async` keeps the `Stop` hook off the reply's path.
+An interactive async `Stop` outlives `/exit`, but under `claude -p`
+Claude Code terminates it about 30 milliseconds after starting it, as
+it exits; the `SessionEnd` catch-up records that last turn.
+`SessionEnd` ran on every exit tried: print mode, `/clear`, Ctrl-D,
+`/exit` and a hung-up terminal. A plain detached spawn outlived each
+teardown, with no `setsid`.
 
 `dorothy --claude-hook` reads the hook's JSON on stdin:
 `hook_event_name`, `session_id`, `transcript_path` and `cwd`. It notes
@@ -341,11 +386,13 @@ Claude Code owns, and always exits 0. Then:
 1. **Record.** Under the sidecar lock, find the conversation, read from
    its resume point, append what is new, write its rows of
    `conversation_sessions` into the index itself, as the index's lock
-   is not re-entrant, and commit to history, as chat commits each turn.
-   Hooks can overlap, a `Stop` and the `SessionEnd` after it, so a
-   transcript has one writer at a time rather than one writer. With
-   neither the index nor history there is no lock: nothing is recorded,
-   and the next start says so.
+   is not re-entrant, and commit to history, as chat commits each turn,
+   as `turn: <phrase> (claude-code)`. Hooks can overlap, a `Stop` and
+   the `SessionEnd` after it, so a transcript has one writer at a time
+   rather than one writer. Without the index, a hook under history's
+   lock finds the session's conversation by scanning the transcripts for
+   its session event. With neither the index nor history there is no
+   lock: nothing is recorded, and the next start says so.
 2. **Sync** the launch's project, if it is one. A sync that changes the
    store is one history commit, as the store says; one that changes
    nothing commits nothing.
@@ -353,17 +400,20 @@ Claude Code owns, and always exits 0. Then:
    - **The first `Stop`** of a conversation never reviewed asks for a
      review at once.
    - **A later `Stop`** waits `[memory] idle-seconds`, then looks at the
-     tail of Claude Code's transcript: if a line has come since it
-     recorded, a reply or a prompt the user has sent, it does nothing,
-     as a later hook has the conversation. Otherwise it records again
-     and asks, if turns remain that no review has covered.
+     tail of Claude Code's transcript: if a main-thread `user`,
+     `assistant` or `attachment` line has come since it recorded, a
+     reply or a prompt the user has sent, it does nothing, as a later
+     hook has the conversation; the bookkeeping Claude Code appends
+     after a reply does not count. Otherwise it records again and asks,
+     if turns remain that no review has covered.
    - **`SessionEnd`** records and asks if any turn is uncovered.
 
    The recall index's review claims keep two processes from reviewing
-   one conversation at once; without the index, there are no reviews
-   until chat's catch-up. A review is chat's own prompt, schema and
-   `StructuredCall`, through a review function taken out of the TUI's
-   `MemoryService`, which keeps its scheduler.
+   one conversation at once; without the index, a hook asks for no
+   review, and there are none until chat's catch-up. A review is chat's
+   own prompt, schema and `StructuredCall`, through a `Reviewer`
+   (`memory/reviewer.ts`) taken out of the TUI's `MemoryService`, which
+   keeps its scheduler; claims stay with each caller.
 
 **Credentials.** Reviews are billed to Dorothy's credentials, as chat's
 are. The hook loads the `.env` of the checkout `dorothy` runs from, by
@@ -371,8 +421,14 @@ explicit path, never the working directory's, and calls the model with
 `ANTHROPIC_BASE_URL`, `ENABLE_TOOL_SEARCH`, `DOROTHY_LAUNCH` and every
 `CLAUDE_CODE_` and `CLAUDECODE` variable removed from the environment it
 inherited from `claude`, so a review never reaches the stopped gateway
-or the live session. `claude` itself still loads no `.env`; the CLI's
-guide narrows its rule to say so.
+or the live session. The hook runs as `bun --no-env-file`, so the
+project's `.env`, which Bun loads from the working directory and whose
+keys dotenvx would keep over Dorothy's, never reaches it; the recall
+server runs so too. dotenvx prints through the console even when quiet,
+some of it with a key's first characters, so the console is silenced
+around the load and a failure is logged by its code alone. `claude`
+itself still loads no `.env`; the CLI's guide narrows its rule to say
+so.
 
 ### Catch-up
 
@@ -388,10 +444,18 @@ catch-up, and the next start warns that Claude Code ran no hooks, as
 `disableAllHooks`, an untrusted folder, `--bare` or `--safe-mode` would
 cause.
 
+What a hook or a catch-up cannot tell itself, that Claude Code ran no
+hooks or that nothing was recorded for want of a lock, it leaves as a
+one-shot notice in `$XDG_STATE_HOME/dorothy/notices.jsonl`, told at the
+next start of either body, `dorothy --claude` on stderr and chat as a
+notice, and then cleared.
+
 ### Recall in Claude Code
 
 The recall server inherits `DOROTHY_LAUNCH`, and reads the launch's
-notes to find the live session's conversation: it leaves that out of
+notes to find the live session's conversation, the live session being
+the one a hook noted last, else the one `--session-id` named: it
+leaves that out of
 `search`, as chat's `--exclude` does, and names it as `from` in
 `remember`'s writes. Before the first `Stop` there is no conversation
 yet, so nothing is left out and `from` is omitted.
@@ -407,13 +471,14 @@ type and uuid.
 
 New rows are marked.
 
-| Class            | What                                  | Where                                     |
-| ---------------- | ------------------------------------- | ----------------------------------------- |
-| Canonical        | transcripts; events gain `sourceUuid` | `transcripts/<phrase>.jsonl`              |
-| Derived          | the recall index, schema 5            | `$XDG_CACHE_HOME/dorothy/recall.sqlite`   |
-| Ephemeral (new)  | launches and their sessions           | `$XDG_RUNTIME_DIR/dorothy/<launch>.json`  |
-| Log (new)        | the hook's warnings                   | `$XDG_CACHE_HOME/dorothy/claude-hook.log` |
-| Kept aside (new) | unreadable lines, as they were        | `$XDG_STATE_HOME/dorothy/unread/`         |
+| Class            | What                                  | Where                                          |
+| ---------------- | ------------------------------------- | ---------------------------------------------- |
+| Canonical        | transcripts; events gain `sourceUuid` | `transcripts/<phrase>.jsonl`                   |
+| Derived          | the recall index, schema 5            | `$XDG_CACHE_HOME/dorothy/recall.sqlite`        |
+| Ephemeral (new)  | launches and their sessions           | `$XDG_RUNTIME_DIR/dorothy/launches/<launch>/`  |
+| Log (new)        | the hook's warnings                   | `$XDG_CACHE_HOME/dorothy/claude-hook.log`      |
+| Kept aside (new) | unreadable lines, as they were        | `$XDG_STATE_HOME/dorothy/unread/`              |
+| Kept aside (new) | notices a hook leaves                 | `$XDG_STATE_HOME/dorothy/notices.jsonl`        |
 
 The index gains `conversation_sessions`, each `sourceSession` any of a
 conversation's session events names, so a hook finds its conversation
@@ -428,8 +493,8 @@ given one.
 - `dorothy --claude [args...]` gains sync, the block, recall,
   permissions and auto memory off (delivery), and hooks, the launch's
   notes and catch-up (recording).
-- `dorothy --claude-hook [--catch-up <launch>]`: the hooks' command,
-  listed in usage as internal.
+- `dorothy --claude-hook [--catch-up <launch> [--session <id>]]`: the
+  hooks' command, listed in usage as internal.
 - `dorothy --claude-hook --reread` and `--dismiss <session id>`: the
   unreadable lines, read again or silenced.
 - `dorothy --check` also lists the unreadable lines kept aside, and says
@@ -463,11 +528,15 @@ Recording:
   pure.
 - `memory/src/bodies/record.ts`: recording a session under the lock.
 - `memory/src/bodies/hook.ts`: `--claude-hook`, its cadence, catch-up,
-  unreadable lines and log.
-- `memory/src/memory/service.ts` and `review.ts`: the review function
-  out of `MemoryService`.
+  `--reread` and `--dismiss`.
+- `memory/src/bodies/launches.ts`: the launch's notes; `unread.ts`: the
+  lines kept aside and the notices; `log.ts`: the hook's log.
+- `memory/src/memory/reviewer.ts`: the `Reviewer`, out of
+  `MemoryService`, which chat's service and the hook share.
 - `memory/src/transcript.ts`: `sourceUuid`, and an event's given time.
 - `cli/src/claude.ts`: the launch id, notes, hooks and catch-up.
+- `cli/src/claude-hook.ts`: `--claude-hook`, its environment and
+  Dorothy's `.env` loaded by path.
 
 Each package's `AGENTS.md` changes with it, `memory`'s gaining a nested
 `src/bodies/AGENTS.md` as it is at its budget.
