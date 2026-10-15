@@ -34,7 +34,7 @@ import { dataRoot } from "../facts/store.js";
 import { commandHistory } from "../history/commands.js";
 import { indexCatalogue } from "../memory/catalogue.js";
 import { REVIEW_TIMEOUT_MS } from "../memory/review.js";
-import { Reviewer } from "../memory/reviewer.js";
+import { Reviewer, type ReviewProblem } from "../memory/reviewer.js";
 import { type HistoryHandle, readSidecar } from "../memory/sidecar.js";
 import { vocabularyPath } from "../memory/vocabulary.js";
 import { identify } from "../projects/identify.js";
@@ -97,6 +97,20 @@ const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
 // A claim outlives the longest review by this much, as chat's do.
 const CLAIM_MARGIN_MS = 30_000;
+
+const PROBLEMS: Record<ReviewProblem["kind"], string> = {
+    transcript: "its transcript can't be read",
+    call: "the review call failed",
+    notes: "the review's notes were not usable",
+    save: "its notes can't be saved",
+    tags: "tags are paused: the vocabulary can't be read",
+};
+
+// A reviewer's warning as the log may hold it.
+const reviewProblem = (problem: ReviewProblem) =>
+    problem.phrase === null
+        ? `review: ${PROBLEMS[problem.kind]}`
+        : `review of ${problem.phrase}: ${PROBLEMS[problem.kind]}`;
 
 // A hook's JSON on stdin, or null for one it cannot use.
 export function parseHookInput(text: string): HookInput | null {
@@ -377,7 +391,10 @@ async function stepsFor(
                     persona: deps.persona,
                     now,
                     entries: () => loaded.entries,
-                    warn: (message) => log.warn(message),
+                    // The log names the phrase and the kind alone: the
+                    // message holds the title, or the model's words.
+                    warn: (_message, problem) =>
+                        log.warn(reviewProblem(problem)),
                     cost: (usd) =>
                         log.info(`review of ${phrase} cost $${usd.toFixed(4)}`),
                 });

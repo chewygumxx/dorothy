@@ -188,7 +188,13 @@ export type ReviewOutcome =
           model: string;
           costUsd: number;
       }
-    | { ok: false; reason: string; costUsd: number };
+    | {
+          ok: false;
+          reason: string;
+          costUsd: number;
+          // Where it failed: the call, or the notes it returned.
+          stage: "call" | "notes";
+      };
 
 // One line per concept she may see; a broader concept she may not see
 // is left unnamed.
@@ -458,7 +464,7 @@ export async function runReview({
         ...(signal === undefined ? {} : { signal }),
     });
     if (!outcome.ok) {
-        return outcome;
+        return { ...outcome, stage: "call" };
     }
     const checked = validateReview(outcome.output, readIds, tagging);
     return checked.ok
@@ -470,5 +476,10 @@ export async function runReview({
               model: outcome.model,
               costUsd: outcome.costUsd,
           }
-        : { ok: false, reason: checked.reason, costUsd: outcome.costUsd };
+        : {
+              ok: false,
+              reason: checked.reason,
+              costUsd: outcome.costUsd,
+              stage: "notes",
+          };
 }

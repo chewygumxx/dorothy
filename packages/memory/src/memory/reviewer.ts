@@ -79,8 +79,16 @@ export type ReviewerOptions = {
     // The catalogue as last seen: the block a review is given, the
     // names of conversations it read, and the carriers of tags.
     entries: () => Iterable<Entry>;
-    warn: (message: string) => void;
+    // A warning for the user, and what went wrong by kind alone, for a
+    // log that must not hold a conversation's title or a model's words.
+    warn: (message: string, problem: ReviewProblem) => void;
     cost: (usd: number) => void;
+};
+
+// What went wrong: the conversation, null for tags, and the kind.
+export type ReviewProblem = {
+    phrase: string | null;
+    kind: "transcript" | "call" | "notes" | "save" | "tags";
 };
 
 // What a review wrote: notes reviewed, or only marked (nothing new to
@@ -139,6 +147,7 @@ export class Reviewer {
                 this.#vocabularyWarned = true;
                 this.#options.warn(
                     `memory: tags are paused: ${path}: ${read.reason}`,
+                    { phrase: null, kind: "tags" },
                 );
             }
             return null;
@@ -245,13 +254,16 @@ export class Reviewer {
         const vocabulary = await this.readVocabulary();
         const tagging = vocabulary !== null;
         const name = current?.title ?? phrase;
-        const fail = (reason: string) =>
-            this.#options.warn(`memory: couldn't review "${name}": ${reason}`);
+        const fail = (reason: string, kind: ReviewProblem["kind"]) =>
+            this.#options.warn(`memory: couldn't review "${name}": ${reason}`, {
+                phrase,
+                kind,
+            });
         let turns: ResumedTurn[];
         try {
             turns = (await readTranscript(join(dir, `${phrase}.jsonl`))).turns;
         } catch (error) {
-            fail(describeError(error));
+            fail(describeError(error), "transcript");
             return { kind: "none" };
         }
         const reads = pendingReads(turns, current?.appraisals ?? {}, (of) =>
@@ -333,7 +345,7 @@ export class Reviewer {
         }
         const at = this.#options.now().toISOString();
         if (!outcome.ok) {
-            fail(outcome.reason);
+            fail(outcome.reason, outcome.stage);
             const failed = await updateSidecar(
                 dir,
                 phrase,
@@ -382,6 +394,7 @@ export class Reviewer {
         if (result.kind === "failed") {
             this.#options.warn(
                 `memory: couldn't save notes on "${name}": ${result.reason}`,
+                { phrase, kind: "save" },
             );
             return { kind: "none" };
         }

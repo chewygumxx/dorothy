@@ -13,7 +13,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CONFIG, newPhrase, type StructuredCall } from "@dorothy/core";
-import { Reviewer } from "./reviewer.js";
+import { Reviewer, type ReviewProblem } from "./reviewer.js";
 import { readSidecar } from "./sidecar.js";
 
 const NOW = new Date("2026-10-15T09:00:00.000Z");
@@ -94,6 +94,41 @@ describe("Reviewer", () => {
         expect(reviewed.kind).toBe("marked");
         expect(said).toEqual([
             `memory: couldn't review "${PHRASE}": no credentials`,
+        ]);
+    });
+
+    it("names what went wrong by kind beside the warning", async () => {
+        const problems: ReviewProblem[] = [];
+        const options = {
+            dir,
+            config: DEFAULT_CONFIG.memory,
+            index: null,
+            vocabulary: null,
+            versions: null,
+            persona: "You are Dorothy.",
+            now: () => NOW,
+            entries: () => [],
+            warn: (_message: string, problem: ReviewProblem) =>
+                problems.push(problem),
+            cost: () => {},
+        };
+        await new Reviewer({
+            ...options,
+            call: async () => ({ ok: false, reason: "words", costUsd: 0 }),
+        }).review(PHRASE, new AbortController().signal);
+        await new Reviewer({
+            ...options,
+            now: () => new Date(NOW.getTime() + 2 * 3_600_000),
+            call: async () => ({
+                ok: true,
+                output: { title: "a" },
+                model: "m",
+                costUsd: 0,
+            }),
+        }).review(PHRASE, new AbortController().signal);
+        expect(problems).toEqual([
+            { phrase: PHRASE, kind: "call" },
+            { phrase: PHRASE, kind: "notes" },
         ]);
     });
 

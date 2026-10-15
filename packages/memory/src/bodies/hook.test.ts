@@ -420,6 +420,43 @@ describe("runClaudeHook", () => {
         );
     });
 
+    it("logs a failed review by its kind, never its title or the model's words", async () => {
+        const answers = [
+            {
+                ok: true as const,
+                output: { ...NOTES, title: "Tea at the Ritz" },
+                model: "m",
+                costUsd: 0.01,
+            },
+            {
+                ok: false as const,
+                reason: "I won't summarise the tea secrets",
+                costUsd: 0,
+            },
+        ];
+        const scripted: StructuredCall = async () =>
+            answers.shift() ?? { ok: false, reason: "none left", costUsd: 0 };
+        await runClaudeHook(
+            { kind: "hook" },
+            { ...deps(input("Stop")), call: scripted },
+        );
+        await writeFile(
+            claude,
+            `${userLine("u1", 1, "hello")}\n${assistantLine("a1", 2, [text("Hi.")])}\n${userLine("u2", 3, "more")}\n${assistantLine("a2", 4, [text("Yes.")])}\n`,
+        );
+        await runClaudeHook(
+            { kind: "catch-up", launch: LAUNCH, session: null },
+            { ...deps(""), call: scripted },
+        );
+        expect(answers).toEqual([]);
+        const [name] = await conversations();
+        const phrase = (name ?? "").replace(/\.jsonl$/, "");
+        const log = await readFile(hookLogPath(env), "utf8");
+        expect(log).toContain(`review of ${phrase}: the review call failed`);
+        expect(log).not.toContain("Tea at the Ritz");
+        expect(log).not.toContain("tea secrets");
+    });
+
     it("reads a halted session again once it can, and dismisses one", async () => {
         await writeFile(claude, `${userLine("u1", 1, "hello")}\n{bad\n`);
         await runClaudeHook({ kind: "hook" }, deps(input("Stop")));
