@@ -61,9 +61,10 @@ found a dozen faults the plan had mandated, all fixed in rounds of
 their own. The probe adopted this repository's own
 `.agents/memory/` into a scratch store and went through every row of the
 sync it was written to check, and every step read as expected. At the
-head of the branch `bun run check` passes with 1,512 tests across 80
+head of the branch `bun run check` passes with 1,533 tests across 80
 files, up from 1,234. A final whole-branch review found fourteen more
-faults, all fixed in one wave (see Final review).
+faults, all fixed in one wave (see Final review), and five follow-ups
+closed the gaps it left (see Follow-up).
 
 ## The probe
 
@@ -280,7 +281,7 @@ the reason and what it costs if wrong.
   `MEMORY.md` entry's when there is one, else the store's, else its
   name, as the spec says.
 - `synced` is keyed by root within a project, `{ root: { name: hash } }`,
-  since become `{ root: { dir, facts } }` (see Final review).
+  since become `{ root: { dir: { name: hash } } }` (see Follow-up).
   One map per project let two checkouts of one remote ping-pong and a
   stale clone silently roll the store back. The spec's example and text
   changed to match; `projects.json` is unreleased, so there is no
@@ -323,7 +324,7 @@ fixed them all, each with a regression test:
    a truncated block. It now redacts to the end of the text, linearly.
 2. **Quoted values.** `password: "correct horse battery"` leaked after
    its first word; a quoted value is now redacted to its closing quote,
-   at most 512 characters.
+   at most 512 characters (a cap since lifted, see Follow-up).
 3. **Provenance on every write.** A retirement, revival, move or sync's
    retirement kept the old provenance, so when left uncommitted the
    sweep made the fact the user's. Every write now sets `provenance.at`,
@@ -331,7 +332,7 @@ fixed them all, each with a regression test:
 4. **An edited memory directory.** Changing `memoryDir` retired every
    fact. Each root's record now names the directory it synced, and a
    record of another directory counts as none: a first sync, retiring
-   nothing.
+   nothing. Records are now kept per directory (see Follow-up).
 5. **Claude Code's index entries.** `indexTitles` reads the one-line
    `- [T](name.md)` form with a hook after it, under `-` or `*`.
 6. **A hand's lines in the index.** `isGeneratedIndex` ends an entry at a
@@ -339,7 +340,7 @@ fixed them all, each with a regression test:
    description. A description wrapping onto a list marker escapes it.
 7. **Secrets in registry reasons.** A bad project is named by its place,
    never its key, and a memory directory with a control character or NUL
-   is refused without repeating it.
+   is refused without repeating it; since, any hidden character too.
 8. **Facts never indexed.** No caller passed the data directory; the
    catalogue, `--tags`, `--edit-tags` and the recall server now do.
 9. **`--sync`'s report** says "1 fact" in the singular,
@@ -349,6 +350,38 @@ fixed them all, each with a regression test:
     repository's version kept and reported.
 13. The spec's known risks name snake-case files and lost hooks.
 14. This report, made true of the scrub and the index.
+
+## Follow-up
+
+The last review's gaps, approved by the user and fixed each in its own
+commit with a regression test written to fail first:
+
+1. **Escaped quotes.** `password: "abc\"def ghi"` leaked `def ghi`. A
+   quoted value now steps over a backslash and what it escapes.
+2. **Long quoted values.** The 512-character cap leaked a longer
+   secret's tail, and a second scrub of an unclosed quote redacted more.
+   A quoted value now runs to its closing quote or its line's end. A
+   repeated group in the pattern turned out to cost the engine a frame a
+   character: past some hundred thousand it stopped matching and kept the
+   secret, after some 250 ms. So the pattern matches only the value's
+   first character and `quotedEnd` scans the rest in a loop. Timing tests
+   on about 3 MB of adversarial input (openings with no closing quote,
+   keys inside one unclosed value, runs of quotes and backslashes,
+   escaped quotes) each check the exact output; at 4 MB the slowest
+   takes about 50 ms, growing linearly.
+3. **PGP private keys.** `-----BEGIN PGP PRIVATE KEY BLOCK-----` is
+   redacted, whole or cut short; a public key block is left alone.
+4. **Hidden characters in `memoryDir`.** A bidirectional override, a
+   zero width or a line separator is refused, by the rule facts use,
+   naming the code point and never the path.
+5. **Switching `memoryDir` back.** A root's record named only its last
+   directory, so going from A to B and back made A's out-of-date files
+   win a first sync. `synced` is now
+   `{ root: { dir: { name: hash } } }`; a sync uses and replaces only
+   its root and current directory's record and keeps the rest, never
+   pruned. There is no migration from `{ dir, facts }`, which only this
+   branch wrote. The spec's example and text and the projects guide say
+   so.
 
 ## Verification
 
@@ -364,13 +397,13 @@ fixed them all, each with a regression test:
 $ bun test
 bun test v1.4.2 (744846f84)
 
- 1512 pass
+ 1533 pass
  0 fail
- 135409 expect() calls
-Ran 1512 tests across 80 files. [17.67s]
+ 135470 expect() calls
+Ran 1533 tests across 80 files. [20.36s]
 ```
 
-- The tests numbered 1,234 before this branch and 1,512 now.
+- The tests numbered 1,234 before this branch and 1,533 now.
 - The probe above, against this repository's own memory, in scratch
   directories only.
 
@@ -416,7 +449,13 @@ d1f44b9 fix(memory): Index the store's facts on every sync
 7f947c6 fix(memory): Say what --sync moved, and plainly
 752939c test(memory): Pin first-sync conflicts, snake case
 d3abdd5 docs: Name snake case and lost hooks as risks
-(this commit) docs: Report the final review's fixes
+2607717 docs: Report the final review's fixes
+c04e8c7 fix(memory): Step over escaped quotes in secrets
+e55585a fix(memory): Redact a quoted secret to its end
+08d4be8 fix(memory): Redact PGP private key blocks
+19a6914 fix(memory): Refuse hidden characters in memoryDir
+3d4391a fix(memory): Keep a sync record per directory
+(this commit) docs: Report the follow-up fixes
 ```
 
 ## Known limitations
@@ -466,8 +505,9 @@ changes behaviour the specs pin:
   fact's description.
 - **Sync.** A store-retired fact's `synced` row is deleted, so the file
   reappearing on a branch switch revives it; a recorder that throws
-  after writes reports a failure and loses the report; per-root `synced`
-  maps of deleted checkouts are never pruned.
+  after writes reports a failure and loses the report; the `synced`
+  records of deleted checkouts and of directories no longer used are
+  never pruned.
 - **Commands.** `--retire --from` with no match
   exits 0 silently; `--sync -x` takes `-x` as a path; `--sync` on a
   regular file errors as "sync failed"; `--facts` sweeps history for a
