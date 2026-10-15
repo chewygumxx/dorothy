@@ -46,7 +46,7 @@ linker fails an undeclared or internal import under Bun and `tsc`.
 
 ## Working rules
 
-- Work on a plain branch in the main checkout, never in a worktree.
+- Work on a branch, in the main checkout or in a worktree.
 - Tests and probes never touch real user data (`$XDG_DATA_HOME/dorothy`,
   `$XDG_CACHE_HOME/dorothy`): every root, key and environment is passed in.
 - `.env` is committed encrypted by dotenvx: set values only with
@@ -79,8 +79,8 @@ Design work starts with `brainstorming`. Specs go in `docs/specs/`, plans
 in `docs/plans/`, written with `writing-plans` and carried out with
 `subagent-driven-development`. Bugs start with `systematic-debugging`, and
 nothing is claimed done without `verification-before-completion`. The
-skills are in `.agents/skills/`; where one names another path, a worktree
-or `docs/superpowers/`, these rules win.
+skills are in `.agents/skills/`; where one names another path, these
+rules win, and a worktree goes wherever the user's tools put it.
 
 `docs/roadmap.md` orders the phases. Once a phase merges, revise the
 roadmap as its Revising section says before starting the next, and add
