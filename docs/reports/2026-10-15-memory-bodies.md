@@ -799,5 +799,3 @@ variables, prompts sent through Herdr.
   those plain turns recorded as hers when it is next resumed in her
   launch.
 - A session resumed by id can appear in recall until its first reply.
-- `dorothy --resume` of a Claude Code conversation is not refused: chat
-  would write to it, and compact it.
