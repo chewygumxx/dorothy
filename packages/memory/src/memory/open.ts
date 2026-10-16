@@ -548,6 +548,18 @@ export async function openMemory({
     if (resume !== null) {
         try {
             const read = await readTranscript(path);
+            // Claude Code's conversations are its hooks' to write, and
+            // Dorothy's compaction does not run on them.
+            if (read.claudeSession !== null) {
+                await closeInOrder([
+                    () => launched?.close(),
+                    () => index?.close(),
+                ]);
+                return {
+                    ok: false,
+                    message: `cannot resume ${resume}: it is a Claude Code conversation; resume it there with dorothy --claude --resume ${read.claudeSession}`,
+                };
+            }
             history = read.turns;
             costUsd = read.costUsd;
             if (read.skipped > 0) {

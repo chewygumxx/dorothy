@@ -295,6 +295,9 @@ export type TranscriptRead = {
     turns: ResumedTurn[];
     skipped: number;
     costUsd: number;
+    // The Claude Code session that last joined a Claude Code
+    // conversation; null for a chat.
+    claudeSession: string | null;
 };
 
 export async function readTranscript(path: string): Promise<TranscriptRead> {
@@ -309,6 +312,7 @@ export function parseTranscript(text: string): TranscriptRead {
     let lookups: RecallEvent[] = [];
     let skipped = 0;
     let costUsd = 0;
+    let claudeSession: string | null = null;
     for (const line of text.split("\n")) {
         if (line.trim() === "") {
             continue;
@@ -334,6 +338,14 @@ export function parseTranscript(text: string): TranscriptRead {
             reply = null;
             continue;
         }
+        if (
+            (event as { kind?: unknown } | null)?.kind === "session" &&
+            sourceOf(event as { source?: unknown }) === "claude-code"
+        ) {
+            const session = (event as { sourceSession?: unknown })
+                .sourceSession;
+            claudeSession = typeof session === "string" ? session : "";
+        }
         if ((event as { kind?: unknown } | null)?.kind === "recall") {
             const recall = toRecall(event);
             if (recall === null) {
@@ -358,7 +370,7 @@ export function parseTranscript(text: string): TranscriptRead {
             reply = turn.role === "assistant" ? resumed : null;
         }
     }
-    return { turns, skipped, costUsd };
+    return { turns, skipped, costUsd, claudeSession };
 }
 
 // Chats are private: new transcripts are the user's alone.

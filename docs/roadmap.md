@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-10-15
+mtime: 2026-10-16
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -60,13 +60,21 @@ memory system as it stands may be reworked rather than extended.
 Findings: [objectives](./reports/2026-10-15-objectives.md). The store:
 [spec](./specs/2026-10-15-memory-store-design.md),
 [plan](./plans/2026-10-15-memory-store.md),
-[report](./reports/2026-10-15-memory-store-implementation.md).
+[report](./reports/2026-10-15-memory-store-implementation.md). Bodies:
+[spec](./specs/2026-10-15-memory-bodies-design.md),
+[delivery plan](./plans/2026-10-15-memory-bodies-delivery.md),
+[recording plan](./plans/2026-10-15-memory-bodies-recording.md),
+[report](./reports/2026-10-15-memory-bodies.md),
+[deferred](./deferred/2026-10-16_memory-bodies-deferred.md); merged in
+#22 and #24.
 
-- **Status**: Store Built; Bodies Pending Design
+- **Status**: Store and Bodies Built; Layers and Learning Pending Design
 - **Required**: Requisites Fulfilled
-- **Rationale**: Wherever she goes, her memory follows with her. In
-  Claude Code she has her identity but none of her memory, and every
-  objective after this one builds on what she remembers.
+- **Rationale**: Wherever she goes, her memory follows with her. Claude
+  Code now has her memory and records her sessions, but facts reach her
+  only through recall: what is always in context, its budget, and
+  reviews that distil facts are the third part, and every objective
+  after this one builds on what she remembers.
 
 ### Model Providers
 
@@ -179,8 +187,25 @@ Found but not scheduled, each with its source.
 
 - Sweeps of deferred findings:
   [memory history](./deferred/2026-10-08_memory-history-deferred.md),
-  [tags](./deferred/2026-10-08_tags-deferred.md) and
-  [compaction test gaps](./deferred/2026-10-07_compaction-test-gaps.md).
+  [tags](./deferred/2026-10-08_tags-deferred.md),
+  [compaction test gaps](./deferred/2026-10-07_compaction-test-gaps.md)
+  and [memory bodies](./deferred/2026-10-16_memory-bodies-deferred.md).
+- Launch notes kept in the state directory rather than the runtime one,
+  so a launch killed by a crash or a power-off is still caught up after
+  a reboot (memory bodies report).
+- Reviews from Claude Code's hooks through a user's own proxy, passed as
+  a variable of Dorothy's own, since the hook drops
+  `ANTHROPIC_BASE_URL` (memory bodies report).
+- Subagents' transcripts as conversations of their own, and a forked
+  session linked to the conversation it forked from (memory bodies
+  spec, Later; report).
+- Turn times stored in UTC while `dateCreated` and the `after` and
+  `before` filters use the local date (memory bodies, delivery's hand
+  check).
+- The store's open gaps: snake-case memory files skipped, regenerating
+  `MEMORY.md` replacing hook lines, and history keeping the provenance
+  an outside writer claims; and a `--fact` editor like `--memory`
+  (memory store and bodies specs, Later).
 - Forgetting a conversation, which must reach history and the mirror
   (memory history spec, Later).
 - Consolidating sealed bundles, and more than one mirror (memory history
@@ -300,3 +325,11 @@ In order of completion.
   fallback to Claude Code, and Learning, Extensions and Reach follow
   Topic Overviews. Candidates gain a probe of open models behind Claude
   Code, and a test of what the identity costs her agentic ability.
+- 2026-10-16: Dorothy's Memory has built its bodies: Claude Code gets
+  her memory block, recall and `remember`, and its sessions are
+  recorded and reviewed as her conversations. Layers and learning, the
+  memory's third part, is next, so the phase stays first. Candidates
+  gain launch notes that outlive a reboot, reviews through a user's
+  proxy, subagents' and forks' conversations, local dates for turn
+  times, the store's open gaps, and a sweep of the bodies' deferred
+  findings.

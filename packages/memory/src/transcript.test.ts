@@ -277,6 +277,7 @@ describe("readTranscript", () => {
             ].join("\n"),
         );
         expect(await readTranscript(path)).toEqual({
+            claudeSession: null,
             turns: [
                 { role: "user", text: "a" },
                 { role: "assistant", text: "b" },
@@ -304,6 +305,7 @@ describe("readTranscript", () => {
             ].join("\n"),
         );
         expect(await readTranscript(path)).toEqual({
+            claudeSession: null,
             turns: [
                 { role: "user", text: "hello" },
                 {
@@ -370,7 +372,28 @@ describe("parseTranscript", () => {
             { role: "assistant", text: "Hello" },
         ]);
         expect(parsed.skipped).toBe(1);
+        expect(parsed.claudeSession).toBeNull();
         expect(await readTranscript(path)).toEqual(parsed);
+    });
+
+    it("names the Claude Code session that last joined", () => {
+        const session = (sourceSession: string) =>
+            JSON.stringify({
+                v: 1,
+                kind: "session",
+                at: "2026-10-16T00:00:00.000Z",
+                phrase: "p",
+                sdkSessionId: "",
+                model: "m",
+                promptHash: "",
+                resumed: false,
+                source: "claude-code",
+                sourceSession,
+            });
+        expect(
+            parseTranscript([session("first"), session("second")].join("\n"))
+                .claudeSession,
+        ).toBe("second");
     });
 });
 

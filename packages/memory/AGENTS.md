@@ -49,10 +49,10 @@ is the only file importing `@modelcontextprotocol/sdk`.
   and recorded by `sessionRecorder` (`record.ts`). Each starts from the
   `SessionStart` values memory renders, handed to the CLI's `connect`. It
   records chat's project and, with memory on, syncs it at the start and
-  after each turn. `preview.ts` gives `--dump-context` a start without
-  history. `catalogue.ts`'s `indexCatalogue` loads each conversation's
-  sidecar, visits and reads from the recall index, for `openMemory`,
-  `previewStart` and `--list`.
+  after each turn; it refuses to resume a Claude Code conversation.
+  `preview.ts` gives `--dump-context` a start without history.
+  `catalogue.ts`'s `indexCatalogue` loads each conversation's sidecar,
+  visits and reads from the index for `openMemory`, `previewStart` and `--list`.
 - `memory/sidecar.ts`: the notes, kept in `<phrase>.meta.json` beside the
   transcript. `service.ts`'s `MemoryService` builds the memory block each
   session starts with, frozen for the session, and schedules reviews

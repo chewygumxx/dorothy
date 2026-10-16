@@ -752,6 +752,57 @@ describe("openMemory", () => {
         }
     });
 
+    it("refuses to resume a Claude Code conversation", async () => {
+        const phrase = "tumble-orchid-vapor-lantern";
+        const session = "0f8fad5b-d9cb-469f-a165-70867728950e";
+        await mkdir(transcriptDir(env), { recursive: true });
+        await writeFile(
+            transcriptPath(phrase, env),
+            `${[
+                {
+                    v: 1,
+                    kind: "session",
+                    at: "2026-10-16T02:52:00.000Z",
+                    phrase,
+                    sdkSessionId: "",
+                    model: "m",
+                    promptHash: "",
+                    resumed: false,
+                    source: "claude-code",
+                    sourceSession: session,
+                },
+                {
+                    v: 1,
+                    kind: "user",
+                    at: "2026-10-16T02:52:01.000Z",
+                    text: "hello",
+                },
+            ]
+                .map((event) => JSON.stringify(event))
+                .join("\n")}\n`,
+        );
+        const before = await readFile(transcriptPath(phrase, env), "utf8");
+        const opened = await openMemory({
+            resume: phrase,
+            call: quiet,
+            prompts,
+            connect: () => {
+                throw new Error("no session expected");
+            },
+            recallLaunch: (launched) => ({ command: "x", args: [launched] }),
+            env,
+        });
+        expect(opened.ok).toBe(false);
+        if (!opened.ok) {
+            expect(opened.message).toBe(
+                `cannot resume ${phrase}: it is a Claude Code conversation; resume it there with dorothy --claude --resume ${session}`,
+            );
+        }
+        expect(await readFile(transcriptPath(phrase, env), "utf8")).toBe(
+            before,
+        );
+    });
+
     it("starts sessions with memory's start and records them", async () => {
         const starts: SessionStart[] = [];
         const inner = new FakeSession();
