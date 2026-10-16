@@ -17,6 +17,7 @@ import type { Fact } from "../facts/file.js";
 import { PERSONAL, putFact, type Scope } from "../facts/store.js";
 import { EMPTY_SIDECAR, type Sidecar, sidecarPath } from "../memory/sidecar.js";
 import {
+    listTags,
     NO_CLUSTER,
     NO_FACT,
     NO_TAG,
@@ -646,6 +647,33 @@ describe("search by a tag facts carry", () => {
         expect(() => search(index, { tags: ["secret"] }, withProject)).toThrow(
             `${NO_TAG}: secret.`,
         );
+    });
+
+    it("lists a tag a live fact carries, though only hidden conversations do besides", async () => {
+        await putFact(dir, PERSONAL, fact("poem", { tags: ["k00000002"] }));
+        // A retired fact's tags count for nothing here.
+        await putFact(
+            dir,
+            PERSONAL,
+            fact("old", {
+                tags: ["k00000002"],
+                retired: { at: day(6), by: "user", why: "Stopped." },
+            }),
+        );
+        await syncIndex(
+            index,
+            dir,
+            Date.parse(day(20)),
+            join(dir, "tags.json"),
+            dir,
+        );
+        const tags = listTags(index, {}, withProject).results;
+        expect(
+            tags.map((tag) => [tag.name, tag.conversations, tag.facts]),
+        ).toEqual([
+            ["drinks", 0, 1],
+            ["secret", 0, 1],
+        ]);
     });
 });
 

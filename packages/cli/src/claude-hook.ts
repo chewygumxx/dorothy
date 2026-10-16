@@ -1,0 +1,229 @@
+// vim:set expandtab shiftwidth=4 filetype=typescript:
+// SPDX-License-Identifier: GPL-3.0-only
+
+//
+//
+// ~chewygumxx/dorothy.git
+// ::: :/packages/cli/src/claude-hook.ts
+//
+//
+
+// dorothy --claude-hook: memory's hook process, given what its reviews
+// need. Claude Code runs it with claude's environment: the gateway's
+// URL, the launch, and claude's own variables and sign-in. Memory keeps
+// that environment, to find the launch in it. Reviews run in
+// process.env, which the Agent SDK reads at each call: it loses those
+// variables before Dorothy's own .env is loaded by path from this
+// checkout, never the working directory's. A review is then billed to
+// her credentials, as chat's are, and never reaches the stopped gateway
+// or the live session.
+
+import { appendFileSync, mkdirSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { type Env, type StructuredCall, xdgDir } from "@dorothy/core";
+import type { HookDeps, HookLog, HookMode } from "@dorothy/memory/claude-hook";
+import { config } from "@dotenvx/dotenvx";
+
+// What a review must not inherit from claude, beside every CLAUDE_CODE_
+// variable.
+export const REVIEW_DROPPED: readonly string[] = [
+    "ANTHROPIC_BASE_URL",
+    "ENABLE_TOOL_SEARCH",
+    "DOROTHY_LAUNCH",
+    "CLAUDECODE",
+];
+
+const dropped = (name: string) =>
+    REVIEW_DROPPED.includes(name) || name.startsWith("CLAUDE_CODE_");
+
+export function reviewEnv(env: Env): Env {
+    return Object.fromEntries(
+        Object.entries(env).filter(([name]) => !dropped(name)),
+    );
+}
+
+// The checkout this program runs from: three up from packages/cli/src.
+export const checkoutRoot = resolve(import.meta.dir, "..", "..", "..");
+
+// A .env, by its path and its keys file's, into an environment. A
+// variable already set is kept, as the entry guard's config() keeps it.
+// A hook owns no terminal and dotenvx prints its errors, some with a
+// key's first characters, through console even when quiet: so nothing it
+// prints is let out, and its failure comes back as a code alone.
+export function loadDotenv(
+    path: string,
+    keys: string,
+    into: Env,
+): string | null {
+    const { error: logError, log, warn, info } = console;
+    const silent = () => {};
+    console.error = console.log = console.warn = console.info = silent;
+    try {
+        const { error } = config({
+            path,
+            envKeysFile: keys,
+            processEnv: into as Record<string, string>,
+            quiet: true,
+            ignore: ["MISSING_ENV_FILE"],
+        });
+        return error === undefined ? null : failureName(error);
+    } finally {
+        Object.assign(console, { error: logError, log, warn, info });
+    }
+}
+
+// Only a code or a name, never a message, which may hold key characters.
+function failureName(error: unknown): string {
+    const { code, name } = (error ?? {}) as { code?: unknown; name?: unknown };
+    return typeof code === "string"
+        ? code
+        : typeof name === "string"
+          ? name
+          : "an unknown error";
+}
+
+type Agent = { call: StructuredCall; persona: string };
+
+export type HookCliDeps = {
+    // process.env: claude's environment, which reviews read at each call.
+    env?: Env;
+    // The checkout whose .env is loaded.
+    root?: string;
+    // This program as a command, for the detached catch-up.
+    self?: readonly string[];
+    // Returns the code of a failure to load, if it had one.
+    load?: (path: string, keys: string, into: Env) => string | null | undefined;
+    agent?: () => Promise<Agent>;
+    run?: (mode: HookMode, deps: HookDeps) => Promise<number>;
+    // Memory's hook entry point, imported once it is needed.
+    memory?: () => Promise<typeof import("@dorothy/memory/claude-hook")>;
+};
+
+const describeError = (error: unknown) =>
+    error instanceof Error ? error.message : String(error);
+
+async function loadAgent(): Promise<Agent> {
+    const { prepareCliHome, structuredCall, systemPrompt } = await import(
+        "@dorothy/agent"
+    );
+    prepareCliHome();
+    return { call: structuredCall(), persona: systemPrompt };
+}
+
+// For the modes that never review, and for a hook whose agent cannot
+// load: the call fails, and the reviewer logs why.
+const refusing =
+    (reason: string): StructuredCall =>
+    async () => ({ ok: false, reason, costUsd: 0 });
+
+// The hook's log, from memory; if memory cannot load, a bare append to
+// the same file, so that the failure still has somewhere to be said.
+async function openLog(env: Env, deps: HookCliDeps): Promise<HookLog> {
+    try {
+        return (await (deps.memory ?? loadMemory)()).hookLog(env);
+    } catch {
+        const path = join(
+            xdgDir(env, "XDG_CACHE_HOME", ".cache"),
+            "dorothy",
+            "claude-hook.log",
+        );
+        const write = (level: string) => (message: string) => {
+            try {
+                mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+                appendFileSync(
+                    path,
+                    `${new Date().toISOString()} ${level} ${process.pid} ${message.replaceAll(/\s*\n\s*/g, " ")}\n`,
+                    { mode: 0o600 },
+                );
+            } catch {
+                // Unwritable: said nowhere.
+            }
+        };
+        return {
+            info: write("info"),
+            warn: write("warn"),
+            error: write("error"),
+        };
+    }
+}
+
+const loadMemory = () => import("@dorothy/memory/claude-hook");
+
+// A hook and a catch-up exit 0 whatever goes wrong, and write nothing to
+// the terminal: what went wrong is in the hook's log.
+export async function runHook(
+    mode: HookMode,
+    deps: HookCliDeps = {},
+): Promise<number> {
+    const env = deps.env ?? process.env;
+    if (mode.kind !== "hook" && mode.kind !== "catch-up") {
+        return runOnce(mode, deps, env);
+    }
+    try {
+        return await runOnce(mode, deps, env);
+    } catch (error) {
+        (await openLog(env, deps)).error(
+            `the hook could not run (${describeError(error)})`,
+        );
+        return 0;
+    }
+}
+
+async function runOnce(
+    mode: HookMode,
+    deps: HookCliDeps,
+    env: Env,
+): Promise<number> {
+    const given: Env = { ...env };
+    for (const name of Object.keys(env)) {
+        if (dropped(name)) {
+            delete env[name];
+        }
+    }
+    const root = deps.root ?? checkoutRoot;
+    let loadFailure: string | null | undefined = null;
+    try {
+        loadFailure = (deps.load ?? loadDotenv)(
+            join(root, ".env"),
+            join(root, ".env.keys"),
+            env,
+        );
+    } catch (error) {
+        loadFailure = failureName(error);
+    }
+    if (loadFailure) {
+        // Without her credentials a review fails, and says so in the log.
+        (await openLog(env, deps)).warn(
+            `Dorothy's .env could not be loaded (${loadFailure})`,
+        );
+    }
+    let agent: Agent = {
+        call: refusing("reviews are not run here"),
+        persona: "",
+    };
+    if (mode.kind === "hook" || mode.kind === "catch-up") {
+        try {
+            agent = await (deps.agent ?? loadAgent)();
+        } catch (error) {
+            agent = {
+                call: refusing(
+                    `the agent could not load (${describeError(error)})`,
+                ),
+                persona: "",
+            };
+        }
+    }
+    const run = deps.run ?? (await (deps.memory ?? loadMemory)()).runClaudeHook;
+    return run(mode, {
+        env: given,
+        call: agent.call,
+        persona: agent.persona,
+        // As --claude passes it: Bun would otherwise load the .env of the
+        // directory the catch-up starts in, the user's project.
+        self: deps.self ?? [
+            process.execPath,
+            "--no-env-file",
+            resolve(process.argv[1] ?? ""),
+        ],
+    });
+}

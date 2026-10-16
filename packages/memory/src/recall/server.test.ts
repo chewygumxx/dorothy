@@ -9,7 +9,7 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -451,5 +451,63 @@ describe("the recall server's facts", () => {
         });
         expect(result.isError).toBe(true);
         expect(textOf(result)).toStartWith("There is no project here");
+    });
+});
+
+describe("the recall server in Claude Code", () => {
+    const S = "0f8fad5b-d9cb-469f-a165-70867728950e";
+    const begun = (phrase: string) =>
+        `${JSON.stringify({ v: 1, kind: "session", at: "2026-10-04T12:00:00.000Z", phrase, sdkSessionId: "", model: "m", promptHash: "", resumed: false, source: "claude-code", sourceSession: S })}\n`;
+    const found = async (client: Client) =>
+        (
+            JSON.parse(
+                textOf(
+                    await client.callTool({
+                        name: "search",
+                        arguments: { query: "render", kind: "conversations" },
+                    }),
+                ),
+            ) as SearchResult
+        ).results
+            .map((hit) => hit.identifier)
+            .sort();
+
+    it("leaves out the live session's conversation once a hook has recorded it, and remembers from it", async () => {
+        let live: string | null = null;
+        const client = await connect({
+            exclude: null,
+            facts: dir,
+            liveSession: async () => live,
+        });
+        expect(await found(client)).toEqual([A, LIVE].sort());
+        // A session no hook has recorded yet has no conversation to leave out.
+        live = S;
+        expect(await found(client)).toEqual([A, LIVE].sort());
+        // A hook records it as a resumed session would be: appended.
+        await appendFile(join(dir, `${LIVE}.jsonl`), begun(LIVE));
+        expect(await found(client)).toEqual([A]);
+        await client.callTool({
+            name: "remember",
+            arguments: {
+                action: "write",
+                name: "tea",
+                scope: "personal",
+                type: "user",
+                title: "Tea",
+                description: "Tea at four.",
+                body: "Every day.",
+            },
+        });
+        const read = await readFactFile(factPath(dir, PERSONAL, "tea"), "tea");
+        expect(read.kind === "ok" && read.fact.provenance.from).toBe(LIVE);
+    });
+
+    it("leaves out the conversation chat names, whatever the launch says", async () => {
+        await writeFile(
+            join(dir, `${A}.jsonl`),
+            begun(A) + user("the render bug again"),
+        );
+        const client = await connect({ liveSession: async () => S });
+        expect(await found(client)).toEqual([A]);
     });
 });

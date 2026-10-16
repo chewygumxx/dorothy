@@ -22,6 +22,7 @@ import {
     type StructuredCall,
     type Turn,
 } from "@dorothy/core";
+import { startNotices } from "../bodies/unread.js";
 import { COMPACTION_TIMEOUT_MS } from "../compaction/compact.js";
 import { clusterTokens, seedTurns } from "../compaction/plan.js";
 import {
@@ -514,6 +515,9 @@ export async function openMemory({
     const warnings: string[] = [];
     const { config, warnings: configWarnings } = await readConfig(env);
     warnings.push(...configWarnings);
+    // What Claude Code's hooks could not tell, and lines left unread,
+    // told at chat's start as at dorothy --claude's.
+    warnings.push(...(await startNotices(env).catch(() => [])));
 
     // The index and history open before anything is read, so that
     // history restores a broken file first. The index serves compaction

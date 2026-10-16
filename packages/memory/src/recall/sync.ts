@@ -145,6 +145,7 @@ function forget(index: RecallIndex, phrase: string): void {
         "DELETE FROM appraisals WHERE reader = ?",
         "DELETE FROM clusters WHERE phrase = ?",
         "DELETE FROM tagged WHERE phrase = ?",
+        "DELETE FROM conversation_sessions WHERE phrase = ?",
         "DELETE FROM conversations WHERE phrase = ?",
     ]) {
         index.db.run(sql, [phrase]);
@@ -267,6 +268,12 @@ function applyLines(index: RecallIndex, row: Row, text: string): void {
                             : null,
                         row.phrase,
                     ],
+                );
+            }
+            if (isRecord(event) && typeof event.sourceSession === "string") {
+                index.db.run(
+                    "INSERT OR IGNORE INTO conversation_sessions (session, phrase) VALUES (?, ?)",
+                    [event.sourceSession, row.phrase],
                 );
             }
             row.sessions++;
@@ -479,4 +486,17 @@ export function readsByTarget(index: RecallIndex): Map<string, ReadRow[]> {
         reads.set(phrase, [...(reads.get(phrase) ?? []), read]);
     }
     return reads;
+}
+
+// The conversation a body's session belongs to, as its session events
+// say; null for a session never recorded. A plain read, so callable
+// inside exclusive.
+export function sessionPhrase(
+    index: RecallIndex,
+    session: string,
+): string | null {
+    const row = index.db
+        .query("SELECT phrase FROM conversation_sessions WHERE session = ?")
+        .get(session) as { phrase: string } | null;
+    return row?.phrase ?? null;
 }

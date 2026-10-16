@@ -31,6 +31,7 @@ import {
     withSection,
     xdgDir,
 } from "@dorothy/core";
+import { addNotice, stateDir } from "../bodies/unread.js";
 import { dataRoot, putFact } from "../facts/store.js";
 import { projectsPath } from "../projects/registry.js";
 import { transcriptDir, transcriptPath } from "../transcript.js";
@@ -55,7 +56,12 @@ import {
 
 // openMemory reads the config and opens the transcript and the index from
 // these, so every one points into the test's directory.
-const XDG = ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"] as const;
+const XDG = [
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_CACHE_HOME",
+    "XDG_STATE_HOME",
+] as const;
 let dir = "";
 let saved: Partial<Record<(typeof XDG)[number], string>> = {};
 beforeEach(async () => {
@@ -695,8 +701,35 @@ describe("openMemory", () => {
     it("reads and writes only under the test's directory", () => {
         // The cache holds the index and the CLI's home.
         const cache = xdgDir(process.env, "XDG_CACHE_HOME", ".cache");
-        for (const path of [configPath(), transcriptDir(), cache]) {
+        for (const path of [
+            configPath(),
+            transcriptDir(),
+            cache,
+            stateDir(process.env),
+        ]) {
             expect(path).toStartWith(dir);
+        }
+    });
+
+    it("tells at its start what Claude Code's hooks could not", async () => {
+        await addNotice(env, "memory: Claude Code ran no hooks in session x");
+        const opened = await openMemory({
+            resume: null,
+            call: quiet,
+            prompts,
+            connect: () => new FakeSession(),
+            recallLaunch: (phrase) => ({ command: "x", args: [phrase] }),
+            env,
+        });
+        if (!opened.ok) {
+            throw new Error(opened.message);
+        }
+        try {
+            expect(opened.memory.warnings).toContain(
+                "memory: Claude Code ran no hooks in session x",
+            );
+        } finally {
+            await opened.memory.close();
         }
     });
 

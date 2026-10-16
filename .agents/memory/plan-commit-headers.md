@@ -26,5 +26,4 @@ and every task had to shorten them.
 not from `.commitlintrc.mts`, so they are easy to miss when planning.
 
 **How to apply:** when writing a plan's commit steps, keep each header
-at most 50 characters, scope included, and wrap bodies at 72. See also
-[Recording plan carry-overs](./recording-plan-carry-overs.md).
+at most 50 characters, scope included, and wrap bodies at 72.

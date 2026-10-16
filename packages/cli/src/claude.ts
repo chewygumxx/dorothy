@@ -8,6 +8,7 @@
 //
 //
 
+import { spawn as spawnChild } from "node:child_process";
 import {
     chmodSync,
     lstatSync,
@@ -16,12 +17,14 @@ import {
     rmSync,
     writeFileSync,
 } from "node:fs";
+import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import {
     CLAUDE_ALLOWED_TOOLS,
     CLAUDE_SERVER_NAME,
     type Config,
     type Env,
+    isUuid,
     readConfig,
 } from "@dorothy/core";
 import {
@@ -30,6 +33,8 @@ import {
     startGateway,
     upstreamFrom,
 } from "@dorothy/gateway";
+// A type, erased: the CLI still loads memory lazily.
+import type { LaunchNote } from "@dorothy/memory";
 
 export type Spawned = {
     exited: Promise<number>;
@@ -56,6 +61,12 @@ export type ClaudeDeps = {
     writePrivate?: (text: string) => string;
     // Removes a file writePrivate made.
     remove?: (path: string) => void;
+    // Starts a process that outlives dorothy and the terminal, for a
+    // catch-up.
+    spawnDetached?: (cmd: string[]) => void;
+    // A new uuid, for a launch and a new session.
+    newId?: () => string;
+    now?: () => Date;
 };
 
 // A new file of mode 0600 in $XDG_RUNTIME_DIR/dorothy, or else in a
@@ -86,20 +97,36 @@ export function privateWriter(env: Env): (text: string) => string {
 // which does no harm.
 const FORWARDED = ["SIGTERM", "SIGHUP"] as const;
 
-// What --claude asks of memory, loaded only when memory is on.
+// What --claude asks of memory, loaded only when it is asked.
 export type ClaudeMemory = {
-    // Chat's memory block, rendered by chat's code; "" for none.
-    block(env: Env): Promise<{ block: string; warnings: string[] }>;
+    // Chat's memory block, rendered by chat's code, leaving out the
+    // conversation of the session the arguments resume by id; "" for
+    // none.
+    block(
+        env: Env,
+        session: string | null,
+    ): Promise<{ block: string; warnings: string[] }>;
     // Syncs the project of a directory, if it is in one: null, or why
     // the sync failed.
     sync(dir: string, env: Env): Promise<string | null>;
+    // Notes the launch, for its hooks, its recall server and its
+    // catch-up.
+    note(note: Omit<LaunchNote, "v">, env: Env): Promise<void>;
+    // The launches whose dorothy is gone, left to catch up.
+    stale(env: Env): Promise<string[]>;
+    // What hooks could not tell, and the lines left unread.
+    notices(env: Env): Promise<string[]>;
 };
 
 const MEMORY: ClaudeMemory = {
-    block: async (env) =>
-        (await import("@dorothy/memory")).claudeBlock({ env }),
+    block: async (env, session) =>
+        (await import("@dorothy/memory")).claudeBlock({ env, session }),
     sync: async (dir, env) =>
         (await import("@dorothy/memory")).syncDirectory(dir, { env }),
+    note: async (note, env) =>
+        (await import("@dorothy/memory")).noteLaunch(env, note),
+    stale: async (env) => (await import("@dorothy/memory")).staleLaunches(env),
+    notices: async (env) => (await import("@dorothy/memory")).startNotices(env),
 };
 
 const APPEND = "--append-system-prompt";
@@ -129,6 +156,101 @@ export function claudeArgs(args: readonly string[]): string[] {
     }
     const text = appended === undefined ? MARKER : `${appended}\n\n${MARKER}`;
     return [APPEND, text, ...rest];
+}
+
+// How claude's arguments start its session, from those before --.
+export type ClaudeSession =
+    // A new session, which Dorothy names with --session-id.
+    | { kind: "new" }
+    // The user named it with their own --session-id.
+    | { kind: "named"; id: string }
+    // Continued or resumed: by id where the arguments name one. A
+    // malformed --session-id is here too; claude refuses it.
+    | { kind: "resumed"; id: string | null };
+
+const RESUMING: ReadonlySet<string> = new Set([
+    "-c",
+    "--continue",
+    "-r",
+    "--resume",
+    "--from-pr",
+]);
+
+export function claudeSession(args: readonly string[]): ClaudeSession {
+    for (let index = 0; index < args.length; index += 1) {
+        const arg = args[index] as string;
+        if (arg === "--") {
+            break;
+        }
+        const equals = arg.startsWith("--") ? arg.indexOf("=") : -1;
+        const flag = equals === -1 ? arg : arg.slice(0, equals);
+        const value = equals === -1 ? args[index + 1] : arg.slice(equals + 1);
+        const id = value !== undefined && isUuid(value) ? value : null;
+        if (flag === "--session-id") {
+            return id === null
+                ? { kind: "resumed", id: null }
+                : { kind: "named", id };
+        }
+        if (RESUMING.has(flag)) {
+            return {
+                kind: "resumed",
+                id: flag === "-r" || flag === "--resume" ? id : null,
+            };
+        }
+    }
+    return { kind: "new" };
+}
+
+// SessionEnd's hook only hands its session to a detached catch-up.
+export const END_TIMEOUT_S = 10;
+
+// Claude Code runs a hook's command through a shell: each word quoted.
+const shellWord = (word: string) => `'${word.replaceAll("'", "'\\''")}'`;
+
+// Dorothy's hooks, this program run again: after each reply, off its
+// path (async), and at the session's end.
+export function hookSettings(self: readonly string[]): Json {
+    const command = [...self, "--claude-hook"].map(shellWord).join(" ");
+    return {
+        hooks: {
+            Stop: [{ hooks: [{ type: "command", command, async: true }] }],
+            SessionEnd: [
+                {
+                    hooks: [
+                        { type: "command", command, timeout: END_TIMEOUT_S },
+                    ],
+                },
+            ],
+        },
+    };
+}
+
+// Claude Code's config directory, under whose projects/ its transcripts
+// are.
+export const claudeConfigDir = (env: Env) =>
+    env.CLAUDE_CONFIG_DIR || join(env.HOME || homedir(), ".claude");
+
+// This program as a command: the interpreter and the entry script it
+// was started with, so bun run dev records too. Claude Code runs hooks
+// and servers in the user's project, whose .env Bun would load into
+// their environment, a key of the project's among it, kept over
+// Dorothy's by dotenvx: --no-env-file, for the recall server too.
+const selfCommand = () => [
+    process.execPath,
+    "--no-env-file",
+    resolve(process.argv[1] ?? ""),
+];
+
+// A process of its own session, which outlives dorothy and a terminal
+// that hangs up.
+function spawnDetached(cmd: string[]): void {
+    const [command, ...rest] = cmd;
+    if (command === undefined) {
+        return;
+    }
+    spawnChild(command, rest, { detached: true, stdio: "ignore" })
+        .on("error", () => {})
+        .unref();
 }
 
 const SETTINGS = "--settings";
@@ -329,6 +451,9 @@ export type Launch = {
     env: Env;
     cwd?: string;
     gateway: Gateway;
+    // The launch noted for recording, caught up once claude exits; null
+    // when nothing is recorded.
+    launch: string | null;
     // Removes the private files the launch wrote; call it once claude
     // has exited.
     cleanup: () => void;
@@ -358,7 +483,9 @@ export async function launchClaude(
         config: loadConfig = readConfig,
         memory = MEMORY,
         cwd = process.cwd(),
-        self = [process.execPath, resolve(process.argv[1] ?? "")],
+        self = selfCommand(),
+        newId = () => crypto.randomUUID(),
+        now = () => new Date(),
         read = (path) => readFileSync(path, "utf8"),
         writePrivate = privateWriter(env),
         remove = (path) => rmSync(path, { force: true }),
@@ -384,10 +511,14 @@ export async function launchClaude(
             write(`dorothy: sync failed: ${failed}\n`);
         }
     }
+    const session = claudeSession(args);
     let section = "";
     if (on) {
         try {
-            const built = await memory.block(env);
+            const built = await memory.block(
+                env,
+                session.kind === "resumed" ? session.id : null,
+            );
             for (const warning of built.warnings) {
                 write(`dorothy: ${warning}\n`);
             }
@@ -407,13 +538,50 @@ export async function launchClaude(
         );
         return 1;
     }
+    // Her sessions are recorded by hooks, under a launch noted before
+    // claude starts; a launch that cannot be noted records nothing.
+    let noted: string | null = null;
+    let named: string | null = null;
+    if (on && run) {
+        const id = newId();
+        named =
+            session.kind === "new"
+                ? newId()
+                : session.kind === "named"
+                  ? session.id
+                  : null;
+        try {
+            await memory.note(
+                {
+                    launch: id,
+                    pid: process.pid,
+                    started: now().toISOString(),
+                    dir,
+                    session: named,
+                    claude: claudeConfigDir(shell.env),
+                },
+                env,
+            );
+            noted = id;
+        } catch (error) {
+            write(
+                `dorothy: this launch could not be noted (${describeError(error)}); its sessions will not be recorded\n`,
+            );
+        }
+    }
     const recall = on && run && config.memory.recall;
+    const settings: Json = {
+        ...(recall
+            ? { permissions: { allow: [...CLAUDE_ALLOWED_TOOLS] } }
+            : {}),
+        ...(noted === null ? {} : hookSettings(self)),
+    };
     const flagged = dorothyFlags(
-        args,
+        noted !== null && session.kind === "new"
+            ? [`--session-id=${named}`, ...args]
+            : args,
         {
-            settings: recall
-                ? { permissions: { allow: [...CLAUDE_ALLOWED_TOOLS] } }
-                : null,
+            settings: Object.keys(settings).length > 0 ? settings : null,
             mcpConfig: recall ? recallServer(self, dir) : null,
         },
         { cwd: dir, read, writePrivate },
@@ -421,18 +589,26 @@ export async function launchClaude(
     for (const warning of flagged.warnings) {
         write(`dorothy: ${warning}\n`);
     }
+    const launchEnv: Env = {
+        ...shell.env,
+        ANTHROPIC_BASE_URL: gateway.url,
+        // Claude Code turns tool search off for a base URL not
+        // Anthropic's; a user's own choice stands.
+        ENABLE_TOOL_SEARCH: env.ENABLE_TOOL_SEARCH ?? "1",
+        // remember is her one way to write a memory in her sessions.
+        ...(on ? { CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" } : {}),
+        // Her hooks and her recall server find the launch by it.
+        ...(noted === null ? {} : { DOROTHY_LAUNCH: noted }),
+    };
+    if (noted === null) {
+        // A launch this one runs inside is not this one's.
+        delete launchEnv.DOROTHY_LAUNCH;
+    }
     const launch: Launch = {
         cmd: [claude, ...claudeArgs(flagged.args)],
-        env: {
-            ...shell.env,
-            ANTHROPIC_BASE_URL: gateway.url,
-            // Claude Code turns tool search off for a base URL not
-            // Anthropic's; a user's own choice stands.
-            ENABLE_TOOL_SEARCH: env.ENABLE_TOOL_SEARCH ?? "1",
-            // remember is her one way to write a memory in her sessions.
-            ...(on ? { CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" } : {}),
-        },
+        env: launchEnv,
         gateway,
+        launch: noted,
         cleanup: () => {
             for (const path of flagged.files) {
                 try {
@@ -468,10 +644,26 @@ export async function runClaude(
             process.stderr.write(text);
         },
         signals = process,
+        memory = MEMORY,
+        self = selfCommand(),
+        spawnDetached: detach = spawnDetached,
     } = deps;
+    const catchUp = (launch: string) =>
+        detach([...self, "--claude-hook", "--catch-up", launch]);
+    // Launches whose dorothy was killed before its catch-up, with memory
+    // off too: their notes were written with it on.
+    for (const launch of await memory.stale(env).catch(() => [])) {
+        catchUp(launch);
+    }
+    // What hooks could not tell, and lines left unread, before claude
+    // takes the terminal.
+    for (const notice of await memory.notices(env).catch(() => [])) {
+        write(`dorothy: ${notice}\n`);
+    }
     const launch = await launchClaude(args, upstreamFrom(env), {
         ...deps,
         write,
+        self,
     });
     if (typeof launch === "number") {
         return launch;
@@ -495,5 +687,10 @@ export async function runClaude(
         launch.gateway.stop();
         launch.cleanup();
         warnDrift(launch.gateway.stats, write);
+        // Its sessions recorded, synced and reviewed as SessionEnd would,
+        // by a process that outlives this one.
+        if (launch.launch !== null) {
+            catchUp(launch.launch);
+        }
     }
 }

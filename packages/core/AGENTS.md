@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-15
+mtime: 2026-10-16
 spdx: GPL-3.0-only
 title: packages/core/AGENTS.md
 description: >-
@@ -42,11 +42,13 @@ below. It declares `niceware` alone, and never imports another
   history show on screen.
 - `contracts/editor.ts`: `Editor`, the external editor's contract.
 - `contracts/recall.ts`: the memory tools' names and shapes: chat's server
-  and Claude Code's, the lookups, `remember`, and search and open over
-  facts.
+  and Claude Code's, `toolOf` on either server, the lookups, `remember`,
+  and search and open over facts.
 - `config.ts`: `config.toml` (`readConfig`, `parseConfig`).
-- `xdg.ts`: the XDG directories (`xdgDir`).
-- `session-id.ts`: session phrases; `timers.ts`: injectable timers.
+- `xdg.ts`: the XDG directories (`xdgDir`), the state directory among
+  them.
+- `session-id.ts`: session phrases, and `isUuid` for the ids that name
+  files; `timers.ts`: injectable timers.
 
 ## Invariants
 

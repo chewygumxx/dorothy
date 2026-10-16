@@ -22,14 +22,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Config, DEFAULT_CONFIG } from "@dorothy/core";
 import { MARKER } from "@dorothy/gateway";
+import type { LaunchNote } from "@dorothy/memory";
 import {
     type ClaudeDeps,
+    type ClaudeMemory,
     claudeArgs,
     dorothyFlags,
+    hookSettings,
     mergeJson,
     privateWriter,
     runClaude,
 } from "./claude.js";
+
+const LAUNCH = "6c84fb90-12c4-11e1-840d-7b25c5ee775a";
+const SESSION = "0f8fad5b-d9cb-469f-a165-70867728950e";
+const OTHER = "7d95fc01-23d5-42f2-951e-8c36d6ff886b";
+const SELF = ["/bin/bun", "/d/index.ts"];
 
 function harness(exit: number | Promise<number> = 0, memoryOn = false) {
     const calls = {
@@ -41,10 +49,19 @@ function harness(exit: number | Promise<number> = 0, memoryOn = false) {
         stopped: false,
         killed: [] as string[],
         err: "",
+        spawned: [] as string[][],
     };
     const signals = new EventEmitter();
     const stats = { injected: 0, drift: 0 };
-    const memory = { synced: [] as string[], blocks: 0 };
+    const memory = {
+        synced: [] as string[],
+        blocks: 0,
+        blockFor: [] as (string | null)[],
+        noted: [] as Omit<LaunchNote, "v">[],
+        // What the fakes answer: launches left behind, notices left.
+        stale: [] as string[],
+        notices: [] as string[],
+    };
     const withMemory = (enabled: boolean, recall = true): Config => ({
         ...DEFAULT_CONFIG,
         memory: { ...DEFAULT_CONFIG.memory, enabled, recall },
@@ -81,17 +98,31 @@ function harness(exit: number | Promise<number> = 0, memoryOn = false) {
         signals,
         config: async () => ({ config: withMemory(memoryOn), warnings: [] }),
         memory: {
-            block: async () => {
+            block: async (_env, session) => {
                 memory.blocks += 1;
+                memory.blockFor.push(session);
                 return { block: "<memory>m</memory>", warnings: [] };
             },
             sync: async (dir) => {
                 memory.synced.push(dir);
                 return null;
             },
+            note: async (note) => {
+                memory.noted.push(note);
+            },
+            stale: async () => memory.stale,
+            notices: async () => memory.notices,
         },
+        spawnDetached: (cmd) => {
+            calls.spawned.push(cmd);
+        },
+        newId: (() => {
+            const ids = [LAUNCH, SESSION];
+            return () => ids.shift() ?? "no more ids";
+        })(),
+        now: () => new Date("2026-10-15T09:00:00.000Z"),
         cwd: "/work",
-        self: ["/bin/bun", "/d/index.ts"],
+        self: SELF,
         read: () => {
             throw new Error("no such file");
         },
@@ -280,6 +311,7 @@ describe("dorothy --claude with memory", () => {
                 "mcp__dorothy-memory__remember",
             ],
         },
+        ...hookSettings(SELF),
     })}`;
     const MCP = `--mcp-config=${JSON.stringify({
         mcpServers: {
@@ -302,6 +334,7 @@ describe("dorothy --claude with memory", () => {
             MARKER,
             SETTINGS,
             MCP,
+            `--session-id=${SESSION}`,
             "-p",
             "hi",
         ]);
@@ -311,6 +344,7 @@ describe("dorothy --claude with memory", () => {
     it("goes on when sync fails, saying so", async () => {
         const { calls, deps } = harness(0, true);
         deps.memory = {
+            ...(deps.memory as ClaudeMemory),
             block: async () => ({ block: "", warnings: [] }),
             sync: async () => "a conflict",
         };
@@ -321,6 +355,7 @@ describe("dorothy --claude with memory", () => {
     it("starts without the block when it cannot be built, saying so", async () => {
         const { calls, deps } = harness(0, true);
         deps.memory = {
+            ...(deps.memory as ClaudeMemory),
             block: async () => {
                 throw new Error("index locked");
             },
@@ -347,14 +382,20 @@ describe("dorothy --claude with memory", () => {
             "/bin/claude",
             "--append-system-prompt",
             MARKER,
+            `--settings=${JSON.stringify(hookSettings(SELF))}`,
+            `--session-id=${SESSION}`,
         ]);
         expect(calls.section).toBe("<memory>m</memory>");
     });
 
     it("runs claude as today with memory off", async () => {
         const { calls, deps, memory } = harness(0, false);
+        deps.env = { ...deps.env, DOROTHY_LAUNCH: OTHER };
         await runClaude(["-p", "hi"], deps);
-        expect(memory).toEqual({ synced: [], blocks: 0 });
+        expect(memory).toMatchObject({ synced: [], blocks: 0, noted: [] });
+        // A launch it runs inside is not its own.
+        expect(calls.env.DOROTHY_LAUNCH).toBeUndefined();
+        expect(calls.spawned).toEqual([]);
         expect(calls.cmd).toEqual([
             "/bin/claude",
             "--append-system-prompt",
@@ -363,6 +404,156 @@ describe("dorothy --claude with memory", () => {
             "hi",
         ]);
         expect(calls.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBeUndefined();
+    });
+});
+
+describe("dorothy --claude records her sessions", () => {
+    const HOOK = "'/bin/bun' '/d/index.ts' '--claude-hook'";
+
+    it("notes the launch, names a new session, and passes hooks that run this program", async () => {
+        const { calls, deps, memory } = harness(0, true);
+        deps.config = async () => ({
+            config: {
+                ...DEFAULT_CONFIG,
+                memory: { ...DEFAULT_CONFIG.memory, recall: false },
+            },
+            warnings: [],
+        });
+        expect(await runClaude(["-p", "hi"], deps)).toBe(0);
+        expect(memory.noted).toEqual([
+            {
+                launch: LAUNCH,
+                pid: process.pid,
+                started: "2026-10-15T09:00:00.000Z",
+                dir: "/work",
+                session: SESSION,
+                claude: "/home/u/.claude",
+            },
+        ]);
+        expect(calls.env.DOROTHY_LAUNCH).toBe(LAUNCH);
+        expect(calls.cmd).toEqual([
+            "/bin/claude",
+            "--append-system-prompt",
+            MARKER,
+            `--settings=${JSON.stringify({
+                hooks: {
+                    Stop: [
+                        {
+                            hooks: [
+                                { type: "command", command: HOOK, async: true },
+                            ],
+                        },
+                    ],
+                    SessionEnd: [
+                        {
+                            hooks: [
+                                { type: "command", command: HOOK, timeout: 10 },
+                            ],
+                        },
+                    ],
+                },
+            })}`,
+            `--session-id=${SESSION}`,
+            "-p",
+            "hi",
+        ]);
+    });
+
+    it("takes Claude Code's config directory from claude's environment", async () => {
+        const { deps, memory } = harness(0, true);
+        deps.env = { ...deps.env, CLAUDE_CONFIG_DIR: "/cfg" };
+        await runClaude([], deps);
+        expect(memory.noted[0]?.claude).toBe("/cfg");
+    });
+
+    it("catches up its launch once claude exits, in a process of its own", async () => {
+        const { calls, deps } = harness(0, true);
+        await runClaude([], deps);
+        expect(calls.spawned).toEqual([
+            [...SELF, "--claude-hook", "--catch-up", LAUNCH],
+        ]);
+    });
+
+    it("catches up launches left behind and tells what hooks left, with memory off too", async () => {
+        const { calls, deps, memory } = harness(0, false);
+        memory.stale = [OTHER];
+        memory.notices = ["memory: Claude Code ran no hooks in session x"];
+        await runClaude([], deps);
+        expect(calls.spawned).toEqual([
+            [...SELF, "--claude-hook", "--catch-up", OTHER],
+        ]);
+        expect(calls.err).toBe(
+            "dorothy: memory: Claude Code ran no hooks in session x\n",
+        );
+        expect(memory.noted).toEqual([]);
+    });
+
+    it("lets the arguments choose the session, leaving a resumed one's conversation out of the block", async () => {
+        // The arguments, the session noted, the one the block leaves out.
+        const cases: [string[], string | null, string | null][] = [
+            [["--resume", OTHER], null, OTHER],
+            [["-r", OTHER, "-p", "x"], null, OTHER],
+            [[`--resume=${OTHER}`], null, OTHER],
+            [["--resume", "my-title"], null, null],
+            [["--resume"], null, null],
+            [["-c"], null, null],
+            [["--continue", "-p", "x"], null, null],
+            [["--from-pr", "12"], null, null],
+            [["--session-id", OTHER], OTHER, null],
+            [[`--session-id=${OTHER}`], OTHER, null],
+            [["-p", "--", "--resume", OTHER], SESSION, null],
+        ];
+        for (const [args, noted, left] of cases) {
+            const { calls, deps, memory } = harness(0, true);
+            await runClaude(args, deps);
+            expect([args, memory.noted[0]?.session ?? null]).toEqual([
+                args,
+                noted,
+            ]);
+            expect([args, memory.blockFor]).toEqual([args, [left]]);
+            expect([
+                args,
+                calls.cmd.includes(`--session-id=${SESSION}`),
+            ]).toEqual([args, noted === SESSION]);
+        }
+    });
+
+    it("records nothing when the launch cannot be noted, saying so", async () => {
+        const { calls, deps } = harness(0, true);
+        deps.memory = {
+            ...(deps.memory as ClaudeMemory),
+            note: async () => {
+                throw new Error("read-only");
+            },
+        };
+        await runClaude([], deps);
+        expect(calls.err).toBe(
+            "dorothy: this launch could not be noted (read-only); its sessions will not be recorded\n",
+        );
+        expect(calls.env.DOROTHY_LAUNCH).toBeUndefined();
+        expect(
+            calls.cmd.some(
+                (arg) =>
+                    arg.includes("--claude-hook") ||
+                    arg.startsWith("--session-id"),
+            ),
+        ).toBe(false);
+        expect(calls.spawned).toEqual([]);
+    });
+
+    it("goes on when memory cannot say what was left behind", async () => {
+        const { calls, deps } = harness(0, false);
+        deps.memory = {
+            ...(deps.memory as ClaudeMemory),
+            stale: async () => {
+                throw new Error("no runtime directory");
+            },
+            notices: async () => {
+                throw new Error("no state directory");
+            },
+        };
+        expect(await runClaude([], deps)).toBe(0);
+        expect(calls.err).toBe("");
     });
 });
 
@@ -419,6 +610,7 @@ describe("dorothy --claude with the user's own settings file", () => {
                         "mcp__dorothy-memory__remember",
                     ],
                 },
+                ...hookSettings(SELF),
             });
             expect(during?.mode).toBe(0o600);
             expect(statSync(join(runtime, "dorothy")).mode & 0o777).toBe(0o700);

@@ -1,0 +1,55 @@
+{
+    "first": "85e09ff8-6162-4f7d-a0db-8c6444265f37",
+    "listing": [
+        "/tmp/claude-1000/dorothy-recording-probe/cfg/projects/-tmp-claude-1000-dorothy-recording-probe-cwd:",
+        "02f87cb7-5465-41c5-bf0c-3ce6472f83c7.jsonl",
+        "57810090-a312-41b4-b0de-63f3f1d3e0fc.jsonl",
+        "85e09ff8-6162-4f7d-a0db-8c6444265f37",
+        "85e09ff8-6162-4f7d-a0db-8c6444265f37.jsonl",
+        "8ca31944-89e0-431c-bf34-970090ae77a5.jsonl",
+        "d4c837f1-ec00-43f9-82fa-ff8613889f9f.jsonl",
+        "db7c3ea2-831d-44d9-ac82-90cd4e8b1cdb.jsonl",
+        "memory",
+        "/tmp/claude-1000/dorothy-recording-probe/cfg/projects/-tmp-claude-1000-dorothy-recording-probe-cwd/85e09ff8-6162-4f7d-a0db-8c6444265f37:",
+        "subagents"
+    ],
+    "files": [
+        {
+            "file": "02f87cb7-5465-41c5-bf0c-3ce6472f83c7.jsonl",
+            "lines": 32,
+            "sessions": ["02f87cb7-5465-41c5-bf0c-3ce6472f83c7"],
+            "uuidCount": 18
+        },
+        {
+            "file": "57810090-a312-41b4-b0de-63f3f1d3e0fc.jsonl",
+            "lines": 25,
+            "sessions": ["57810090-a312-41b4-b0de-63f3f1d3e0fc"],
+            "uuidCount": 15
+        },
+        {
+            "file": "85e09ff8-6162-4f7d-a0db-8c6444265f37.jsonl",
+            "lines": 77,
+            "sessions": ["85e09ff8-6162-4f7d-a0db-8c6444265f37"],
+            "uuidCount": 40
+        },
+        {
+            "file": "8ca31944-89e0-431c-bf34-970090ae77a5.jsonl",
+            "lines": 52,
+            "sessions": ["8ca31944-89e0-431c-bf34-970090ae77a5"],
+            "uuidCount": 36
+        },
+        {
+            "file": "d4c837f1-ec00-43f9-82fa-ff8613889f9f.jsonl",
+            "lines": 24,
+            "sessions": ["d4c837f1-ec00-43f9-82fa-ff8613889f9f"],
+            "uuidCount": 15
+        },
+        {
+            "file": "db7c3ea2-831d-44d9-ac82-90cd4e8b1cdb.jsonl",
+            "lines": 26,
+            "sessions": ["db7c3ea2-831d-44d9-ac82-90cd4e8b1cdb"],
+            "uuidCount": 15
+        }
+    ],
+    "repeated": 31
+}

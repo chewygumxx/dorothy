@@ -15,7 +15,7 @@ import { type Env, xdgDir } from "@dorothy/core";
 import type { Lock } from "../memory/sidecar.js";
 import { exclusiveLock } from "../sqlite-lock.js";
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 // Times are milliseconds since the epoch. Each FTS table takes its text
 // from the table beside it, which triggers keep them in step with.
@@ -68,6 +68,12 @@ const SCHEMA = [
         phrase TEXT PRIMARY KEY,
         owner TEXT NOT NULL,
         until INTEGER NOT NULL
+    )`,
+    // Each body's session id a conversation's session events name, so a
+    // hook finds its conversation without reading every transcript.
+    `CREATE TABLE conversation_sessions (
+        session TEXT PRIMARY KEY,
+        phrase TEXT NOT NULL
     )`,
     `CREATE TABLE clusters (
         phrase TEXT NOT NULL,

@@ -20,3 +20,9 @@ process.env.FORCE_COLOR = "0";
 // The recall index lives in the cache directory; no test may touch the
 // user's.
 process.env.XDG_CACHE_HOME = mkdtempSync(join(tmpdir(), "dorothy-cache-"));
+
+// Recording keeps unread lines and notices in the state directory and
+// notes launches in the runtime directory; no test may touch the
+// user's.
+process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), "dorothy-state-"));
+process.env.XDG_RUNTIME_DIR = mkdtempSync(join(tmpdir(), "dorothy-run-"));

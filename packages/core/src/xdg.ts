@@ -17,7 +17,11 @@ export type Env = Record<string, string | undefined>;
 // would otherwise put files under the working directory.
 export function xdgDir(
     env: Env,
-    variable: "XDG_DATA_HOME" | "XDG_CONFIG_HOME" | "XDG_CACHE_HOME",
+    variable:
+        | "XDG_DATA_HOME"
+        | "XDG_CONFIG_HOME"
+        | "XDG_CACHE_HOME"
+        | "XDG_STATE_HOME",
     fallback: string,
 ): string {
     const xdg = env[variable] ?? "";

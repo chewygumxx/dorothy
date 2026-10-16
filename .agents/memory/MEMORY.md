@@ -9,7 +9,5 @@
   purge then hit the live session
 - [Dorothy's ambition](./dorothy-ambition.md)
   One adaptable Dorothy: extensible, remembering, Anthropic first
-- [Recording plan carry-overs](./recording-plan-carry-overs.md)
-  What delivery left for the bodies spec's recording plan to handle
 - [Plan commit headers](./plan-commit-headers.md)
   commitlint caps headers at 50 and body lines at 72; plans must too

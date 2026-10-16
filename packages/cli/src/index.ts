@@ -10,7 +10,8 @@
 
 import { pathToFileURL } from "node:url";
 import type { PersonaMode } from "@dorothy/agent";
-import { isPhrase } from "@dorothy/core";
+import { isPhrase, isUuid } from "@dorothy/core";
+import type { HookMode } from "@dorothy/memory/claude-hook";
 import { config } from "@dotenvx/dotenvx";
 
 export type Mode =
@@ -44,6 +45,7 @@ export type Mode =
           recollect: boolean;
           project: string | null;
       }
+    | { kind: "claude-hook"; hook: HookMode }
     | { kind: "claude"; args: string[] }
     | { kind: "claude-dump"; args: string[]; message: string }
     | { kind: "help" }
@@ -73,6 +75,10 @@ export const USAGE = [
     "       dorothy --sync [<path>]    sync a project's facts with its repo",
     "       dorothy --projects         the projects Dorothy knows",
     "       dorothy --recall-server    memory tools for MCP clients (stdio)",
+    "       dorothy --claude-hook      internal: what --claude's hooks run",
+    "       dorothy --claude-hook --reread | --dismiss <session>",
+    "                                  read again the Claude Code lines she",
+    "                                  could not, or stop telling of them",
     "       dorothy -- <prompt...>     a prompt that starts with -",
     "       dorothy --dump-context [--resume <phrase>] [message...]",
     "                                  print the request a chat would send",
@@ -119,6 +125,44 @@ function parseDump(argv: readonly string[]): Mode {
     };
 }
 
+const HOOK_USAGE =
+    "--claude-hook takes [--catch-up <launch> [--session <id>]], --reread or --dismiss <session>";
+
+function parseHook(rest: readonly string[]): Mode {
+    const hook = (mode: HookMode): Mode => ({
+        kind: "claude-hook",
+        hook: mode,
+    });
+    const [flag, value, next, session] = rest;
+    if (flag === undefined) {
+        return hook({ kind: "hook" });
+    }
+    if (flag === "--reread" && rest.length === 1) {
+        return hook({ kind: "reread" });
+    }
+    if (flag === "--dismiss" && rest.length === 2 && isUuid(value ?? "")) {
+        return hook({ kind: "dismiss", session: value as string });
+    }
+    if (flag === "--catch-up" && isUuid(value ?? "")) {
+        const launch = value as string;
+        if (rest.length === 2) {
+            return hook({ kind: "catch-up", launch, session: null });
+        }
+        if (
+            rest.length === 4 &&
+            next === "--session" &&
+            isUuid(session ?? "")
+        ) {
+            return hook({
+                kind: "catch-up",
+                launch,
+                session: session as string,
+            });
+        }
+    }
+    return { kind: "usage", message: HOOK_USAGE };
+}
+
 export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
     const [first, ...rest] = argv;
     if (first === "--dev") {
@@ -150,6 +194,9 @@ export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
             args: end === -1 ? words : words.slice(0, end),
             message: message.length > 0 ? message.join(" ") : "hi",
         };
+    }
+    if (first === "--claude-hook") {
+        return parseHook(rest);
     }
     if (first === "--claude") {
         return { kind: "claude", args: rest };
@@ -446,6 +493,17 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     } else if (mode.kind === "projects") {
         const { runProjects } = await import("@dorothy/memory/commands");
         process.exitCode = await runProjects();
+    } else if (mode.kind === "claude-hook") {
+        // No config(): the hook loads Dorothy's .env by path, once
+        // claude's variables are gone (claude-hook.ts).
+        const { runHook } = await import("./claude-hook.js");
+        const code = await runHook(mode.hook);
+        // A hook and a catch-up end here, as chat does: nothing they
+        // started may keep a process of Claude Code's hooks alive.
+        if (mode.hook.kind === "hook" || mode.hook.kind === "catch-up") {
+            process.exit(code);
+        }
+        process.exitCode = code;
     } else if (mode.kind === "claude") {
         // No config(): claude signs in as the user's own Claude Code does.
         const { runClaude } = await import("./claude.js");

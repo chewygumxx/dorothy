@@ -144,11 +144,13 @@ describe("runReview", () => {
             ok: false,
             reason: "title is 61 characters, over 60",
             costUsd: 0.25,
+            stage: "notes",
         });
         expect(await run(fakeCall(answered({ title: "a" })).call)).toEqual({
             ok: false,
             reason: "no description in the notes",
             costUsd: 0.25,
+            stage: "notes",
         });
     });
 
@@ -160,7 +162,12 @@ describe("runReview", () => {
         });
         expect(
             await runReview({ call, systemPrompt: "s", prompt: "p" }),
-        ).toEqual({ ok: false, reason: "no valid output", costUsd: 0.1 });
+        ).toEqual({
+            ok: false,
+            reason: "no valid output",
+            costUsd: 0.1,
+            stage: "call",
+        });
     });
 });
 
