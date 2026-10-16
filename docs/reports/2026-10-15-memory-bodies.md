@@ -722,6 +722,32 @@ The two catch-ups both ran, as the plan allowed: here the later found
 the session already recorded and its review claimed, rather than the
 launch's notes gone.
 
+### Recording: by hand
+
+At the user's request the controller ran the check itself on
+2026-10-16, on the user's own data: `bun run dev --claude` in a Herdr
+pane beside its own, from a fresh shell with no `CLAUDE_CODE_*`
+variables, prompts sent through Herdr.
+
+- **Recorded at each reply.** After the first reply the `Stop` hook
+  wrote 2 events into a new conversation and reviewed it ($0.02).
+- **The live conversation left out.** Asked to search for a password
+  said in that turn, she found nothing: the only match was the live
+  conversation.
+- **remember.** She saved `personal/heron-festival-test`; its `from`
+  named the live conversation.
+- **/clear.** It began a new session; its `SessionEnd` catch-up
+  recorded and reviewed the old one and marked its note ended. In the
+  new session's first turn, search found the cleared conversation by
+  the title its review gave it.
+- **At exit.** The catch-ups emptied the launches directory; the hook's
+  log held only `info` lines.
+- **Afterwards.** `--list` showed both sessions as reviewed
+  conversations, `/clear`'s as one of its own; `--facts` showed the
+  fact; `--check` passed with no `unread:` line. In chat, asked what
+  password she had been told in Claude Code, she searched and answered
+  from both the fact and the conversation.
+
 ## Known limitations
 
 - The block is fixed for the launch: a fact written in another body
