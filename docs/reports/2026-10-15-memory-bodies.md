@@ -63,7 +63,7 @@ Delivery's checks passed (`bun run check`, 1615 tests after the final
 review's fixes), its end-to-end run on temporary data behaved as
 expected, and the user's own check in `dorothy --claude` passed (see
 Verification, By hand). Recording's checks passed at its last commit
-(`bun run check`, 1711 tests), and its run through the stand-in
+(`bun run check`, 1721 tests), and its run through the stand-in
 recorded a session whole and reviewed it on Dorothy's own credentials,
 no review reaching the gateway (see Verification, Recording).
 
@@ -567,13 +567,14 @@ is outside delivery and left for a follow-up.
 
 ### Recording: the checks
 
-Run on 2026-10-16 on `feat/memory-recording`, at the report's commit:
+Run on 2026-10-16 on `feat/memory-recording`, after the final review's
+fixes:
 
 ```sh
 bun run format && bun run check
 ```
 
-Passed: lint, types and the tests, `1711 pass`, `0 fail`, 91 files.
+Passed: lint, types and the tests, `1721 pass`, `0 fail`, 91 files.
 
 ### Recording: a session through the stand-in
 
