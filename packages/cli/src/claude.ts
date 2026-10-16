@@ -282,6 +282,8 @@ export function mergeJson(a: Json, b: Json): Json {
     return out;
 }
 
+const isInline = (value: string) => value.trimStart().startsWith("{");
+
 // A flag's value as JSON: inline, or the file it names.
 function jsonOf(
     value: string,
@@ -289,7 +291,7 @@ function jsonOf(
     read: (path: string) => string,
 ): Json | { problem: string } {
     try {
-        const text = value.trimStart().startsWith("{")
+        const text = isInline(value)
             ? value
             : read(isAbsolute(value) ? value : resolve(cwd, value));
         const parsed: unknown = JSON.parse(text);
@@ -335,35 +337,36 @@ export function dorothyFlags(
             rest.push(...args.slice(index));
             break;
         }
-        const name = [SETTINGS, MCP_CONFIG].find(
+        const name = [...MERGED].find(
             (flag) => arg === flag || arg.startsWith(`${flag}=`),
         );
         const ours = name === undefined ? null : (values[name] ?? null);
-        const value =
-            arg === name ? args[index + 1] : arg.slice((name ?? "").length + 1);
-        if (
-            name === undefined ||
-            ours === null ||
-            !MERGED.has(name) ||
-            value === undefined
-        ) {
+        if (name === undefined || ours === null) {
             rest.push(arg);
             continue;
         }
-        if (arg === name) {
+        const spaced = arg === name;
+        const value = spaced ? args[index + 1] : arg.slice(name.length + 1);
+        if (value === undefined) {
+            rest.push(arg);
+            continue;
+        }
+        if (spaced) {
             index += 1;
         }
+        // The flag as the user gave it, with its value.
+        const given = spaced ? [arg, value] : [arg];
         const theirs = jsonOf(value, cwd, read);
         if ("problem" in theirs && typeof theirs.problem === "string") {
-            rest.push(...(arg === name ? [arg, value] : [arg]));
+            rest.push(...given);
             warnings.push(
                 `your ${name} could not be read (${theirs.problem}); it is passed on as given, and may override Dorothy's`,
             );
             continue;
         }
         values[name] = mergeJson(theirs as Json, ours);
-        if (!value.trimStart().startsWith("{")) {
-            filed.push(arg === name ? [arg, value] : [arg]);
+        if (!isInline(value)) {
+            filed.push(given);
         }
     }
     const files: string[] = [];
@@ -390,6 +393,20 @@ export function dorothyFlags(
         return [`${name}=${JSON.stringify(value)}`];
     });
     return { args: [...front, ...rest], warnings, files };
+}
+
+// The recall server as claude starts it: this program again, in the
+// project claude starts in.
+function recallServer(self: readonly string[], dir: string): Json {
+    return {
+        mcpServers: {
+            [CLAUDE_SERVER_NAME]: {
+                type: "stdio",
+                command: self[0],
+                args: [...self.slice(1), "--recall-server", "--project", dir],
+            },
+        },
+    };
 }
 
 // Where claude runs and with what environment. A package script, such as
@@ -565,22 +582,7 @@ export async function launchClaude(
             : args,
         {
             settings: Object.keys(settings).length > 0 ? settings : null,
-            mcpConfig: recall
-                ? {
-                      mcpServers: {
-                          [CLAUDE_SERVER_NAME]: {
-                              type: "stdio",
-                              command: self[0],
-                              args: [
-                                  ...self.slice(1),
-                                  "--recall-server",
-                                  "--project",
-                                  dir,
-                              ],
-                          },
-                      },
-                  }
-                : null,
+            mcpConfig: recall ? recallServer(self, dir) : null,
         },
         { cwd: dir, read, writePrivate },
     );

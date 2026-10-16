@@ -76,6 +76,9 @@ export type Action =
 const oneRow = (text: string) =>
     text.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\s]+/gu, " ").trim();
 
+const plural = (count: number, noun: string) =>
+    `${count} ${noun}${count === 1 ? "" : "s"}`;
+
 export function lookupLine(
     ok: boolean,
     lookup: Lookup,
@@ -90,12 +93,9 @@ export function lookupLine(
         if (!ok) {
             return { text: `⌕ couldn't search ${subject}` };
         }
-        const plural = (count: number, noun: string) =>
-            `${count} ${noun}${count === 1 ? "" : "s"}`;
+        const facts = lookup.facts ?? 0;
         const counts = [
-            ...((lookup.facts ?? 0) > 0
-                ? [plural(lookup.facts as number, "fact")]
-                : []),
+            ...(facts > 0 ? [plural(facts, "fact")] : []),
             ...(lookup.hits > 0 ? [plural(lookup.hits, "conversation")] : []),
         ];
         const found = counts.length === 0 ? "nothing found" : counts.join(", ");
@@ -110,11 +110,7 @@ export function lookupLine(
                 ? "tags"
                 : `tags under ${oneRow(lookup.under)}`;
         const count =
-            lookup.hits === 0
-                ? "no tags"
-                : lookup.hits === 1
-                  ? "1 tag"
-                  : `${lookup.hits} tags`;
+            lookup.hits === 0 ? "no tags" : plural(lookup.hits, "tag");
         return { text: `⌕ listed ${what} · ${count}` };
     }
     if (lookup.tool === "recollect") {
@@ -274,6 +270,27 @@ function memoryLine(
     };
 }
 
+// The lines with the reply a failure cut short marked: its live text, or
+// with nothing live, the line a lookup pending at the failure may just
+// have flushed.
+function interruptedLines(state: ChatState): Line[] {
+    if (state.live) {
+        return append(state.lines, {
+            role: "dorothy",
+            text: state.live,
+            interrupted: true,
+            continued: state.continued,
+        });
+    }
+    const last = state.lines.findLastIndex((line) => line.role === "dorothy");
+    if (!state.continued || last === -1) {
+        return state.lines;
+    }
+    return state.lines.map((line, index) =>
+        index === last ? { ...line, interrupted: true } : line,
+    );
+}
+
 function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
     switch (event.type) {
         case "ready":
@@ -344,7 +361,7 @@ function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
                 ),
                 lines: append(state.lines, {
                     role: "lookup",
-                    text: `compacted turns ${event.from}-${event.through} into ${event.clusters} cluster${event.clusters === 1 ? "" : "s"}`,
+                    text: `compacted turns ${event.from}-${event.through} into ${plural(event.clusters, "cluster")}`,
                 }),
             };
         case "memory-cost":
@@ -361,27 +378,13 @@ function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
                 rememberLine(event.ok, event.input, event.output),
                 event.offset,
             );
-        case "error": {
-            // With nothing live, a lookup pending at the failure may just
-            // have flushed the reply's text; that line carries the marker.
-            const last = state.lines.findLastIndex(
-                (line) => line.role === "dorothy",
-            );
-            const lines = state.live
-                ? append(state.lines, {
-                      role: "dorothy",
-                      text: state.live,
-                      interrupted: true,
-                      continued: state.continued,
-                  })
-                : state.continued && last !== -1
-                  ? state.lines.map((line, index) =>
-                        index === last ? { ...line, interrupted: true } : line,
-                    )
-                  : state.lines;
+        case "error":
             return {
                 ...state,
-                lines: append(lines, { role: "error", text: event.message }),
+                lines: append(interruptedLines(state), {
+                    role: "error",
+                    text: event.message,
+                }),
                 live: "",
                 streaming: false,
                 split: false,
@@ -389,7 +392,6 @@ function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
                 replyOffset: 0,
                 status: "disconnected",
             };
-        }
     }
 }
 

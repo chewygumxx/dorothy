@@ -287,20 +287,16 @@ export class Conversation implements ChatSession {
         }
         if (message.type === "system" && message.subtype === "init") {
             this.#checkRecall(message);
-        }
-        // The CLI sends init at the start of every turn; only the first one
-        // means the session is ready.
-        if (
-            message.type === "system" &&
-            message.subtype === "init" &&
-            !this.#ready
-        ) {
-            this.#ready = true;
-            this.#emit({
-                type: "ready",
-                model: message.model,
-                sdkSessionId: message.session_id,
-            });
+            // The CLI sends init at the start of every turn; only the first
+            // one means the session is ready.
+            if (!this.#ready) {
+                this.#ready = true;
+                this.#emit({
+                    type: "ready",
+                    model: message.model,
+                    sdkSessionId: message.session_id,
+                });
+            }
         } else if (
             message.type === "stream_event" &&
             message.event.type === "content_block_delta" &&
@@ -327,28 +323,22 @@ export class Conversation implements ChatSession {
                     (usage.cache_creation_input_tokens ?? 0);
             }
             for (const block of message.message.content) {
-                const tool =
-                    block.type === "tool_use" ? toolOf(block.name) : null;
-                if (
-                    block.type === "tool_use" &&
-                    tool !== null &&
-                    !this.#calls.has(block.id)
-                ) {
-                    this.#calls.set(block.id, {
-                        tool,
-                        input: block.input,
-                        offset: this.#reply.length,
-                    });
+                if (block.type !== "tool_use") {
+                    continue;
+                }
+                const pending = {
+                    input: block.input,
+                    offset: this.#reply.length,
+                };
+                const tool = toolOf(block.name);
+                if (tool !== null && !this.#calls.has(block.id)) {
+                    this.#calls.set(block.id, { tool, ...pending });
                 }
                 if (
-                    block.type === "tool_use" &&
                     block.name === REMEMBER_TOOL &&
                     !this.#remembers.has(block.id)
                 ) {
-                    this.#remembers.set(block.id, {
-                        input: block.input,
-                        offset: this.#reply.length,
-                    });
+                    this.#remembers.set(block.id, pending);
                 }
             }
         } else if (message.type === "user") {

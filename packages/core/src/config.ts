@@ -215,25 +215,21 @@ function parseTable<T extends object>(
         return defaults;
     }
     const parsed = { ...defaults };
+    const names = Object.keys(specs) as (keyof T)[];
     for (const [key, field] of Object.entries(value)) {
-        let known = false;
-        for (const name in specs) {
-            const spec = specs[name];
-            if (spec.key !== key) {
-                continue;
-            }
-            known = true;
-            const read = spec.read(field);
-            if (read === undefined) {
-                warnings.push(
-                    `config.toml: ${table}.${key} must be ${spec.expected}`,
-                );
-            } else {
-                parsed[name] = read;
-            }
-        }
-        if (!known) {
+        const name = names.find((each) => specs[each].key === key);
+        if (name === undefined) {
             warnings.push(`config.toml: unknown key ${table}.${key}`);
+            continue;
+        }
+        const spec = specs[name];
+        const read = spec.read(field);
+        if (read === undefined) {
+            warnings.push(
+                `config.toml: ${table}.${key} must be ${spec.expected}`,
+            );
+        } else {
+            parsed[name] = read;
         }
     }
     return parsed;

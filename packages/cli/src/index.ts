@@ -91,6 +91,14 @@ export const USAGE = [
     "                                  prompt or --dump-context",
 ].join("\n");
 
+// The flags that take no arguments, and the mode each starts.
+const BARE = {
+    "--list": "list",
+    "--tags": "tags",
+    "--facts": "facts",
+    "--projects": "projects",
+} as const;
+
 const DUMP_USAGE = "--dump-context takes [--resume <phrase>] [message...]";
 
 function parseDump(argv: readonly string[]): Mode {
@@ -196,15 +204,10 @@ export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
     if (first === "--help" || first === "-h") {
         return { kind: "help" };
     }
-    if (first === "--list") {
+    if (first !== undefined && Object.hasOwn(BARE, first)) {
         return rest.length === 0
-            ? { kind: "list" }
-            : { kind: "usage", message: "--list takes no arguments" };
-    }
-    if (first === "--tags") {
-        return rest.length === 0
-            ? { kind: "tags" }
-            : { kind: "usage", message: "--tags takes no arguments" };
+            ? { kind: BARE[first as keyof typeof BARE] }
+            : { kind: "usage", message: `${first} takes no arguments` };
     }
     if (first === "--edit-tags") {
         if (rest.length !== 0) {
@@ -216,11 +219,6 @@ export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
         return isTTY
             ? { kind: "tags-edit" }
             : { kind: "usage", message: "--edit-tags needs a terminal" };
-    }
-    if (first === "--facts" || first === "--projects") {
-        return rest.length === 0
-            ? { kind: first === "--facts" ? "facts" : "projects" }
-            : { kind: "usage", message: `${first} takes no arguments` };
     }
     if (first === "--retire") {
         const usage = {
