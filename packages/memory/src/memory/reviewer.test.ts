@@ -97,7 +97,7 @@ describe("Reviewer", () => {
         ]);
     });
 
-    it("names what went wrong by kind beside the warning", async () => {
+    it("names what went wrong by kind beside the warning, and a call's error", async () => {
         const problems: ReviewProblem[] = [];
         const options = {
             dir,
@@ -114,7 +114,11 @@ describe("Reviewer", () => {
         };
         await new Reviewer({
             ...options,
-            call: async () => ({ ok: false, reason: "words", costUsd: 0 }),
+            call: async () => ({
+                ok: false,
+                reason: "API Error: 529 Overloaded",
+                costUsd: 0,
+            }),
         }).review(PHRASE, new AbortController().signal);
         await new Reviewer({
             ...options,
@@ -127,7 +131,11 @@ describe("Reviewer", () => {
             }),
         }).review(PHRASE, new AbortController().signal);
         expect(problems).toEqual([
-            { phrase: PHRASE, kind: "call" },
+            {
+                phrase: PHRASE,
+                kind: "call",
+                error: "API Error: 529 Overloaded",
+            },
             { phrase: PHRASE, kind: "notes" },
         ]);
     });

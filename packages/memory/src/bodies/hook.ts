@@ -106,11 +106,17 @@ const PROBLEMS: Record<ReviewProblem["kind"], string> = {
     tags: "tags are paused: the vocabulary can't be read",
 };
 
-// A reviewer's warning as the log may hold it.
-const reviewProblem = (problem: ReviewProblem) =>
-    problem.phrase === null
-        ? `review: ${PROBLEMS[problem.kind]}`
-        : `review of ${problem.phrase}: ${PROBLEMS[problem.kind]}`;
+// A reviewer's warning as the log may hold it: never the message,
+// which names the title, but a failed call's error.
+const reviewProblem = (problem: ReviewProblem) => {
+    const what =
+        problem.error === undefined
+            ? PROBLEMS[problem.kind]
+            : `${PROBLEMS[problem.kind]} (${problem.error})`;
+    return problem.phrase === null
+        ? `review: ${what}`
+        : `review of ${problem.phrase}: ${what}`;
+};
 
 // A hook's JSON on stdin, or null for one it cannot use.
 export function parseHookInput(text: string): HookInput | null {
@@ -391,8 +397,8 @@ async function stepsFor(
                     persona: deps.persona,
                     now,
                     entries: () => loaded.entries,
-                    // The log names the phrase and the kind alone: the
-                    // message holds the title, or the model's words.
+                    // The log names the phrase, the kind and a call's
+                    // error: the message holds the title.
                     warn: (_message, problem) =>
                         log.warn(reviewProblem(problem)),
                     cost: (usd) =>

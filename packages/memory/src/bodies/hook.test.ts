@@ -420,7 +420,7 @@ describe("runClaudeHook", () => {
         );
     });
 
-    it("logs a failed review by its kind, never its title or the model's words", async () => {
+    it("logs a failed call with its error, never the conversation's title", async () => {
         const answers = [
             {
                 ok: true as const,
@@ -430,7 +430,7 @@ describe("runClaudeHook", () => {
             },
             {
                 ok: false as const,
-                reason: "I won't summarise the tea secrets",
+                reason: "API Error: 401 Invalid bearer token",
                 costUsd: 0,
             },
         ];
@@ -452,9 +452,30 @@ describe("runClaudeHook", () => {
         const [name] = await conversations();
         const phrase = (name ?? "").replace(/\.jsonl$/, "");
         const log = await readFile(hookLogPath(env), "utf8");
-        expect(log).toContain(`review of ${phrase}: the review call failed`);
+        expect(log).toContain(
+            `review of ${phrase}: the review call failed (API Error: 401 Invalid bearer token)`,
+        );
         expect(log).not.toContain("Tea at the Ritz");
-        expect(log).not.toContain("tea secrets");
+    });
+
+    it("logs notes it could not use by their kind alone", async () => {
+        const unusable: StructuredCall = async () => ({
+            ok: true as const,
+            output: { ...NOTES, title: "" },
+            model: "m",
+            costUsd: 0.01,
+        });
+        await runClaudeHook(
+            { kind: "hook" },
+            { ...deps(input("Stop")), call: unusable },
+        );
+        const [name] = await conversations();
+        const phrase = (name ?? "").replace(/\.jsonl$/, "");
+        const log = await readFile(hookLogPath(env), "utf8");
+        expect(log).toContain(
+            `review of ${phrase}: the review's notes were not usable`,
+        );
+        expect(log).not.toContain("the title is empty");
     });
 
     it("reads a halted session again once it can, and dismisses one", async () => {
