@@ -338,6 +338,30 @@ describe("the edit view", () => {
         });
     });
 
+    it("refuses an empty or over-long note", () => {
+        expect(parse(["Note:\nAbout tui.", "Note:"])).toEqual({
+            kind: "error",
+            reason: "tui: Note can't be empty",
+        });
+        expect(
+            parse(["Note:\nAbout tui.", `Note:\n${"x".repeat(161)}`]),
+        ).toEqual({
+            kind: "error",
+            reason: "a tag's note is 161 characters, over 160",
+        });
+    });
+
+    it("refuses a field before any concept, and a new block without a Tag:", () => {
+        expect(parseTagsView(`Note: stray\n${VIEW}`, SMALL)).toEqual({
+            kind: "error",
+            reason: "Note: is in no concept",
+        });
+        expect(parseTagsView(`${VIEW}\nConcept:\nNote:\nN.\n`, SMALL)).toEqual({
+            kind: "error",
+            reason: "a new concept: a new concept needs a Note:",
+        });
+    });
+
     it.each([
         [[["Under: tui", "Under: nowhere"]], "Under names no concept: nowhere"],
         [

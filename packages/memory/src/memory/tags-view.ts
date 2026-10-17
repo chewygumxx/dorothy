@@ -142,7 +142,6 @@ export type TagsParse =
 // it, whitespace aside, is an edit; a rendered block that is gone is a
 // deletion.
 export function parseTagsView(text: string, shown: Vocabulary): TagsParse {
-    const error = (reason: string): TagsParse => ({ kind: "error", reason });
     // Some editors save a byte order mark at the start of the file.
     const lines = text
         .replace(/^\uFEFF/, "")
@@ -151,150 +150,229 @@ export function parseTagsView(text: string, shown: Vocabulary): TagsParse {
     if (lines.every((line) => line.trim() === "")) {
         return { kind: "unchanged" };
     }
-    // A block starts at Concept:, or at a Tag: in no block that has one.
-    const blocks: Map<string, string[]>[] = [];
-    let block: Map<string, string[]> | null = null;
-    let inNote = false;
-    for (const line of lines) {
-        const field = FIELD.exec(line);
-        if (field === null) {
-            if (inNote && block !== null) {
-                block.get("Note")?.push(line);
-                continue;
-            }
-            if (line.trim() === "") {
-                continue;
-            }
-            const unknown = UNKNOWN.exec(line);
-            return error(
-                unknown === null
-                    ? `"${line.trim()}" is in no concept`
-                    : `there is no field ${unknown[1]}`,
-            );
-        }
-        const [, name = "", rest = ""] = field;
-        if (
-            name === "Concept" ||
-            (name === "Tag" && (block === null || block.has("Tag")))
-        ) {
-            block = new Map();
-            blocks.push(block);
-        }
-        if (block === null) {
-            return error(`${name}: is in no concept`);
-        }
-        if (block.has(name)) {
-            return error(`${name} appears twice in one concept`);
-        }
-        block.set(name, [rest]);
-        inNote = name === "Note";
+    const blocks = readBlocks(lines);
+    if (typeof blocks === "string") {
+        return { kind: "error", reason: blocks };
     }
-
     const live = new Map(liveConcepts(shown));
+    const seen = new Set<string>();
     const edit: TagsEdit = {
         changed: new Map(),
         created: [],
         deleted: [],
         merged: new Map(),
     };
-    const seen = new Set<string>();
-    for (const fields of blocks) {
-        const value = (name: string) => {
-            const given = fields.get(name);
-            return given === undefined ? undefined : normalise(given.join(" "));
-        };
-        const id = value("Concept") || undefined;
-        const tag = value("Tag");
-        const note = value("Note");
-        const merge = value("Merge") || undefined;
-        const alsoText = value("Also");
-        const underText = value("Under");
-        const also = alsoText === undefined ? undefined : listOf(alsoText);
-        const under = underText === undefined ? undefined : listOf(underText);
-        const name = tag || id || "a new concept";
-        if (tag === "") {
-            return error(`${name}: Tag can't be empty`);
-        }
-        if (note === "") {
-            return error(`${name}: Note can't be empty`);
-        }
-        for (const label of [
-            ...(tag === undefined ? [] : [tag]),
-            ...(also ?? []),
-        ]) {
-            const problem = labelProblem(label);
-            if (problem !== null) {
-                return error(problem);
-            }
-        }
-        const noteProblem = note === undefined ? null : scopeNoteProblem(note);
-        if (noteProblem !== null) {
-            return error(noteProblem);
-        }
-        if (also !== undefined && also.length > TAG_LIMITS.altLabels) {
-            return error(
-                `${name} has more than ${TAG_LIMITS.altLabels} alternative labels`,
-            );
-        }
-        if (id === undefined) {
-            if (merge !== undefined) {
-                return error(`${name}: a new concept can't be merged`);
-            }
-            if (tag === undefined || note === undefined) {
-                return error(`${name}: a new concept needs a Note:`);
-            }
-            edit.created.push({
-                tag,
-                also: also ?? [],
-                under: under ?? [],
-                note,
-            });
-            continue;
-        }
-        const concept = live.get(id);
-        if (seen.has(id)) {
-            return error(`${id} appears twice`);
-        }
-        if (concept === undefined) {
-            return error(`there is no concept ${id}`);
-        }
-        seen.add(id);
-        if (merge !== undefined) {
-            edit.merged.set(id, merge);
-            continue;
-        }
-        const change: ConceptChange = {};
-        if (tag !== undefined && tag !== concept.prefLabel) {
-            change.tag = tag;
-        }
-        if (also !== undefined && list(also) !== list(concept.altLabel)) {
-            change.also = also;
-        }
-        if (
-            under !== undefined &&
-            list(under) !== list(parentLabels(shown, concept))
-        ) {
-            change.under = under;
-        }
-        if (note !== undefined && note !== concept.scopeNote) {
-            change.note = note;
-        }
-        if (Object.keys(change).length > 0) {
-            edit.changed.set(id, change);
+    for (const block of blocks) {
+        const fields = fieldsOf(block);
+        const problem =
+            blockProblem(fields) ??
+            addBlock(edit, fields, { live, seen, shown });
+        if (problem !== null) {
+            return { kind: "error", reason: problem };
         }
     }
-    for (const id of live.keys()) {
-        if (!seen.has(id)) {
-            edit.deleted.push(id);
-        }
-    }
-    const nothing =
-        edit.changed.size === 0 &&
-        edit.created.length === 0 &&
-        edit.deleted.length === 0 &&
-        edit.merged.size === 0;
-    return nothing ? { kind: "unchanged" } : { kind: "edit", edit };
+    edit.deleted.push(...[...live.keys()].filter((id) => !seen.has(id)));
+    return isEmpty(edit) ? { kind: "unchanged" } : { kind: "edit", edit };
 }
+
+// A block of the view: each field it gives, with its lines.
+type Block = Map<string, string[]>;
+
+// The view's lines as blocks, or why they are not. A block starts at
+// Concept:, or at a Tag: in no block that has one; a Note: runs on to the
+// next field.
+function readBlocks(lines: readonly string[]): Block[] | string {
+    const blocks: Block[] = [];
+    let block: Block | null = null;
+    let inNote = false;
+    for (const line of lines) {
+        const field = FIELD.exec(line);
+        if (field === null) {
+            if (inNote) {
+                block?.get("Note")?.push(line);
+            } else if (line.trim() !== "") {
+                return strayLine(line);
+            }
+            continue;
+        }
+        const [, name = "", rest = ""] = field;
+        if (startsBlock(name, block)) {
+            block = new Map();
+            blocks.push(block);
+        }
+        if (block === null) {
+            return `${name}: is in no concept`;
+        }
+        if (block.has(name)) {
+            return `${name} appears twice in one concept`;
+        }
+        block.set(name, [rest]);
+        inNote = name === "Note";
+    }
+    return blocks;
+}
+
+const startsBlock = (name: string, block: Block | null) =>
+    name === "Concept" ||
+    (name === "Tag" && (block === null || block.has("Tag")));
+
+function strayLine(line: string): string {
+    const unknown = UNKNOWN.exec(line);
+    return unknown === null
+        ? `"${line.trim()}" is in no concept`
+        : `there is no field ${unknown[1]}`;
+}
+
+// A block's fields, normalised; undefined for one it leaves out.
+type Fields = {
+    id: string | undefined;
+    tag: string | undefined;
+    also: string[] | undefined;
+    under: string[] | undefined;
+    note: string | undefined;
+    merge: string | undefined;
+    // What its errors call it.
+    name: string;
+};
+
+function fieldsOf(block: Block): Fields {
+    const value = (name: string) => {
+        const given = block.get(name);
+        return given === undefined ? undefined : normalise(given.join(" "));
+    };
+    const listValue = (name: string) => {
+        const text = value(name);
+        return text === undefined ? undefined : listOf(text);
+    };
+    const id = value("Concept") || undefined;
+    const tag = value("Tag");
+    return {
+        id,
+        tag,
+        also: listValue("Also"),
+        under: listValue("Under"),
+        note: value("Note"),
+        merge: value("Merge") || undefined,
+        name: tag || id || "a new concept",
+    };
+}
+
+// What is wrong with a block's own fields, before it is compared.
+function blockProblem({ name, tag, also, note }: Fields): string | null {
+    if (tag === "") {
+        return `${name}: Tag can't be empty`;
+    }
+    if (note === "") {
+        return `${name}: Note can't be empty`;
+    }
+    for (const label of [
+        ...(tag === undefined ? [] : [tag]),
+        ...(also ?? []),
+    ]) {
+        const problem = labelProblem(label);
+        if (problem !== null) {
+            return problem;
+        }
+    }
+    const noteProblem = note === undefined ? null : scopeNoteProblem(note);
+    if (noteProblem !== null) {
+        return noteProblem;
+    }
+    return also !== undefined && also.length > TAG_LIMITS.altLabels
+        ? `${name} has more than ${TAG_LIMITS.altLabels} alternative labels`
+        : null;
+}
+
+// Adds a block to the edit, as a new concept, a merge or a change to the
+// concept it names; or says why it can't.
+function addBlock(
+    edit: TagsEdit,
+    fields: Fields,
+    {
+        live,
+        seen,
+        shown,
+    }: {
+        live: ReadonlyMap<string, Concept>;
+        seen: Set<string>;
+        shown: Vocabulary;
+    },
+): string | null {
+    const { id } = fields;
+    if (id === undefined) {
+        const draft = draftOf(fields);
+        if (typeof draft === "string") {
+            return draft;
+        }
+        edit.created.push(draft);
+        return null;
+    }
+    const concept = live.get(id);
+    if (seen.has(id)) {
+        return `${id} appears twice`;
+    }
+    if (concept === undefined) {
+        return `there is no concept ${id}`;
+    }
+    seen.add(id);
+    if (fields.merge !== undefined) {
+        edit.merged.set(id, fields.merge);
+        return null;
+    }
+    const change = changeOf(fields, concept, shown);
+    if (Object.keys(change).length > 0) {
+        edit.changed.set(id, change);
+    }
+    return null;
+}
+
+function draftOf({
+    name,
+    tag,
+    also,
+    under,
+    note,
+    merge,
+}: Fields): ConceptDraft | string {
+    if (merge !== undefined) {
+        return `${name}: a new concept can't be merged`;
+    }
+    if (tag === undefined || note === undefined) {
+        return `${name}: a new concept needs a Note:`;
+    }
+    return { tag, also: also ?? [], under: under ?? [], note };
+}
+
+// The fields that differ from the concept as it was shown.
+function changeOf(
+    { tag, also, under, note }: Fields,
+    concept: Concept,
+    shown: Vocabulary,
+): ConceptChange {
+    const change: ConceptChange = {};
+    if (tag !== undefined && tag !== concept.prefLabel) {
+        change.tag = tag;
+    }
+    if (also !== undefined && list(also) !== list(concept.altLabel)) {
+        change.also = also;
+    }
+    if (
+        under !== undefined &&
+        list(under) !== list(parentLabels(shown, concept))
+    ) {
+        change.under = under;
+    }
+    if (note !== undefined && note !== concept.scopeNote) {
+        change.note = note;
+    }
+    return change;
+}
+
+const isEmpty = (edit: TagsEdit) =>
+    edit.changed.size === 0 &&
+    edit.created.length === 0 &&
+    edit.deleted.length === 0 &&
+    edit.merged.size === 0;
 
 // The user's edit, applied to the vocabulary as it is now: labels and notes
 // first, so Under and Merge name concepts as they stand after the edit;
