@@ -103,6 +103,20 @@ type Fake = {
     inputEnded: boolean;
 };
 
+// One turn's steps, pausing at WAIT_FOR_INTERRUPT until interrupted.
+async function* play(
+    steps: readonly Step[],
+    interrupted: () => Promise<void>,
+): AsyncGenerator<SDKMessage> {
+    for (const step of steps) {
+        if (step === WAIT_FOR_INTERRUPT) {
+            await interrupted();
+        } else {
+            yield step;
+        }
+    }
+}
+
 // Replays one scripted batch of messages per user message. WAIT_FOR_INTERRUPT
 // pauses the batch until interrupt() is called.
 function fakeQuery(
@@ -121,15 +135,13 @@ function fakeQuery(
                 let turn = 0;
                 for await (const message of prompt) {
                     fake.prompts.push(String(message.message.content));
-                    for (const step of turns[turn++] ?? []) {
-                        if (step === WAIT_FOR_INTERRUPT) {
-                            await new Promise<void>((resolve) => {
+                    yield* play(
+                        turns[turn++] ?? [],
+                        () =>
+                            new Promise<void>((resolve) => {
                                 release = resolve;
-                            });
-                        } else {
-                            yield step;
-                        }
-                    }
+                            }),
+                    );
                     if (fail) {
                         throw fail;
                     }

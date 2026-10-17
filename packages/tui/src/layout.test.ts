@@ -54,39 +54,44 @@ describe("tooSmallMessage", () => {
     });
 });
 
+const upTo = (from: number, to: number) =>
+    Array.from({ length: to - from + 1 }, (_, at) => from + at);
+
+// Every window from the minimum up to 60 rows, with every mix of options.
+function* layouts(): Generator<[number, Options]> {
+    for (const statusLines of upTo(0, 5)) {
+        for (const rows of upTo(minRows(statusLines), 60)) {
+            for (const options of optionsWith(statusLines)) {
+                yield [rows, options];
+            }
+        }
+    }
+}
+
+// Every mix of raw pane, warnings, status rows and input wanted.
+const optionsWith = (statusLines: number): Options[] =>
+    [false, true].flatMap((showRaw) =>
+        upTo(0, 3).flatMap((warnings) =>
+            upTo(0, statusLines).flatMap((statusRows) =>
+                [1, 3, 5, 6, 50].map((inputRows) => ({
+                    showRaw,
+                    rawCount: 20,
+                    warnings,
+                    statusRows,
+                    inputRows,
+                })),
+            ),
+        ),
+    );
+
 describe("fitLayout", () => {
     it("fits every part, two rows short of the window, from the minimum up", () => {
-        for (let statusLines = 0; statusLines <= 5; statusLines++) {
-            for (let rows = minRows(statusLines); rows <= 60; rows++) {
-                for (const showRaw of [false, true]) {
-                    for (let warnings = 0; warnings <= 3; warnings++) {
-                        for (
-                            let statusRows = 0;
-                            statusRows <= statusLines;
-                            statusRows++
-                        ) {
-                            for (const wanted of [1, 3, 5, 6, 50]) {
-                                const options = {
-                                    showRaw,
-                                    rawCount: 20,
-                                    warnings,
-                                    statusRows,
-                                    inputRows: wanted,
-                                };
-                                const layout = fitLayout(rows, options);
-                                expect(used(rows, options)).toBe(rows - 2);
-                                expect(layout.replyRows).toBeGreaterThanOrEqual(
-                                    3,
-                                );
-                                expect(layout.inputRows).toBe(
-                                    Math.min(wanted, 5),
-                                );
-                                expect(layout.rawRows > 0).toBe(showRaw);
-                            }
-                        }
-                    }
-                }
-            }
+        for (const [rows, options] of layouts()) {
+            const layout = fitLayout(rows, options);
+            expect(used(rows, options)).toBe(rows - 2);
+            expect(layout.replyRows).toBeGreaterThanOrEqual(3);
+            expect(layout.inputRows).toBe(Math.min(options.inputRows, 5));
+            expect(layout.rawRows > 0).toBe(options.showRaw);
         }
     });
 

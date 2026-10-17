@@ -51,20 +51,26 @@ function cellLines(spans: Span[]): Cell[][] {
             if (text === "\n" || text === "\r\n") {
                 line = [];
                 lines.push(line);
-            } else if (text === "\t") {
-                for (let i = 0; i < 4; i++) {
-                    line.push({ text: " ", width: 1, style: span.style });
-                }
-            } else if (!CONTROL.test(text)) {
-                line.push({
-                    text,
-                    width: stringWidth(text),
-                    style: span.style,
-                });
+            } else {
+                line.push(...cellsOf(text, span.style));
             }
         }
     }
     return lines;
+}
+
+// A grapheme's cells: a tab's four spaces, none for a control character.
+function cellsOf(text: string, style: Style): Cell[] {
+    if (text === "\t") {
+        return Array.from({ length: 4 }, () => ({
+            text: " ",
+            width: 1,
+            style,
+        }));
+    }
+    return CONTROL.test(text)
+        ? []
+        : [{ text, width: stringWidth(text), style }];
 }
 
 // Adjacent cells that share a style object become one span.
