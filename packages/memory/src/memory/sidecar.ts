@@ -276,6 +276,71 @@ function readTags(value: unknown): string[] {
     return tags;
 }
 
+// Each note with its owner: a note that is not there has none. Unlike a
+// note's, the tags' owner stays when the set is empty: she may have found
+// nothing to tag.
+function readNotes(data: Record<string, unknown>, sidecar: Sidecar): void {
+    const owners = isRecord(data.fields) ? data.fields : {};
+    for (const field of FIELDS) {
+        const note = readNote(field, data[field]);
+        sidecar[field] = note;
+        const provenance = readProvenance(owners[field]);
+        if (note !== null && provenance !== null) {
+            sidecar.fields[field] = provenance;
+        }
+    }
+    const tagsBy = readProvenance(owners.tags);
+    if (tagsBy !== null) {
+        sidecar.fields.tags = tagsBy;
+    }
+}
+
+function readTitles(value: unknown): Sidecar["titles"] {
+    const titles: Sidecar["titles"] = [];
+    for (const entry of Array.isArray(value) ? value : []) {
+        if (!isRecord(entry) || typeof entry.title !== "string") {
+            continue;
+        }
+        const title = normalise(entry.title);
+        if (
+            title !== "" &&
+            typeof entry.at === "string" &&
+            isAuthor(entry.by)
+        ) {
+            titles.push({ title, at: entry.at, by: entry.by });
+        }
+    }
+    return titles;
+}
+
+function readAppraisals(value: unknown): Sidecar["appraisals"] {
+    const appraisals: Sidecar["appraisals"] = {};
+    for (const [id, entry] of Object.entries(isRecord(value) ? value : {})) {
+        if (
+            isRecord(entry) &&
+            SERVED.includes(entry.served as Served) &&
+            typeof entry.at === "string" &&
+            typeof entry.model === "string"
+        ) {
+            appraisals[id] = {
+                served: entry.served as Served,
+                at: entry.at,
+                model: entry.model,
+            };
+        }
+    }
+    return appraisals;
+}
+
+function readFailures(value: unknown): Sidecar["failures"] | null {
+    return isRecord(value) &&
+        isCount(value.count) &&
+        value.count > 0 &&
+        typeof value.at === "string"
+        ? { count: value.count, at: value.at }
+        : null;
+}
+
 // Only bad JSON, a non-object or an unknown version make a sidecar
 // unparseable; a field of the wrong shape reads as absent.
 export function parseSidecar(
@@ -299,83 +364,24 @@ export function parseSidecar(
     }
     const sidecar: Sidecar = {
         ...EMPTY_SIDECAR,
-        titles: [],
+        titles: readTitles(data.titles),
         fields: {},
-        appraisals: {},
+        appraisals: readAppraisals(data.appraisals),
         clusters: readClusters(data.clusters),
         tags: readTags(data.tags),
     };
     sidecar.rev = isCount(data.rev) ? data.rev : 0;
-    for (const field of FIELDS) {
-        const note = readNote(field, data[field]);
-        sidecar[field] = note;
-        const provenance = isRecord(data.fields)
-            ? readProvenance(data.fields[field])
-            : null;
-        // A note that is not there has no owner.
-        if (note !== null && provenance !== null) {
-            sidecar.fields[field] = provenance;
-        }
-    }
-    // Unlike a note's, the tags' owner stays when the set is empty: she
-    // may have found nothing to tag.
-    const tagsBy = isRecord(data.fields)
-        ? readProvenance(data.fields.tags)
-        : null;
-    if (tagsBy !== null) {
-        sidecar.fields.tags = tagsBy;
-    }
+    readNotes(data, sidecar);
     sidecar.pinned = data.pinned === true;
     sidecar.hidden = data.hidden === true;
-    if (Array.isArray(data.titles)) {
-        for (const entry of data.titles) {
-            const title =
-                isRecord(entry) && typeof entry.title === "string"
-                    ? normalise(entry.title)
-                    : "";
-            if (
-                isRecord(entry) &&
-                title !== "" &&
-                typeof entry.at === "string" &&
-                isAuthor(entry.by)
-            ) {
-                sidecar.titles.push({
-                    title,
-                    at: entry.at,
-                    by: entry.by,
-                });
-            }
-        }
-    }
     sidecar.reviewedThrough = isCount(data.reviewedThrough)
         ? data.reviewedThrough
         : 0;
     sidecar.reviewCostUsd = readCost(data.reviewCostUsd);
     sidecar.compactionCostUsd = readCost(data.compactionCostUsd);
-    if (isRecord(data.appraisals)) {
-        for (const [id, value] of Object.entries(data.appraisals)) {
-            if (
-                isRecord(value) &&
-                SERVED.includes(value.served as Served) &&
-                typeof value.at === "string" &&
-                typeof value.model === "string"
-            ) {
-                sidecar.appraisals[id] = {
-                    served: value.served as Served,
-                    at: value.at,
-                    model: value.model,
-                };
-            }
-        }
-    }
-    const failures = data.failures;
-    if (
-        isRecord(failures) &&
-        isCount(failures.count) &&
-        failures.count > 0 &&
-        typeof failures.at === "string"
-    ) {
-        sidecar.failures = { count: failures.count, at: failures.at };
+    const failures = readFailures(data.failures);
+    if (failures !== null) {
+        sidecar.failures = failures;
     }
     return { kind: "ok", sidecar };
 }
