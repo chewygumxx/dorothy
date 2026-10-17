@@ -408,7 +408,6 @@ const PLUGINS = {
     "claude-code-setup@claude-plugins-official": true,
     "claude-md-management@claude-plugins-official": true,
     "code-simplifier@claude-plugins-official": true,
-    "explanatory-output-style@claude-plugins-official": true,
     "repo-metadata@chewygumxx": true,
     "superpowers@claude-plugins-official": false,
     "typescript-lsp@claude-plugins-official": true,
