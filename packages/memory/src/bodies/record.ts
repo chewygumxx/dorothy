@@ -24,7 +24,7 @@ import type { HistoryHandle, Lock } from "../memory/sidecar.js";
 import type { RecallIndex } from "../recall/store.js";
 import { sessionPhrase } from "../recall/sync.js";
 import { TranscriptWriter, transcriptDir } from "../transcript.js";
-import { readLines } from "./claude-code.js";
+import { type LinesRead, readLines } from "./claude-code.js";
 import type { HookLog } from "./log.js";
 import { keepHalt, keepNewType, resolveHalt } from "./unread.js";
 
@@ -152,134 +152,35 @@ export async function recordSession(
     if (lock === undefined) {
         return { kind: "unlocked" };
     }
-    const dir = transcriptDir(deps.env);
-    const now = deps.now ?? (() => new Date());
+    const recording: Recording = {
+        report,
+        deps,
+        dir: transcriptDir(deps.env),
+        now: deps.now ?? (() => new Date()),
+    };
     return lock(async (): Promise<Recorded> => {
-        let text: string;
-        try {
-            text = await readFile(report.transcript, "utf8");
-        } catch (error) {
-            return { kind: "missing", reason: describeError(error) };
+        const transcript = await readWhole(report.transcript);
+        if ("reason" in transcript) {
+            return { kind: "missing", reason: transcript.reason };
         }
-        // A line Claude Code is still writing waits for the next reading.
-        const whole = text.slice(0, text.lastIndexOf("\n") + 1);
-        const size = Buffer.byteLength(whole);
-        const lines = whole === "" ? [] : whole.slice(0, -1).split("\n");
-        const named: string[] = [];
-        for (const line of lines) {
-            const id = parsed(line)?.sessionId;
-            if (typeof id === "string" && !named.includes(id)) {
-                named.push(id);
-            }
-        }
-        let found: string | null = null;
-        for (const id of [
-            report.session,
-            ...named.filter((id) => id !== report.session),
-        ]) {
-            found =
-                deps.index === null
-                    ? await scanFor(dir, id)
-                    : sessionPhrase(deps.index, id);
-            if (found !== null) {
-                break;
-            }
-        }
-        let recorded = {
-            uuids: new Set<string>(),
-            last: null as string | null,
-        };
-        let joined = false;
-        if (found !== null) {
-            const own = await cutTornTail(join(dir, `${found}.jsonl`));
-            recorded = recordedUuids(own);
-            joined = sessionsIn(own).has(report.session);
-        }
-        const at =
-            recorded.last === null
-                ? -1
-                : lines.findIndex(
-                      (line) => parsed(line)?.uuid === recorded.last,
-                  );
-        const from = at + 1;
+        const { lines, size } = transcript;
+        const found = await findConversation(lines, recording);
+        const { recorded, joined, from } = await resumeFrom(
+            found,
+            lines,
+            recording,
+        );
         const read = readLines(lines.slice(from), {
             ended: report.ended,
-            recorded: recorded.uuids,
+            recorded,
             since: found === null ? report.since : null,
         });
-        for (const unknown of read.unknown) {
-            const line = lines[from + unknown.line] ?? "";
-            await keepNewType(deps.env, unknown.type, line);
-            deps.log.warn(
-                `session ${report.session}: line ${from + unknown.line + 1} is of a new type, ${unknown.type}; passed over`,
-            );
-        }
-        let phrase = found;
-        if (read.events.length > 0) {
-            phrase ??= newPhrase();
-            const path = join(dir, `${phrase}.jsonl`);
-            const writer = await TranscriptWriter.open(path, now);
-            try {
-                if (!joined) {
-                    await writer.append(
-                        {
-                            kind: "session",
-                            phrase,
-                            sdkSessionId: "",
-                            model: read.model ?? "unknown",
-                            promptHash: "",
-                            resumed: found !== null,
-                            source: "claude-code",
-                            sourceSession: report.session,
-                            ...(deps.project === null
-                                ? {}
-                                : { project: deps.project }),
-                        },
-                        { at: read.events[0]?.at },
-                    );
-                    deps.index?.db.run(
-                        "INSERT OR IGNORE INTO conversation_sessions (session, phrase) VALUES (?, ?)",
-                        [report.session, phrase],
-                    );
-                }
-                for (const event of read.events) {
-                    await writer.append(event.entry, {
-                        at: event.at,
-                        sourceUuid: event.uuid,
-                    });
-                }
-            } finally {
-                await writer.close();
-            }
-            await deps.versions?.recorder(
-                [path],
-                `turn: ${phrase} (claude-code)`,
-            );
-        }
-        if (read.halt !== null) {
-            const line = from + read.halt.line;
-            await keepHalt(
-                deps.env,
-                {
-                    session: report.session,
-                    conversation: phrase,
-                    transcript: report.transcript,
-                    dir: report.dir,
-                    since: report.since,
-                    line: line + 1,
-                    type: read.halt.type,
-                    uuid: read.halt.uuid,
-                    reason: read.halt.reason,
-                    at: now().toISOString(),
-                },
-                lines.slice(line),
-            );
-            deps.log.error(
-                `session ${report.session}: halted at line ${line + 1} (${read.halt.type ?? "no type"}, ${read.halt.uuid ?? "no uuid"}): ${read.halt.reason}`,
-            );
-        } else {
-            await resolveHalt(deps.env, report.session);
-        }
+        await keepNewTypes(read.unknown, lines, from, recording);
+        const phrase =
+            read.events.length > 0
+                ? await appendEvents(read, found, joined, recording)
+                : found;
+        await noteHalt(read.halt, lines, from, phrase, recording);
         if (phrase === null) {
             return { kind: "nothing", size };
         }
@@ -294,4 +195,176 @@ export async function recordSession(
             halted: read.halt !== null,
         };
     });
+}
+
+// What recording one session shares.
+type Recording = {
+    report: SessionReport;
+    deps: RecordDeps;
+    // The transcripts' directory.
+    dir: string;
+    now: () => Date;
+};
+
+// Claude Code's transcript to its last whole line: a line it is still
+// writing waits for the next reading. size is the bytes read.
+async function readWhole(
+    path: string,
+): Promise<{ lines: string[]; size: number } | { reason: string }> {
+    let text: string;
+    try {
+        text = await readFile(path, "utf8");
+    } catch (error) {
+        return { reason: describeError(error) };
+    }
+    const whole = text.slice(0, text.lastIndexOf("\n") + 1);
+    return {
+        lines: whole === "" ? [] : whole.slice(0, -1).split("\n"),
+        size: Buffer.byteLength(whole),
+    };
+}
+
+// The conversation the session continues: found by its own id, else by
+// another session its lines name; null for one new to Dorothy.
+async function findConversation(
+    lines: readonly string[],
+    { report, deps, dir }: Recording,
+): Promise<string | null> {
+    const named = new Set<string>();
+    for (const line of lines) {
+        const id = parsed(line)?.sessionId;
+        if (typeof id === "string" && id !== report.session) {
+            named.add(id);
+        }
+    }
+    for (const id of [report.session, ...named]) {
+        const found =
+            deps.index === null
+                ? await scanFor(dir, id)
+                : sessionPhrase(deps.index, id);
+        if (found !== null) {
+            return found;
+        }
+    }
+    return null;
+}
+
+// Where reading resumes: the line after the last one the conversation
+// holds. joined: its session event names this session already.
+async function resumeFrom(
+    found: string | null,
+    lines: readonly string[],
+    { report, dir }: Recording,
+): Promise<{ recorded: Set<string>; joined: boolean; from: number }> {
+    if (found === null) {
+        return { recorded: new Set(), joined: false, from: 0 };
+    }
+    const own = await cutTornTail(join(dir, `${found}.jsonl`));
+    const { uuids, last } = recordedUuids(own);
+    const at =
+        last === null
+            ? -1
+            : lines.findIndex((line) => parsed(line)?.uuid === last);
+    return {
+        recorded: uuids,
+        joined: sessionsIn(own).has(report.session),
+        from: at + 1,
+    };
+}
+
+// A line of a type the reader neither maps nor lists is passed over, and
+// kept once.
+async function keepNewTypes(
+    unknown: LinesRead["unknown"],
+    lines: readonly string[],
+    from: number,
+    { report, deps }: Recording,
+): Promise<void> {
+    for (const { line, type } of unknown) {
+        await keepNewType(deps.env, type, lines[from + line] ?? "");
+        deps.log.warn(
+            `session ${report.session}: line ${from + line + 1} is of a new type, ${type}; passed over`,
+        );
+    }
+}
+
+// The events appended to the conversation, a new one if none was found,
+// after a session event if this session has none there yet; one history
+// commit. The conversation's phrase.
+async function appendEvents(
+    read: LinesRead,
+    found: string | null,
+    joined: boolean,
+    { report, deps, dir, now }: Recording,
+): Promise<string> {
+    const phrase = found ?? newPhrase();
+    const path = join(dir, `${phrase}.jsonl`);
+    const writer = await TranscriptWriter.open(path, now);
+    try {
+        if (!joined) {
+            await writer.append(
+                {
+                    kind: "session",
+                    phrase,
+                    sdkSessionId: "",
+                    model: read.model ?? "unknown",
+                    promptHash: "",
+                    resumed: found !== null,
+                    source: "claude-code",
+                    sourceSession: report.session,
+                    ...(deps.project === null ? {} : { project: deps.project }),
+                },
+                { at: read.events[0]?.at },
+            );
+            deps.index?.db.run(
+                "INSERT OR IGNORE INTO conversation_sessions (session, phrase) VALUES (?, ?)",
+                [report.session, phrase],
+            );
+        }
+        for (const event of read.events) {
+            await writer.append(event.entry, {
+                at: event.at,
+                sourceUuid: event.uuid,
+            });
+        }
+    } finally {
+        await writer.close();
+    }
+    await deps.versions?.recorder([path], `turn: ${phrase} (claude-code)`);
+    return phrase;
+}
+
+// A halt is kept aside with the lines from it on and logged; a reading
+// that did not halt resolves one kept before.
+async function noteHalt(
+    halt: LinesRead["halt"],
+    lines: readonly string[],
+    from: number,
+    phrase: string | null,
+    { report, deps, now }: Recording,
+): Promise<void> {
+    if (halt === null) {
+        await resolveHalt(deps.env, report.session);
+        return;
+    }
+    const line = from + halt.line;
+    await keepHalt(
+        deps.env,
+        {
+            session: report.session,
+            conversation: phrase,
+            transcript: report.transcript,
+            dir: report.dir,
+            since: report.since,
+            line: line + 1,
+            type: halt.type,
+            uuid: halt.uuid,
+            reason: halt.reason,
+            at: now().toISOString(),
+        },
+        lines.slice(line),
+    );
+    deps.log.error(
+        `session ${report.session}: halted at line ${line + 1} (${halt.type ?? "no type"}, ${halt.uuid ?? "no uuid"}): ${halt.reason}`,
+    );
 }
