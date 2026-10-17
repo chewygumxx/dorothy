@@ -11,3 +11,5 @@
   One adaptable Dorothy: extensible, remembering, Anthropic first
 - [Plan commit headers](./plan-commit-headers.md)
   commitlint caps headers at 50 and body lines at 72; plans must too
+- [Readability over indicators](./readability-over-indicators.md)
+  Fix the code a metric points at; never hide or gate the metric
