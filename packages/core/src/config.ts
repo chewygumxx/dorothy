@@ -134,45 +134,62 @@ function parseLine(
     const line = { ...fallback };
     for (const [key, field] of Object.entries(value)) {
         if (key === "modules") {
-            if (
-                !Array.isArray(field) ||
-                !field.every((name) => typeof name === "string")
-            ) {
-                warnings.push(
-                    `config.toml: ${table}.modules is not a list of module names`,
-                );
-                continue;
-            }
-            const modules: ModuleName[] = [];
-            for (const name of field as string[]) {
-                if (!isModule(name)) {
-                    warnings.push(
-                        `config.toml: unknown module ${name} in ${table}`,
-                    );
-                } else if (modules.includes(name)) {
-                    warnings.push(`config.toml: ${name} repeated in ${table}`);
-                } else {
-                    modules.push(name);
-                }
-            }
-            line.modules = modules;
+            line.modules = readModules(table, field, warnings) ?? line.modules;
         } else if (key === "max-lines") {
-            const valid =
-                typeof field === "number" &&
-                Number.isInteger(field) &&
-                field >= 1 &&
-                field <= MAX_LINES;
-            if (!valid) {
-                warnings.push(
-                    `config.toml: ${table}.max-lines must be a whole number from 1 to ${MAX_LINES}`,
-                );
-            }
-            line.maxLines = valid ? field : 1;
+            line.maxLines = readMaxLines(table, field, warnings);
         } else {
             warnings.push(`config.toml: unknown key ${table}.${key}`);
         }
     }
     return line;
+}
+
+// A line's modules, each known one once; null for no list of names.
+function readModules(
+    table: string,
+    field: unknown,
+    warnings: string[],
+): ModuleName[] | null {
+    if (
+        !Array.isArray(field) ||
+        !field.every((name) => typeof name === "string")
+    ) {
+        warnings.push(
+            `config.toml: ${table}.modules is not a list of module names`,
+        );
+        return null;
+    }
+    const modules: ModuleName[] = [];
+    for (const name of field as string[]) {
+        if (!isModule(name)) {
+            warnings.push(`config.toml: unknown module ${name} in ${table}`);
+        } else if (modules.includes(name)) {
+            warnings.push(`config.toml: ${name} repeated in ${table}`);
+        } else {
+            modules.push(name);
+        }
+    }
+    return modules;
+}
+
+// A line's height; 1 for one out of range.
+function readMaxLines(
+    table: string,
+    field: unknown,
+    warnings: string[],
+): number {
+    if (
+        typeof field === "number" &&
+        Number.isInteger(field) &&
+        field >= 1 &&
+        field <= MAX_LINES
+    ) {
+        return field;
+    }
+    warnings.push(
+        `config.toml: ${table}.max-lines must be a whole number from 1 to ${MAX_LINES}`,
+    );
+    return 1;
 }
 
 // How a field of a table is written in the file: its key there, and a
