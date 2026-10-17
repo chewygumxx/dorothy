@@ -9,492 +9,146 @@
 //
 
 import { pathToFileURL } from "node:url";
-import type { PersonaMode } from "@dorothy/agent";
-import { isPhrase, isUuid } from "@dorothy/core";
-import type { HookMode } from "@dorothy/memory/claude-hook";
 import { config } from "@dotenvx/dotenvx";
+import { type Mode, parseArgs, USAGE } from "./args.js";
 
-export type Mode =
-    | { kind: "oneshot"; prompt: string; persona: PersonaMode }
-    | { kind: "tui"; resume: string | null; persona: PersonaMode }
-    | {
-          kind: "dump";
-          resume: string | null;
-          message: string;
-          persona: PersonaMode;
-      }
-    | { kind: "list" }
-    | { kind: "memory"; phrase: string }
-    | { kind: "tags" }
-    | { kind: "tags-edit" }
-    | { kind: "history"; path: string | null; count: number }
-    | { kind: "restore"; path: string; rev: string | null }
-    | { kind: "rollback"; rev: string }
-    | { kind: "check"; staged: boolean }
-    | { kind: "mirror"; url: string | null }
-    | { kind: "recover"; url: string }
-    | { kind: "facts" }
-    | { kind: "retire"; target: string }
-    | { kind: "retire-from"; phrase: string }
-    | { kind: "revive"; target: string }
-    | { kind: "sync"; path: string | null }
-    | { kind: "projects" }
-    | {
-          kind: "recall-server";
-          exclude: string | null;
-          recollect: boolean;
-          project: string | null;
-      }
-    | { kind: "claude-hook"; hook: HookMode }
-    | { kind: "claude"; args: string[] }
-    | { kind: "claude-dump"; args: string[]; message: string }
-    | { kind: "help" }
-    | { kind: "usage"; message: string };
+// What runs each mode, and the code it exits with; nothing where it set
+// its own. Each loads its packages as it runs, so a mode pays only for
+// what it uses: --help, --list and --recall-server never load the SDK.
+type Runners = {
+    [K in Mode["kind"]]: (
+        mode: Extract<Mode, { kind: K }>,
+    ) => Promise<number | undefined>;
+};
 
-export const USAGE = [
-    "usage: dorothy <prompt...>        one reply, then exit",
-    "       dorothy                    chat (needs a terminal)",
-    "       dorothy --resume <phrase>  continue a saved chat",
-    "       dorothy --list             what Dorothy remembers",
-    "       dorothy --memory <phrase>  correct, pin or hide a chat's notes",
-    "       dorothy --tags             Dorothy's tags, as a tree",
-    "       dorothy --edit-tags        correct, merge or delete her tags",
-    "       dorothy --history [<path>] [-n <count>]",
-    "                                  what changed in her memory, newest first",
-    "       dorothy --restore <path> [<rev>]",
-    "                                  put a file back as it was",
-    "       dorothy --rollback <rev>   put notes and tags back as they were",
-    "       dorothy --check [--staged] lint memory's files",
-    "       dorothy --mirror [<url>]   set or show the sealed mirror",
-    "       dorothy --recover <url>    rebuild memory from the mirror",
-    "       dorothy --facts            what Dorothy knows, by scope",
-    "       dorothy --retire <scope>/<name> | --from <phrase>",
-    "                                  retire a fact, or what a chat gave",
-    "       dorothy --revive <scope>/<name>",
-    "                                  bring a retired fact back",
-    "       dorothy --sync [<path>]    sync a project's facts with its repo",
-    "       dorothy --projects         the projects Dorothy knows",
-    "       dorothy --recall-server    memory tools for MCP clients (stdio)",
-    "       dorothy --claude-hook      internal: what --claude's hooks run",
-    "       dorothy --claude-hook --reread | --dismiss <session>",
-    "                                  read again the Claude Code lines she",
-    "                                  could not, or stop telling of them",
-    "       dorothy -- <prompt...>     a prompt that starts with -",
-    "       dorothy --dump-context [--resume <phrase>] [message...]",
-    "                                  print the request a chat would send",
-    "       dorothy --claude [args...] Claude Code, with Dorothy as its",
-    "                                  agent; args go to claude",
-    "       dorothy --claude --dump-context [args...] [-- message...]",
-    "                                  print the request claude would send",
-    "                                  in print mode, through the gateway",
-    "       dorothy --dev ...          development mode, before a chat, a",
-    "                                  prompt or --dump-context",
-].join("\n");
+const commands = () => import("@dorothy/memory/commands");
 
-// The flags that take no arguments, and the mode each starts.
-const BARE = {
-    "--list": "list",
-    "--tags": "tags",
-    "--facts": "facts",
-    "--projects": "projects",
-} as const;
+// Credentials are decrypted only for the modes that need them.
+// quiet: dotenvx would otherwise log to stdout, over the TUI.
+const loadCredentials = () => config({ quiet: true });
 
-const DUMP_USAGE = "--dump-context takes [--resume <phrase>] [message...]";
-
-function parseDump(argv: readonly string[]): Mode {
-    let words = argv;
-    let resume: string | null = null;
-    if (words[0] === "--resume") {
-        const phrase = words[1];
-        if (phrase === undefined || !isPhrase(phrase)) {
-            return { kind: "usage", message: DUMP_USAGE };
-        }
-        resume = phrase;
-        words = words.slice(2);
-    }
-    if (words[0] === "--") {
-        words = words.slice(1);
-    } else if (words[0] !== undefined && /^-./.test(words[0])) {
-        return { kind: "usage", message: DUMP_USAGE };
-    }
-    return {
-        kind: "dump",
-        resume,
-        message: words.length > 0 ? words.join(" ") : "hi",
-        persona: "chat",
-    };
+// The modes that talk to the model, which alone pay for the Agent SDK.
+async function forTheModel(): Promise<void> {
+    loadCredentials();
+    const { prepareCliHome } = await import("@dorothy/agent");
+    prepareCliHome();
 }
 
-const HOOK_USAGE =
-    "--claude-hook takes [--catch-up <launch> [--session <id>]], --reread or --dismiss <session>";
-
-function parseHook(rest: readonly string[]): Mode {
-    const hook = (mode: HookMode): Mode => ({
-        kind: "claude-hook",
-        hook: mode,
-    });
-    const [flag, value, next, session] = rest;
-    if (flag === undefined) {
-        return hook({ kind: "hook" });
-    }
-    if (flag === "--reread" && rest.length === 1) {
-        return hook({ kind: "reread" });
-    }
-    if (flag === "--dismiss" && rest.length === 2 && isUuid(value ?? "")) {
-        return hook({ kind: "dismiss", session: value as string });
-    }
-    if (flag === "--catch-up" && isUuid(value ?? "")) {
-        const launch = value as string;
-        if (rest.length === 2) {
-            return hook({ kind: "catch-up", launch, session: null });
-        }
-        if (
-            rest.length === 4 &&
-            next === "--session" &&
-            isUuid(session ?? "")
-        ) {
-            return hook({
-                kind: "catch-up",
-                launch,
-                session: session as string,
-            });
-        }
-    }
-    return { kind: "usage", message: HOOK_USAGE };
-}
-
-export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
-    const [first, ...rest] = argv;
-    if (first === "--dev") {
-        const mode = rest[0] === "--dev" ? null : parseArgs(rest, isTTY);
-        if (
-            mode?.kind === "oneshot" ||
-            mode?.kind === "tui" ||
-            mode?.kind === "dump"
-        ) {
-            return { ...mode, persona: "development" };
-        }
-        return mode?.kind === "usage"
-            ? mode
-            : {
-                  kind: "usage",
-                  message:
-                      "--dev applies only to chat, a prompt or --dump-context",
-              };
-    }
-    if (first === "--dump-context") {
-        return parseDump(rest);
-    }
-    if (first === "--claude" && rest[0] === "--dump-context") {
-        const words = rest.slice(1);
-        const end = words.indexOf("--");
-        const message = end === -1 ? [] : words.slice(end + 1);
-        return {
-            kind: "claude-dump",
-            args: end === -1 ? words : words.slice(0, end),
-            message: message.length > 0 ? message.join(" ") : "hi",
-        };
-    }
-    if (first === "--claude-hook") {
-        return parseHook(rest);
-    }
-    if (first === "--claude") {
-        return { kind: "claude", args: rest };
-    }
-    if (first === "--help" || first === "-h") {
-        return { kind: "help" };
-    }
-    if (first !== undefined && Object.hasOwn(BARE, first)) {
-        return rest.length === 0
-            ? { kind: BARE[first as keyof typeof BARE] }
-            : { kind: "usage", message: `${first} takes no arguments` };
-    }
-    if (first === "--edit-tags") {
-        if (rest.length !== 0) {
-            return {
-                kind: "usage",
-                message: "--edit-tags takes no arguments",
-            };
-        }
-        return isTTY
-            ? { kind: "tags-edit" }
-            : { kind: "usage", message: "--edit-tags needs a terminal" };
-    }
-    if (first === "--retire") {
-        const usage = {
-            kind: "usage" as const,
-            message: "--retire takes <scope>/<name> or --from <phrase>",
-        };
-        if (rest[0] === "--from") {
-            const phrase = rest[1];
-            return rest.length === 2 && phrase !== undefined && isPhrase(phrase)
-                ? { kind: "retire-from", phrase }
-                : usage;
-        }
-        const target = rest[0];
-        return rest.length === 1 &&
-            target !== undefined &&
-            !target.startsWith("-")
-            ? { kind: "retire", target }
-            : usage;
-    }
-    if (first === "--revive") {
-        const target = rest[0];
-        return rest.length === 1 &&
-            target !== undefined &&
-            !target.startsWith("-")
-            ? { kind: "revive", target }
-            : { kind: "usage", message: "--revive takes <scope>/<name>" };
-    }
-    if (first === "--sync") {
-        return rest.length <= 1
-            ? { kind: "sync", path: rest[0] ?? null }
-            : { kind: "usage", message: "--sync takes [<path>]" };
-    }
-    if (first === "--recall-server") {
-        const usage = {
-            kind: "usage" as const,
-            message:
-                "--recall-server takes [--exclude <phrase> [--recollect]] [--project <root>]",
-        };
-        let exclude: string | null = null;
-        let project: string | null = null;
-        let recollect = false;
-        for (let index = 0; index < rest.length; index += 1) {
-            const word = rest[index];
-            const value = rest[index + 1];
-            if (
-                word === "--exclude" &&
-                exclude === null &&
-                value !== undefined &&
-                isPhrase(value)
-            ) {
-                exclude = value;
-                index += 1;
-            } else if (
-                word === "--project" &&
-                project === null &&
-                value !== undefined &&
-                value !== ""
-            ) {
-                project = value;
-                index += 1;
-            } else if (word === "--recollect" && !recollect) {
-                recollect = true;
-            } else {
-                return usage;
-            }
-        }
-        return recollect && exclude === null
-            ? usage
-            : { kind: "recall-server", exclude, recollect, project };
-    }
-    if (first === "--history") {
-        const usage = {
-            kind: "usage",
-            message: "--history takes [<path>] [-n <count>]",
-        } as const;
-        let path: string | null = null;
-        let count = 20;
-        for (let index = 0; index < rest.length; index++) {
-            const word = rest[index] as string;
-            if (word === "-n") {
-                const value = Number(rest[index + 1]);
-                if (!Number.isInteger(value) || value < 1) {
-                    return usage;
-                }
-                count = value;
-                index++;
-            } else if (path === null && !word.startsWith("-")) {
-                path = word;
-            } else {
-                return usage;
-            }
-        }
-        return { kind: "history", path, count };
-    }
-    if (first === "--restore") {
-        const [path, rev] = rest;
-        return path !== undefined && rest.length <= 2
-            ? { kind: "restore", path, rev: rev ?? null }
-            : { kind: "usage", message: "--restore takes <path> [<rev>]" };
-    }
-    if (first === "--rollback") {
-        const [rev] = rest;
-        return rev !== undefined && rest.length === 1
-            ? { kind: "rollback", rev }
-            : { kind: "usage", message: "--rollback takes one revision" };
-    }
-    if (first === "--check") {
-        if (
-            rest.length === 0 ||
-            (rest.length === 1 && rest[0] === "--staged")
-        ) {
-            return { kind: "check", staged: rest.length === 1 };
-        }
-        return { kind: "usage", message: "--check takes only --staged" };
-    }
-    if (first === "--mirror") {
-        return rest.length <= 1
-            ? { kind: "mirror", url: rest[0] ?? null }
-            : { kind: "usage", message: "--mirror takes one url or path" };
-    }
-    if (first === "--recover") {
-        const [url] = rest;
-        return url !== undefined && rest.length === 1
-            ? { kind: "recover", url }
-            : { kind: "usage", message: "--recover takes one url or path" };
-    }
-    if (first === "--memory") {
-        const phrase = rest[0];
-        if (rest.length !== 1 || phrase === undefined || !isPhrase(phrase)) {
-            return {
-                kind: "usage",
-                message: "--memory takes one four-word phrase",
-            };
-        }
-        return isTTY
-            ? { kind: "memory", phrase }
-            : { kind: "usage", message: "--memory needs a terminal" };
-    }
-    if (first === "--resume") {
-        const phrase = rest[0];
-        if (rest.length !== 1 || phrase === undefined || !isPhrase(phrase)) {
-            return {
-                kind: "usage",
-                message: "--resume takes one four-word phrase",
-            };
-        }
-        return isTTY
-            ? { kind: "tui", resume: phrase, persona: "chat" }
-            : { kind: "usage", message: "--resume needs a terminal" };
-    }
-    // A mistyped option would otherwise be sent, and paid for, as a prompt.
-    if (first !== undefined && first !== "--" && /^-./.test(first)) {
-        return { kind: "usage", message: `unknown option ${first}` };
-    }
-    const words = first === "--" ? rest : argv;
-    if (words.length > 0) {
-        return { kind: "oneshot", prompt: words.join(" "), persona: "chat" };
-    }
-    return isTTY
-        ? { kind: "tui", resume: null, persona: "chat" }
-        : { kind: "usage", message: "chat needs a terminal" };
-}
-
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-    const mode = parseArgs(
-        process.argv.slice(2),
-        process.stdin.isTTY === true && process.stdout.isTTY === true,
-    );
-    // Credentials are decrypted only for the modes that talk to the model.
-    // quiet: dotenvx would otherwise log to stdout, over the TUI.
-    if (
-        mode.kind === "oneshot" ||
-        mode.kind === "tui" ||
-        mode.kind === "dump"
-    ) {
-        config({ quiet: true });
-        // Loaded here rather than at the top, so the modes that never talk
-        // to the model do not pay for the Agent SDK.
-        const { prepareCliHome } = await import("@dorothy/agent");
-        prepareCliHome();
-    }
-    if (mode.kind === "mirror" || mode.kind === "recover") {
-        config({ quiet: true });
-    }
-    if (mode.kind === "help") {
+const RUNNERS: Runners = {
+    help: async () => {
         process.stdout.write(`${USAGE}\n`);
-    } else if (mode.kind === "usage") {
+        return 0;
+    },
+    usage: async (mode) => {
         process.stderr.write(`dorothy: ${mode.message}\n${USAGE}\n`);
-        process.exitCode = 2;
-    } else if (mode.kind === "dump") {
-        const { runDump } = await import("./dump.js");
-        process.exitCode = await runDump(mode);
-    } else if (mode.kind === "oneshot") {
+        return 2;
+    },
+    oneshot: async (mode) => {
+        await forTheModel();
         const { runOneShot } = await import("@dorothy/agent");
+        // It sets the exit code itself, should the reply fail.
         await runOneShot(mode.prompt, mode.persona);
-    } else if (mode.kind === "list") {
-        const { commandHistory, runList } = await import(
-            "@dorothy/memory/commands"
-        );
-        process.exitCode = await runList({ openHistory: commandHistory() });
-    } else if (mode.kind === "memory") {
-        const { commandHistory, runMemoryEdit } = await import(
-            "@dorothy/memory/commands"
-        );
+        return undefined;
+    },
+    tui: async (mode) => {
+        await forTheModel();
+        // Loaded only for chat, so one-shot replies never pay for React.
+        const { runTui } = await import("./run-tui.js");
+        // runTui has closed everything by now. A push or a repack still
+        // running must not hold the terminal after the chat is gone.
+        process.exit(await runTui(mode.resume, mode.persona));
+    },
+    dump: async (mode) => {
+        await forTheModel();
+        const { runDump } = await import("./dump.js");
+        return runDump(mode);
+    },
+    list: async () => {
+        const { commandHistory, runList } = await commands();
+        return runList({ openHistory: commandHistory() });
+    },
+    memory: async (mode) => {
+        const { commandHistory, runMemoryEdit } = await commands();
         const { editInEditor } = await import("@dorothy/tui");
-        process.exitCode = await runMemoryEdit(mode.phrase, {
+        return runMemoryEdit(mode.phrase, {
             edit: (text) => editInEditor(text),
             openHistory: commandHistory(),
         });
-    } else if (mode.kind === "tags") {
-        const { commandHistory, runTags } = await import(
-            "@dorothy/memory/commands"
-        );
-        process.exitCode = await runTags({ openHistory: commandHistory() });
-    } else if (mode.kind === "tags-edit") {
-        const { commandHistory, runTagsEdit } = await import(
-            "@dorothy/memory/commands"
-        );
+    },
+    tags: async () => {
+        const { commandHistory, runTags } = await commands();
+        return runTags({ openHistory: commandHistory() });
+    },
+    "tags-edit": async () => {
+        const { commandHistory, runTagsEdit } = await commands();
         const { editInEditor } = await import("@dorothy/tui");
-        process.exitCode = await runTagsEdit({
+        return runTagsEdit({
             edit: (text) => editInEditor(text),
             openHistory: commandHistory(),
         });
-    } else if (mode.kind === "history") {
-        const { runHistory } = await import("@dorothy/memory/commands");
-        process.exitCode = await runHistory({
-            path: mode.path,
-            count: mode.count,
-        });
-    } else if (mode.kind === "restore") {
-        const { runRestore } = await import("@dorothy/memory/commands");
-        process.exitCode = await runRestore(mode.path, mode.rev);
-    } else if (mode.kind === "rollback") {
-        const { runRollback } = await import("@dorothy/memory/commands");
-        process.exitCode = await runRollback(mode.rev);
-    } else if (mode.kind === "check") {
-        const { runCheck } = await import("@dorothy/memory/commands");
-        process.exitCode = await runCheck({ staged: mode.staged });
-    } else if (mode.kind === "mirror") {
-        const { runMirror } = await import("@dorothy/memory/commands");
-        process.exitCode = await runMirror(mode.url);
-    } else if (mode.kind === "recover") {
-        const { runRecover } = await import("@dorothy/memory/commands");
-        process.exitCode = await runRecover(mode.url);
-    } else if (mode.kind === "facts") {
-        const { commandHistory, runFacts } = await import(
-            "@dorothy/memory/commands"
+    },
+    history: async (mode) => {
+        const { runHistory } = await commands();
+        return runHistory({ path: mode.path, count: mode.count });
+    },
+    restore: async (mode) => {
+        const { runRestore } = await commands();
+        return runRestore(mode.path, mode.rev);
+    },
+    rollback: async (mode) => {
+        const { runRollback } = await commands();
+        return runRollback(mode.rev);
+    },
+    check: async (mode) => {
+        const { runCheck } = await commands();
+        return runCheck({ staged: mode.staged });
+    },
+    mirror: async (mode) => {
+        loadCredentials();
+        const { runMirror } = await commands();
+        return runMirror(mode.url);
+    },
+    recover: async (mode) => {
+        loadCredentials();
+        const { runRecover } = await commands();
+        return runRecover(mode.url);
+    },
+    facts: async () => {
+        const { commandHistory, runFacts } = await commands();
+        return runFacts({ openHistory: commandHistory() });
+    },
+    retire: async (mode) => {
+        const { commandHistory, runRetire } = await commands();
+        return runRetire(mode.target, { openHistory: commandHistory() });
+    },
+    "retire-from": async (mode) => {
+        const { commandHistory, runRetireFrom } = await commands();
+        return runRetireFrom(mode.phrase, { openHistory: commandHistory() });
+    },
+    revive: async (mode) => {
+        const { commandHistory, runRevive } = await commands();
+        return runRevive(mode.target, { openHistory: commandHistory() });
+    },
+    sync: async (mode) => {
+        const { commandHistory, runSync } = await commands();
+        return runSync(mode.path, { openHistory: commandHistory() });
+    },
+    projects: async () => {
+        const { runProjects } = await commands();
+        return runProjects();
+    },
+    "recall-server": async (mode) => {
+        const { runRecallServer } = await import(
+            "@dorothy/memory/recall-server"
         );
-        process.exitCode = await runFacts({ openHistory: commandHistory() });
-    } else if (mode.kind === "retire" || mode.kind === "revive") {
-        const { commandHistory, runRetire, runRevive } = await import(
-            "@dorothy/memory/commands"
-        );
-        const run = mode.kind === "retire" ? runRetire : runRevive;
-        process.exitCode = await run(mode.target, {
-            openHistory: commandHistory(),
+        return runRecallServer({
+            exclude: mode.exclude,
+            recollect: mode.recollect,
+            project: mode.project,
         });
-    } else if (mode.kind === "retire-from") {
-        const { commandHistory, runRetireFrom } = await import(
-            "@dorothy/memory/commands"
-        );
-        process.exitCode = await runRetireFrom(mode.phrase, {
-            openHistory: commandHistory(),
-        });
-    } else if (mode.kind === "sync") {
-        const { commandHistory, runSync } = await import(
-            "@dorothy/memory/commands"
-        );
-        process.exitCode = await runSync(mode.path, {
-            openHistory: commandHistory(),
-        });
-    } else if (mode.kind === "projects") {
-        const { runProjects } = await import("@dorothy/memory/commands");
-        process.exitCode = await runProjects();
-    } else if (mode.kind === "claude-hook") {
-        // No config(): the hook loads Dorothy's .env by path, once
+    },
+    "claude-hook": async (mode) => {
+        // No credentials: the hook loads Dorothy's .env by path, once
         // claude's variables are gone (claude-hook.ts).
         const { runHook } = await import("./claude-hook.js");
         const code = await runHook(mode.hook);
@@ -503,29 +157,31 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
         if (mode.hook.kind === "hook" || mode.hook.kind === "catch-up") {
             process.exit(code);
         }
-        process.exitCode = code;
-    } else if (mode.kind === "claude") {
-        // No config(): claude signs in as the user's own Claude Code does.
+        return code;
+    },
+    claude: async (mode) => {
+        // No credentials: claude signs in as the user's own Claude Code does.
         const { runClaude } = await import("./claude.js");
-        process.exitCode = await runClaude(mode.args);
-    } else if (mode.kind === "claude-dump") {
-        // No config(), as for --claude.
+        return runClaude(mode.args);
+    },
+    "claude-dump": async (mode) => {
+        // No credentials, as for --claude.
         const { runClaudeDump } = await import("./claude-dump.js");
-        process.exitCode = await runClaudeDump(mode.args, mode.message);
-    } else if (mode.kind === "recall-server") {
-        const { runRecallServer } = await import(
-            "@dorothy/memory/recall-server"
-        );
-        process.exitCode = await runRecallServer({
-            exclude: mode.exclude,
-            recollect: mode.recollect,
-            project: mode.project,
-        });
-    } else {
-        // Loaded only for chat, so one-shot replies never pay for React.
-        const { runTui } = await import("./run-tui.js");
-        // runTui has closed everything by now. A push or a repack still
-        // running must not hold the terminal after the chat is gone.
-        process.exit(await runTui(mode.resume, mode.persona));
+        return runClaudeDump(mode.args, mode.message);
+    },
+};
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+    const mode = parseArgs(
+        process.argv.slice(2),
+        process.stdin.isTTY === true && process.stdout.isTTY === true,
+    );
+    // TypeScript cannot tie a mode to its own runner without the cast.
+    const run = RUNNERS[mode.kind] as (
+        mode: Mode,
+    ) => Promise<number | undefined>;
+    const code = await run(mode);
+    if (code !== undefined) {
+        process.exitCode = code;
     }
 }

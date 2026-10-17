@@ -4,13 +4,13 @@
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/packages/cli/src/index.test.ts
+// ::: :/packages/cli/src/args.test.ts
 //
 //
 
 import { describe, expect, it } from "bun:test";
 import { newPhrase } from "@dorothy/core";
-import { parseArgs, USAGE } from "./index.js";
+import { parseArgs, USAGE } from "./args.js";
 
 const phrase = newPhrase(() => Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]));
 
@@ -474,11 +474,48 @@ describe("parseArgs", () => {
             ["--catch-up", L, "--other", S],
             ["--dismiss"],
             ["--dismiss", "x"],
+            ["--dismiss", S, "--catch-up", L],
+            ["--session", S],
             ["--reread", "x"],
+            ["--reread", "--session", S],
             ["--other"],
         ]) {
             expect(hook(rest)).toEqual({ kind: "usage", message: HOOK_USAGE });
         }
+    });
+
+    it("takes an option's value after = or run on, as POSIX and GNU do", () => {
+        expect(
+            parseArgs(["--recall-server", `--exclude=${phrase}`], false),
+        ).toEqual({
+            kind: "recall-server",
+            exclude: phrase,
+            recollect: false,
+            project: null,
+        });
+        expect(parseArgs(["--history", "-n5"], false)).toEqual({
+            kind: "history",
+            path: null,
+            count: 5,
+        });
+        expect(parseArgs(["--retire", `--from=${phrase}`], false)).toEqual({
+            kind: "retire-from",
+            phrase,
+        });
+    });
+
+    it("takes a catch-up's session before its launch", () => {
+        const L = "6c84fb90-12c4-11e1-840d-7b25c5ee775a";
+        const S = "0f8fad5b-d9cb-469f-a165-70867728950e";
+        expect(
+            parseArgs(
+                ["--claude-hook", "--session", S, "--catch-up", L],
+                false,
+            ),
+        ).toEqual({
+            kind: "claude-hook",
+            hook: { kind: "catch-up", launch: L, session: S },
+        });
     });
 
     it("refuses anything else after --recall-server", () => {
@@ -486,6 +523,7 @@ describe("parseArgs", () => {
             ["x"],
             ["--exclude"],
             ["--exclude", "nope"],
+            ["--exclude", phrase, "--exclude", phrase],
             ["--project"],
             ["--project", "/a", "--project", "/b"],
         ]) {

@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-16
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: packages/cli/AGENTS.md
 description: >-
@@ -25,8 +25,9 @@ wiring memory, the agent, the TUI and the gateway together.
 
 ## Entry points and imports
 
-No entry points. `src/index.ts` parses the flags and loads each mode's
-package lazily (`await import(...)`): memory's commands, recall server
+No entry points. `src/index.ts` runs each mode from `RUNNERS`, whose
+type has `tsc` require a runner for every mode, and each runner loads
+its package lazily (`await import(...)`): memory's commands, recall server
 and hooks through their own entry points (`@dorothy/memory/commands`,
 `@dorothy/memory/recall-server`, `@dorothy/memory/claude-hook`), and even
 `prepareCliHome` only for the model modes, so `--help`, `--list` and
@@ -35,8 +36,12 @@ lazy.
 
 ## Files
 
-- `index.ts`: the entry guard, the flags (`parseArgs`, `USAGE`) and the
-  modes.
+- `index.ts`: the entry guard, which runs the mode `parseArgs` gives
+  from `RUNNERS`, each runner returning its exit code, or nothing where
+  it set its own (`runOneShot`).
+- `args.ts`: the flags (`parseArgs`, `USAGE`) and the modes they give:
+  `COMMANDS` maps each flag to a reader of the words after it, those
+  taking options through `node:util`'s `parseArgs`.
 - `run-tui.ts`: `runTui` connects memory, the agent and `runApp`, with
   the directory the user ran it from (`userShell`), whose project chat
   records and syncs.
