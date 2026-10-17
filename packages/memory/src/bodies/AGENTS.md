@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-15
-mtime: 2026-10-16
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: packages/memory/src/bodies/AGENTS.md
 description: >-
@@ -68,8 +68,9 @@ reader, the store and reviews alone. The CLI loads both lazily.
 
 - A hook and a catch-up write nothing to the terminal, which Claude
   Code owns, and always exit 0. What went wrong is in the log, which
-  names lines by type and uuid, a failed review by its phrase and kind
-  (`ReviewProblem`), and never holds a transcript's text or a title.
+  names lines by type and uuid, a failed review by its phrase, kind
+  and a call's error (`ReviewProblem`), and never holds a transcript's
+  text, a title, the model's words or a parser's quote of a file.
 - A line of a mapped type in a shape the reader does not expect halts
   the reading there: the lines before it are recorded, the rest is kept
   aside, and the user is told at every start until it reads or is

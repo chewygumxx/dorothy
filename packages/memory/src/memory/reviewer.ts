@@ -85,10 +85,13 @@ export type ReviewerOptions = {
     cost: (usd: number) => void;
 };
 
-// What went wrong: the conversation, null for tags, and the kind.
+// What went wrong: the conversation, null for tags, and the kind. A
+// failed call keeps its error, Dorothy's, the SDK's or the API's: the
+// model's own words come back only in notes, which keep none.
 export type ReviewProblem = {
     phrase: string | null;
     kind: "transcript" | "call" | "notes" | "save" | "tags";
+    error?: string;
 };
 
 // What a review wrote: notes reviewed, or only marked (nothing new to
@@ -258,6 +261,7 @@ export class Reviewer {
             this.#options.warn(`memory: couldn't review "${name}": ${reason}`, {
                 phrase,
                 kind,
+                ...(kind === "call" ? { error: reason } : {}),
             });
         let turns: ResumedTurn[];
         try {
