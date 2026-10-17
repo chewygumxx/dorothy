@@ -347,8 +347,9 @@ export function parseVocabulary(
     let data: unknown;
     try {
         data = JSON.parse(text);
-    } catch (error) {
-        return { kind: "unparseable", reason: describeError(error) };
+    } catch {
+        // Not the parser's message: it quotes the file's words.
+        return { kind: "unparseable", reason: "it is not JSON" };
     }
     if (!isRecord(data)) {
         return { kind: "unparseable", reason: "not a JSON object" };

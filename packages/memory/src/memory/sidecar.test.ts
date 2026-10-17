@@ -100,6 +100,13 @@ describe("parseSidecar", () => {
         });
     });
 
+    it("says bad JSON is not JSON, quoting none of the notes", () => {
+        expect(parseSidecar('{"v":1,"title": Tea at the Ritz}')).toEqual({
+            kind: "unparseable",
+            reason: "it is not JSON",
+        });
+    });
+
     it("normalises notes, and reads one over its limit or of the wrong shape as null", () => {
         const text = JSON.stringify({
             ...reviewed,

@@ -92,6 +92,10 @@ describe("parseVocabulary", () => {
 
     it("refuses what is not a vocabulary", () => {
         expect(parseVocabulary("{ bad").kind).toBe("unparseable");
+        expect(parseVocabulary('{"v":1,"concepts": tea}')).toEqual({
+            kind: "unparseable",
+            reason: "it is not JSON",
+        });
         expect(reason([])).toBe("not a JSON object");
         expect(reason({ ...SAMPLE, v: 2 })).toBe("unknown version 2");
         expect(reason({ v: 1, rev: 0, concepts: [] })).toBe(
