@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-15
-mtime: 2026-10-15
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: packages/memory/src/compaction/AGENTS.md
 description: >-
@@ -31,3 +31,9 @@ verbatim tail into topical clusters with an abstract each.
 - `run.ts`, on `shared.ts`'s state: a pass appends the clusters to the
   sidecar, writes a `compaction` transcript event, and swaps in a session
   seeded with the abstracts and the turns after them.
+
+## Tests
+
+`Compaction`'s tests are one file a topic, `session*.test.ts`: handover
+and holding, chains, quitting, claims, saves and interrupts. They share
+`testing.ts`'s harness and fixtures.
