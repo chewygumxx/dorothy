@@ -136,6 +136,24 @@ export function isoRepo(location: string): MemoryRepo {
             : (await git.readTree({ fs, dir, oid: bundles.oid })).tree;
     };
 
+    // main is a line: its commits from tip back to since, which must be
+    // in it.
+    const walkBack = async (
+        tip: string,
+        since: string | null,
+    ): Promise<string[]> => {
+        const commits: string[] = [];
+        let at: string | null = tip;
+        while (at !== null && at !== since) {
+            commits.push(at);
+            const { commit } = await git.readCommit({ fs, dir, oid: at });
+            at = commit.parent[0] ?? null;
+        }
+        if (since !== null && at === null) {
+            throw new Error(`${since} is not in main's history`);
+        }
+        return commits;
+    };
     return {
         engine: "isomorphic-git",
         root,
@@ -241,17 +259,7 @@ export function isoRepo(location: string): MemoryRepo {
             if (tip === null || tip === since) {
                 return null;
             }
-            // main is a line: walk back from the tip to since.
-            const commits: string[] = [];
-            let at: string | null = tip;
-            while (at !== null && at !== since) {
-                commits.push(at);
-                const { commit } = await git.readCommit({ fs, dir, oid: at });
-                at = commit.parent[0] ?? null;
-            }
-            if (since !== null && at === null) {
-                throw new Error(`${since} is not in main's history`);
-            }
+            const commits = await walkBack(tip, since);
             const known = new Set<string>();
             if (since !== null) {
                 const { commit } = await git.readCommit({

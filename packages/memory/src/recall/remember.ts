@@ -74,11 +74,31 @@ export async function remember(
             `${input.name} is not a fact's name: lower case words joined by hyphens, like tea-at-four.`,
         );
     }
-    const id = `${scopeLabel(scope)}/${input.name}`;
-    const writing = input.action === "write";
-    let existed = false;
-    const guard: Guard = (current) => {
-        existed = current !== null;
+    const target = {
+        scope,
+        name: input.name,
+        id: `${scopeLabel(scope)}/${input.name}`,
+    };
+    if (input.action === "retire") {
+        return retireAs(store, target, input);
+    }
+    if (input.action !== "write") {
+        throw new RecallError("action must be write or retire.");
+    }
+    return writeAs(store, target, input, from);
+}
+
+type RememberTarget = { scope: Scope; name: string; id: string };
+
+// What she may not change: what the user or the repository wrote, and,
+// writing, a retired fact. existed hears whether the fact was there.
+function guardFor(
+    id: string,
+    writing: boolean,
+    existed: (was: boolean) => void,
+): Guard {
+    return (current) => {
+        existed(current !== null);
         if (current === null) {
             return null;
         }
@@ -91,27 +111,37 @@ export async function remember(
         }
         return null;
     };
-    if (input.action === "retire") {
-        const why = normalise(input.why ?? "");
-        if (why === "") {
-            throw new RecallError("Say in why the fact no longer serves.");
-        }
-        const result = await retireFact(
-            store,
-            { scope, name: input.name },
-            { by: "dorothy", why, guard },
-        );
-        if (result.kind === "written") {
-            return { action: "retired", id };
-        }
-        if (result.kind === "unchanged") {
-            return { action: "unchanged", id };
-        }
-        return refused(result, id);
+}
+
+async function retireAs(
+    store: FactStore,
+    { scope, name, id }: RememberTarget,
+    input: RememberInput,
+): Promise<RememberResult> {
+    const why = normalise(input.why ?? "");
+    if (why === "") {
+        throw new RecallError("Say in why the fact no longer serves.");
     }
-    if (input.action !== "write") {
-        throw new RecallError("action must be write or retire.");
+    const result = await retireFact(
+        store,
+        { scope, name },
+        { by: "dorothy", why, guard: guardFor(id, false, () => {}) },
+    );
+    if (result.kind === "written") {
+        return { action: "retired", id };
     }
+    if (result.kind === "unchanged") {
+        return { action: "unchanged", id };
+    }
+    return refused(result, id);
+}
+
+async function writeAs(
+    store: FactStore,
+    { scope, name, id }: RememberTarget,
+    input: RememberInput,
+    from: RememberOptions["from"],
+): Promise<RememberResult> {
     if (!(FACT_TYPES as readonly string[]).includes(input.type ?? "")) {
         throw new RecallError(`type must be one of ${FACT_TYPES.join(", ")}.`);
     }
@@ -123,11 +153,12 @@ export async function remember(
     if (title === "" || description === "" || body === "") {
         throw new RecallError("Give the fact's title, description and body.");
     }
+    let existed = false;
     const result = await writeFact(
         store,
         {
             scope,
-            name: input.name,
+            name,
             title: title as string,
             description: description as string,
             type: input.type as FactType,
@@ -136,7 +167,9 @@ export async function remember(
             by: "dorothy",
             ...(from === null ? {} : { from }),
         },
-        guard,
+        guardFor(id, true, (was) => {
+            existed = was;
+        }),
     );
     if (result.kind === "written") {
         return { action: existed ? "corrected" : "written", id };

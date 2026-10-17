@@ -294,38 +294,41 @@ export function writeFact(
         if (refusal !== null) {
             return { kind: "refused", reason: refusal };
         }
-        const before = found.fact;
-        const now = at(store);
-        const fact: Fact = {
-            name: input.name,
-            title: normalise(input.title),
-            description: normalise(input.description),
-            type: input.type,
-            extra: before?.extra ?? {},
-            tags: input.tags ?? before?.tags ?? [],
-            importance:
-                input.importance === undefined
-                    ? (before?.importance ?? null)
-                    : input.importance,
-            provenance: {
-                origin: nextOrigin(
-                    before?.provenance.origin ?? null,
-                    input.origin,
-                    input.by,
-                ),
-                by: input.by,
-                at: now,
-                created: before?.provenance.created ?? now,
-                ...(input.model === undefined ? {} : { model: input.model }),
-                ...(input.from === undefined ? {} : { from: input.from }),
-            },
-            retired: null,
-            body: input.body.trim(),
-        };
+        const fact = factOf(input, found.fact, at(store));
         const path = await putFact(store.root, input.scope, fact);
         await store.recorder?.([path], `fact: ${label(input)}`);
         return { kind: "written", fact };
     });
+}
+
+// The fact as written: what the input gives, else what it held before.
+function factOf(input: FactInput, before: Fact | null, now: string): Fact {
+    return {
+        name: input.name,
+        title: normalise(input.title),
+        description: normalise(input.description),
+        type: input.type,
+        extra: before?.extra ?? {},
+        tags: input.tags ?? before?.tags ?? [],
+        importance:
+            input.importance === undefined
+                ? (before?.importance ?? null)
+                : input.importance,
+        provenance: {
+            origin: nextOrigin(
+                before?.provenance.origin ?? null,
+                input.origin,
+                input.by,
+            ),
+            by: input.by,
+            at: now,
+            created: before?.provenance.created ?? now,
+            ...(input.model === undefined ? {} : { model: input.model }),
+            ...(input.from === undefined ? {} : { from: input.from }),
+        },
+        retired: null,
+        body: input.body.trim(),
+    };
 }
 
 export function moveFact(

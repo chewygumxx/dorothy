@@ -14,6 +14,7 @@
 // has it.
 
 import {
+    type Config,
     type Env,
     newPhrase,
     type RecallLaunch,
@@ -51,26 +52,12 @@ export async function previewStart({
     env?: Env;
 }): Promise<Preview> {
     const phrase = resume ?? newPhrase();
-    let history: Turn[] = [];
-    if (resume !== null) {
-        const path = transcriptPath(phrase, env);
-        try {
-            history = (await readTranscript(path)).turns;
-        } catch (error) {
-            return {
-                ok: false,
-                message: `cannot resume ${phrase}: ${path}: ${describeError(error)}`,
-            };
-        }
+    const resumed = resume === null ? FRESH : await resumedOf(phrase, env);
+    if ("message" in resumed) {
+        return { ok: false, message: resumed.message };
     }
+    const { history, clusters } = resumed;
     const { config, warnings } = await readConfig(env);
-    let clusters: Cluster[] = [];
-    if (resume !== null) {
-        const notes = await readSidecar(transcriptDir(env), phrase);
-        if (notes.kind === "ok") {
-            clusters = notes.sidecar.clusters;
-        }
-    }
     let index: RecallIndex | null = null;
     if (config.memory.enabled || config.memory.recall) {
         try {
@@ -86,23 +73,16 @@ export async function previewStart({
             config.memory.recall && index !== null
                 ? recallLaunch(phrase)
                 : null;
-        let memory = "";
-        if (config.memory.enabled && index !== null) {
-            const loaded = await indexCatalogue(
-                index,
-                transcriptDir(env),
-                null,
-                dataRoot(env),
-            ).load();
-            const built = buildMemory(loaded.entries, {
-                now: Date.now(),
-                config: config.memory,
-                exclude: phrase,
-                reserved: clusterTokens(clusters, recall !== null),
-            });
-            warnings.push(...loaded.warnings, ...built.warnings);
-            memory = built.block;
-        }
+        const memory =
+            config.memory.enabled && index !== null
+                ? await memoryOf(index, {
+                      phrase,
+                      config,
+                      reserved: clusterTokens(clusters, recall !== null),
+                      warnings,
+                      env,
+                  })
+                : "";
         return {
             ok: true,
             phrase,
@@ -118,4 +98,63 @@ export async function previewStart({
     } finally {
         index?.close();
     }
+}
+
+type Resumed = { history: Turn[]; clusters: Cluster[] };
+
+const FRESH: Resumed = { history: [], clusters: [] };
+
+// A resumed chat's turns and clusters; or why it can't be resumed.
+async function resumedOf(
+    phrase: string,
+    env: Env,
+): Promise<Resumed | { message: string }> {
+    const path = transcriptPath(phrase, env);
+    let history: Turn[];
+    try {
+        history = (await readTranscript(path)).turns;
+    } catch (error) {
+        return {
+            message: `cannot resume ${phrase}: ${path}: ${describeError(error)}`,
+        };
+    }
+    const notes = await readSidecar(transcriptDir(env), phrase);
+    return {
+        history,
+        clusters: notes.kind === "ok" ? notes.sidecar.clusters : [],
+    };
+}
+
+// The memory block, as chat would build it, the chat's clusters' tokens
+// reserved first.
+async function memoryOf(
+    index: RecallIndex,
+    {
+        phrase,
+        config,
+        reserved,
+        warnings,
+        env,
+    }: {
+        phrase: string;
+        config: Config;
+        reserved: number;
+        warnings: string[];
+        env: Env;
+    },
+): Promise<string> {
+    const loaded = await indexCatalogue(
+        index,
+        transcriptDir(env),
+        null,
+        dataRoot(env),
+    ).load();
+    const built = buildMemory(loaded.entries, {
+        now: Date.now(),
+        config: config.memory,
+        exclude: phrase,
+        reserved,
+    });
+    warnings.push(...loaded.warnings, ...built.warnings);
+    return built.block;
 }
