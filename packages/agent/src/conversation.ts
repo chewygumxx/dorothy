@@ -275,137 +275,164 @@ export class Conversation implements ChatSession {
 
     #handleMessage(message: SDKMessage): void {
         this.#emit({ type: "sdk", message });
-        if (
-            message.type === "system" &&
-            message.subtype === "compact_boundary"
-        ) {
+        switch (message.type) {
+            case "system":
+                this.#onSystem(message);
+                break;
+            case "stream_event":
+                this.#onStreamEvent(message);
+                break;
+            case "assistant":
+                this.#onAssistant(message);
+                break;
+            case "user":
+                this.#onToolResults(message);
+                break;
+            case "result":
+                this.#onResult(message);
+                break;
+        }
+    }
+
+    #onSystem(message: Extract<SDKMessage, { type: "system" }>): void {
+        if (message.subtype === "compact_boundary") {
             // Its context is replaced, so what the last request read no
             // longer measures it.
             this.#lastInput = null;
             this.#emit({ type: "warning", message: COMPACTED_BY_CLI });
             return;
         }
-        if (message.type === "system" && message.subtype === "init") {
-            this.#checkRecall(message);
-            // The CLI sends init at the start of every turn; only the first
-            // one means the session is ready.
-            if (!this.#ready) {
-                this.#ready = true;
-                this.#emit({
-                    type: "ready",
-                    model: message.model,
-                    sdkSessionId: message.session_id,
-                });
-            }
-        } else if (
-            message.type === "stream_event" &&
-            message.event.type === "content_block_delta" &&
-            message.event.delta.type === "text_delta"
+        if (message.subtype !== "init") {
+            return;
+        }
+        this.#checkRecall(message);
+        // The CLI sends init at the start of every turn; only the first one
+        // means the session is ready.
+        if (!this.#ready) {
+            this.#ready = true;
+            this.#emit({
+                type: "ready",
+                model: message.model,
+                sdkSessionId: message.session_id,
+            });
+        }
+    }
+
+    #onStreamEvent(
+        message: Extract<SDKMessage, { type: "stream_event" }>,
+    ): void {
+        const { event } = message;
+        if (
+            event.type !== "content_block_delta" ||
+            event.delta.type !== "text_delta"
         ) {
-            const text =
-                this.#afterLookup && this.#reply !== ""
-                    ? `\n\n${message.event.delta.text}`
-                    : message.event.delta.text;
-            this.#afterLookup = false;
-            this.#reply += text;
-            this.#emit({ type: "delta", text });
-        } else if (message.type === "assistant") {
-            // A subagent's request reads its own context, not this one.
-            const usage = message.message.usage;
-            if (
-                message.parent_tool_use_id === null &&
-                usage !== undefined &&
-                usage !== null
-            ) {
-                this.#lastInput =
-                    usage.input_tokens +
-                    (usage.cache_read_input_tokens ?? 0) +
-                    (usage.cache_creation_input_tokens ?? 0);
+            return;
+        }
+        // Text after a lookup starts a new step of the reply.
+        const text =
+            this.#afterLookup && this.#reply !== ""
+                ? `\n\n${event.delta.text}`
+                : event.delta.text;
+        this.#afterLookup = false;
+        this.#reply += text;
+        this.#emit({ type: "delta", text });
+    }
+
+    #onAssistant(message: Extract<SDKMessage, { type: "assistant" }>): void {
+        // A subagent's request reads its own context, not this one.
+        const usage = message.message.usage;
+        if (
+            message.parent_tool_use_id === null &&
+            usage !== undefined &&
+            usage !== null
+        ) {
+            this.#lastInput =
+                usage.input_tokens +
+                (usage.cache_read_input_tokens ?? 0) +
+                (usage.cache_creation_input_tokens ?? 0);
+        }
+        for (const block of message.message.content) {
+            if (block.type === "tool_use") {
+                this.#noteCall(block.id, block.name, block.input);
             }
-            for (const block of message.message.content) {
-                if (block.type !== "tool_use") {
-                    continue;
-                }
-                const pending = {
-                    input: block.input,
-                    offset: this.#reply.length,
-                };
-                const tool = toolOf(block.name);
-                if (tool !== null && !this.#calls.has(block.id)) {
-                    this.#calls.set(block.id, { tool, ...pending });
-                }
-                if (
-                    block.name === REMEMBER_TOOL &&
-                    !this.#remembers.has(block.id)
-                ) {
-                    this.#remembers.set(block.id, pending);
-                }
-            }
-        } else if (message.type === "user") {
-            const { content } = message.message;
-            for (const block of Array.isArray(content) ? content : []) {
-                if (block.type !== "tool_result") {
-                    continue;
-                }
-                const kept = this.#remembers.get(block.tool_use_id);
-                if (kept !== undefined) {
-                    this.#remembers.delete(block.tool_use_id);
-                    this.#remembered(
-                        block.tool_use_id,
-                        kept,
-                        block.is_error !== true,
-                        textOf(block.content),
-                    );
-                    continue;
-                }
-                const call = this.#calls.get(block.tool_use_id);
-                if (call === undefined) {
-                    continue;
-                }
-                this.#calls.delete(block.tool_use_id);
-                const ok = block.is_error !== true;
-                this.#lookup(
+        }
+    }
+
+    // A call of recall's or of remember, kept until its result comes.
+    #noteCall(id: string, name: string, input: unknown): void {
+        const pending = { input, offset: this.#reply.length };
+        const tool = toolOf(name);
+        if (tool !== null && !this.#calls.has(id)) {
+            this.#calls.set(id, { tool, ...pending });
+        }
+        if (name === REMEMBER_TOOL && !this.#remembers.has(id)) {
+            this.#remembers.set(id, pending);
+        }
+    }
+
+    #onToolResults(message: Extract<SDKMessage, { type: "user" }>): void {
+        const { content } = message.message;
+        for (const block of Array.isArray(content) ? content : []) {
+            if (block.type === "tool_result") {
+                this.#settle(
                     block.tool_use_id,
-                    call,
-                    ok,
-                    ok ? textOf(block.content) : null,
+                    block.is_error !== true,
+                    block.content,
                 );
             }
-        } else if (
-            message.type === "result" &&
-            message.is_error &&
-            !this.#interrupted
-        ) {
-            // API failures (auth, rate limit, overload) do not throw: the turn
-            // ends with an error result carrying the text instead of a reply.
-            this.#settleCalls();
-            const text =
-                message.subtype === "success"
-                    ? message.result
-                    : message.errors.join("; ");
-            this.#fail(text || message.subtype);
-            this.#streaming = false;
-            this.#lastInput = null;
-        } else if (message.type === "result") {
-            this.#settleCalls();
-            const stats = this.#stats(message);
-            const read =
-                this.#lastInput ??
-                stats.inputTokens +
-                    stats.cacheReadTokens +
-                    stats.cacheWriteTokens;
-            this.#emit({
-                type: "turn-end",
-                reply: this.#reply,
-                interrupted: this.#interrupted,
-                stats,
-                contextTokens: read + estimate(this.#reply),
-            });
-            this.#reply = "";
-            this.#interrupted = false;
-            this.#streaming = false;
-            this.#lastInput = null;
         }
+    }
+
+    // A pending call's result, as a remember or a lookup event.
+    #settle(id: string, ok: boolean, content: unknown): void {
+        const kept = this.#remembers.get(id);
+        if (kept !== undefined) {
+            this.#remembers.delete(id);
+            this.#remembered(id, kept, ok, textOf(content));
+            return;
+        }
+        const call = this.#calls.get(id);
+        if (call !== undefined) {
+            this.#calls.delete(id);
+            this.#lookup(id, call, ok, ok ? textOf(content) : null);
+        }
+    }
+
+    #onResult(message: ResultMessage): void {
+        this.#settleCalls();
+        if (message.is_error && !this.#interrupted) {
+            this.#failTurn(message);
+        } else {
+            this.#endTurn(message);
+        }
+        this.#streaming = false;
+        this.#lastInput = null;
+    }
+
+    // API failures (auth, rate limit, overload) do not throw: the turn ends
+    // with an error result carrying the text instead of a reply.
+    #failTurn(message: ResultMessage): void {
+        const text =
+            message.subtype === "success"
+                ? message.result
+                : message.errors.join("; ");
+        this.#fail(text || message.subtype);
+    }
+
+    #endTurn(message: ResultMessage): void {
+        const stats = this.#stats(message);
+        const read =
+            this.#lastInput ??
+            stats.inputTokens + stats.cacheReadTokens + stats.cacheWriteTokens;
+        this.#emit({
+            type: "turn-end",
+            reply: this.#reply,
+            interrupted: this.#interrupted,
+            stats,
+            contextTokens: read + estimate(this.#reply),
+        });
+        this.#reply = "";
+        this.#interrupted = false;
     }
 
     #lookup(
