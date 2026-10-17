@@ -131,6 +131,24 @@ const MEMORY: ClaudeMemory = {
 
 const APPEND = "--append-system-prompt";
 
+// claude's argument at index as a flag and its value: a long flag's
+// --flag=value holds its own, one word; otherwise the value is the next
+// word, if any, two.
+function flagAt(
+    args: readonly string[],
+    index: number,
+): { flag: string; value: string | undefined; words: 1 | 2 } {
+    const word = args[index] as string;
+    const equals = word.startsWith("--") ? word.indexOf("=") : -1;
+    return equals === -1
+        ? { flag: word, value: args[index + 1], words: 2 }
+        : {
+              flag: word.slice(0, equals),
+              value: word.slice(equals + 1),
+              words: 1,
+          };
+}
+
 // The arguments claude is run with: the marker appended to its system
 // prompt, then the user's. Claude Code keeps only the last
 // --append-system-prompt it is given, so the user's own, if any, goes in
@@ -139,19 +157,16 @@ export function claudeArgs(args: readonly string[]): string[] {
     let appended: string | undefined;
     const rest: string[] = [];
     for (let index = 0; index < args.length; index += 1) {
-        const arg = args[index] as string;
-        const value = args[index + 1];
-        if (arg === "--") {
+        if (args[index] === "--") {
             rest.push(...args.slice(index));
             break;
         }
-        if (arg === APPEND && value !== undefined) {
+        const { flag, value, words } = flagAt(args, index);
+        if (flag === APPEND && value !== undefined) {
             appended = value;
-            index += 1;
-        } else if (arg.startsWith(`${APPEND}=`)) {
-            appended = arg.slice(APPEND.length + 1);
+            index += words - 1;
         } else {
-            rest.push(arg);
+            rest.push(args[index] as string);
         }
     }
     const text = appended === undefined ? MARKER : `${appended}\n\n${MARKER}`;
@@ -176,16 +191,16 @@ const RESUMING: ReadonlySet<string> = new Set([
     "--from-pr",
 ]);
 
+const uuidOf = (value: string | undefined) =>
+    value !== undefined && isUuid(value) ? value : null;
+
 export function claudeSession(args: readonly string[]): ClaudeSession {
     for (let index = 0; index < args.length; index += 1) {
-        const arg = args[index] as string;
-        if (arg === "--") {
+        if (args[index] === "--") {
             break;
         }
-        const equals = arg.startsWith("--") ? arg.indexOf("=") : -1;
-        const flag = equals === -1 ? arg : arg.slice(0, equals);
-        const value = equals === -1 ? args[index + 1] : arg.slice(equals + 1);
-        const id = value !== undefined && isUuid(value) ? value : null;
+        const { flag, value } = flagAt(args, index);
+        const id = uuidOf(value);
         if (flag === "--session-id") {
             return id === null
                 ? { kind: "resumed", id: null }
@@ -321,78 +336,123 @@ export function dorothyFlags(
         writePrivate: (text: string) => string;
     },
 ): { args: string[]; warnings: string[]; files: string[] } {
-    // What the user's --settings files held may be secret (an env block
-    // of tokens), and argv is readable by other users: a merge that
-    // includes a file goes to a private file, passed by path.
-    const filed: string[][] = [];
+    const merged = mergeTheirs(args, flags, { cwd, read });
+    const front = frontFlags(merged, flags, writePrivate);
+    return {
+        args: [...front.args, ...merged.rest, ...front.passedOn],
+        warnings: [...merged.warnings, ...front.warnings],
+        files: front.files,
+    };
+}
+
+// Dorothy's flags with the user's own merged in, and the user's arguments
+// left: theirs where it could not be read, with a warning. filed holds
+// each flag whose value was a file, as the user gave it.
+type Merged = {
+    values: Record<string, Json | null>;
+    filed: string[][];
+    rest: string[];
+    warnings: string[];
+};
+
+function mergeTheirs(
+    args: readonly string[],
+    flags: DorothyFlags,
+    { cwd, read }: { cwd: string; read: (path: string) => string },
+): Merged {
     const values: Record<string, Json | null> = {
         [SETTINGS]: flags.settings,
         [MCP_CONFIG]: flags.mcpConfig,
     };
-    const warnings: string[] = [];
+    const filed: string[][] = [];
     const rest: string[] = [];
+    const warnings: string[] = [];
     for (let index = 0; index < args.length; index += 1) {
         const arg = args[index] as string;
         if (arg === "--") {
             rest.push(...args.slice(index));
             break;
         }
-        const name = [...MERGED].find(
-            (flag) => arg === flag || arg.startsWith(`${flag}=`),
-        );
-        const ours = name === undefined ? null : (values[name] ?? null);
-        if (name === undefined || ours === null) {
+        const { flag, value, words } = flagAt(args, index);
+        const ours = MERGED.has(flag) ? (values[flag] ?? null) : null;
+        if (ours === null || value === undefined) {
             rest.push(arg);
             continue;
-        }
-        const spaced = arg === name;
-        const value = spaced ? args[index + 1] : arg.slice(name.length + 1);
-        if (value === undefined) {
-            rest.push(arg);
-            continue;
-        }
-        if (spaced) {
-            index += 1;
         }
         // The flag as the user gave it, with its value.
-        const given = spaced ? [arg, value] : [arg];
+        const given = args.slice(index, index + words);
+        index += words - 1;
         const theirs = jsonOf(value, cwd, read);
         if ("problem" in theirs && typeof theirs.problem === "string") {
             rest.push(...given);
             warnings.push(
-                `your ${name} could not be read (${theirs.problem}); it is passed on as given, and may override Dorothy's`,
+                `your ${flag} could not be read (${theirs.problem}); it is passed on as given, and may override Dorothy's`,
             );
             continue;
         }
-        values[name] = mergeJson(theirs as Json, ours);
+        values[flag] = mergeJson(theirs as Json, ours);
         if (!isInline(value)) {
             filed.push(given);
         }
     }
-    const files: string[] = [];
-    const front = [SETTINGS, MCP_CONFIG].flatMap((name) => {
-        const value = values[name];
-        if (value === null || value === undefined) {
-            return [];
+    return { values, filed, rest, warnings };
+}
+
+// Dorothy's flags as claude takes them. What the user's --settings files
+// held may be secret (an env block of tokens), and argv is readable by
+// other users: a merge that includes a file goes to a private file,
+// passed by path. Without one the secrets stay with the user's own
+// flags, passed on as given, and Dorothy's settings go in alone.
+type Front = {
+    args: string[];
+    passedOn: string[];
+    warnings: string[];
+    files: string[];
+};
+
+function frontFlags(
+    { values, filed }: Merged,
+    flags: DorothyFlags,
+    writePrivate: (text: string) => string,
+): Front {
+    const front: Front = { args: [], passedOn: [], warnings: [], files: [] };
+    const settings = values[SETTINGS] ?? null;
+    if (settings !== null && filed.length > 0) {
+        const written = writeSettings(settings, writePrivate);
+        if ("path" in written) {
+            front.files.push(written.path);
+            front.args.push(`${SETTINGS}=${written.path}`);
+        } else {
+            front.passedOn.push(...filed.flat());
+            front.warnings.push(
+                `a private settings file could not be written (${written.problem}); your --settings is passed on as given, and may override Dorothy's`,
+            );
+            front.args.push(jsonFlag(SETTINGS, flags.settings));
         }
-        if (name === SETTINGS && filed.length > 0) {
-            try {
-                const path = writePrivate(JSON.stringify(value));
-                files.push(path);
-                return [`${name}=${path}`];
-            } catch (error) {
-                // Without a private file the secrets stay with the user's
-                // own flags; Dorothy's settings go in alone.
-                rest.push(...filed.flat());
-                warnings.push(
-                    `a private settings file could not be written (${describeError(error)}); your --settings is passed on as given, and may override Dorothy's`,
-                );
-                return [`${name}=${JSON.stringify(flags.settings)}`];
-            }
-        }
-        return [`${name}=${JSON.stringify(value)}`];
-    });
-    return { args: [...front, ...rest], warnings, files };
+    } else if (settings !== null) {
+        front.args.push(jsonFlag(SETTINGS, settings));
+    }
+    const mcpConfig = values[MCP_CONFIG] ?? null;
+    if (mcpConfig !== null) {
+        front.args.push(jsonFlag(MCP_CONFIG, mcpConfig));
+    }
+    return front;
+}
+
+const jsonFlag = (flag: string, value: Json | null) =>
+    `${flag}=${JSON.stringify(value)}`;
+
+// Settings that hold a user's file, written where only the user can read
+// them: the path, or why it could not be written.
+function writeSettings(
+    settings: Json,
+    writePrivate: (text: string) => string,
+): { path: string } | { problem: string } {
+    try {
+        return { path: writePrivate(JSON.stringify(settings)) };
+    } catch (error) {
+        return { problem: describeError(error) };
+    }
 }
 
 // The recall server as claude starts it: this program again, in the
