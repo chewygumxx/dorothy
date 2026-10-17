@@ -500,35 +500,15 @@ export async function launchClaude(
     }
     const dir = shell.cwd ?? cwd;
     const { config, warnings } = await loadConfig(env);
-    for (const warning of warnings) {
-        write(`dorothy: ${warning}\n`);
-    }
+    warnAll(warnings, write);
     const on = config.memory.enabled;
-    const run = purpose === "run";
-    if (on && run) {
-        const failed = await memory.sync(dir, env).catch(describeError);
-        if (failed !== null) {
-            write(`dorothy: sync failed: ${failed}\n`);
-        }
+    // Its dump records nothing, so syncs nothing and notes no launch.
+    const records = on && purpose === "run";
+    if (records) {
+        await syncProject(memory, dir, env, write);
     }
     const session = claudeSession(args);
-    let section = "";
-    if (on) {
-        try {
-            const built = await memory.block(
-                env,
-                session.kind === "resumed" ? session.id : null,
-            );
-            for (const warning of built.warnings) {
-                write(`dorothy: ${warning}\n`);
-            }
-            section = built.block;
-        } catch (error) {
-            write(
-                `dorothy: the memory block could not be built (${describeError(error)}); starting without it\n`,
-            );
-        }
-    }
+    const section = on ? await memorySection(memory, env, session, write) : "";
     let gateway: Gateway;
     try {
         gateway = start({ upstream, section });
@@ -538,60 +518,161 @@ export async function launchClaude(
         );
         return 1;
     }
-    // Her sessions are recorded by hooks, under a launch noted before
-    // claude starts; a launch that cannot be noted records nothing.
-    let noted: string | null = null;
-    let named: string | null = null;
-    if (on && run) {
-        const id = newId();
-        named =
-            session.kind === "new"
-                ? newId()
-                : session.kind === "named"
-                  ? session.id
-                  : null;
-        try {
-            await memory.note(
-                {
-                    launch: id,
-                    pid: process.pid,
-                    started: now().toISOString(),
-                    dir,
-                    session: named,
-                    claude: claudeConfigDir(shell.env),
-                },
-                env,
-            );
-            noted = id;
-        } catch (error) {
-            write(
-                `dorothy: this launch could not be noted (${describeError(error)}); its sessions will not be recorded\n`,
-            );
-        }
-    }
-    const recall = on && run && config.memory.recall;
-    const settings: Json = {
-        ...(recall
-            ? { permissions: { allow: [...CLAUDE_ALLOWED_TOOLS] } }
-            : {}),
-        ...(noted === null ? {} : hookSettings(self)),
-    };
+    const noted = records
+        ? await noteLaunch(memory, env, write, {
+              dir,
+              session,
+              claude: claudeConfigDir(shell.env),
+              newId,
+              now,
+          })
+        : null;
+    const recall = records && config.memory.recall;
+    // A new session gets the id Dorothy noted; a named one has its own.
+    const named = session.kind === "new" ? noted?.session : undefined;
     const flagged = dorothyFlags(
-        noted !== null && session.kind === "new"
-            ? [`--session-id=${named}`, ...args]
-            : args,
+        named === undefined ? args : [`--session-id=${named}`, ...args],
         {
-            settings: Object.keys(settings).length > 0 ? settings : null,
+            settings: launchSettings(recall, noted !== null, self),
             mcpConfig: recall ? recallServer(self, dir) : null,
         },
         { cwd: dir, read, writePrivate },
     );
-    for (const warning of flagged.warnings) {
+    warnAll(flagged.warnings, write);
+    const launch: Launch = {
+        cmd: [claude, ...claudeArgs(flagged.args)],
+        env: launchEnv(shell.env, env, gateway.url, on, noted?.launch ?? null),
+        gateway,
+        launch: noted?.launch ?? null,
+        cleanup: () => removeAll(flagged.files, remove),
+    };
+    return shell.cwd === undefined ? launch : { ...launch, cwd: shell.cwd };
+}
+
+type Write = (text: string) => void;
+
+function warnAll(warnings: readonly string[], write: Write): void {
+    for (const warning of warnings) {
         write(`dorothy: ${warning}\n`);
     }
+}
+
+// Syncs the project claude starts in; a failure is told, not fatal.
+async function syncProject(
+    memory: ClaudeMemory,
+    dir: string,
+    env: Env,
+    write: Write,
+): Promise<void> {
+    const failed = await memory.sync(dir, env).catch(describeError);
+    if (failed !== null) {
+        write(`dorothy: sync failed: ${failed}\n`);
+    }
+}
+
+// Chat's memory block, the gateway's section after her identity; ""
+// where it cannot be built, so claude starts without it.
+async function memorySection(
+    memory: ClaudeMemory,
+    env: Env,
+    session: ClaudeSession,
+    write: Write,
+): Promise<string> {
+    try {
+        const built = await memory.block(
+            env,
+            session.kind === "resumed" ? session.id : null,
+        );
+        warnAll(built.warnings, write);
+        return built.block;
+    } catch (error) {
+        write(
+            `dorothy: the memory block could not be built (${describeError(error)}); starting without it\n`,
+        );
+        return "";
+    }
+}
+
+// The launch noted and the session it records: Dorothy's new id, the
+// user's own, or undefined when resumed.
+type NotedLaunch = { launch: string; session: string | undefined };
+
+// Her sessions are recorded by hooks, under a launch noted before
+// claude starts; a launch that cannot be noted records nothing, null.
+async function noteLaunch(
+    memory: ClaudeMemory,
+    env: Env,
+    write: Write,
+    {
+        dir,
+        session,
+        claude,
+        newId,
+        now,
+    }: {
+        dir: string;
+        session: ClaudeSession;
+        claude: string;
+        newId: () => string;
+        now: () => Date;
+    },
+): Promise<NotedLaunch | null> {
+    const launch = newId();
+    const named =
+        session.kind === "new"
+            ? newId()
+            : session.kind === "named"
+              ? session.id
+              : undefined;
+    try {
+        await memory.note(
+            {
+                launch,
+                pid: process.pid,
+                started: now().toISOString(),
+                dir,
+                session: named ?? null,
+                claude,
+            },
+            env,
+        );
+        return { launch, session: named };
+    } catch (error) {
+        write(
+            `dorothy: this launch could not be noted (${describeError(error)}); its sessions will not be recorded\n`,
+        );
+        return null;
+    }
+}
+
+// The settings Dorothy adds to claude's: recall's tools allowed, and
+// the hooks that record a noted launch. null for none.
+function launchSettings(
+    recall: boolean,
+    noted: boolean,
+    self: readonly string[],
+): Json | null {
+    const settings: Json = {
+        ...(recall
+            ? { permissions: { allow: [...CLAUDE_ALLOWED_TOOLS] } }
+            : {}),
+        ...(noted ? hookSettings(self) : {}),
+    };
+    return Object.keys(settings).length > 0 ? settings : null;
+}
+
+// The environment claude runs in: the user's shell's, pointed at the
+// gateway.
+function launchEnv(
+    shellEnv: Env,
+    env: Env,
+    url: string,
+    on: boolean,
+    noted: string | null,
+): Env {
     const launchEnv: Env = {
-        ...shell.env,
-        ANTHROPIC_BASE_URL: gateway.url,
+        ...shellEnv,
+        ANTHROPIC_BASE_URL: url,
         // Claude Code turns tool search off for a base URL not
         // Anthropic's; a user's own choice stands.
         ENABLE_TOOL_SEARCH: env.ENABLE_TOOL_SEARCH ?? "1",
@@ -604,22 +685,20 @@ export async function launchClaude(
         // A launch this one runs inside is not this one's.
         delete launchEnv.DOROTHY_LAUNCH;
     }
-    const launch: Launch = {
-        cmd: [claude, ...claudeArgs(flagged.args)],
-        env: launchEnv,
-        gateway,
-        launch: noted,
-        cleanup: () => {
-            for (const path of flagged.files) {
-                try {
-                    remove(path);
-                } catch {
-                    // A file already gone needs no removing.
-                }
-            }
-        },
-    };
-    return shell.cwd === undefined ? launch : { ...launch, cwd: shell.cwd };
+    return launchEnv;
+}
+
+function removeAll(
+    paths: readonly string[],
+    remove: (path: string) => void,
+): void {
+    for (const path of paths) {
+        try {
+            remove(path);
+        } catch {
+            // A file already gone needs no removing.
+        }
+    }
 }
 
 export function warnDrift(
