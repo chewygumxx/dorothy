@@ -11,8 +11,12 @@
 import type {
     ConversationEvent,
     Lookup,
+    OpenLookup,
     RawMessage,
+    RecollectLookup,
     ResumedTurn,
+    SearchLookup,
+    TagsLookup,
     TurnStats,
 } from "@dorothy/core";
 
@@ -79,52 +83,67 @@ const oneRow = (text: string) =>
 const plural = (count: number, noun: string) =>
     `${count} ${noun}${count === 1 ? "" : "s"}`;
 
-export function lookupLine(
-    ok: boolean,
-    lookup: Lookup,
-): { text: string; detail?: string } {
-    if (lookup.tool === "search") {
-        const query = oneRow(lookup.query);
-        const tags = (lookup.tags ?? []).map(oneRow);
-        const subject = [
-            ...(query === "" ? [] : [`"${query}"`]),
-            ...(tags.length === 0 ? [] : [`tagged ${tags.join(", ")}`]),
-        ].join(" ");
-        if (!ok) {
-            return { text: `⌕ couldn't search ${subject}` };
-        }
-        const facts = lookup.facts ?? 0;
-        const counts = [
-            ...(facts > 0 ? [plural(facts, "fact")] : []),
-            ...(lookup.hits > 0 ? [plural(lookup.hits, "conversation")] : []),
-        ];
-        const found = counts.length === 0 ? "nothing found" : counts.join(", ");
-        return { text: `⌕ searched ${subject} · ${found}` };
+// A lookup's or a remember's dim row, and what it adds below.
+type DimLine = { text: string; detail?: string };
+
+export function lookupLine(ok: boolean, lookup: Lookup): DimLine {
+    switch (lookup.tool) {
+        case "search":
+            return searchLine(ok, lookup);
+        case "tags":
+            return tagsLine(ok, lookup);
+        case "recollect":
+            return recollectLine(ok, lookup);
+        default:
+            return openLine(ok, lookup);
     }
-    if (lookup.tool === "tags") {
-        if (!ok) {
-            return { text: "⌕ couldn't list tags" };
-        }
-        const what =
-            lookup.under === undefined
-                ? "tags"
-                : `tags under ${oneRow(lookup.under)}`;
-        const count =
-            lookup.hits === 0 ? "no tags" : plural(lookup.hits, "tag");
-        return { text: `⌕ listed ${what} · ${count}` };
+}
+
+function searchLine(ok: boolean, lookup: SearchLookup): DimLine {
+    const query = oneRow(lookup.query);
+    const tags = (lookup.tags ?? []).map(oneRow);
+    const subject = [
+        ...(query === "" ? [] : [`"${query}"`]),
+        ...(tags.length === 0 ? [] : [`tagged ${tags.join(", ")}`]),
+    ].join(" ");
+    if (!ok) {
+        return { text: `⌕ couldn't search ${subject}` };
     }
-    if (lookup.tool === "recollect") {
-        const cluster = `cluster ${lookup.cluster}`;
-        if (!ok) {
-            return { text: `⌕ couldn't recollect ${cluster}` };
-        }
-        return {
-            text:
-                lookup.turns === null
-                    ? `⌕ recollected ${cluster}`
-                    : `⌕ recollected ${cluster}, turns ${lookup.turns[0]}-${lookup.turns[1]}`,
-        };
+    const facts = lookup.facts ?? 0;
+    const counts = [
+        ...(facts > 0 ? [plural(facts, "fact")] : []),
+        ...(lookup.hits > 0 ? [plural(lookup.hits, "conversation")] : []),
+    ];
+    const found = counts.length === 0 ? "nothing found" : counts.join(", ");
+    return { text: `⌕ searched ${subject} · ${found}` };
+}
+
+function tagsLine(ok: boolean, lookup: TagsLookup): DimLine {
+    if (!ok) {
+        return { text: "⌕ couldn't list tags" };
     }
+    const what =
+        lookup.under === undefined
+            ? "tags"
+            : `tags under ${oneRow(lookup.under)}`;
+    const count = lookup.hits === 0 ? "no tags" : plural(lookup.hits, "tag");
+    return { text: `⌕ listed ${what} · ${count}` };
+}
+
+function recollectLine(ok: boolean, lookup: RecollectLookup): DimLine {
+    const cluster = `cluster ${lookup.cluster}`;
+    if (!ok) {
+        return { text: `⌕ couldn't recollect ${cluster}` };
+    }
+    return {
+        text:
+            lookup.turns === null
+                ? `⌕ recollected ${cluster}`
+                : `⌕ recollected ${cluster}, turns ${lookup.turns[0]}-${lookup.turns[1]}`,
+    };
+}
+
+function openLine(ok: boolean, lookup: OpenLookup): DimLine {
     const name = oneRow(lookup.name);
     return ok
         ? {
@@ -140,7 +159,7 @@ export function rememberLine(
     ok: boolean,
     input: unknown,
     output: string,
-): { text: string; detail?: string } {
+): DimLine {
     const fields =
         typeof input === "object" && input !== null
             ? (input as Record<string, unknown>)
