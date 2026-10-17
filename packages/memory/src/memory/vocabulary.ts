@@ -226,33 +226,53 @@ export function newId(
     }
 }
 
-// What breaks the vocabulary's rules, worded for the user, or null.
+// What breaks the vocabulary's rules, worded for the user, or null: the
+// first term that breaks one, then the first cycle.
 export function vocabularyProblem(v: Vocabulary): string | null {
     const owners = new Set<string>();
     for (const [id, term] of Object.entries(v.concepts)) {
-        const labels = isConcept(term)
-            ? labelsOf(term)
-            : isDeleted(term)
-              ? term.labels
-              : [];
-        for (const label of labels) {
-            const key = labelKey(label);
-            if (owners.has(key)) {
-                return `the label "${label}" is used twice`;
-            }
-            owners.add(key);
-        }
-        if (isConcept(term)) {
-            for (const parent of term.broader) {
-                if (!isConcept(v.concepts[parent])) {
-                    return `${term.prefLabel} is under ${parent}, which is not a concept`;
-                }
-            }
-        }
-        if (isMerged(term) && !isConcept(v.concepts[term.mergedInto])) {
-            return `${id} was merged into ${term.mergedInto}, which is not a concept`;
+        const problem = termProblem(v, id, term, owners);
+        if (problem !== null) {
+            return problem;
         }
     }
+    return cycleProblem(v);
+}
+
+// A term's label used before (owners holds the keys seen so far), or a
+// link to what is not a concept.
+function termProblem(
+    v: Vocabulary,
+    id: string,
+    term: Term,
+    owners: Set<string>,
+): string | null {
+    const labels = isConcept(term)
+        ? labelsOf(term)
+        : isDeleted(term)
+          ? term.labels
+          : [];
+    for (const label of labels) {
+        const key = labelKey(label);
+        if (owners.has(key)) {
+            return `the label "${label}" is used twice`;
+        }
+        owners.add(key);
+    }
+    if (isMerged(term)) {
+        return isConcept(v.concepts[term.mergedInto])
+            ? null
+            : `${id} was merged into ${term.mergedInto}, which is not a concept`;
+    }
+    const orphan = isConcept(term)
+        ? term.broader.find((parent) => !isConcept(v.concepts[parent]))
+        : undefined;
+    return orphan === undefined || !isConcept(term)
+        ? null
+        : `${term.prefLabel} is under ${orphan}, which is not a concept`;
+}
+
+function cycleProblem(v: Vocabulary): string | null {
     for (const [id, term] of Object.entries(v.concepts)) {
         if (
             isConcept(term) &&
@@ -280,63 +300,91 @@ function readTerm(id: string, value: unknown): Term | string {
         return `${id} is not an object`;
     }
     if ("prefLabel" in value || "scopeNote" in value) {
-        if (typeof value.prefLabel !== "string") {
-            return `${id} has no prefLabel`;
-        }
-        if (typeof value.scopeNote !== "string") {
-            return `${id} has no scopeNote`;
-        }
-        const altLabel = value.altLabel ?? [];
-        const broader = value.broader ?? [];
-        if (!isList(altLabel) || !isList(broader)) {
-            return `${id}'s altLabel and broader must be lists`;
-        }
-        if (
-            (value.by !== "dorothy" && value.by !== "user") ||
-            typeof value.at !== "string" ||
-            (value.model !== undefined && typeof value.model !== "string") ||
-            (value.edited !== undefined &&
-                value.edited !== null &&
-                typeof value.edited !== "string")
-        ) {
-            return `${id}'s by, at, model or edited is not as written`;
-        }
-        const concept: Concept = {
-            prefLabel: normalise(value.prefLabel),
-            altLabel: altLabel.map(normalise),
-            broader: [...new Set(broader)],
-            scopeNote: normalise(value.scopeNote),
-            by: value.by,
-            at: value.at,
-            ...(typeof value.model === "string" ? { model: value.model } : {}),
-            edited: typeof value.edited === "string" ? value.edited : null,
-        };
-        if (concept.altLabel.length > TAG_LIMITS.altLabels) {
-            return `${id} has more than ${TAG_LIMITS.altLabels} alternative labels`;
-        }
-        const problem =
-            labelsOf(concept)
-                .map(labelProblem)
-                .find((p) => p !== null) ?? scopeNoteProblem(concept.scopeNote);
-        return problem === null ? concept : `${id}: ${problem}`;
+        return readConcept(id, value);
     }
     if ("deleted" in value) {
-        return typeof value.deleted === "string" && isList(value.labels)
-            ? {
-                  deleted: value.deleted,
-                  labels: value.labels
-                      .map(normalise)
-                      .filter((label) => label !== ""),
-              }
-            : `${id}'s deleted or labels is not as written`;
+        return readDeleted(id, value);
     }
     if ("mergedInto" in value) {
-        return typeof value.mergedInto === "string" &&
-            typeof value.at === "string"
-            ? { mergedInto: value.mergedInto, at: value.at }
-            : `${id}'s mergedInto or at is not as written`;
+        return readMerged(id, value);
     }
     return `${id} is neither a concept nor a tombstone`;
+}
+
+function readConcept(
+    id: string,
+    value: Record<string, unknown>,
+): Term | string {
+    const { prefLabel, scopeNote } = value;
+    const altLabel = value.altLabel ?? [];
+    const broader = value.broader ?? [];
+    if (typeof prefLabel !== "string") {
+        return `${id} has no prefLabel`;
+    }
+    if (typeof scopeNote !== "string") {
+        return `${id} has no scopeNote`;
+    }
+    if (!isList(altLabel) || !isList(broader)) {
+        return `${id}'s altLabel and broader must be lists`;
+    }
+    if (!stampWritten(value)) {
+        return `${id}'s by, at, model or edited is not as written`;
+    }
+    const concept: Concept = {
+        prefLabel: normalise(prefLabel),
+        altLabel: altLabel.map(normalise),
+        broader: [...new Set(broader)],
+        scopeNote: normalise(scopeNote),
+        by: value.by,
+        at: value.at,
+        ...(typeof value.model === "string" ? { model: value.model } : {}),
+        edited: typeof value.edited === "string" ? value.edited : null,
+    };
+    if (concept.altLabel.length > TAG_LIMITS.altLabels) {
+        return `${id} has more than ${TAG_LIMITS.altLabels} alternative labels`;
+    }
+    const problem =
+        labelsOf(concept)
+            .map(labelProblem)
+            .find((p) => p !== null) ?? scopeNoteProblem(concept.scopeNote);
+    return problem === null ? concept : `${id}: ${problem}`;
+}
+
+// Who made a concept, when, with which model, and when it was edited.
+function stampWritten(value: Record<string, unknown>): value is {
+    by: Concept["by"];
+    at: string;
+    model?: string;
+    edited?: string | null;
+} {
+    return (
+        (value.by === "dorothy" || value.by === "user") &&
+        typeof value.at === "string" &&
+        (value.model === undefined || typeof value.model === "string") &&
+        (value.edited === undefined ||
+            value.edited === null ||
+            typeof value.edited === "string")
+    );
+}
+
+function readDeleted(
+    id: string,
+    value: Record<string, unknown>,
+): Term | string {
+    return typeof value.deleted === "string" && isList(value.labels)
+        ? {
+              deleted: value.deleted,
+              labels: value.labels
+                  .map(normalise)
+                  .filter((label) => label !== ""),
+          }
+        : `${id}'s deleted or labels is not as written`;
+}
+
+function readMerged(id: string, value: Record<string, unknown>): Term | string {
+    return typeof value.mergedInto === "string" && typeof value.at === "string"
+        ? { mergedInto: value.mergedInto, at: value.at }
+        : `${id}'s mergedInto or at is not as written`;
 }
 
 // Unlike a sidecar, any departure from the rules makes the whole file
