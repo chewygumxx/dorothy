@@ -411,27 +411,7 @@ export function search(
     input: SearchInput,
     options: QueryOptions,
 ): SearchResult {
-    const terms = termsOf(input.query ?? "");
-    const labels = (input.tags ?? [])
-        .map(normalise)
-        .filter((label) => label !== "");
-    if (terms.length === 0 && labels.length === 0) {
-        throw new RecallError("Give some words or tags to search for.");
-    }
-    if (labels.length > MAX_TAG_FILTERS) {
-        throw new RecallError(`Give at most ${MAX_TAG_FILTERS} tags.`);
-    }
-    const kind = input.kind;
-    if (
-        kind !== undefined &&
-        !(SEARCH_KINDS as readonly string[]).includes(kind)
-    ) {
-        throw new RecallError("kind must be conversations or facts.");
-    }
-    const broken = vocabularyBroken(index) !== null;
-    if (labels.length > 0 && broken) {
-        throw new RecallError(TAGS_UNAVAILABLE);
-    }
+    const { terms, labels, kind, broken } = searchQuery(index, input);
     const from = dayBound(input.after, "after");
     const to = dayBound(input.before, "before");
     const limit = clamp(input.limit, DEFAULT_LIMIT, MAX_LIMIT);
@@ -459,21 +439,66 @@ export function search(
             .filter((row) => !row.hidden && row.phrase !== exclude)
             .map((row) => [row.id, row.phrase] as const),
     );
-    const within = (found: Map<string, Hit>) =>
-        allowed === null
-            ? found
-            : new Map([...found].filter(([phrase]) => allowed.has(phrase)));
-    let hits =
-        terms.length === 0
-            ? activeIn(index, allowed ?? new Set(), from, to)
-            : within(findHits(index, terms.join(" "), from, to, exclude));
-    if (hits.size === 0 && terms.length > 1) {
-        hits = within(findHits(index, terms.join(" OR "), from, to, exclude));
-    }
+    const hits = conversationHits(index, terms, allowed, { from, to, exclude });
     return {
         ...facts,
         ...rankConversations(index, hits, limit, broken, options),
     };
+}
+
+// A search's words and tags, refused where it asks what can't be given.
+function searchQuery(
+    index: RecallIndex,
+    input: SearchInput,
+): {
+    terms: string[];
+    labels: string[];
+    kind: SearchInput["kind"];
+    broken: boolean;
+} {
+    const terms = termsOf(input.query ?? "");
+    const labels = (input.tags ?? [])
+        .map(normalise)
+        .filter((label) => label !== "");
+    if (terms.length === 0 && labels.length === 0) {
+        throw new RecallError("Give some words or tags to search for.");
+    }
+    if (labels.length > MAX_TAG_FILTERS) {
+        throw new RecallError(`Give at most ${MAX_TAG_FILTERS} tags.`);
+    }
+    const kind = input.kind;
+    if (
+        kind !== undefined &&
+        !(SEARCH_KINDS as readonly string[]).includes(kind)
+    ) {
+        throw new RecallError("kind must be conversations or facts.");
+    }
+    const broken = vocabularyBroken(index) !== null;
+    if (labels.length > 0 && broken) {
+        throw new RecallError(TAGS_UNAVAILABLE);
+    }
+    return { terms, labels, kind, broken };
+}
+
+// Conversations with every word, else any of them; with no words, those
+// active in the dates. allowed: the conversations tags leave, or null.
+function conversationHits(
+    index: RecallIndex,
+    terms: readonly string[],
+    allowed: Set<string> | null,
+    { from, to, exclude }: { from: number; to: number; exclude: string },
+): Map<string, Hit> {
+    if (terms.length === 0) {
+        return activeIn(index, allowed ?? new Set(), from, to);
+    }
+    const within = (found: Map<string, Hit>) =>
+        allowed === null
+            ? found
+            : new Map([...found].filter(([phrase]) => allowed.has(phrase)));
+    const hits = within(findHits(index, terms.join(" "), from, to, exclude));
+    return hits.size === 0 && terms.length > 1
+        ? within(findHits(index, terms.join(" OR "), from, to, exclude))
+        : hits;
 }
 
 const cut = (text: string) =>
@@ -498,31 +523,32 @@ export function windowOf<T extends { text: string }>(
     if (used > WINDOW_TOKENS) {
         return [{ ...centre, text: cut(centre.text) }];
     }
-    let forward = true;
-    let canForward = true;
-    let canBack = true;
-    while (canForward || canBack) {
-        const ahead = forward ? canForward : !canBack;
+    // One turn more on a side, if it fits.
+    const extend = (ahead: boolean): boolean => {
         const next = ahead ? high + 1 : low - 1;
         const candidate = turns[next];
         if (
             candidate === undefined ||
             used + tokens(candidate.text) > WINDOW_TOKENS
         ) {
-            if (ahead) {
-                canForward = false;
-            } else {
-                canBack = false;
-            }
-        } else {
-            used += tokens(candidate.text);
-            if (ahead) {
-                high = next;
-            } else {
-                low = next;
-            }
+            return false;
         }
-        forward = !forward;
+        used += tokens(candidate.text);
+        if (ahead) {
+            high = next;
+        } else {
+            low = next;
+        }
+        return true;
+    };
+    // The sides take turns, forward first; a side that has stopped gives
+    // its turn to the other.
+    const open = { ahead: true, back: true };
+    for (let forward = true; open.ahead || open.back; forward = !forward) {
+        const ahead = forward ? open.ahead : !open.back;
+        if (!extend(ahead)) {
+            open[ahead ? "ahead" : "back"] = false;
+        }
     }
     return turns.slice(low, high + 1);
 }
@@ -797,6 +823,53 @@ export function listTags(
 // A cluster of the live conversation, read from turn (its first by
 // default) and never past its last. With words, the window centres on the
 // first turn from there on that holds them all, or any of them.
+// The turn a recollection starts from: the one asked for, which must be in
+// the cluster, else its first.
+function startTurn(
+    asked: number | undefined,
+    range: { first: number; last: number },
+    n: number,
+): number {
+    if (asked === undefined) {
+        return range.first;
+    }
+    const turn = Number.isFinite(asked) ? Math.round(asked) : Number.NaN;
+    if (!(turn >= range.first && turn <= range.last)) {
+        throw new RecallError(
+            `turn must be from ${range.first} to ${range.last}, within cluster ${n}.`,
+        );
+    }
+    return turn;
+}
+
+// The first turn from start to last with every word, else any of them.
+function findWords(
+    index: RecallIndex,
+    words: string,
+    phrase: string,
+    start: number,
+    last: number,
+): { n: number } | null {
+    if (normalise(words) === "") {
+        throw new RecallError("Give some words to look for.");
+    }
+    const terms = termsOf(words);
+    const find = (expression: string) =>
+        index.db
+            .query(
+                `SELECT t.n AS n FROM turns_fts
+                 JOIN turns t ON t.rowid = turns_fts.rowid
+                 WHERE turns_fts MATCH ? AND t.phrase = ?
+                     AND t.n BETWEEN ? AND ?
+                 ORDER BY t.n LIMIT 1`,
+            )
+            .get(expression, phrase, start, last) as { n: number } | null;
+    return (
+        find(terms.join(" ")) ??
+        (terms.length > 1 ? find(terms.join(" OR ")) : null)
+    );
+}
+
 export function recollect(
     index: RecallIndex,
     input: RecollectInput,
@@ -818,43 +891,13 @@ export function recollect(
     if (phrase === null || range === null) {
         throw new RecallError(NO_CLUSTER);
     }
-    let start = range.first;
-    if (input.turn !== undefined) {
-        const turn = Number.isFinite(input.turn)
-            ? Math.round(input.turn)
-            : Number.NaN;
-        if (!(turn >= range.first && turn <= range.last)) {
-            throw new RecallError(
-                `turn must be from ${range.first} to ${range.last}, within cluster ${n}.`,
-            );
-        }
-        start = turn;
-    }
-    let centre = start;
-    let matched: boolean | undefined;
-    if (input.words !== undefined) {
-        if (normalise(input.words) === "") {
-            throw new RecallError("Give some words to look for.");
-        }
-        const terms = termsOf(input.words);
-        const find = (expression: string) =>
-            index.db
-                .query(
-                    `SELECT t.n AS n FROM turns_fts
-                     JOIN turns t ON t.rowid = turns_fts.rowid
-                     WHERE turns_fts MATCH ? AND t.phrase = ?
-                         AND t.n BETWEEN ? AND ?
-                     ORDER BY t.n LIMIT 1`,
-                )
-                .get(expression, phrase, start, range.last) as {
-                n: number;
-            } | null;
-        const hit =
-            find(terms.join(" ")) ??
-            (terms.length > 1 ? find(terms.join(" OR ")) : null);
-        matched = hit !== null;
-        centre = hit?.n ?? start;
-    }
+    const start = startTurn(input.turn, range, n);
+    const found =
+        input.words === undefined
+            ? null
+            : findWords(index, input.words, phrase, start, range.last);
+    const centre = found?.n ?? start;
+    const matched = input.words === undefined ? undefined : found !== null;
     const turns = index.db
         .query(
             "SELECT n AS turn, role, at, text FROM turns WHERE phrase = ? AND n BETWEEN ? AND ? ORDER BY n",
