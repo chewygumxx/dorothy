@@ -26,6 +26,8 @@ import {
 import { formatList, listRows } from "./list.js";
 import { rank, tier } from "./rank.js";
 import {
+    type EditChanges,
+    type Lock,
     mergeEdit,
     type OpenHistory,
     readSidecar,
@@ -181,6 +183,51 @@ const tagsContext = (read: VocabularyRead): TagsContext =>
                   read.kind === "ok" ? read.vocabulary : EMPTY_VOCABULARY,
           };
 
+// The index, if it opens, and history, which commits or restores whatever
+// changed while Dorothy was away before anything is read. Without the
+// index a write takes history's lock, or none, as before recall.
+async function openStores(
+    env: Env,
+    openHistory: OpenHistory | undefined,
+): Promise<{ index: RecallIndex | null; versions: Versions }> {
+    let index: RecallIndex | null = null;
+    try {
+        index = RecallIndex.open(indexPath(env));
+    } catch {
+        // Left without the index.
+    }
+    return { index, versions: (await openHistory?.(index)) ?? null };
+}
+
+type Versions = Awaited<ReturnType<OpenHistory>> | null;
+
+// An edit's outcome: an exit code, or why the editor opens again.
+type Attempt = number | { reopen: string };
+
+// Opens text in $EDITOR until attempt settles what the user wrote; each
+// time it does not, the editor opens again on their text, the reason
+// above it.
+async function editLoop(
+    edit: Editor,
+    err: Output,
+    text: string,
+    attempt: (edited: string) => Promise<Attempt>,
+): Promise<number> {
+    let shown = text;
+    for (;;) {
+        const result = await edit(shown);
+        if (!result.ok) {
+            err.write(`dorothy: ${result.message}\n`);
+            return 1;
+        }
+        const outcome = await attempt(result.text);
+        if (typeof outcome === "number") {
+            return outcome;
+        }
+        shown = `# error: ${outcome.reopen}\n${result.text.replace(ERROR_LINES, "")}`;
+    }
+}
+
 // Opens a conversation's notes in $EDITOR until they parse, then writes
 // only what the user changed.
 export async function runMemoryEdit(
@@ -200,24 +247,13 @@ export async function runMemoryEdit(
     },
 ): Promise<number> {
     const dir = transcriptDir(env);
-    const transcript = join(dir, `${phrase}.jsonl`);
     try {
-        await access(transcript);
+        await access(join(dir, `${phrase}.jsonl`));
     } catch (error) {
         err.write(`dorothy: no chat ${phrase}: ${describeError(error)}\n`);
         return 1;
     }
-    let index: RecallIndex | null = null;
-    try {
-        index = RecallIndex.open(indexPath(env));
-    } catch {
-        // Without the index the edit takes history's lock, or none, as
-        // before recall.
-    }
-    // Whatever changed while Dorothy was away is committed, or restored,
-    // before anything is read.
-    const versions = (await openHistory?.(index)) ?? null;
-    const lock = index?.lock ?? versions?.lock;
+    const { index, versions } = await openStores(env, openHistory);
     try {
         const read = await readSidecar(dir, phrase);
         if (read.kind === "unparseable") {
@@ -227,84 +263,104 @@ export async function runMemoryEdit(
         const shown = read.kind === "ok" ? read.sidecar : null;
         const path = vocabularyPath(env);
         const tags = tagsContext(await readVocabulary(path));
-        let text = renderEditView(phrase, shown, tags);
-        for (;;) {
-            const result = await edit(text);
-            if (!result.ok) {
-                err.write(`dorothy: ${result.message}\n`);
-                return 1;
-            }
-            const reopen = (reason: string) =>
-                `# error: ${reason}\n${result.text.replace(ERROR_LINES, "")}`;
-            // Labels resolve against the vocabulary as it is now, so one
-            // coined while the editor was open is known. Broken meanwhile,
-            // it leaves the line to be checked against what was shown.
-            const fresh = tagsContext(await readVocabulary(path));
-            const parsed = parseEditView(
-                result.text,
-                shown,
-                fresh.kind === "ok" ? fresh : tags,
-            );
-            if (parsed.kind === "unchanged") {
-                return 0;
-            }
-            if (parsed.kind === "error") {
-                text = reopen(parsed.reason);
-                continue;
-            }
-            const at = now().toISOString();
-            const refused = { tags: false };
-            // Under the sidecar's lock the vocabulary is read once more:
-            // the tags as they are now, a review's among them, are pruned
-            // only against one that reads, and kept as they are otherwise.
-            const update = await updateSidecar(
-                dir,
-                phrase,
-                async (current) => {
-                    const latest = await readVocabulary(path);
-                    if (latest.kind === "unparseable") {
-                        if (parsed.changes.tags !== undefined) {
-                            refused.tags = true;
-                            return null;
-                        }
-                        return mergeEdit(current, parsed.changes, at);
-                    }
-                    const next = mergeEdit(current, parsed.changes, at);
-                    return {
-                        ...next,
-                        tags: resolveTags(
-                            latest.kind === "ok"
-                                ? latest.vocabulary
-                                : EMPTY_VOCABULARY,
-                            next.tags,
-                        ),
-                    };
-                },
-                lock,
-                versions === null
-                    ? undefined
-                    : {
-                          recorder: versions.recorder,
-                          message: `edit: ${phrase} (user)`,
-                          also: [path],
-                      },
-            );
-            if (refused.tags) {
-                text = reopen(TAGS_BROKEN);
-                continue;
-            }
-            if (update.kind === "unparseable" || update.kind === "failed") {
-                err.write(
-                    `dorothy: ${sidecarPath(dir, phrase)}: ${update.reason}\n`,
+        return await editLoop(
+            edit,
+            err,
+            renderEditView(phrase, shown, tags),
+            async (edited) => {
+                // Labels resolve against the vocabulary as it is now, so
+                // one coined while the editor was open is known. Broken
+                // meanwhile, it leaves the line to be checked against what
+                // was shown.
+                const fresh = tagsContext(await readVocabulary(path));
+                const parsed = parseEditView(
+                    edited,
+                    shown,
+                    fresh.kind === "ok" ? fresh : tags,
                 );
-                return 1;
-            }
-            return 0;
-        }
+                if (parsed.kind !== "edit") {
+                    return parsed.kind === "unchanged"
+                        ? 0
+                        : { reopen: parsed.reason };
+                }
+                return saveNotes(phrase, parsed.changes, {
+                    dir,
+                    path,
+                    lock: index?.lock ?? versions?.lock,
+                    versions,
+                    at: now().toISOString(),
+                    err,
+                });
+            },
+        );
     } finally {
         versions?.close();
         index?.close();
     }
+}
+
+// The user's changes merged into the notes as they are by then. Under the
+// sidecar's lock the vocabulary is read once more: the tags as they are
+// now, a review's among them, are pruned only against one that reads, and
+// kept as they are otherwise; a change to them waits for one that reads.
+async function saveNotes(
+    phrase: string,
+    changes: EditChanges,
+    {
+        dir,
+        path,
+        lock,
+        versions,
+        at,
+        err,
+    }: {
+        dir: string;
+        path: string;
+        lock: Lock | undefined;
+        versions: Versions;
+        at: string;
+        err: Output;
+    },
+): Promise<Attempt> {
+    const refused = { tags: false };
+    const update = await updateSidecar(
+        dir,
+        phrase,
+        async (current) => {
+            const latest = await readVocabulary(path);
+            if (latest.kind === "unparseable") {
+                if (changes.tags !== undefined) {
+                    refused.tags = true;
+                    return null;
+                }
+                return mergeEdit(current, changes, at);
+            }
+            const next = mergeEdit(current, changes, at);
+            return {
+                ...next,
+                tags: resolveTags(
+                    latest.kind === "ok" ? latest.vocabulary : EMPTY_VOCABULARY,
+                    next.tags,
+                ),
+            };
+        },
+        lock,
+        versions === null
+            ? undefined
+            : {
+                  recorder: versions.recorder,
+                  message: `edit: ${phrase} (user)`,
+                  also: [path],
+              },
+    );
+    if (refused.tags) {
+        return { reopen: TAGS_BROKEN };
+    }
+    if (update.kind === "unparseable" || update.kind === "failed") {
+        err.write(`dorothy: ${sidecarPath(dir, phrase)}: ${update.reason}\n`);
+        return 1;
+    }
+    return 0;
 }
 
 // How many concepts an edit touches, for its commit.
@@ -331,16 +387,7 @@ export async function runTagsEdit({
     openHistory?: OpenHistory;
 }): Promise<number> {
     const path = vocabularyPath(env);
-    let index: RecallIndex | null = null;
-    try {
-        index = RecallIndex.open(indexPath(env));
-    } catch {
-        // Without the index the view has no counts and the save takes
-        // history's lock, or none, as --memory's does.
-    }
-    // Whatever changed while Dorothy was away is committed, or restored,
-    // before anything is read.
-    const versions = (await openHistory?.(index)) ?? null;
+    const { index, versions } = await openStores(env, openHistory);
     try {
         const read = await readVocabulary(path);
         if (read.kind === "unparseable") {
@@ -348,72 +395,102 @@ export async function runTagsEdit({
             return 1;
         }
         const shown = read.kind === "ok" ? read.vocabulary : EMPTY_VOCABULARY;
-        let counts = new Map<string, number>();
-        if (index !== null) {
-            const opened = index;
-            try {
-                await syncIndex(
-                    opened,
-                    transcriptDir(env),
-                    now().getTime(),
+        const counts = await viewCounts(index, env, now, path);
+        return await editLoop(
+            edit,
+            err,
+            renderTagsView(shown, counts),
+            async (text) => {
+                const parsed = parseTagsView(text, shown);
+                if (parsed.kind !== "edit") {
+                    return parsed.kind === "unchanged"
+                        ? 0
+                        : { reopen: parsed.reason };
+                }
+                return saveTags(parsed.edit, {
                     path,
-                    dataRoot(env),
-                );
-                counts = await opened.exclusive(() => carrierCounts(opened));
-            } catch {
-                // A failed sync leaves the view without counts; the index
-                // still holds the lock.
-            }
-        }
-        let text = renderTagsView(shown, counts);
-        for (;;) {
-            const result = await edit(text);
-            if (!result.ok) {
-                err.write(`dorothy: ${result.message}\n`);
-                return 1;
-            }
-            const reopen = (reason: string) =>
-                `# error: ${reason}\n${result.text.replace(ERROR_LINES, "")}`;
-            const parsed = parseTagsView(result.text, shown);
-            if (parsed.kind === "unchanged") {
-                return 0;
-            }
-            if (parsed.kind === "error") {
-                text = reopen(parsed.reason);
-                continue;
-            }
-            const at = now().toISOString();
-            const refused: { reason: string | null } = { reason: null };
-            const update = await updateVocabulary(
-                path,
-                (current) => {
-                    const applied = applyTagsEdit(current, parsed.edit, at);
-                    if (!applied.ok) {
-                        refused.reason = applied.reason;
-                        return null;
-                    }
-                    return applied.vocabulary;
-                },
-                index?.lock ?? versions?.lock,
-                versions === null
-                    ? undefined
-                    : {
-                          recorder: versions.recorder,
-                          message: `edit-tags: ${edited(parsed.edit)} concepts (user)`,
-                      },
-            );
-            if (refused.reason !== null) {
-                text = reopen(refused.reason);
-                continue;
-            }
-            if (update.kind === "unparseable" || update.kind === "failed") {
-                err.write(`dorothy: ${path}: ${update.reason}\n`);
-                return 1;
-            }
-            return 0;
-        }
+                    lock: index?.lock ?? versions?.lock,
+                    versions,
+                    at: now().toISOString(),
+                    err,
+                });
+            },
+        );
     } finally {
         versions?.close();
         index?.close();
     }
+}
+
+// How many conversations carry each concept, from the index synced first;
+// none without the index, or when the sync fails, which leaves it holding
+// the lock all the same.
+async function viewCounts(
+    index: RecallIndex | null,
+    env: Env,
+    now: () => Date,
+    path: string,
+): Promise<Map<string, number>> {
+    if (index === null) {
+        return new Map();
+    }
+    try {
+        await syncIndex(
+            index,
+            transcriptDir(env),
+            now().getTime(),
+            path,
+            dataRoot(env),
+        );
+        return await index.exclusive(() => carrierCounts(index));
+    } catch {
+        return new Map();
+    }
+}
+
+// The edit applied to the vocabulary as it is by then; one that no longer
+// applies reopens the editor with why.
+async function saveTags(
+    edit: TagsEdit,
+    {
+        path,
+        lock,
+        versions,
+        at,
+        err,
+    }: {
+        path: string;
+        lock: Lock | undefined;
+        versions: Versions;
+        at: string;
+        err: Output;
+    },
+): Promise<Attempt> {
+    const refused: { reason: string | null } = { reason: null };
+    const update = await updateVocabulary(
+        path,
+        (current) => {
+            const applied = applyTagsEdit(current, edit, at);
+            if (!applied.ok) {
+                refused.reason = applied.reason;
+                return null;
+            }
+            return applied.vocabulary;
+        },
+        lock,
+        versions === null
+            ? undefined
+            : {
+                  recorder: versions.recorder,
+                  message: `edit-tags: ${edited(edit)} concepts (user)`,
+              },
+    );
+    if (refused.reason !== null) {
+        return { reopen: refused.reason };
+    }
+    if (update.kind === "unparseable" || update.kind === "failed") {
+        err.write(`dorothy: ${path}: ${update.reason}\n`);
+        return 1;
+    }
+    return 0;
 }
