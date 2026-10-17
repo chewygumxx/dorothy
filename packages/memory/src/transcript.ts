@@ -193,80 +193,114 @@ export function toRecall(event: unknown): RecallEvent | null {
     ) {
         return null;
     }
-    const base = { v: 1, kind: "recall", at, id, ok, offset } as const;
-    if (
-        event.tool === "search" &&
-        typeof event.query === "string" &&
-        typeof event.hits === "number" &&
-        Number.isInteger(event.hits)
-    ) {
-        return {
-            ...base,
-            tool: "search",
-            query: event.query,
-            hits: event.hits,
-            ...(typeof event.after === "string" ? { after: event.after } : {}),
-            ...(typeof event.before === "string"
-                ? { before: event.before }
-                : {}),
-            ...(isStringList(event.tags) ? { tags: event.tags } : {}),
-            ...(event.searched === "conversations" || event.searched === "facts"
-                ? { searched: event.searched }
-                : {}),
-            ...(Number.isInteger(event.facts)
-                ? { facts: event.facts as number }
-                : {}),
-        };
+    const base: RecallBase = { v: 1, kind: "recall", at, id, ok, offset };
+    switch (event.tool) {
+        case "search":
+            return searchRecall(event, base);
+        case "open":
+            return openRecall(event, base);
+        case "recollect":
+            return recollectRecall(event, base);
+        case "tags":
+            return tagsRecall(event, base);
+        default:
+            return null;
     }
+}
+
+type RecallBase = {
+    v: 1;
+    kind: "recall";
+    at: string;
+    id: string;
+    ok: boolean;
+    offset: number;
+};
+type Written = Record<string, unknown>;
+
+function searchRecall(event: Written, base: RecallBase): RecallEvent | null {
     if (
-        event.tool === "open" &&
-        typeof event.name === "string" &&
-        typeof event.purpose === "string" &&
-        (event.turns === null || isTurnRange(event.turns))
+        typeof event.query !== "string" ||
+        typeof event.hits !== "number" ||
+        !Number.isInteger(event.hits)
     ) {
-        const open = {
-            ...base,
-            tool: "open" as const,
-            name: event.name,
-            purpose: event.purpose,
-            turns: event.turns,
-        };
-        if (typeof event.conversation === "string") {
-            return { ...open, conversation: event.conversation };
-        }
-        if (typeof event.fact === "string") {
-            return { ...open, fact: event.fact };
-        }
+        return null;
     }
+    return {
+        ...base,
+        tool: "search",
+        query: event.query,
+        hits: event.hits,
+        ...(typeof event.after === "string" ? { after: event.after } : {}),
+        ...(typeof event.before === "string" ? { before: event.before } : {}),
+        ...(isStringList(event.tags) ? { tags: event.tags } : {}),
+        ...(event.searched === "conversations" || event.searched === "facts"
+            ? { searched: event.searched }
+            : {}),
+        ...(Number.isInteger(event.facts)
+            ? { facts: event.facts as number }
+            : {}),
+    };
+}
+
+function openRecall(event: Written, base: RecallBase): RecallEvent | null {
     if (
-        event.tool === "recollect" &&
-        Number.isInteger(event.cluster) &&
-        (event.cluster as number) >= 0 &&
-        (event.words === undefined || typeof event.words === "string") &&
-        (event.turns === null || isTurnRange(event.turns))
+        typeof event.name !== "string" ||
+        typeof event.purpose !== "string" ||
+        !(event.turns === null || isTurnRange(event.turns))
     ) {
-        return {
-            ...base,
-            tool: "recollect",
-            cluster: event.cluster as number,
-            ...(typeof event.words === "string" ? { words: event.words } : {}),
-            turns: event.turns,
-        };
+        return null;
     }
+    const open = {
+        ...base,
+        tool: "open" as const,
+        name: event.name,
+        purpose: event.purpose,
+        turns: event.turns,
+    };
+    if (typeof event.conversation === "string") {
+        return { ...open, conversation: event.conversation };
+    }
+    return typeof event.fact === "string"
+        ? { ...open, fact: event.fact }
+        : null;
+}
+
+function recollectRecall(event: Written, base: RecallBase): RecallEvent | null {
+    const { cluster, words, turns } = event;
     if (
-        event.tool === "tags" &&
-        typeof event.hits === "number" &&
-        Number.isInteger(event.hits) &&
-        (event.under === undefined || typeof event.under === "string")
+        typeof cluster !== "number" ||
+        !Number.isInteger(cluster) ||
+        cluster < 0 ||
+        !(words === undefined || typeof words === "string") ||
+        !(turns === null || isTurnRange(turns))
     ) {
-        return {
-            ...base,
-            tool: "tags",
-            hits: event.hits,
-            ...(typeof event.under === "string" ? { under: event.under } : {}),
-        };
+        return null;
     }
-    return null;
+    return {
+        ...base,
+        tool: "recollect",
+        cluster,
+        ...(typeof words === "string" ? { words } : {}),
+        turns,
+    };
+}
+
+function tagsRecall(event: Written, base: RecallBase): RecallEvent | null {
+    const { hits, under } = event;
+    if (
+        typeof hits !== "number" ||
+        !Number.isInteger(hits) ||
+        !(under === undefined || typeof under === "string")
+    ) {
+        return null;
+    }
+    return {
+        ...base,
+        tool: "tags",
+        hits,
+        ...(typeof under === "string" ? { under } : {}),
+    };
 }
 
 const finite = (value: unknown): value is number =>
@@ -306,13 +340,11 @@ export async function readTranscript(path: string): Promise<TranscriptRead> {
 
 // The memory catalogue counts turns from text it has already read.
 export function parseTranscript(text: string): TranscriptRead {
-    const turns: ResumedTurn[] = [];
-    // The reply a stats line would belong to.
-    let reply: ResumedTurn | null = null;
-    let lookups: RecallEvent[] = [];
-    let skipped = 0;
-    let costUsd = 0;
-    let claudeSession: string | null = null;
+    const parsing: Parsing = {
+        read: { turns: [], skipped: 0, costUsd: 0, claudeSession: null },
+        reply: null,
+        lookups: [],
+    };
     for (const line of text.split("\n")) {
         if (line.trim() === "") {
             continue;
@@ -321,56 +353,84 @@ export function parseTranscript(text: string): TranscriptRead {
         try {
             event = JSON.parse(line);
         } catch {
-            skipped++;
+            parsing.read.skipped++;
             continue;
         }
-        if ((event as { kind?: unknown } | null)?.kind === "stats") {
-            const fields = event as Record<string, unknown>;
-            const cost = fields.costUsd;
-            if (finite(cost)) {
-                costUsd += cost;
-            }
-            const stats = toStats(fields);
-            if (reply !== null && stats !== null) {
-                reply.stats = stats;
-                reply.chatCostUsd = costUsd;
-            }
-            reply = null;
-            continue;
-        }
-        if (
-            (event as { kind?: unknown } | null)?.kind === "session" &&
-            sourceOf(event as { source?: unknown }) === "claude-code"
-        ) {
-            const session = (event as { sourceSession?: unknown })
-                .sourceSession;
-            claudeSession = typeof session === "string" ? session : "";
-        }
-        if ((event as { kind?: unknown } | null)?.kind === "recall") {
-            const recall = toRecall(event);
-            if (recall === null) {
-                skipped++;
-            } else {
-                lookups.push(recall);
-            }
-            continue;
-        }
-        const turn = toTurn(event);
-        if (turn === "malformed") {
-            skipped++;
-        } else if (turn !== "ignore") {
-            // Lookups belong to the reply after them; a user message means
-            // the reply they began never came.
-            const resumed: ResumedTurn = turn;
-            if (turn.role === "assistant" && lookups.length > 0) {
-                resumed.lookups = lookups;
-            }
-            lookups = [];
-            turns.push(resumed);
-            reply = turn.role === "assistant" ? resumed : null;
-        }
+        takeEvent(event, parsing);
     }
-    return { turns, skipped, costUsd, claudeSession };
+    return parsing.read;
+}
+
+function takeEvent(event: unknown, parsing: Parsing): void {
+    const kind = isRecord(event) ? event.kind : undefined;
+    if (kind === "stats") {
+        takeStats(event as Written, parsing);
+    } else if (kind === "recall") {
+        takeRecall(event, parsing);
+    } else {
+        if (kind === "session") {
+            takeSession(event as Written, parsing);
+        }
+        takeTurn(event, parsing);
+    }
+}
+
+// The Claude Code session that last joined a Claude Code conversation.
+function takeSession(event: Written, parsing: Parsing): void {
+    if (sourceOf(event) === "claude-code") {
+        const session = event.sourceSession;
+        parsing.read.claudeSession = typeof session === "string" ? session : "";
+    }
+}
+
+// What reading a transcript has read so far, the reply a stats line
+// would belong to, and the lookups awaiting the reply after them.
+type Parsing = {
+    read: TranscriptRead;
+    reply: ResumedTurn | null;
+    lookups: RecallEvent[];
+};
+
+function takeStats(fields: Written, parsing: Parsing): void {
+    const { read, reply } = parsing;
+    if (finite(fields.costUsd)) {
+        read.costUsd += fields.costUsd;
+    }
+    const stats = toStats(fields);
+    if (reply !== null && stats !== null) {
+        reply.stats = stats;
+        reply.chatCostUsd = read.costUsd;
+    }
+    parsing.reply = null;
+}
+
+function takeRecall(event: unknown, parsing: Parsing): void {
+    const recall = toRecall(event);
+    if (recall === null) {
+        parsing.read.skipped++;
+    } else {
+        parsing.lookups.push(recall);
+    }
+}
+
+// Lookups belong to the reply after them; a user message means the reply
+// they began never came.
+function takeTurn(event: unknown, parsing: Parsing): void {
+    const turn = toTurn(event);
+    if (turn === "malformed") {
+        parsing.read.skipped++;
+        return;
+    }
+    if (turn === "ignore") {
+        return;
+    }
+    const resumed: ResumedTurn = turn;
+    if (turn.role === "assistant" && parsing.lookups.length > 0) {
+        resumed.lookups = parsing.lookups;
+    }
+    parsing.lookups = [];
+    parsing.read.turns.push(resumed);
+    parsing.reply = turn.role === "assistant" ? resumed : null;
 }
 
 // Chats are private: new transcripts are the user's alone.
