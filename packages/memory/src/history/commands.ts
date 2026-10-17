@@ -246,35 +246,10 @@ export async function runRestore(
             return 1;
         }
         return await history.lock(async () => {
-            let version: Version | null;
-            if (rev === null) {
-                version = await goodVersion(repo, inside);
-                if (version === null) {
-                    err.write(
-                        `dorothy: ${inside} has no good version in its history\n`,
-                    );
-                    return 1;
-                }
-            } else {
-                const sha = await repo.resolve(rev);
-                const bytes =
-                    sha === null ? null : await repo.show(inside, sha);
-                if (sha === null || bytes === null) {
-                    err.write(`dorothy: no ${inside} at ${rev}\n`);
-                    return 1;
-                }
-                const problem = lint(inside, bytes, null);
-                if (problem !== null) {
-                    err.write(
-                        `dorothy: ${inside} at ${rev} is broken too (${problem})\n`,
-                    );
-                    return 1;
-                }
-                const at =
-                    (await repo.log(inside, RECOVERY_DEPTH)).find(
-                        (commit) => commit.sha === sha,
-                    )?.at ?? "";
-                version = { sha, at, bytes };
+            const version = await versionAt(repo, inside, rev);
+            if (typeof version === "string") {
+                err.write(`dorothy: ${version}\n`);
+                return 1;
             }
             const full = join(history.root, inside);
             if (
@@ -303,6 +278,35 @@ export async function runRestore(
     }
 }
 
+// The version of a file to restore: the one at rev, or its last good one;
+// else why there is none.
+async function versionAt(
+    repo: MemoryRepo,
+    path: string,
+    rev: string | null,
+): Promise<Version | string> {
+    if (rev === null) {
+        return (
+            (await goodVersion(repo, path)) ??
+            `${path} has no good version in its history`
+        );
+    }
+    const sha = await repo.resolve(rev);
+    const bytes = sha === null ? null : await repo.show(path, sha);
+    if (sha === null || bytes === null) {
+        return `no ${path} at ${rev}`;
+    }
+    const problem = lint(path, bytes, null);
+    if (problem !== null) {
+        return `${path} at ${rev} is broken too (${problem})`;
+    }
+    const at =
+        (await repo.log(path, RECOVERY_DEPTH)).find(
+            (commit) => commit.sha === sha,
+        )?.at ?? "";
+    return { sha, at, bytes };
+}
+
 // Notes and tags as they were at a revision, in one commit. Transcripts
 // are never rolled back: rolling back returns to an earlier judgement of
 // the conversations, never an earlier record of them.
@@ -326,30 +330,13 @@ export async function runRollback(
             }
             const changed: string[] = [];
             for (const path of await repo.files(sha)) {
-                const kind = fileKind(path);
-                const bytes =
-                    kind === "vocabulary" || kind === "sidecar"
-                        ? await repo.show(path, sha)
-                        : null;
-                if (bytes === null) {
-                    continue;
-                }
-                const problem = lint(path, bytes, null);
-                if (problem !== null) {
-                    err.write(
-                        `dorothy: ${path} at ${short(sha)} is broken (${problem}); it is left as it is\n`,
-                    );
-                    continue;
-                }
-                const full = join(history.root, path);
+                const bytes = await rollbackBytes(repo, path, sha, err);
                 if (
-                    existsSync(full) &&
-                    sameBytes(await readFile(full), bytes)
+                    bytes !== null &&
+                    (await writeIfChanged(join(history.root, path), bytes))
                 ) {
-                    continue;
+                    changed.push(path);
                 }
-                await writeAtomic(full, bytes);
-                changed.push(path);
             }
             if (changed.length === 0) {
                 out.write(
@@ -366,6 +353,41 @@ export async function runRollback(
     } finally {
         opened.close();
     }
+}
+
+// A note's or the vocabulary's bytes at a revision; null for any other
+// file, and for one broken there, which is said and left as it is.
+async function rollbackBytes(
+    repo: MemoryRepo,
+    path: string,
+    sha: string,
+    err: Output,
+): Promise<Uint8Array | null> {
+    const kind = fileKind(path);
+    const bytes =
+        kind === "vocabulary" || kind === "sidecar"
+            ? await repo.show(path, sha)
+            : null;
+    const problem = bytes === null ? null : lint(path, bytes, null);
+    if (problem !== null) {
+        err.write(
+            `dorothy: ${path} at ${short(sha)} is broken (${problem}); it is left as it is\n`,
+        );
+        return null;
+    }
+    return bytes;
+}
+
+// Writes bytes over a file that does not hold them yet; whether it did.
+async function writeIfChanged(
+    path: string,
+    bytes: Uint8Array,
+): Promise<boolean> {
+    if (existsSync(path) && sameBytes(await readFile(path), bytes)) {
+        return false;
+    }
+    await writeAtomic(path, bytes);
+    return true;
 }
 
 type Checked = { path: string; problem: string | null };
@@ -592,69 +614,25 @@ export async function runMirror(
     const repo = history.repo;
     try {
         if (target === null) {
-            const current = await repo.remote(MIRROR);
-            if (current === null) {
-                out.write(
-                    "No mirror yet; set one with dorothy --mirror <url-or-path>\n",
-                );
-                return 0;
-            }
-            const through = await repo.resolve(SEALED_THROUGH);
-            out.write(
-                `Mirror: ${current}\nSealed through: ${through === null ? "nothing yet" : short(through)}\nWaiting: ${(await waiting(repo)) ? "yes" : "no"}\n`,
-            );
-            return 0;
+            return await showMirror(repo, out);
         }
         const existing = env.DOROTHY_MIRROR_KEY;
-        let key = parseKey(existing);
-        // Bundles sealed under a key are lost with it: one already set is
-        // never replaced, even one that does not read.
-        if (existing !== undefined && existing !== "" && key === null) {
-            err.write(
-                "dorothy: DOROTHY_MIRROR_KEY is set but is not 32 bytes of base64; it is left as it is, and no mirror is set\n",
-            );
-            return 1;
-        }
-        // A bundle sealed under another key would stop every recovery
-        // there; a key is made only where the entry guard will read it.
-        if (key === null) {
-            if ((await repo.sealedNames()).length > 0) {
-                err.write(
-                    "dorothy: DOROTHY_MIRROR_KEY is not set, and the bundles already sealed need the key they were sealed with; set that one with dotenvx set. Nothing was changed\n",
-                );
-                return 1;
-            }
-            if (!existsSync(join(cwd, ".env"))) {
-                err.write(
-                    `dorothy: there is no .env in ${cwd} to keep DOROTHY_MIRROR_KEY in; run --mirror from the checkout whose .env holds Dorothy's credentials. Nothing was changed\n`,
-                );
-                return 1;
-            }
-        } else if (!(await opensSealed(repo, key))) {
-            err.write(
-                "dorothy: DOROTHY_MIRROR_KEY does not open the bundles already sealed; set the key they were sealed with. Nothing was changed\n",
-            );
+        const problem = await keyProblem(existing, repo, cwd);
+        if (problem !== null) {
+            err.write(`dorothy: ${problem}\n`);
             return 1;
         }
         await repo.setRemote(MIRROR, target);
-        if (key === null) {
-            const made = newKey();
-            await setSecret("DOROTHY_MIRROR_KEY", made);
-            key = parseKey(made);
-            out.write(
-                "Made DOROTHY_MIRROR_KEY and saved it with dotenvx. Keep a copy somewhere else (dotenvx get DOROTHY_MIRROR_KEY): without it the mirror can't be read.\n",
-            );
-        }
+        const key = parseKey(existing) ?? (await makeKey(setSecret, out));
         if (!isLocal(target)) {
             out.write(
                 `Your conversations will be stored at ${target}, encrypted.\n`,
             );
         }
-        const sealing = key;
         const outcome = await new Mirror({
             repo,
             lock: history.lock,
-            key: () => sealing,
+            key: () => key,
             token: () => env.DOROTHY_MIRROR_TOKEN ?? null,
             warn: (message) => err.write(`dorothy: ${message}\n`),
             pushMs: 0,
@@ -667,6 +645,61 @@ export async function runMirror(
     } finally {
         opened.close();
     }
+}
+
+async function showMirror(repo: MemoryRepo, out: Output): Promise<number> {
+    const current = await repo.remote(MIRROR);
+    if (current === null) {
+        out.write(
+            "No mirror yet; set one with dorothy --mirror <url-or-path>\n",
+        );
+        return 0;
+    }
+    const through = await repo.resolve(SEALED_THROUGH);
+    out.write(
+        `Mirror: ${current}\nSealed through: ${through === null ? "nothing yet" : short(through)}\nWaiting: ${(await waiting(repo)) ? "yes" : "no"}\n`,
+    );
+    return 0;
+}
+
+// Why the mirror's key can't seal, so that no mirror is set; null when it
+// can, or when one can be made. Bundles sealed under a key are lost with
+// it: one already set is never replaced, even one that does not read. A
+// bundle sealed under another key would stop every recovery there; a key
+// is made only where the entry guard will read it.
+async function keyProblem(
+    existing: string | undefined,
+    repo: MemoryRepo,
+    cwd: string,
+): Promise<string | null> {
+    const key = parseKey(existing);
+    if (existing !== undefined && existing !== "" && key === null) {
+        return "DOROTHY_MIRROR_KEY is set but is not 32 bytes of base64; it is left as it is, and no mirror is set";
+    }
+    if (key !== null) {
+        return (await opensSealed(repo, key))
+            ? null
+            : "DOROTHY_MIRROR_KEY does not open the bundles already sealed; set the key they were sealed with. Nothing was changed";
+    }
+    if ((await repo.sealedNames()).length > 0) {
+        return "DOROTHY_MIRROR_KEY is not set, and the bundles already sealed need the key they were sealed with; set that one with dotenvx set. Nothing was changed";
+    }
+    return existsSync(join(cwd, ".env"))
+        ? null
+        : `there is no .env in ${cwd} to keep DOROTHY_MIRROR_KEY in; run --mirror from the checkout whose .env holds Dorothy's credentials. Nothing was changed`;
+}
+
+// A new mirror key, saved with dotenvx.
+async function makeKey(
+    setSecret: (name: string, value: string) => Promise<void>,
+    out: Output,
+): Promise<ReturnType<typeof parseKey>> {
+    const made = newKey();
+    await setSecret("DOROTHY_MIRROR_KEY", made);
+    out.write(
+        "Made DOROTHY_MIRROR_KEY and saved it with dotenvx. Keep a copy somewhere else (dotenvx get DOROTHY_MIRROR_KEY): without it the mirror can't be read.\n",
+    );
+    return parseKey(made);
 }
 
 export async function runRecover(
