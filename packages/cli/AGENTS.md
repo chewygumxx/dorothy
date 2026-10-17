@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-16
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: packages/cli/AGENTS.md
 description: >-
@@ -35,8 +35,8 @@ lazy.
 
 ## Files
 
-- `index.ts`: the entry guard, the flags (`parseArgs`, `USAGE`) and the
-  modes.
+- `index.ts`: the entry guard, which runs the mode `parseArgs` gives.
+- `args.ts`: the flags (`parseArgs`, `USAGE`) and the modes they give.
 - `run-tui.ts`: `runTui` connects memory, the agent and `runApp`, with
   the directory the user ran it from (`userShell`), whose project chat
   records and syncs.

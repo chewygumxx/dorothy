@@ -4,13 +4,13 @@
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/packages/cli/src/index.test.ts
+// ::: :/packages/cli/src/args.test.ts
 //
 //
 
 import { describe, expect, it } from "bun:test";
 import { newPhrase } from "@dorothy/core";
-import { parseArgs, USAGE } from "./index.js";
+import { parseArgs, USAGE } from "./args.js";
 
 const phrase = newPhrase(() => Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]));
 
