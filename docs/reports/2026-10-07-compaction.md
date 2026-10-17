@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-07
-mtime: 2026-10-07
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: Compaction probes
 description: "Live checks that the CLI's own compaction stays off and that Dorothy's compacts, seeds and recollects"
@@ -66,13 +66,13 @@ No `compact_boundary` appeared in either run, and the cause was the turn
 count, not the window. A larger prompt would not have helped. So the probe
 was paced instead: five prompts, each sent after the previous `result`.
 
-| Turn | Without `DISABLE_COMPACT`                                  | With `DISABLE_COMPACT=1` |
-| ---- | ---------------------------------------------------------- | ------------------------ |
-| 1    | `init`, `status` requesting                                | the same                 |
-| 2    | `init`, `status` requesting, compacting, failed (too few groups) | `init`, `status` requesting |
+| Turn | Without `DISABLE_COMPACT`                                            | With `DISABLE_COMPACT=1`    |
+| ---- | -------------------------------------------------------------------- | --------------------------- |
+| 1    | `init`, `status` requesting                                          | the same                    |
+| 2    | `init`, `status` requesting, compacting, failed (too few groups)     | `init`, `status` requesting |
 | 3    | `init`, `status` requesting, compacting, success, `compact_boundary` | `init`, `status` requesting |
-| 4    | the same as turn 3                                         | `init`, `status` requesting |
-| 5    | the same as turn 3                                         | `init`, `status` requesting |
+| 4    | the same as turn 3                                                   | `init`, `status` requesting |
+| 5    | the same as turn 3                                                   | `init`, `status` requesting |
 
 With the switch set, the CLI never reported `compacting`, and the context
 grew steadily, from 3,252 to 3,462 tokens. Without it, the context jumped

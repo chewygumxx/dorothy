@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-03
-mtime: 2026-10-05
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: Input editor design
 description: "Design spec for the chat TUI's multi-line input editor"
@@ -121,6 +121,8 @@ recall (`index` back to `null`). Consecutive duplicates appear once.
 
 ### `src/tui/Input.tsx`
 
+<!-- markdownlint-disable MD038 -->
+
 A key map from `useInput` and `usePaste` onto `editor.ts` and `recall.ts`.
 `App` owns the draft, and an `EditorMemory` (`{ killed, goal, recall }`: the
 kill buffer, the goal column and recall state) that it passes in as
@@ -131,6 +133,8 @@ draft's first row, `↑ ` on the top visible row when rows are hidden above,
 `↓ ` on the bottom one when rows are hidden below, and spaces otherwise. The
 cursor is drawn as an inverse cell (or `▏` at a row's end). The key hints show,
 padded and truncated, only while the draft is empty.
+
+<!-- markdownlint-enable MD038 -->
 
 A paste inserts at the cursor as one edit, with escape sequences dropped
 whole, `\r\n` and `\r` turned into `\n`, each tab into 4 spaces, and other
@@ -167,26 +171,27 @@ Ctrl keys to App's `onCtrl`, as only it sees those typed with text.
 
 ## Keys
 
-| Key                         | Action                                                       |
-| --------------------------- | ------------------------------------------------------------ |
-| Enter                       | Send, unless a reply is streaming or the draft is blank      |
-| Shift+Enter                 | Insert a newline                                             |
-| Left, Right, Ctrl+B, Ctrl+F | Move one grapheme                                            |
-| Alt+B, Alt+F, Ctrl+Left, Ctrl+Right | Move one word                                        |
-| Home, End, Ctrl+A, Ctrl+E   | Start or end of the line                                     |
-| Up, Down                    | Move one visual row; past the first or last, recall          |
-| Backspace, Delete           | Delete one grapheme back or forward                          |
-| Ctrl+W, Alt+Backspace       | Kill the previous word                                       |
-| Ctrl+U, Ctrl+K              | Kill to the start or end of the line                         |
-| Ctrl+Y                      | Yank the last kill                                           |
-| Ctrl+G                      | Edit the draft in `$EDITOR`                                  |
-| Ctrl+C                      | Stop a reply; else clear the draft; else quit                |
-| Ctrl+D                      | Quit on an empty draft; else delete forward                  |
-| Esc                         | Stop a reply                                                 |
-| Ctrl+R                      | Toggle the raw pane                                          |
+| Key                                 | Action                                                  |
+| ----------------------------------- | ------------------------------------------------------- |
+| Enter                               | Send, unless a reply is streaming or the draft is blank |
+| Shift+Enter                         | Insert a newline                                        |
+| Left, Right, Ctrl+B, Ctrl+F         | Move one grapheme                                       |
+| Alt+B, Alt+F, Ctrl+Left, Ctrl+Right | Move one word                                           |
+| Home, End, Ctrl+A, Ctrl+E           | Start or end of the line                                |
+| Up, Down                            | Move one visual row; past the first or last, recall     |
+| Backspace, Delete                   | Delete one grapheme back or forward                     |
+| Ctrl+W, Alt+Backspace               | Kill the previous word                                  |
+| Ctrl+U, Ctrl+K                      | Kill to the start or end of the line                    |
+| Ctrl+Y                              | Yank the last kill                                      |
+| Ctrl+G                              | Edit the draft in `$EDITOR`                             |
+| Ctrl+C                              | Stop a reply; else clear the draft; else quit           |
+| Ctrl+D                              | Quit on an empty draft; else delete forward             |
+| Esc                                 | Stop a reply                                            |
+| Ctrl+R                              | Toggle the raw pane                                     |
 
 The key hints become
-`enter send · shift+enter newline · ctrl+g editor · esc stop · ctrl+r raw · ctrl+c quit`,
+`enter send · shift+enter newline · ctrl+g editor · esc stop · ctrl+r raw ·
+ctrl+c quit`,
 truncated where the terminal is narrower.
 
 ## Testing

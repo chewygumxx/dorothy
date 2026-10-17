@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-08
-mtime: 2026-10-08
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: Memory history implementation plan
 description: "Plan for keeping Dorothy's data directory as a git repository, with recovery and a sealed mirror"
@@ -91,7 +91,8 @@ TypeScript 7, git 2.56 (the binary), isomorphic-git 1.43.1,
     `outside: <path>`, `catch-up: <paths>`,
     `restore: <path> from <short sha> (broken kept)`,
     `rollback: to <short sha> (user)`;
-  - the warning `Restored <path> from <short sha> (<date>); the broken copy is in broken/`;
+  - the warning `Restored <path> from <short sha> (<date>); the broken copy is
+    in broken/`;
   - the reminder `memory has no mirror · dorothy --mirror <url>`.
 - `bun run check` passes at the end of every task.
 
@@ -213,32 +214,32 @@ exercise; each has a test in the task named.
 
 ## Files
 
-| File                              | Task | Responsibility                                                                 |
-| --------------------------------- | ---- | ------------------------------------------------------------------------------ |
-| `src/history/lint.ts`             | 1    | pure: a file's kind; the lint                                                  |
-| `src/history/boundary.test.ts`    | 1    | no SDK or TUI in history; memory never imports history                         |
-| `src/history/seal.ts`             | 2    | the mirror key; sealing and opening bundles; sealed names                      |
-| `src/history/repo.ts`             | 3    | `MemoryRepo`, `Commit`, the refs and author; `hasGitBinary`                    |
-| `src/history/binary.ts`           | 3    | the git binary engine, isolated                                                |
-| `src/history/testing.ts`          | 3    | test helpers: temporary roots, files, a bare repository                        |
-| `src/history/repo.test.ts`        | 3, 4 | the contract, run against both engines                                         |
-| `src/history/iso.ts`              | 4    | the isomorphic-git engine                                                      |
-| `src/history/open.ts`             | 4    | choosing the engine                                                            |
-| `src/history/cross.test.ts`       | 4    | one engine writes, the other reads                                             |
-| `src/memory/sidecar.ts`           | 5, 6, 7 | `writeAtomic` takes bytes; history's types; `updateSidecar` records         |
-| `src/history/heal.ts`             | 5    | the newest good version; restoring a file; broken copies                       |
-| `src/history/lock.ts`             | 6    | `FileLock`, history's own lock                                                 |
-| `src/history/history.ts`          | 6    | `MemoryHistory`; `openHistory`; the hook                                       |
-| `src/config.ts`                   | 6    | `[history]`                                                                    |
-| `src/memory/vocabulary.ts`        | 7    | `updateVocabulary` records                                                     |
-| `src/memory/service.ts`           | 7    | records reviews and titles; heals before a review                              |
-| `src/memory/commands.ts`          | 7    | sweeps before reading; records `--memory` and `--edit-tags`                    |
-| `src/history/commands.ts`         | 7, 9 | the opener for memory's commands; history's own commands                       |
-| `src/history/mirror.ts`           | 8    | sealing pending commits; pushing; recovering                                   |
-| `src/index.ts`                    | 7, 9 | passes the opener; the new modes; decrypting for the mirror                    |
-| `src/tui/run.tsx`                 | 10   | opens history; turn commits; compaction's recording; the mirror; notices       |
-| `README.md`, `.claude/CLAUDE.md`  | 10   | describe history                                                               |
-| `docs/reports/2026-10-08-memory-history.md` | 11 | the live probe                                                        |
+| File                                        | Task    | Responsibility                                                           |
+| ------------------------------------------- | ------- | ------------------------------------------------------------------------ |
+| `src/history/lint.ts`                       | 1       | pure: a file's kind; the lint                                            |
+| `src/history/boundary.test.ts`              | 1       | no SDK or TUI in history; memory never imports history                   |
+| `src/history/seal.ts`                       | 2       | the mirror key; sealing and opening bundles; sealed names                |
+| `src/history/repo.ts`                       | 3       | `MemoryRepo`, `Commit`, the refs and author; `hasGitBinary`              |
+| `src/history/binary.ts`                     | 3       | the git binary engine, isolated                                          |
+| `src/history/testing.ts`                    | 3       | test helpers: temporary roots, files, a bare repository                  |
+| `src/history/repo.test.ts`                  | 3, 4    | the contract, run against both engines                                   |
+| `src/history/iso.ts`                        | 4       | the isomorphic-git engine                                                |
+| `src/history/open.ts`                       | 4       | choosing the engine                                                      |
+| `src/history/cross.test.ts`                 | 4       | one engine writes, the other reads                                       |
+| `src/memory/sidecar.ts`                     | 5, 6, 7 | `writeAtomic` takes bytes; history's types; `updateSidecar` records      |
+| `src/history/heal.ts`                       | 5       | the newest good version; restoring a file; broken copies                 |
+| `src/history/lock.ts`                       | 6       | `FileLock`, history's own lock                                           |
+| `src/history/history.ts`                    | 6       | `MemoryHistory`; `openHistory`; the hook                                 |
+| `src/config.ts`                             | 6       | `[history]`                                                              |
+| `src/memory/vocabulary.ts`                  | 7       | `updateVocabulary` records                                               |
+| `src/memory/service.ts`                     | 7       | records reviews and titles; heals before a review                        |
+| `src/memory/commands.ts`                    | 7       | sweeps before reading; records `--memory` and `--edit-tags`              |
+| `src/history/commands.ts`                   | 7, 9    | the opener for memory's commands; history's own commands                 |
+| `src/history/mirror.ts`                     | 8       | sealing pending commits; pushing; recovering                             |
+| `src/index.ts`                              | 7, 9    | passes the opener; the new modes; decrypting for the mirror              |
+| `src/tui/run.tsx`                           | 10      | opens history; turn commits; compaction's recording; the mirror; notices |
+| `README.md`, `.claude/CLAUDE.md`            | 10      | describe history                                                         |
+| `docs/reports/2026-10-08-memory-history.md` | 11      | the live probe                                                           |
 
 ---
 
@@ -259,7 +260,8 @@ exercise; each has a test in the task named.
   - `type FileKind = "vocabulary" | "sidecar" | "transcript" | "other"`
   - `fileKind(path: string): FileKind`, for a path relative to the data
     directory with `/` separators
-  - `lint(path: string, bytes: Uint8Array, committed: Uint8Array | null): string | null`:
+  - `lint(path: string, bytes: Uint8Array, committed: Uint8Array | null):
+    string | null`:
     `null` when the file may be committed, otherwise the reason.
     `committed` is the file as last committed, or `null`; only transcripts
     use it.
@@ -599,7 +601,8 @@ git log --oneline -1 && git status --short
   - `parseKey(text: string | undefined): Uint8Array | null`: the key's
     32 bytes, or `null` when it is missing or not 32 bytes of base64
   - `seal(bundle: Uint8Array, key: Uint8Array, nonce?: Uint8Array): Promise<Uint8Array>`
-  - `type Opened = { ok: true; bundle: Uint8Array } | { ok: false; reason: string }`
+  - `type Opened = { ok: true; bundle: Uint8Array } | { ok: false; reason:
+    string }`
   - `unseal(sealed: Uint8Array, key: Uint8Array): Promise<Opened>`
   - `sealedName(sequence: number): string`: `bundles/000042.enc`
   - `SEALED_README: string`, the text of the sealed branch's `SEALED`
@@ -1895,7 +1898,8 @@ git log --oneline -1 && git status --short
   `NEEDS_BINARY`, `hasGitBinary` (Task 3); `binaryRepo` (Task 3).
 - Produces:
   - `isoRepo(root: string): MemoryRepo`, in `iso.ts`
-  - `openRepo(root: string, options?: { engine?: Engine; probe?: () => Promise<boolean> }): Promise<MemoryRepo>`,
+  - `openRepo(root: string, options?: { engine?: Engine; probe?: () =>
+    Promise<boolean> }): Promise<MemoryRepo>`,
     in `open.ts`: the binary when `probe()` (by default `hasGitBinary`)
     says so, isomorphic-git otherwise, unless `engine` names one
 
@@ -2531,14 +2535,16 @@ git log --oneline -2 && git status --short
   `testing.ts` helpers (Task 3).
 - Produces, in `heal.ts`:
   - `type Version = { sha: string; at: string; bytes: Uint8Array }`
-  - `type Healed = { kind: "restored"; path: string; from: string; at: string; broken: string } | { kind: "unrecoverable"; path: string; broken: string }`
+  - `type Healed = { kind: "restored"; path: string; from: string; at: string;
+    broken: string } | { kind: "unrecoverable"; path: string; broken: string }`
   - `RECOVERY_DEPTH = 200`
   - `stamp(now: Date): string`: `2026-10-15T09-12-03-123Z`
   - `goodVersion(repo: MemoryRepo, path: string): Promise<Version | null>`:
     the newest committed version that passes the lint
   - `keepCopy(root: string, path: string, bytes: Uint8Array, now: Date): Promise<string>`:
     the copy's path under `broken/`, relative to `root`
-  - `putBack(repo: MemoryRepo, root: string, path: string, version: Version, now: Date): Promise<string | null>`:
+  - `putBack(repo: MemoryRepo, root: string, path: string, version: Version,
+    now: Date): Promise<string | null>`:
     writes the version, keeps what it replaces, commits both; returns
     the copy's path, or `null` when there was no file
   - `recoverFile(repo: MemoryRepo, root: string, path: string, now: Date): Promise<Healed>`
@@ -2923,12 +2929,17 @@ git log --oneline -1 && git status --short
   `transcriptDir` from `src/transcript.ts`.
 - Produces, in `src/memory/sidecar.ts`:
   - `type Recorder = (paths: readonly string[], message: string) => Promise<void>`
-  - `type Recording = { recorder: Recorder; message: string; also?: readonly string[] }`
-  - `type HistoryHandle = { recorder: Recorder; lock: Lock; sweep(): Promise<void>; heal(path: string): Promise<boolean>; close(): void }`
-  - `type OpenHistory = (index: { lock: Lock } | null) => Promise<HistoryHandle | null>`
-- Produces, in `src/config.ts`: `type HistoryConfig = { enabled: boolean; pushSeconds: number }`,
+  - `type Recording = { recorder: Recorder; message: string; also?: readonly
+    string[] }`
+  - `type HistoryHandle = { recorder: Recorder; lock: Lock; sweep():
+    Promise<void>; heal(path: string): Promise<boolean>; close(): void }`
+  - `type OpenHistory = (index: { lock: Lock } | null) =>
+    Promise<HistoryHandle | null>`
+- Produces, in `src/config.ts`: `type HistoryConfig = { enabled: boolean;
+  pushSeconds: number }`,
   `Config.history`, defaults `{ enabled: true, pushSeconds: 60 }`.
-- Produces, in `lock.ts`: `class FileLock { static open(path: string, busyMs?: number): FileLock; readonly lock: Lock; close(): void }`
+- Produces, in `lock.ts`: `class FileLock { static open(path: string, busyMs?:
+  number): FileLock; readonly lock: Lock; close(): void }`
 - Produces, in `history.ts`:
   - `historyRoot(env?: Env): string`: the data directory
   - `HOOK_MARK`, `hookScript(exec: string, script: string): string`
@@ -2938,8 +2949,11 @@ git log --oneline -1 && git status --short
     `recorder`, `sweep()`, `turn(path, count)`, `heal(path)` (each takes
     the lock), `afterCommit(fn)`, `warn(message)`, `subscribe(listener)`,
     `takeWarnings()`, `handle(close)`
-  - `type OpenedHistory = { ok: true; history: MemoryHistory; close(): void } | { ok: false; reason: string }`
-  - `openHistory(options: { root: string; index: { lock: Lock } | null; engine?: Engine; hook?: HookCommand | null; warn?: (message: string) => void; now?: () => Date }): Promise<OpenedHistory>`
+  - `type OpenedHistory = { ok: true; history: MemoryHistory; close(): void } |
+    { ok: false; reason: string }`
+  - `openHistory(options: { root: string; index: { lock: Lock } | null; engine?:
+    Engine; hook?: HookCommand | null; warn?: (message: string) => void; now?:
+    () => Date }): Promise<OpenedHistory>`
 
 - [ ] **Step 1: Add history's types to `src/memory/sidecar.ts`**
 
@@ -3961,7 +3975,8 @@ git log --oneline -2 && git status --short
     `openHistory?: OpenHistory` among their options
   - in `src/history/commands.ts`:
     `entryHook(): HookCommand | null` and
-    `commandHistory(options?: { env?: Env; err?: Output; hook?: HookCommand | null }): OpenHistory`,
+    `commandHistory(options?: { env?: Env; err?: Output; hook?: HookCommand |
+    null }): OpenHistory`,
     with `type Output = { write(text: string): unknown }`
 
 A write records inside the lock it was written under, right after its
@@ -4919,11 +4934,17 @@ git log --oneline -2 && git status --short
     the caller holds the lock
   - `waiting(repo: MemoryRepo): Promise<boolean>`: main has commits not
     yet sealed
-  - `type PushOutcome = { kind: "no-mirror" } | { kind: "no-key" } | { kind: "pushed"; sealed: boolean } | { kind: "failed"; reason: string }`
-  - `class Mirror { constructor(options: MirrorOptions); schedule(): void; push(): Promise<PushOutcome>; stop(): void }`
-    with `type MirrorOptions = { repo: MemoryRepo; lock: Lock; key: () => Uint8Array | null; token: () => string | null; warn: (message: string) => void; pushMs: number; timers?: Timers }`
-  - `type Recovered = { applied: number; of: number; tip: string | null; stopped: string | null }`
-  - `recover(options: { repo: MemoryRepo; url: string; key: Uint8Array; token: string | null }): Promise<Recovered>`
+  - `type PushOutcome = { kind: "no-mirror" } | { kind: "no-key" } | { kind:
+    "pushed"; sealed: boolean } | { kind: "failed"; reason: string }`
+  - `class Mirror { constructor(options: MirrorOptions); schedule(): void;
+    push(): Promise<PushOutcome>; stop(): void }`
+    with `type MirrorOptions = { repo: MemoryRepo; lock: Lock; key: () =>
+    Uint8Array | null; token: () => string | null; warn: (message: string) =>
+    void; pushMs: number; timers?: Timers }`
+  - `type Recovered = { applied: number; of: number; tip: string | null;
+    stopped: string | null }`
+  - `recover(options: { repo: MemoryRepo; url: string; key: Uint8Array; token:
+    string | null }): Promise<Recovered>`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -5399,12 +5420,15 @@ git log --oneline -1 && git status --short
   (`src/recall/store.ts`); dotenvx's `set`.
 - Produces, in `src/history/commands.ts` (besides Task 7's `entryHook`,
   `commandHistory` and `Output`):
-  - `type CommandOptions = { env?: Env; out?: Output; err?: Output; engine?: Engine; hook?: HookCommand | null; now?: () => Date }`
-  - `runHistory(options: CommandOptions & { path?: string | null; count?: number }): Promise<number>`
+  - `type CommandOptions = { env?: Env; out?: Output; err?: Output; engine?:
+    Engine; hook?: HookCommand | null; now?: () => Date }`
+  - `runHistory(options: CommandOptions & { path?: string | null; count?: number
+    }): Promise<number>`
   - `runRestore(path: string, rev: string | null, options?: CommandOptions): Promise<number>`
   - `runRollback(rev: string, options?: CommandOptions): Promise<number>`
   - `runCheck(options: CommandOptions & { staged?: boolean; root?: string }): Promise<number>`
-  - `runMirror(url: string | null, options?: CommandOptions & { setSecret?: (name: string, value: string) => Promise<void> }): Promise<number>`
+  - `runMirror(url: string | null, options?: CommandOptions & { setSecret?:
+    (name: string, value: string) => Promise<void> }): Promise<number>`
   - `runRecover(url: string, options?: CommandOptions): Promise<number>`
   - `authorOf(message: string): string`, `isLocal(url: string): boolean`
 - Produces, in `src/index.ts`: the `Mode` kinds

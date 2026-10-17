@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-15
-mtime: 2026-10-15
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: Dorothy's memory store design
 description: >-
@@ -249,12 +249,16 @@ history, or kept aside in `broken/`, as transcripts and notes are.
 
 ### Frontmatter
 
+<!-- markdownlint-disable MD038 -->
+
 Frontmatter is YAML, and YAML coerces. Bun's parser, `Bun.YAML.parse`,
 reads YAML 1.2's core schema, so `no` and timestamps stay strings, but
 an unquoted `~` or `null` is null and `1e3` or `0o17` a number; a `: `
 or ` #` inside a plain value ends it early; and a leading `*`, `&`, `!`,
 `[`, `{`, `|` or `>` changes what follows. Every value is therefore
 written in a form with one reading, and checked for its type once read.
+
+<!-- markdownlint-enable MD038 -->
 
 Only Dorothy's code renders frontmatter, from a fact's fields, with its
 keys in a fixed order: `name`, `title`, `description`, `metadata`,

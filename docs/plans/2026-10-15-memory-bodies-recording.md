@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-15
-mtime: 2026-10-15
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: Dorothy's memory in her bodies, recording plan
 description: >-
@@ -848,8 +848,8 @@ describe("conversation_sessions", () => {
 ```
 
 If `sync.test.ts` names its helpers otherwise, write the transcript
-with `writeFile(join(dir, `${A}.jsonl`), lines.map(...).join("\n") +
-"\n")` and an `AT` of its own.
+with `` writeFile(join(dir, `${A}.jsonl`), lines.map(...).join("\n") +
+"\n") `` and an `AT` of its own.
 
 `query.test.ts`, inside `describe("search by a tag facts carry")`
 (import `listTags`):
@@ -4982,7 +4982,8 @@ Existing expectations that change, since with memory on every launch
 is noted and passes its hooks and a new session's id:
 
 - `describe("dorothy --claude with memory")`'s `SETTINGS` becomes
-  `--settings=${JSON.stringify({ permissions: { allow: [...] }, ...hookSettings(SELF) })}`
+  `--settings=${JSON.stringify({ permissions: { allow: [...] },
+  ...hookSettings(SELF) })}`
   (the `allow` list as it is), and the first test's `cmd` gains
   `` `--session-id=${SESSION}` `` after `MCP`.
 - "serves no recall with recall off, but keeps the block" expects
@@ -5888,6 +5889,7 @@ Run `wc -l packages/memory/AGENTS.md`; expect at most 150.
   starts a detached catch-up of each launch a killed `dorothy` left
   behind, memory off or on, and says what hooks left to tell; once
   `claude` exits, a catch-up of its own launch."
+
 - A new bullet after `claude-dump.ts`:
 
 ```markdown

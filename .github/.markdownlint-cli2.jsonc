@@ -1,0 +1,17 @@
+// vim:set expandtab shiftwidth=4 filetype=jsonc:
+// SPDX-License-Identifier: GPL-3.0-only
+
+//
+//
+// ~chewygumxx/dorothy.git
+// ::: :/.github/.markdownlint-cli2.jsonc
+//
+//
+
+// Merged over the root's configuration for the files in this directory.
+{
+    "config": {
+        // The template's sections are its headings; the pull request has the title.
+        "MD041": false
+    }
+}

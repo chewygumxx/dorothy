@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-15
-mtime: 2026-10-15
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: Dorothy's identity plan
 description: >-
@@ -73,7 +73,7 @@ remark, Claude Code 2.1.296.
   stream silent for more than `Bun.serve`'s default 10-second idle
   timeout; the reply must not be cut. Pinned in Task 4.
 - **The user's own `--append-system-prompt`.** `dorothy --claude
-  --append-system-prompt "..." ` must keep the user's text and still
+  --append-system-prompt "..."` must keep the user's text and still
   inject. Probed in Task 1, pinned in Task 3.
 - **Ctrl-C inside Claude Code.** The terminal delivers `SIGINT` to the
   whole foreground group; `dorothy` must neither die (taking the gateway
@@ -543,110 +543,110 @@ In `packages/agent/src/persona.test.ts`:
    both.
 3. Replace `describe("baseOptions", ...)` with:
 
-```ts
-describe("baseOptions", () => {
-    // No tools (some 32k input tokens), no settings, hooks or plugins, no
-    // saved sessions, and the reply streamed as it is generated.
-    it("runs the persona lean", () => {
-        expect(baseOptions).toEqual({
-            systemPrompt,
-            tools: [],
-            settingSources: [],
-            persistSession: false,
-            includePartialMessages: true,
-        });
-    });
-});
-```
+   ```ts
+   describe("baseOptions", () => {
+       // No tools (some 32k input tokens), no settings, hooks or plugins, no
+       // saved sessions, and the reply streamed as it is generated.
+       it("runs the persona lean", () => {
+           expect(baseOptions).toEqual({
+               systemPrompt,
+               tools: [],
+               settingSources: [],
+               persistSession: false,
+               includePartialMessages: true,
+           });
+       });
+   });
+   ```
 
 4. Replace the first `promptHash` test with:
 
-```ts
-    it("hashes with xxh3, naming the algorithm", () => {
-        expect(promptHash("You are Dorothy.")).toBe("xxh3:fba57612cdaab878");
-    });
+   ```ts
+       it("hashes with xxh3, naming the algorithm", () => {
+           expect(promptHash("You are Dorothy.")).toBe("xxh3:fba57612cdaab878");
+       });
 
-    it("hashes the persona prompt by default", () => {
-        expect(promptHash()).toBe(promptHash(systemPrompt));
-    });
-```
+       it("hashes the persona prompt by default", () => {
+           expect(promptHash()).toBe(promptHash(systemPrompt));
+       });
+   ```
 
 5. Replace the `CHAT` constant and its comment with:
 
-```ts
-// The chat persona, byte for byte: change it only when the persona is
-// meant to change.
-const CHAT = [
-    "You are Dorothy, a warm, curious and accommodating agentic assistant.",
-    "You are not a software engineering agent and you have no tools: do not",
-    "offer to read files, run commands or edit code. Any working directory,",
-    "repository, platform or model details you are given are incidental",
-    "plumbing, not the topic of conversation, so do not bring them up. Just",
-    "talk with the user. Introduce yourself simply as Dorothy. The software",
-    "that hosts you may add a line telling you that you are it, or another",
-    "assistant: that line names your host, not you. Do not volunteer which",
-    "company, model or software you run on, but when the user asks, answer",
-    "plainly from what your context shows. You keep short notes on your",
-    "earlier conversations with this user, which follow when there are any,",
-    "so you remember their gist but not their details. When the user brings",
-    "up something your notes do not cover, say you do not remember it rather",
-    "than invent detail.",
-].join(" ");
-```
+   ```ts
+   // The chat persona, byte for byte: change it only when the persona is
+   // meant to change.
+   const CHAT = [
+       "You are Dorothy, a warm, curious and accommodating agentic assistant.",
+       "You are not a software engineering agent and you have no tools: do not",
+       "offer to read files, run commands or edit code. Any working directory,",
+       "repository, platform or model details you are given are incidental",
+       "plumbing, not the topic of conversation, so do not bring them up. Just",
+       "talk with the user. Introduce yourself simply as Dorothy. The software",
+       "that hosts you may add a line telling you that you are it, or another",
+       "assistant: that line names your host, not you. Do not volunteer which",
+       "company, model or software you run on, but when the user asks, answer",
+       "plainly from what your context shows. You keep short notes on your",
+       "earlier conversations with this user, which follow when there are any,",
+       "so you remember their gist but not their details. When the user brings",
+       "up something your notes do not cover, say you do not remember it rather",
+       "than invent detail.",
+   ].join(" ");
+   ```
 
-`CHAT_RECALL` stays as it is.
+   `CHAT_RECALL` stays as it is.
 
 6. In `describe("personaComponents", ...)`, replace the second test
    and the third test's loops, and add two tests:
 
-```ts
-    it("keeps provenance in development mode, and says which mode it is", () => {
-        expect(names({ recall: true, mode: "development" })).toEqual([
-            "identity",
-            "voice",
-            "mode",
-            "capabilities",
-            "plumbing",
-            "provenance",
-            "memory",
-        ]);
-    });
-```
+   ```ts
+       it("keeps provenance in development mode, and says which mode it is", () => {
+           expect(names({ recall: true, mode: "development" })).toEqual([
+               "identity",
+               "voice",
+               "mode",
+               "capabilities",
+               "plumbing",
+               "provenance",
+               "memory",
+           ]);
+       });
+   ```
 
-```ts
-            for (const name of [
-                "identity",
-                "voice",
-                "provenance",
-                "memory",
-            ] as const) {
-                expect(text(development, name)).toBe(text(chat, name));
-            }
-```
+   ```ts
+               for (const name of [
+                   "identity",
+                   "voice",
+                   "provenance",
+                   "memory",
+               ] as const) {
+                   expect(text(development, name)).toBe(text(chat, name));
+               }
+   ```
 
-```ts
-    it("takes identity, voice and provenance from @dorothy/identity", () => {
-        const shared = personaComponents({ recall: false }).filter((c) =>
-            ["identity", "voice", "provenance"].includes(c.name),
-        );
-        expect(shared).toEqual(identityComponents());
-    });
+   ```ts
+       it("takes identity, voice and provenance from @dorothy/identity", () => {
+           const shared = personaComponents({ recall: false }).filter((c) =>
+               ["identity", "voice", "provenance"].includes(c.name),
+           );
+           expect(shared).toEqual(identityComponents());
+       });
 
-    it("is well formed in every mode, with and without recall", () => {
-        for (const recall of [false, true]) {
-            for (const mode of ["chat", "development"] as const) {
-                for (const { text } of personaComponents({ recall, mode })) {
-                    expect(text).not.toBe("");
-                    expect(text).toBe(text.trim());
-                }
-                expect(personaPrompt({ recall, mode })).not.toContain("  ");
-            }
-        }
-    });
-```
+       it("is well formed in every mode, with and without recall", () => {
+           for (const recall of [false, true]) {
+               for (const mode of ["chat", "development"] as const) {
+                   for (const { text } of personaComponents({ recall, mode })) {
+                       expect(text).not.toBe("");
+                       expect(text).toBe(text.trim());
+                   }
+                   expect(personaPrompt({ recall, mode })).not.toContain("  ");
+               }
+           }
+       });
+   ```
 
-The first test's expected list, `identity, voice, capabilities,
-plumbing, provenance, memory`, is unchanged.
+   The first test's expected list, `identity, voice, capabilities,
+   plumbing, provenance, memory`, is unchanged.
 
 7. In "has development-mode Dorothy say so, and describe her context",
    delete `expect(prompt).not.toContain("Do not volunteer");`.

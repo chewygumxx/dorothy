@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-08
-mtime: 2026-10-08
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: Memory history design
 description: "Design spec for keeping Dorothy's data directory as a git repository, with recovery and a sealed mirror"
@@ -186,17 +186,17 @@ always wins.
 A commit is one logical change, made inside the same lock as the writes it
 records, right after them:
 
-| Change                     | Paths                                     | Message                                        |
-| -------------------------- | ----------------------------------------- | ---------------------------------------------- |
-| A review                   | the sidecar, and `tags.json` if she coined | `review: <phrase> (dorothy, <model>)`          |
-| A `--memory` save          | the sidecar, and `tags.json` if changed    | `edit: <phrase> (user)`                        |
-| An `--edit-tags` save      | `tags.json`                               | `edit-tags: <n> concepts (user)`               |
-| A compaction               | the sidecar                               | `compaction: <phrase> (dorothy, <model>)`      |
-| A turn                     | the transcript                            | `turn: <phrase> #<n>`                          |
-| A file changed outside     | that file                                 | `outside: <path>`                              |
-| A missed commit, caught up | those files                               | `catch-up: <paths>`                            |
-| A restore                  | the file, and its broken copy             | `restore: <path> from <short sha> (broken kept)` |
-| A rollback                 | every authored file that changed          | `rollback: to <short sha> (user)`              |
+| Change                     | Paths                                      | Message                                          |
+| -------------------------- | ------------------------------------------ | ------------------------------------------------ |
+| A review                   | the sidecar, and `tags.json` if she coined | `review: <phrase> (dorothy, <model>)`            |
+| A `--memory` save          | the sidecar, and `tags.json` if changed    | `edit: <phrase> (user)`                          |
+| An `--edit-tags` save      | `tags.json`                                | `edit-tags: <n> concepts (user)`                 |
+| A compaction               | the sidecar                                | `compaction: <phrase> (dorothy, <model>)`        |
+| A turn                     | the transcript                             | `turn: <phrase> #<n>`                            |
+| A file changed outside     | that file                                  | `outside: <path>`                                |
+| A missed commit, caught up | those files                                | `catch-up: <paths>`                              |
+| A restore                  | the file, and its broken copy              | `restore: <path> from <short sha> (broken kept)` |
+| A rollback                 | every authored file that changed           | `rollback: to <short sha> (user)`                |
 
 - **Writers record, they never run git.** `updateSidecar` and
   `updateVocabulary` take an injected `Recorder`, as they already take a
@@ -232,12 +232,12 @@ writing at once.
 
 ## The lint
 
-| File                           | Passes when                                                                                                   |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `tags.json`                    | `parseVocabulary` accepts it                                                                                  |
-| `transcripts/*.meta.json`      | the sidecar parse accepts it                                                                                  |
-| `transcripts/*.jsonl`          | its last committed content is a prefix of it, and each line after that prefix is JSON with `v` and `kind`; a torn final line is allowed |
-| `.gitignore`, anything else    | always                                                                                                        |
+| File                        | Passes when                                                                                                                             |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `tags.json`                 | `parseVocabulary` accepts it                                                                                                            |
+| `transcripts/*.meta.json`   | the sidecar parse accepts it                                                                                                            |
+| `transcripts/*.jsonl`       | its last committed content is a prefix of it, and each line after that prefix is JSON with `v` and `kind`; a torn final line is allowed |
+| `.gitignore`, anything else | always                                                                                                                                  |
 
 The append-only check catches what parsing cannot: a truncated transcript,
 or an earlier turn rewritten, where the file still parses but the
@@ -356,11 +356,11 @@ Every mirror is sealed, local paths included.
 - With no key while a mirror is set, sealing stops with a warning naming
   `dotenvx`; commits go on.
 
-| Remote                         | git binary                                                             | isomorphic-git                                |
-| ------------------------------ | ---------------------------------------------------------------------- | --------------------------------------------- |
-| A local path                   | yes                                                                    | no: "this mirror needs the git binary"        |
-| `ssh://` or `git@host:path`    | yes, through the user's ssh agent and `~/.ssh/config`                  | no: the same warning                          |
-| `https://`                     | yes, with `DOROTHY_MIRROR_TOKEN`, else the carried-over `credential.helper` | yes, with `DOROTHY_MIRROR_TOKEN` from `.env`  |
+| Remote                      | git binary                                                                  | isomorphic-git                               |
+| --------------------------- | --------------------------------------------------------------------------- | -------------------------------------------- |
+| A local path                | yes                                                                         | no: "this mirror needs the git binary"       |
+| `ssh://` or `git@host:path` | yes, through the user's ssh agent and `~/.ssh/config`                       | no: the same warning                         |
+| `https://`                  | yes, with `DOROTHY_MIRROR_TOKEN`, else the carried-over `credential.helper` | yes, with `DOROTHY_MIRROR_TOKEN` from `.env` |
 
 `DOROTHY_MIRROR_KEY` and `DOROTHY_MIRROR_TOKEN` live in the `.env` the
 entry guard already decrypts, and are set only with `dotenvx set`; tests
@@ -385,14 +385,14 @@ and the directory holds what was recovered up to it.
 
 ## Commands
 
-| Command                                     | Does                                                                                                         |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `dorothy --history [<path>] [-n <count>]`   | Commits newest first, 20 by default: time, author kind, message; one file's when a path is given            |
-| `dorothy --restore <path> [<rev>]`          | Restores one file from its newest good version, or from `<rev>`; works on a valid file too                  |
-| `dorothy --rollback <rev>`                  | Restores `tags.json` and every sidecar to `<rev>`, as one commit                                             |
-| `dorothy --check [--staged]`                | Lints every tracked file, or the staged ones, and reports; changes nothing; exits 1 on a failure            |
-| `dorothy --mirror [<url-or-path>]`          | Sets the mirror, or shows it                                                                                 |
-| `dorothy --recover <url-or-path>`           | Rebuilds an empty data directory from a mirror                                                               |
+| Command                                   | Does                                                                                             |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `dorothy --history [<path>] [-n <count>]` | Commits newest first, 20 by default: time, author kind, message; one file's when a path is given |
+| `dorothy --restore <path> [<rev>]`        | Restores one file from its newest good version, or from `<rev>`; works on a valid file too       |
+| `dorothy --rollback <rev>`                | Restores `tags.json` and every sidecar to `<rev>`, as one commit                                 |
+| `dorothy --check [--staged]`              | Lints every tracked file, or the staged ones, and reports; changes nothing; exits 1 on a failure |
+| `dorothy --mirror [<url-or-path>]`        | Sets the mirror, or shows it                                                                     |
+| `dorothy --recover <url-or-path>`         | Rebuilds an empty data directory from a mirror                                                   |
 
 ```text
 2026-10-15 09:12  dorothy  review: anabolic-gat-sangh-autodidact (dorothy, claude-sonnet-5-5)
@@ -423,25 +423,25 @@ heal, no mirror and no reminder. An existing repository is left as it is.
 
 ## Modules
 
-| File                       | Change                                                                                       |
-| -------------------------- | -------------------------------------------------------------------------------------------- |
-| `src/history/repo.ts`      | new: `MemoryRepo`, `Commit`, choosing the engine                                             |
-| `src/history/binary.ts`    | new: the git binary engine and its isolation                                                 |
-| `src/history/iso.ts`       | new: the isomorphic-git engine, bundles included                                             |
-| `src/history/lint.ts`      | new, pure: the lint by file kind                                                             |
-| `src/history/heal.ts`      | new: recovering a file; the launch pass                                                      |
+| File                       | Change                                                                                              |
+| -------------------------- | --------------------------------------------------------------------------------------------------- |
+| `src/history/repo.ts`      | new: `MemoryRepo`, `Commit`, choosing the engine                                                    |
+| `src/history/binary.ts`    | new: the git binary engine and its isolation                                                        |
+| `src/history/iso.ts`       | new: the isomorphic-git engine, bundles included                                                    |
+| `src/history/lint.ts`      | new, pure: the lint by file kind                                                                    |
+| `src/history/heal.ts`      | new: recovering a file; the launch pass                                                             |
 | `src/history/history.ts`   | new: `MemoryHistory`: adoption, `record`, outside and catch-up commits, the lock, scheduling pushes |
-| `src/history/seal.ts`      | new: sealing and opening bundles; the sealed branch's layout                                 |
-| `src/history/mirror.ts`    | new: pushing, `--mirror`, `--recover`                                                        |
-| `src/history/commands.ts`  | new: the commands                                                                            |
-| `src/memory/sidecar.ts`    | `Recorder`; `updateSidecar` records; a read that heals                                       |
-| `src/memory/vocabulary.ts` | `updateVocabulary` records; a read that heals                                                |
-| `src/memory/service.ts`    | passes the recorder and messages for reviews                                                 |
-| `src/memory/commands.ts`   | passes the recorder for `--memory` and `--edit-tags`                                         |
-| `src/compaction/run.ts`    | passes the recorder for a compaction                                                         |
-| `src/config.ts`            | `[history]`                                                                                  |
-| `src/tui/run.tsx`          | builds `MemoryHistory`, heals before loading, commits each turn, shows its notices           |
-| `src/index.ts`             | the new modes                                                                                |
+| `src/history/seal.ts`      | new: sealing and opening bundles; the sealed branch's layout                                        |
+| `src/history/mirror.ts`    | new: pushing, `--mirror`, `--recover`                                                               |
+| `src/history/commands.ts`  | new: the commands                                                                                   |
+| `src/memory/sidecar.ts`    | `Recorder`; `updateSidecar` records; a read that heals                                              |
+| `src/memory/vocabulary.ts` | `updateVocabulary` records; a read that heals                                                       |
+| `src/memory/service.ts`    | passes the recorder and messages for reviews                                                        |
+| `src/memory/commands.ts`   | passes the recorder for `--memory` and `--edit-tags`                                                |
+| `src/compaction/run.ts`    | passes the recorder for a compaction                                                                |
+| `src/config.ts`            | `[history]`                                                                                         |
+| `src/tui/run.tsx`          | builds `MemoryHistory`, heals before loading, commits each turn, shows its notices                  |
+| `src/index.ts`             | the new modes                                                                                       |
 
 - `src/history/` imports neither the Agent SDK nor `src/tui/`, and
   `src/memory/` does not import `src/history/`; `boundary.test.ts` pins

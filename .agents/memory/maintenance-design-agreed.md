@@ -4,7 +4,7 @@ description: "Agreed design for cyclical maintenance (sub-project 4a), queued af
 metadata:
   node_type: memory
   ctime: 2026-10-08
-  mtime: 2026-10-09
+  mtime: 2026-10-18
   spdx: GPL-3.0-only
   type: project
   originSessionId: 6d4ead19-0e3d-4f19-a216-a3e1114b5bea
@@ -24,6 +24,7 @@ approved section by section, then paused: memory history (a git-backed data
 directory) is specced and built first, and maintenance builds on it.
 
 Agreed decisions:
+
 - Approach A: two phases of structured calls via injected `StructuredCall`, in
   a new `src/maintenance/` free of the Agent SDK. Approach C (cheap proposer
   model + Dorothy supervising, between "proposed" and "applied") goes in the

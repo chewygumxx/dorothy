@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-15
-mtime: 2026-10-15
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: Dorothy's memory in her bodies, delivery plan
 description: >-
@@ -1012,7 +1012,12 @@ Existing `pendingReads` expectations gain `fact: false`.
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `bun test packages/memory/src/recall/query.test.ts packages/memory/src/transcript.test.ts packages/memory/src/memory/review.test.ts`
+Run:
+
+```bash
+bun test packages/memory/src/recall/query.test.ts packages/memory/src/transcript.test.ts packages/memory/src/memory/review.test.ts
+```
+
 Expected: FAIL (`openFact` is not exported; facts are `[]`).
 
 - [ ] **Step 3: Add the fact helpers to `tags.ts`**
@@ -1310,7 +1315,8 @@ export async function openFact(
 - [ ] **Step 5: Fact reads in the transcript, the index and reviews**
 
 In `transcript.ts` `toRecall`, the search branch adds
-`...(event.kind === "conversations" || event.kind === "facts" ? { kind: event.kind } : {})`
+`...(event.kind === "conversations" || event.kind === "facts" ? { kind:
+event.kind } : {})`
 and
 `...(Number.isInteger(event.facts) ? { facts: event.facts as number } : {})`.
 Replace the open branch with:
@@ -1991,7 +1997,12 @@ and the refusals (`["--recollect"]`, `["--exclude", phrase, "--other"]`,
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `bun test packages/memory/src/recall/server.test.ts packages/memory/src/history/commands.test.ts packages/cli/src/index.test.ts`
+Run:
+
+```bash
+bun test packages/memory/src/recall/server.test.ts packages/memory/src/history/commands.test.ts packages/cli/src/index.test.ts
+```
+
 Expected: FAIL.
 
 - [ ] **Step 3: `commandHistory` without the reminder**
@@ -2193,8 +2204,10 @@ export async function runRecallServer(
 - [ ] **Step 5: The CLI's flags**
 
 In `cli/src/index.ts`, the mode becomes
-`{ kind: "recall-server"; exclude: string | null; recollect: boolean; project: string | null }`,
-the usage line `"       dorothy --recall-server    memory tools for MCP clients (stdio)"`,
+`{ kind: "recall-server"; exclude: string | null; recollect: boolean; project:
+string | null }`,
+the usage line `"       dorothy --recall-server    memory tools for MCP clients
+(stdio)"`,
 and the parse:
 
 ```ts
@@ -2229,7 +2242,8 @@ and the parse:
 ```
 
 and the dispatch
-`process.exitCode = await runRecallServer({ exclude: mode.exclude, recollect: mode.recollect, project: mode.project });`.
+`process.exitCode = await runRecallServer({ exclude: mode.exclude, recollect:
+mode.recollect, project: mode.project });`.
 
 - [ ] **Step 6: Run the tests**
 
@@ -3156,9 +3170,11 @@ git commit -m "feat(cli): Give Claude Code her memory block, recall and remember
 
 `conversation.test.ts`: with the file's fake query, an assistant
 message holding
-`{ type: "tool_use", id: "t1", name: "mcp__memory__remember", input: { action: "write", name: "tea" } }`
+`{ type: "tool_use", id: "t1", name: "mcp__memory__remember", input: { action:
+"write", name: "tea" } }`
 then a user message with
-`{ type: "tool_result", tool_use_id: "t1", content: '{"action":"written","id":"personal/tea"}' }`
+`{ type: "tool_result", tool_use_id: "t1", content:
+'{"action":"written","id":"personal/tea"}' }`
 emits exactly one event of type `remember`:
 
 ```ts
@@ -3312,7 +3328,9 @@ and in `#settleCalls`, before `this.#afterLookup = false;`:
 ```
 
 In `persona.ts`, the development capabilities with recall read
-`"Your only tools are your memory tools, which search and", "open your earlier conversations with this user, and keep", "facts; you cannot read files, run commands or edit code."`,
+`"Your only tools are your memory tools, which search and", "open your earlier
+conversations with this user, and keep", "facts; you cannot read files, run
+commands or edit code."`,
 and the memory component becomes:
 
 ```ts
@@ -3411,7 +3429,8 @@ export function rememberLine(
 ```
 
 Pull the body of the reducer's `case "lookup":` into
-`function memoryLine(state: State, line: { text: string; detail?: string }, offset: number): State`
+`function memoryLine(state: State, line: { text: string; detail?: string },
+offset: number): State`
 (the segment flush, the appended `lookup`-role line, `live: ""`,
 `split`, `continued`, `replyOffset: offset`), and make the cases:
 
@@ -3540,7 +3559,12 @@ loop's promise, which loops while `again` is set.
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `bun test packages/cli/src/recall-launch.test.ts packages/memory/src/memory/open.test.ts packages/memory/src/memory/record.test.ts`
+Run:
+
+```bash
+bun test packages/cli/src/recall-launch.test.ts packages/memory/src/memory/open.test.ts packages/memory/src/memory/record.test.ts
+```
+
 Expected: FAIL.
 
 - [ ] **Step 3: Implement**
@@ -3615,7 +3639,8 @@ export function projectSyncer(
 ```
 
 `OpenMemoryOptions` gains
-`// The directory chat started in; its project, if any, is recorded and synced.\n cwd?: string | null;`.
+`// The directory chat started in; its project, if any, is recorded and
+synced.\n cwd?: string | null;`.
 In `openMemory`, destructure `cwd = null`; after the history launch:
 
 ```ts

@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-12
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: AGENTS.md
 description: >-
@@ -92,7 +92,7 @@ Agent memory is in `.agents/memory/`, indexed by its `MEMORY.md`, each
 entry a list item linking `./<name>.md`, its hook on the next line. Link
 memories by relative Markdown link, never `[[...]]`, and write no em dash
 and no line over 80 characters, whatever a client's own memory
-instructions say: remark and `lint:emdash` reject them.
+instructions say: `lint:md` and `lint:emdash` reject them.
 
 ## Before you start
 

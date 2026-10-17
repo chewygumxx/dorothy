@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-07
-mtime: 2026-10-07
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: Tags design
 description: "Design spec for Dorothy's tag vocabulary and shallow tagging"
@@ -580,20 +580,20 @@ Tags: memory; tui
 
 ## Modules
 
-| File                         | Change                                                                       |
-| ---------------------------- | ---------------------------------------------------------------------------- |
-| `src/memory/vocabulary.ts`   | new: types, `readVocabulary`, the checks, atomic write, resolution, merges   |
-| `src/memory/tags-view.ts`    | new, pure: the `--tags` tree; `--edit-tags` render, parse and diff           |
-| `src/memory/sidecar.ts`      | `tags`, `fields.tags`, `EditChanges.tags`; dropping unresolved ids           |
-| `src/memory/review.ts`       | `<tags>`, `<vocabulary>`, `TAGS_INSTRUCTION`, the schema, the output check   |
-| `src/memory/service.ts`      | the vocabulary for reviews; coining and the sidecar under one lock; staleness |
-| `src/memory/edit-view.ts`    | the `Tags:` line                                                             |
-| `src/memory/commands.ts`     | `--tags`, `--edit-tags`                                                      |
-| `src/recall/store.ts`        | the schema version and the new tables                                        |
-| `src/recall/sync.ts`         | syncing `tags.json` and `tagged`                                             |
-| `src/recall/query.ts`        | `search`'s `tags` and `keywords`, `open`'s `keywords`, `tags()`              |
-| `src/recall/server.ts`       | registers `tags`                                                             |
-| `src/index.ts`               | the `--tags` and `--edit-tags` modes                                         |
+| File                       | Change                                                                        |
+| -------------------------- | ----------------------------------------------------------------------------- |
+| `src/memory/vocabulary.ts` | new: types, `readVocabulary`, the checks, atomic write, resolution, merges    |
+| `src/memory/tags-view.ts`  | new, pure: the `--tags` tree; `--edit-tags` render, parse and diff            |
+| `src/memory/sidecar.ts`    | `tags`, `fields.tags`, `EditChanges.tags`; dropping unresolved ids            |
+| `src/memory/review.ts`     | `<tags>`, `<vocabulary>`, `TAGS_INSTRUCTION`, the schema, the output check    |
+| `src/memory/service.ts`    | the vocabulary for reviews; coining and the sidecar under one lock; staleness |
+| `src/memory/edit-view.ts`  | the `Tags:` line                                                              |
+| `src/memory/commands.ts`   | `--tags`, `--edit-tags`                                                       |
+| `src/recall/store.ts`      | the schema version and the new tables                                         |
+| `src/recall/sync.ts`       | syncing `tags.json` and `tagged`                                              |
+| `src/recall/query.ts`      | `search`'s `tags` and `keywords`, `open`'s `keywords`, `tags()`               |
+| `src/recall/server.ts`     | registers `tags`                                                              |
+| `src/index.ts`             | the `--tags` and `--edit-tags` modes                                          |
 
 - `vocabulary.ts` is in `src/memory/`, beside `sidecar.ts`: recall already
   reads sidecars through memory's reader and reads the vocabulary the same

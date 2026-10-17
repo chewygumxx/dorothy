@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-12
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: docs/AGENTS.md
 description: >-
@@ -36,8 +36,9 @@ tags:
   `description`, `tags`) and the breadcrumb comment; copy both from a
   sibling, and bump `mtime` when you edit. `lint:header` checks the
   breadcrumb against the file's path.
-- Lines are at most 80 characters, and links are Markdown links, never
-  `[[...]]` wiki links; remark (`lint:md`) enforces both.
+- Lines are at most 80 characters, inline code included: a long command
+  goes in a fenced block. Links are Markdown links, never `[[...]]` wiki
+  links. `lint:md` runs remark and markdownlint, which enforce both.
 - A spec says what and why; a plan says how, task by task, with the code.
 - A report records each probe and how it was run, the rulings made on the
   spec, and the verification, with commands and their output.
