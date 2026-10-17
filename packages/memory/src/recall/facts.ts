@@ -14,7 +14,7 @@
 
 import { readFile, stat } from "node:fs/promises";
 import { relative, sep } from "node:path";
-import { parseFact } from "../facts/file.js";
+import { type Fact, parseFact } from "../facts/file.js";
 import { factFiles, scopeLabel } from "../facts/store.js";
 import type { RecallIndex } from "./store.js";
 
@@ -41,7 +41,7 @@ export async function syncFacts(
                 }[]
             ).map(({ path, mtime }) => [path, mtime]),
         );
-        let files: Awaited<ReturnType<typeof factFiles>>;
+        let files: FactFile[];
         try {
             files = await factFiles(root);
         } catch (error) {
@@ -52,54 +52,8 @@ export async function syncFacts(
         const seen = new Set<string>();
         for (const file of files) {
             const key = relative(root, file.path).split(sep).join("/");
-            let mtime: number;
-            let text: string;
-            try {
-                mtime = (await stat(file.path)).mtimeMs;
-                if (known.get(key) === mtime) {
-                    seen.add(key);
-                    continue;
-                }
-                text = await readFile(file.path, "utf8");
-            } catch (error) {
-                if (codeOf(error) !== "ENOENT") {
-                    // Unreadable: left out like a broken fact.
-                    seen.add(key);
-                    drop(index, key);
-                    warnings.push(`${file.path}: ${describeError(error)}`);
-                }
-                continue;
-            }
-            seen.add(key);
-            drop(index, key);
-            const read = parseFact(text, file.name);
-            if (read.kind !== "ok") {
-                warnings.push(`${file.path}: ${read.reason}`);
-                continue;
-            }
-            const { fact } = read;
-            index.db.run(
-                "INSERT INTO facts (path, scope, name, title, description, type, body, origin, importance, created, retired, mtime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                [
-                    key,
-                    scopeLabel(file.scope),
-                    fact.name,
-                    fact.title,
-                    fact.description,
-                    fact.type,
-                    fact.body,
-                    fact.provenance.origin,
-                    fact.importance,
-                    Date.parse(fact.provenance.created),
-                    fact.retired === null ? 0 : 1,
-                    mtime,
-                ],
-            );
-            for (const [n, id] of fact.tags.entries()) {
-                index.db.run(
-                    "INSERT OR IGNORE INTO fact_tags (path, n, id) VALUES (?, ?, ?)",
-                    [key, n, id],
-                );
+            if (await syncFile(index, file, key, known.get(key), warnings)) {
+                seen.add(key);
             }
         }
         for (const path of known.keys()) {
@@ -109,4 +63,92 @@ export async function syncFacts(
         }
     });
     return warnings;
+}
+
+type FactFile = Awaited<ReturnType<typeof factFiles>>[number];
+
+// One fact file into the index under key; false for one gone since it was
+// listed. One unreadable or broken is left out with a warning.
+async function syncFile(
+    index: RecallIndex,
+    file: FactFile,
+    key: string,
+    mtime: number | undefined,
+    warnings: string[],
+): Promise<boolean> {
+    const read = await readChanged(file.path, mtime);
+    if (read.kind === "gone") {
+        return false;
+    }
+    if (read.kind === "same") {
+        return true;
+    }
+    drop(index, key);
+    if (read.kind === "unreadable") {
+        warnings.push(`${file.path}: ${read.reason}`);
+        return true;
+    }
+    const parsed = parseFact(read.text, file.name);
+    if (parsed.kind === "ok") {
+        insertFact(index, key, file, parsed.fact, read.mtime);
+    } else {
+        warnings.push(`${file.path}: ${parsed.reason}`);
+    }
+    return true;
+}
+
+type Changed =
+    | { kind: "same" }
+    | { kind: "gone" }
+    | { kind: "unreadable"; reason: string }
+    | { kind: "read"; text: string; mtime: number };
+
+// A fact file read again only if its mtime is not the one indexed.
+async function readChanged(
+    path: string,
+    known: number | undefined,
+): Promise<Changed> {
+    try {
+        const mtime = (await stat(path)).mtimeMs;
+        if (known === mtime) {
+            return { kind: "same" };
+        }
+        return { kind: "read", text: await readFile(path, "utf8"), mtime };
+    } catch (error) {
+        return codeOf(error) === "ENOENT"
+            ? { kind: "gone" }
+            : { kind: "unreadable", reason: describeError(error) };
+    }
+}
+
+function insertFact(
+    index: RecallIndex,
+    key: string,
+    file: FactFile,
+    fact: Fact,
+    mtime: number,
+): void {
+    index.db.run(
+        "INSERT INTO facts (path, scope, name, title, description, type, body, origin, importance, created, retired, mtime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            key,
+            scopeLabel(file.scope),
+            fact.name,
+            fact.title,
+            fact.description,
+            fact.type,
+            fact.body,
+            fact.provenance.origin,
+            fact.importance,
+            Date.parse(fact.provenance.created),
+            fact.retired === null ? 0 : 1,
+            mtime,
+        ],
+    );
+    for (const [n, id] of fact.tags.entries()) {
+        index.db.run(
+            "INSERT OR IGNORE INTO fact_tags (path, n, id) VALUES (?, ?, ?)",
+            [key, n, id],
+        );
+    }
 }
