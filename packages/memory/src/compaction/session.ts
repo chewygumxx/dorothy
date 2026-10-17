@@ -518,23 +518,7 @@ class CompactingSession implements ChatSession {
             this.#enter({ kind: "handing", stale: this.#inner !== null });
             run.landed = "chained";
         } else {
-            const old = this.#inner;
-            // A connect that throws here, after the save, still counts as a
-            // failed compaction: no session took over and the context is
-            // as full as before, so the wait before the next try doubles
-            // as it does for any failure. The clusters stay saved. Urgency
-            // stands until the session connects, so that a held message
-            // sent on to the old session is warned of, and after it when
-            // the new seed is still past hard.
-            const next = this.#connect(seed);
-            this.#urgent = past;
-            // The old session's last reply may have started an idle wait.
-            this.#cancelIdle();
-            this.#attach(next);
-            this.#fresh();
-            if (old !== null) {
-                this.#shared.retire(old, this);
-            }
+            this.#handOver(seed, past);
             run.landed = "handed";
         }
         // Warned even when a listener throws on the event; the first throw
@@ -607,6 +591,25 @@ class CompactingSession implements ChatSession {
         });
     }
 
+    // A connect that throws here, after the save, still counts as a failed
+    // compaction: no session took over and the context is as full as
+    // before, so the wait before the next try doubles as it does for any
+    // failure. The clusters stay saved. Urgency stands until the session
+    // connects, so that a held message sent on to the old session is
+    // warned of, and after it when the new seed is still past hard.
+    #handOver(seed: Seed, past: boolean): void {
+        const old = this.#inner;
+        const next = this.#connect(seed);
+        this.#urgent = past;
+        // The old session's last reply may have started an idle wait.
+        this.#cancelIdle();
+        this.#attach(next);
+        this.#fresh();
+        if (old !== null) {
+            this.#shared.retire(old, this);
+        }
+    }
+
     // Unless another run follows, a session exists afterwards and held
     // messages go to it: after a failure, to the session that is nearly
     // full, seeded from the clusters saved so far.
@@ -614,38 +617,11 @@ class CompactingSession implements ChatSession {
         if (this.#closed) {
             return;
         }
-        if (run.landed === "chained") {
-            // Quitting: no run follows.
-            if (run.controller.signal.aborted) {
-                return;
-            }
-            if (!this.#cutShort) {
-                this.#start();
-                return;
-            }
-            // Esc came after the run chose to go on: its seed is past hard.
-            this.#urgent = true;
+        if (run.landed === "chained" && !this.#afterChain(run)) {
+            return;
         }
-        if (
-            this.#inner === null ||
-            (this.#phase.kind === "handing" && this.#phase.stale)
-        ) {
-            // Cancelled, which only quitting does to a wrapper still open:
-            // no session is wanted, as for a reconnect waiting on a save.
-            if (run.controller.signal.aborted) {
-                return;
-            }
-            const old = this.#inner;
-            try {
-                this.#attach(this.#connect(this.#shared.seed(this.#turns)));
-            } catch (error) {
-                this.#die(error);
-                return;
-            }
-            this.#fresh();
-            if (old !== null) {
-                this.#shared.retire(old, this);
-            }
+        if (!this.#ensureSession(run)) {
+            return;
         }
         const held = this.#held.splice(0);
         // Held messages go on even when a listener throws on the warning.
@@ -661,6 +637,49 @@ class CompactingSession implements ChatSession {
             this.#enter({ kind: "open" });
             this.#sendHeld(held);
         }
+    }
+
+    // A run that chose to go on starts the next, unless quitting; false
+    // when nothing more is to be done here. Esc after it chose to go on
+    // leaves its seed past hard.
+    #afterChain(run: Run): boolean {
+        if (run.controller.signal.aborted) {
+            return false;
+        }
+        if (!this.#cutShort) {
+            this.#start();
+            return false;
+        }
+        this.#urgent = true;
+        return true;
+    }
+
+    // A session to send to, connected if there is none or the one there
+    // is stale; false when none is wanted or none could connect.
+    #ensureSession(run: Run): boolean {
+        if (
+            this.#inner !== null &&
+            !(this.#phase.kind === "handing" && this.#phase.stale)
+        ) {
+            return true;
+        }
+        // Cancelled, which only quitting does to a wrapper still open: no
+        // session is wanted, as for a reconnect waiting on a save.
+        if (run.controller.signal.aborted) {
+            return false;
+        }
+        const old = this.#inner;
+        try {
+            this.#attach(this.#connect(this.#shared.seed(this.#turns)));
+        } catch (error) {
+            this.#die(error);
+            return false;
+        }
+        this.#fresh();
+        if (old !== null) {
+            this.#shared.retire(old, this);
+        }
+        return true;
     }
 
     // Sends held messages on; one that can't be sent is warned of and

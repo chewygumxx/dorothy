@@ -105,6 +105,35 @@ export function clusterSchema(range: Range): Record<string, unknown> {
     };
 }
 
+// Cluster n's end, within the turns left, and its abstract; or why not.
+function readCluster(
+    n: number,
+    item: unknown,
+    left: Range,
+): { through: number; abstract: string } | string {
+    const fields = isRecord(item) ? item : {};
+    const through = fields.through;
+    if (
+        typeof through !== "number" ||
+        !Number.isInteger(through) ||
+        through < left.from ||
+        through > left.through
+    ) {
+        return `cluster ${n} ends at ${String(through)}, outside ${left.from}-${left.through}`;
+    }
+    if (typeof fields.abstract !== "string") {
+        return `the abstract of cluster ${n} isn't text`;
+    }
+    const abstract = normalise(unescapeXml(fields.abstract));
+    if (abstract === "") {
+        return `the abstract of cluster ${n} is empty`;
+    }
+    const problem = overLimit("abstract", abstract);
+    return problem === null
+        ? { through, abstract }
+        : `cluster ${n}: ${problem}`;
+}
+
 // The schema asked for this; the model's output is checked again. Each
 // cluster starts on the turn after the one before, so only the ends need
 // checking: in order, within the range, the last at its end.
@@ -120,39 +149,15 @@ export function validateClusters(
     const clusters: Cluster[] = [];
     let from = range.from;
     for (const [at, item] of list.entries()) {
-        const n = at + 1;
-        const fields = isRecord(item) ? item : {};
-        const through = fields.through;
-        if (
-            typeof through !== "number" ||
-            !Number.isInteger(through) ||
-            through < from ||
-            through > range.through
-        ) {
-            return {
-                ok: false,
-                reason: `cluster ${n} ends at ${String(through)}, outside ${from}-${range.through}`,
-            };
+        const read = readCluster(at + 1, item, {
+            from,
+            through: range.through,
+        });
+        if (typeof read === "string") {
+            return { ok: false, reason: read };
         }
-        if (typeof fields.abstract !== "string") {
-            return {
-                ok: false,
-                reason: `the abstract of cluster ${n} isn't text`,
-            };
-        }
-        const abstract = normalise(unescapeXml(fields.abstract));
-        if (abstract === "") {
-            return {
-                ok: false,
-                reason: `the abstract of cluster ${n} is empty`,
-            };
-        }
-        const problem = overLimit("abstract", abstract);
-        if (problem !== null) {
-            return { ok: false, reason: `cluster ${n}: ${problem}` };
-        }
-        clusters.push({ from, through, abstract, ...stamp });
-        from = through + 1;
+        clusters.push({ from, ...read, ...stamp });
+        from = read.through + 1;
     }
     const last = (clusters.at(-1) as Cluster).through;
     if (last !== range.through) {
