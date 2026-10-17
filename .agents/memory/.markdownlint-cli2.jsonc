@@ -1,0 +1,17 @@
+// vim:set expandtab shiftwidth=4 filetype=jsonc:
+// SPDX-License-Identifier: GPL-3.0-only
+
+//
+//
+// ~chewygumxx/dorothy.git
+// ::: :/.agents/memory/.markdownlint-cli2.jsonc
+//
+//
+
+// Merged over the root's configuration for the files in this directory.
+{
+    "config": {
+        // A memory opens with its fact, its name in the front matter.
+        "MD041": false
+    }
+}
