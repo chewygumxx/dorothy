@@ -255,153 +255,21 @@ export function readLines(
     lines: readonly string[],
     { ended = false, recorded = new Set(), since = null }: ReadOptions = {},
 ): LinesRead {
-    const parsed = lines.map((text): Json | null => {
-        try {
-            const value: unknown = JSON.parse(text);
-            return isRecord(value) ? value : null;
-        } catch {
-            return null;
-        }
-    });
-    const results = resultsIn(parsed);
-    const read: LinesRead = {
-        events: [],
-        model: null,
-        sessions: [],
-        halt: null,
-        unknown: [],
+    const parsed = lines.map(parseLine);
+    const reading: Reading = {
+        read: {
+            events: [],
+            model: null,
+            sessions: [],
+            halt: null,
+            unknown: [],
+        },
+        results: resultsIn(parsed),
+        ended,
+        recorded,
+        since,
     };
-    const sessions = new Set<string>();
-
-    // Maps one line; false when the reading waits here for a call's
-    // answer. Throws Unreadable for a shape it does not expect.
-    const map = (line: Json, index: number, type: string): boolean => {
-        if (!MAPPED.has(type)) {
-            if (!BOOKKEEPING.has(type)) {
-                read.unknown.push({ line: index, type });
-            }
-            return true;
-        }
-        if (
-            type === "system" ||
-            line.isSidechain === true ||
-            line.isMeta === true ||
-            line.isCompactSummary === true
-        ) {
-            return true;
-        }
-        // What came before the launch is never read, whatever its shape.
-        if (since !== null && typeof line.timestamp === "string") {
-            const stamped = Date.parse(line.timestamp);
-            if (Number.isFinite(stamped) && stamped < since) {
-                return true;
-            }
-        }
-        let words: string | null = null;
-        let content: Json[] | string = [];
-        if (type === "attachment") {
-            if (!isRecord(line.attachment)) {
-                throw new Unreadable("an attachment without its object");
-            }
-            words = spokenAttachment(line.attachment);
-            if (words === null) {
-                return true;
-            }
-        } else {
-            content = contentOf(
-                line,
-                type === "user" ? "a user" : "an assistant",
-            );
-            if (type === "assistant" && typeof content === "string") {
-                throw new Unreadable("an assistant line without its content");
-            }
-        }
-        if (typeof line.uuid !== "string") {
-            throw new Unreadable("no uuid");
-        }
-        const uuid = line.uuid;
-        const time = timeOf(line);
-        if (
-            recorded.has(uuid) ||
-            (since !== null && Date.parse(time) < since)
-        ) {
-            return true;
-        }
-        const emit = (entry: TranscriptEntry) =>
-            read.events.push({ entry, uuid, at: time });
-        if (words !== null) {
-            emit({ kind: "user", text: words });
-            return true;
-        }
-        if (type === "user") {
-            if (typeof content === "string") {
-                const said = spoken(content);
-                if (said !== null) {
-                    emit({ kind: "user", text: said });
-                }
-                return true;
-            }
-            const parts: string[] = [];
-            for (const block of content) {
-                if (block.type === "text") {
-                    const said =
-                        typeof block.text === "string"
-                            ? spoken(block.text)
-                            : null;
-                    if (said !== null) {
-                        parts.push(said);
-                    }
-                } else if (block.type === "image") {
-                    parts.push("[image]");
-                } else if (
-                    block.type === "tool_result" &&
-                    typeof block.tool_use_id !== "string"
-                ) {
-                    throw new Unreadable("a tool result without its call's id");
-                }
-            }
-            if (parts.length > 0) {
-                emit({ kind: "user", text: parts.join("\n\n") });
-            }
-            return true;
-        }
-        const model = isRecord(line.message) ? line.message.model : undefined;
-        if (
-            read.model === null &&
-            typeof model === "string" &&
-            model !== "<synthetic>"
-        ) {
-            read.model = model;
-        }
-        for (const block of content as Json[]) {
-            if (block.type === "text") {
-                if (typeof block.text !== "string") {
-                    throw new Unreadable("a text block without its text");
-                }
-                if (block.text.trim() !== "") {
-                    emit({
-                        kind: "assistant",
-                        text: block.text,
-                        interrupted: false,
-                    });
-                }
-            } else if (block.type === "tool_use") {
-                if (
-                    typeof block.id !== "string" ||
-                    typeof block.name !== "string"
-                ) {
-                    throw new Unreadable("a tool call without its id or name");
-                }
-                const answer = results.get(block.id);
-                if (answer === undefined && !ended) {
-                    return false;
-                }
-                emit(callEntry(block.id, block.name, block.input, answer));
-            }
-        }
-        return true;
-    };
-
+    const { read } = reading;
     for (const [index, line] of parsed.entries()) {
         if ((lines[index] ?? "").trim() === "") {
             continue;
@@ -409,20 +277,7 @@ export function readLines(
         const mark = read.events.length;
         const type = typeof line?.type === "string" ? line.type : null;
         try {
-            if (line === null) {
-                throw new Unreadable("not a JSON object");
-            }
-            if (type === null) {
-                throw new Unreadable("no type");
-            }
-            if (
-                typeof line.sessionId === "string" &&
-                !sessions.has(line.sessionId)
-            ) {
-                sessions.add(line.sessionId);
-                read.sessions.push(line.sessionId);
-            }
-            if (!map(line, index, type)) {
+            if (!readLine(line, index, type, reading)) {
                 // The line is read again with its answer: none of it now.
                 read.events.length = mark;
                 break;
@@ -435,11 +290,221 @@ export function readLines(
             read.halt = {
                 line: index,
                 type,
-                uuid: typeof line?.uuid === "string" ? line.uuid : null,
+                uuid: uuidOf(line),
                 reason: error.message,
             };
             break;
         }
     }
     return read;
+}
+
+const uuidOf = (line: Json | null) =>
+    typeof line?.uuid === "string" ? line.uuid : null;
+
+function parseLine(text: string): Json | null {
+    try {
+        const value: unknown = JSON.parse(text);
+        return isRecord(value) ? value : null;
+    } catch {
+        return null;
+    }
+}
+
+// What reading the lines shares: what it has read so far, every call's
+// result, and the options.
+type Reading = {
+    read: LinesRead;
+    results: ReadonlyMap<string, Result>;
+    ended: boolean;
+    recorded: ReadonlySet<string>;
+    since: number | null;
+};
+
+// Reads one line; false when the reading waits here for a call's
+// answer. Throws Unreadable for a shape it does not expect.
+function readLine(
+    line: Json | null,
+    index: number,
+    type: string | null,
+    reading: Reading,
+): boolean {
+    if (line === null) {
+        throw new Unreadable("not a JSON object");
+    }
+    if (type === null) {
+        throw new Unreadable("no type");
+    }
+    const { read } = reading;
+    if (
+        typeof line.sessionId === "string" &&
+        !read.sessions.includes(line.sessionId)
+    ) {
+        read.sessions.push(line.sessionId);
+    }
+    if (!MAPPED.has(type)) {
+        if (!BOOKKEEPING.has(type)) {
+            read.unknown.push({ line: index, type });
+        }
+        return true;
+    }
+    return (
+        passedOver(line, type, reading.since) || mapLine(line, type, reading)
+    );
+}
+
+// Lines outside her conversation: Claude Code's system lines, its
+// subagents', meta and compaction lines, and what came before the launch,
+// whatever its shape.
+function passedOver(line: Json, type: string, since: number | null): boolean {
+    if (
+        type === "system" ||
+        line.isSidechain === true ||
+        line.isMeta === true ||
+        line.isCompactSummary === true
+    ) {
+        return true;
+    }
+    if (since === null || typeof line.timestamp !== "string") {
+        return false;
+    }
+    const stamped = Date.parse(line.timestamp);
+    return Number.isFinite(stamped) && stamped < since;
+}
+
+// A line's shape is checked before its uuid and time.
+function mapLine(line: Json, type: string, reading: Reading): boolean {
+    if (type === "attachment") {
+        return mapAttachment(line, reading);
+    }
+    const content = contentOf(
+        line,
+        type === "user" ? "a user" : "an assistant",
+    );
+    if (type === "assistant" && typeof content === "string") {
+        throw new Unreadable("an assistant line without its content");
+    }
+    const emit = stampOf(line, reading);
+    if (emit === null) {
+        return true;
+    }
+    if (type === "user") {
+        const said = userWords(content);
+        if (said !== null) {
+            emit({ kind: "user", text: said });
+        }
+        return true;
+    }
+    return mapAssistant(line, content as Json[], emit, reading);
+}
+
+type Emit = (entry: TranscriptEntry) => void;
+
+// How to record the line's events, stamped with its uuid and time; null
+// for a line already recorded or from before the launch.
+function stampOf(line: Json, { read, recorded, since }: Reading): Emit | null {
+    if (typeof line.uuid !== "string") {
+        throw new Unreadable("no uuid");
+    }
+    const uuid = line.uuid;
+    const at = timeOf(line);
+    if (recorded.has(uuid) || (since !== null && Date.parse(at) < since)) {
+        return null;
+    }
+    return (entry) => read.events.push({ entry, uuid, at });
+}
+
+function mapAttachment(line: Json, reading: Reading): boolean {
+    if (!isRecord(line.attachment)) {
+        throw new Unreadable("an attachment without its object");
+    }
+    const words = spokenAttachment(line.attachment);
+    if (words !== null) {
+        stampOf(line, reading)?.({ kind: "user", text: words });
+    }
+    return true;
+}
+
+// What the user said in a user line: its text as spoken, and its images.
+function userWords(content: Json[] | string): string | null {
+    if (typeof content === "string") {
+        return spoken(content);
+    }
+    const parts = content
+        .map(userBlock)
+        .filter((part): part is string => part !== null);
+    return parts.length > 0 ? parts.join("\n\n") : null;
+}
+
+function userBlock(block: Json): string | null {
+    if (block.type === "text") {
+        return typeof block.text === "string" ? spoken(block.text) : null;
+    }
+    if (block.type === "image") {
+        return "[image]";
+    }
+    if (block.type === "tool_result" && typeof block.tool_use_id !== "string") {
+        throw new Unreadable("a tool result without its call's id");
+    }
+    return null;
+}
+
+// Her words and her calls; false when a call's answer has not come and
+// the session goes on.
+function mapAssistant(
+    line: Json,
+    content: readonly Json[],
+    emit: Emit,
+    reading: Reading,
+): boolean {
+    noteModel(line, reading.read);
+    for (const block of content) {
+        const entry = assistantBlock(block, reading);
+        if (entry === UNANSWERED) {
+            return false;
+        }
+        if (entry !== null) {
+            emit(entry);
+        }
+    }
+    return true;
+}
+
+// The first model an assistant line names, but Claude Code's own.
+function noteModel(line: Json, read: LinesRead): void {
+    const model = isRecord(line.message) ? line.message.model : undefined;
+    if (
+        read.model === null &&
+        typeof model === "string" &&
+        model !== "<synthetic>"
+    ) {
+        read.model = model;
+    }
+}
+
+// A call whose answer has not come, in a session not yet over.
+const UNANSWERED = Symbol("unanswered");
+
+function assistantBlock(
+    block: Json,
+    { results, ended }: Reading,
+): TranscriptEntry | null | typeof UNANSWERED {
+    if (block.type === "text") {
+        if (typeof block.text !== "string") {
+            throw new Unreadable("a text block without its text");
+        }
+        return block.text.trim() === ""
+            ? null
+            : { kind: "assistant", text: block.text, interrupted: false };
+    }
+    if (block.type !== "tool_use") {
+        return null;
+    }
+    if (typeof block.id !== "string" || typeof block.name !== "string") {
+        throw new Unreadable("a tool call without its id or name");
+    }
+    const answer = results.get(block.id);
+    return answer === undefined && !ended
+        ? UNANSWERED
+        : callEntry(block.id, block.name, block.input, answer);
 }
