@@ -213,32 +213,32 @@ exercise; each has a test in the task named.
 
 ## Files
 
-| File                              | Task | Responsibility                                                                 |
-| --------------------------------- | ---- | ------------------------------------------------------------------------------ |
-| `src/history/lint.ts`             | 1    | pure: a file's kind; the lint                                                  |
-| `src/history/boundary.test.ts`    | 1    | no SDK or TUI in history; memory never imports history                         |
-| `src/history/seal.ts`             | 2    | the mirror key; sealing and opening bundles; sealed names                      |
-| `src/history/repo.ts`             | 3    | `MemoryRepo`, `Commit`, the refs and author; `hasGitBinary`                    |
-| `src/history/binary.ts`           | 3    | the git binary engine, isolated                                                |
-| `src/history/testing.ts`          | 3    | test helpers: temporary roots, files, a bare repository                        |
-| `src/history/repo.test.ts`        | 3, 4 | the contract, run against both engines                                         |
-| `src/history/iso.ts`              | 4    | the isomorphic-git engine                                                      |
-| `src/history/open.ts`             | 4    | choosing the engine                                                            |
-| `src/history/cross.test.ts`       | 4    | one engine writes, the other reads                                             |
-| `src/memory/sidecar.ts`           | 5, 6, 7 | `writeAtomic` takes bytes; history's types; `updateSidecar` records         |
-| `src/history/heal.ts`             | 5    | the newest good version; restoring a file; broken copies                       |
-| `src/history/lock.ts`             | 6    | `FileLock`, history's own lock                                                 |
-| `src/history/history.ts`          | 6    | `MemoryHistory`; `openHistory`; the hook                                       |
-| `src/config.ts`                   | 6    | `[history]`                                                                    |
-| `src/memory/vocabulary.ts`        | 7    | `updateVocabulary` records                                                     |
-| `src/memory/service.ts`           | 7    | records reviews and titles; heals before a review                              |
-| `src/memory/commands.ts`          | 7    | sweeps before reading; records `--memory` and `--edit-tags`                    |
-| `src/history/commands.ts`         | 7, 9 | the opener for memory's commands; history's own commands                       |
-| `src/history/mirror.ts`           | 8    | sealing pending commits; pushing; recovering                                   |
-| `src/index.ts`                    | 7, 9 | passes the opener; the new modes; decrypting for the mirror                    |
-| `src/tui/run.tsx`                 | 10   | opens history; turn commits; compaction's recording; the mirror; notices       |
-| `README.md`, `.claude/CLAUDE.md`  | 10   | describe history                                                               |
-| `docs/reports/2026-10-08-memory-history.md` | 11 | the live probe                                                        |
+| File                                        | Task    | Responsibility                                                           |
+| ------------------------------------------- | ------- | ------------------------------------------------------------------------ |
+| `src/history/lint.ts`                       | 1       | pure: a file's kind; the lint                                            |
+| `src/history/boundary.test.ts`              | 1       | no SDK or TUI in history; memory never imports history                   |
+| `src/history/seal.ts`                       | 2       | the mirror key; sealing and opening bundles; sealed names                |
+| `src/history/repo.ts`                       | 3       | `MemoryRepo`, `Commit`, the refs and author; `hasGitBinary`              |
+| `src/history/binary.ts`                     | 3       | the git binary engine, isolated                                          |
+| `src/history/testing.ts`                    | 3       | test helpers: temporary roots, files, a bare repository                  |
+| `src/history/repo.test.ts`                  | 3, 4    | the contract, run against both engines                                   |
+| `src/history/iso.ts`                        | 4       | the isomorphic-git engine                                                |
+| `src/history/open.ts`                       | 4       | choosing the engine                                                      |
+| `src/history/cross.test.ts`                 | 4       | one engine writes, the other reads                                       |
+| `src/memory/sidecar.ts`                     | 5, 6, 7 | `writeAtomic` takes bytes; history's types; `updateSidecar` records      |
+| `src/history/heal.ts`                       | 5       | the newest good version; restoring a file; broken copies                 |
+| `src/history/lock.ts`                       | 6       | `FileLock`, history's own lock                                           |
+| `src/history/history.ts`                    | 6       | `MemoryHistory`; `openHistory`; the hook                                 |
+| `src/config.ts`                             | 6       | `[history]`                                                              |
+| `src/memory/vocabulary.ts`                  | 7       | `updateVocabulary` records                                               |
+| `src/memory/service.ts`                     | 7       | records reviews and titles; heals before a review                        |
+| `src/memory/commands.ts`                    | 7       | sweeps before reading; records `--memory` and `--edit-tags`              |
+| `src/history/commands.ts`                   | 7, 9    | the opener for memory's commands; history's own commands                 |
+| `src/history/mirror.ts`                     | 8       | sealing pending commits; pushing; recovering                             |
+| `src/index.ts`                              | 7, 9    | passes the opener; the new modes; decrypting for the mirror              |
+| `src/tui/run.tsx`                           | 10      | opens history; turn commits; compaction's recording; the mirror; notices |
+| `README.md`, `.claude/CLAUDE.md`            | 10      | describe history                                                         |
+| `docs/reports/2026-10-08-memory-history.md` | 11      | the live probe                                                           |
 
 ---
 

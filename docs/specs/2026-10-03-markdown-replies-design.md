@@ -107,15 +107,15 @@ Uses `createLowlight(common)` and walks the hast tree to spans. It returns
 `null` when the language is missing or unknown, and the code block falls back
 to plain text. Class to colour:
 
-| highlight.js classes                     | Colour  |
-| ---------------------------------------- | ------- |
-| `keyword`, `built_in`, `type`, `literal` | magenta |
-| `string`, `regexp`, `symbol`             | green   |
-| `number`                                 | yellow  |
-| `comment`, `quote`                       | dim     |
-| `title`, `function`, `class`, `section`  | blue    |
-| `attr`, `attribute`, `property`, `variable`, `params` | cyan |
-| anything else                            | default |
+| highlight.js classes                                  | Colour  |
+| ----------------------------------------------------- | ------- |
+| `keyword`, `built_in`, `type`, `literal`              | magenta |
+| `string`, `regexp`, `symbol`                          | green   |
+| `number`                                              | yellow  |
+| `comment`, `quote`                                    | dim     |
+| `title`, `function`, `class`, `section`               | blue    |
+| `attr`, `attribute`, `property`, `variable`, `params` | cyan    |
+| anything else                                         | default |
 
 A nested class takes its own colour; one without a mapping inherits its
 parent's.
@@ -129,22 +129,22 @@ final dim span when the line is interrupted.
 
 ## Rendering rules
 
-| Token          | Rendering                                                                              |
-| -------------- | -------------------------------------------------------------------------------------- |
-| Paragraph      | Inline spans, wrapped                                                                  |
-| Heading        | Bold; levels 1 and 2 also underlined                                                   |
-| Strong, em, del | Bold, italic, strikethrough                                                           |
-| Inline code    | Cyan, backticks dropped                                                                |
-| Code block     | Dim language label row if labelled, then each line behind a dim `┃ ` gutter; highlighted when the language is known; a wrapped line's continuation rows start with a dim `↪ ` |
-| List           | `• ` or `N. ` with a hanging indent; nested lists 2 further in; task items `☐ ` / `☑ ` |
-| Blockquote     | Children behind a dim `│ ` gutter                                                      |
-| Rule           | `─` across the width, dim                                                              |
-| Table          | Box-drawn borders, bold header row, cells aligned per the table's alignment row        |
-| Link           | Text underlined, then dim ` (url)`, unless the text is the URL                         |
-| Image          | `[image: alt]` then dim ` (url)`                                                       |
-| HTML, unknown  | Raw text                                                                               |
-| Line break     | Row break                                                                              |
-| Escape, entity | The character it stands for                                                            |
+| Token           | Rendering                                                                                                                                                                     |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Paragraph       | Inline spans, wrapped                                                                                                                                                         |
+| Heading         | Bold; levels 1 and 2 also underlined                                                                                                                                          |
+| Strong, em, del | Bold, italic, strikethrough                                                                                                                                                   |
+| Inline code     | Cyan, backticks dropped                                                                                                                                                       |
+| Code block      | Dim language label row if labelled, then each line behind a dim `┃ ` gutter; highlighted when the language is known; a wrapped line's continuation rows start with a dim `↪ ` |
+| List            | `• ` or `N. ` with a hanging indent; nested lists 2 further in; task items `☐ ` / `☑ `                                                                                        |
+| Blockquote      | Children behind a dim `│ ` gutter                                                                                                                                             |
+| Rule            | `─` across the width, dim                                                                                                                                                     |
+| Table           | Box-drawn borders, bold header row, cells aligned per the table's alignment row                                                                                               |
+| Link            | Text underlined, then dim ` (url)`, unless the text is the URL                                                                                                                |
+| Image           | `[image: alt]` then dim ` (url)`                                                                                                                                              |
+| HTML, unknown   | Raw text                                                                                                                                                                      |
+| Line break      | Row break                                                                                                                                                                     |
+| Escape, entity  | The character it stands for                                                                                                                                                   |
 
 Blocks are separated by one empty row; no leading or trailing empty rows.
 

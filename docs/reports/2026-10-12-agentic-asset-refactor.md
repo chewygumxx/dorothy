@@ -88,10 +88,10 @@ section probes.
 `prepare` became `scripts/prepare.sh`. Each case ran against the old
 `prepare` first, then the new:
 
-| Case                                                        | Before | After |
-| ----------------------------------------------------------- | ------ | ----- |
-| `.claude/skills/brainstorming` a link to a directory elsewhere | 0   | 1     |
-| A copy of `package.json` with no `node_modules`, as a production install | 127 | 0 |
+| Case                                                                     | Before | After |
+| ------------------------------------------------------------------------ | ------ | ----- |
+| `.claude/skills/brainstorming` a link to a directory elsewhere           | 0      | 1     |
+| A copy of `package.json` with no `node_modules`, as a production install | 127    | 0     |
 
 - The sync skipped the linked skill ("Skipped brainstorming from
   superpowers: ... is a symlink to /tmp/elsewhere/brainstorming") and

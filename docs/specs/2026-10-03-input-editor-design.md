@@ -167,23 +167,23 @@ Ctrl keys to App's `onCtrl`, as only it sees those typed with text.
 
 ## Keys
 
-| Key                         | Action                                                       |
-| --------------------------- | ------------------------------------------------------------ |
-| Enter                       | Send, unless a reply is streaming or the draft is blank      |
-| Shift+Enter                 | Insert a newline                                             |
-| Left, Right, Ctrl+B, Ctrl+F | Move one grapheme                                            |
-| Alt+B, Alt+F, Ctrl+Left, Ctrl+Right | Move one word                                        |
-| Home, End, Ctrl+A, Ctrl+E   | Start or end of the line                                     |
-| Up, Down                    | Move one visual row; past the first or last, recall          |
-| Backspace, Delete           | Delete one grapheme back or forward                          |
-| Ctrl+W, Alt+Backspace       | Kill the previous word                                       |
-| Ctrl+U, Ctrl+K              | Kill to the start or end of the line                         |
-| Ctrl+Y                      | Yank the last kill                                           |
-| Ctrl+G                      | Edit the draft in `$EDITOR`                                  |
-| Ctrl+C                      | Stop a reply; else clear the draft; else quit                |
-| Ctrl+D                      | Quit on an empty draft; else delete forward                  |
-| Esc                         | Stop a reply                                                 |
-| Ctrl+R                      | Toggle the raw pane                                          |
+| Key                                 | Action                                                  |
+| ----------------------------------- | ------------------------------------------------------- |
+| Enter                               | Send, unless a reply is streaming or the draft is blank |
+| Shift+Enter                         | Insert a newline                                        |
+| Left, Right, Ctrl+B, Ctrl+F         | Move one grapheme                                       |
+| Alt+B, Alt+F, Ctrl+Left, Ctrl+Right | Move one word                                           |
+| Home, End, Ctrl+A, Ctrl+E           | Start or end of the line                                |
+| Up, Down                            | Move one visual row; past the first or last, recall     |
+| Backspace, Delete                   | Delete one grapheme back or forward                     |
+| Ctrl+W, Alt+Backspace               | Kill the previous word                                  |
+| Ctrl+U, Ctrl+K                      | Kill to the start or end of the line                    |
+| Ctrl+Y                              | Yank the last kill                                      |
+| Ctrl+G                              | Edit the draft in `$EDITOR`                             |
+| Ctrl+C                              | Stop a reply; else clear the draft; else quit           |
+| Ctrl+D                              | Quit on an empty draft; else delete forward             |
+| Esc                                 | Stop a reply                                            |
+| Ctrl+R                              | Toggle the raw pane                                     |
 
 The key hints become
 `enter send · shift+enter newline · ctrl+g editor · esc stop · ctrl+r raw · ctrl+c quit`,
