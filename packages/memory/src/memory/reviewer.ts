@@ -234,24 +234,8 @@ export class Reviewer {
     }
 
     async review(phrase: string, signal: AbortSignal): Promise<Reviewed> {
-        const { dir, versions } = this.#options;
-        let read = await readSidecar(dir, phrase);
-        if (
-            read.kind === "unparseable" &&
-            (await versions?.heal(sidecarPath(dir, phrase)))
-        ) {
-            read = await readSidecar(dir, phrase);
-        }
-        // Unparseable: warned of at launch and never written. Hidden:
-        // forgotten.
-        if (
-            read.kind === "unparseable" ||
-            (read.kind === "ok" && read.sidecar.hidden)
-        ) {
-            return { kind: "none" };
-        }
-        const current = read.kind === "ok" ? read.sidecar : null;
-        if (!reviewDue(current, this.#options.now().getTime())) {
+        const current = await this.#current(phrase);
+        if (current === undefined) {
             return { kind: "none" };
         }
         const vocabulary = await this.readVocabulary();
@@ -265,7 +249,9 @@ export class Reviewer {
             });
         let turns: ResumedTurn[];
         try {
-            turns = (await readTranscript(join(dir, `${phrase}.jsonl`))).turns;
+            turns = (
+                await readTranscript(join(this.#options.dir, `${phrase}.jsonl`))
+            ).turns;
         } catch (error) {
             fail(describeError(error), "transcript");
             return { kind: "none" };
@@ -273,15 +259,9 @@ export class Reviewer {
         const reads = pendingReads(turns, current?.appraisals ?? {}, (of) =>
             this.#nameOf(of),
         );
-        if (
-            (turns.length <= (current?.reviewedThrough ?? 0) &&
-                reads.length === 0 &&
-                !(tagging && untagged(current))) ||
-            signal.aborted
-        ) {
+        if (!reviewable(current, turns, reads, tagging) || signal.aborted) {
             return { kind: "none" };
         }
-        const lock = this.#lock;
         // Every note and tag is the user's and nothing awaits appraisal: a
         // review could change nothing, so none is paid for.
         if (
@@ -289,38 +269,14 @@ export class Reviewer {
             ownsAll(current, tagging) &&
             reads.length === 0
         ) {
-            const skipped = await updateSidecar(
-                dir,
-                phrase,
-                (latest) =>
-                    latest === null || latest.hidden
-                        ? null
-                        : markReviewed(latest, turns.length),
-                lock,
-                this.#recording(`review: ${phrase} (dorothy, nothing new)`),
-            );
-            return skipped.kind === "written"
-                ? {
-                      kind: "marked",
-                      sidecar: skipped.sidecar,
-                      turns: turns.length,
-                  }
-                : { kind: "none" };
+            return this.#markUnchanged(phrase, turns.length);
         }
         const readIds = reads.map((read) => read.id);
-        const instructions = [
-            REVIEW_INSTRUCTIONS,
-            ...(reads.length > 0 ? [READS_INSTRUCTION] : []),
-            ...((current?.clusters.length ?? 0) > 0
-                ? [CLUSTERS_INSTRUCTION]
-                : []),
-            ...(tagging ? [TAGS_INSTRUCTION] : []),
-        ].join(" ");
         const outcome = await runReview({
             call: this.#options.call,
             systemPrompt: [
                 withSection(this.#options.persona, this.#block(phrase)),
-                instructions,
+                instructions(reads.length > 0, current, tagging),
             ].join("\n\n"),
             prompt: reviewPrompt(
                 turns,
@@ -350,22 +306,85 @@ export class Reviewer {
         const at = this.#options.now().toISOString();
         if (!outcome.ok) {
             fail(outcome.reason, outcome.stage);
-            const failed = await updateSidecar(
-                dir,
-                phrase,
-                (latest) => (latest?.hidden ? null : markFailed(latest, at)),
-                lock,
-                this.#recording(`review: ${phrase} (dorothy, failed)`),
-            );
-            return failed.kind === "written"
-                ? { kind: "marked", sidecar: failed.sidecar, turns: null }
-                : { kind: "none" };
+            return this.#markFailed(phrase, at);
         }
-        // Quitting may land while the write waits its turn. Tags are
-        // applied inside the same lock as the notes.
+        return this.#save(phrase, name, outcome, {
+            at,
+            turns: turns.length,
+            signal,
+        });
+    }
+
+    // The notes as they are, healed once if they can't be read; undefined
+    // when no review is due. Unparseable notes were warned of at launch
+    // and are never written; hidden ones are forgotten.
+    async #current(phrase: string): Promise<Sidecar | null | undefined> {
+        const { dir, versions } = this.#options;
+        let read = await readSidecar(dir, phrase);
+        if (
+            read.kind === "unparseable" &&
+            (await versions?.heal(sidecarPath(dir, phrase)))
+        ) {
+            read = await readSidecar(dir, phrase);
+        }
+        if (
+            read.kind === "unparseable" ||
+            (read.kind === "ok" && read.sidecar.hidden)
+        ) {
+            return undefined;
+        }
+        const current = read.kind === "ok" ? read.sidecar : null;
+        return reviewDue(current, this.#options.now().getTime())
+            ? current
+            : undefined;
+    }
+
+    // Marked reviewed through the turns, with no call made.
+    async #markUnchanged(phrase: string, turns: number): Promise<Reviewed> {
+        const skipped = await updateSidecar(
+            this.#options.dir,
+            phrase,
+            (latest) =>
+                latest === null || latest.hidden
+                    ? null
+                    : markReviewed(latest, turns),
+            this.#lock,
+            this.#recording(`review: ${phrase} (dorothy, nothing new)`),
+        );
+        return skipped.kind === "written"
+            ? { kind: "marked", sidecar: skipped.sidecar, turns }
+            : { kind: "none" };
+    }
+
+    async #markFailed(phrase: string, at: string): Promise<Reviewed> {
+        const failed = await updateSidecar(
+            this.#options.dir,
+            phrase,
+            (latest) => (latest?.hidden ? null : markFailed(latest, at)),
+            this.#lock,
+            this.#recording(`review: ${phrase} (dorothy, failed)`),
+        );
+        return failed.kind === "written"
+            ? { kind: "marked", sidecar: failed.sidecar, turns: null }
+            : { kind: "none" };
+    }
+
+    // The review's notes merged into the notes as they are by then.
+    // Quitting may land while the write waits its turn. Tags are applied
+    // inside the same lock as the notes.
+    async #save(
+        phrase: string,
+        name: string,
+        outcome: Extract<Awaited<ReturnType<typeof runReview>>, { ok: true }>,
+        {
+            at,
+            turns,
+            signal,
+        }: { at: string; turns: number; signal: AbortSignal },
+    ): Promise<Reviewed> {
         const tagOutput = outcome.tags;
         const result = await updateSidecar(
-            dir,
+            this.#options.dir,
             phrase,
             async (latest) => {
                 if (signal.aborted || latest?.hidden) {
@@ -381,13 +400,13 @@ export class Reviewer {
                 return mergeReview(latest, outcome.notes, {
                     model: outcome.model,
                     at,
-                    throughTurn: turns.length,
+                    throughTurn: turns,
                     costUsd: outcome.costUsd,
                     appraisals: outcome.appraisals,
                     ...(tags === undefined ? {} : { tags }),
                 });
             },
-            lock,
+            this.#lock,
             this.#recording(
                 `review: ${phrase} (dorothy, ${outcome.model})`,
                 this.#options.vocabulary === null
@@ -400,15 +419,38 @@ export class Reviewer {
                 `memory: couldn't save notes on "${name}": ${result.reason}`,
                 { phrase, kind: "save" },
             );
-            return { kind: "none" };
         }
-        if (result.kind !== "written") {
-            return { kind: "none" };
-        }
-        return {
-            kind: "reviewed",
-            sidecar: result.sidecar,
-            turns: turns.length,
-        };
+        return result.kind === "written"
+            ? { kind: "reviewed", sidecar: result.sidecar, turns }
+            : { kind: "none" };
     }
+}
+
+// A review has something to do: turns past the last it read, reads to
+// appraise, or, with tags, notes not yet tagged.
+function reviewable(
+    current: Sidecar | null,
+    turns: readonly ResumedTurn[],
+    reads: readonly unknown[],
+    tagging: boolean,
+): boolean {
+    return (
+        turns.length > (current?.reviewedThrough ?? 0) ||
+        reads.length > 0 ||
+        (tagging && untagged(current))
+    );
+}
+
+// The review's instructions, with what this one is asked besides notes.
+function instructions(
+    reading: boolean,
+    current: Sidecar | null,
+    tagging: boolean,
+): string {
+    return [
+        REVIEW_INSTRUCTIONS,
+        ...(reading ? [READS_INSTRUCTION] : []),
+        ...((current?.clusters.length ?? 0) > 0 ? [CLUSTERS_INSTRUCTION] : []),
+        ...(tagging ? [TAGS_INSTRUCTION] : []),
+    ].join(" ");
 }
