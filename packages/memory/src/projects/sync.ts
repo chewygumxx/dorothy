@@ -158,65 +158,73 @@ async function readRepo(dir: string): Promise<RepoSide> {
         }
         throw error;
     }
-    for (const file of names) {
-        if (!file.endsWith(".md")) {
+    for (const file of names.filter((name) => name.endsWith(".md"))) {
+        const path = join(dir, file);
+        if (file === INDEX) {
+            await readIndex(path, side);
             continue;
         }
-        const path = join(dir, file);
-        const name = file.slice(0, -3);
-        // A hostile file name must not reach a terminal as it is.
-        const shown = name.replace(/\p{C}/gu, "?");
-        try {
-            const info = await lstat(path);
-            if (file === INDEX) {
-                if (info.isSymbolicLink()) {
-                    side.indexBlocked = true;
-                } else if (info.isFile()) {
-                    side.index = await readFile(path, "utf8");
-                    side.titles = indexTitles(side.index);
-                }
-                continue;
-            }
-            if (info.isSymbolicLink()) {
-                side.skipped.push({ name: shown, reason: "it is a symlink" });
-            } else if (!info.isFile()) {
-                side.skipped.push({
-                    name: shown,
-                    reason: "it is not a regular file",
-                });
-            } else {
-                if (!FACT_NAME.test(name)) {
-                    side.skipped.push({
-                        name: shown,
-                        reason: "its name is not a fact's",
-                    });
-                } else if (info.size > MAX_FILE_BYTES) {
-                    side.skipped.push({ name, reason: "it is over 64 KiB" });
-                } else {
-                    const read = parseExported(
-                        await readFile(path, "utf8"),
-                        name,
-                    );
-                    if (read.kind === "ok") {
-                        side.forms.set(name, read.form);
-                    } else {
-                        side.skipped.push({ name, reason: read.reason });
-                    }
-                }
-            }
-        } catch (error) {
-            // One unreadable file does not stop the rest.
-            if (file === INDEX) {
-                side.indexBlocked = true;
-            } else {
-                side.skipped.push({
-                    name: shown,
-                    reason: `it cannot be read, ${String(codeOf(error) ?? "error")}`,
-                });
-            }
+        // One unreadable file does not stop the rest.
+        const read = await readFactFile(path, file.slice(0, -3));
+        if (read.kind === "fact") {
+            side.forms.set(read.name, read.form);
+        } else {
+            side.skipped.push({ name: read.name, reason: read.reason });
         }
     }
     return side;
+}
+
+// MEMORY.md, never read or written through a symlink.
+async function readIndex(path: string, side: RepoSide): Promise<void> {
+    try {
+        const info = await lstat(path);
+        if (info.isSymbolicLink()) {
+            side.indexBlocked = true;
+        } else if (info.isFile()) {
+            side.index = await readFile(path, "utf8");
+            side.titles = indexTitles(side.index);
+        }
+    } catch {
+        side.indexBlocked = true;
+    }
+}
+
+type FileRead =
+    | { kind: "fact"; name: string; form: ExportedFact }
+    | { kind: "skipped"; name: string; reason: string };
+
+// A repository file as a fact's exported form, or why it is skipped.
+async function readFactFile(path: string, name: string): Promise<FileRead> {
+    // A hostile file name must not reach a terminal as it is; a fact's
+    // name is safe.
+    const shown = name.replace(/\p{C}/gu, "?");
+    const skip = (reason: string, as = shown): FileRead => ({
+        kind: "skipped",
+        name: as,
+        reason,
+    });
+    try {
+        const info = await lstat(path);
+        if (info.isSymbolicLink()) {
+            return skip("it is a symlink");
+        }
+        if (!info.isFile()) {
+            return skip("it is not a regular file");
+        }
+        if (!FACT_NAME.test(name)) {
+            return skip("its name is not a fact's");
+        }
+        if (info.size > MAX_FILE_BYTES) {
+            return skip("it is over 64 KiB", name);
+        }
+        const read = parseExported(await readFile(path, "utf8"), name);
+        return read.kind === "ok"
+            ? { kind: "fact", name, form: read.form }
+            : skip(read.reason, name);
+    } catch (error) {
+        return skip(`it cannot be read, ${String(codeOf(error) ?? "error")}`);
+    }
 }
 
 // Whether a repository file is still as sync read it (a form of this
@@ -291,7 +299,6 @@ async function reconcile(
     { root, recorder, now: clock = () => new Date() }: SyncOptions,
 ): Promise<SyncResult> {
     const now = clock();
-    const at = now.toISOString();
     const registryPath = projectsPath(root);
     const registryRead = await readRegistry(registryPath);
     if (registryRead.kind === "unparseable") {
@@ -307,205 +314,62 @@ async function reconcile(
     const dir = await safeDir(project.root, memoryDir);
     const scope: Scope = { kind: "project", id: project.id };
     const repo = await readRepo(dir);
-    // Each memory directory keeps its own record, so one switched away
-    // from and back is synced from what it last held there. With none, or
-    // for a directory moved away since, the sync is this root and
-    // directory's first, and adopts and exports rather than retiring.
-    const synced: SyncRecord = {
-        ...syncRecord(known, project.root, memoryDir, repo.present),
-    };
     const listed = await listFacts(root, scope);
     const store = new Map(listed.facts.map(({ fact }) => [fact.name, fact]));
-    const report: SyncReport = {
-        project,
-        memoryDir,
-        imported: [],
-        exported: [],
-        removed: [],
-        retired: [],
-        conflicts: [],
-        skipped: [
-            ...repo.skipped,
-            ...listed.broken.map(({ path }) => ({
-                name: basename(path, ".md"),
-                reason: "it is broken in the store",
-            })),
-        ],
-        index: "left",
-        omitted: 0,
+    const sync: Sync = {
+        root,
+        scope,
+        dir,
+        at: now.toISOString(),
+        report: {
+            project,
+            memoryDir,
+            imported: [],
+            exported: [],
+            removed: [],
+            retired: [],
+            conflicts: [],
+            skipped: [
+                ...repo.skipped,
+                ...listed.broken.map(({ path }) => ({
+                    name: basename(path, ".md"),
+                    reason: "it is broken in the store",
+                })),
+            ],
+            index: "left",
+            omitted: 0,
+        },
+        // Each memory directory keeps its own record, so one switched away
+        // from and back is synced from what it last held there. With none,
+        // or for a directory moved away since, the sync is this root and
+        // directory's first, and adopts and exports rather than retiring.
+        synced: {
+            ...syncRecord(known, project.root, memoryDir, repo.present),
+        },
+        written: [],
+        ...adoption(repo, now),
     };
+    const { report, synced, written } = sync;
     const passed = new Set(report.skipped.map(({ name }) => name));
-    const written: string[] = [];
-
-    // Facts adopted from the repository take creation times in the
-    // index's order, then by name, a millisecond apart.
-    const order = [
-        ...repo.titles.keys(),
-        ...[...repo.forms.keys()].filter((name) => !repo.titles.has(name)),
-    ];
-    const createdFor = (name: string) =>
-        new Date(
-            now.getTime() + Math.max(0, order.indexOf(name)),
-        ).toISOString();
-    // The index's entry, else the store's title, else the name.
-    const titleFor = (name: string, held: Fact | null) => {
-        const title = normalise(repo.titles.get(name) ?? "");
-        return title !== "" && characters(title) <= FACT_LIMITS.title
-            ? title
-            : (held?.title ?? [...name].slice(0, FACT_LIMITS.title).join(""));
-    };
-
     const names = new Set([
         ...store.keys(),
         ...repo.forms.keys(),
         ...Object.keys(synced),
     ]);
     for (const name of [...names].sort()) {
-        if (passed.has(name)) {
-            continue;
-        }
-        const held = store.get(name) ?? null;
-        const live =
-            held !== null && held.retired === null ? exportedForm(held) : null;
-        const theirs = repo.forms.get(name) ?? null;
-        const ours = live === null ? null : formHash(live);
-        const their = theirs === null ? null : formHash(theirs);
-        const last = synced[name];
-        if (ours === their) {
-            if (ours === null) {
-                delete synced[name];
-            } else {
-                synced[name] = ours;
-            }
-            continue;
-        }
-        const oursChanged = last === undefined ? ours !== null : ours !== last;
-        const theirsChanged =
-            last === undefined ? their !== null : their !== last;
-        if (oursChanged && !theirsChanged) {
-            // A file that cannot be written is skipped; the rest go on.
-            try {
-                if (!(await holds(join(dir, `${name}.md`), name, their))) {
-                    throw new Error("it changed while syncing");
-                }
-                if (live === null) {
-                    await rm(join(dir, `${name}.md`));
-                    report.removed.push(name);
-                    delete synced[name];
-                } else {
-                    await writeRepoFile(
-                        join(dir, `${name}.md`),
-                        renderExported(live),
-                    );
-                    report.exported.push(name);
-                    synced[name] = ours as string;
-                }
-            } catch (error) {
-                report.skipped.push({ name, reason: describeError(error) });
-            }
-            continue;
-        }
-        // The repository changed, alone or with the store: its version
-        // wins, and the store's stays in history.
-        try {
-            if (theirs === null) {
-                if (held !== null && held.retired === null) {
-                    written.push(
-                        await putFact(root, scope, {
-                            ...held,
-                            provenance: { ...held.provenance, by: "repo", at },
-                            retired: {
-                                at,
-                                by: "repo",
-                                why: "deleted in the repository",
-                            },
-                        }),
-                    );
-                    report.retired.push(name);
-                }
-                if (oursChanged) {
-                    report.conflicts.push(name);
-                }
-                delete synced[name];
-                continue;
-            }
-            const fact: Fact = {
-                ...theirs,
-                title: titleFor(name, held),
-                tags: held?.tags ?? [],
-                importance: held?.importance ?? null,
-                provenance: {
-                    origin: nextOrigin(
-                        held?.provenance.origin ?? null,
-                        "repo",
-                        "repo",
-                    ),
-                    by: "repo",
-                    at,
-                    created: held?.provenance.created ?? createdFor(name),
-                    ...(held?.provenance.from === undefined
-                        ? {}
-                        : { from: held.provenance.from }),
-                },
-                retired: null,
-            };
-            written.push(await putFact(root, scope, fact));
-            report.imported.push(name);
-            if (oursChanged) {
-                report.conflicts.push(name);
-            }
-            synced[name] = their as string;
-        } catch (error) {
-            report.skipped.push({ name, reason: describeError(error) });
+        if (!passed.has(name)) {
+            await syncFact(
+                name,
+                store.get(name) ?? null,
+                repo.forms.get(name) ?? null,
+                sync,
+            );
         }
     }
-
-    // MEMORY.md is regenerated only when it holds nothing a hand wrote
-    // and nothing it links could not be read, and there is something to
-    // list, so a hand-kept index never loses an entry or a line.
     const lives = (await listFacts(root, scope)).facts
         .map(({ fact }) => fact)
         .filter((fact) => fact.retired === null);
-    const skippedNames = new Set(report.skipped.map(({ name }) => name));
-    const linked = report.skipped.find(({ name }) => repo.titles.has(name));
-    const reason =
-        lives.length === 0
-            ? "no fact is live"
-            : repo.indexBlocked
-              ? "it is a symlink or cannot be read"
-              : repo.index !== null && !isGeneratedIndex(repo.index)
-                ? "it holds lines sync did not write"
-                : linked !== undefined
-                  ? `it links ${linked.name}, which was skipped`
-                  : null;
-    if (reason !== null) {
-        report.indexReason = reason;
-    } else {
-        // A fact whose file could not be written is not listed.
-        const { text, omitted } = renderIndex(
-            lives
-                .filter((fact) => !skippedNames.has(fact.name))
-                .map((fact) => ({
-                    name: fact.name,
-                    title: fact.title,
-                    description: fact.description,
-                    importance: fact.importance,
-                    created: fact.provenance.created,
-                })),
-        );
-        report.omitted = omitted;
-        if (text === repo.index) {
-            report.index = "unchanged";
-        } else {
-            try {
-                await writeRepoFile(join(dir, INDEX), text);
-                report.index = "written";
-            } catch (error) {
-                report.indexReason = describeError(error);
-            }
-        }
-    }
-
+    await syncIndex(repo, dir, lives, report);
     const next = withProject(registry, project, memoryDir, synced);
     if (JSON.stringify(next) !== JSON.stringify(registry)) {
         await writeRegistry(registryPath, next);
@@ -518,4 +382,226 @@ async function reconcile(
         );
     }
     return { kind: "ok", report };
+}
+
+// What syncing a project's facts shares.
+type Sync = {
+    root: string;
+    scope: Scope;
+    // The memory directory.
+    dir: string;
+    at: string;
+    report: SyncReport;
+    synced: SyncRecord;
+    // The store's files written, for history.
+    written: string[];
+} & Adoption;
+
+// The title and creation time of a fact adopted from the repository.
+type Adoption = {
+    titleFor: (name: string, held: Fact | null) => string;
+    createdFor: (name: string) => string;
+};
+
+function adoption(repo: RepoSide, now: Date): Adoption {
+    // Creation times in the index's order, then by name, a millisecond
+    // apart.
+    const order = [
+        ...repo.titles.keys(),
+        ...[...repo.forms.keys()].filter((name) => !repo.titles.has(name)),
+    ];
+    return {
+        createdFor: (name) =>
+            new Date(
+                now.getTime() + Math.max(0, order.indexOf(name)),
+            ).toISOString(),
+        // The index's entry, else the store's title, else the name.
+        titleFor: (name, held) => {
+            const title = normalise(repo.titles.get(name) ?? "");
+            return title !== "" && characters(title) <= FACT_LIMITS.title
+                ? title
+                : (held?.title ??
+                      [...name].slice(0, FACT_LIMITS.title).join(""));
+        },
+    };
+}
+
+// One fact, by what each side holds against what both last held. A file
+// that cannot be written is skipped; the rest go on.
+async function syncFact(
+    name: string,
+    held: Fact | null,
+    theirs: ExportedFact | null,
+    sync: Sync,
+): Promise<void> {
+    const live =
+        held !== null && held.retired === null ? exportedForm(held) : null;
+    const ours = live === null ? null : formHash(live);
+    const their = theirs === null ? null : formHash(theirs);
+    const last = sync.synced[name];
+    if (ours === their) {
+        setRecord(sync.synced, name, ours);
+        return;
+    }
+    const oursChanged = last === undefined ? ours !== null : ours !== last;
+    const theirsChanged = last === undefined ? their !== null : their !== last;
+    try {
+        if (oursChanged && !theirsChanged) {
+            await exportFact(name, live, their, sync);
+            return;
+        }
+        // The repository changed, alone or with the store: its version
+        // wins, and the store's stays in history.
+        if (theirs === null) {
+            await retireFact(name, held, sync);
+        } else {
+            await importFact(name, theirs, held, sync);
+        }
+        if (oursChanged) {
+            sync.report.conflicts.push(name);
+        }
+    } catch (error) {
+        sync.report.skipped.push({ name, reason: describeError(error) });
+    }
+}
+
+// Both sides hold this hash now; null for neither holding the fact.
+function setRecord(synced: SyncRecord, name: string, hash: string | null) {
+    if (hash === null) {
+        delete synced[name];
+    } else {
+        synced[name] = hash;
+    }
+}
+
+// The store's version to the repository, once its file is found as sync
+// read it; a fact no longer live has its file removed.
+async function exportFact(
+    name: string,
+    live: ExportedFact | null,
+    their: string | null,
+    { dir, report, synced }: Sync,
+): Promise<void> {
+    const path = join(dir, `${name}.md`);
+    if (!(await holds(path, name, their))) {
+        throw new Error("it changed while syncing");
+    }
+    if (live === null) {
+        await rm(path);
+        report.removed.push(name);
+        delete synced[name];
+        return;
+    }
+    await writeRepoFile(path, renderExported(live));
+    report.exported.push(name);
+    synced[name] = formHash(live);
+}
+
+// A fact deleted in the repository is retired in the store.
+async function retireFact(
+    name: string,
+    held: Fact | null,
+    { root, scope, at, report, synced, written }: Sync,
+): Promise<void> {
+    if (held !== null && held.retired === null) {
+        written.push(
+            await putFact(root, scope, {
+                ...held,
+                provenance: { ...held.provenance, by: "repo", at },
+                retired: { at, by: "repo", why: "deleted in the repository" },
+            }),
+        );
+        report.retired.push(name);
+    }
+    delete synced[name];
+}
+
+// The repository's version into the store, keeping what only the store
+// holds: tags, importance and when it was made.
+async function importFact(
+    name: string,
+    theirs: ExportedFact,
+    held: Fact | null,
+    sync: Sync,
+): Promise<void> {
+    const { at } = sync;
+    const fact: Fact = {
+        ...theirs,
+        title: sync.titleFor(name, held),
+        tags: held?.tags ?? [],
+        importance: held?.importance ?? null,
+        provenance: {
+            origin: nextOrigin(held?.provenance.origin ?? null, "repo", "repo"),
+            by: "repo",
+            at,
+            created: held?.provenance.created ?? sync.createdFor(name),
+            ...(held?.provenance.from === undefined
+                ? {}
+                : { from: held.provenance.from }),
+        },
+        retired: null,
+    };
+    sync.written.push(await putFact(sync.root, sync.scope, fact));
+    sync.report.imported.push(name);
+    sync.synced[name] = formHash(theirs);
+}
+
+// MEMORY.md is regenerated only when it holds nothing a hand wrote and
+// nothing it links could not be read, and there is something to list, so
+// a hand-kept index never loses an entry or a line.
+async function syncIndex(
+    repo: RepoSide,
+    dir: string,
+    lives: readonly Fact[],
+    report: SyncReport,
+): Promise<void> {
+    const reason = indexLeftReason(repo, lives, report.skipped);
+    if (reason !== null) {
+        report.indexReason = reason;
+        return;
+    }
+    // A fact whose file could not be written is not listed.
+    const skipped = new Set(report.skipped.map(({ name }) => name));
+    const { text, omitted } = renderIndex(
+        lives
+            .filter((fact) => !skipped.has(fact.name))
+            .map((fact) => ({
+                name: fact.name,
+                title: fact.title,
+                description: fact.description,
+                importance: fact.importance,
+                created: fact.provenance.created,
+            })),
+    );
+    report.omitted = omitted;
+    if (text === repo.index) {
+        report.index = "unchanged";
+        return;
+    }
+    try {
+        await writeRepoFile(join(dir, INDEX), text);
+        report.index = "written";
+    } catch (error) {
+        report.indexReason = describeError(error);
+    }
+}
+
+function indexLeftReason(
+    repo: RepoSide,
+    lives: readonly Fact[],
+    skipped: SyncReport["skipped"],
+): string | null {
+    if (lives.length === 0) {
+        return "no fact is live";
+    }
+    if (repo.indexBlocked) {
+        return "it is a symlink or cannot be read";
+    }
+    if (repo.index !== null && !isGeneratedIndex(repo.index)) {
+        return "it holds lines sync did not write";
+    }
+    const linked = skipped.find(({ name }) => repo.titles.has(name));
+    return linked === undefined
+        ? null
+        : `it links ${linked.name}, which was skipped`;
 }
