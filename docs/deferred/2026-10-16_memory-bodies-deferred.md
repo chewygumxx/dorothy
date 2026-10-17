@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-16
-mtime: 2026-10-16
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: Memory bodies deferred findings
 description: >-
@@ -70,9 +70,7 @@ fixed are left out, and the behaviours a user meets are in the
 5. With the state directory unwritable, the catch-up records the
    session and then fails in `resolveHalt`; the launch stays and is
    retried.
-6. The hook's log still takes the index's and the catalogue's warnings,
-   which carry paths and parse errors.
-7. A failed detached spawn is not logged; `held` is shadowed in
+6. A failed detached spawn is not logged; `held` is shadowed in
    `reread`.
 
 ## The review
