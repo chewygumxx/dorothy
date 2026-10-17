@@ -250,76 +250,98 @@ export function describeLookup(
     result: string | null,
 ): Lookup {
     const fields = isRecord(input) ? input : {};
-    if (tool === "search") {
-        const lookup: SearchLookup = {
-            tool,
-            query: textOf(fields.query),
-            hits: 0,
-        };
-        if (typeof fields.after === "string") {
-            lookup.after = fields.after;
-        }
-        if (typeof fields.before === "string") {
-            lookup.before = fields.before;
-        }
-        if (Array.isArray(fields.tags)) {
-            const tags = fields.tags.filter(
-                (tag): tag is string => typeof tag === "string",
-            );
-            if (tags.length > 0) {
-                lookup.tags = tags;
-            }
-        }
-        if (fields.kind === "conversations" || fields.kind === "facts") {
-            lookup.searched = fields.kind;
-        }
-        const found = parse<SearchResult>(result);
-        if (Array.isArray(found?.results) && typeof found.more === "number") {
-            lookup.hits = found.results.length + found.more;
-        }
-        if (
-            lookup.searched !== "conversations" &&
-            Array.isArray(found?.facts) &&
-            typeof found.moreFacts === "number"
-        ) {
-            lookup.facts = found.facts.length + found.moreFacts;
-        }
-        return lookup;
+    switch (tool) {
+        case "search":
+            return searchLookup(fields, result);
+        case "recollect":
+            return recollectLookup(fields, result);
+        case "tags":
+            return tagsLookup(fields, result);
+        default:
+            return openLookup(fields, result);
     }
-    if (tool === "recollect") {
-        const lookup: RecollectLookup = {
-            tool,
-            cluster:
-                typeof fields.cluster === "number" &&
-                Number.isInteger(fields.cluster) &&
-                fields.cluster >= 1
-                    ? fields.cluster
-                    : 0,
-            turns: null,
-        };
-        if (typeof fields.words === "string") {
-            lookup.words = fields.words;
-        }
-        lookup.turns = windowRange(parse<RecollectResult>(result)?.window);
-        return lookup;
+}
+
+type Fields = Record<string, unknown>;
+
+function searchLookup(fields: Fields, result: string | null): SearchLookup {
+    const lookup: SearchLookup = {
+        tool: "search",
+        query: textOf(fields.query),
+        hits: 0,
+    };
+    if (typeof fields.after === "string") {
+        lookup.after = fields.after;
     }
-    if (tool === "tags") {
-        const lookup: TagsLookup = { tool, hits: 0 };
-        if (typeof fields.under === "string") {
-            lookup.under = fields.under;
-        }
-        const listed = parse<TagsResult>(result);
-        if (Array.isArray(listed?.results) && typeof listed.more === "number") {
-            lookup.hits = listed.results.length + listed.more;
-        }
-        return lookup;
+    if (typeof fields.before === "string") {
+        lookup.before = fields.before;
     }
+    const tags = Array.isArray(fields.tags)
+        ? fields.tags.filter((tag): tag is string => typeof tag === "string")
+        : [];
+    if (tags.length > 0) {
+        lookup.tags = tags;
+    }
+    if (fields.kind === "conversations" || fields.kind === "facts") {
+        lookup.searched = fields.kind;
+    }
+    return { ...lookup, ...searchHits(parse<SearchResult>(result), lookup) };
+}
+
+// What a search found: its conversations, and its facts unless it
+// searched conversations alone.
+function searchHits(
+    found: SearchResult | null,
+    lookup: SearchLookup,
+): Pick<SearchLookup, "hits" | "facts"> {
+    const hits =
+        Array.isArray(found?.results) && typeof found.more === "number"
+            ? found.results.length + found.more
+            : 0;
+    return lookup.searched !== "conversations" &&
+        Array.isArray(found?.facts) &&
+        typeof found.moreFacts === "number"
+        ? { hits, facts: found.facts.length + found.moreFacts }
+        : { hits };
+}
+
+function recollectLookup(
+    fields: Fields,
+    result: string | null,
+): RecollectLookup {
+    const { cluster } = fields;
+    return {
+        tool: "recollect",
+        cluster:
+            typeof cluster === "number" &&
+            Number.isInteger(cluster) &&
+            cluster >= 1
+                ? cluster
+                : 0,
+        turns: windowRange(parse<RecollectResult>(result)?.window),
+        ...(typeof fields.words === "string" ? { words: fields.words } : {}),
+    };
+}
+
+function tagsLookup(fields: Fields, result: string | null): TagsLookup {
+    const listed = parse<TagsResult>(result);
+    return {
+        tool: "tags",
+        hits:
+            Array.isArray(listed?.results) && typeof listed.more === "number"
+                ? listed.results.length + listed.more
+                : 0,
+        ...(typeof fields.under === "string" ? { under: fields.under } : {}),
+    };
+}
+
+function openLookup(fields: Fields, result: string | null): OpenLookup {
     const purpose = textOf(fields.purpose);
     if (typeof fields.fact === "string") {
         const fact = fields.fact;
         const opened = parse<OpenFactResult>(result);
         return {
-            tool,
+            tool: "open",
             fact,
             name: typeof opened?.title === "string" ? opened.title : fact,
             purpose,
@@ -329,7 +351,7 @@ export function describeLookup(
     const conversation = textOf(fields.conversation);
     const opened = parse<OpenResult>(result);
     return {
-        tool,
+        tool: "open",
         conversation,
         name: typeof opened?.name === "string" ? opened.name : conversation,
         purpose,
