@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-15
-mtime: 2026-10-15
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: Dorothy's memory store plan
 description: >-

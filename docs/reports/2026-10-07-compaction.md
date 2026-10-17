@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-07
-mtime: 2026-10-07
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: Compaction probes
 description: "Live checks that the CLI's own compaction stays off and that Dorothy's compacts, seeds and recollects"

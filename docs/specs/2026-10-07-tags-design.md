@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-07
-mtime: 2026-10-07
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: Tags design
 description: "Design spec for Dorothy's tag vocabulary and shallow tagging"

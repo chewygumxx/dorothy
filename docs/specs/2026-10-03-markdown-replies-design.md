@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-03
-mtime: 2026-10-05
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: Markdown replies design
 description: "Design spec for rendering Dorothy's Markdown replies in the TUI"
@@ -122,6 +122,8 @@ parent's.
 
 ### `src/tui/Markdown.tsx`
 
+<!-- markdownlint-disable MD038 -->
+
 `<Markdown text width />` draws each row as one `<Text wrap="truncate">` with a
 nested `<Text>` per span. `LineView` in `History.tsx` uses it for `dorothy`
 lines with `width = columns - LABEL_WIDTH`, appending ` [interrupted]` as a
@@ -145,6 +147,8 @@ final dim span when the line is interrupted.
 | HTML, unknown   | Raw text                                                                                                                                                                      |
 | Line break      | Row break                                                                                                                                                                     |
 | Escape, entity  | The character it stands for                                                                                                                                                   |
+
+<!-- markdownlint-enable MD038 -->
 
 Blocks are separated by one empty row; no leading or trailing empty rows.
 

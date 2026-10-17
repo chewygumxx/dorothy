@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-10-16
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -65,8 +65,8 @@ Findings: [objectives](./reports/2026-10-15-objectives.md). The store:
 [delivery plan](./plans/2026-10-15-memory-bodies-delivery.md),
 [recording plan](./plans/2026-10-15-memory-bodies-recording.md),
 [report](./reports/2026-10-15-memory-bodies.md),
-[deferred](./deferred/2026-10-16_memory-bodies-deferred.md); merged in
-#22 and #24.
+[deferred](./deferred/2026-10-16_memory-bodies-deferred.md); merged in #22
+and #24.
 
 - **Status**: Store and Bodies Built; Layers and Learning Pending Design
 - **Required**: Requisites Fulfilled

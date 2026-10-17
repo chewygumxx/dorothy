@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-03
-mtime: 2026-10-05
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: Markdown replies plan
 description: "Implementation plan for rendering Dorothy's Markdown replies"

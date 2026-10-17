@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-07
-mtime: 2026-10-07
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: Compaction implementation plan
 description: "Plan for compacting a long conversation into clusters"
@@ -5260,7 +5260,7 @@ topics (`tmux send-keys -t probe '...' Enter`), waiting for each reply.
 Check, with `tmux capture-pane -p -t probe`:
 
 - a dim `compacted turns 1-N into K clusters` line appears after an idle;
-- asking "what did we say about <the first topic>, word for word?" makes
+- asking "what did we say about \<the first topic>, word for word?" makes
   Dorothy call `recollect`, shown as `⌕ recollected cluster 1, turns a-b`;
 - the sidecar under `$probe/data/dorothy/transcripts/` holds `clusters`, and
   the transcript a `compaction` event before the next `session` event.

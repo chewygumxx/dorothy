@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-08
-mtime: 2026-10-08
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: Memory history implementation plan
 description: "Plan for keeping Dorothy's data directory as a git repository, with recovery and a sealed mirror"

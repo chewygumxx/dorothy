@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-05
-mtime: 2026-10-05
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: Statusline and minimum size plan
 description: "Implementation plan for the statusline and a minimum window"
@@ -60,6 +60,8 @@ the Too Small message beside the still-mounted `History`.
 
 ## Rulings made while planning
 
+<!-- markdownlint-disable MD038 -->
+
 - **No line number in TOML errors.** `Bun.TOML.parse` throws a
   `SyntaxError` whose `line` and `column` point at the calling JavaScript,
   not the TOML. The warning is `config.toml: <message>` with Bun's
@@ -77,6 +79,8 @@ the Too Small message beside the still-mounted `History`.
   short terminal every App test would otherwise see the Too Small message.
 - **`initialState` keeps the last three distinct warnings**, as the reducer
   does: config problems can produce more than three at startup.
+
+<!-- markdownlint-enable MD038 -->
 
 ## Review Focus
 

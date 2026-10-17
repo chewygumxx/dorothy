@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-03
-mtime: 2026-10-05
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: Input editor plan
 description: "Implementation plan for the chat TUI's multi-line input editor"
