@@ -23,6 +23,7 @@ import {
     labelKey,
     labelsOf,
     readVocabulary,
+    type Term,
     type VocabularyRead,
 } from "../memory/vocabulary.js";
 import { sourceOf, toRecall, toTurn } from "../transcript.js";
@@ -92,30 +93,25 @@ export async function syncIndex(
             }
         }
         for (const phrase of phrases) {
-            index.db.run("SAVEPOINT transcript");
-            try {
+            const problem = await inSavepoint(index, async () => {
                 if (
                     await syncTranscript(index, dir, phrase, rows.get(phrase))
                 ) {
                     await syncSidecar(index, dir, phrase);
                 }
-            } catch (error) {
-                index.db.run("ROLLBACK TO transcript");
-                warnings.push(
-                    `${join(dir, `${phrase}.jsonl`)}: ${describeError(error)}`,
-                );
+            });
+            if (problem !== null) {
+                warnings.push(`${join(dir, `${phrase}.jsonl`)}: ${problem}`);
             }
-            index.db.run("RELEASE transcript");
         }
-        if (vocabulary !== null) {
-            index.db.run("SAVEPOINT vocabulary");
-            try {
-                await syncVocabulary(index, vocabulary);
-            } catch (error) {
-                index.db.run("ROLLBACK TO vocabulary");
-                warnings.push(`${vocabulary}: ${describeError(error)}`);
-            }
-            index.db.run("RELEASE vocabulary");
+        const problem =
+            vocabulary === null
+                ? null
+                : await inSavepoint(index, () =>
+                      syncVocabulary(index, vocabulary),
+                  );
+        if (problem !== null) {
+            warnings.push(`${vocabulary}: ${problem}`);
         }
         return listing;
     });
@@ -124,6 +120,35 @@ export async function syncIndex(
         warnings.push(...(await syncFacts(index, facts)));
     }
     return warnings;
+}
+
+// Work that fails is undone alone, and says why; null when it succeeds.
+async function inSavepoint(
+    index: RecallIndex,
+    work: () => Promise<void>,
+): Promise<string | null> {
+    index.db.run("SAVEPOINT sync");
+    let problem: string | null = null;
+    try {
+        await work();
+    } catch (error) {
+        index.db.run("ROLLBACK TO sync");
+        problem = describeError(error);
+    }
+    index.db.run("RELEASE sync");
+    return problem;
+}
+
+// A file's mtime; null for one that is not there.
+async function mtimeOf(path: string): Promise<number | null> {
+    try {
+        return (await stat(path)).mtimeMs;
+    } catch (error) {
+        if (codeOf(error) !== "ENOENT") {
+            throw error;
+        }
+        return null;
+    }
 }
 
 async function list(dir: string): Promise<string[]> {
@@ -240,83 +265,116 @@ async function syncTranscript(
 // Turns, visits and reads from complete lines, continuing the counts in row.
 function applyLines(index: RecallIndex, row: Row, text: string): void {
     for (const line of text.split("\n")) {
-        if (line.trim() === "") {
+        const parsed = parseEvent(line);
+        if (parsed === null) {
             continue;
         }
-        let event: unknown;
-        try {
-            event = JSON.parse(line);
-        } catch {
-            continue;
+        const { event, at } = parsed;
+        if (event.kind === "session") {
+            applySession(index, row, event);
+        } else if (event.kind === "recall") {
+            applyRead(index, row, event, at);
+        } else {
+            applyTurn(index, row, event, at);
         }
-        const parsed =
-            isRecord(event) && typeof event.at === "string"
-                ? Date.parse(event.at)
-                : Number.NaN;
-        const at = Number.isFinite(parsed) ? parsed : null;
-        const kind = isRecord(event) ? event.kind : undefined;
-        if (kind === "session") {
-            // The first session says which body, and which project, the
-            // conversation began in.
-            if (row.sessions === 0 && isRecord(event)) {
-                index.db.run(
-                    "UPDATE conversations SET source = ?, project = ? WHERE phrase = ?",
-                    [
-                        sourceOf(event),
-                        typeof event.project === "string"
-                            ? event.project
-                            : null,
-                        row.phrase,
-                    ],
-                );
-            }
-            if (isRecord(event) && typeof event.sourceSession === "string") {
-                index.db.run(
-                    "INSERT OR IGNORE INTO conversation_sessions (session, phrase) VALUES (?, ?)",
-                    [event.sourceSession, row.phrase],
-                );
-            }
-            row.sessions++;
-            continue;
-        }
-        if (kind === "recall") {
-            const recall = toRecall(event);
-            if (recall?.tool === "open" && recall.ok) {
-                index.db.run(
-                    "INSERT OR IGNORE INTO reads (id, reader, target, at) VALUES (?, ?, ?, ?)",
-                    [
-                        recall.id,
-                        row.phrase,
-                        "fact" in recall ? recall.fact : recall.conversation,
-                        at ?? row.last_at ?? 0,
-                    ],
-                );
-            }
-            continue;
-        }
-        const turn = toTurn(event);
-        if (turn === "ignore" || turn === "malformed") {
-            continue;
-        }
-        row.turns++;
-        const turnAt = at ?? row.last_at ?? 0;
+    }
+}
+
+// An event and its time; null for a line that is no event.
+function parseEvent(
+    line: string,
+): { event: Record<string, unknown>; at: number | null } | null {
+    if (line.trim() === "") {
+        return null;
+    }
+    let event: unknown;
+    try {
+        event = JSON.parse(line);
+    } catch {
+        return null;
+    }
+    if (!isRecord(event)) {
+        return null;
+    }
+    const parsed = typeof event.at === "string" ? Date.parse(event.at) : NaN;
+    return { event, at: Number.isFinite(parsed) ? parsed : null };
+}
+
+// The first session says which body, and which project, the conversation
+// began in; each names the body's session it records.
+function applySession(
+    index: RecallIndex,
+    row: Row,
+    event: Record<string, unknown>,
+): void {
+    if (row.sessions === 0) {
         index.db.run(
-            "INSERT INTO turns (phrase, n, role, at, text) VALUES (?, ?, ?, ?, ?)",
-            [row.phrase, row.turns, turn.role, turnAt, turn.text],
+            "UPDATE conversations SET source = ?, project = ? WHERE phrase = ?",
+            [
+                sourceOf(event),
+                typeof event.project === "string" ? event.project : null,
+                row.phrase,
+            ],
         );
-        row.first_at = Math.min(row.first_at ?? turnAt, turnAt);
-        row.last_at = Math.max(row.last_at ?? turnAt, turnAt);
-        // As visitsOf counts them: a visit opens at each session event, and
-        // what came before the first belongs to the first.
-        if (turn.role === "user") {
-            index.db.run(
-                `INSERT INTO visits (phrase, n, user_turns, last_at) VALUES (?, ?, 1, ?)
-                 ON CONFLICT (phrase, n) DO UPDATE SET
-                     user_turns = user_turns + 1,
-                     last_at = coalesce(excluded.last_at, last_at)`,
-                [row.phrase, Math.max(0, row.sessions - 1), at],
-            );
-        }
+    }
+    if (typeof event.sourceSession === "string") {
+        index.db.run(
+            "INSERT OR IGNORE INTO conversation_sessions (session, phrase) VALUES (?, ?)",
+            [event.sourceSession, row.phrase],
+        );
+    }
+    row.sessions++;
+}
+
+// A conversation or a fact she opened.
+function applyRead(
+    index: RecallIndex,
+    row: Row,
+    event: Record<string, unknown>,
+    at: number | null,
+): void {
+    const recall = toRecall(event);
+    if (recall?.tool === "open" && recall.ok) {
+        index.db.run(
+            "INSERT OR IGNORE INTO reads (id, reader, target, at) VALUES (?, ?, ?, ?)",
+            [
+                recall.id,
+                row.phrase,
+                "fact" in recall ? recall.fact : recall.conversation,
+                at ?? row.last_at ?? 0,
+            ],
+        );
+    }
+}
+
+function applyTurn(
+    index: RecallIndex,
+    row: Row,
+    event: Record<string, unknown>,
+    at: number | null,
+): void {
+    const turn = toTurn(event);
+    if (turn === "ignore" || turn === "malformed") {
+        return;
+    }
+    row.turns++;
+    const turnAt = at ?? row.last_at ?? 0;
+    index.db.run(
+        "INSERT INTO turns (phrase, n, role, at, text) VALUES (?, ?, ?, ?, ?)",
+        [row.phrase, row.turns, turn.role, turnAt, turn.text],
+    );
+    row.first_at = Math.min(row.first_at ?? turnAt, turnAt);
+    row.last_at = Math.max(row.last_at ?? turnAt, turnAt);
+    // As visitsOf counts them: a visit opens at each session event, and
+    // what came before the first belongs to the first.
+    if (turn.role === "user") {
+        index.db.run(
+            `INSERT INTO visits (phrase, n, user_turns, last_at) VALUES (?, ?, 1, ?)
+             ON CONFLICT (phrase, n) DO UPDATE SET
+                 user_turns = user_turns + 1,
+                 last_at = coalesce(excluded.last_at, last_at)`,
+            [row.phrase, Math.max(0, row.sessions - 1), at],
+        );
     }
 }
 
@@ -325,14 +383,7 @@ async function syncSidecar(
     dir: string,
     phrase: string,
 ): Promise<void> {
-    let mtime: number | null = null;
-    try {
-        mtime = (await stat(sidecarPath(dir, phrase))).mtimeMs;
-    } catch (error) {
-        if (codeOf(error) !== "ENOENT") {
-            throw error;
-        }
-    }
+    const mtime = await mtimeOf(sidecarPath(dir, phrase));
     const { s_mtime: known } = index.db
         .query("SELECT s_mtime FROM conversations WHERE phrase = ?")
         .get(phrase) as { s_mtime: number | null };
@@ -381,14 +432,7 @@ async function syncSidecar(
 // is replaced: the vocabulary is small, and sidecars' ids are resolved
 // through merged at query time, so no sidecar is read again.
 async function syncVocabulary(index: RecallIndex, path: string): Promise<void> {
-    let mtime: number | null = null;
-    try {
-        mtime = (await stat(path)).mtimeMs;
-    } catch (error) {
-        if (codeOf(error) !== "ENOENT") {
-            throw error;
-        }
-    }
+    const mtime = await mtimeOf(path);
     const known = index.db
         .query("SELECT mtime FROM vocabulary WHERE id = 1")
         .get() as { mtime: number | null };
@@ -408,31 +452,35 @@ async function syncVocabulary(index: RecallIndex, path: string): Promise<void> {
         return;
     }
     for (const [id, term] of Object.entries(read.vocabulary.concepts)) {
-        if (isMerged(term)) {
-            index.db.run("INSERT INTO merged (id, into_id) VALUES (?, ?)", [
-                id,
-                term.mergedInto,
-            ]);
-        }
-        if (!isConcept(term)) {
-            continue;
-        }
-        index.db.run(
-            "INSERT INTO concepts (id, label, alt, scope_note) VALUES (?, ?, ?, ?)",
-            [id, term.prefLabel, JSON.stringify(term.altLabel), term.scopeNote],
-        );
-        for (const label of labelsOf(term)) {
-            index.db.run("INSERT INTO labels (norm, id) VALUES (?, ?)", [
-                labelKey(label),
-                id,
-            ]);
-        }
-        for (const parent of term.broader) {
-            index.db.run("INSERT INTO broader (id, parent) VALUES (?, ?)", [
-                id,
-                parent,
-            ]);
-        }
+        insertTerm(index, id, term);
+    }
+}
+
+function insertTerm(index: RecallIndex, id: string, term: Term): void {
+    if (isMerged(term)) {
+        index.db.run("INSERT INTO merged (id, into_id) VALUES (?, ?)", [
+            id,
+            term.mergedInto,
+        ]);
+    }
+    if (!isConcept(term)) {
+        return;
+    }
+    index.db.run(
+        "INSERT INTO concepts (id, label, alt, scope_note) VALUES (?, ?, ?, ?)",
+        [id, term.prefLabel, JSON.stringify(term.altLabel), term.scopeNote],
+    );
+    for (const label of labelsOf(term)) {
+        index.db.run("INSERT INTO labels (norm, id) VALUES (?, ?)", [
+            labelKey(label),
+            id,
+        ]);
+    }
+    for (const parent of term.broader) {
+        index.db.run("INSERT INTO broader (id, parent) VALUES (?, ?)", [
+            id,
+            parent,
+        ]);
     }
 }
 
