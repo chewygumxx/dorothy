@@ -53,6 +53,12 @@
       "skillPath": "skills/herdr/SKILL.md",
       "computedHash": "72177e911f55467de8737174072ec6bb08e30bbf62bceabcb69678e944398b18"
     },
+    "i-have-adhd": {
+      "source": "ayghri/i-have-adhd",
+      "sourceType": "github",
+      "skillPath": "skills/i-have-adhd/SKILL.md",
+      "computedHash": "e12ff08dfe4b5baae7065c2f05a5738b8a55f3ccbed82ba45f5496c8e83b2a25"
+    },
     "receiving-code-review": {
       "source": "superpowers",
       "sourceType": "node_modules",
