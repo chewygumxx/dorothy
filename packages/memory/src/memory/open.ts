@@ -60,6 +60,7 @@ import { MemoryService } from "./service.js";
 import {
     appendClusters,
     type Cluster,
+    type HistoryHandle,
     type Lock,
     type Recorder,
     readSidecar,
@@ -510,8 +511,6 @@ export async function openMemory({
     const phrase = resume ?? newPhrase();
     const path = transcriptPath(phrase, env);
     const dir = transcriptDir(env);
-    let history: ResumedTurn[] = [];
-    let costUsd = 0;
     const warnings: string[] = [];
     const { config, warnings: configWarnings } = await readConfig(env);
     warnings.push(...configWarnings);
@@ -530,95 +529,34 @@ export async function openMemory({
     }
     const launched = await launchHistory({ config, index, warnings, env });
 
-    let project: string | null = null;
-    if (cwd !== null) {
-        try {
-            project = (await identify(cwd))?.id ?? null;
-        } catch (error) {
-            warnings.push(
-                `project: ${cwd} can't be identified (${describeError(error)})`,
-            );
-        }
+    const project = await identifyProject(cwd, warnings);
+    const resumed =
+        resume === null
+            ? FRESH
+            : await readResumed(resume, path, dir, warnings);
+    if ("refusal" in resumed) {
+        await closeInOrder([() => launched?.close(), () => index?.close()]);
+        return { ok: false, message: resumed.refusal };
     }
-
-    // A resumed conversation starts from its clusters. Notes that cannot be
-    // read are never written, so compaction stays off for this chat.
-    let clusters: Cluster[] = [];
-    let compactable = config.compaction.enabled;
-    if (resume !== null) {
-        try {
-            const read = await readTranscript(path);
-            // Claude Code's conversations are its hooks' to write, and
-            // Dorothy's compaction does not run on them.
-            if (read.claudeSession !== null) {
-                await closeInOrder([
-                    () => launched?.close(),
-                    () => index?.close(),
-                ]);
-                return {
-                    ok: false,
-                    message: `cannot resume ${resume}: it is a Claude Code conversation; resume it there with dorothy --claude --resume ${read.claudeSession}`,
-                };
-            }
-            history = read.turns;
-            costUsd = read.costUsd;
-            if (read.skipped > 0) {
-                warnings.push(
-                    `skipped ${read.skipped} malformed line(s) in ${path}`,
-                );
-            }
-        } catch (error) {
-            await closeInOrder([() => launched?.close(), () => index?.close()]);
-            return {
-                ok: false,
-                message: `cannot resume ${resume}: ${path}: ${describeError(error)}`,
-            };
-        }
-        const notes = await readSidecar(dir, phrase);
-        if (notes.kind === "ok") {
-            clusters = notes.sidecar.clusters;
-        } else if (notes.kind === "unparseable" && compactable) {
-            compactable = false;
-            warnings.push(
-                `compaction: off for this chat; its notes can't be read (${notes.reason})`,
-            );
-        }
-    }
-
-    let writer: TranscriptWriter | null = null;
-    try {
-        writer = await TranscriptWriter.open(path);
-    } catch (error) {
-        warnings.push(`transcript not saved: ${describeError(error)}`);
-    }
-    const transcript = writer;
-
-    let service: MemoryService | null = null;
-    if (config.memory.enabled && index !== null) {
-        const vocabulary = vocabularyPath(env);
-        const loaded = await indexCatalogue(
-            index,
-            dir,
-            vocabulary,
-            dataRoot(env),
-        ).load();
-        warnings.push(...loaded.warnings);
-        service = new MemoryService({
-            dir,
-            phrase,
-            history,
-            config: config.memory,
-            entries: loaded.entries,
-            index,
-            vocabulary,
-            versions: launched?.history.handle() ?? null,
-            call,
-            persona: prompts.review,
-            // Without a transcript the live chat is left alone.
-            flushed: transcript === null ? null : () => transcript.flushed(),
-        });
-        warnings.push(...service.warnings());
-    }
+    const { history, costUsd, clusters } = resumed;
+    const compactable = compactionAllowed(config, resumed, warnings);
+    const transcript = await openWriter(path, warnings);
+    const service =
+        config.memory.enabled && index !== null
+            ? await startService({
+                  index,
+                  dir,
+                  phrase,
+                  history,
+                  config,
+                  versions: launched?.history.handle() ?? null,
+                  call,
+                  persona: prompts.review,
+                  transcript,
+                  warnings,
+                  env,
+              })
+            : null;
 
     const recall =
         config.memory.recall && index !== null ? recallLaunch(phrase) : null;
@@ -643,59 +581,25 @@ export async function openMemory({
     // Chat syncs its project at its start and after each turn; with
     // memory off, or without a lock to sync under, it does not.
     const syncer =
-        !config.memory.enabled ||
-        project === null ||
-        cwd === null ||
-        writeLock === undefined
+        !config.memory.enabled || project === null || cwd === null
             ? null
-            : projectSyncer(
-                  () =>
-                      syncProject(cwd, {
-                          root: dataRoot(env),
-                          lock: writeLock,
-                          recorder: launched?.history.recorder ?? null,
-                      }),
-                  (message) => channel.warn(message),
-              );
+            : chatSyncer(cwd, writeLock, launched, channel, env);
     syncer?.run();
-    const committer =
-        launched === null || transcript === null
-            ? null
-            : turnCommitter(
-                  launched.history,
-                  path,
-                  () => transcript.flushed(),
-                  history.filter((turn) => turn.role === "user").length,
-              );
+    const committer = chatCommitter(launched, transcript, path, history);
     const compaction = compactable
-        ? new Compaction({
-              config: config.compaction,
-              // The review's idle wait too: at a shared idle compaction
-              // runs first only because its timer is armed first, on the
-              // same turn-end, and same-delay timers fire in order. Keep
-              // the two delays shared, or order them some other way.
-              idleMs: config.memory.idleSeconds * 1000,
+        ? chatCompaction({
+              config,
               clusters,
-              persona: prompts.compaction,
-              // With recall on, a session with clusters offers recollect.
+              prompts,
               recollect: recall !== null,
               call,
-              save: clusterSaver({
-                  dir,
-                  phrase,
-                  ...(writeLock === undefined ? {} : { lock: writeLock }),
-                  transcript: transcript !== null,
-                  recorder: launched?.history.recorder ?? null,
-              }),
-              ready: () =>
-                  transcript === null
-                      ? Promise.resolve({ ok: true })
-                      : notesReady(dir, phrase),
-              record: async (entry) => {
-                  await transcript?.append({ kind: "compaction", ...entry });
-              },
-              estimate: (seed) => tokens(prompts.session(startOf(seed))),
-              claims: claims === null ? null : indexClaims(claims, phrase),
+              dir,
+              phrase,
+              writeLock,
+              transcript,
+              recorder: launched?.history.recorder ?? null,
+              claims,
+              startOf,
           })
         : null;
 
@@ -705,29 +609,19 @@ export async function openMemory({
     // reply is appended before memory's turn-end hook asks for the flush
     // holds in either order, as the recorder records an event before
     // passing it on and trackMemory (track.ts) calls its hooks after.
-    const record =
-        transcript === null
-            ? null
-            : sessionRecorder({
-                  sink: transcript,
-                  phrase,
-                  promptHash: prompts.hash(recall !== null),
-                  resumed: history.length > 0,
-                  ...(project === null ? {} : { project }),
-                  warn: (message) => channel.warn(message),
-              });
+    const record = chatRecorder(transcript, {
+        phrase,
+        promptHash: prompts.hash(recall !== null),
+        resumed: history.length > 0,
+        project,
+        channel,
+    });
     const make = sessionMaker({
         compaction,
         connect: (seed) => connect(startOf(seed)),
         clusters,
         memory: service,
-        turnEnded:
-            committer === null && syncer === null
-                ? null
-                : () => {
-                      committer?.ended();
-                      syncer?.run();
-                  },
+        turnEnded: afterTurn(committer, syncer),
     });
 
     return {
@@ -751,8 +645,304 @@ export async function openMemory({
                     () => syncer?.settled(),
                     () => launched?.close(),
                     () => index?.close(),
-                    () => writer?.close(),
+                    () => transcript?.close(),
                 ]),
         },
     };
+}
+
+// The project of the directory chat started in, if it is in one.
+async function identifyProject(
+    cwd: string | null,
+    warnings: string[],
+): Promise<string | null> {
+    if (cwd === null) {
+        return null;
+    }
+    try {
+        return (await identify(cwd))?.id ?? null;
+    } catch (error) {
+        warnings.push(
+            `project: ${cwd} can't be identified (${describeError(error)})`,
+        );
+        return null;
+    }
+}
+
+// What a chat starts from: a new one, nothing.
+type Resumed = {
+    history: ResumedTurn[];
+    costUsd: number;
+    clusters: Cluster[];
+    // Its notes can't be read; why.
+    notesBroken: boolean;
+    notesReason: string;
+};
+
+const FRESH: Resumed = {
+    history: [],
+    costUsd: 0,
+    clusters: [],
+    notesBroken: false,
+    notesReason: "",
+};
+
+// A resumed conversation starts from its turns and its clusters; or why it
+// can't be resumed. Claude Code's conversations are its hooks' to write,
+// and Dorothy's compaction does not run on them.
+async function readResumed(
+    resume: string,
+    path: string,
+    dir: string,
+    warnings: string[],
+): Promise<Resumed | { refusal: string }> {
+    let read: Awaited<ReturnType<typeof readTranscript>>;
+    try {
+        read = await readTranscript(path);
+    } catch (error) {
+        return {
+            refusal: `cannot resume ${resume}: ${path}: ${describeError(error)}`,
+        };
+    }
+    if (read.claudeSession !== null) {
+        return {
+            refusal: `cannot resume ${resume}: it is a Claude Code conversation; resume it there with dorothy --claude --resume ${read.claudeSession}`,
+        };
+    }
+    if (read.skipped > 0) {
+        warnings.push(`skipped ${read.skipped} malformed line(s) in ${path}`);
+    }
+    const notes = await readSidecar(dir, resume);
+    return {
+        history: read.turns,
+        costUsd: read.costUsd,
+        clusters: notes.kind === "ok" ? notes.sidecar.clusters : [],
+        notesBroken: notes.kind === "unparseable",
+        notesReason: notes.kind === "unparseable" ? notes.reason : "",
+    };
+}
+
+async function openWriter(
+    path: string,
+    warnings: string[],
+): Promise<TranscriptWriter | null> {
+    try {
+        return await TranscriptWriter.open(path);
+    } catch (error) {
+        warnings.push(`transcript not saved: ${describeError(error)}`);
+        return null;
+    }
+}
+
+// Memory's service over the catalogue of other conversations.
+async function startService({
+    index,
+    dir,
+    phrase,
+    history,
+    config,
+    versions,
+    call,
+    persona,
+    transcript,
+    warnings,
+    env,
+}: {
+    index: RecallIndex;
+    dir: string;
+    phrase: string;
+    history: ResumedTurn[];
+    config: Config;
+    versions: HistoryHandle | null;
+    call: StructuredCall;
+    persona: string;
+    transcript: TranscriptWriter | null;
+    warnings: string[];
+    env: Env;
+}): Promise<MemoryService> {
+    const vocabulary = vocabularyPath(env);
+    const loaded = await indexCatalogue(
+        index,
+        dir,
+        vocabulary,
+        dataRoot(env),
+    ).load();
+    warnings.push(...loaded.warnings);
+    const service = new MemoryService({
+        dir,
+        phrase,
+        history,
+        config: config.memory,
+        entries: loaded.entries,
+        index,
+        vocabulary,
+        versions,
+        call,
+        persona,
+        // Without a transcript the live chat is left alone.
+        flushed: transcript === null ? null : () => transcript.flushed(),
+    });
+    warnings.push(...service.warnings());
+    return service;
+}
+
+// Chat syncs its project at its start and after each turn; without a lock
+// to sync under, it does not.
+function chatSyncer(
+    cwd: string,
+    lock: Lock | undefined,
+    launched: LaunchedHistory | null,
+    channel: ReturnType<typeof noticeChannel>,
+    env: Env,
+): ReturnType<typeof projectSyncer> | null {
+    if (lock === undefined) {
+        return null;
+    }
+    return projectSyncer(
+        () =>
+            syncProject(cwd, {
+                root: dataRoot(env),
+                lock,
+                recorder: launched?.history.recorder ?? null,
+            }),
+        (message) => channel.warn(message),
+    );
+}
+
+// Compaction for this chat, from the clusters it resumed with.
+function chatCompaction({
+    config,
+    clusters,
+    prompts,
+    recollect,
+    call,
+    dir,
+    phrase,
+    writeLock,
+    transcript,
+    recorder,
+    claims,
+    startOf,
+}: {
+    config: Config;
+    clusters: Cluster[];
+    prompts: MemoryPrompts;
+    recollect: boolean;
+    call: StructuredCall;
+    dir: string;
+    phrase: string;
+    writeLock: Lock | undefined;
+    transcript: TranscriptWriter | null;
+    recorder: Recorder | null;
+    claims: RecallIndex | null;
+    startOf: (seed: Seed) => SessionStart;
+}): Compaction {
+    return new Compaction({
+        config: config.compaction,
+        // The review's idle wait too: at a shared idle compaction runs
+        // first only because its timer is armed first, on the same
+        // turn-end, and same-delay timers fire in order. Keep the two
+        // delays shared, or order them some other way.
+        idleMs: config.memory.idleSeconds * 1000,
+        clusters,
+        persona: prompts.compaction,
+        // With recall on, a session with clusters offers recollect.
+        recollect,
+        call,
+        save: clusterSaver({
+            dir,
+            phrase,
+            ...(writeLock === undefined ? {} : { lock: writeLock }),
+            transcript: transcript !== null,
+            recorder,
+        }),
+        ready: () =>
+            transcript === null
+                ? Promise.resolve({ ok: true })
+                : notesReady(dir, phrase),
+        record: async (entry) => {
+            await transcript?.append({ kind: "compaction", ...entry });
+        },
+        estimate: (seed) => tokens(prompts.session(startOf(seed))),
+        claims: claims === null ? null : indexClaims(claims, phrase),
+    });
+}
+
+// Notes that cannot be read are never written, so compaction stays off
+// for a chat whose notes are broken.
+function compactionAllowed(
+    config: Config,
+    resumed: Resumed,
+    warnings: string[],
+): boolean {
+    if (!config.compaction.enabled) {
+        return false;
+    }
+    if (resumed.notesBroken) {
+        warnings.push(
+            `compaction: off for this chat; its notes can't be read (${resumed.notesReason})`,
+        );
+    }
+    return !resumed.notesBroken;
+}
+
+// Each turn committed to history, once the transcript is flushed.
+function chatCommitter(
+    launched: LaunchedHistory | null,
+    transcript: TranscriptWriter | null,
+    path: string,
+    history: readonly ResumedTurn[],
+): ReturnType<typeof turnCommitter> | null {
+    if (launched === null || transcript === null) {
+        return null;
+    }
+    return turnCommitter(
+        launched.history,
+        path,
+        () => transcript.flushed(),
+        history.filter((turn) => turn.role === "user").length,
+    );
+}
+
+// At each turn's end: the turn committed, the project synced.
+function afterTurn(
+    committer: ReturnType<typeof turnCommitter> | null,
+    syncer: ReturnType<typeof projectSyncer> | null,
+): (() => void) | null {
+    if (committer === null && syncer === null) {
+        return null;
+    }
+    return () => {
+        committer?.ended();
+        syncer?.run();
+    };
+}
+
+function chatRecorder(
+    transcript: TranscriptWriter | null,
+    {
+        phrase,
+        promptHash,
+        resumed,
+        project,
+        channel,
+    }: {
+        phrase: string;
+        promptHash: string;
+        resumed: boolean;
+        project: string | null;
+        channel: ReturnType<typeof noticeChannel>;
+    },
+): ReturnType<typeof sessionRecorder> | null {
+    if (transcript === null) {
+        return null;
+    }
+    return sessionRecorder({
+        sink: transcript,
+        phrase,
+        promptHash,
+        resumed,
+        ...(project === null ? {} : { project }),
+        warn: (message) => channel.warn(message),
+    });
 }
