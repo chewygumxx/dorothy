@@ -8,6 +8,10 @@
 //
 //
 
+import {
+    type ParseArgsOptionsConfig,
+    parseArgs as parseOptions,
+} from "node:util";
 import type { PersonaMode } from "@dorothy/agent";
 import { isPhrase, isUuid } from "@dorothy/core";
 import type { HookMode } from "@dorothy/memory/claude-hook";
@@ -89,23 +93,277 @@ export const USAGE = [
     "                                  prompt or --dump-context",
 ].join("\n");
 
-// The flags that take no arguments, and the mode each starts.
-const BARE = {
-    "--list": "list",
-    "--tags": "tags",
-    "--facts": "facts",
-    "--projects": "projects",
-} as const;
+type Command = (rest: readonly string[], isTTY: boolean) => Mode;
+
+const usage = (message: string): Mode => ({ kind: "usage", message });
+
+// Each flag that starts a mode, and how it reads the words after it.
+const COMMANDS: Record<string, Command> = {
+    "--help": () => ({ kind: "help" }),
+    "-h": () => ({ kind: "help" }),
+    "--dev": parseDev,
+    "--resume": parseResume,
+    "--list": noArguments("--list", { kind: "list" }),
+    "--memory": parseMemory,
+    "--tags": noArguments("--tags", { kind: "tags" }),
+    "--edit-tags": (rest, isTTY) =>
+        rest.length > 0
+            ? usage("--edit-tags takes no arguments")
+            : inTerminal(isTTY, "--edit-tags", { kind: "tags-edit" }),
+    "--history": parseHistory,
+    "--restore": ([path, rev, ...extra]) =>
+        path !== undefined && extra.length === 0
+            ? { kind: "restore", path, rev: rev ?? null }
+            : usage("--restore takes <path> [<rev>]"),
+    "--rollback": ([rev, ...extra]) =>
+        rev !== undefined && extra.length === 0
+            ? { kind: "rollback", rev }
+            : usage("--rollback takes one revision"),
+    "--check": parseCheck,
+    "--mirror": ([url, ...extra]) =>
+        extra.length === 0
+            ? { kind: "mirror", url: url ?? null }
+            : usage("--mirror takes one url or path"),
+    "--recover": ([url, ...extra]) =>
+        url !== undefined && extra.length === 0
+            ? { kind: "recover", url }
+            : usage("--recover takes one url or path"),
+    "--facts": noArguments("--facts", { kind: "facts" }),
+    "--retire": parseRetire,
+    "--revive": parseRevive,
+    "--sync": ([path, ...extra]) =>
+        extra.length === 0
+            ? { kind: "sync", path: path ?? null }
+            : usage("--sync takes [<path>]"),
+    "--projects": noArguments("--projects", { kind: "projects" }),
+    "--recall-server": parseRecallServer,
+    "--claude-hook": parseHook,
+    "--dump-context": parseDump,
+    "--claude": parseClaude,
+};
+
+export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
+    const [first, ...rest] = argv;
+    if (first !== undefined && Object.hasOwn(COMMANDS, first)) {
+        return (COMMANDS[first] as Command)(rest, isTTY);
+    }
+    // A mistyped option would otherwise be sent, and paid for, as a prompt.
+    if (first !== undefined && first !== "--" && /^-./.test(first)) {
+        return usage(`unknown option ${first}`);
+    }
+    const words = first === "--" ? rest : argv;
+    if (words.length > 0) {
+        return { kind: "oneshot", prompt: words.join(" "), persona: "chat" };
+    }
+    return inTerminal(isTTY, "chat", {
+        kind: "tui",
+        resume: null,
+        persona: "chat",
+    });
+}
+
+function noArguments(flag: string, mode: Mode): Command {
+    return (rest) =>
+        rest.length === 0 ? mode : usage(`${flag} takes no arguments`);
+}
+
+// The modes that open the screen or an editor.
+function inTerminal(isTTY: boolean, what: string, mode: Mode): Mode {
+    return isTTY ? mode : usage(`${what} needs a terminal`);
+}
+
+function onePhrase(rest: readonly string[]): string | null {
+    const [phrase, ...extra] = rest;
+    return phrase !== undefined && extra.length === 0 && isPhrase(phrase)
+        ? phrase
+        : null;
+}
+
+// A command's options and words, read as POSIX and GNU do, or null where
+// node:util refuses them: an unknown option, or one missing its value.
+function options<const T extends ParseArgsOptionsConfig>(
+    rest: readonly string[],
+    spec: T,
+) {
+    try {
+        return parseOptions({
+            args: [...rest],
+            options: spec,
+            allowPositionals: true,
+            strict: true,
+        });
+    } catch (error) {
+        if (error instanceof TypeError) {
+            return null;
+        }
+        throw error;
+    }
+}
+
+const DEV_USAGE = "--dev applies only to chat, a prompt or --dump-context";
+
+function parseDev(rest: readonly string[], isTTY: boolean): Mode {
+    if (rest[0] === "--dev") {
+        return usage(DEV_USAGE);
+    }
+    const mode = parseArgs(rest, isTTY);
+    switch (mode.kind) {
+        case "oneshot":
+        case "tui":
+        case "dump":
+            return { ...mode, persona: "development" };
+        case "usage":
+            return mode;
+        default:
+            return usage(DEV_USAGE);
+    }
+}
+
+function parseResume(rest: readonly string[], isTTY: boolean): Mode {
+    const phrase = onePhrase(rest);
+    if (phrase === null) {
+        return usage("--resume takes one four-word phrase");
+    }
+    return inTerminal(isTTY, "--resume", {
+        kind: "tui",
+        resume: phrase,
+        persona: "chat",
+    });
+}
+
+function parseMemory(rest: readonly string[], isTTY: boolean): Mode {
+    const phrase = onePhrase(rest);
+    if (phrase === null) {
+        return usage("--memory takes one four-word phrase");
+    }
+    return inTerminal(isTTY, "--memory", { kind: "memory", phrase });
+}
+
+function parseHistory(rest: readonly string[]): Mode {
+    const HISTORY_USAGE = "--history takes [<path>] [-n <count>]";
+    const parsed = options(rest, { count: { type: "string", short: "n" } });
+    const count = Number(parsed?.values.count ?? 20);
+    if (
+        parsed === null ||
+        parsed.positionals.length > 1 ||
+        !Number.isInteger(count) ||
+        count < 1
+    ) {
+        return usage(HISTORY_USAGE);
+    }
+    return { kind: "history", path: parsed.positionals[0] ?? null, count };
+}
+
+function parseCheck(rest: readonly string[]): Mode {
+    const parsed = options(rest, { staged: { type: "boolean" } });
+    return parsed === null || parsed.positionals.length > 0
+        ? usage("--check takes only --staged")
+        : { kind: "check", staged: parsed.values.staged === true };
+}
+
+// A fact is named <scope>/<name>; its name is checked where it is looked up.
+function parseRetire(rest: readonly string[]): Mode {
+    const RETIRE_USAGE = "--retire takes <scope>/<name> or --from <phrase>";
+    const parsed = options(rest, { from: { type: "string" } });
+    if (parsed === null) {
+        return usage(RETIRE_USAGE);
+    }
+    const { from } = parsed.values;
+    const [target, ...extra] = parsed.positionals;
+    if (from !== undefined) {
+        return target === undefined && isPhrase(from)
+            ? { kind: "retire-from", phrase: from }
+            : usage(RETIRE_USAGE);
+    }
+    return target !== undefined && extra.length === 0
+        ? { kind: "retire", target }
+        : usage(RETIRE_USAGE);
+}
+
+function parseRevive(rest: readonly string[]): Mode {
+    const [target, ...extra] = options(rest, {})?.positionals ?? [];
+    return target !== undefined && extra.length === 0
+        ? { kind: "revive", target }
+        : usage("--revive takes <scope>/<name>");
+}
+
+const RECALL_USAGE =
+    "--recall-server takes [--exclude <phrase> [--recollect]] [--project <root>]";
+
+function parseRecallServer(rest: readonly string[]): Mode {
+    const parsed = options(rest, {
+        exclude: { type: "string", multiple: true },
+        project: { type: "string", multiple: true },
+        recollect: { type: "boolean" },
+    });
+    if (parsed === null || parsed.positionals.length > 0) {
+        return usage(RECALL_USAGE);
+    }
+    const { exclude = [], project = [], recollect = false } = parsed.values;
+    const [phrase] = exclude;
+    const [root] = project;
+    const valid =
+        exclude.length <= 1 &&
+        project.length <= 1 &&
+        (phrase === undefined ? !recollect : isPhrase(phrase)) &&
+        root !== "";
+    return valid
+        ? {
+              kind: "recall-server",
+              exclude: phrase ?? null,
+              recollect,
+              project: root ?? null,
+          }
+        : usage(RECALL_USAGE);
+}
+
+const HOOK_USAGE =
+    "--claude-hook takes [--catch-up <launch> [--session <id>]], --reread or --dismiss <session>";
+
+// What --claude's hooks run, and the two commands its notice offers.
+function parseHook(rest: readonly string[]): Mode {
+    const parsed = options(rest, {
+        "catch-up": { type: "string" },
+        session: { type: "string" },
+        reread: { type: "boolean" },
+        dismiss: { type: "string" },
+    });
+    if (parsed === null || parsed.positionals.length > 0) {
+        return usage(HOOK_USAGE);
+    }
+    const { "catch-up": launch, session, reread, dismiss } = parsed.values;
+    const chosen = [launch, reread, dismiss].filter((v) => v !== undefined);
+    if (chosen.length > 1 || (session !== undefined && launch === undefined)) {
+        return usage(HOOK_USAGE);
+    }
+    const hook = (mode: HookMode): Mode => ({
+        kind: "claude-hook",
+        hook: mode,
+    });
+    if (launch !== undefined) {
+        return isUuid(launch) && (session === undefined || isUuid(session))
+            ? hook({ kind: "catch-up", launch, session: session ?? null })
+            : usage(HOOK_USAGE);
+    }
+    if (dismiss !== undefined) {
+        return isUuid(dismiss)
+            ? hook({ kind: "dismiss", session: dismiss })
+            : usage(HOOK_USAGE);
+    }
+    return hook(reread === true ? { kind: "reread" } : { kind: "hook" });
+}
 
 const DUMP_USAGE = "--dump-context takes [--resume <phrase>] [message...]";
 
+// Hand-read, as the message is free text: an option-like word after its
+// first is part of it.
 function parseDump(argv: readonly string[]): Mode {
     let words = argv;
     let resume: string | null = null;
     if (words[0] === "--resume") {
         const phrase = words[1];
         if (phrase === undefined || !isPhrase(phrase)) {
-            return { kind: "usage", message: DUMP_USAGE };
+            return usage(DUMP_USAGE);
         }
         resume = phrase;
         words = words.slice(2);
@@ -113,7 +371,7 @@ function parseDump(argv: readonly string[]): Mode {
     if (words[0] === "--") {
         words = words.slice(1);
     } else if (words[0] !== undefined && /^-./.test(words[0])) {
-        return { kind: "usage", message: DUMP_USAGE };
+        return usage(DUMP_USAGE);
     }
     return {
         kind: "dump",
@@ -123,259 +381,18 @@ function parseDump(argv: readonly string[]): Mode {
     };
 }
 
-const HOOK_USAGE =
-    "--claude-hook takes [--catch-up <launch> [--session <id>]], --reread or --dismiss <session>";
-
-function parseHook(rest: readonly string[]): Mode {
-    const hook = (mode: HookMode): Mode => ({
-        kind: "claude-hook",
-        hook: mode,
-    });
-    const [flag, value, next, session] = rest;
-    if (flag === undefined) {
-        return hook({ kind: "hook" });
+// Everything after --claude is claude's, but for --dump-context, whose
+// message follows a --.
+function parseClaude(rest: readonly string[]): Mode {
+    if (rest[0] !== "--dump-context") {
+        return { kind: "claude", args: [...rest] };
     }
-    if (flag === "--reread" && rest.length === 1) {
-        return hook({ kind: "reread" });
-    }
-    if (flag === "--dismiss" && rest.length === 2 && isUuid(value ?? "")) {
-        return hook({ kind: "dismiss", session: value as string });
-    }
-    if (flag === "--catch-up" && isUuid(value ?? "")) {
-        const launch = value as string;
-        if (rest.length === 2) {
-            return hook({ kind: "catch-up", launch, session: null });
-        }
-        if (
-            rest.length === 4 &&
-            next === "--session" &&
-            isUuid(session ?? "")
-        ) {
-            return hook({
-                kind: "catch-up",
-                launch,
-                session: session as string,
-            });
-        }
-    }
-    return { kind: "usage", message: HOOK_USAGE };
-}
-
-export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
-    const [first, ...rest] = argv;
-    if (first === "--dev") {
-        const mode = rest[0] === "--dev" ? null : parseArgs(rest, isTTY);
-        if (
-            mode?.kind === "oneshot" ||
-            mode?.kind === "tui" ||
-            mode?.kind === "dump"
-        ) {
-            return { ...mode, persona: "development" };
-        }
-        return mode?.kind === "usage"
-            ? mode
-            : {
-                  kind: "usage",
-                  message:
-                      "--dev applies only to chat, a prompt or --dump-context",
-              };
-    }
-    if (first === "--dump-context") {
-        return parseDump(rest);
-    }
-    if (first === "--claude" && rest[0] === "--dump-context") {
-        const words = rest.slice(1);
-        const end = words.indexOf("--");
-        const message = end === -1 ? [] : words.slice(end + 1);
-        return {
-            kind: "claude-dump",
-            args: end === -1 ? words : words.slice(0, end),
-            message: message.length > 0 ? message.join(" ") : "hi",
-        };
-    }
-    if (first === "--claude-hook") {
-        return parseHook(rest);
-    }
-    if (first === "--claude") {
-        return { kind: "claude", args: rest };
-    }
-    if (first === "--help" || first === "-h") {
-        return { kind: "help" };
-    }
-    if (first !== undefined && Object.hasOwn(BARE, first)) {
-        return rest.length === 0
-            ? { kind: BARE[first as keyof typeof BARE] }
-            : { kind: "usage", message: `${first} takes no arguments` };
-    }
-    if (first === "--edit-tags") {
-        if (rest.length !== 0) {
-            return {
-                kind: "usage",
-                message: "--edit-tags takes no arguments",
-            };
-        }
-        return isTTY
-            ? { kind: "tags-edit" }
-            : { kind: "usage", message: "--edit-tags needs a terminal" };
-    }
-    if (first === "--retire") {
-        const usage = {
-            kind: "usage" as const,
-            message: "--retire takes <scope>/<name> or --from <phrase>",
-        };
-        if (rest[0] === "--from") {
-            const phrase = rest[1];
-            return rest.length === 2 && phrase !== undefined && isPhrase(phrase)
-                ? { kind: "retire-from", phrase }
-                : usage;
-        }
-        const target = rest[0];
-        return rest.length === 1 &&
-            target !== undefined &&
-            !target.startsWith("-")
-            ? { kind: "retire", target }
-            : usage;
-    }
-    if (first === "--revive") {
-        const target = rest[0];
-        return rest.length === 1 &&
-            target !== undefined &&
-            !target.startsWith("-")
-            ? { kind: "revive", target }
-            : { kind: "usage", message: "--revive takes <scope>/<name>" };
-    }
-    if (first === "--sync") {
-        return rest.length <= 1
-            ? { kind: "sync", path: rest[0] ?? null }
-            : { kind: "usage", message: "--sync takes [<path>]" };
-    }
-    if (first === "--recall-server") {
-        const usage = {
-            kind: "usage" as const,
-            message:
-                "--recall-server takes [--exclude <phrase> [--recollect]] [--project <root>]",
-        };
-        let exclude: string | null = null;
-        let project: string | null = null;
-        let recollect = false;
-        for (let index = 0; index < rest.length; index += 1) {
-            const word = rest[index];
-            const value = rest[index + 1];
-            if (
-                word === "--exclude" &&
-                exclude === null &&
-                value !== undefined &&
-                isPhrase(value)
-            ) {
-                exclude = value;
-                index += 1;
-            } else if (
-                word === "--project" &&
-                project === null &&
-                value !== undefined &&
-                value !== ""
-            ) {
-                project = value;
-                index += 1;
-            } else if (word === "--recollect" && !recollect) {
-                recollect = true;
-            } else {
-                return usage;
-            }
-        }
-        return recollect && exclude === null
-            ? usage
-            : { kind: "recall-server", exclude, recollect, project };
-    }
-    if (first === "--history") {
-        const usage = {
-            kind: "usage",
-            message: "--history takes [<path>] [-n <count>]",
-        } as const;
-        let path: string | null = null;
-        let count = 20;
-        for (let index = 0; index < rest.length; index++) {
-            const word = rest[index] as string;
-            if (word === "-n") {
-                const value = Number(rest[index + 1]);
-                if (!Number.isInteger(value) || value < 1) {
-                    return usage;
-                }
-                count = value;
-                index++;
-            } else if (path === null && !word.startsWith("-")) {
-                path = word;
-            } else {
-                return usage;
-            }
-        }
-        return { kind: "history", path, count };
-    }
-    if (first === "--restore") {
-        const [path, rev] = rest;
-        return path !== undefined && rest.length <= 2
-            ? { kind: "restore", path, rev: rev ?? null }
-            : { kind: "usage", message: "--restore takes <path> [<rev>]" };
-    }
-    if (first === "--rollback") {
-        const [rev] = rest;
-        return rev !== undefined && rest.length === 1
-            ? { kind: "rollback", rev }
-            : { kind: "usage", message: "--rollback takes one revision" };
-    }
-    if (first === "--check") {
-        if (
-            rest.length === 0 ||
-            (rest.length === 1 && rest[0] === "--staged")
-        ) {
-            return { kind: "check", staged: rest.length === 1 };
-        }
-        return { kind: "usage", message: "--check takes only --staged" };
-    }
-    if (first === "--mirror") {
-        return rest.length <= 1
-            ? { kind: "mirror", url: rest[0] ?? null }
-            : { kind: "usage", message: "--mirror takes one url or path" };
-    }
-    if (first === "--recover") {
-        const [url] = rest;
-        return url !== undefined && rest.length === 1
-            ? { kind: "recover", url }
-            : { kind: "usage", message: "--recover takes one url or path" };
-    }
-    if (first === "--memory") {
-        const phrase = rest[0];
-        if (rest.length !== 1 || phrase === undefined || !isPhrase(phrase)) {
-            return {
-                kind: "usage",
-                message: "--memory takes one four-word phrase",
-            };
-        }
-        return isTTY
-            ? { kind: "memory", phrase }
-            : { kind: "usage", message: "--memory needs a terminal" };
-    }
-    if (first === "--resume") {
-        const phrase = rest[0];
-        if (rest.length !== 1 || phrase === undefined || !isPhrase(phrase)) {
-            return {
-                kind: "usage",
-                message: "--resume takes one four-word phrase",
-            };
-        }
-        return isTTY
-            ? { kind: "tui", resume: phrase, persona: "chat" }
-            : { kind: "usage", message: "--resume needs a terminal" };
-    }
-    // A mistyped option would otherwise be sent, and paid for, as a prompt.
-    if (first !== undefined && first !== "--" && /^-./.test(first)) {
-        return { kind: "usage", message: `unknown option ${first}` };
-    }
-    const words = first === "--" ? rest : argv;
-    if (words.length > 0) {
-        return { kind: "oneshot", prompt: words.join(" "), persona: "chat" };
-    }
-    return isTTY
-        ? { kind: "tui", resume: null, persona: "chat" }
-        : { kind: "usage", message: "chat needs a terminal" };
+    const words = rest.slice(1);
+    const end = words.indexOf("--");
+    const message = end === -1 ? [] : words.slice(end + 1);
+    return {
+        kind: "claude-dump",
+        args: end === -1 ? words : words.slice(0, end),
+        message: message.length > 0 ? message.join(" ") : "hi",
+    };
 }

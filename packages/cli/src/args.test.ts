@@ -474,11 +474,48 @@ describe("parseArgs", () => {
             ["--catch-up", L, "--other", S],
             ["--dismiss"],
             ["--dismiss", "x"],
+            ["--dismiss", S, "--catch-up", L],
+            ["--session", S],
             ["--reread", "x"],
+            ["--reread", "--session", S],
             ["--other"],
         ]) {
             expect(hook(rest)).toEqual({ kind: "usage", message: HOOK_USAGE });
         }
+    });
+
+    it("takes an option's value after = or run on, as POSIX and GNU do", () => {
+        expect(
+            parseArgs(["--recall-server", `--exclude=${phrase}`], false),
+        ).toEqual({
+            kind: "recall-server",
+            exclude: phrase,
+            recollect: false,
+            project: null,
+        });
+        expect(parseArgs(["--history", "-n5"], false)).toEqual({
+            kind: "history",
+            path: null,
+            count: 5,
+        });
+        expect(parseArgs(["--retire", `--from=${phrase}`], false)).toEqual({
+            kind: "retire-from",
+            phrase,
+        });
+    });
+
+    it("takes a catch-up's session before its launch", () => {
+        const L = "6c84fb90-12c4-11e1-840d-7b25c5ee775a";
+        const S = "0f8fad5b-d9cb-469f-a165-70867728950e";
+        expect(
+            parseArgs(
+                ["--claude-hook", "--session", S, "--catch-up", L],
+                false,
+            ),
+        ).toEqual({
+            kind: "claude-hook",
+            hook: { kind: "catch-up", launch: L, session: S },
+        });
     });
 
     it("refuses anything else after --recall-server", () => {
@@ -486,6 +523,7 @@ describe("parseArgs", () => {
             ["x"],
             ["--exclude"],
             ["--exclude", "nope"],
+            ["--exclude", phrase, "--exclude", phrase],
             ["--project"],
             ["--project", "/a", "--project", "/b"],
         ]) {
