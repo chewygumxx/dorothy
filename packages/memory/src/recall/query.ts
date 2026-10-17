@@ -681,91 +681,17 @@ export function listTags(
     }
     const exclude = options.exclude ?? "";
     const rows = carriers(index);
-    // A concept a live fact carries is hers to see, as search finds it,
-    // and its tag counts those facts. fact_tags holds retired facts'
-    // tags too, which search wants and the tags list does not.
-    const live = new Set(
-        (
-            index.db
-                .query("SELECT path FROM facts WHERE retired = 0")
-                .all() as {
-                path: string;
-            }[]
-        ).map((row) => row.path),
-    );
-    const factCount = new Map<string, number>();
-    for (const row of factCarriers(index)) {
-        if (live.has(row.path)) {
-            factCount.set(row.id, (factCount.get(row.id) ?? 0) + 1);
-        }
-    }
+    const factCount = liveFactCounts(index);
     const listed = new Set([
         ...listedConcepts(index, exclude, rows),
         ...factCount.keys(),
     ]);
-    let scope = listed;
-    if (input.under !== undefined) {
-        const label = normalise(input.under);
-        const root = conceptByLabel(index, label);
-        if (root === null || !listed.has(root)) {
-            throw new RecallError(`${NO_TAG}: ${label}.`);
-        }
-        const below = narrowerThan(index, root);
-        scope = new Set([...listed].filter((id) => below.has(id)));
-    }
-    const visits = visitsByPhrase(index);
-    const reads = readsByTarget(index);
-    const scores = new Map<string, number>();
-    const score = (phrase: string) => {
-        const known = scores.get(phrase);
-        if (known !== undefined) {
-            return known;
-        }
-        const value = salience(
-            visits.get(phrase) ?? [],
-            reads.get(phrase) ?? [],
-            options.now,
-            options.halfLifeDays,
-        );
-        scores.set(phrase, value);
-        return value;
-    };
-    const carriedBy = new Map<string, string[]>();
-    for (const row of rows) {
-        if (!row.hidden && row.phrase !== exclude) {
-            carriedBy.set(row.id, [
-                ...(carriedBy.get(row.id) ?? []),
-                row.phrase,
-            ]);
-        }
-    }
-    const spans = new Map(
-        (
-            index.db
-                .query(
-                    "SELECT phrase, first_at, last_at FROM conversations WHERE first_at IS NOT NULL",
-                )
-                .all() as {
-                phrase: string;
-                first_at: number;
-                last_at: number;
-            }[]
-        ).map((span) => [span.phrase, span]),
-    );
+    const scope = tagScope(index, input.under, listed);
+    const score = salienceOf(index, options);
+    const carriedBy = carriersOf(rows, exclude);
     const concepts = index.db
         .query("SELECT id, label, alt, scope_note FROM concepts")
         .all() as ConceptRow[];
-    const labelOf = new Map(concepts.map((c) => [c.id, c.label]));
-    const edges = index.db.query("SELECT id, parent FROM broader").all() as {
-        id: string;
-        parent: string;
-    }[];
-    // Neighbours she may see, by preferred label.
-    const named = (ids: string[]) =>
-        ids
-            .filter((id) => listed.has(id))
-            .map((id) => labelOf.get(id) as string)
-            .sort(byLabel);
     const ranked = concepts
         .filter((c) => scope.has(c.id))
         .map((c) => {
@@ -780,43 +706,163 @@ export function listTags(
             (a, b) => b.frecency - a.frecency || byLabel(a.c.label, b.c.label),
         );
     const limit = clamp(input.limit, DEFAULT_TAGS_LIMIT, MAX_TAGS_LIMIT);
+    const describe = tagObject(index, concepts, listed, factCount);
     return {
-        results: ranked.slice(0, limit).map(({ c, phrases }): TagObject => {
-            const alt = JSON.parse(c.alt) as string[];
-            const broader = named(
-                edges.filter((e) => e.id === c.id).map((e) => e.parent),
-            );
-            const narrower = named(
-                edges.filter((e) => e.parent === c.id).map((e) => e.id),
-            );
-            const active = phrases.flatMap((p) => {
-                const span = spans.get(p);
-                return span === undefined ? [] : [span];
-            });
-            return {
-                "@type": "DefinedTerm",
-                name: c.label,
-                ...(alt.length > 0 ? { alternateName: alt } : {}),
-                description: c.scope_note,
-                ...(broader.length > 0 ? { broader } : {}),
-                ...(narrower.length > 0 ? { narrower } : {}),
-                conversations: phrases.length,
-                ...(factCount.has(c.id)
-                    ? { facts: factCount.get(c.id) as number }
-                    : {}),
-                ...(active.length > 0
-                    ? {
-                          dateCreated: localDate(
-                              Math.min(...active.map((s) => s.first_at)),
-                          ),
-                          dateModified: localDate(
-                              Math.max(...active.map((s) => s.last_at)),
-                          ),
-                      }
-                    : {}),
-            };
-        }),
+        results: ranked
+            .slice(0, limit)
+            .map(({ c, phrases }) => describe(c, phrases)),
         more: Math.max(0, ranked.length - limit),
+    };
+}
+
+// A concept a live fact carries is hers to see, as search finds it, and
+// its tag counts those facts. fact_tags holds retired facts' tags too,
+// which search wants and the tags list does not.
+function liveFactCounts(index: RecallIndex): Map<string, number> {
+    const live = new Set(
+        (
+            index.db
+                .query("SELECT path FROM facts WHERE retired = 0")
+                .all() as {
+                path: string;
+            }[]
+        ).map((row) => row.path),
+    );
+    const counts = new Map<string, number>();
+    for (const row of factCarriers(index)) {
+        if (live.has(row.path)) {
+            counts.set(row.id, (counts.get(row.id) ?? 0) + 1);
+        }
+    }
+    return counts;
+}
+
+// The concepts listed, or those under the one named.
+function tagScope(
+    index: RecallIndex,
+    under: string | undefined,
+    listed: ReadonlySet<string>,
+): ReadonlySet<string> {
+    if (under === undefined) {
+        return listed;
+    }
+    const label = normalise(under);
+    const root = conceptByLabel(index, label);
+    if (root === null || !listed.has(root)) {
+        throw new RecallError(`${NO_TAG}: ${label}.`);
+    }
+    const below = narrowerThan(index, root);
+    return new Set([...listed].filter((id) => below.has(id)));
+}
+
+// Each conversation's salience, worked out once.
+function salienceOf(
+    index: RecallIndex,
+    options: QueryOptions,
+): (phrase: string) => number {
+    const visits = visitsByPhrase(index);
+    const reads = readsByTarget(index);
+    const scores = new Map<string, number>();
+    return (phrase) => {
+        const known = scores.get(phrase);
+        if (known !== undefined) {
+            return known;
+        }
+        const value = salience(
+            visits.get(phrase) ?? [],
+            reads.get(phrase) ?? [],
+            options.now,
+            options.halfLifeDays,
+        );
+        scores.set(phrase, value);
+        return value;
+    };
+}
+
+// The conversations she may see that carry each concept.
+function carriersOf(
+    rows: ReturnType<typeof carriers>,
+    exclude: string,
+): Map<string, string[]> {
+    const carriedBy = new Map<string, string[]>();
+    for (const row of rows) {
+        if (!row.hidden && row.phrase !== exclude) {
+            carriedBy.set(row.id, [
+                ...(carriedBy.get(row.id) ?? []),
+                row.phrase,
+            ]);
+        }
+    }
+    return carriedBy;
+}
+
+type Span = { phrase: string; first_at: number; last_at: number };
+
+function conversationSpans(index: RecallIndex): Map<string, Span> {
+    return new Map(
+        (
+            index.db
+                .query(
+                    "SELECT phrase, first_at, last_at FROM conversations WHERE first_at IS NOT NULL",
+                )
+                .all() as Span[]
+        ).map((span) => [span.phrase, span]),
+    );
+}
+
+// A concept as schema.org's DefinedTerm: its neighbours she may see, by
+// preferred label, and the dates of the conversations that carry it.
+function tagObject(
+    index: RecallIndex,
+    concepts: readonly ConceptRow[],
+    listed: ReadonlySet<string>,
+    factCount: ReadonlyMap<string, number>,
+): (c: ConceptRow, phrases: string[]) => TagObject {
+    const spans = conversationSpans(index);
+    const labelOf = new Map(concepts.map((c) => [c.id, c.label]));
+    const edges = index.db.query("SELECT id, parent FROM broader").all() as {
+        id: string;
+        parent: string;
+    }[];
+    const named = (ids: string[]) =>
+        ids
+            .filter((id) => listed.has(id))
+            .map((id) => labelOf.get(id) as string)
+            .sort(byLabel);
+    return (c, phrases) => {
+        const alt = JSON.parse(c.alt) as string[];
+        const broader = named(
+            edges.filter((e) => e.id === c.id).map((e) => e.parent),
+        );
+        const narrower = named(
+            edges.filter((e) => e.parent === c.id).map((e) => e.id),
+        );
+        const active = phrases.flatMap((p) => {
+            const span = spans.get(p);
+            return span === undefined ? [] : [span];
+        });
+        return {
+            "@type": "DefinedTerm",
+            name: c.label,
+            ...(alt.length > 0 ? { alternateName: alt } : {}),
+            description: c.scope_note,
+            ...(broader.length > 0 ? { broader } : {}),
+            ...(narrower.length > 0 ? { narrower } : {}),
+            conversations: phrases.length,
+            ...(factCount.has(c.id)
+                ? { facts: factCount.get(c.id) as number }
+                : {}),
+            ...(active.length > 0
+                ? {
+                      dateCreated: localDate(
+                          Math.min(...active.map((s) => s.first_at)),
+                      ),
+                      dateModified: localDate(
+                          Math.max(...active.map((s) => s.last_at)),
+                      ),
+                  }
+                : {}),
+        };
     };
 }
 

@@ -236,6 +236,22 @@ export function reviewPrompt(
     reads: readonly PendingRead[] = [],
     tags?: ReviewTags,
 ): string {
+    return [
+        ...conversationSection(turns, current, reads),
+        ...readsSection(reads),
+        ...notesSection(current, tags),
+        ...titlesSection(current),
+        ...(tags === undefined ? [] : vocabularySection(tags)),
+    ].join("\n");
+}
+
+// The turns after the clusters, which come first as their abstracts; a
+// read's turn is marked.
+function conversationSection(
+    turns: readonly ResumedTurn[],
+    current: Sidecar | null,
+    reads: readonly PendingRead[],
+): string[] {
     const ids = new Set(reads.map((read) => read.id));
     const clusters = current?.clusters ?? [];
     const covered = clusters.at(-1)?.through ?? 0;
@@ -251,76 +267,88 @@ export function reviewPrompt(
             )
             .join("\n\n"),
     ].join("\n");
-    const notes = [
-        ...FIELDS.map((field) => {
-            const value = current?.[field] ?? null;
-            if (value === null) {
-                return `<${field}/>`;
-            }
-            const by = current?.fields[field]?.by;
-            const mark =
-                by === "user"
-                    ? ' fixed="true"'
-                    : by === "prompt"
-                      ? ' provisional="true"'
-                      : "";
-            return `<${field}${mark}>${escapeXml(value)}</${field}>`;
-        }),
-        ...(tags === undefined ? [] : [tagsLine(tags, current)]),
-    ];
-    const titles = (current?.titles ?? []).map(
-        (past) => `<title>${escapeXml(past.title)}</title>`,
-    );
+    return ["<conversation>", conversation, "</conversation>"];
+}
+
+function readsSection(reads: readonly PendingRead[]): string[] {
+    if (reads.length === 0) {
+        return [];
+    }
     return [
-        "<conversation>",
-        conversation,
-        "</conversation>",
-        ...(reads.length > 0
-            ? [
-                  "",
-                  "Your reads during it, to appraise:",
-                  "<reads>",
-                  ...reads.map(
-                      (read) =>
-                          `<read id="${escapeAttribute(read.id)}" ${read.fact ? "fact" : "conversation"}="${escapeAttribute(read.name)}"${
-                              read.turns === null
-                                  ? ""
-                                  : ` turns="${read.turns[0]}-${read.turns[1]}"`
-                          }>${escapeXml(read.purpose)}</read>`,
-                  ),
-                  "</reads>",
-              ]
-            : []),
+        "",
+        "Your reads during it, to appraise:",
+        "<reads>",
+        ...reads.map(
+            (read) =>
+                `<read id="${escapeAttribute(read.id)}" ${read.fact ? "fact" : "conversation"}="${escapeAttribute(read.name)}"${
+                    read.turns === null
+                        ? ""
+                        : ` turns="${read.turns[0]}-${read.turns[1]}"`
+                }>${escapeXml(read.purpose)}</read>`,
+        ),
+        "</reads>",
+    ];
+}
+
+// Each note, marked fixed where it is the user's and provisional where it
+// is the prompt's; then the tags, when she tags.
+function notesSection(
+    current: Sidecar | null,
+    tags: ReviewTags | undefined,
+): string[] {
+    const notes = FIELDS.map((field) => {
+        const value = current?.[field] ?? null;
+        if (value === null) {
+            return `<${field}/>`;
+        }
+        const by = current?.fields[field]?.by;
+        const mark =
+            by === "user"
+                ? ' fixed="true"'
+                : by === "prompt"
+                  ? ' provisional="true"'
+                  : "";
+        return `<${field}${mark}>${escapeXml(value)}</${field}>`;
+    });
+    return [
         "",
         "Your current notes on it:",
         "<notes>",
         ...notes,
+        ...(tags === undefined ? [] : [tagsLine(tags, current)]),
         "</notes>",
-        ...(titles.length > 0
-            ? [
-                  "",
-                  "Its earlier titles, oldest first:",
-                  "<titles>",
-                  ...titles,
-                  "</titles>",
-              ]
-            : []),
-        ...(tags === undefined
-            ? []
+    ];
+}
+
+function titlesSection(current: Sidecar | null): string[] {
+    const titles = (current?.titles ?? []).map(
+        (past) => `<title>${escapeXml(past.title)}</title>`,
+    );
+    return titles.length === 0
+        ? []
+        : [
+              "",
+              "Its earlier titles, oldest first:",
+              "<titles>",
+              ...titles,
+              "</titles>",
+          ];
+}
+
+function vocabularySection(tags: ReviewTags): string[] {
+    return [
+        "",
+        "The concepts you tag with:",
+        ...(tags.concepts.length === 0
+            ? ["<vocabulary/>"]
             : [
-                  "",
-                  "The concepts you tag with:",
-                  ...(tags.concepts.length === 0
-                      ? ["<vocabulary/>"]
-                      : [
-                            "<vocabulary>",
-                            ...tags.concepts.map(([, concept]) =>
-                                conceptLine(tags, concept),
-                            ),
-                            "</vocabulary>",
-                        ]),
+                  "<vocabulary>",
+                  ...tags.concepts.map(([, concept]) =>
+                      conceptLine(tags, concept),
+                  ),
+                  "</vocabulary>",
               ]),
-    ].join("\n");
+    ];
 }
 
 // The schema already asked for this; the model's output is checked again.
