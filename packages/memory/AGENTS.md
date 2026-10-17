@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-16
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: packages/memory/AGENTS.md
 description: >-
@@ -133,7 +133,7 @@ is the only file importing `@modelcontextprotocol/sdk`.
   directories (`history/testing.ts` has `tempRoot` and `TEST_ENV`).
 - The git binary's tests shut out the user's git configuration.
 - One contract test runs against both history engines, and across them.
-- `memory/fake-session.ts` stands in for a `ChatSession`.
+- `memory/fake-session.ts` fakes a `ChatSession`; `*-testing.ts` share fixtures.
 
 ## See also
 
