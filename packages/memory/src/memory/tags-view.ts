@@ -8,7 +8,7 @@
 //
 //
 
-import { wrap } from "./edit-view.js";
+import { viewLines, wrap } from "./edit-view.js";
 import { normalise } from "./sidecar.js";
 import {
     type Concept,
@@ -142,12 +142,8 @@ export type TagsParse =
 // it, whitespace aside, is an edit; a rendered block that is gone is a
 // deletion.
 export function parseTagsView(text: string, shown: Vocabulary): TagsParse {
-    // Some editors save a byte order mark at the start of the file.
-    const lines = text
-        .replace(/^\uFEFF/, "")
-        .split(/\r?\n/)
-        .filter((line) => !line.startsWith("#"));
-    if (lines.every((line) => line.trim() === "")) {
+    const lines = viewLines(text);
+    if (lines === null) {
         return { kind: "unchanged" };
     }
     const blocks = readBlocks(lines);

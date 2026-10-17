@@ -171,6 +171,16 @@ export function renderEditView(
     return `${lines.join("\n")}\n`;
 }
 
+// A view's lines but its comments; null for a view left empty. Some
+// editors save a byte order mark at the start of the file.
+export function viewLines(text: string): string[] | null {
+    const lines = text
+        .replace(/^\uFEFF/, "")
+        .split(/\r?\n/)
+        .filter((line) => !line.startsWith("#"));
+    return lines.every((line) => line.trim() === "") ? null : lines;
+}
+
 // shown: the sidecar the template was rendered from. Only what differs from
 // it, whitespace aside, is an edit.
 export function parseEditView(
@@ -178,14 +188,31 @@ export function parseEditView(
     shown: Sidecar | null,
     tags?: TagsContext,
 ): EditParse {
-    // Some editors save a byte order mark at the start of the file.
-    const lines = text
-        .replace(/^\uFEFF/, "")
-        .split(/\r?\n/)
-        .filter((line) => !line.startsWith("#"));
-    if (lines.every((line) => line.trim() === "")) {
+    const lines = viewLines(text);
+    if (lines === null) {
         return { kind: "unchanged" };
     }
+    const found = readFields(lines);
+    if (typeof found === "string") {
+        return { kind: "error", reason: found };
+    }
+    const base = shown ?? EMPTY_SIDECAR;
+    const changes: EditChanges = {};
+    const problem =
+        textChanges(found, base, changes) ??
+        flagChanges(found, base, changes) ??
+        tagsChange(found.get("Tags"), tags, base, changes);
+    if (problem !== null) {
+        return { kind: "error", reason: problem };
+    }
+    return Object.keys(changes).length === 0
+        ? { kind: "unchanged" }
+        : { kind: "edit", changes };
+}
+
+// Each field given, normalised; or why the lines are not fields. A
+// paragraph runs on to the next field.
+function readFields(lines: readonly string[]): Map<string, string> | string {
     const found = new Map<string, string[]>();
     let open: string | null = null;
     for (const line of lines) {
@@ -193,104 +220,122 @@ export function parseEditView(
         if (header !== null) {
             const [, name = "", rest = ""] = header;
             if (found.has(name)) {
-                return { kind: "error", reason: `${name} appears twice` };
+                return `${name} appears twice`;
             }
             found.set(name, [rest]);
             open = PARAGRAPHS.has(name) ? name : null;
         } else if (open !== null) {
             found.get(open)?.push(line);
         } else if (line.trim() !== "") {
-            const unknown = UNKNOWN.exec(line);
-            return {
-                kind: "error",
-                reason:
-                    unknown === null
-                        ? `"${line.trim()}" is under no field`
-                        : `there is no field ${unknown[1]}`,
-            };
+            return strayLine(line);
         }
     }
+    return new Map(
+        [...found].map(([name, given]) => [name, normalise(given.join(" "))]),
+    );
+}
 
-    const base = shown ?? EMPTY_SIDECAR;
-    const changes: EditChanges = {};
+function strayLine(line: string): string {
+    const unknown = UNKNOWN.exec(line);
+    return unknown === null
+        ? `"${line.trim()}" is under no field`
+        : `there is no field ${unknown[1]}`;
+}
+
+// Title, Description and Abstract; an emptied one is handed back.
+function textChanges(
+    found: ReadonlyMap<string, string>,
+    base: Sidecar,
+    changes: EditChanges,
+): string | null {
     for (const field of FIELDS) {
-        const given = found.get(LABELS[field]);
-        if (given === undefined) {
+        const value = found.get(LABELS[field]);
+        if (value === undefined) {
             continue;
         }
-        const value = normalise(given.join(" "));
         const problem = overLimit(field, value);
         if (problem !== null) {
-            return { kind: "error", reason: problem };
+            return problem;
         }
         if (value !== (base[field] ?? "")) {
             changes[field] = value === "" ? null : value;
         }
     }
+    return null;
+}
+
+function flagChanges(
+    found: ReadonlyMap<string, string>,
+    base: Sidecar,
+    changes: EditChanges,
+): string | null {
     for (const [label, key] of [
         ["Pinned", "pinned"],
         ["Hidden", "hidden"],
     ] as const) {
-        const given = found.get(label);
-        if (given === undefined) {
+        const answer = found.get(label);
+        if (answer === undefined) {
             continue;
         }
-        const answer = normalise(given.join(" "));
         const yes = answer.toLowerCase() === "yes";
         if (!yes && answer.toLowerCase() !== "no") {
-            return {
-                kind: "error",
-                reason: `${label} takes yes or no, not "${answer}"`,
-            };
+            return `${label} takes yes or no, not "${answer}"`;
         }
         if (yes !== base[key]) {
             changes[key] = yes;
         }
     }
-    const given = found.get("Tags");
-    if (given !== undefined) {
-        if (tags === undefined) {
-            return { kind: "error", reason: "there is no field Tags" };
+    return null;
+}
+
+function tagsChange(
+    given: string | undefined,
+    tags: TagsContext | undefined,
+    base: Sidecar,
+    changes: EditChanges,
+): string | null {
+    if (given === undefined) {
+        return null;
+    }
+    if (tags === undefined) {
+        return "there is no field Tags";
+    }
+    if (tags.kind === "broken") {
+        return TAGS_BROKEN;
+    }
+    const ids = tagIds(given, tags.vocabulary);
+    if (typeof ids === "string") {
+        return ids;
+    }
+    const current = resolveTags(tags.vocabulary, base.tags);
+    const same =
+        ids.length === current.length &&
+        ids.every((id, at) => id === current[at]);
+    // A fixed set whose concepts are all gone shows as an empty line,
+    // which hands it back as emptying it would.
+    const lapsed = ids.length === 0 && base.fields.tags?.by === "user";
+    if (!same || lapsed) {
+        changes.tags = ids.length === 0 ? null : ids;
+    }
+    return null;
+}
+
+// The concepts a Tags: line names, once each; or why it can't.
+function tagIds(given: string, vocabulary: Vocabulary): string[] | string {
+    const ids: string[] = [];
+    for (const label of given.split(";").map(normalise)) {
+        if (label === "") {
+            continue;
         }
-        if (tags.kind === "broken") {
-            return { kind: "error", reason: TAGS_BROKEN };
+        const id = resolveLabel(vocabulary, label);
+        if (id === null) {
+            return `No tag by that name: ${label}`;
         }
-        const ids: string[] = [];
-        for (const label of normalise(given.join(" "))
-            .split(";")
-            .map(normalise)) {
-            if (label === "") {
-                continue;
-            }
-            const id = resolveLabel(tags.vocabulary, label);
-            if (id === null) {
-                return {
-                    kind: "error",
-                    reason: `No tag by that name: ${label}`,
-                };
-            }
-            if (!ids.includes(id)) {
-                ids.push(id);
-            }
-        }
-        if (ids.length > TAG_LIMITS.tags) {
-            return {
-                kind: "error",
-                reason: `Tags takes at most ${TAG_LIMITS.tags} tags`,
-            };
-        }
-        const current = resolveTags(tags.vocabulary, base.tags);
-        const same =
-            ids.length === current.length &&
-            ids.every((id, at) => id === current[at]);
-        // A fixed set whose concepts are all gone shows as an empty line,
-        // which hands it back as emptying it would.
-        const lapsed = ids.length === 0 && base.fields.tags?.by === "user";
-        if (!same || lapsed) {
-            changes.tags = ids.length === 0 ? null : ids;
+        if (!ids.includes(id)) {
+            ids.push(id);
         }
     }
-    return Object.keys(changes).length === 0
-        ? { kind: "unchanged" }
-        : { kind: "edit", changes };
+    return ids.length > TAG_LIMITS.tags
+        ? `Tags takes at most ${TAG_LIMITS.tags} tags`
+        : ids;
 }
