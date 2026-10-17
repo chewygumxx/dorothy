@@ -22,7 +22,7 @@
         "@dorothy/cli": "workspace:*"
     },
     "devDependencies": {
-        "@biomejs/biome": "2.5.14",
+        "@biomejs/biome": "2.5.15",
         "markdownlint-cli2": "^0.23.3",
         "@chewygumxx/biome-config": "^1.0.0",
         "@chewygumxx/commitlint-config": "^1.1.0",
@@ -31,7 +31,7 @@
         "@chewygumxx/remark-preset": "^1.0.3",
         "@chewygumxx/yamllint-config": "^1.0.0",
         "@commitlint/cli": "^21.2.2",
-        "@dotenvx/dotenvx": "^2.32.4",
+        "@dotenvx/dotenvx": "^2.38.0",
         "@types/bun": "^1.4.2",
         "commitizen": "^4.3.2",
         "husky": "^9.1.7",
