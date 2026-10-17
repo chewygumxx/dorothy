@@ -137,7 +137,8 @@ first; where a task disagrees, these win.
 
 - Consumes: nothing new.
 - Produces:
-  - `type Style = { bold?; italic?; underline?; strikethrough?; dim?: boolean; color?: string }`
+  - `type Style = { bold?; italic?; underline?; strikethrough?; dim?: boolean;
+    color?: string }`
   - `type Span = { text: string; style: Style }`, `type Row = Span[]`
   - `const PLAIN: Style`
   - `graphemes(text: string): string[]`
@@ -1054,7 +1055,8 @@ Expected: the 7 new tests FAIL (lists and quotes print as raw text).
 - [ ] **Step 3: Implement**
 
 In `render.ts`, add `import stringWidth from "string-width";`, change the
-marked import to `import { type MarkedToken, marked, type Token, type Tokens } from "marked";`,
+marked import to `import { type MarkedToken, marked, type Token, type Tokens }
+from "marked";`,
 add the quote gutter beside `GUTTER`:
 
 ```ts

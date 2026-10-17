@@ -186,7 +186,8 @@ Ctrl keys to App's `onCtrl`, as only it sees those typed with text.
 | Ctrl+R                              | Toggle the raw pane                                     |
 
 The key hints become
-`enter send · shift+enter newline · ctrl+g editor · esc stop · ctrl+r raw · ctrl+c quit`,
+`enter send · shift+enter newline · ctrl+g editor · esc stop · ctrl+r raw ·
+ctrl+c quit`,
 truncated where the terminal is narrower.
 
 ## Testing

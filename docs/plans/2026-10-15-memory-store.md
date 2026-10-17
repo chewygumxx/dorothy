@@ -406,7 +406,12 @@ Append to `packages/memory/src/memory/review.test.ts`, beside the test
 
 - [ ] **Step 7: Run them to see them fail**
 
-Run: `bun test packages/memory/src/transcript.test.ts packages/memory/src/compaction/plan.test.ts packages/memory/src/memory/review.test.ts`
+Run:
+
+```bash
+bun test packages/memory/src/transcript.test.ts packages/memory/src/compaction/plan.test.ts packages/memory/src/memory/review.test.ts
+```
+
 Expected: FAIL: `toolEntry` and `sourceOf` are not exported; the
 compaction and review tests pass already (they pin behaviour).
 

@@ -50,7 +50,8 @@ the Too Small message beside the still-mounted `History`.
 - Module names: `in`, `cache-read`, `cache-write`, `out`, `ttft`, `duration`,
   `cost`, `chat-cost`; separator `" · "`.
 - Too Small text:
-  `Too Small: Dorothy's TUI needs at least <R> lines and 40 columns (this window is <rows> × <columns>)`.
+  `Too Small: Dorothy's TUI needs at least <R> lines and 40 columns (this window
+  is <rows> × <columns>)`.
 - Commits: header at most 50 characters, body lines at most 72; scopes
   `sdk` (`src/` outside the TUI), `tui`, `config`, `claude`; no em dashes.
   Run `bun run format` and `bun run lint` before each commit.
@@ -123,7 +124,8 @@ the Too Small message beside the still-mounted `History`.
 **Interfaces:**
 
 - Produces: `type Env = Record<string, string | undefined>`;
-  `xdgDir(env: Env, variable: "XDG_DATA_HOME" | "XDG_CONFIG_HOME", fallback: string): string`.
+  `xdgDir(env: Env, variable: "XDG_DATA_HOME" | "XDG_CONFIG_HOME", fallback:
+  string): string`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -624,9 +626,11 @@ git commit -m "feat(sdk): Read settings from config.toml"
   `TurnStats` from `../conversation.js` (type only).
 - Produces:
   - `SEPARATOR = " · "`
-  - `renderModule(name: ModuleName, stats: TurnStats | null, chatCostUsd: number): string | null`
+  - `renderModule(name: ModuleName, stats: TurnStats | null, chatCostUsd:
+    number): string | null`
   - `fitModules(pieces: string[], width: number, maxLines: number): string[]`
-  - `moduleRows(line: LineConfig, stats: TurnStats | null, chatCostUsd: number, width: number): string[]`
+  - `moduleRows(line: LineConfig, stats: TurnStats | null, chatCostUsd: number,
+    width: number): string[]`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -876,7 +880,8 @@ git commit -m "feat(tui): Render and fit statusline modules"
 
 - Consumes: `moduleRows` (Task 3); `Config`, `LineConfig`, `DEFAULT_CONFIG`,
   `readConfig` (Task 2).
-- Produces: `History({ lines, replyStats }: { lines: Line[]; replyStats: LineConfig })`;
+- Produces: `History({ lines, replyStats }: { lines: Line[]; replyStats:
+  LineConfig })`;
   `AppProps.config?: Config` (default `DEFAULT_CONFIG`); `formatStats` is
   removed.
 
@@ -1023,7 +1028,8 @@ import type { Line } from "./state.js";
 import { moduleRows } from "./statusline.js";
 ```
 
-Make `LineView` take `{ line, replyStats }: { line: Line; replyStats: LineConfig }`
+Make `LineView` take `{ line, replyStats }: { line: Line; replyStats: LineConfig
+}`
 and replace its stats block with:
 
 ```tsx
@@ -1120,8 +1126,10 @@ git commit -m "feat(tui): Configure the stats under each reply"
 **Interfaces:**
 
 - Consumes: `TurnStats` (type) from `./conversation.js`.
-- Produces: `type ResumedTurn = Turn & { stats?: TurnStats; chatCostUsd?: number }`
-  from `src/transcript.ts`; `readTranscript(path): Promise<{ turns: ResumedTurn[]; skipped: number; costUsd: number }>`;
+- Produces: `type ResumedTurn = Turn & { stats?: TurnStats; chatCostUsd?: number
+  }`
+  from `src/transcript.ts`; `readTranscript(path): Promise<{ turns:
+  ResumedTurn[]; skipped: number; costUsd: number }>`;
   `initialState(history: readonly ResumedTurn[], …)`;
   `AppProps.history: ResumedTurn[]`.
 

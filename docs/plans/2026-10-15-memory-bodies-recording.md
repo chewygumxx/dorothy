@@ -4982,7 +4982,8 @@ Existing expectations that change, since with memory on every launch
 is noted and passes its hooks and a new session's id:
 
 - `describe("dorothy --claude with memory")`'s `SETTINGS` becomes
-  `--settings=${JSON.stringify({ permissions: { allow: [...] }, ...hookSettings(SELF) })}`
+  `--settings=${JSON.stringify({ permissions: { allow: [...] },
+  ...hookSettings(SELF) })}`
   (the `allow` list as it is), and the first test's `cmd` gains
   `` `--session-id=${SESSION}` `` after `MCP`.
 - "serves no recall with recall off, but keeps the block" expects

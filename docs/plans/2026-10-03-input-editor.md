@@ -98,7 +98,8 @@ first; where a task disagrees, these win.
 - **App owns the editor's memory.** Input is unmounted while the window is
   too small, which would reset its kill buffer, goal column and recall
   state. Task 4 exports
-  `type EditorMemory = { killed: string; goal: number | null; recall: Recall | null }`
+  `type EditorMemory = { killed: string; goal: number | null; recall: Recall |
+  null }`
   from `Input.tsx` and adds `memory: EditorMemory` to `InputProps`; Input
   reads and writes `memory.killed`, `memory.goal` and `memory.recall` where
   the plan has `killed.current`, `goal.current` and `recall.current`
@@ -121,7 +122,8 @@ first; where a task disagrees, these win.
 - The draft shows at most `max(3, floor(rows / 3))` rows.
 - Ctrl+C: stop a reply; else clear a non-empty draft; else quit. Ctrl+D: quit
   on an empty draft; else delete forward.
-- Key hints: `enter send · shift+enter newline · ctrl+g editor · esc stop · ctrl+r raw · ctrl+c quit`.
+- Key hints: `enter send · shift+enter newline · ctrl+g editor · esc stop ·
+  ctrl+r raw · ctrl+c quit`.
 - `$EDITOR` order: `$VISUAL`, then `$EDITOR`, then `vi`, run as
   `sh -c '<editor> "$1"' sh <file>`; the file is `draft.md` in a fresh
   `mkdtemp` directory, mode `0600`, removed afterwards.
@@ -427,11 +429,13 @@ git commit -m "feat(tui): Add pure draft edits"
   `./markdown/spans.js`; `Draft` from Task 1.
 - Produces:
   - `type DraftRow = { text: string; start: number }`
-  - `type DraftLayout = { rows: DraftRow[]; cursorRow: number; cursorColumn: number }`
+  - `type DraftLayout = { rows: DraftRow[]; cursorRow: number; cursorColumn:
+    number }`
   - `layoutDraft(draft: Draft, width: number): DraftLayout`
   - `offsetAt(row: DraftRow, column: number): number`
   - `up`, `down`: `(draft: Draft, width: number, column?: number) => Draft | null`
-  - `draftWindow(layout: DraftLayout, maxRows: number): { first: number; last: number }`
+  - `draftWindow(layout: DraftLayout, maxRows: number): { first: number; last:
+    number }`
   - `maxDraftRows(rows: number): number`
 
 - [ ] **Step 1: Write the failing tests**
@@ -802,7 +806,9 @@ git commit -m "feat(tui): Add message recall"
   - `KEY_HINTS: string`, `PROMPT_WIDTH = 2`
   - `draftWidth(columns: number): number` (`max(1, columns - 3)`)
   - `cleanPaste(text: string): string`
-  - `type InputProps = { draft: Draft; messages: readonly string[]; canSend: boolean; maxRows: number; onChange(draft: Draft): void; onSubmit(text: string): void }`
+  - `type InputProps = { draft: Draft; messages: readonly string[]; canSend:
+    boolean; maxRows: number; onChange(draft: Draft): void; onSubmit(text:
+    string): void }`
   - `Input(props: InputProps)`
 
 - [ ] **Step 1: Write the failing tests**
@@ -1546,7 +1552,8 @@ record that in the ledger.)
 **Interfaces:**
 
 - Produces:
-  - `type EditResult = { ok: true; text: string } | { ok: false; message: string }`
+  - `type EditResult = { ok: true; text: string } | { ok: false; message: string
+    }`
   - `editorCommand(env?: NodeJS.ProcessEnv): string`
   - `editInEditor(text: string, command?: string): Promise<EditResult>`
   - `AppProps.editDraft(text: string): Promise<EditResult>`

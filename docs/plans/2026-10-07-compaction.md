@@ -1774,7 +1774,8 @@ export async function runRecallServer(
 
 (the rest unchanged). The local import name `recollect` from `./query.js`
 clashes with the parameter: import it as
-`import { openConversation, RecallError, recollect as recollectIn, search } from "./query.js";`
+`import { openConversation, RecallError, recollect as recollectIn, search } from
+"./query.js";`
 and call `recollectIn(index, input, { phrase: live })` in the tool.
 
 In `src/index.ts`, change the mode to
