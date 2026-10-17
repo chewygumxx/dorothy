@@ -8,7 +8,7 @@
 //
 //
 
-import { Box, Text, useInput, usePaste, useWindowSize } from "ink";
+import { Box, type Key, Text, useInput, usePaste, useWindowSize } from "ink";
 import { type ReactNode, useRef } from "react";
 import {
     backspace,
@@ -118,6 +118,45 @@ function gutterOf(
     return index === 0 ? "›" : "";
 }
 
+// What a key that moves the cursor or deletes makes of the draft; null
+// for any other key, and for Meta+Backspace, which kills.
+function moveFor(input: string, key: Key, current: Draft): Draft | null {
+    const moved = sideways(input, key, current);
+    if (moved !== null) {
+        return moved;
+    }
+    if (key.home) {
+        return lineStart(current);
+    }
+    if (key.end) {
+        return lineEnd(current);
+    }
+    if (key.backspace && !key.meta) {
+        return backspace(current);
+    }
+    if (key.delete) {
+        return deleteForward(current);
+    }
+    return null;
+}
+
+// Left and right, by words with Ctrl or Meta; Meta+B and Meta+F too.
+function sideways(input: string, key: Key, current: Draft): Draft | null {
+    const word = key.ctrl || key.meta;
+    const metaLetter = key.meta && !key.ctrl ? input : "";
+    if (key.leftArrow || metaLetter === "b") {
+        return word ? wordLeft(current) : left(current);
+    }
+    if (key.rightArrow || metaLetter === "f") {
+        return word ? wordRight(current) : right(current);
+    }
+    return null;
+}
+
+// Text typed, as no key the editor acts on.
+const isText = (input: string, key: Key) =>
+    !key.meta && !key.escape && !key.tab && input !== "";
+
 export function Input({
     draft,
     messages,
@@ -207,71 +246,68 @@ export function Input({
         }
     };
 
-    useInput((input, key) => {
-        const current = latest.current;
-        if (key.return) {
-            if (key.shift) {
-                change(insert(current, "\n"));
-            } else if (canSend) {
+    // Enter sends, unless shifted or a reply streams.
+    const enter = (shift: boolean) => {
+        if (shift) {
+            change(insert(latest.current, "\n"));
+        } else if (canSend) {
+            memory.recall = null;
+            onSubmit(latest.current.text);
+        }
+    };
+
+    // Keys the terminal sends together (fast typing, or typing before raw
+    // mode is on) reach here as one chunk, Enter and Ctrl keys included;
+    // Ink leaves them in the text. Each acts as if typed alone, but only
+    // the first Enter sends: App cannot stop sending until it renders
+    // again, so later ones start new lines, as does one that cannot send.
+    // Pastes come through usePaste instead.
+    const typeChunk = (input: string) => {
+        let sent = false;
+        for (const part of input.split(TYPED_KEYS)) {
+            if (!/^[\r\n]/.test(part)) {
+                typedPart(part);
+            } else if (canSend && !sent) {
+                const text = latest.current.text;
                 memory.recall = null;
-                onSubmit(current.text);
+                onSubmit(text);
+                sent = text.trim() !== "";
+                latest.current = EMPTY_DRAFT;
+            } else {
+                change(insert(latest.current, "\n"));
             }
+        }
+    };
+    // A Ctrl key or text from a chunk; other controls do nothing.
+    const typedPart = (part: string) => {
+        if (!TYPED_KEYS.test(part)) {
+            if (part !== "") {
+                change(insert(latest.current, cleanPaste(part)));
+            }
+            return;
+        }
+        const code = part.charCodeAt(0);
+        if (code >= 1 && code <= 26) {
+            control(String.fromCharCode(code + 96));
+        }
+    };
+
+    useInput((input, key) => {
+        const moved = moveFor(input, key, latest.current);
+        if (key.return) {
+            enter(key.shift);
         } else if (key.upArrow) {
             vertical("up");
         } else if (key.downArrow) {
             vertical("down");
-        } else if (key.leftArrow) {
-            change(key.ctrl || key.meta ? wordLeft(current) : left(current));
-        } else if (key.rightArrow) {
-            change(key.ctrl || key.meta ? wordRight(current) : right(current));
-        } else if (key.home) {
-            change(lineStart(current));
-        } else if (key.end) {
-            change(lineEnd(current));
+        } else if (moved !== null) {
+            change(moved);
         } else if (key.backspace) {
-            if (key.meta) {
-                kill(killWordBack(current));
-            } else {
-                change(backspace(current));
-            }
-        } else if (key.delete) {
-            change(deleteForward(current));
+            kill(killWordBack(latest.current));
         } else if (key.ctrl) {
             control(input);
-        } else if (key.meta) {
-            if (input === "b") {
-                change(wordLeft(current));
-            } else if (input === "f") {
-                change(wordRight(current));
-            }
-        } else if (!key.escape && !key.tab && input) {
-            // Keys the terminal sends together (fast typing, or typing before
-            // raw mode is on) reach here as one chunk, Enter and Ctrl keys
-            // included; Ink leaves them in the text. Each acts as if typed
-            // alone, but only the first Enter sends: App cannot stop sending
-            // until it renders again, so later ones start new lines, as does
-            // one that cannot send. Pastes come through usePaste instead.
-            let sent = false;
-            for (const part of input.split(TYPED_KEYS)) {
-                if (/^[\r\n]/.test(part)) {
-                    const text = latest.current.text;
-                    if (canSend && !sent) {
-                        memory.recall = null;
-                        onSubmit(text);
-                        sent = text.trim() !== "";
-                        latest.current = EMPTY_DRAFT;
-                    } else {
-                        change(insert(latest.current, "\n"));
-                    }
-                } else if (TYPED_KEYS.test(part)) {
-                    const code = part.charCodeAt(0);
-                    if (code >= 1 && code <= 26) {
-                        control(String.fromCharCode(code + 96));
-                    }
-                } else if (part !== "") {
-                    change(insert(latest.current, cleanPaste(part)));
-                }
-            }
+        } else if (isText(input, key)) {
+            typeChunk(input);
         }
     });
 
@@ -279,23 +315,40 @@ export function Input({
         change(insert(latest.current, cleanPaste(text)));
     });
 
-    if (draft.text === "") {
-        // The hints, right-aligned by padding, are cut short rather than
-        // wrapped.
-        const pad = Math.max(1, width - KEY_HINTS.length);
-        return (
-            <Box>
-                <Box width={PROMPT_WIDTH} flexShrink={0}>
-                    <Text>›</Text>
-                </Box>
-                <Text wrap="truncate">
-                    ▏{" ".repeat(pad)}
-                    <Text dimColor>{KEY_HINTS}</Text>
-                </Text>
-            </Box>
-        );
-    }
+    return draft.text === "" ? (
+        <Hints width={width} />
+    ) : (
+        <DraftRows draft={draft} width={width} maxRows={maxRows} />
+    );
+}
 
+// The empty draft's line: the hints, right-aligned by padding, cut short
+// rather than wrapped.
+function Hints({ width }: { width: number }) {
+    const pad = Math.max(1, width - KEY_HINTS.length);
+    return (
+        <Box>
+            <Box width={PROMPT_WIDTH} flexShrink={0}>
+                <Text>›</Text>
+            </Box>
+            <Text wrap="truncate">
+                ▏{" ".repeat(pad)}
+                <Text dimColor>{KEY_HINTS}</Text>
+            </Text>
+        </Box>
+    );
+}
+
+// The rows of the draft the window shows, the cursor's drawn.
+function DraftRows({
+    draft,
+    width,
+    maxRows,
+}: {
+    draft: Draft;
+    width: number;
+    maxRows: number;
+}) {
     const layout = layoutDraft(draft, width);
     const { first, last } = draftWindow(layout, maxRows);
     return (
