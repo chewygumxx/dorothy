@@ -386,20 +386,62 @@ export function applyTagsEdit(
     at: string,
     random?: (size: number) => Uint8Array,
 ): { ok: true; vocabulary: Vocabulary } | { ok: false; reason: string } {
-    const fail = (reason: string) => ({ ok: false as const, reason });
     const v: Vocabulary = { ...current, concepts: { ...current.concepts } };
-    const live = (id: string) => v.concepts[id] as Concept;
-    for (const id of [
+    const gone = [
         ...edit.changed.keys(),
         ...edit.deleted,
         ...edit.merged.keys(),
-    ]) {
-        if (!isConcept(v.concepts[id])) {
-            return fail(`${id} has gone since the editor opened`);
-        }
+    ].find((id) => !isConcept(v.concepts[id]));
+    if (gone !== undefined) {
+        return {
+            ok: false,
+            reason: `${gone} has gone since the editor opened`,
+        };
     }
-    for (const [id, change] of edit.changed) {
-        const old = live(id);
+    relabel(v, edit.changed, at);
+    const parents = [
+        ...[...edit.changed].flatMap(([id, change]) =>
+            change.under === undefined
+                ? []
+                : [[id, change.under] as [string, string[]]],
+        ),
+        ...create(v, edit.created, at, random),
+    ];
+    // Merge targets are named as the labels stand before any deletion or
+    // merge, so a chain or a merge into a deleted concept is seen as one
+    // whatever the order of the blocks.
+    const targets = new Map(
+        [...edit.merged].map(([source, label]) => [
+            source,
+            resolveLabel(v, label),
+        ]),
+    );
+    for (const id of edit.deleted) {
+        v.concepts[id] = { deleted: at, labels: labelsOf(conceptIn(v, id)) };
+    }
+    const problem = setParents(v, parents) ?? mergeAll(v, edit, targets, at);
+    if (problem !== null) {
+        return { ok: false, reason: problem };
+    }
+    forgetDeleted(v, new Set(edit.deleted));
+    unblockLabels(v);
+    const invalid = vocabularyProblem(v);
+    return invalid === null
+        ? { ok: true, vocabulary: v }
+        : { ok: false, reason: invalid };
+}
+
+// A concept applyTagsEdit has checked is live.
+const conceptIn = (v: Vocabulary, id: string) => v.concepts[id] as Concept;
+
+// The changed labels and notes, made the user's.
+function relabel(
+    v: Vocabulary,
+    changed: ReadonlyMap<string, ConceptChange>,
+    at: string,
+): void {
+    for (const [id, change] of changed) {
+        const old = conceptIn(v, id);
         v.concepts[id] = {
             ...old,
             prefLabel: change.tag ?? old.prefLabel,
@@ -408,13 +450,16 @@ export function applyTagsEdit(
             edited: at,
         };
     }
-    const parents: [string, string[]][] = [];
-    for (const [id, change] of edit.changed) {
-        if (change.under !== undefined) {
-            parents.push([id, change.under]);
-        }
-    }
-    for (const draft of edit.created) {
+}
+
+// The new concepts, the user's, with the parents each names.
+function create(
+    v: Vocabulary,
+    drafts: readonly ConceptDraft[],
+    at: string,
+    random?: (size: number) => Uint8Array,
+): [string, string[]][] {
+    return drafts.map((draft) => {
         const id = newId(v, random);
         v.concepts[id] = {
             prefLabel: draft.tag,
@@ -425,83 +470,97 @@ export function applyTagsEdit(
             at,
             edited: null,
         };
-        parents.push([id, draft.under]);
-    }
-    // Merge targets are named as the labels stand before any deletion or
-    // merge, so a chain or a merge into a deleted concept is seen as one
-    // whatever the order of the blocks.
-    const targets = new Map<string, string | null>();
-    for (const [source, label] of edit.merged) {
-        targets.set(source, resolveLabel(v, label));
-    }
-    for (const id of edit.deleted) {
-        v.concepts[id] = { deleted: at, labels: labelsOf(live(id)) };
-    }
+        return [id, draft.under];
+    });
+}
+
+// Each concept's parents, by label; or the first label that names none.
+function setParents(
+    v: Vocabulary,
+    parents: readonly [string, string[]][],
+): string | null {
     for (const [id, labels] of parents) {
         const broader: string[] = [];
         for (const label of labels) {
             const parent = resolveLabel(v, label);
             if (parent === null) {
-                return fail(`Under names no concept: ${label}`);
+                return `Under names no concept: ${label}`;
             }
             if (!broader.includes(parent)) {
                 broader.push(parent);
             }
         }
-        v.concepts[id] = { ...live(id), broader };
+        v.concepts[id] = { ...conceptIn(v, id), broader };
     }
+    return null;
+}
+
+// Each merge, once checked against the others and the deletions.
+function mergeAll(
+    v: Vocabulary,
+    edit: TagsEdit,
+    targets: ReadonlyMap<string, string | null>,
+    at: string,
+): string | null {
     const sources = new Set(edit.merged.keys());
     for (const [source, label] of edit.merged) {
         const target = targets.get(source) ?? null;
         if (target === null) {
-            return fail(`Merge names no concept: ${label}`);
+            return `Merge names no concept: ${label}`;
         }
         if (target === source) {
-            return fail(`${label} can't be merged into itself`);
+            return `${label} can't be merged into itself`;
         }
         if (sources.has(target)) {
-            return fail(
-                `${label} is merged itself, so nothing can be merged into it`,
-            );
+            return `${label} is merged itself, so nothing can be merged into it`;
         }
         if (edit.deleted.includes(target)) {
-            return fail(
-                `${label} is deleted, so nothing can be merged into it`,
-            );
+            return `${label} is deleted, so nothing can be merged into it`;
         }
-        const from = live(source);
-        const into = live(target);
-        v.concepts[source] = { mergedInto: target, at };
-        const taken = new Set(labelsOf(into).map(labelKey));
-        const altLabel = [...into.altLabel];
-        for (const moved of labelsOf(from)) {
-            if (
-                altLabel.length < TAG_LIMITS.altLabels &&
-                !taken.has(labelKey(moved))
-            ) {
-                altLabel.push(moved);
-                taken.add(labelKey(moved));
-            }
-        }
-        v.concepts[target] = { ...into, altLabel, edited: at };
-        for (const [id, term] of Object.entries(v.concepts)) {
-            if (isConcept(term) && term.broader.includes(source)) {
-                v.concepts[id] = {
-                    ...term,
-                    broader: [
-                        ...new Set(
-                            term.broader.map((parent) =>
-                                parent === source ? target : parent,
-                            ),
-                        ),
-                    ].filter((parent) => parent !== id),
-                };
-            } else if (isMerged(term) && term.mergedInto === source) {
-                v.concepts[id] = { ...term, mergedInto: target };
-            }
+        merge(v, source, target, at);
+    }
+    return null;
+}
+
+// Folds source into target: its labels become the target's alternatives,
+// as many as fit, and whatever pointed at it points at the target.
+function merge(v: Vocabulary, source: string, target: string, at: string) {
+    const from = conceptIn(v, source);
+    const into = conceptIn(v, target);
+    v.concepts[source] = { mergedInto: target, at };
+    const taken = new Set(labelsOf(into).map(labelKey));
+    const altLabel = [...into.altLabel];
+    for (const moved of labelsOf(from)) {
+        if (
+            altLabel.length < TAG_LIMITS.altLabels &&
+            !taken.has(labelKey(moved))
+        ) {
+            altLabel.push(moved);
+            taken.add(labelKey(moved));
         }
     }
-    const deleted = new Set(edit.deleted);
+    v.concepts[target] = { ...into, altLabel, edited: at };
+    for (const [id, term] of Object.entries(v.concepts)) {
+        if (isConcept(term) && term.broader.includes(source)) {
+            v.concepts[id] = {
+                ...term,
+                broader: [
+                    ...new Set(
+                        term.broader.map((parent) =>
+                            parent === source ? target : parent,
+                        ),
+                    ),
+                ].filter((parent) => parent !== id),
+            };
+        } else if (isMerged(term) && term.mergedInto === source) {
+            v.concepts[id] = { ...term, mergedInto: target };
+        }
+    }
+}
+
+// Nothing points at a deleted concept: a merge into it goes, and a child
+// loses it as a parent.
+function forgetDeleted(v: Vocabulary, deleted: ReadonlySet<string>): void {
     for (const [id, term] of Object.entries(v.concepts)) {
         if (isMerged(term) && deleted.has(term.mergedInto)) {
             delete v.concepts[id];
@@ -515,7 +574,10 @@ export function applyTagsEdit(
             };
         }
     }
-    // A label the user gave a live concept is no longer blocked.
+}
+
+// A label the user gave a live concept is no longer blocked.
+function unblockLabels(v: Vocabulary): void {
     const liveKeys = new Set(
         Object.values(v.concepts)
             .filter(isConcept)
@@ -523,17 +585,16 @@ export function applyTagsEdit(
             .map(labelKey),
     );
     for (const [id, term] of Object.entries(v.concepts)) {
-        if (isDeleted(term)) {
-            const labels = term.labels.filter(
-                (label) => !liveKeys.has(labelKey(label)),
-            );
-            if (labels.length === 0) {
-                delete v.concepts[id];
-            } else if (labels.length !== term.labels.length) {
-                v.concepts[id] = { ...term, labels };
-            }
+        if (!isDeleted(term)) {
+            continue;
+        }
+        const labels = term.labels.filter(
+            (label) => !liveKeys.has(labelKey(label)),
+        );
+        if (labels.length === 0) {
+            delete v.concepts[id];
+        } else if (labels.length !== term.labels.length) {
+            v.concepts[id] = { ...term, labels };
         }
     }
-    const problem = vocabularyProblem(v);
-    return problem === null ? { ok: true, vocabulary: v } : fail(problem);
 }
