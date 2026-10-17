@@ -106,32 +106,38 @@ function entryProblem(
     if (dir !== null) {
         return `${it}'s memory directory: ${dir}`;
     }
-    if (
-        !isRecord(entry.synced) ||
-        !Object.entries(entry.synced).every(
+    if (!isSynced(entry.synced)) {
+        return `${it}'s synced records are not facts' hashes by root and directory, with the last synced`;
+    }
+    return null;
+}
+
+// By absolute root: the directory it synced last, and by memory directory,
+// each fact's hash as both sides last held it there.
+function isSynced(synced: unknown): boolean {
+    return (
+        isRecord(synced) &&
+        Object.entries(synced).every(
             ([root, sync]) =>
                 isAbsolute(root) &&
                 isRecord(sync) &&
                 typeof sync.last === "string" &&
                 isRecord(sync.dirs) &&
                 Object.hasOwn(sync.dirs, sync.last) &&
-                Object.entries(sync.dirs).every(
-                    ([dir, record]) =>
-                        memoryDirProblem(dir) === null &&
-                        isRecord(record) &&
-                        Object.entries(record).every(
-                            ([name, hash]) =>
-                                FACT_NAME.test(name) &&
-                                typeof hash === "string" &&
-                                HASH.test(hash),
-                        ),
+                Object.entries(sync.dirs).every(([dir, record]) =>
+                    isDirRecord(dir, record),
                 ),
         )
-    ) {
-        return `${it}'s synced records are not facts' hashes by root and directory, with the last synced`;
-    }
-    return null;
+    );
 }
+
+const isDirRecord = (dir: string, record: unknown): boolean =>
+    memoryDirProblem(dir) === null &&
+    isRecord(record) &&
+    Object.entries(record).every(
+        ([name, hash]) =>
+            FACT_NAME.test(name) && typeof hash === "string" && HASH.test(hash),
+    );
 
 export function parseRegistry(text: string): RegistryRead {
     let value: unknown;

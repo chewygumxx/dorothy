@@ -284,29 +284,7 @@ export function readCommon(
         throw new Problem("metadata is not a mapping");
     }
     const type = oneOf(metadata.type, "metadata.type", FACT_TYPES);
-    const extra: Record<string, Extra> = {};
-    for (const [key, value] of Object.entries(metadata)) {
-        if (key === "type") {
-            continue;
-        }
-        if (
-            key === "__proto__" ||
-            !EXTRA_KEY.test(key) ||
-            !(
-                typeof value === "string" ||
-                typeof value === "boolean" ||
-                (typeof value === "number" && Number.isFinite(value))
-            )
-        ) {
-            throw new Problem(
-                `metadata.${key} is not text, a number or a boolean`,
-            );
-        }
-        if (typeof value === "string") {
-            visible(value, `metadata.${key}`);
-        }
-        extra[key] = value;
-    }
+    const extra = readExtra(metadata);
     return {
         name,
         description: text(
@@ -319,6 +297,32 @@ export function readCommon(
         body: checkBody(body),
     };
 }
+
+// The metadata beside its type, kept as written: text, numbers and
+// booleans under plain keys.
+function readExtra(metadata: Record<string, unknown>): Record<string, Extra> {
+    const extra: Record<string, Extra> = {};
+    for (const [key, value] of Object.entries(metadata)) {
+        if (key === "type") {
+            continue;
+        }
+        if (key === "__proto__" || !EXTRA_KEY.test(key) || !isExtra(value)) {
+            throw new Problem(
+                `metadata.${key} is not text, a number or a boolean`,
+            );
+        }
+        if (typeof value === "string") {
+            visible(value, `metadata.${key}`);
+        }
+        extra[key] = value;
+    }
+    return extra;
+}
+
+const isExtra = (value: unknown): value is Extra =>
+    typeof value === "string" ||
+    typeof value === "boolean" ||
+    (typeof value === "number" && Number.isFinite(value));
 
 const FROM = /^([a-z]+(?:-[a-z]+){3})(?:#[1-9][0-9]*)?$/;
 
