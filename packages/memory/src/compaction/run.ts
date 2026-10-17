@@ -9,6 +9,7 @@
 //
 
 import { sleep, type Turn } from "@dorothy/core";
+import type { Cluster } from "../memory/sidecar.js";
 import { type CompactOutcome, compact } from "./compact.js";
 import { callCap, covered } from "./plan.js";
 import {
@@ -77,18 +78,8 @@ export async function compactOnce(
     signal: AbortSignal,
     host: RunHost,
 ): Promise<Landing> {
-    if (chained !== null) {
-        while (!(await chained.claim.take())) {
-            chained.held = false;
-            if (!host.holding() || signal.aborted) {
-                return NONE;
-            }
-            await sleep(shared.timers, CLAIM_RETRY_MS, signal);
-            if (signal.aborted) {
-                return NONE;
-            }
-        }
-        chained.held = true;
+    if (chained !== null && !(await takeClaim(chained, shared, signal, host))) {
+        return NONE;
     }
     const ready = (await shared.options.ready?.()) ?? { ok: true };
     if (!ready.ok) {
@@ -147,10 +138,41 @@ export async function compactOnce(
     if (!saved.ok) {
         return { kind: "failed", reason: saved.reason };
     }
-    // Another writer's clusters, taken up, are theirs to record; the
-    // screen tells of the turns they cover past this run's start.
+    return landedAs(outcome, saved.clusters, after);
+}
+
+// The claim, taken once no other run holds it; false when the session
+// stops holding messages or the run is cancelled first.
+async function takeClaim(
+    chained: Chained,
+    shared: Shared,
+    signal: AbortSignal,
+    host: RunHost,
+): Promise<boolean> {
+    while (!(await chained.claim.take())) {
+        chained.held = false;
+        if (!host.holding() || signal.aborted) {
+            return false;
+        }
+        await sleep(shared.timers, CLAIM_RETRY_MS, signal);
+        if (signal.aborted) {
+            return false;
+        }
+    }
+    chained.held = true;
+    return true;
+}
+
+// What the screen tells of a save. Another writer's clusters, taken up,
+// are theirs to record; it tells of the turns they cover past this run's
+// start.
+function landedAs(
+    outcome: Extract<CompactOutcome, { kind: "compacted" }>,
+    taken: readonly Cluster[] | undefined,
+    after: string[],
+): Landing {
     const from = outcome.range.from;
-    return saved.clusters === undefined
+    return taken === undefined
         ? {
               kind: "saved",
               from,
@@ -161,9 +183,8 @@ export async function compactOnce(
         : {
               kind: "saved",
               from,
-              through: covered(saved.clusters),
-              clusters: saved.clusters.filter((cluster) => cluster.from >= from)
-                  .length,
+              through: covered(taken),
+              clusters: taken.filter((cluster) => cluster.from >= from).length,
               after,
           };
 }
