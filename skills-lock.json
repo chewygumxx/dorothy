@@ -14,11 +14,11 @@
       "skillPath": "skills/code-simplification/SKILL.md",
       "computedHash": "7973e746e8e2ea5004d520da970c15a106824b8d6be1bcff48908aec021f3677"
     },
-    "compact": {
+    "compact-summary": {
       "source": "chewygumxx/claude-library",
       "sourceType": "github",
-      "skillPath": "plugins/compact/skills/compact/SKILL.md",
-      "computedHash": "7c15eb319e4cb9e1e2f580ccda710d7dd758a73397149b65c6a55efe755950ef"
+      "skillPath": "plugins/compact/skills/compact-summary/SKILL.md",
+      "computedHash": "c53fd741cd6b7dcf5cf6a3f9827b5b0df0ede3e6d5a1882f9dac634503538545"
     },
     "dispatching-parallel-agents": {
       "source": "superpowers",
