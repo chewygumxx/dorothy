@@ -94,9 +94,9 @@ export function applyTagging(
         concepts: { ...current.concepts },
     };
     const dropped: string[] = [];
-    const made: { concept: Concept; id: string; broader: string[] }[] = [];
-    for (const coin of output.coined) {
-        const label = coin.prefLabel;
+    const made: Made[] = [];
+    for (const coined of output.coined) {
+        const label = coined.prefLabel;
         if (resolveLabel(vocabulary, label) !== null) {
             continue;
         }
@@ -104,47 +104,89 @@ export function applyTagging(
             dropped.push(`coined "${label}"`);
             continue;
         }
-        const problem =
-            labelProblem(label) ??
-            (isBlocked(vocabulary, label)
-                ? `"${label}" was deleted by the user`
-                : null) ??
-            scopeNoteProblem(coin.scopeNote);
+        const problem = coinProblem(vocabulary, coined);
         if (problem !== null) {
             dropped.push(problem);
             continue;
         }
-        const keys = new Set([labelKey(label)]);
-        const altLabel: string[] = [];
-        for (const alt of coin.altLabel) {
-            if (
-                keys.has(labelKey(alt)) ||
-                labelProblem(alt) !== null ||
-                resolveLabel(vocabulary, alt) !== null ||
-                isBlocked(vocabulary, alt) ||
-                altLabel.length === TAG_LIMITS.altLabels
-            ) {
-                dropped.push(`alternative label "${alt}"`);
-                continue;
-            }
-            keys.add(labelKey(alt));
-            altLabel.push(alt);
-        }
-        const id = newId(vocabulary, random);
-        const concept: Concept = {
-            prefLabel: label,
-            altLabel,
-            broader: [],
-            scopeNote: coin.scopeNote,
-            by: "dorothy",
-            at: stamp.at,
-            model: stamp.model,
-            edited: null,
-        };
-        vocabulary.concepts[id] = concept;
-        made.push({ concept, id, broader: coin.broader });
+        made.push(coin(vocabulary, coined, stamp, dropped, random));
     }
     // Once every coin has its label, so a coin may sit under a later one.
+    linkParents(vocabulary, made, dropped);
+    const tags = tagIds(vocabulary, output.tags, dropped);
+    return { vocabulary, coined: made.length, tags, dropped };
+}
+
+// A concept coined, and the labels of the parents it names.
+type Made = { concept: Concept; id: string; broader: string[] };
+
+function coinProblem(vocabulary: Vocabulary, coined: Coined): string | null {
+    const label = coined.prefLabel;
+    return (
+        labelProblem(label) ??
+        (isBlocked(vocabulary, label)
+            ? `"${label}" was deleted by the user`
+            : null) ??
+        scopeNoteProblem(coined.scopeNote)
+    );
+}
+
+// The concept added to the vocabulary, hers, with no parents yet.
+function coin(
+    vocabulary: Vocabulary,
+    coined: Coined,
+    stamp: { at: string; model: string },
+    dropped: string[],
+    random?: (size: number) => Uint8Array,
+): Made {
+    const id = newId(vocabulary, random);
+    const concept: Concept = {
+        prefLabel: coined.prefLabel,
+        altLabel: altLabelsOf(vocabulary, coined, dropped),
+        broader: [],
+        scopeNote: coined.scopeNote,
+        by: "dorothy",
+        at: stamp.at,
+        model: stamp.model,
+        edited: null,
+    };
+    vocabulary.concepts[id] = concept;
+    return { concept, id, broader: coined.broader };
+}
+
+// The alternative labels no concept has and the user never deleted, each
+// once and as many as fit.
+function altLabelsOf(
+    vocabulary: Vocabulary,
+    coined: Coined,
+    dropped: string[],
+): string[] {
+    const keys = new Set([labelKey(coined.prefLabel)]);
+    const altLabel: string[] = [];
+    for (const alt of coined.altLabel) {
+        if (
+            keys.has(labelKey(alt)) ||
+            labelProblem(alt) !== null ||
+            resolveLabel(vocabulary, alt) !== null ||
+            isBlocked(vocabulary, alt) ||
+            altLabel.length === TAG_LIMITS.altLabels
+        ) {
+            dropped.push(`alternative label "${alt}"`);
+            continue;
+        }
+        keys.add(labelKey(alt));
+        altLabel.push(alt);
+    }
+    return altLabel;
+}
+
+// Each coin's parents, by label; an edge that would close a cycle is
+// dropped.
+function linkParents(
+    vocabulary: Vocabulary,
+    made: readonly Made[],
+    dropped: string[],
+): void {
     for (const { concept, id, broader } of made) {
         for (const label of broader) {
             const parent = resolveLabel(vocabulary, label);
@@ -159,8 +201,16 @@ export function applyTagging(
             concept.broader.push(parent);
         }
     }
+}
+
+// The conversation's tags by id, each once and as many as fit.
+function tagIds(
+    vocabulary: Vocabulary,
+    labels: readonly string[],
+    dropped: string[],
+): string[] {
     const tags: string[] = [];
-    for (const label of output.tags) {
+    for (const label of labels) {
         const id = resolveLabel(vocabulary, label);
         if (id === null) {
             dropped.push(`tag "${label}"`);
@@ -168,7 +218,7 @@ export function applyTagging(
             tags.push(id);
         }
     }
-    return { vocabulary, coined: made.length, tags, dropped };
+    return tags;
 }
 
 // A conversation as far as listing concepts goes.
