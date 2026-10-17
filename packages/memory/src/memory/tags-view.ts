@@ -337,7 +337,10 @@ function draftOf({
     if (merge !== undefined) {
         return `${name}: a new concept can't be merged`;
     }
-    if (tag === undefined || note === undefined) {
+    if (tag === undefined) {
+        return `${name}: a new concept needs a Tag:`;
+    }
+    if (note === undefined) {
         return `${name}: a new concept needs a Note:`;
     }
     return { tag, also: also ?? [], under: under ?? [], note };

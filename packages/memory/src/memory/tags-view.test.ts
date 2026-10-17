@@ -358,7 +358,7 @@ describe("the edit view", () => {
         });
         expect(parseTagsView(`${VIEW}\nConcept:\nNote:\nN.\n`, SMALL)).toEqual({
             kind: "error",
-            reason: "a new concept: a new concept needs a Note:",
+            reason: "a new concept: a new concept needs a Tag:",
         });
     });
 
@@ -384,6 +384,10 @@ describe("the edit view", () => {
         [
             [["Tag: recollection\n", "Tag: recollection\nMerge: misc\n"]],
             "Merge names no concept: misc",
+        ],
+        [
+            [["Tag: tui\n", "Tag: tui\nMerge: tui\n"]],
+            "tui can't be merged into itself",
         ],
     ])("refuses on applying %j", (swaps, reason) => {
         expect(applied(parse(...(swaps as [string, string][])))).toEqual({
