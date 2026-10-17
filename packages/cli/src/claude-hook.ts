@@ -42,6 +42,15 @@ export function reviewEnv(env: Env): Env {
     );
 }
 
+// reviewEnv in place, for process.env, which the Agent SDK reads.
+function stripClaude(env: Env): void {
+    for (const name of Object.keys(env)) {
+        if (dropped(name)) {
+            delete env[name];
+        }
+    }
+}
+
 // The checkout this program runs from: three up from packages/cli/src.
 export const checkoutRoot = resolve(import.meta.dir, "..", "..", "..");
 
@@ -175,44 +184,9 @@ async function runOnce(
     env: Env,
 ): Promise<number> {
     const given: Env = { ...env };
-    for (const name of Object.keys(env)) {
-        if (dropped(name)) {
-            delete env[name];
-        }
-    }
-    const root = deps.root ?? checkoutRoot;
-    let loadFailure: string | null | undefined = null;
-    try {
-        loadFailure = (deps.load ?? loadDotenv)(
-            join(root, ".env"),
-            join(root, ".env.keys"),
-            env,
-        );
-    } catch (error) {
-        loadFailure = failureName(error);
-    }
-    if (loadFailure) {
-        // Without her credentials a review fails, and says so in the log.
-        (await openLog(env, deps)).warn(
-            `Dorothy's .env could not be loaded (${loadFailure})`,
-        );
-    }
-    let agent: Agent = {
-        call: refusing("reviews are not run here"),
-        persona: "",
-    };
-    if (mode.kind === "hook" || mode.kind === "catch-up") {
-        try {
-            agent = await (deps.agent ?? loadAgent)();
-        } catch (error) {
-            agent = {
-                call: refusing(
-                    `the agent could not load (${describeError(error)})`,
-                ),
-                persona: "",
-            };
-        }
-    }
+    stripClaude(env);
+    await loadDorothyEnv(env, deps);
+    const agent = await reviewingAgent(mode, deps);
     const run = deps.run ?? (await (deps.memory ?? loadMemory)()).runClaudeHook;
     return run(mode, {
         env: given,
@@ -226,4 +200,46 @@ async function runOnce(
             resolve(process.argv[1] ?? ""),
         ],
     });
+}
+
+// Dorothy's .env, by path from this checkout. Without her credentials a
+// review fails, and says so in the log.
+async function loadDorothyEnv(env: Env, deps: HookCliDeps): Promise<void> {
+    const root = deps.root ?? checkoutRoot;
+    let failure: string | null | undefined;
+    try {
+        failure = (deps.load ?? loadDotenv)(
+            join(root, ".env"),
+            join(root, ".env.keys"),
+            env,
+        );
+    } catch (error) {
+        failure = failureName(error);
+    }
+    if (failure) {
+        (await openLog(env, deps)).warn(
+            `Dorothy's .env could not be loaded (${failure})`,
+        );
+    }
+}
+
+// The agent for a hook or a catch-up, which review; the other modes
+// never do.
+async function reviewingAgent(
+    mode: HookMode,
+    deps: HookCliDeps,
+): Promise<Agent> {
+    if (mode.kind !== "hook" && mode.kind !== "catch-up") {
+        return { call: refusing("reviews are not run here"), persona: "" };
+    }
+    try {
+        return await (deps.agent ?? loadAgent)();
+    } catch (error) {
+        return {
+            call: refusing(
+                `the agent could not load (${describeError(error)})`,
+            ),
+            persona: "",
+        };
+    }
 }
