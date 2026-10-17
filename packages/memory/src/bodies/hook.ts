@@ -59,6 +59,7 @@ import {
     dismissHalt,
     halts,
     readRecord,
+    type UnreadRecord,
     unreadDir,
 } from "./unread.js";
 
@@ -562,40 +563,8 @@ async function reread(
     let failed = 0;
     const held = await holding(env, log, deps, async (held) => {
         for (const record of records) {
-            const there =
-                ((await stat(record.transcript).catch(() => null))?.size ?? 0) >
-                0;
-            const steps = await stepsFor(held, {
-                session: record.session,
-                transcript: there
-                    ? record.transcript
-                    : copyPath(env, record.session),
-                dir: record.dir,
-                since: record.since,
-            });
-            // A session no launch holds is over: a call never answered
-            // is recorded failed, not waited for.
-            const recorded = await steps.record(
-                !(await launchHolds(env, record.session)),
-            );
-            // Nothing to record, and no halt kept: it read to its end.
-            const read =
-                recorded.kind === "recorded"
-                    ? !recorded.halted
-                    : recorded.kind === "nothing" &&
-                      (await readRecord(env, record.session)) === null;
-            if (read) {
-                out.write(`dorothy: read ${record.session} to its end\n`);
-                if (recorded.kind === "recorded") {
-                    await steps.sync();
-                }
-            } else {
+            if (!(await rereadOne(env, held, record, { out, err }))) {
                 failed += 1;
-                const kept = await halts(env);
-                const now = kept.find((one) => one.session === record.session);
-                err.write(
-                    `dorothy: ${record.session} still can't be read${now === undefined ? "" : ` past line ${now.line} (${now.reason})`}\n`,
-                );
             }
         }
     });
@@ -606,6 +575,57 @@ async function reread(
         return 1;
     }
     return failed === 0 ? 0 : 1;
+}
+
+// One halted session read again, from Claude Code's transcript or, gone
+// from there, the copy kept; whether it read to its end.
+async function rereadOne(
+    env: Env,
+    held: Held,
+    record: UnreadRecord,
+    { out, err }: { out: Output; err: Output },
+): Promise<boolean> {
+    const there =
+        ((await stat(record.transcript).catch(() => null))?.size ?? 0) > 0;
+    const steps = await stepsFor(held, {
+        session: record.session,
+        transcript: there ? record.transcript : copyPath(env, record.session),
+        dir: record.dir,
+        since: record.since,
+    });
+    // A session no launch holds is over: a call never answered is
+    // recorded failed, not waited for.
+    const recorded = await steps.record(
+        !(await launchHolds(env, record.session)),
+    );
+    if (await readToEnd(env, record.session, recorded)) {
+        out.write(`dorothy: read ${record.session} to its end\n`);
+        if (recorded.kind === "recorded") {
+            await steps.sync();
+        }
+        return true;
+    }
+    const now = (await halts(env)).find(
+        (one) => one.session === record.session,
+    );
+    err.write(
+        `dorothy: ${record.session} still can't be read${now === undefined ? "" : ` past line ${now.line} (${now.reason})`}\n`,
+    );
+    return false;
+}
+
+// Recorded without a halt, or nothing to record and no halt kept.
+async function readToEnd(
+    env: Env,
+    session: string,
+    recorded: Recorded,
+): Promise<boolean> {
+    if (recorded.kind === "recorded") {
+        return !recorded.halted;
+    }
+    return (
+        recorded.kind === "nothing" && (await readRecord(env, session)) === null
+    );
 }
 
 function spawnDetached(cmd: string[]): void {
