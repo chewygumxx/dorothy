@@ -65,18 +65,36 @@ export function injectIdentity(
     };
     const { system } = body;
     if (typeof system === "string") {
-        if (!system.includes(MARKER)) {
-            return null;
-        }
-        const rest = unmark(system);
-        return {
-            ...body,
-            system: rest === "" ? [mine] : [{ type: "text", text: rest }, mine],
-        };
+        return system.includes(MARKER)
+            ? injectIntoString(body, system, mine)
+            : null;
     }
     if (!Array.isArray(system)) {
         return null;
     }
+    const kept = unmarkBlocks(system, mine);
+    return kept === null
+        ? null
+        : { ...body, system: placeIdentity(kept, mine) };
+}
+
+// A system prompt given as one string becomes blocks: what is left of it,
+// then her identity.
+function injectIntoString(body: Fields, system: string, mine: Fields): Fields {
+    const rest = unmark(system);
+    return {
+        ...body,
+        system: rest === "" ? [mine] : [{ type: "text", text: rest }, mine],
+    };
+}
+
+// The blocks with the marker gone from each that carries it; null when
+// none does. An emptied block goes, and its cache breakpoint moves to the
+// block before it, or to hers, so the request keeps as many as it had.
+function unmarkBlocks(
+    system: readonly unknown[],
+    mine: Fields,
+): unknown[] | null {
     const kept: unknown[] = [];
     let marked = false;
     for (const block of system) {
@@ -88,32 +106,30 @@ export function injectIdentity(
         const rest = unmark(block.text);
         if (rest !== "") {
             kept.push({ ...block, text: rest });
-            continue;
-        }
-        // An emptied block goes, and its cache breakpoint moves to the
-        // block before it, so the request keeps as many as it had.
-        if (block.cache_control !== undefined) {
-            const before = kept.at(-1);
-            if (isRecord(before)) {
-                kept[kept.length - 1] = {
-                    ...before,
-                    cache_control: block.cache_control,
-                };
-            } else {
-                mine.cache_control = block.cache_control;
-            }
+        } else if (block.cache_control !== undefined) {
+            moveCache(kept, mine, block.cache_control);
         }
     }
-    if (!marked) {
-        return null;
+    return marked ? kept : null;
+}
+
+function moveCache(kept: unknown[], mine: Fields, cache: unknown): void {
+    const before = kept.at(-1);
+    if (isRecord(before)) {
+        kept[kept.length - 1] = { ...before, cache_control: cache };
+    } else {
+        mine.cache_control = cache;
     }
-    // After the first block that is not the billing header: in Claude
-    // Code's requests, its identity line.
+}
+
+// Her identity after the first block that is not the billing header: in
+// Claude Code's requests, its identity line.
+function placeIdentity(kept: unknown[], mine: Fields): unknown[] {
     const host = kept.findIndex(
         (block) => !(isText(block) && block.text.startsWith(BILLING)),
     );
     kept.splice(host === -1 ? kept.length : host + 1, 0, mine);
-    return { ...body, system: kept };
+    return kept;
 }
 
 // A request body as it arrived, rewritten if its system prompt carries
