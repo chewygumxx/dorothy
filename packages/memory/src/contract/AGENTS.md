@@ -63,8 +63,12 @@ gives back, and the service that speaks it. The spec is
   directory, by its real path; anything else gets one fixed 403.
   Anything else from beyond loopback carries a device token. A local
   proxy or tunnel to 127.0.0.1 looks like loopback, so none may front it.
-- The client fails open: a 2xx is delivered, a 403 is refused for good,
-  and the queue stops only on network failure, timeout, 401, 408, 429 or
-  5xx. It never throws and never waits past its deadline.
+- The client fails open: a 2xx is delivered, and a record refused for
+  good (400, 403, 404, 413, 415 or 422) is dropped. The queue stops at
+  anything else not delivered: network failure, timeout, 401, 408, 421,
+  429 or 5xx. It never throws and never waits past its deadline.
+- A request whose `Host` is not one the service listens on gets 421, so
+  a client reaching it by another name keeps its records; the service
+  warns once per name. A web page's `Origin` is refused with 403.
 - Migration leaves a fact in `facts/`, with a warning, when its
   `knowledge/` target exists or the file fails; it overwrites nothing.

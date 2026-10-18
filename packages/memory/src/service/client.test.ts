@@ -132,6 +132,12 @@ describe("sendRecord", () => {
         expect(pending()).toEqual([]);
     });
 
+    it("keeps a record sent to a name the service lacks (421)", async () => {
+        status = 421;
+        expect(await sendRecord(record, up())).toBeNull();
+        expect(pending()).toHaveLength(1);
+    });
+
     it("keeps a record refused for its token, which may come right", async () => {
         status = 401;
         expect(await sendRecord(record, up())).toBeNull();

@@ -34,6 +34,7 @@ let tokens: TokenStore;
 let token: string;
 let running: RunningService | null = null;
 let claude: string;
+let warned: string[] = [];
 const config: Config = {
     ...DEFAULT_CONFIG,
     history: { ...DEFAULT_CONFIG.history, enabled: false },
@@ -48,6 +49,7 @@ beforeEach(async () => {
         XDG_STATE_HOME: join(home, "state"),
         XDG_CONFIG_HOME: join(home, "config"),
     };
+    warned = [];
     claude = join(home, "claude");
     mkdirSync(join(claude, "projects", "-work"), { recursive: true });
     tokens = tokenStore(join(home, "tokens.json"));
@@ -69,7 +71,7 @@ const start = async (remote = false) => {
         port: 0,
         listen: [],
         loopback: () => !remote,
-        warn: () => {},
+        warn: (message) => warned.push(message),
         claudeDir: claude,
         maxTranscript: 4096,
     });
@@ -172,10 +174,25 @@ describe("the memory service", () => {
             body: JSON.stringify(record),
         });
         expect(plain.status).toBe(415);
-        const rebound = await fetch(`${running?.url}/v1/health`, {
-            headers: { host: "evil.example" },
-        });
-        expect(rebound.status).toBe(403);
+    });
+
+    it("answers a request to another name with 421, warning once", async () => {
+        await start(true);
+        for (let again = 0; again < 2; again++) {
+            const rebound = await fetch(`${running?.url}/v1/health`, {
+                headers: {
+                    host: "evil.example",
+                    authorization: `Bearer ${token}`,
+                },
+            });
+            expect(rebound.status).toBe(421);
+            expect(await rebound.json()).toEqual({
+                error: "this service does not answer to that name",
+            });
+        }
+        const named = warned.filter((line) => line.includes("evil.example"));
+        expect(named).toHaveLength(1);
+        expect(named.join("\n")).not.toContain(token);
     });
 
     it("answers a GET on /mcp with 405, holding nothing open", async () => {

@@ -378,6 +378,9 @@ export async function startService(
     // The names the service answers to, filled once it is listening: a
     // request to any other, as DNS rebinding sends, is refused.
     const allowedHosts = new Set<string>();
+    // The names refused, each warned of once, up to a few: the header is
+    // the sender's to fill.
+    const misdirected = new Set<string>();
     const handle = async (
         request: Request,
         address: string,
@@ -391,8 +394,19 @@ export async function startService(
         if (request.headers.has("origin")) {
             return json(403, { error: "a request from a web page is refused" });
         }
-        if (!allowedHosts.has(request.headers.get("host") ?? "")) {
-            return json(403, { error: "a request to another name is refused" });
+        const named = request.headers.get("host") ?? "";
+        if (!allowedHosts.has(named)) {
+            // Not the client's fault for good: it may be reaching the
+            // service by a name the listen list lacks, so its records wait.
+            if (misdirected.size < 16 && !misdirected.has(named)) {
+                misdirected.add(named);
+                warn(
+                    `refused a request to ${JSON.stringify(named.slice(0, 80))}: add its address to [service] listen`,
+                );
+            }
+            return json(421, {
+                error: "this service does not answer to that name",
+            });
         }
         if (
             request.method === "POST" &&
