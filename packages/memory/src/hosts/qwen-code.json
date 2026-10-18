@@ -1,0 +1,8 @@
+{
+    "id": "qwen-code",
+    "checked": ["0.25.2"],
+    "blockBudget": 10000,
+    "recallBudget": 0,
+    "delivery": ["hook", "mcp"],
+    "instructions": 2048
+}

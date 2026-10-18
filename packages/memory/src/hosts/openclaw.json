@@ -1,0 +1,8 @@
+{
+    "id": "openclaw",
+    "checked": ["2026.10.4"],
+    "blockBudget": 4000,
+    "recallBudget": 4000,
+    "delivery": ["plugin", "mcp"],
+    "instructions": 2048
+}

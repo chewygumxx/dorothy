@@ -1,0 +1,8 @@
+{
+    "id": "goose",
+    "checked": ["1.55.0"],
+    "blockBudget": 16000,
+    "recallBudget": 0,
+    "delivery": ["file", "mcp"],
+    "instructions": 2048
+}
