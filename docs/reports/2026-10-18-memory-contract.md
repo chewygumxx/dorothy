@@ -116,6 +116,16 @@ final review:
   leftover warns on every launch, and pruning follows a linked
   directory.
 
+### Task 5: the contract's types
+
+Complete in `f087d1b`; review clean, and `core` passes 75 of 75. The
+implementer added the `contracts/memory.ts` bullet to
+`packages/core/AGENTS.md` that Task 19 was to add. Ruling: the bullet
+stays, and Task 19 moves it after the `contracts/recall.ts` bullet
+rather than adding a second. If wrong, one bullet sits a line off.
+Minor finding deferred: the tests check neither a `.` segment in a
+memory id nor the length cap of a host id.
+
 ## Verification
 
 Recorded at the end of each part, with `bun run check`.
