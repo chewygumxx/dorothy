@@ -322,6 +322,36 @@ the final review:
   lack a wrong token, a real socket's peer and a foreign `Host` on a
   POST.
 
+### Task 16: the client
+
+Complete in `5502917` and `6c5c19a`, after one fix round; the memory
+package passes 1260 of 1260. The review found the timeouts real and the
+waiting records written whole, but the plan's client neither always
+failed open nor kept to its timeouts:
+
+- A record refused for good, now including a missing transcript after
+  Task 15's ruling, or a reply that did not match the schema, stopped
+  every waiting record behind it forever. Ruling: a 2xx counts as
+  delivered whatever its reply, a 403 is refused for good, and the
+  flush stops only on a network failure, a timeout, 401, 408, 429 or a
+  5xx. If wrong, a record refused by a passing 403 is dropped.
+- `ensureService` threw on a bad URL, a missing program crashed the
+  hook, and `[::1]` was not loopback; `flushPending` threw on a failed
+  delete. Ruling: neither throws. If wrong, a fault goes unseen.
+- A backlog made one hook wait two seconds a record, and starting the
+  service waited four. Ruling: both run to a deadline, the record's
+  budget and one second. If wrong, a backlog drains over more calls.
+  The client gained an optional `timeouts` for its tests.
+
+The re-review found all four addressed. Minor findings deferred to the
+final review:
+
+- An unlisted 4xx still stops the queue, and three calls read the
+  configuration outside their guard; a record's send may spend twice
+  its budget.
+- Waiting records made in one millisecond may reorder; a kept block's
+  path does not encode its host, and the fallback ignores the session.
+
 ## Verification
 
 Recorded at the end of each part, with `bun run check`.
