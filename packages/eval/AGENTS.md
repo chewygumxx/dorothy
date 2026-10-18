@@ -54,4 +54,8 @@ reads no file of memory's itself.
   commands that rewrite it read it with `readQuestionsToRewrite`.
 - `questions/mine.ts`: lookup questions from her appraised reads, and
   the `mine` command.
+- `models/config.ts`: `eval.toml`, a base URL, model and key variable
+  per role; `models/client.ts`: `Models`, one `ChatOpenAI` per role,
+  with retries of its own (the client's are off: it does not retry a
+  headerless 429) and the `--max-calls` cap.
 - `testing.ts`: `fakeIo`, temporary roots and the fixture archive.

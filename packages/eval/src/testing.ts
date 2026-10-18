@@ -22,6 +22,7 @@ import {
     writeArchive,
 } from "@dorothy/memory/evaluation";
 import type { Io } from "./command.js";
+import { ROLES } from "./models/config.js";
 import { takeSnapshot } from "./snapshot/snapshot.js";
 
 export function fakeIo(
@@ -204,4 +205,84 @@ export async function snapshotFixture(root: string): Promise<string> {
     const work = join(root, "work");
     await takeSnapshot(await writeFixtureData(root), work);
     return work;
+}
+
+export type StubRequest = {
+    path: string;
+    authorization: string | null;
+    body: Record<string, unknown>;
+};
+export type StubReply = {
+    status?: number;
+    content?: string;
+    json?: unknown;
+    // The body of a refusal.
+    body?: string;
+};
+
+// An OpenAI-compatible Chat Completions server on loopback, answering as
+// reply says: a status other than 200 refuses; json is sent as the
+// message's content, as a model answering a schema does.
+export function stubModels(
+    reply: (request: StubRequest, count: number) => StubReply,
+): { url: string; requests: StubRequest[]; stop(): void } {
+    const requests: StubRequest[] = [];
+    const server = Bun.serve({
+        port: 0,
+        hostname: "127.0.0.1",
+        async fetch(request) {
+            const body = (await request.json()) as Record<string, unknown>;
+            const seen: StubRequest = {
+                path: new URL(request.url).pathname,
+                authorization: request.headers.get("authorization"),
+                body,
+            };
+            requests.push(seen);
+            const answer = reply(seen, requests.length);
+            if (answer.status !== undefined && answer.status !== 200) {
+                return new Response(answer.body ?? "refused", {
+                    status: answer.status,
+                });
+            }
+            return Response.json({
+                id: "stub",
+                object: "chat.completion",
+                created: 0,
+                model: body.model,
+                choices: [
+                    {
+                        index: 0,
+                        message: {
+                            role: "assistant",
+                            content:
+                                answer.json === undefined
+                                    ? (answer.content ?? "")
+                                    : JSON.stringify(answer.json),
+                        },
+                        finish_reason: "stop",
+                    },
+                ],
+                usage: {
+                    prompt_tokens: 11,
+                    completion_tokens: 7,
+                    total_tokens: 18,
+                },
+            });
+        },
+    });
+    return {
+        url: `http://127.0.0.1:${server.port}/v1`,
+        requests,
+        stop: () => server.stop(true),
+    };
+}
+
+// eval.toml with every role on the stub, each of its own vendor.
+export function stubConfig(url: string, key: string | null = null): string {
+    return ROLES.map(
+        (role) =>
+            `[models.${role}]\nbase-url = "${url}"\nmodel = "${role}/model"\n${
+                key === null ? "" : `key = "${key}"\n`
+            }`,
+    ).join("\n");
 }
