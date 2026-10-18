@@ -9,11 +9,23 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import {
+    mkdirSync,
+    mkdtempSync,
+    readdirSync,
+    rmSync,
+    writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Env, RecordRequest } from "@dorothy/core";
-import { flushPending, requestBlock, sendRecord } from "./client.js";
+import {
+    ensureService,
+    flushPending,
+    requestBlock,
+    sendRecord,
+} from "./client.js";
+import { isLoopbackUrl } from "./loopback.js";
 
 const AT = "2026-10-18T09:30:00.000Z";
 const BLOCK = {
@@ -27,6 +39,7 @@ let env: Env;
 let server: ReturnType<typeof Bun.serve>;
 let status = 200;
 let seen: string[] = [];
+const extra: ReturnType<typeof Bun.serve>[] = [];
 
 beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "dorothy-client-"));
@@ -50,6 +63,9 @@ beforeEach(() => {
 });
 afterEach(() => {
     server.stop(true);
+    for (const other of extra.splice(0)) {
+        other.stop(true);
+    }
     rmSync(home, { recursive: true, force: true });
 });
 
@@ -120,5 +136,127 @@ describe("sendRecord", () => {
         status = 401;
         expect(await sendRecord(record, up())).toBeNull();
         expect(pending()).toHaveLength(1);
+    });
+});
+
+// A service of its own, answering by what the record is called.
+const serve = (fetch: (request: Request) => Response | Promise<Response>) => {
+    const other = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch });
+    extra.push(other);
+    return { env, url: `http://127.0.0.1:${other.port}`, token: null };
+};
+const wait = (...names: string[]) => {
+    const dir = join(home, "state", "dorothy", "pending");
+    mkdirSync(dir, { recursive: true });
+    for (const name of names) {
+        writeFileSync(
+            join(dir, `${name}.json`),
+            JSON.stringify({ ...record, session: name }),
+        );
+    }
+};
+const ACCEPTED = { accepted: 1, duplicates: 0, through: "a" };
+const sessionOf = async (request: Request) =>
+    ((await request.json()) as RecordRequest).session;
+
+describe("the queue of records", () => {
+    it("drops a refused head, and sends the one behind it", async () => {
+        wait("1-a", "2-b");
+        const sent: string[] = [];
+        const options = serve(async (request) => {
+            const session = await sessionOf(request);
+            sent.push(session);
+            return session === "1-a"
+                ? Response.json({ error: "no" }, { status: 403 })
+                : Response.json(ACCEPTED);
+        });
+        expect(await flushPending(options)).toBe(0);
+        expect(sent).toEqual(["1-a", "2-b"]);
+        expect(pending()).toEqual([]);
+    });
+
+    it("drops a record refused with 403, not queueing it", async () => {
+        status = 403;
+        expect(await sendRecord(record, up())).toBeNull();
+        expect(pending()).toEqual([]);
+    });
+
+    it("removes a record taken with a reply that is not the contract's", async () => {
+        wait("1-a");
+        const options = serve(() => Response.json({ surprise: true }));
+        expect(await flushPending(options)).toBe(0);
+        expect(pending()).toEqual([]);
+        const other = serve(() => new Response("not json"));
+        expect(await sendRecord(record, other)).toBeNull();
+        expect(pending()).toEqual([]);
+    });
+
+    it("stops at a record the service cannot take yet", async () => {
+        wait("1-a", "2-b");
+        for (const code of [401, 408, 429, 503]) {
+            const options = serve(() => new Response("", { status: code }));
+            expect(await flushPending(options)).toBe(2);
+            expect(pending()).toHaveLength(2);
+        }
+    });
+
+    it("spends no more than the record timeout on a backlog", async () => {
+        wait(...Array.from({ length: 10 }, (_, i) => `${i}-x`));
+        const options = {
+            ...serve(async () => {
+                await Bun.sleep(80);
+                return Response.json(ACCEPTED);
+            }),
+            timeouts: { record: 300 },
+        };
+        const started = Date.now();
+        const left = await flushPending(options);
+        expect(Date.now() - started).toBeLessThan(700);
+        expect(left).toBeGreaterThan(0);
+        expect(left).toBeLessThan(10);
+        expect(pending()).toHaveLength(left);
+    });
+
+    it("gives up on a service that hangs, within the timeout", async () => {
+        wait("1-a", "2-b");
+        const options = {
+            ...serve(() => new Promise<Response>(() => {})),
+            timeouts: { record: 200 },
+        };
+        const started = Date.now();
+        expect(await sendRecord(record, options)).toBeNull();
+        expect(Date.now() - started).toBeLessThan(600);
+        expect(pending()).toHaveLength(3);
+    });
+});
+
+describe("ensureService", () => {
+    it("is true for a service that answers", async () => {
+        const options = serve(() => new Response("ok"));
+        expect(await ensureService([], options)).toBe(true);
+    });
+
+    it("resolves false for a URL that is not one", async () => {
+        expect(await ensureService(["true"], { env, url: "nope" })).toBe(false);
+    });
+
+    it("resolves false for a program that is not there", async () => {
+        const command = [join(home, "no-such-program")];
+        expect(await ensureService(command, down())).toBe(false);
+    });
+
+    it("starts nothing for a service on another machine", async () => {
+        const command = [join(home, "no-such-program")];
+        const options = { env, url: "http://192.0.2.1:4774", token: null };
+        expect(await ensureService(command, options)).toBe(false);
+    });
+});
+
+describe("isLoopbackUrl", () => {
+    it("knows the loopback addresses, IPv6 in brackets too", () => {
+        expect(isLoopbackUrl("http://127.0.0.1:4774")).toBe(true);
+        expect(isLoopbackUrl("http://[::1]:4774")).toBe(true);
+        expect(isLoopbackUrl("http://192.0.2.1:4774")).toBe(false);
+        expect(isLoopbackUrl("http://[2001:db8::1]:4774")).toBe(false);
     });
 });

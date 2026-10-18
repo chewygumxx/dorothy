@@ -45,9 +45,11 @@ import {
     recallResponseSchema,
     recordResponseSchema,
 } from "../contract/schemas.js";
-import { isLoopback } from "./loopback.js";
+import { isLoopbackUrl } from "./loopback.js";
 
 export const DEFAULT_URL = `http://127.0.0.1:${SERVICE_PORT}`;
+// What ensureService waits for a service it started, in all.
+const START_WAIT = 1000;
 export const TIMEOUTS = {
     block: 1000,
     recall: 500,
@@ -62,6 +64,8 @@ export type ClientOptions = {
     // The device's token file by default; null sends none.
     token?: string | null;
     fetch?: typeof fetch;
+    // Shorter timeouts than TIMEOUTS, for tests.
+    timeouts?: Partial<Record<keyof typeof TIMEOUTS, number>>;
 };
 
 type Client = {
@@ -69,6 +73,7 @@ type Client = {
     url: string;
     token: string | null;
     fetch: typeof fetch;
+    timeouts: Record<keyof typeof TIMEOUTS, number>;
 };
 
 const stateDir = (env: Env) =>
@@ -105,6 +110,7 @@ export async function clientOf(options: ClientOptions = {}): Promise<Client> {
         token:
             options.token === undefined ? await readToken(env) : options.token,
         fetch: options.fetch ?? fetch,
+        timeouts: { ...TIMEOUTS, ...options.timeouts },
     };
 }
 
@@ -115,8 +121,12 @@ async function writePrivate(path: string, text: string): Promise<void> {
     await rename(temp, path);
 }
 
+const REFUSED = [400, 403, 404, 413, 415, 422];
+
 type Posted<T> =
     | { kind: "ok"; data: T }
+    // Taken (a 2xx), though its reply is not the contract's.
+    | { kind: "delivered" }
     | { kind: "refused" }
     | { kind: "unreachable" };
 
@@ -139,18 +149,24 @@ async function post<T>(
             body: JSON.stringify(body),
             signal: AbortSignal.timeout(timeout),
         });
-        // Refused for good: what the service cannot take. A token it
-        // does not know, or a rate, may come right, so those wait.
-        if ([400, 404, 413, 415, 422].includes(response.status)) {
+        // Refused for good: what the service cannot take, or will not
+        // from this client. A token it does not know, a timeout, a rate
+        // or a fault of its own may come right, so those wait.
+        if (REFUSED.includes(response.status)) {
             return { kind: "refused" };
         }
         if (!response.ok) {
             return { kind: "unreachable" };
         }
-        const parsed = schema.safeParse(await response.json());
-        return parsed.success
+        // The service took it: a reply that does not parse is no reason
+        // to send it twice.
+        const parsed = await response
+            .json()
+            .then((reply) => schema.safeParse(reply))
+            .catch(() => null);
+        return parsed?.success
             ? { kind: "ok", data: parsed.data }
-            : { kind: "unreachable" };
+            : { kind: "delivered" };
     } catch {
         return { kind: "unreachable" };
     }
@@ -166,7 +182,7 @@ export async function requestBlock(
         client,
         SERVICE_PATHS.block,
         request,
-        TIMEOUTS.block,
+        client.timeouts.block,
         blockResponseSchema,
     );
     if (posted.kind === "ok") {
@@ -185,22 +201,31 @@ export async function requestRecall(
     request: RecallRequest,
     options: ClientOptions = {},
 ): Promise<RecallResponse | null> {
+    const client = await clientOf(options);
     const posted = await post(
-        await clientOf(options),
+        client,
         SERVICE_PATHS.recall,
         request,
-        TIMEOUTS.recall,
+        client.timeouts.recall,
         recallResponseSchema,
     );
     return posted.kind === "ok" ? posted.data : null;
 }
 
-// Sends what waits, oldest first, until one cannot go; how many still
-// wait.
+// Sends what waits, oldest first, until one cannot go or the record
+// timeout is spent; how many still wait. It never throws.
 export async function flushPending(
     options: ClientOptions = {},
 ): Promise<number> {
-    const client = await clientOf(options);
+    try {
+        return await flush(await clientOf(options));
+    } catch {
+        return 0;
+    }
+}
+
+async function flush(client: Client): Promise<number> {
+    const deadline = Date.now() + client.timeouts.record;
     let names: string[];
     try {
         names = (await readdir(pendingDir(client.env)))
@@ -210,25 +235,29 @@ export async function flushPending(
         return 0;
     }
     for (const [at, name] of names.entries()) {
+        const left = deadline - Date.now();
+        if (left <= 0) {
+            return names.length - at;
+        }
         const path = join(pendingDir(client.env), name);
         let request: unknown;
         try {
             request = JSON.parse(await readFile(path, "utf8"));
         } catch {
-            await rm(path, { force: true });
+            await rm(path, { force: true }).catch(() => {});
             continue;
         }
         const posted = await post(
             client,
             SERVICE_PATHS.record,
             request,
-            TIMEOUTS.record,
+            left,
             recordResponseSchema,
         );
         if (posted.kind === "unreachable") {
             return names.length - at;
         }
-        await rm(path, { force: true });
+        await rm(path, { force: true }).catch(() => {});
     }
     return 0;
 }
@@ -245,7 +274,7 @@ export async function sendRecord(
                   client,
                   SERVICE_PATHS.record,
                   request,
-                  TIMEOUTS.record,
+                  client.timeouts.record,
                   recordResponseSchema,
               )
             : ({ kind: "unreachable" } as const);
@@ -261,7 +290,7 @@ export async function sendRecord(
     return null;
 }
 
-async function healthy(client: Client): Promise<boolean> {
+async function healthy(client: Client, timeout: number): Promise<boolean> {
     try {
         const response = await client.fetch(
             new URL(SERVICE_PATHS.health, client.url),
@@ -270,7 +299,7 @@ async function healthy(client: Client): Promise<boolean> {
                     client.token === null
                         ? {}
                         : { authorization: `Bearer ${client.token}` },
-                signal: AbortSignal.timeout(TIMEOUTS.health),
+                signal: AbortSignal.timeout(timeout),
             },
         );
         return response.ok;
@@ -281,25 +310,40 @@ async function healthy(client: Client): Promise<boolean> {
 
 // Starts the service on this machine when it does not answer, detached,
 // and waits a second at most for it; false when it is still not there or
-// lives on another machine.
+// lives on another machine. It never throws.
 export async function ensureService(
     command: readonly string[],
     options: ClientOptions = {},
 ): Promise<boolean> {
-    const client = await clientOf(options);
-    if (await healthy(client)) {
-        return true;
-    }
-    if (!isLoopback(new URL(client.url).hostname) || command.length === 0) {
-        return false;
-    }
-    const [program, ...args] = command;
-    spawn(program as string, args, { detached: true, stdio: "ignore" }).unref();
-    for (let tries = 0; tries < 10; tries++) {
-        await Bun.sleep(100);
-        if (await healthy(client)) {
+    try {
+        const client = await clientOf(options);
+        const { health } = client.timeouts;
+        if (await healthy(client, health)) {
             return true;
         }
+        if (!isLoopbackUrl(client.url) || command.length === 0) {
+            return false;
+        }
+        const [program, ...args] = command;
+        let failed = false;
+        const child = spawn(program as string, args, {
+            detached: true,
+            stdio: "ignore",
+        });
+        child.on("error", () => {
+            failed = true;
+        });
+        child.unref();
+        const deadline = Date.now() + START_WAIT;
+        while (!failed && Date.now() < deadline) {
+            await Bun.sleep(100);
+            const left = deadline - Date.now();
+            if (!failed && (await healthy(client, Math.min(health, left)))) {
+                return true;
+            }
+        }
+        return false;
+    } catch {
+        return false;
     }
-    return false;
 }

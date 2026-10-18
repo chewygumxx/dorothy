@@ -14,3 +14,7 @@ const LOOPBACK = new Set(["::1", "::ffff:127.0.0.1"]);
 
 export const isLoopback = (address: string) =>
     LOOPBACK.has(address) || address.startsWith("127.");
+
+// A URL's host, brackets of an IPv6 address stripped, as loopback or not.
+export const isLoopbackUrl = (url: string) =>
+    isLoopback(new URL(url).hostname.replace(/^\[(.*)\]$/, "$1"));
