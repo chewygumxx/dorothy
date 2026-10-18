@@ -17,6 +17,7 @@ import { generateCommand } from "./questions/generate-command.js";
 import { mineCommand } from "./questions/mine.js";
 import { reviewCommand } from "./questions/review.js";
 import { compareCommand } from "./report/command.js";
+import { runCommand } from "./run/command.js";
 import { snapshotCommand } from "./snapshot/command.js";
 
 export const COMMANDS: Record<string, Command> = {
@@ -24,6 +25,7 @@ export const COMMANDS: Record<string, Command> = {
     mine: mineCommand,
     generate: generateCommand,
     review: reviewCommand,
+    run: runCommand,
     compare: compareCommand,
 };
 
