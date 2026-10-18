@@ -47,6 +47,7 @@ const ENTRIES: Record<string, string[]> = {
         "./claude-hook",
         "./client",
         "./commands",
+        "./evaluation",
         "./recall-server",
         "./service",
     ],
