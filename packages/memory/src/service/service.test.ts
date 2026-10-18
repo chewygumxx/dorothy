@@ -61,10 +61,10 @@ afterEach(async () => {
     rmSync(home, { recursive: true, force: true });
 });
 
-const start = async (remote = false) => {
+const start = async (remote = false, settings: Config = config) => {
     running = await startService({
         env,
-        config,
+        config: settings,
         profiles: await loadProfiles(),
         tokens,
         review: null,
@@ -331,6 +331,27 @@ describe("the memory service", () => {
         it("refuses a missing file as it does any other", async () => {
             await start();
             await refused(inside("gone.jsonl"));
+        });
+
+        it("reads one inside a further directory of [service] claude-dirs", async () => {
+            const second = join(home, "claude-2");
+            mkdirSync(join(second, "projects", "-work"), { recursive: true });
+            const at = join(second, "projects", "-work", "c1.jsonl");
+            writeFileSync(at, `${userLine("u1", 0, "hi")}\n`);
+            await start(false, {
+                ...config,
+                service: { ...config.service, claudeDirs: [second] },
+            });
+            const response = await named(at);
+            expect(response.status).toBe(200);
+        });
+
+        it("warns once of a refusal, naming the setting", async () => {
+            await start();
+            await refused(join(home, "elsewhere", "a.jsonl"));
+            await refused(join(home, "elsewhere", "b.jsonl"));
+            const said = warned.filter((line) => line.includes("claude-dirs"));
+            expect(said).toHaveLength(1);
         });
     });
 });

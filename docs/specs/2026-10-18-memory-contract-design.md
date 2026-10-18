@@ -440,7 +440,10 @@ interface: the FTS5 index, `salience()` and the reviewer.
   may front the service without its own authentication.
 - A transcript path is confined to Claude Code's `projects` directory by
   its real path, a regular `.jsonl` file of at most 64 MiB; anything else
-  gets one fixed 403, which says nothing of the file.
+  gets one fixed 403, which says nothing of the file. The directory is
+  the service's own `CLAUDE_CONFIG_DIR` (else `~/.claude`) and any listed
+  in `[service] claude-dirs`, as for a second account; the service warns
+  once of a refusal.
 - Scope is enforced by the service, never trusted to the host; export
   never carries personal knowledge.
 - Private sessions are neither stored nor extracted; records are scrubbed

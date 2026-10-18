@@ -87,8 +87,8 @@ export type ServiceOptions = {
     warn?: (message: string) => void;
     now?: () => Date;
     // Claude Code's configuration directory, whose projects directory
-    // holds the only transcripts a record may name; found as dorothy
-    // --claude finds it by default.
+    // holds transcripts a record may name, as do those of [service]
+    // claude-dirs; found as dorothy --claude finds it by default.
     claudeDir?: string;
     // The largest transcript read, in bytes; for tests.
     maxTranscript?: number;
@@ -195,15 +195,30 @@ export async function startService(
         isProjectId(value)
             ? value
             : ((await identify(value).catch(() => null))?.id ?? null);
-    const claudeDir = options.claudeDir ?? claudeConfigDir(env);
+    const claudeDirs = [
+        options.claudeDir ?? claudeConfigDir(env),
+        ...config.service.claudeDirs,
+    ];
+    // A refusal says nothing to the caller; the service's log says once
+    // where a transcript must be, as another account's directory is not
+    // known until it is listed.
+    let refusedOnce = false;
+    const confined = (transcript: string) =>
+        confineTranscript(transcript, claudeDirs, options.maxTranscript).catch(
+            (error: unknown) => {
+                if (!refusedOnce) {
+                    refusedOnce = true;
+                    warn(
+                        "refused a transcript outside Claude Code's projects directories: list another account's directory in [service] claude-dirs",
+                    );
+                }
+                throw error;
+            },
+        );
     const claudeTranscript = async (
         request: RecordRequest & { transcript: string },
     ): Promise<RecordResponse> => {
-        const transcript = await confineTranscript(
-            request.transcript,
-            claudeDir,
-            options.maxTranscript,
-        );
+        const transcript = await confined(request.transcript);
         const found = await recordSession(
             {
                 session: request.session,

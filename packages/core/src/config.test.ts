@@ -77,6 +77,7 @@ describe("parseConfig", () => {
         expect(config.service).toEqual({
             port: 5000,
             listen: ["100.64.0.1", "fd7a::1"],
+            claudeDirs: [],
         });
     });
 
@@ -84,7 +85,28 @@ describe("parseConfig", () => {
         expect(parseConfig("").config.service).toEqual({
             port: 4774,
             listen: [],
+            claudeDirs: [],
         });
+    });
+
+    it("reads the further Claude Code directories a transcript may be in", () => {
+        const { config, warnings } = parseConfig(
+            '[service]\nclaude-dirs = ["/home/me/.config/claude-2"]\n',
+        );
+        expect(warnings).toEqual([]);
+        expect(config.service.claudeDirs).toEqual([
+            "/home/me/.config/claude-2",
+        ]);
+    });
+
+    it("warns of claude-dirs that are not absolute paths", () => {
+        const { config, warnings } = parseConfig(
+            '[service]\nclaude-dirs = ["~/.claude-2"]\n',
+        );
+        expect(config.service.claudeDirs).toEqual([]);
+        expect(warnings).toEqual([
+            'config.toml: service.claude-dirs must be a list of absolute paths, such as "/home/me/.config/claude"',
+        ]);
     });
 
     it("warns of a listen that is no list of addresses", () => {

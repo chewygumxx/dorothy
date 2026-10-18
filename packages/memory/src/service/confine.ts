@@ -30,17 +30,31 @@ export const claudeConfigDir = (env: Env) =>
 // reveal which paths exist.
 const refusal = () => new ContractError(403, "that transcript cannot be read");
 
-// The real path of a transcript under claude's projects directory, or a
-// 403. Called before anything is read or locked.
+// The real path of a transcript under one of the projects directories of
+// claude's configuration directories, or a 403. Called before anything is
+// read or locked.
 export async function confineTranscript(
     path: string,
-    claude: string,
+    claude: readonly string[],
     max: number = MAX_TRANSCRIPT,
 ): Promise<string> {
     try {
-        const projects = await realpath(join(claude, "projects"));
         const real = await realpath(path);
-        if (!real.startsWith(projects + sep) || !real.endsWith(".jsonl")) {
+        if (!real.endsWith(".jsonl")) {
+            throw refusal();
+        }
+        // A directory that is not there, as an account never signed in to
+        // has, holds nothing to read.
+        const roots = await Promise.all(
+            claude.map((dir) =>
+                realpath(join(dir, "projects")).catch(() => null),
+            ),
+        );
+        if (
+            !roots.some(
+                (projects) => projects && real.startsWith(projects + sep),
+            )
+        ) {
             throw refusal();
         }
         const found = await stat(real);

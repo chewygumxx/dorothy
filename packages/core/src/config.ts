@@ -9,7 +9,7 @@
 //
 
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { type Env, xdgDir } from "./xdg.js";
 
 export const MODULE_NAMES = [
@@ -57,6 +57,9 @@ export type ServiceConfig = {
     port: number;
     // Further addresses it listens on, where a private network reaches it.
     listen: string[];
+    // Claude Code configuration directories besides the environment's,
+    // whose projects directories hold transcripts a record may name.
+    claudeDirs: string[];
 };
 export type Config = {
     statusline: LineConfig;
@@ -119,6 +122,7 @@ export const DEFAULT_CONFIG: Config = {
     service: {
         port: 4774,
         listen: [],
+        claudeDirs: [],
     },
 };
 
@@ -309,6 +313,16 @@ const addresses = (key: string): FieldSpec<string[]> => ({
     expected: 'a list of addresses, such as "100.64.0.1"',
 });
 
+const directories = (key: string): FieldSpec<string[]> => ({
+    key,
+    read: (field) =>
+        Array.isArray(field) &&
+        field.every((each) => typeof each === "string" && isAbsolute(each))
+            ? [...new Set(field as string[])]
+            : undefined,
+    expected: 'a list of absolute paths, such as "/home/me/.config/claude"',
+});
+
 const parseService = (value: unknown, warnings: string[]): ServiceConfig =>
     parseTable(
         "service",
@@ -317,6 +331,7 @@ const parseService = (value: unknown, warnings: string[]): ServiceConfig =>
         {
             port: whole("port", 1024, 65535),
             listen: addresses("listen"),
+            claudeDirs: directories("claude-dirs"),
         },
         warnings,
     );

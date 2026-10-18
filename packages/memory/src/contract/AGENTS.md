@@ -61,7 +61,8 @@ gives back, and the service that speaks it. The spec is
   `open` and `remember` refuse an argument naming another (403).
 - A transcript path is taken only over loopback, and only a regular
   `.jsonl` file of at most 64 MiB under Claude Code's `projects`
-  directory, by its real path; anything else gets one fixed 403.
+  directory or one of `[service] claude-dirs`, by its real path; anything
+  else gets one fixed 403, and the service warns once.
   Anything else from beyond loopback carries a device token. A local
   proxy or tunnel to 127.0.0.1 looks like loopback, so none may front it.
 - The client fails open: a 2xx is delivered, and a record refused for

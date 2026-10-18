@@ -336,6 +336,16 @@ the traffic, or behind a proxy that does. A request from loopback needs
 no token, so a local proxy or tunnel that forwards to `127.0.0.1` makes
 remote traffic look local: do not run one in front of it.
 
+A harness's hook may name a Claude Code transcript, which the service
+reads only under the `projects` directory of `CLAUDE_CONFIG_DIR` (else
+`~/.claude`) as the service found it. With another account's directory,
+list it too:
+
+```toml
+[service]
+claude-dirs = ["/home/me/.config/claude-2"]
+```
+
 Her knowledge lives in `knowledge/` in the data directory, one Markdown
 file each in the [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md),
 which you may read and edit; `facts/` is moved there once.
