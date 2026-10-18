@@ -60,14 +60,20 @@ export async function readEvalConfig(work: string): Promise<EvalConfig> {
     let text: string;
     try {
         text = await readFile(configPath(work), "utf8");
-    } catch {
-        return config;
+    } catch (error) {
+        if ((error as { code?: unknown }).code === "ENOENT") {
+            return config;
+        }
+        throw new UsageError(`cannot read ${configPath(work)}`);
     }
     let parsed: unknown;
     try {
         parsed = Bun.TOML.parse(text);
-    } catch (error) {
-        throw new UsageError(`eval.toml: ${(error as Error).message}`);
+    } catch {
+        // The parser quotes the line it dislikes, which may hold a key.
+        throw new UsageError(
+            "eval.toml does not parse as TOML: check its quoting",
+        );
     }
     const models = isTable(parsed) ? (parsed.models ?? {}) : {};
     if (!isTable(models)) {

@@ -9,7 +9,7 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { tempRoot } from "../testing.js";
 import { configPath, readEvalConfig, requireRole, vendorOf } from "./config.js";
 
@@ -78,6 +78,22 @@ describe("eval.toml", () => {
         await expect(readEvalConfig(temp.root)).rejects.toThrow(
             "has no setting temperature",
         );
+    });
+
+    it("never repeats an unquoted key the parser rejects", async () => {
+        write(
+            '[models.answer]\nbase-url = "http://x"\nmodel = "m"\nkey = sk-or-v1-0123456789abcdef\n',
+        );
+        const error = await readEvalConfig(temp.root).catch(
+            (caught: Error) => caught,
+        );
+        expect(String(error)).toContain("check its quoting");
+        expect(String(error)).not.toContain("0123456789abcdef");
+    });
+
+    it("says when eval.toml cannot be read", async () => {
+        mkdirSync(configPath(temp.root));
+        await expect(readEvalConfig(temp.root)).rejects.toThrow("cannot read");
     });
 
     it("says where to add a role a command needs", () => {
