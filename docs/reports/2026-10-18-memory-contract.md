@@ -144,6 +144,18 @@ deferred to the final review:
 - The tests cover the plan's cases alone, not the responses, the tool
   shapes or the caps.
 
+### Task 7: host profiles
+
+Complete in `8cfd322`; review clean, and the profiles' tests pass 3 of
+3. Minor findings deferred to the final review:
+
+- A profile that is not JSON throws without naming its file, and a
+  schema failure reports its first issue alone, without the field.
+- An empty profile directory loads without complaint.
+- The test of the shipped profiles checks two of their values.
+- Codex's profile allows 512 characters of instructions, where the
+  constraints say under 512; Task 13's instructions settle it.
+
 ## Verification
 
 Recorded at the end of each part, with `bun run check`.
