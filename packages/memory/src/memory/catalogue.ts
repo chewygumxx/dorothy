@@ -38,7 +38,7 @@ const describeError = (error: unknown) =>
 
 // Brings the index up to date, then reads every conversation the user spoke
 // in from it. Conversations the user never spoke in are left out.
-// facts is the data directory, whose facts/ is synced with the
+// facts is the data directory, whose knowledge/ is synced with the
 // transcripts; null leaves facts as the index last saw them.
 export function indexCatalogue(
     index: RecallIndex,

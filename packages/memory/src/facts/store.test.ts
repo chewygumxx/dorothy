@@ -104,7 +104,7 @@ describe("writeFact", () => {
         const result = await writeFact(store(), input());
         expect(result.kind).toBe("written");
         expect(factPath(root, PERSONAL, "likes-tea")).toBe(
-            join(root, "facts", "personal", "likes-tea.md"),
+            join(root, "knowledge", "personal", "likes-tea.md"),
         );
         expect(await read(PERSONAL, "likes-tea")).toMatchObject({
             title: "Likes tea",
@@ -128,7 +128,7 @@ describe("writeFact", () => {
         expect(factPath(root, PROJECT, "likes-tea")).toBe(
             join(
                 root,
-                "facts",
+                "knowledge",
                 "projects",
                 "github.com",
                 "chewygumxx",
@@ -197,7 +197,7 @@ describe("writeFact", () => {
 
     it("refuses to write over a fact that is broken", async () => {
         const path = factPath(root, PERSONAL, "likes-tea");
-        await mkdir(join(root, "facts", "personal"), { recursive: true });
+        await mkdir(join(root, "knowledge", "personal"), { recursive: true });
         await writeFile(path, "not a fact\n");
         const result = await writeFact(store(), input());
         expect(result).toEqual({
@@ -323,7 +323,10 @@ describe("listFacts", () => {
     it("lists personal facts first, then each project's, and names broken ones", async () => {
         await writeFact(store(), input({ name: "b", scope: PROJECT }));
         await writeFact(store(), input({ name: "a" }));
-        await writeFile(join(root, "facts", "personal", "z.md"), "broken\n");
+        await writeFile(
+            join(root, "knowledge", "personal", "z.md"),
+            "broken\n",
+        );
         const { facts, broken } = await listFacts(root);
         expect(facts.map(({ scope, fact }) => [scope, fact.name])).toEqual([
             [PERSONAL, "a"],
@@ -331,7 +334,7 @@ describe("listFacts", () => {
         ]);
         expect(broken).toEqual([
             {
-                path: join(root, "facts", "personal", "z.md"),
+                path: join(root, "knowledge", "personal", "z.md"),
                 reason: "it has no frontmatter",
             },
         ]);
@@ -341,10 +344,16 @@ describe("listFacts", () => {
         await writeFact(store(), input());
         const outside = join(root, "outside.md");
         await writeFile(outside, "x\n");
-        await symlink(outside, join(root, "facts", "personal", "linked.md"));
-        await writeFile(join(root, "facts", "personal", "notes.txt"), "x\n");
-        await mkdir(join(root, "facts", "projects"), { recursive: true });
-        await writeFile(join(root, "facts", "projects", "loose.md"), "x\n");
+        await symlink(
+            outside,
+            join(root, "knowledge", "personal", "linked.md"),
+        );
+        await writeFile(
+            join(root, "knowledge", "personal", "notes.txt"),
+            "x\n",
+        );
+        await mkdir(join(root, "knowledge", "projects"), { recursive: true });
+        await writeFile(join(root, "knowledge", "projects", "loose.md"), "x\n");
         expect((await factFiles(root)).map(({ name }) => name)).toEqual([
             "likes-tea",
         ]);

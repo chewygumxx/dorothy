@@ -125,7 +125,10 @@ describe("runFacts", () => {
                 retired: { at: NOW.toISOString(), by: "user", why: "Done." },
             }),
         );
-        await writeFile(join(root, "facts", "personal", "broken.md"), "x\n");
+        await writeFile(
+            join(root, "knowledge", "personal", "broken.md"),
+            "x\n",
+        );
         expect(await runFacts(options())).toBe(0);
         expect(out.text).toBe(
             [
@@ -139,7 +142,7 @@ describe("runFacts", () => {
             ].join("\n"),
         );
         expect(err.text).toBe(
-            `dorothy: ${join(root, "facts", "personal", "broken.md")}: it has no frontmatter\n`,
+            `dorothy: ${join(root, "knowledge", "personal", "broken.md")}: it has no frontmatter\n`,
         );
     });
 

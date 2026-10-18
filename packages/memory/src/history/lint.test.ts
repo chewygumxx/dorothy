@@ -139,28 +139,28 @@ const FACT = renderFact({
 
 describe("facts and projects", () => {
     it("knows facts and the registry by where they sit", () => {
-        expect(fileKind("facts/personal/likes-tea.md")).toBe("fact");
-        expect(fileKind("facts/projects/github.com/a/b/likes-tea.md")).toBe(
+        expect(fileKind("knowledge/personal/likes-tea.md")).toBe("fact");
+        expect(fileKind("knowledge/projects/github.com/a/b/likes-tea.md")).toBe(
             "fact",
         );
         expect(fileKind("projects.json")).toBe("projects");
         expect(fileKind("facts/likes-tea.md")).toBe("other");
-        expect(fileKind("facts/personal/sub/likes-tea.md")).toBe("other");
+        expect(fileKind("knowledge/personal/sub/likes-tea.md")).toBe("other");
     });
 
     it("lints a fact against its file's name and scope", () => {
         expect(
-            lint("facts/personal/likes-tea.md", bytes(FACT), null),
+            lint("knowledge/personal/likes-tea.md", bytes(FACT), null),
         ).toBeNull();
-        expect(lint("facts/personal/Bad-Name.md", bytes(FACT), null)).toBe(
+        expect(lint("knowledge/personal/Bad-Name.md", bytes(FACT), null)).toBe(
             "its file's name, Bad-Name, is not a fact's name",
         );
         expect(
-            lint("facts/projects/nohost/likes-tea.md", bytes(FACT), null),
+            lint("knowledge/projects/nohost/likes-tea.md", bytes(FACT), null),
         ).toBe("it is not under a project id");
-        expect(lint("facts/personal/likes-tea.md", bytes("x\n"), null)).toBe(
-            "it has no frontmatter",
-        );
+        expect(
+            lint("knowledge/personal/likes-tea.md", bytes("x\n"), null),
+        ).toBe("it has no frontmatter");
     });
 
     it("lints the registry", () => {

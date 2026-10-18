@@ -8,10 +8,11 @@
 //
 //
 
-// The store's facts: personal ones in facts/personal/, a project's in
-// facts/projects/<id>/, one file each. Writes take the store's lock and
-// are recorded by history. Nothing here deletes a fact: a fact that no
-// longer serves is retired, and stays.
+// The store's facts: personal ones in knowledge/personal/, a project's
+// in knowledge/projects/<id>/, one file each in the Open Knowledge
+// Format. Writes take the store's lock and are recorded by history.
+// Nothing here deletes a fact: a fact that no longer serves is retired,
+// and stays.
 
 import { readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
@@ -38,6 +39,9 @@ import {
 export type Scope = { kind: "personal" } | { kind: "project"; id: string };
 export const PERSONAL: Scope = Object.freeze({ kind: "personal" });
 
+// Where facts live under the data directory; facts/ held them before.
+export const KNOWLEDGE = "knowledge";
+
 // local- and 12 hex digits, or a host and at least one path segment, as
 // projects/identify.ts makes them.
 export const PROJECT_ID =
@@ -46,17 +50,23 @@ export const isProjectId = (id: string) =>
     PROJECT_ID.test(id) &&
     !id.split("/").some((part) => part === "." || part === "..");
 
-// The data directory: transcripts/, tags.json, facts/ and projects.json.
+// The data directory: transcripts/, tags.json, knowledge/ and projects.json.
 export const dataRoot = (env: Env = process.env) => dirname(transcriptDir(env));
 
-export function scopeDir(root: string, scope: Scope): string {
+export function scopeDir(
+    root: string,
+    scope: Scope,
+    under: string = KNOWLEDGE,
+): string {
     if (scope.kind === "personal") {
-        return join(root, "facts", "personal");
+        return join(root, under, "personal");
     }
+    // The guard today's scopeDir holds: an id with .. or an empty part
+    // would write outside the store.
     if (!isProjectId(scope.id)) {
         throw new Error(`${scope.id} is not a project id`);
     }
-    return join(root, "facts", "projects", ...scope.id.split("/"));
+    return join(root, under, "projects", ...scope.id.split("/"));
 }
 
 export const factPath = (root: string, scope: Scope, name: string) =>
@@ -110,6 +120,7 @@ const factName = (file: string) =>
 export async function factFiles(
     root: string,
     scope?: Scope,
+    under: string = KNOWLEDGE,
 ): Promise<FactFile[]> {
     const files: FactFile[] = [];
     const inScope = async (dir: string, of: Scope) => {
@@ -120,7 +131,7 @@ export async function factFiles(
             }
         }
     };
-    const projects = join(root, "facts", "projects");
+    const projects = join(root, under, "projects");
     const walk = async (dir: string): Promise<void> => {
         const id = relative(projects, dir).split(sep).join("/");
         if (id !== "" && isProjectId(id)) {
@@ -133,9 +144,9 @@ export async function factFiles(
         }
     };
     if (scope !== undefined) {
-        await inScope(scopeDir(root, scope), scope);
+        await inScope(scopeDir(root, scope, under), scope);
     } else {
-        await inScope(scopeDir(root, PERSONAL), PERSONAL);
+        await inScope(scopeDir(root, PERSONAL, under), PERSONAL);
         await walk(projects);
     }
     const key = (file: FactFile) =>
