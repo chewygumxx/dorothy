@@ -202,6 +202,16 @@ a stale block. Minor findings deferred to the final review:
   trailing space; an episode with an abstract but no description shows
   its title alone.
 
+### Task 10: recall for a prompt
+
+Complete in `020ea33`; review clean, and the memory package passes
+1184 of 1184. The review found the budget never passed, passages whole
+or skipped, and recall asking for personal knowledge and its own
+project's alone. Minor findings deferred to the final review: the tests
+do not check the scope recall asks for, the budget's exact edge, a
+request's budget clamped to the host's, a budget below the frame, or
+escaping.
+
 ## Verification
 
 Recorded at the end of each part, with `bun run check`.
