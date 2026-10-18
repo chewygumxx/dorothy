@@ -145,11 +145,60 @@ What it costs:
 - Whether Dorothy keeps a runtime of her own (chat, reviews, compaction),
   and on what: LangChain.js, the AI SDK or another.
 
+## Research since
+
+Two research agents' reports sit beside these minutes.
+
+[LangChain and the standards](./2026-10-18-protocol-diversity/langchain-and-standards.md):
+
+- LangChain's libraries are MIT and run on Bun, but its memory parts fail
+  compatibility: the Store is vector-only with no SQLite backend in JS,
+  only LangChain's own clients speak Agent Protocol's `/store`, and
+  langmem is dormant.
+- Worth adopting from LangChain: openevals (MIT, TypeScript and Python)
+  for the memory evaluation, and `createAgent`'s middleware list as a
+  checklist for a runtime of her own.
+- Definition standards (Open Agent Spec, Letta's Agent File, Microsoft
+  Agent Framework's declarative agents) compile to frameworks, not
+  harnesses.
+- What reaches harnesses is Agent Skills, AGENTS.md, MCP and ACP, each in
+  or joining the Linux Foundation's Agentic AI Foundation, which declined
+  a `SOUL.md` proposal.
+- No memory or persona interchange standard has adoption. Google's Open
+  Knowledge Format v0.2, Markdown with YAML frontmatter and provenance, is
+  the nearest shape to her facts.
+
+[Cross-harness tooling](./2026-10-18-protocol-diversity/cross-harness.md):
+
+- **rulesync** is the generator to use, pinned and checked. One owner
+  makes some 90% of its commits, it shipped 27 releases in the month to
+  2026-10-17, it has no plugin point, and it leaves persona files alone by
+  policy.
+- **Persona slots** are filled by a subagent in two hosts only: Claude
+  Code's `--agent`, whose prompt "replaces the default Claude Code system
+  prompt entirely", and OpenCode's primary agent. Codex, Hermes, OpenClaw
+  and Qwen Code need writers of her own.
+- **Five mechanisms** reach all twelve harnesses surveyed:
+  - one MCP server;
+  - one budgeted block per host, injected by Claude-shaped session-start
+    hooks or written as a static file;
+  - in-process adapters for OpenCode, Hermes, OpenClaw and DeepSeek
+    Harness;
+  - transcript readers that hooks trigger;
+  - an ACP client for the sessions Dorothy launches.
+- **Existing parts:** Hindsight's MIT adapters cover the four in-process
+  hosts, and Letta's `trajectory` parses most transcripts.
+- **The risks are design choices:**
+  - where injected memory sits, for the prompt cache;
+  - recording a turn twice;
+  - exclusive memory slots;
+  - rulesync replacing whole settings keys.
+
 ## Next
 
-1. Research langchain-ai's components, and standards for portable agent
-   definitions, personas and memory.
-2. Research tooling as widely adopted as rulesync, for generating
-   configuration and sharing memory across harnesses.
+1. ~~Research langchain-ai's components, and standards for portable agent
+   definitions, personas and memory.~~ Done above.
+2. ~~Research tooling as widely adopted as rulesync, for generating
+   configuration and sharing memory across harnesses.~~ Done above.
 3. Design memory that works across harnesses, starting with
    brainstorming.
