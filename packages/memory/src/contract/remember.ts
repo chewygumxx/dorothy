@@ -41,6 +41,9 @@ export type RememberDeps = {
     project: string | null;
     host: string | null;
     from: string | null;
+    // Where a store failure's reason goes, which may name a path and so
+    // never reaches the caller.
+    warn?: ((message: string) => void) | undefined;
 };
 
 type Target = { scope: Scope; name: string; id: string };
@@ -116,6 +119,7 @@ function settle(
     result: FactResult,
     id: string,
     done: MemoryRememberResult["status"],
+    warn: RememberDeps["warn"],
 ): MemoryRememberResult {
     switch (result.kind) {
         case "written":
@@ -127,7 +131,8 @@ function settle(
         case "refused":
             throw new ContractError(409, result.reason);
         default:
-            throw new ContractError(500, result.reason);
+            warn?.(`remember of ${id} failed: ${result.reason}`);
+            throw new ContractError(500, "Memory failed.");
     }
 }
 
@@ -151,7 +156,7 @@ export async function contractRemember(
             { scope: target.scope, name: target.name },
             { by: "dorothy", why, guard: guardFor(target.id, false, () => {}) },
         );
-        return settle(result, target.id, "retired");
+        return settle(result, target.id, "retired", deps.warn);
     }
     const title = normalise(input.title ?? "");
     const text = (input.text ?? "").trim();
@@ -203,5 +208,5 @@ export async function contractRemember(
         },
         guard,
     );
-    return settle(result, target.id, adding ? "added" : "revised");
+    return settle(result, target.id, adding ? "added" : "revised", deps.warn);
 }

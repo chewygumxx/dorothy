@@ -269,3 +269,32 @@ describe("nameOf and descriptionOf", () => {
         expect(long).toEndWith(" ...");
     });
 });
+
+describe("a store that fails", () => {
+    it("says Memory failed, and tells the warning what it cannot", async () => {
+        const warnings: string[] = [];
+        store = {
+            ...store,
+            lock: async () => {
+                throw new Error("EACCES: open /home/user/dorothy/x.md");
+            },
+        };
+        const failing = contractRemember(
+            {
+                action: "add",
+                title: "Likes tea",
+                text: "Prefers tea to coffee.",
+                type: "user",
+                scope: "personal",
+            },
+            deps({ warn: (message) => warnings.push(message) }),
+        );
+        await expect(failing).rejects.toMatchObject({
+            status: 500,
+            message: "Memory failed.",
+        });
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toContain("/home/user/dorothy/x.md");
+        expect(warnings[0]).not.toContain("Prefers tea");
+    });
+});

@@ -362,6 +362,7 @@ export async function startService(
                         project === null ? null : await resolveProject(project),
                     host: host !== null && HOST_ID.test(host) ? host : null,
                     resolveProject,
+                    warn,
                 });
                 const transport = new WebStandardStreamableHTTPServerTransport({
                     sessionIdGenerator: undefined,

@@ -61,6 +61,8 @@ export type ToolDeps = {
     host: string | null;
     // A tool's project argument, an id or a path, as a project's id.
     resolveProject: (value: string) => Promise<string | null>;
+    // Where a failure's detail goes, which a caller never sees.
+    warn?: ((message: string) => void) | undefined;
 };
 
 export function withinOf(
@@ -222,6 +224,7 @@ export function createContractServer(deps: ToolDeps): McpServer {
                     project: await projectOf(input.project),
                     host: deps.host,
                     from: null,
+                    warn: deps.warn,
                 }),
             ),
     );
