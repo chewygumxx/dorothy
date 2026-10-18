@@ -8,8 +8,10 @@
   claude run from a session's Bash inherits its project and session; -c and
   purge then hit the live session
 - [Dorothy's ambition](./dorothy-ambition.md)
-  One adaptable Dorothy: extensible, remembering, Anthropic first
+  One adaptable Dorothy: extensible, remembering; Anthropic in doubt
 - [Plan commit headers](./plan-commit-headers.md)
   commitlint caps headers at 50 and body lines at 72; plans must too
 - [Readability over indicators](./readability-over-indicators.md)
   Fix the code a metric points at; never hide or gate the metric
+- [Memory priorities](./memory-priorities.md)
+  Memory ranks compatibility, access, progressive disclosure, persistence
