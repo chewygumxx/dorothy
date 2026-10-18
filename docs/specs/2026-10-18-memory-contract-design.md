@@ -276,7 +276,7 @@ holds one piece of knowledge, its filename its name:
 | `verified` | Trust | The user's confirmations, `{ by: human:<id>, at }` |
 | `status` | Lifecycle | `stable`, or `deprecated` once retired or superseded |
 | `stale_after` | Lifecycle | Optional: when a time-bound piece of knowledge lapses |
-| `dorothy` | An extension | `scope`, `origin`, `importance`, `retired` (`at`, `by`, `why`) and `superseded_by` |
+| `dorothy` | An extension | `origin`, `created`, `importance`, `metadata` and `retired` (`at`, `by`, `why`); the scope is the file's path |
 
 Actors follow OKF: `human:<id>` for the user, `<host>/<model>` for a
 harness's model through `remember`, and `dorothy-extraction/<model>` for
@@ -318,7 +318,9 @@ disclosure.
 
 - **MCP** at `/mcp` over Streamable HTTP, and over stdio through
   `dorothy --mcp`, a bridge for hosts that only launch processes, which
-  identifies the project from the directory it runs in. `--recall-server`
+  identifies the project from the directory it runs in and names its
+  host with `--host`, so what that host's model remembers is attributed to
+  it. `--recall-server`
   keeps serving her chat's own tools, `recollect` and `tags` among them,
   until her chat becomes a client of the service.
 - **The hook API** at `/v1/block`, `/v1/recall` and `/v1/record`, JSON
@@ -343,7 +345,8 @@ under the store's lock, the recall index's, as every writer does today,
 and commits each change as it is made. Her commands that write
 (`--memory`, `--retire`, `--edit-tags` and the rest) keep taking that
 lock themselves, so they and the service are serialised as writers are
-now; routing them through the service is later. Reads need no lock.
+now; routing them through the service is later. Reads wait their turn
+in the index's queue, as recall's do today.
 
 ### Background work
 
@@ -422,6 +425,9 @@ interface: the FTS5 index, `salience()` and the reviewer.
 
 ## Security and privacy
 
+- A request a web page could make is refused: one naming an `Origin`, a
+  POST that is not JSON, or one sent to a name other than the service's,
+  as DNS rebinding sends.
 - Loopback by default; a token for anything else; tokens hashed at rest
   and per device, so one can be withdrawn.
 - Scope is enforced by the service, never trusted to the host; export
@@ -505,6 +511,8 @@ is passed in.
 - OKF's `index.md` and `log.md` for `knowledge/`.
 - Encryption at rest of the data directory.
 - Exported forms for harnesses other than Claude Code.
+- `superseded_by`, when consolidation replaces one file with another, and
+  a command by which the user confirms a piece of knowledge (`verified`).
 - A user beyond one.
 
 ## Out of scope
