@@ -44,6 +44,20 @@ complete.
 
 Each entry gives the task, its commits and its review.
 
+### Task 1: the service table and the extraction cap
+
+Complete in `7c55313`; review clean, and `config.test.ts` passes 32 of
+32. Minor findings deferred to the final review:
+
+- "reads both tables" asserts nothing of `service` under `toEqual`, as
+  the plan wrote it.
+- The `listen` address pattern admits values such as `-` or `:`, as the
+  plan wrote it; a failed bind must surface as a clear error.
+- No test covers `listen`'s de-duplication, a `listen` not a list, a
+  port out of range or an `extract-cap` over 100.
+- `README.md` names neither `extract-cap` nor `[service]`; Task 19
+  documents them.
+
 ## Verification
 
 Recorded at the end of each part, with `bun run check`.
