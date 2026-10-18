@@ -1,0 +1,160 @@
+// vim:set expandtab shiftwidth=4 filetype=typescript:
+// SPDX-License-Identifier: GPL-3.0-only
+
+//
+//
+// ~chewygumxx/dorothy.git
+// ::: :/packages/eval/src/report/summary.ts
+//
+//
+
+// A run's records counted: each rate over the records that have it, by
+// system, overall and by type.
+
+import type { QuestionType } from "../questions/file.js";
+import type { RunInfo, RunRecord } from "../run/record.js";
+
+export type Rate = { hits: number; of: number };
+export type Cell = {
+    n: number;
+    strict: Rate;
+    lenient: Rate;
+    at5: Rate;
+    at10: Rate;
+    // Of abstentions, those declined; of the rest, those declined wrongly.
+    declined: Rate;
+    wronglyDeclined: Rate;
+    // Of updates, those that gave the older answer.
+    stale: Rate;
+    // Means.
+    retrievalMs: number;
+    chars: number;
+    // Of the answered.
+    answerMs: number;
+    answered: number;
+    // Sums.
+    input: number;
+    output: number;
+    failures: number;
+};
+export type SystemSummary = {
+    all: Cell;
+    byType: Partial<Record<QuestionType, Cell>>;
+    alone: { right: string[]; wrong: string[] };
+};
+export type Summary = { run: RunInfo; systems: Record<string, SystemSummary> };
+
+const rate = (): Rate => ({ hits: 0, of: 0 });
+const emptyCell = (): Cell => ({
+    n: 0,
+    strict: rate(),
+    lenient: rate(),
+    at5: rate(),
+    at10: rate(),
+    declined: rate(),
+    wronglyDeclined: rate(),
+    stale: rate(),
+    retrievalMs: 0,
+    chars: 0,
+    answerMs: 0,
+    answered: 0,
+    input: 0,
+    output: 0,
+    failures: 0,
+});
+
+function tally(into: Rate, value: boolean | null): void {
+    if (value !== null) {
+        into.of++;
+        into.hits += value ? 1 : 0;
+    }
+}
+
+function add(cell: Cell, record: RunRecord): void {
+    cell.n++;
+    tally(cell.strict, record.judged.strict);
+    tally(cell.lenient, record.judged.lenient);
+    tally(cell.at5, record.recall?.at5 ?? null);
+    tally(cell.at10, record.recall?.at10 ?? null);
+    tally(
+        record.type === "abstention" ? cell.declined : cell.wronglyDeclined,
+        record.judged.declined,
+    );
+    tally(cell.stale, record.judged.stale);
+    cell.retrievalMs += record.retrieval.ms;
+    cell.chars += record.retrieval.chars;
+    cell.answerMs += record.answer?.ms ?? 0;
+    cell.answered += record.answer === null ? 0 : 1;
+    cell.input += record.answer?.input ?? 0;
+    cell.output += record.answer?.output ?? 0;
+    cell.failures +=
+        record.failures.length + (record.retrieval.error === null ? 0 : 1);
+}
+
+// Sums of time and characters become means.
+function settle(cell: Cell): Cell {
+    return cell.n === 0
+        ? cell
+        : {
+              ...cell,
+              retrievalMs: Math.round(cell.retrievalMs / cell.n),
+              chars: Math.round(cell.chars / cell.n),
+              answerMs:
+                  cell.answered === 0
+                      ? 0
+                      : Math.round(cell.answerMs / cell.answered),
+          };
+}
+
+export function summarise(info: RunInfo, records: RunRecord[]): Summary {
+    const systems: Record<string, SystemSummary> = {};
+    const cells = new Map<
+        string,
+        { all: Cell; byType: Map<QuestionType, Cell> }
+    >();
+    for (const name of info.systems) {
+        cells.set(name, { all: emptyCell(), byType: new Map() });
+    }
+    // Each question's strict verdict by system, for what one alone got.
+    const verdicts = new Map<string, Map<string, boolean>>();
+    for (const record of records) {
+        const cell = cells.get(record.system);
+        if (cell === undefined) {
+            continue;
+        }
+        add(cell.all, record);
+        const byType = cell.byType.get(record.type) ?? emptyCell();
+        add(byType, record);
+        cell.byType.set(record.type, byType);
+        if (record.judged.strict !== null) {
+            const of = verdicts.get(record.question) ?? new Map();
+            of.set(record.system, record.judged.strict);
+            verdicts.set(record.question, of);
+        }
+    }
+    for (const [name, cell] of cells) {
+        systems[name] = {
+            all: settle(cell.all),
+            byType: Object.fromEntries(
+                [...cell.byType].map(([type, each]) => [type, settle(each)]),
+            ),
+            alone: { right: [], wrong: [] },
+        };
+    }
+    for (const [question, of] of [...verdicts].sort(([a], [b]) =>
+        a < b ? -1 : 1,
+    )) {
+        if (of.size < 2) {
+            continue;
+        }
+        const right = [...of].filter(([, strict]) => strict);
+        const wrong = [...of].filter(([, strict]) => !strict);
+        if (right.length === 1) {
+            systems[right[0]?.[0] as string]?.alone.right.push(question);
+        }
+        if (wrong.length === 1) {
+            systems[wrong[0]?.[0] as string]?.alone.wrong.push(question);
+        }
+    }
+    return { run: info, systems };
+}

@@ -69,4 +69,7 @@ reads no file of memory's itself.
   `termsOf` and `scoreOf` (`terms.ts`); and the three systems,
   `dorothy.ts`, `lexical.ts` and `full.ts`. A new system is a maker in
   `system.ts`'s table.
+- `run/record.ts`: a run's directory, its records and settings;
+  `report/`: `summarise`, the Markdown report and `compareOf`, and the
+  `compare` command with `writeRunReport`.
 - `testing.ts`: `fakeIo`, temporary roots and the fixture archive.
