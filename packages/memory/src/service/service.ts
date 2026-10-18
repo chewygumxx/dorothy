@@ -62,6 +62,7 @@ import { syncProject } from "../projects/sync.js";
 import { guardFor } from "../recall/remember.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { transcriptDir } from "../transcript.js";
+import { claudeConfigDir, confineTranscript } from "./confine.js";
 import { isLoopback } from "./loopback.js";
 import type { TokenStore } from "./tokens.js";
 
@@ -85,6 +86,12 @@ export type ServiceOptions = {
     loopback?: (address: string) => boolean;
     warn?: (message: string) => void;
     now?: () => Date;
+    // Claude Code's configuration directory, whose projects directory
+    // holds the only transcripts a record may name; found as dorothy
+    // --claude finds it by default.
+    claudeDir?: string;
+    // The largest transcript read, in bytes; for tests.
+    maxTranscript?: number;
 };
 
 export type RunningService = {
@@ -188,17 +195,23 @@ export async function startService(
         isProjectId(value)
             ? value
             : ((await identify(value).catch(() => null))?.id ?? null);
+    const claudeDir = options.claudeDir ?? claudeConfigDir(env);
     const claudeTranscript = async (
         request: RecordRequest & { transcript: string },
     ): Promise<RecordResponse> => {
+        const transcript = await confineTranscript(
+            request.transcript,
+            claudeDir,
+            options.maxTranscript,
+        );
         const found = await recordSession(
             {
                 session: request.session,
-                transcript: request.transcript,
+                transcript,
                 // The launch's directory, which a halt's note keeps, is not
                 // in the contract's envelope; until adapters send it
                 // (delivery), the transcript's own directory stands in.
-                dir: dirname(request.transcript),
+                dir: dirname(transcript),
                 since: null,
                 ended: false,
             },
@@ -221,7 +234,8 @@ export async function startService(
             case "nothing":
                 return { accepted: 0, duplicates: 0, through: null };
             case "missing":
-                throw new ContractError(404, found.reason);
+                // Only a race now: the path was confined and found a file.
+                throw new ContractError(403, "that transcript cannot be read");
             default:
                 throw new ContractError(503, "the store could not be locked");
         }

@@ -9,12 +9,20 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import {
+    mkdirSync,
+    mkdtempSync,
+    rmSync,
+    symlinkSync,
+    truncateSync,
+    writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Config, DEFAULT_CONFIG, type Env } from "@dorothy/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { userLine } from "../bodies/fixtures.js";
 import { loadProfiles } from "../hosts/profiles.js";
 import { MAX_BODY, type RunningService, startService } from "./service.js";
 import { type TokenStore, tokenStore } from "./tokens.js";
@@ -25,6 +33,7 @@ let env: Env;
 let tokens: TokenStore;
 let token: string;
 let running: RunningService | null = null;
+let claude: string;
 const config: Config = {
     ...DEFAULT_CONFIG,
     history: { ...DEFAULT_CONFIG.history, enabled: false },
@@ -39,6 +48,8 @@ beforeEach(async () => {
         XDG_STATE_HOME: join(home, "state"),
         XDG_CONFIG_HOME: join(home, "config"),
     };
+    claude = join(home, "claude");
+    mkdirSync(join(claude, "projects", "-work"), { recursive: true });
     tokens = tokenStore(join(home, "tokens.json"));
     token = await tokens.add("laptop");
 });
@@ -59,6 +70,8 @@ const start = async (remote = false) => {
         listen: [],
         loopback: () => !remote,
         warn: () => {},
+        claudeDir: claude,
+        maxTranscript: 4096,
     });
     return running;
 };
@@ -241,5 +254,66 @@ describe("the memory service", () => {
             "search",
         ]);
         await client.close();
+    });
+
+    describe("a transcript path from loopback", () => {
+        const FIXED = "that transcript cannot be read";
+        const named = (transcript: string) =>
+            post("/v1/record", {
+                host: "claude-code",
+                session: "c1",
+                transcript,
+            });
+        const refused = async (transcript: string) => {
+            const response = await named(transcript);
+            expect(response.status).toBe(403);
+            expect(await response.json()).toEqual({ error: FIXED });
+        };
+        const inside = (name: string) =>
+            join(claude, "projects", "-work", name);
+
+        it("reads one inside Claude's projects directory", async () => {
+            await start();
+            writeFileSync(inside("c1.jsonl"), `${userLine("u1", 0, "hi")}\n`);
+            const response = await named(inside("c1.jsonl"));
+            expect(response.status).toBe(200);
+            expect(await response.json()).toMatchObject({ accepted: 1 });
+        });
+
+        it("refuses a path that climbs out of it", async () => {
+            await start();
+            const outside = join(home, "outside.jsonl");
+            writeFileSync(outside, `${userLine("u1", 0, "hi")}\n`);
+            await refused(inside("../../../outside.jsonl"));
+            await refused(outside);
+        });
+
+        it("refuses a symlink pointing out of it", async () => {
+            await start();
+            const outside = join(home, "outside.jsonl");
+            writeFileSync(outside, `${userLine("u1", 0, "hi")}\n`);
+            symlinkSync(outside, inside("link.jsonl"));
+            await refused(inside("link.jsonl"));
+        });
+
+        it("refuses a directory and a file not named .jsonl", async () => {
+            await start();
+            mkdirSync(inside("dir.jsonl"));
+            writeFileSync(inside("notes.txt"), "x\n");
+            await refused(inside("dir.jsonl"));
+            await refused(inside("notes.txt"));
+        });
+
+        it("refuses a file over the cap", async () => {
+            await start();
+            writeFileSync(inside("big.jsonl"), "");
+            truncateSync(inside("big.jsonl"), 4097);
+            await refused(inside("big.jsonl"));
+        });
+
+        it("refuses a missing file as it does any other", async () => {
+            await start();
+            await refused(inside("gone.jsonl"));
+        });
     });
 });
