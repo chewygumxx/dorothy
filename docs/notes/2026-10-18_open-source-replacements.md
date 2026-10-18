@@ -38,6 +38,23 @@ npm registry on that day, and a sample was checked again by hand.
 Features are each project's own claims, from its docs or source; nothing
 was installed or run. *Unverified* marks what could not be confirmed.
 
+The agents' reports, with every citation, sit beside this note:
+
+- [inventory](./2026-10-18_open-source-replacements/inventory.md): the
+  code, part by part;
+- [harnesses](./2026-10-18_open-source-replacements/harnesses.md):
+  terminal and coding-agent harnesses;
+- [platforms](./2026-10-18_open-source-replacements/platforms.md):
+  assistant platforms and chat front ends;
+- [memory systems](./2026-10-18_open-source-replacements/memory-systems.md):
+  the first pass on memory, which the second supersedes;
+- [memory architectures](./2026-10-18_open-source-replacements/memory-architectures.md):
+  the second pass, with benchmarks and an evaluation;
+- [gateways](./2026-10-18_open-source-replacements/gateways.md): gateways,
+  model libraries, providers and Anthropic's terms;
+- [libraries](./2026-10-18_open-source-replacements/libraries.md): smaller
+  libraries and tools.
+
 ## In brief
 
 - Dorothy is meant to be one adaptable assistant whose memory follows her
