@@ -44,6 +44,7 @@ describe("parseConfig", () => {
                 memory: DEFAULT_CONFIG.memory,
                 compaction: DEFAULT_CONFIG.compaction,
                 history: DEFAULT_CONFIG.history,
+                service: DEFAULT_CONFIG.service,
             },
             warnings: [],
         });
@@ -68,6 +69,44 @@ describe("parseConfig", () => {
         ]);
     });
 
+    it("reads [service]", () => {
+        const { config, warnings } = parseConfig(
+            '[service]\nport = 5000\nlisten = ["100.64.0.1", "fd7a::1"]\n',
+        );
+        expect(warnings).toEqual([]);
+        expect(config.service).toEqual({
+            port: 5000,
+            listen: ["100.64.0.1", "fd7a::1"],
+        });
+    });
+
+    it("listens on loopback alone by default", () => {
+        expect(parseConfig("").config.service).toEqual({
+            port: 4774,
+            listen: [],
+        });
+    });
+
+    it("warns of a listen that is no list of addresses", () => {
+        const { config, warnings } = parseConfig(
+            '[service]\nlisten = ["http://x"]\n',
+        );
+        expect(config.service.listen).toEqual([]);
+        expect(warnings).toEqual([
+            'config.toml: service.listen must be a list of addresses, such as "100.64.0.1"',
+        ]);
+    });
+
+    it("reads memory's extract-cap, 10 by default", () => {
+        expect(parseConfig("").config.memory.extractCap).toBe(10);
+        expect(
+            parseConfig("[memory]\nextract-cap = 3\n").config.memory.extractCap,
+        ).toBe(3);
+        expect(parseConfig("[memory]\nextract-cap = 0\n").warnings).toEqual([
+            "config.toml: memory.extract-cap must be a whole number from 1 to 100",
+        ]);
+    });
+
     it("reads the memory table", () => {
         const text = [
             "[memory]",
@@ -87,6 +126,7 @@ describe("parseConfig", () => {
                     idleSeconds: 30,
                     halfLifeDays: 7,
                     catchUp: 0,
+                    extractCap: 10,
                 },
             },
             warnings: [],
