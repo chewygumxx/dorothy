@@ -181,13 +181,13 @@ export function baselineEngine(deps: BaselineDeps): MemoryEngine {
                 note: candidate.note,
                 project: projectOf(candidate.phrase),
             }));
-            if (request.project === null) {
-                return items;
-            }
-            return [
-                ...items.filter((item) => item.project === request.project),
-                ...items.filter((item) => item.project !== request.project),
-            ];
+            // Personal conversations and the session's own project's: the
+            // ones `open` admits, as it refuses another project's.
+            const own = items.filter(
+                (item) =>
+                    item.project !== null && item.project === request.project,
+            );
+            return [...own, ...items.filter((item) => item.project === null)];
         },
         async extract(phrase, signal) {
             await deps.reviewer?.review(phrase, signal);

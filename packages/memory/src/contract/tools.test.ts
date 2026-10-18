@@ -9,14 +9,24 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    rmSync,
+    writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { newPhrase } from "@dorothy/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { baselineEngine } from "../engine/baseline.js";
+import type { MemoryEngine } from "../engine/engine.js";
 import { PERSONAL, putFact } from "../facts/store.js";
+import { EMPTY_SIDECAR, updateSidecar } from "../memory/sidecar.js";
 import { RecallIndex } from "../recall/store.js";
+import { transcriptDir, transcriptPath } from "../transcript.js";
 import { fakeEngine, knowledge } from "./testing.js";
 import { createContractServer, INSTRUCTIONS } from "./tools.js";
 
@@ -39,7 +49,7 @@ const engine = fakeEngine({
 const MINE = "github.com/me/app";
 const OTHER = "github.com/me/other";
 
-async function connect(project: string | null, host = engine) {
+async function connect(project: string | null, host: MemoryEngine = engine) {
     const server = createContractServer({
         engine: host,
         index,
@@ -239,6 +249,64 @@ describe("open keeps to the connection's scope", () => {
             project: OTHER,
         });
         expect(isError).toBe(false);
+    });
+});
+
+describe("the opening block's conversations", () => {
+    it("lists only those open admits, and each opens", async () => {
+        const env = {
+            HOME: root,
+            XDG_DATA_HOME: join(root, "data"),
+            XDG_CACHE_HOME: join(root, "cache"),
+            XDG_STATE_HOME: join(root, "state"),
+        };
+        mkdirSync(transcriptDir(env), { recursive: true });
+        const at = "2026-10-15T09:30:00.000Z";
+        const write = async (name: string, project: string | null) => {
+            const line = (kind: string, fields: object) =>
+                `${JSON.stringify({ v: 1, kind, at, ...fields })}\n`;
+            writeFileSync(
+                transcriptPath(name, env),
+                line("session", {
+                    phrase: "p",
+                    sdkSessionId: "",
+                    model: "m",
+                    promptHash: "",
+                    resumed: false,
+                    ...(project === null ? {} : { project }),
+                }) + line("user", { text: "Hello." }),
+            );
+            // A note, which only a titled conversation has.
+            await updateSidecar(transcriptDir(env), name, () => ({
+                ...EMPTY_SIDECAR,
+                title: `About ${project ?? "nothing"}`,
+            }));
+        };
+        const [a, b, none] = [phrase(4), phrase(5), phrase(6)];
+        await write(a, MINE);
+        await write(b, OTHER);
+        await write(none, null);
+        const host = baselineEngine({
+            env,
+            index,
+            halfLifeDays: 30,
+            reviewer: null,
+            now: () => Date.parse(at),
+        });
+        await client.close();
+        // The session is the project OTHER's; MINE's is a stranger.
+        await connect(OTHER, host);
+        const { isError, text } = await call("brief", {});
+        expect(isError).toBe(false);
+        const ids = (JSON.parse(text).items as { id: string }[]).map(
+            (item) => item.id,
+        );
+        expect(ids).toContain(`c:${b}`);
+        expect(ids).toContain(`c:${none}`);
+        expect(ids).not.toContain(`c:${a}`);
+        for (const id of ids.filter((id) => id.startsWith("c:"))) {
+            expect((await call("open", { id })).isError).toBe(false);
+        }
     });
 });
 
