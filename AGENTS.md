@@ -25,13 +25,13 @@ with other harnesses. Bun runs her from source; there is no build.
 
 ## Packages
 
-Seven Bun workspace packages under `packages/`, each `@dorothy/<name>`.
+Eight Bun workspace packages under `packages/`, each `@dorothy/<name>`.
 `core` holds the contracts the others meet on, `identity` who Dorothy is;
 `memory` and `tui` depend on `core` alone, `agent` and `gateway` on it
-and `identity`, never on each other; `cli` depends on all but `identity`
-and wires them. A package exports only the entry points its
-`package.json` names and imports only what it declares, as Bun's isolated
-linker fails an undeclared or internal import under Bun and `tsc`.
+and `identity`, never on each other, `eval` on `core` and `memory`; `cli`
+on all but `identity` and `eval`, and wires them. A package exports only
+the entry points its `package.json` names and imports only what it
+declares, as Bun's isolated linker fails an undeclared or internal import.
 `workspace.test.ts` pins the graph, the entry points and the SDK's holder.
 
 ## Commands

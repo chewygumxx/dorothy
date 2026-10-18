@@ -55,6 +55,14 @@
         "niceware": "^4.0.0",
       },
     },
+    "packages/eval": {
+      "name": "@dorothy/eval",
+      "dependencies": {
+        "@dorothy/core": "workspace:*",
+        "@dorothy/memory": "workspace:*",
+        "zod": "^4.6.7",
+      },
+    },
     "packages/gateway": {
       "name": "@dorothy/gateway",
       "dependencies": {
@@ -195,6 +203,8 @@
     "@dorothy/cli": ["@dorothy/cli@workspace:packages/cli"],
 
     "@dorothy/core": ["@dorothy/core@workspace:packages/core"],
+
+    "@dorothy/eval": ["@dorothy/eval@workspace:packages/eval"],
 
     "@dorothy/gateway": ["@dorothy/gateway@workspace:packages/gateway"],
 

@@ -1,0 +1,10 @@
+{
+    "name": "@dorothy/eval",
+    "private": true,
+    "type": "module",
+    "dependencies": {
+        "@dorothy/core": "workspace:*",
+        "@dorothy/memory": "workspace:*",
+        "zod": "^4.6.7"
+    }
+}

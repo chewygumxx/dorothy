@@ -1,0 +1,207 @@
+// vim:set expandtab shiftwidth=4 filetype=typescript:
+// SPDX-License-Identifier: GPL-3.0-only
+
+//
+//
+// ~chewygumxx/dorothy.git
+// ::: :/packages/eval/src/testing.ts
+//
+//
+
+// What the evaluation's tests share: a terminal to play, temporary roots,
+// and one small archive with a snapshot of it. Nothing here reads a real
+// data directory.
+
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { Env } from "@dorothy/core";
+import {
+    type ArchiveFixture,
+    fixturePhrase,
+    writeArchive,
+} from "@dorothy/memory/evaluation";
+import type { Io } from "./command.js";
+import { takeSnapshot } from "./snapshot/snapshot.js";
+
+export function fakeIo(
+    options: {
+        env?: Env;
+        answers?: string[];
+        onEdit?: (path: string) => void;
+    } = {},
+): { io: Io; out: string[]; err: string[] } {
+    const out: string[] = [];
+    const err: string[] = [];
+    const answers = [...(options.answers ?? [])];
+    return {
+        out,
+        err,
+        io: {
+            env: options.env ?? {},
+            out: (text) => out.push(text),
+            err: (text) => err.push(text),
+            ask: async (prompt) => {
+                out.push(prompt);
+                return answers.shift() ?? null;
+            },
+            edit: async (path) => options.onEdit?.(path),
+        },
+    };
+}
+
+export function tempRoot(prefix: string): { root: string; remove(): void } {
+    const root = mkdtempSync(join(tmpdir(), `dorothy-${prefix}-`));
+    return {
+        root,
+        remove: () => rmSync(root, { recursive: true, force: true }),
+    };
+}
+
+export const [TEA, GARDEN, BIKE, READER] = [1, 2, 3, 4].map(fixturePhrase) as [
+    string,
+    string,
+    string,
+    string,
+];
+
+export const FIXTURE: ArchiveFixture = {
+    conversations: [
+        {
+            phrase: TEA,
+            project: "github.com/me/app",
+            title: "Tea at four",
+            turns: [
+                {
+                    role: "user",
+                    text: "I drink green tea at four every afternoon.",
+                    at: "2026-09-01T16:00:00.000Z",
+                },
+                {
+                    role: "assistant",
+                    text: "Green tea at four, noted.",
+                    at: "2026-09-01T16:00:05.000Z",
+                },
+            ],
+        },
+        {
+            phrase: GARDEN,
+            title: "The allotment",
+            turns: [
+                {
+                    role: "user",
+                    text: "My allotment is plot twelve by the river.",
+                    at: "2026-09-05T10:00:00.000Z",
+                },
+                {
+                    role: "assistant",
+                    text: "Plot twelve, by the river.",
+                    at: "2026-09-05T10:00:05.000Z",
+                },
+            ],
+        },
+        {
+            phrase: BIKE,
+            title: "Bicycle repair",
+            turns: [
+                {
+                    role: "user",
+                    text: "The rear derailleur on my bicycle slips in third gear.",
+                    at: "2026-09-10T18:00:00.000Z",
+                },
+                {
+                    role: "assistant",
+                    text: "Turn the barrel adjuster a quarter turn.",
+                    at: "2026-09-10T18:00:05.000Z",
+                },
+            ],
+        },
+        {
+            phrase: READER,
+            title: "Afternoon plans",
+            turns: [
+                {
+                    role: "user",
+                    text: "What do I drink in the afternoon?",
+                    at: "2026-10-01T15:00:00.000Z",
+                },
+                {
+                    role: "assistant",
+                    text: "Green tea, at four.",
+                    at: "2026-10-01T15:00:05.000Z",
+                },
+            ],
+            reads: [
+                {
+                    id: "r1",
+                    target: { conversation: TEA },
+                    purpose: "what the user drinks in the afternoon",
+                    served: "essential",
+                },
+                {
+                    id: "r2",
+                    target: { fact: "personal/prefers-mornings" },
+                    purpose: "when the user likes to work",
+                    served: "useful",
+                },
+                {
+                    id: "r3",
+                    target: { conversation: BIKE },
+                    purpose: "nothing much",
+                    served: "none",
+                },
+                // A retired file, which no system's search may give.
+                {
+                    id: "r4",
+                    target: { fact: "personal/uses-vim" },
+                    purpose: "which editor the user used",
+                    served: "useful",
+                },
+            ],
+        },
+    ],
+    knowledge: [
+        {
+            scope: "personal",
+            name: "prefers-mornings",
+            title: "Prefers working in the mornings",
+            body: "The user does their best work before noon.",
+            at: "2026-08-01T09:00:00.000Z",
+        },
+        {
+            scope: "personal",
+            name: "uses-vim",
+            title: "Uses Vim",
+            body: "The user edits in Vim.",
+            at: "2026-07-01T09:00:00.000Z",
+            retired: { at: "2026-09-20T09:00:00.000Z", why: "Moved to Helix." },
+        },
+        {
+            scope: "personal",
+            name: "uses-helix",
+            title: "Uses Helix",
+            body: "The user edits in Helix.",
+            at: "2026-09-20T09:00:00.000Z",
+        },
+    ],
+};
+
+// A data directory holding FIXTURE, under root/source; returns its path.
+export async function writeFixtureData(root: string): Promise<string> {
+    const env = {
+        HOME: join(root, "source"),
+        XDG_DATA_HOME: join(root, "source", "data"),
+        XDG_CACHE_HOME: join(root, "source", "cache"),
+        XDG_STATE_HOME: join(root, "source", "state"),
+        XDG_CONFIG_HOME: join(root, "source", "config"),
+    };
+    await writeArchive(env, FIXTURE);
+    return join(root, "source", "data", "dorothy");
+}
+
+// A work directory under root/work holding a snapshot of FIXTURE.
+export async function snapshotFixture(root: string): Promise<string> {
+    const work = join(root, "work");
+    await takeSnapshot(await writeFixtureData(root), work);
+    return work;
+}

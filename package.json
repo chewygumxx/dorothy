@@ -46,6 +46,7 @@
         "check": "bun run typecheck && bun run format:check && bun run lint && bun run lint:md && bun run lint:yaml && bun run lint:env && bun run lint:emdash && bun run lint:header && bun run test",
         "commit": "cz",
         "dev": "bun packages/cli/src/index.ts",
+        "eval": "bun packages/eval/src/main.ts",
         "format": "git ls-files -z -co --exclude-standard | xargs -0 -r biome format --write --files-ignore-unknown=true --no-errors-on-unmatched && bun run format:yaml",
         "format:check": "git ls-files -z -co --exclude-standard | xargs -0 -r biome format --files-ignore-unknown=true --no-errors-on-unmatched",
         "format:header": "sync-header-metadata --update",
