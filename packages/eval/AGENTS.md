@@ -58,4 +58,9 @@ reads no file of memory's itself.
   per role; `models/client.ts`: `Models`, one `ChatOpenAI` per role,
   with retries of its own (the client's are off: it does not retry a
   headerless 429) and the `--max-calls` cap.
+- `systems/`: `System` and `makeSystem` (`system.ts`); the corpus, the
+  snapshot's archive opened once, with items as text (`corpus.ts`);
+  `termsOf` and `scoreOf` (`terms.ts`); and the three systems,
+  `dorothy.ts`, `lexical.ts` and `full.ts`. A new system is a maker in
+  `system.ts`'s table.
 - `testing.ts`: `fakeIo`, temporary roots and the fixture archive.
