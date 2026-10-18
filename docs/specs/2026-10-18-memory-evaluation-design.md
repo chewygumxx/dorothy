@@ -88,11 +88,14 @@ evaluation reads no file of memory's itself.
 bun run eval -- snapshot --from ~/.local/share/dorothy --work ~/eval
 ```
 
-- `--from` is a data directory (`$XDG_DATA_HOME/dorothy`); `--work` a
-  directory of the user's choosing, made if missing, refused if it holds
-  a snapshot already unless `--replace` is given.
-- It copies `transcripts/` (conversations and their sidecars) and
-  `knowledge/`, and records what it copied in `<work>/snapshot.json`:
+- `--from` is a data directory (`$XDG_DATA_HOME/dorothy`), always given,
+  so that nothing reads her real data by default; `--work` a directory
+  of the user's choosing, made if missing, refused if it holds a
+  snapshot already unless `--replace` is given. Neither may hold the
+  other.
+- It copies `transcripts/` (conversations and their sidecars),
+  `knowledge/`, `facts/` where a data directory has not yet moved it,
+  and `tags.json`, and records what it copied in `<work>/snapshot.json`:
   the source, the time, and counts of conversations and knowledge files.
   It never writes to `--from`, and copies no `.git`, mirror or token.
 - Every later command takes `--work` and runs with `HOME`,
@@ -124,7 +127,9 @@ bun run eval -- snapshot --from ~/.local/share/dorothy --work ~/eval
 | `note` | The reviewer's note; optional |
 
 Only accepted questions are run. A malformed line is reported with its
-number and skipped, never fatal.
+number: `run` skips it, while the commands that rewrite the file
+(`mine`, `generate`, `review`) refuse until it is mended, so that none
+drops a line the owner wrote.
 
 ### Mined lookups
 
@@ -174,8 +179,9 @@ bun run eval -- generate --work ~/eval --count 300
 - The model returns JSON, checked by a schema; a draft whose evidence
   ids are not in the snapshot, or whose answer is empty, is dropped and
   counted.
-- Samples are drawn by a seed recorded in the file, so a run can be
-  repeated.
+- Samples are drawn by a seed, which `<work>/generated.json` records
+  with the model, the counts asked and made, and the drafts dropped and
+  why, so a generation can be repeated.
 
 ### Review
 
@@ -193,21 +199,22 @@ estimates three to five hours for 300.
 
 ```ts
 interface System {
-    name: string;
-    // Builds whatever the system needs from the snapshot.
-    prepare(snapshot: Snapshot): Promise<void>;
-    // What it gives for a question, best first, within budget characters.
+    readonly name: string;
+    // What it gives for a question within budget characters.
     retrieve(question: Asked, budget: number): Promise<Retrieved>;
-    close(): Promise<void>;
+    // For systems with a store of their own, as providers have.
+    prepare?(): Promise<void>;
+    close?(): Promise<void>;
 }
 type Asked = { text: string; asOf: string; project: string | null;
     exclude: string | null };
-type Retrieved = { items: { id: string; text: string }[];
-    tokens?: number };
+// Contract ids best first, for evidence recall, and the context the
+// answering model reads.
+type Retrieved = { ranked: string[]; context: string };
 ```
 
-Each item's `id` is a contract id, so evidence can be checked whatever
-the system. The first three:
+The first three are built over one corpus, the snapshot's archive
+opened once for the run:
 
 1. **`dorothy`**: her baseline engine over the snapshot. Its opening
    block for the question's project, then `search` over all scopes for
@@ -217,8 +224,10 @@ the system. The first three:
    knowledge file scored by how many of the question's terms it holds,
    best first, no index: what plain `grep` would find.
 3. **`full`**: a bound from above, where it fits. Every conversation and
-   knowledge file, newest first, until the budget; the run says how much
-   of the snapshot that was.
+   knowledge file, newest first, until a budget of its own
+   (`--full-budget`, 400,000 characters by default, some 100,000
+   tokens); its ranked ids are what fitted, so its evidence recall says
+   how much of the snapshot that was.
 
 `exclude` is honoured by all three. Retrieval sees the whole snapshot;
 `asOf` dates the question for the answering model alone. A system that
