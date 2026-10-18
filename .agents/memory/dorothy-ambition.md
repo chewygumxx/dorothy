@@ -1,6 +1,6 @@
 ---
 name: dorothy-ambition
-description: "One adaptable Dorothy: extensible, remembering, Anthropic first"
+description: "One adaptable Dorothy: extensible, remembering; Anthropic in doubt"
 metadata:
   node_type: memory
   type: project
@@ -19,13 +19,17 @@ Stated 2026-10-15, after comparing OpenClaw and Hermes Agent as hosts:
 - Identity persistence and memory management like Hermes's, which the
   user sees as the state of the art.
 - Anthropic's models first, falling back to featherless.ai and maybe
-  OpenRouter when usage runs out or a different model suits the task.
+  OpenRouter when usage runs out or a different model suits the task. On
+  2026-10-18 the user was weighing leaving Anthropic altogether for more
+  permissive, cheaper models
+  ([replacements](../../docs/notes/2026-10-18_open-source-replacements.md)).
 - Sceptical of Hermes's self-improvement loop over a scheduled run of
   the claude-md-management or claude-code-setup plugins.
 - Memory comes first, and may be reworked whole. Its principle: "Wherever
   you go, your memory follows with you." To be discussed in its spec.
 - Nothing is forgotten: a memory may fade in prominence (ranking,
-  retiring) but must always remain possible to query. No expiry.
+  retiring) but must always remain possible to query. Since 2026-10-18 a
+  preference, not a rule: see [memory priorities](./memory-priorities.md).
 
 **Why:** the user wants the best for Dorothy without being hosted by
 either project. The objectives report,
