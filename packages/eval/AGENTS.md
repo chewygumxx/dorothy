@@ -52,4 +52,6 @@ reads no file of memory's itself.
   `snapshot` command.
 - `questions/file.ts`: the question file, its schema and ids; the
   commands that rewrite it read it with `readQuestionsToRewrite`.
+- `questions/mine.ts`: lookup questions from her appraised reads, and
+  the `mine` command.
 - `testing.ts`: `fakeIo`, temporary roots and the fixture archive.
