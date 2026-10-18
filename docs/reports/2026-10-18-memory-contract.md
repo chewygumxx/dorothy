@@ -126,6 +126,24 @@ rather than adding a second. If wrong, one bullet sits a line off.
 Minor finding deferred: the tests check neither a `.` segment in a
 memory id nor the length cap of a host id.
 
+### Task 6: the contract's schemas
+
+Complete in `80f5b1b`; review approved, and the contract's tests pass
+5 of 5. The review found, as the plan wrote it, that the `open` and
+`remember` tool ids are checked for length alone. Ruling: the schemas
+stay so, as `remember` (Task 12) and the `open` tool (Task 13) run
+`parseMemoryId` on them. If wrong, a malformed id reaches a handler
+that forgets to parse it; the final review checks both. Minor findings
+deferred to the final review:
+
+- `search`'s `after` and `before` are unchecked strings, and event
+  texts and response arrays have no cap but the body's 8 MiB.
+- `from` is not checked against `through`, and a private record may
+  still carry a transcript.
+- A strict schema's message names the unknown key the client sent.
+- The tests cover the plan's cases alone, not the responses, the tool
+  shapes or the caps.
+
 ## Verification
 
 Recorded at the end of each part, with `bun run check`.
