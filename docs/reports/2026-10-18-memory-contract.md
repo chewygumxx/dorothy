@@ -268,6 +268,26 @@ the final review:
 - No test pins `search`'s limit or a `remember` error reaching the
   client.
 
+### Task 14: device tokens
+
+Complete in `c2a4ac6` and `1e9a43f`, after one fix round; the memory
+package passes 1224 of 1224. The review found the tokens' making,
+hashing, comparison and file mode sound, and one fault in the plan's
+code: a token file that could not be read counted as empty, so adding
+or revoking a device over it erased every other device. Ruling: adding
+and revoking take only a missing file as empty, and refuse any other
+failure without touching the file, while verifying still trusts no
+device. If wrong, a corrupt token file must be removed by hand. The
+re-review found it addressed. Minor findings deferred to the final
+review:
+
+- The file is not synced before its rename, so a power loss could
+  leave it empty, as the plan wrote it; a failed write leaves its
+  temporary file.
+- Adding and revoking are not serialised against each other, and the
+  shape check is looser than the file's type.
+- Tests do not cover several devices or a store reopened.
+
 ## Verification
 
 Recorded at the end of each part, with `bun run check`.
