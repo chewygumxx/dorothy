@@ -155,7 +155,7 @@ packs today:
    `feedback` first;
 2. knowledge of the project: the project's knowledge;
 3. episodes: notes on the conversations most salient to this project,
-   then on others;
+   then on personal ones, never another project's, which `open` refuses;
 4. always, one closing line naming `search` and `open`.
 
 It is rendered as today's `<memory>` section, whose first line says that
