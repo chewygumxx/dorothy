@@ -227,6 +227,7 @@ export type FactInput = {
     body: string;
     origin: Origin;
     by: Writer;
+    host?: string;
     tags?: string[];
     importance?: number | null;
     model?: string;
@@ -332,6 +333,7 @@ function factOf(input: FactInput, before: Fact | null, now: string): Fact {
                 input.by,
             ),
             by: input.by,
+            ...(input.host === undefined ? {} : { host: input.host }),
             at: now,
             created: before?.provenance.created ?? now,
             ...(input.model === undefined ? {} : { model: input.model }),
@@ -339,6 +341,10 @@ function factOf(input: FactInput, before: Fact | null, now: string): Fact {
         },
         retired: null,
         body: input.body.trim(),
+        ...(before?.foreign === undefined ? {} : { foreign: before.foreign }),
+        ...(before?.otherSources === undefined
+            ? {}
+            : { otherSources: before.otherSources }),
     };
 }
 

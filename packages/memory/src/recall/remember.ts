@@ -92,7 +92,7 @@ type RememberTarget = { scope: Scope; name: string; id: string };
 
 // What she may not change: what the user or the repository wrote, and,
 // writing, a retired fact. existed hears whether the fact was there.
-function guardFor(
+export function guardFor(
     id: string,
     writing: boolean,
     existed: (was: boolean) => void,
