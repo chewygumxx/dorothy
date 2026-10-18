@@ -244,6 +244,7 @@ export async function launchHistory({
         root: historyRoot(env),
         index,
         hook,
+        warn: (message) => warnings.push(message),
     });
     if (!opened.ok) {
         warnings.push(opened.reason);

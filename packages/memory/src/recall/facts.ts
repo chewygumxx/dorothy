@@ -15,6 +15,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { relative, sep } from "node:path";
 import { type Fact, parseFact } from "../facts/file.js";
+import { migrateFacts } from "../facts/migrate.js";
 import { factFiles, scopeLabel } from "../facts/store.js";
 import type { RecallIndex } from "./store.js";
 
@@ -33,6 +34,7 @@ export async function syncFacts(
 ): Promise<string[]> {
     const warnings: string[] = [];
     await index.exclusive(async () => {
+        warnings.push(...(await migrateFacts(root)));
         const known = new Map(
             (
                 index.db.query("SELECT path, mtime FROM facts").all() as {

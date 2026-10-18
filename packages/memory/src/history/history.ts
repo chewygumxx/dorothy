@@ -23,6 +23,7 @@ import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { Env } from "@dorothy/core";
 import { handEdited, parseFact, renderFact } from "../facts/file.js";
+import { migrateFacts } from "../facts/migrate.js";
 import {
     type HistoryHandle,
     type Lock,
@@ -548,9 +549,13 @@ export async function openHistory({
         if (index === null) {
             file = FileLock.open(join(root, ".git", "dorothy.lock"));
         }
+        const lock = index?.lock ?? (file as FileLock).lock;
+        for (const warning of await lock(() => migrateFacts(root))) {
+            warn?.(warning);
+        }
         const history = await MemoryHistory.open({
             repo,
-            lock: index?.lock ?? (file as FileLock).lock,
+            lock,
             hook,
             ...(warn === undefined ? {} : { warn }),
             ...(now === undefined ? {} : { now }),
