@@ -63,14 +63,33 @@ export function tokenStore(
     path: string,
     now: () => Date = () => new Date(),
 ): TokenStore {
-    const read = async (): Promise<TokenFile> => {
+    const empty = (): TokenFile => ({ v: 1, devices: {} });
+    // Only a missing file is an empty store; anything else is an error, so
+    // that a change never overwrites tokens it could not read.
+    const load = async (): Promise<TokenFile> => {
+        let text: string;
         try {
-            const data: unknown = JSON.parse(await readFile(path, "utf8"));
-            return isTokenFile(data) ? data : { v: 1, devices: {} };
-        } catch {
-            return { v: 1, devices: {} };
+            text = await readFile(path, "utf8");
+        } catch (error) {
+            const { code } = error as NodeJS.ErrnoException;
+            if (code === "ENOENT") {
+                return empty();
+            }
+            throw new Error(`${path} cannot be read (${code ?? "error"})`);
         }
+        let data: unknown;
+        try {
+            data = JSON.parse(text);
+        } catch {
+            throw new Error(`${path} is not valid JSON`);
+        }
+        if (!isTokenFile(data)) {
+            throw new Error(`${path} is not a version 1 token file`);
+        }
+        return data;
     };
+    // Verifying fails closed: a file that cannot be read trusts no one.
+    const read = () => load().catch(empty);
     const write = async (file: TokenFile) => {
         await mkdir(dirname(path), { recursive: true, mode: 0o700 });
         const temp = `${path}.${randomBytes(4).toString("hex")}.tmp`;
@@ -87,7 +106,7 @@ export function tokenStore(
                 );
             }
             const token = `dmt_${randomBytes(32).toString("base64url")}`;
-            const file = await read();
+            const file = await load();
             file.devices[device] = {
                 hash: hashOf(token),
                 at: now().toISOString(),
@@ -96,7 +115,7 @@ export function tokenStore(
             return token;
         },
         async revoke(device) {
-            const file = await read();
+            const file = await load();
             if (!Object.hasOwn(file.devices, device)) {
                 return false;
             }
