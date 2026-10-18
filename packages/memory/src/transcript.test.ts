@@ -782,7 +782,8 @@ describe("tool events in a transcript", () => {
 describe("sourceOf", () => {
     it("reads chat when a session event names no source, or one unknown", () => {
         expect(sourceOf({})).toBe("chat");
-        expect(sourceOf({ source: "telegram" })).toBe("chat");
+        expect(sourceOf({ source: "Not a host" })).toBe("chat");
+        expect(sourceOf({ source: "codex" })).toBe("codex");
         expect(sourceOf({ source: "claude-code" })).toBe("claude-code");
     });
 });
