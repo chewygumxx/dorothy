@@ -893,6 +893,11 @@ natively, but serves only as a front end over another back end.
 
 ## Recommendation
 
+Revised the same day: Dorothy is to be protocol diverse, hosted by no one
+harness, and pi is not to be used; see the
+[minutes](../reports/2026-10-18-protocol-diversity.md). What follows is
+the recommendation as first made.
+
 The owner's priorities put memory's compatibility first, and that sets
 the order. Once her memory is a provider every client reaches over MCP,
 her body can be pi, Hermes, OpenCode or Claude Code without her memory
