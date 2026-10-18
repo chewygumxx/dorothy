@@ -43,6 +43,7 @@ const ENTRIES: Record<string, string[]> = {
     identity: ["."],
     memory: [
         ".",
+        "./bridge",
         "./claude-hook",
         "./client",
         "./commands",
