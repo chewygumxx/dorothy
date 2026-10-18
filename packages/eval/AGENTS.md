@@ -57,6 +57,9 @@ reads no file of memory's itself.
 - `questions/generate.ts`: samples, prompts and checks for drafting
   each type; `questions/generate-command.ts`: the `generate` command,
   which records each generation's seed in `generated.json`.
+- `questions/review.ts`: the owner's pass over the drafts, and the
+  `review` command; an edit goes through `editing.json` in the work
+  directory, and takes a new id from its text and evidence.
 - `models/config.ts`: `eval.toml`, a base URL, model and key variable
   per role; `models/client.ts`: `Models`, one `ChatOpenAI` per role,
   with retries of its own (the client's are off: it does not retry a
