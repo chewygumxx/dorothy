@@ -58,6 +58,26 @@ Complete in `7c55313`; review clean, and `config.test.ts` passes 32 of
 - `README.md` names neither `extract-cap` nor `[service]`; Task 19
   documents them.
 
+### Task 2: facts in the Open Knowledge Format
+
+Complete in `076fe1d`; review clean, and the whole suite passes 1750 of
+1750. Minor findings deferred to the final review:
+
+- `actorOf` renders any `host`, but `writingOf` refuses one outside
+  `HOST`: whatever first sets `host` must check it the same way.
+- `dorothy.origin` and `generated.by` are not checked against each
+  other, so `extraction` written by a user re-renders as `model`.
+- A hand-edited `dorothy.metadata.type` is dropped without an error.
+- Tests do not cover `retired` without `deprecated`, bad foreign keys,
+  `otherSources`, `handEdited` keeping foreign keys, or `generated`
+  without `dorothy.origin`.
+- Foreign keys and other sources have no size cap; `readCommon` serves
+  only `legacy.ts`.
+
+`packages/memory/AGENTS.md` still calls `file.ts` the one canonical
+form until Task 19, and old fact files do not parse until Task 4
+migrates them.
+
 ## Verification
 
 Recorded at the end of each part, with `bun run check`.
