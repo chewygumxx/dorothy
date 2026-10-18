@@ -228,6 +228,21 @@ findings deferred to the final review:
   the session cache trusts a file that history may remove.
 - A host named `chat` would read as her own chat's conversations.
 
+### Task 12: remember through the contract
+
+Complete in `83a927b`; review clean, and the memory package passes 1202
+of 1202. As Task 6's ruling has it, `remember` parses every id with
+`parseMemoryId`, and a test refuses eight malformed or traversing ids
+without a write. As Task 2's finding asks, a host it writes is checked
+against core's `HOST_ID`, the pattern a fact file is parsed with. The
+review found no write to another project's scope and none outside the
+lock. Minor findings deferred to the final review:
+
+- A `why` over 160 characters fails as a 500, not a 400, as her own
+  `remember` does today.
+- The host check refuses a retire too; a revise without a host drops
+  the host the fact had; no test revises another project's id.
+
 ## Verification
 
 Recorded at the end of each part, with `bun run check`.
