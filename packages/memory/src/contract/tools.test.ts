@@ -12,8 +12,10 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { newPhrase } from "@dorothy/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { PERSONAL, putFact } from "../facts/store.js";
 import { RecallIndex } from "../recall/store.js";
 import { fakeEngine, knowledge } from "./testing.js";
 import { createContractServer, INSTRUCTIONS } from "./tools.js";
@@ -34,14 +36,15 @@ const engine = fakeEngine({
     ],
 });
 
-beforeEach(async () => {
-    root = mkdtempSync(join(tmpdir(), "dorothy-tools-"));
-    index = RecallIndex.open(join(root, "recall.sqlite"));
+const MINE = "github.com/me/app";
+const OTHER = "github.com/me/other";
+
+async function connect(project: string | null, host = engine) {
     const server = createContractServer({
-        engine,
+        engine: host,
         index,
         store: { root, lock: index.lock, recorder: null },
-        project: null,
+        project,
         host: "codex",
         resolveProject: async (value) => value,
     });
@@ -49,6 +52,12 @@ beforeEach(async () => {
     await server.connect(near);
     client = new Client({ name: "test", version: "1.0.0" });
     await client.connect(far);
+}
+
+beforeEach(async () => {
+    root = mkdtempSync(join(tmpdir(), "dorothy-tools-"));
+    index = RecallIndex.open(join(root, "recall.sqlite"));
+    await connect(null);
 });
 afterEach(async () => {
     await client.close();
@@ -130,5 +139,121 @@ describe("the contract's MCP server", () => {
         expect(existsSync(join(root, "knowledge/personal/likes-tea.md"))).toBe(
             true,
         );
+    });
+});
+
+const phrase = (seed: number) =>
+    newPhrase((size) => Uint8Array.from({ length: size }, () => seed));
+
+const fact = (name: string) => ({
+    name,
+    title: name,
+    description: `About ${name}.`,
+    type: "user" as const,
+    extra: {},
+    tags: [],
+    importance: null,
+    provenance: {
+        origin: "user" as const,
+        by: "user" as const,
+        at: "2026-10-18T09:30:00.000Z",
+        created: "2026-10-18T09:30:00.000Z",
+    },
+    retired: null,
+    body: `Body of ${name}.`,
+});
+
+const converse = (name: string, project: string | null) => {
+    index.db.run(
+        "INSERT INTO conversations (phrase, t_size, t_ino, turns, first_at, last_at, project) VALUES (?, 0, 0, 1, 1, 1, ?)",
+        [name, project],
+    );
+    index.db.run(
+        "INSERT INTO turns (phrase, n, role, at, text) VALUES (?, 1, 'user', 1, 'Hello.')",
+        [name],
+    );
+};
+
+describe("open keeps to the connection's scope", () => {
+    const own = phrase(1);
+    const elsewhere = phrase(2);
+    const personal = phrase(3);
+
+    beforeEach(async () => {
+        await putFact(root, PERSONAL, fact("likes-tea"));
+        await putFact(root, { kind: "project", id: MINE }, fact("uses-bun"));
+        await putFact(root, { kind: "project", id: OTHER }, fact("uses-npm"));
+        converse(own, MINE);
+        converse(elsewhere, OTHER);
+        converse(personal, null);
+        await client.close();
+        await connect(MINE);
+    });
+
+    it("opens personal knowledge and the project's own", async () => {
+        for (const id of [
+            "k:personal/likes-tea",
+            `k:projects/${MINE}/uses-bun`,
+        ]) {
+            const { isError, text } = await call("open", { id });
+            expect(isError).toBe(false);
+            expect(JSON.parse(text).id).toBe(id);
+        }
+    });
+
+    it("refuses another project's knowledge", async () => {
+        const { isError, text } = await call("open", {
+            id: `k:projects/${OTHER}/uses-npm`,
+        });
+        expect(isError).toBe(true);
+        expect(text).toBe("that id is outside this session's scope");
+    });
+
+    it("refuses another project's knowledge where there is no project", async () => {
+        await client.close();
+        await connect(null);
+        const { isError, text } = await call("open", {
+            id: `k:projects/${MINE}/uses-bun`,
+        });
+        expect(isError).toBe(true);
+        expect(text).toContain("outside this session's scope");
+    });
+
+    it("opens the project's conversations and personal ones", async () => {
+        for (const name of [own, personal]) {
+            const { isError, text } = await call("open", { id: `c:${name}` });
+            expect(isError).toBe(false);
+            expect(JSON.parse(text).window[0].text).toBe("Hello.");
+        }
+    });
+
+    it("refuses another project's conversation", async () => {
+        const { isError, text } = await call("open", { id: `c:${elsewhere}` });
+        expect(isError).toBe(true);
+        expect(text).toBe("that id is outside this session's scope");
+    });
+
+    it("takes the call's own project over the connection's", async () => {
+        const { isError } = await call("open", {
+            id: `c:${elsewhere}`,
+            project: OTHER,
+        });
+        expect(isError).toBe(false);
+    });
+});
+
+describe("a failure nobody meant to show", () => {
+    it("answers in general terms, naming no path", async () => {
+        const broken = fakeEngine();
+        broken.index = async () => {
+            throw new Error("SQLITE_CORRUPT at /home/user/.cache/dorothy/x");
+        };
+        await client.close();
+        await connect(null, broken);
+        const { isError, text } = await call("open", {
+            id: "k:personal/likes-tea",
+        });
+        expect(isError).toBe(true);
+        expect(text).toBe("Memory failed.");
     });
 });

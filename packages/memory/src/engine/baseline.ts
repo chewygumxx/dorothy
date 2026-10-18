@@ -53,17 +53,25 @@ export const knowledgePath = (scope: Scope, name: string) =>
         ? `personal/${name}`
         : `projects/${scope.id}/${name}`;
 
+// The project a conversation belongs to; null for a personal one, or none
+// indexed by that phrase.
+export function conversationProject(
+    index: RecallIndex,
+    phrase: string,
+): string | null {
+    const row = index.db
+        .query("SELECT project FROM conversations WHERE phrase = ?")
+        .get(phrase) as { project: string | null } | null;
+    return row?.project ?? null;
+}
+
 export function baselineEngine(deps: BaselineDeps): MemoryEngine {
     const now = deps.now ?? Date.now;
     const root = dataRoot(deps.env);
     const dir = transcriptDir(deps.env);
     const vocabulary = vocabularyPath(deps.env);
-    const projectOf = (phrase: string): string | null => {
-        const row = deps.index.db
-            .query("SELECT project FROM conversations WHERE phrase = ?")
-            .get(phrase) as { project: string | null } | null;
-        return row?.project ?? null;
-    };
+    const projectOf = (phrase: string) =>
+        conversationProject(deps.index, phrase);
     const fresh = () => syncIndex(deps.index, dir, now(), vocabulary, root);
     return {
         index: fresh,

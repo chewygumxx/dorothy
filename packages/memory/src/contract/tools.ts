@@ -19,6 +19,7 @@ import {
     parseMemoryId,
 } from "@dorothy/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { conversationProject } from "../engine/baseline.js";
 import type { MemoryEngine, Within } from "../engine/engine.js";
 import type { FactStore } from "../facts/store.js";
 import { openConversation, openFact, RecallError } from "../recall/query.js";
@@ -84,13 +85,26 @@ export function withinOf(
     return project === null ? ["personal"] : ["personal", project];
 }
 
+// Only a failure the contract or recall raised on purpose shows its own
+// words; any other may carry a path or the database's text.
 const messageOf = (error: unknown) =>
     error instanceof ContractError || error instanceof RecallError
         ? error.message
-        : `Memory failed: ${error instanceof Error ? error.message : String(error)}`;
+        : "Memory failed.";
+
+const OUT_OF_SCOPE = "that id is outside this session's scope";
+
+// A request sees personal knowledge and its own project's; another
+// project's is for search with scope all to find.
+function checkScope(owner: string | null, project: string | null): void {
+    if (owner !== null && owner !== project) {
+        throw new ContractError(403, OUT_OF_SCOPE);
+    }
+}
 
 async function openId(
     input: MemoryOpenInput,
+    project: string | null,
     deps: ToolDeps,
 ): Promise<unknown> {
     const id = parseMemoryId(input.id);
@@ -102,6 +116,13 @@ async function openId(
     }
     await deps.engine.index();
     if (id.kind === "knowledge") {
+        // A project's id may hold slashes: projects/<id>/<name>.
+        checkScope(
+            id.path.startsWith("projects/")
+                ? id.path.slice("projects/".length, id.path.lastIndexOf("/"))
+                : null,
+            project,
+        );
         const fact = id.path.startsWith("personal/")
             ? id.path
             : id.path.slice("projects/".length);
@@ -111,13 +132,14 @@ async function openId(
         // The contract's id, not recall's.
         return { ...opened, id: input.id };
     }
-    const opened = await deps.index.exclusive(() =>
-        openConversation(
+    const opened = await deps.index.exclusive(() => {
+        checkScope(conversationProject(deps.index, id.phrase), project);
+        return openConversation(
             deps.index,
             { conversation: id.phrase, purpose: PURPOSE, turn: input.from },
             { exclude: null },
-        ),
-    );
+        );
+    });
     const { through } = input;
     return through === undefined
         ? opened
@@ -185,7 +207,10 @@ export function createContractServer(deps: ToolDeps): McpServer {
     server.registerTool(
         "open",
         { description: OPEN_DESCRIPTION, inputSchema: openShape },
-        (input) => answer(() => openId(input, deps)),
+        (input) =>
+            answer(async () =>
+                openId(input, await projectOf(input.project), deps),
+            ),
     );
     server.registerTool(
         "remember",
