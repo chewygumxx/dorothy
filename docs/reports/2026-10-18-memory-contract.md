@@ -212,6 +212,22 @@ do not check the scope recall asks for, the budget's exact edge, a
 request's budget clamped to the host's, a budget below the frame, or
 escaping.
 
+### Task 11: records into the archive
+
+Complete in `5567c44`; review clean, and the memory package passes 1192
+of 1192. The review found the check for events already held and the
+append within one section under the lock, a private session touching
+nothing, and a `transcript` path passed unread to its reader, whose
+handling of the path the final review checks once it is wired. Minor
+findings deferred to the final review:
+
+- The concurrent test does not check the order stored, and the private
+  test does not check that nothing was written.
+- A record with both a transcript and events drops the events without
+  a word; each record reads the session's whole file under the lock;
+  the session cache trusts a file that history may remove.
+- A host named `chat` would read as her own chat's conversations.
+
 ## Verification
 
 Recorded at the end of each part, with `bun run check`.
