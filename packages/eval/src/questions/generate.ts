@@ -14,7 +14,7 @@
 import type { ArchiveConversation } from "@dorothy/memory/evaluation";
 import { z } from "zod";
 import { UsageError } from "../errors.js";
-import { CallCap, type Message } from "../models/client.js";
+import { CallCap, failureOf, type Message } from "../models/client.js";
 import {
     type Corpus,
     clip,
@@ -396,6 +396,8 @@ export async function generateQuestions(options: {
     const drop = (reason: string) => {
         dropped[reason] = (dropped[reason] ?? 0) + 1;
     };
+    // Calls failed in a row; any call that returns resets it.
+    let failures = 0;
     for (const type of GENERATED_TYPES) {
         const want = options.counts[type];
         let have = 0;
@@ -416,11 +418,22 @@ export async function generateQuestions(options: {
             let drafts: Draft[];
             try {
                 drafts = await options.draft(sample, n);
+                failures = 0;
             } catch (error) {
                 if (error instanceof CallCap) {
                     return { made, dropped, stopped: error.message };
                 }
-                drop("failed call");
+                const why = failureOf(error);
+                drop(`failed call: ${why}`);
+                failures++;
+                const status = (error as { status?: unknown } | null)?.status;
+                if (status === 401 || status === 403 || failures >= 3) {
+                    return {
+                        made,
+                        dropped,
+                        stopped: `the generating model failed: ${why}`,
+                    };
+                }
                 continue;
             }
             for (const each of drafts.slice(0, n)) {

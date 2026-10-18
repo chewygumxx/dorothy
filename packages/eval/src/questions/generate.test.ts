@@ -24,7 +24,7 @@ import {
     stubModels,
     tempRoot,
 } from "../testing.js";
-import { readQuestions } from "./file.js";
+import { type Question, questionId, readQuestions } from "./file.js";
 import {
     acceptDraft,
     countsFor,
@@ -265,6 +265,67 @@ describe("generation", () => {
     });
 });
 
+describe("failed calls", () => {
+    const counts = {
+        "single-session": 6,
+        preference: 0,
+        "multi-session": 0,
+        "knowledge-update": 0,
+        temporal: 0,
+        abstention: 0,
+    };
+    const options = (draft: () => Promise<Draft[]>) => ({
+        corpus,
+        counts,
+        random: seeded(3),
+        model: "m/1",
+        existing: [],
+        today: "2026-10-19",
+        draft,
+    });
+
+    it("stop at once for a refused key", async () => {
+        let calls = 0;
+        const result = await generateQuestions(
+            options(async () => {
+                calls++;
+                throw Object.assign(new Error("bad key"), { status: 401 });
+            }),
+        );
+        expect(calls).toBe(1);
+        expect(result.stopped).toBe("the generating model failed: 401 bad key");
+        expect(result.dropped).toEqual({ "failed call: 401 bad key": 1 });
+    });
+
+    it("stop after three in a row, naming the failure", async () => {
+        let calls = 0;
+        const result = await generateQuestions(
+            options(async () => {
+                calls++;
+                throw new Error("down");
+            }),
+        );
+        expect(calls).toBe(3);
+        expect(result.dropped).toEqual({ "failed call: down": 3 });
+        expect(result.stopped).toBe("the generating model failed: down");
+    });
+
+    it("go on when a call returns between failures", async () => {
+        let calls = 0;
+        const result = await generateQuestions(
+            options(async () => {
+                calls++;
+                if (calls % 3 !== 0) {
+                    throw new Error("down");
+                }
+                return [];
+            }),
+        );
+        expect(result.stopped).toBeNull();
+        expect(calls).toBeGreaterThan(3);
+    });
+});
+
 describe("bun run eval -- generate", () => {
     let stub: ReturnType<typeof stubModels> | null = null;
     afterEach(() => {
@@ -326,6 +387,82 @@ describe("bun run eval -- generate", () => {
                     | undefined
             )?.type,
         ).toBe("json_schema");
+    });
+
+    it("keeps questions written while it ran", async () => {
+        const extra = {
+            ...(await readQuestions(work)).questions[0],
+            question: "Written meanwhile?",
+        } as Question;
+        extra.id = questionId(extra.question, extra.evidence);
+        stub = stubModels((request) => {
+            // As if a review in another terminal wrote now.
+            const text = readFileSync(join(work, "questions.jsonl"), "utf8");
+            if (!text.includes(extra.id)) {
+                writeFileSync(
+                    join(work, "questions.jsonl"),
+                    `${text}${JSON.stringify(extra)}\n`,
+                );
+            }
+            const content = JSON.stringify(request.body.messages);
+            const id = /<item id=\\"([^\\]+)\\">/.exec(content)?.[1] ?? "";
+            return {
+                json: {
+                    questions: [
+                        {
+                            question: "What was said in that talk?",
+                            answer: "Something.",
+                            evidence: [id],
+                            older: "",
+                        },
+                    ],
+                },
+            };
+        });
+        writeFileSync(configPath(work), stubConfig(stub.url));
+        const { io } = fakeIo();
+        expect(
+            await runCli(
+                [
+                    "generate",
+                    "--work",
+                    work,
+                    "--count",
+                    "1",
+                    "--type",
+                    "single-session=1",
+                    "--seed",
+                    "9",
+                ],
+                io,
+            ),
+        ).toBe(0);
+        const { questions } = await readQuestions(work);
+        expect(questions.map((each) => each.id)).toContain(extra.id);
+        expect(questions.at(-1)?.source).toBe("generated:generate/model");
+    });
+
+    it("refuses a generated.json that is not a list, writing nothing", async () => {
+        stub = stubModels(() => ({ content: "" }));
+        writeFileSync(configPath(work), stubConfig(stub.url));
+        const path = join(work, "generated.json");
+        const before = readFileSync(path, "utf8");
+        const questions = readFileSync(join(work, "questions.jsonl"), "utf8");
+        writeFileSync(path, "{not json");
+        try {
+            const { io, err } = fakeIo();
+            expect(
+                await runCli(["generate", "--work", work, "--count", "1"], io),
+            ).toBe(1);
+            expect(err.join("")).toContain("generated.json is not a list");
+            expect(readFileSync(path, "utf8")).toBe("{not json");
+            expect(stub.requests).toHaveLength(0);
+            expect(readFileSync(join(work, "questions.jsonl"), "utf8")).toBe(
+                questions,
+            );
+        } finally {
+            writeFileSync(path, before);
+        }
     });
 
     it("counts its calls on a dry run, and makes none", async () => {

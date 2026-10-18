@@ -11,11 +11,13 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Command, intOf, workOf } from "../command.js";
+import { UsageError } from "../errors.js";
 import { Models } from "../models/client.js";
 import { readEvalConfig, requireRole } from "../models/config.js";
 import { readSnapshot, workEnv } from "../snapshot/snapshot.js";
 import { openCorpus } from "../systems/corpus.js";
 import {
+    mergeQuestions,
     type Question,
     readQuestionsToRewrite,
     writeQuestions,
@@ -33,18 +35,35 @@ import {
 } from "./generate.js";
 
 // <work>/generated.json: each generation's seed, model, counts and drops.
-async function recordGeneration(work: string, entry: object): Promise<void> {
-    const path = join(work, "generated.json");
-    let entries: unknown[] = [];
+async function readGenerations(work: string): Promise<unknown[]> {
+    let text: string;
     try {
-        const read = JSON.parse(await readFile(path, "utf8"));
-        entries = Array.isArray(read) ? read : [];
-    } catch {
-        // None yet.
+        text = await readFile(join(work, "generated.json"), "utf8");
+    } catch (error) {
+        if ((error as { code?: unknown }).code === "ENOENT") {
+            return [];
+        }
+        throw error;
     }
-    await writeFile(path, `${JSON.stringify([...entries, entry], null, 4)}\n`, {
-        mode: 0o600,
-    });
+    let read: unknown;
+    try {
+        read = JSON.parse(text);
+    } catch {
+        read = null;
+    }
+    if (!Array.isArray(read)) {
+        throw new UsageError("generated.json is not a list: mend or remove it");
+    }
+    return read;
+}
+
+async function recordGeneration(work: string, entry: object): Promise<void> {
+    const entries = await readGenerations(work);
+    await writeFile(
+        join(work, "generated.json"),
+        `${JSON.stringify([...entries, entry], null, 4)}\n`,
+        { mode: 0o600 },
+    );
 }
 
 const byType = (questions: Question[]) => {
@@ -84,6 +103,8 @@ export const generateCommand: Command = {
             return 0;
         }
         const existing = await readQuestionsToRewrite(work);
+        // Mended before any call is paid for.
+        await readGenerations(work);
         const config = await readEvalConfig(work);
         const role = requireRole(config, "generate");
         const models = new Models(config, {
@@ -121,7 +142,14 @@ export const generateCommand: Command = {
                         )
                     ).value.questions,
             });
-            await writeQuestions(work, [...existing, ...result.made]);
+            // Both read again, before either is written: a review in
+            // another terminal may have written meanwhile.
+            await readGenerations(work);
+            const current = await readQuestionsToRewrite(work);
+            await writeQuestions(
+                work,
+                mergeQuestions(current, result.made).questions,
+            );
             await recordGeneration(work, {
                 at: new Date().toISOString(),
                 seed,
