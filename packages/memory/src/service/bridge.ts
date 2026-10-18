@@ -13,6 +13,7 @@
 // one process. The project is the repository of the directory it runs
 // in. A request the service cannot take is answered with an error.
 
+import type { Readable } from "node:stream";
 import { SERVICE_PATHS } from "@dorothy/core";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -25,6 +26,8 @@ export type BridgeOptions = ClientOptions & {
     cwd: string;
     // stdio by default; tests pass an in-memory transport.
     local?: Transport;
+    // What stdio reads, process.stdin by default; its end ends the bridge.
+    stdin?: Readable;
     // The command that starts the service here; null never starts it.
     serve: readonly string[] | null;
     // The host that launched it, named in what its model remembers.
@@ -55,10 +58,24 @@ export async function runBridge(options: BridgeOptions): Promise<number> {
                     : { authorization: `Bearer ${client.token}` },
         },
     });
-    const local = options.local ?? new StdioServerTransport();
+    const stdin = options.stdin ?? process.stdin;
+    const local = options.local ?? new StdioServerTransport(stdin);
     const closed = new Promise<void>((resolve) => {
         local.onclose = () => resolve();
     });
+    // The SDK's stdio transport never notices stdin ending, so without
+    // this the bridge outlives its host.
+    let ending = false;
+    const end = () => {
+        if (!ending) {
+            ending = true;
+            local.close().catch(() => {});
+        }
+    };
+    if (options.local === undefined) {
+        stdin.on("end", end);
+        stdin.on("close", end);
+    }
     local.onmessage = (message: JSONRPCMessage) => {
         remote.send(message).catch((error: unknown) => {
             const { id } = message as { id?: string | number };
@@ -80,6 +97,8 @@ export async function runBridge(options: BridgeOptions): Promise<number> {
     await remote.start();
     await local.start();
     await closed;
+    stdin.off("end", end);
+    stdin.off("close", end);
     await remote.close().catch(() => {});
     return 0;
 }
