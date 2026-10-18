@@ -243,6 +243,31 @@ lock. Minor findings deferred to the final review:
 - The host check refuses a retire too; a revise without a host drops
   the host the fact had; no test revises another project's id.
 
+### Task 13: the four MCP tools
+
+Complete in `9362215` and `1132f8f`, after one fix round; the memory
+package passes 1216 of 1216, and the server's instructions run to 205
+characters. The review found two faults in the plan's code:
+
+- `open` read another project's knowledge or conversation by its id.
+  Ruling: it refuses them with a 403, as the spec gives another
+  project's knowledge only through `search` with `scope: all`. If
+  wrong, a model sees such a hit's snippet but cannot open it, which a
+  small change relaxes.
+- A failure other than the contract's own reached the client word for
+  word, paths and SQL with it. Ruling: it now reads `Memory failed.`
+  If wrong, a client has less to report.
+
+The re-review found both addressed, and no crafted id that passes the
+scope check while naming a file elsewhere. Minor findings deferred to
+the final review:
+
+- The generic failure leaves no trace on the service's side.
+- `through` filters a window already cut to its budget, as the plan
+  wrote it.
+- No test pins `search`'s limit or a `remember` error reaching the
+  client.
+
 ## Verification
 
 Recorded at the end of each part, with `bun run check`.
