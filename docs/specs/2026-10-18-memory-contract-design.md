@@ -198,7 +198,10 @@ A tool call's project is, in order: its `project` argument, as an id or a
 path; the connection's, which the stdio bridge identifies from the
 directory it runs in and an HTTP client names in its URL
 (`/mcp?project=<id>`); else none, and only personal knowledge is in
-scope.
+scope. Where the connection names a project, `open` and `remember` keep
+to it: an argument naming another is refused (403), so a model cannot
+widen what the service enforces. A connection with none, as from a host
+with no directory, names its project by the argument.
 
 The server's instructions stay under 512 characters, the smallest any
 host allows, and say to call `brief` first where nothing else gave a

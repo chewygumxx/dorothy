@@ -57,7 +57,8 @@ gives back, and the service that speaks it. The spec is
   commands take too.
 - Scope is the service's to enforce: a request sees personal knowledge
   and its own project's. `open` refuses another's (403); it is reached
-  only by `search` with `scope: all`.
+  only by `search` with `scope: all`. On a connection with a project,
+  `open` and `remember` refuse an argument naming another (403).
 - A transcript path is taken only over loopback, and only a regular
   `.jsonl` file of at most 64 MiB under Claude Code's `projects`
   directory, by its real path; anything else gets one fixed 403.

@@ -10,7 +10,7 @@
 
 // The contract's four MCP tools, the same in every host: brief, search,
 // open and remember. A call's project is its own argument, else the
-// connection's, else none.
+// connection's, else none; open and remember keep to a connection's own.
 
 import {
     CONTRACT_SERVER_NAME,
@@ -95,6 +95,7 @@ const messageOf = (error: unknown) =>
         : "Memory failed.";
 
 const OUT_OF_SCOPE = "that id is outside this session's scope";
+const OTHER_PROJECT = "that project is outside this session's scope";
 
 // A request sees personal knowledge and its own project's; another
 // project's is for search with scope all to find.
@@ -158,6 +159,16 @@ export function createContractServer(deps: ToolDeps): McpServer {
     );
     const projectOf = async (value: string | undefined) =>
         value === undefined ? deps.project : deps.resolveProject(value);
+    // What open reads and remember writes keeps to a connection's own
+    // project: the service enforces scope, not the model's argument. A
+    // connection with none, as a host with no directory has, names one.
+    const ownProjectOf = async (value: string | undefined) => {
+        const project = await projectOf(value);
+        if (deps.project !== null && project !== deps.project) {
+            throw new ContractError(403, OTHER_PROJECT);
+        }
+        return project;
+    };
     const answer = async (work: () => Promise<unknown>) => {
         try {
             return {
@@ -211,7 +222,7 @@ export function createContractServer(deps: ToolDeps): McpServer {
         { description: OPEN_DESCRIPTION, inputSchema: openShape },
         (input) =>
             answer(async () =>
-                openId(input, await projectOf(input.project), deps),
+                openId(input, await ownProjectOf(input.project), deps),
             ),
     );
     server.registerTool(
@@ -221,7 +232,7 @@ export function createContractServer(deps: ToolDeps): McpServer {
             answer(async () =>
                 contractRemember(input, {
                     store: deps.store,
-                    project: await projectOf(input.project),
+                    project: await ownProjectOf(input.project),
                     host: deps.host,
                     from: null,
                     warn: deps.warn,

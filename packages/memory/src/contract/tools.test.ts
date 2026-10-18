@@ -243,7 +243,40 @@ describe("open keeps to the connection's scope", () => {
         expect(text).toBe("that id is outside this session's scope");
     });
 
-    it("takes the call's own project over the connection's", async () => {
+    it("refuses a call naming another project than the connection's", async () => {
+        const { isError, text } = await call("open", {
+            id: `c:${elsewhere}`,
+            project: OTHER,
+        });
+        expect(isError).toBe(true);
+        expect(text).toBe("that project is outside this session's scope");
+        const remembered = await call("remember", {
+            action: "add",
+            title: "Uses kumquats",
+            text: "Kumquats.",
+            type: "project",
+            scope: "project",
+            project: OTHER,
+        });
+        expect(remembered.isError).toBe(true);
+        expect(
+            existsSync(
+                join(root, `knowledge/projects/${OTHER}/uses-kumquats.md`),
+            ),
+        ).toBe(false);
+    });
+
+    it("admits a call naming the connection's own project", async () => {
+        const { isError } = await call("open", {
+            id: `c:${own}`,
+            project: MINE,
+        });
+        expect(isError).toBe(false);
+    });
+
+    it("takes the call's project where the connection has none", async () => {
+        await client.close();
+        await connect(null);
         const { isError } = await call("open", {
             id: `c:${elsewhere}`,
             project: OTHER,
