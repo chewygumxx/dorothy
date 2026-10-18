@@ -50,4 +50,6 @@ reads no file of memory's itself.
 - `command.ts`: `Io`, `Command` and the options' readers.
 - `snapshot/`: `takeSnapshot`, `readSnapshot`, `workEnv`, and the
   `snapshot` command.
+- `questions/file.ts`: the question file, its schema and ids; the
+  commands that rewrite it read it with `readQuestionsToRewrite`.
 - `testing.ts`: `fakeIo`, temporary roots and the fixture archive.
