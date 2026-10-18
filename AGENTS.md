@@ -21,7 +21,8 @@ tags:
 
 Dorothy is a conversational LLM interface: a terminal chat over a model,
 with a memory of her past conversations that she can search, compact and
-tag. Bun runs her from source; there is no build.
+tag, and that a service of hers shares with other harnesses over MCP and
+hooks. Bun runs her from source; there is no build.
 
 ## Packages
 

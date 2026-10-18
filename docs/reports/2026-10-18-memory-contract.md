@@ -5,7 +5,8 @@ spdx: GPL-3.0-only
 title: Dorothy's memory contract implementation
 description: >-
   Progress, rulings and verification of the memory contract plan, carried
-  out task by task by subagents on the branch feat/memory-contract.
+  out task by task by subagents on the branch feat/memory-contract, and
+  its final review; merged in #69.
 tags:
   - dorothy
   - memory
@@ -399,6 +400,53 @@ failures, where any unlisted refusal stops it too, and the spec's
 Migration and Failures sections do not yet say what the migration and
 the client now do.
 
+## Final review
+
+A review of the whole branch, `3141323..47fe8a6`, found it ready with
+fixes. Its four important findings, and how each was settled:
+
+1. The opening block listed other projects' conversations, which `open`
+   refuses. Ruling: the block keeps to personal conversations and the
+   session's project's (`4fb901d`, `f101136`). If wrong, the block shows
+   fewer conversations.
+2. A request to a `Host` the service does not listen on got 403, which
+   the client drops for good, so a device reaching it by another name
+   lost every record. Ruling: it gets 421, so records wait, and the
+   service warns once per name (`573bfb4`, `c054391`). If wrong, a
+   record waits for a configuration the user must fix.
+3. A tool's `project` argument overrode the connection's, so the model
+   could open or write another project's memory. Ruling, taken by the
+   coding agent on the user's delegation: on a connection with a
+   project, `open` and `remember` refuse another (403); a connection
+   with none still names its project by the argument (`1584cc6`). If
+   wrong, a model in one repository cannot open another's by name.
+4. Transcripts were confined to the Claude Code directory of the
+   service's own environment, so a second account's were refused.
+   Ruling, likewise delegated: `[service] claude-dirs` lists further
+   directories, and the service warns once of a refusal (`71d8665`).
+   If wrong, one more setting to keep.
+
+`remember`'s store failure also passed its reason, which may name a
+path, to the caller; it now reads `Memory failed.`, and the reason goes
+to the service's log (`1c91417`). A re-review of the first three fixes
+found them addressed; the coding agent re-reviewed them after the
+user's other session reached its usage limit mid-review.
+
+Left for later, from the final review:
+
+- `brief`'s budget is not clamped to the host profile's (Goose 16000,
+  Hermes 4000) when the bridge names a host.
+- The hook API's `project` is any string of up to 512 characters,
+  neither checked as a project's id nor resolved from a path, so a
+  record may land under a project that is not one.
+- With reviews off, the service's map of idle sessions grows without
+  bound and no notes are written, and its "reviews are off" line goes to
+  the detached service's ignored stderr.
+- The history launch runs before the service binds its port, so a
+  second service started by racing bridges does that work, then fails
+  to bind.
+- An unexpected tool failure leaves no trace in the service's log.
+
 ## Verification
 
 Recorded at the end of each part, with `bun run check`.
@@ -417,3 +465,16 @@ Ran 1759 tests across 104 files. [19.52s]
 Part 2, at `1d41cb2`, run by Task 19's implementer: `bun run check`
 exited 0, with 1876 tests passing, 1 skipped and none failing, across
 117 files.
+
+After the final review's fixes, at `71d8665`:
+
+```text
+$ bun run check
+ 1886 pass
+ 1 skip
+ 0 fail
+ 136440 expect() calls
+Ran 1887 tests across 117 files. [21.35s]
+```
+
+Merged in #69.
