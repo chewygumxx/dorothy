@@ -184,6 +184,24 @@ final review:
   missing reviewer; `knowledgePath` would sit better beside the
   interface.
 
+### Task 9: the opening block
+
+Complete in `04af0c3`; review clean, and the memory package passes 1179
+of 1179. The review checked the budget's arithmetic by hand: a block
+never passes its budget but for the closing line alone, and no item is
+cut midway. A `startup` for a session with a kept block returns that
+block. Ruling: this stands, as the spec renders anew only for `compact`
+and `clear`. If wrong, a host reusing a session id across projects sees
+a stale block. Minor findings deferred to the final review:
+
+- Tests do not cover `resume` with nothing kept, one session under two
+  hosts, `clear`, a repeated `startup`, or a sweep of budgets; one
+  check of a second item's tier passes if the item is missing.
+- Sizes count code points, not UTF-16 units; a section's wrapper that
+  does not fit ends every later section; an empty body renders a
+  trailing space; an episode with an abstract but no description shows
+  its title alone.
+
 ## Verification
 
 Recorded at the end of each part, with `bun run check`.
