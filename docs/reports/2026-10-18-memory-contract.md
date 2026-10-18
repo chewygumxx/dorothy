@@ -89,6 +89,44 @@ findings deferred to the final review:
 - No test pins the old `facts/personal/` layout as `other` in the lint,
   nor passes `under` a directory other than the default.
 
+### Task 4: moving facts/ to knowledge/
+
+Complete in `336c9c0` and `3a29dbb`, after one fix round. The review
+found two faults in the plan's code, and both rulings below keep user
+data safe where the spec's Migration section says nothing:
+
+- `migrateFacts` wrote a legacy fact over an existing `knowledge/` file
+  and deleted the legacy copy. Ruling: it now leaves the legacy file in
+  `facts/` and warns, as a knowledge file may be newer and not yet
+  committed by history. If wrong, a duplicate waits in `facts/` for the
+  user.
+- One file failing to read or write stopped the migration, and with it
+  recall's sync and history. Ruling: it now warns of that file, leaves
+  it in place and moves the rest. If wrong, a failure is quieter than an
+  abort.
+
+The re-review found both addressed. Minor findings deferred to the
+final review:
+
+- The unreadable-file test relies on `chmod 000`, which root ignores.
+- The unwritable-target test fails at the existence check, not the
+  write; a file made between check and write would still be
+  overwritten, though the store's lock is held.
+- Files in `facts/` the store does not list are left unmentioned, a
+  leftover warns on every launch, and pruning follows a linked
+  directory.
+
 ## Verification
 
 Recorded at the end of each part, with `bun run check`.
+
+Part 1, at `3a29dbb`:
+
+```text
+$ bun run check
+ 1758 pass
+ 1 skip
+ 0 fail
+ 136103 expect() calls
+Ran 1759 tests across 104 files. [19.52s]
+```
