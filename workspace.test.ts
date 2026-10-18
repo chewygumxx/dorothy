@@ -41,7 +41,14 @@ const ENTRIES: Record<string, string[]> = {
     core: ["."],
     gateway: ["."],
     identity: ["."],
-    memory: [".", "./claude-hook", "./commands", "./recall-server"],
+    memory: [
+        ".",
+        "./claude-hook",
+        "./client",
+        "./commands",
+        "./recall-server",
+        "./service",
+    ],
     tui: ["."],
 };
 

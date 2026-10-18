@@ -6,7 +6,9 @@
         ".": "./src/index.ts",
         "./claude-hook": "./src/claude-hook.ts",
         "./recall-server": "./src/recall-server.ts",
-        "./commands": "./src/commands.ts"
+        "./commands": "./src/commands.ts",
+        "./service": "./src/service.ts",
+        "./client": "./src/client.ts"
     },
     "dependencies": {
         "@dorothy/core": "workspace:*",
