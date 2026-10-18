@@ -104,6 +104,22 @@ describe("a summary", () => {
         expect(lexical?.all.failures).toBe(2);
     });
 
+    it("counts a failed question as a miss, unless nothing was judged", () => {
+        expect(lexical?.all.strict).toEqual({ hits: 0, of: 2 });
+        expect(lexical?.byType["knowledge-update"]?.strict).toEqual({
+            hits: 0,
+            of: 1,
+        });
+        const retrieval = summarise(
+            { ...info("r1"), retrievalOnly: true },
+            RECORDS,
+        );
+        expect(retrieval.systems.lexical?.all.strict).toEqual({
+            hits: 0,
+            of: 1,
+        });
+    });
+
     it("averages retrieval and sums tokens", () => {
         expect(dorothy?.all.n).toBe(3);
         expect(dorothy?.all.retrievalMs).toBe(17);

@@ -63,22 +63,30 @@ const emptyCell = (): Cell => ({
     failures: 0,
 });
 
-function tally(into: Rate, value: boolean | null): void {
+// A verdict the run owed but lacks (the retrieval, answer or judgement
+// failed) counts as a miss, so a flaky system does not score higher; one
+// not owed is left out of the rate.
+function tally(into: Rate, value: boolean | null, owed = false): void {
     if (value !== null) {
         into.of++;
         into.hits += value ? 1 : 0;
+    } else if (owed) {
+        into.of++;
     }
 }
 
-function add(cell: Cell, record: RunRecord): void {
+function add(cell: Cell, record: RunRecord, judging: boolean): void {
     cell.n++;
-    tally(cell.strict, record.judged.strict);
-    tally(cell.lenient, record.judged.lenient);
+    const graded =
+        judging && record.type !== "lookup" && record.type !== "abstention";
+    tally(cell.strict, record.judged.strict, graded);
+    tally(cell.lenient, record.judged.lenient, graded);
     tally(cell.at5, record.recall?.at5 ?? null);
     tally(cell.at10, record.recall?.at10 ?? null);
     tally(
         record.type === "abstention" ? cell.declined : cell.wronglyDeclined,
         record.judged.declined,
+        judging && record.type === "abstention",
     );
     tally(cell.stale, record.judged.stale);
     cell.retrievalMs += record.retrieval.ms;
@@ -108,6 +116,7 @@ function settle(cell: Cell): Cell {
 
 export function summarise(info: RunInfo, records: RunRecord[]): Summary {
     const systems: Record<string, SystemSummary> = {};
+    const judging = !info.retrievalOnly;
     const cells = new Map<
         string,
         { all: Cell; byType: Map<QuestionType, Cell> }
@@ -122,9 +131,9 @@ export function summarise(info: RunInfo, records: RunRecord[]): Summary {
         if (cell === undefined) {
             continue;
         }
-        add(cell.all, record);
+        add(cell.all, record, judging);
         const byType = cell.byType.get(record.type) ?? emptyCell();
-        add(byType, record);
+        add(byType, record, judging);
         cell.byType.set(record.type, byType);
         if (record.judged.strict !== null) {
             const of = verdicts.get(record.question) ?? new Map();
