@@ -8,7 +8,9 @@
 //
 //
 
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import type { StructuredCall } from "@dorothy/core";
 import { config } from "@dotenvx/dotenvx";
 import { type Mode, parseArgs, USAGE } from "./args.js";
 
@@ -22,6 +24,50 @@ type Runners = {
 };
 
 const commands = () => import("@dorothy/memory/commands");
+const service = () => import("@dorothy/memory/service");
+
+// This program as a command, as --claude's hooks run it: --no-env-file,
+// so a project's .env never reaches the service.
+const selfServe = () => [
+    process.execPath,
+    "--no-env-file",
+    resolve(process.argv[1] ?? ""),
+    "--serve",
+];
+
+// Reviews for the service: Claude Code's variables dropped first, as a
+// service --mcp starts inside her Claude Code would inherit its gateway,
+// which dies with the session; then Dorothy's .env by path from this
+// checkout, then the agent. Off, and said, when either fails.
+async function reviewAgent(): Promise<{
+    call: StructuredCall;
+    persona: string;
+} | null> {
+    try {
+        const { checkoutRoot, loadDotenv, stripClaude } = await import(
+            "./claude-hook.js"
+        );
+        stripClaude(process.env);
+        const failure = loadDotenv(
+            join(checkoutRoot, ".env"),
+            join(checkoutRoot, ".env.keys"),
+            process.env,
+        );
+        if (failure !== null) {
+            throw new Error(`.env did not load (${failure})`);
+        }
+        const { prepareCliHome, structuredCall, systemPrompt } = await import(
+            "@dorothy/agent"
+        );
+        prepareCliHome();
+        return { call: structuredCall(), persona: systemPrompt };
+    } catch (error) {
+        process.stderr.write(
+            `dorothy: reviews are off: ${error instanceof Error ? error.message : String(error)}\n`,
+        );
+        return null;
+    }
+}
 
 // Credentials are decrypted only for the modes that need them.
 // quiet: dotenvx would otherwise log to stdout, over the TUI.
@@ -145,6 +191,26 @@ const RUNNERS: Runners = {
             exclude: mode.exclude,
             recollect: mode.recollect,
             project: mode.project,
+        });
+    },
+    serve: async () => {
+        const { runService } = await service();
+        return runService({ review: await reviewAgent() });
+    },
+    "token-add": async (mode) => {
+        const { runTokenAdd } = await service();
+        return runTokenAdd(mode.device);
+    },
+    "token-revoke": async (mode) => {
+        const { runTokenRevoke } = await service();
+        return runTokenRevoke(mode.device);
+    },
+    mcp: async (mode) => {
+        const { runBridge } = await import("@dorothy/memory/bridge");
+        return runBridge({
+            cwd: process.cwd(),
+            serve: selfServe(),
+            host: mode.host,
         });
     },
     "claude-hook": async (mode) => {

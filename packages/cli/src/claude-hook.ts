@@ -43,7 +43,7 @@ export function reviewEnv(env: Env): Env {
 }
 
 // reviewEnv in place, for process.env, which the Agent SDK reads.
-function stripClaude(env: Env): void {
+export function stripClaude(env: Env): void {
     for (const name of Object.keys(env)) {
         if (dropped(name)) {
             delete env[name];
