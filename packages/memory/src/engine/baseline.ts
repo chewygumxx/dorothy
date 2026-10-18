@@ -35,7 +35,6 @@ import type {
     KnowledgeItem,
     MemoryEngine,
     RankRequest,
-    Within,
 } from "./engine.js";
 
 export type BaselineDeps = {
@@ -53,9 +52,6 @@ export const knowledgePath = (scope: Scope, name: string) =>
     scope.kind === "personal"
         ? `personal/${name}`
         : `projects/${scope.id}/${name}`;
-
-const allowed = (within: Within, scope: string) =>
-    within === "all" || within.includes(scope);
 
 export function baselineEngine(deps: BaselineDeps): MemoryEngine {
     const now = deps.now ?? Date.now;
@@ -94,12 +90,16 @@ export function baselineEngine(deps: BaselineDeps): MemoryEngine {
                         now: now(),
                         halfLifeDays: deps.halfLifeDays,
                         project: request.project,
+                        within:
+                            request.within === "all"
+                                ? undefined
+                                : request.within,
                     },
                 ),
             );
             const hits: MemoryHit[] = [];
             for (const hit of found.facts) {
-                if (!allowed(request.within, hit.scope)) {
+                if (hit.retired) {
                     continue;
                 }
                 hits.push({
@@ -116,9 +116,6 @@ export function baselineEngine(deps: BaselineDeps): MemoryEngine {
             }
             for (const hit of found.results) {
                 const scope = projectOf(hit.identifier) ?? "personal";
-                if (!allowed(request.within, scope)) {
-                    continue;
-                }
                 hits.push({
                     id: conversationId(hit.identifier),
                     kind: "episode",

@@ -9,13 +9,14 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Env } from "@dorothy/core";
+import { type Env, newPhrase } from "@dorothy/core";
 import type { Fact } from "../facts/file.js";
 import { dataRoot, PERSONAL, putFact, type Scope } from "../facts/store.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
+import { transcriptDir, transcriptPath } from "../transcript.js";
 import { baselineEngine } from "./baseline.js";
 
 const AT = "2026-10-15T09:30:00.000Z";
@@ -32,6 +33,27 @@ const fact = (name: string, fields: Partial<Fact> = {}): Fact => ({
     body: `Body of ${name}.`,
     ...fields,
 });
+const line = (kind: string, minute: number, fields: object = {}) =>
+    `${JSON.stringify({ v: 1, kind, at: new Date(Date.parse(AT) + minute * 60000).toISOString(), ...fields })}\n`;
+// A conversation in the temporary root, of a project or none.
+const converse = (seed: number, project: string | null, text: string) => {
+    const phrase = newPhrase(() =>
+        Uint8Array.from([seed, 1, 2, 3, 4, 5, 6, 7]),
+    );
+    mkdirSync(transcriptDir(env), { recursive: true });
+    writeFileSync(
+        transcriptPath(phrase, env),
+        line("session", 0, {
+            phrase: "p",
+            sdkSessionId: "",
+            model: "m",
+            promptHash: "",
+            resumed: false,
+            ...(project === null ? {} : { project }),
+        }) + line("user", 1, { text }),
+    );
+    return phrase;
+};
 const APP: Scope = { kind: "project", id: "github.com/me/app" };
 const OTHER: Scope = { kind: "project", id: "github.com/me/other" };
 
@@ -126,6 +148,57 @@ describe("search", () => {
             "k:projects/github.com/me/app/uses-rust",
             "k:projects/github.com/me/other/uses-go",
         ]);
+    });
+});
+
+describe("search before its cut", () => {
+    it("scopes to a project beyond the limit's worth of others", async () => {
+        const root = dataRoot(env);
+        for (let at = 0; at < 12; at++) {
+            await putFact(root, PERSONAL, fact(`widget-${at}`));
+        }
+        await putFact(root, OTHER, fact("widget-go"));
+        const hits = await engine().search({
+            query: "widget",
+            within: ["github.com/me/other"],
+            kind: "knowledge",
+            limit: 10,
+            project: "github.com/me/app",
+        });
+        expect(hits.map((hit) => hit.id)).toEqual([
+            "k:projects/github.com/me/other/widget-go",
+        ]);
+    });
+
+    it("scopes conversations to a project among others", async () => {
+        for (let at = 0; at < 12; at++) {
+            converse(at + 1, "github.com/me/app", "kumquat");
+        }
+        const mine = converse(
+            100,
+            "github.com/me/other",
+            "kumquat among many other words that dilute the match here",
+        );
+        const hits = await engine().search({
+            query: "kumquat",
+            within: ["github.com/me/other"],
+            kind: "episodes",
+            limit: 10,
+            project: "github.com/me/app",
+        });
+        expect(hits.map((hit) => hit.id)).toEqual([`c:${mine}`]);
+        expect(hits[0]?.scope).toBe("github.com/me/other");
+    });
+
+    it("never gives a retired fact as live", async () => {
+        const hits = await engine().search({
+            query: "old",
+            within: "all",
+            kind: "knowledge",
+            limit: 10,
+            project: null,
+        });
+        expect(hits).toEqual([]);
     });
 });
 
