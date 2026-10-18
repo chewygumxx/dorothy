@@ -65,8 +65,8 @@ Read it before any task.
   error message; a key is named only by its variable.
 - Commits: Conventional Commits, header at most 50 characters, body lines
   at most 72, no agent trailers, no em dash anywhere. Scopes: `memory`,
-  `eval`, `config`, `docs`. Run `bunx biome check --write <paths>` before
-  each commit.
+  `eval`, `config`; `docs` is a type. Run
+  `bunx biome check --write <paths>` before each commit.
 - Markdown prose lines at most 80 characters; no em dash.
 - `packages/memory/AGENTS.md` is at its 150-line budget, the root
   `AGENTS.md` at its 100: an edit replaces lines, never adds them.
@@ -99,7 +99,7 @@ packages/eval/AGENTS.md                    the package's guide (Task 2, then eac
 packages/eval/src/main.ts                  process entry (Task 2)
 packages/eval/src/cli.ts                   command table, runCli (Task 2, then each command)
 packages/eval/src/command.ts               Io, Command, option helpers (Task 2)
-packages/eval/src/errors.ts                EvalError (Task 2)
+packages/eval/src/errors.ts                UsageError (Task 2)
 packages/eval/src/testing.ts               fakeIo, fixtures, stub server (Tasks 2, 5)
 packages/eval/src/snapshot/snapshot.ts     takeSnapshot, readSnapshot, workEnv (Task 2)
 packages/eval/src/snapshot/command.ts      snapshot (Task 2)
@@ -673,15 +673,18 @@ export async function openArchive(
         index.db
             .query("SELECT 1 FROM conversations WHERE phrase = ?")
             .get(phrase) !== null;
-    // A fact as recall names it, personal/<name> or <project>/<name>.
-    const targetOf = (target: string) =>
+    // A fact as recall names it, personal/<name> or <project>/<name>; a
+    // phrase no longer in the index names nothing.
+    const targetOf = (target: string): string | null =>
         isConversation(target)
             ? conversationId(target)
-            : knowledgeId(
-                  target.startsWith("personal/")
-                      ? target
-                      : `projects/${target}`,
-              );
+            : target.includes("/")
+              ? knowledgeId(
+                    target.startsWith("personal/")
+                        ? target
+                        : `projects/${target}`,
+                )
+              : null;
     return {
         engine,
         async block(request) {
@@ -755,12 +758,13 @@ export async function openArchive(
                     purposes.set(row.reader, byId);
                 }
                 const purpose = byId.get(row.id);
-                if (purpose === undefined) {
+                const target = targetOf(row.target);
+                if (purpose === undefined || target === null) {
                     continue;
                 }
                 found.push({
                     reader: row.reader,
-                    target: targetOf(row.target),
+                    target,
                     purpose,
                     served: row.served,
                     at: iso(row.at),
@@ -846,7 +850,8 @@ In `workspace.test.ts`, memory's `ENTRIES` becomes:
 
 - [ ] **Step 7: Document it within the budgets**
 
-In `packages/memory/AGENTS.md`, replace line 43:
+In `packages/memory/AGENTS.md`, replace the line (37 today) that begins
+`` `"./service"` ``:
 
 ```markdown
   `"./service"`, `"./client"`, `"./bridge"`: [the contract's guide](./src/contract/AGENTS.md).
@@ -917,7 +922,7 @@ appraised reads it holds, with a writer of small archives for tests."
 - Consumes: `writeArchive`, `fixturePhrase`, `ArchiveFixture` from
   `@dorothy/memory/evaluation` (Task 1); `Env` from `@dorothy/core`.
 - Produces:
-  - `class EvalError extends Error` (`errors.ts`)
+  - `class UsageError extends Error` (`errors.ts`)
   - `type Io = { env: Env; out(text: string): void; err(text: string):
     void; ask(prompt: string): Promise<string | null>; edit(path:
     string): Promise<void> }` (`command.ts`)
@@ -925,7 +930,7 @@ appraised reads it holds, with a writer of small archives for tests."
     undefined>`; `type Command = { summary: string; options: Options;
     run(values: Values, positionals: string[], io: Io): Promise<number>
     }`; `type Options` (`command.ts`)
-  - `workOf(values: Values): string` (absolute; EvalError if absent),
+  - `workOf(values: Values): string` (absolute; UsageError if absent),
     `stringOf(values, name): string | null`, `intOf(values, name,
     fallback, min, max): number` (`command.ts`)
   - `COMMANDS: Record<string, Command>`, `runCli(argv: string[], io:
@@ -1027,7 +1032,7 @@ Then check: `wc -l AGENTS.md` prints 100.
 
 // A failure the user can mend, said in one line: what is wrong and what
 // to run or set. Anything else is a fault and keeps its stack.
-export class EvalError extends Error {}
+export class UsageError extends Error {}
 ```
 
 `packages/eval/src/command.ts`:
@@ -1048,7 +1053,7 @@ export class EvalError extends Error {}
 
 import { resolve } from "node:path";
 import type { Env } from "@dorothy/core";
-import { EvalError } from "./errors.js";
+import { UsageError } from "./errors.js";
 
 export type Io = {
     env: Env;
@@ -1079,7 +1084,7 @@ export function stringOf(values: Values, name: string): string | null {
 export function workOf(values: Values): string {
     const work = stringOf(values, "work");
     if (work === null) {
-        throw new EvalError("give --work, the evaluation's directory");
+        throw new UsageError("give --work, the evaluation's directory");
     }
     return resolve(work);
 }
@@ -1097,7 +1102,7 @@ export function intOf(
     }
     const value = Number(text);
     if (!Number.isInteger(value) || value < min || value > max) {
-        throw new EvalError(
+        throw new UsageError(
             `--${name} must be a whole number from ${min} to ${max}`,
         );
     }
@@ -1262,6 +1267,13 @@ export const FIXTURE: ArchiveFixture = {
                     purpose: "nothing much",
                     served: "none",
                 },
+                // A retired file, which no system's search may give.
+                {
+                    id: "r4",
+                    target: { fact: "personal/uses-vim" },
+                    purpose: "which editor the user used",
+                    served: "useful",
+                },
             ],
         },
     ],
@@ -1336,7 +1348,7 @@ import {
     writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { EvalError } from "../errors.js";
+import { UsageError } from "../errors.js";
 import { tempRoot, writeFixtureData } from "../testing.js";
 import {
     readSnapshot,
@@ -1422,7 +1434,7 @@ describe("a snapshot", () => {
 
     it("refuses a work directory inside the data directory, or around it", async () => {
         await expect(takeSnapshot(data, join(data, "eval"))).rejects.toThrow(
-            EvalError,
+            UsageError,
         );
         await expect(takeSnapshot(data, temp.root)).rejects.toThrow(
             "must not contain each other",
@@ -1486,7 +1498,7 @@ import {
 } from "node:fs/promises";
 import { basename, join, resolve, sep } from "node:path";
 import type { Env } from "@dorothy/core";
-import { EvalError } from "../errors.js";
+import { UsageError } from "../errors.js";
 
 export type SnapshotInfo = {
     source: string;
@@ -1541,19 +1553,19 @@ export async function takeSnapshot(
     const source = resolve(from);
     const target = resolve(work);
     if (!(await exists(join(source, "transcripts")))) {
-        throw new EvalError(
+        throw new UsageError(
             `${source} is no data directory of Dorothy's: it has no transcripts/`,
         );
     }
     if (within(target, source) || within(source, target)) {
-        throw new EvalError(
+        throw new UsageError(
             "the work directory and the data directory must not contain each other",
         );
     }
     const copy = snapshotDir(target);
     if ((await exists(infoPath(target))) || (await exists(copy))) {
         if (options.replace !== true) {
-            throw new EvalError(
+            throw new UsageError(
                 `${target} holds a snapshot already: give --replace to take it again`,
             );
         }
@@ -1593,7 +1605,7 @@ export async function readSnapshot(work: string): Promise<SnapshotInfo> {
             await readFile(infoPath(work), "utf8"),
         ) as SnapshotInfo;
     } catch {
-        throw new EvalError(
+        throw new UsageError(
             `${work} holds no snapshot: run \`bun run eval -- snapshot --from <data directory> --work ${work}\` first`,
         );
     }
@@ -1702,7 +1714,7 @@ describe("bun run eval", () => {
 //
 
 import { type Command, stringOf, workOf } from "../command.js";
-import { EvalError } from "../errors.js";
+import { UsageError } from "../errors.js";
 import { takeSnapshot } from "./snapshot.js";
 
 export const snapshotCommand: Command = {
@@ -1716,7 +1728,7 @@ export const snapshotCommand: Command = {
         // Never a default: nothing reads her real data unless named.
         const from = stringOf(values, "from");
         if (from === null) {
-            throw new EvalError(
+            throw new UsageError(
                 "give --from, Dorothy's data directory (such as ~/.local/share/dorothy)",
             );
         }
@@ -1748,7 +1760,7 @@ export const snapshotCommand: Command = {
 
 import { parseArgs } from "node:util";
 import type { Command, Io, Values } from "./command.js";
-import { EvalError } from "./errors.js";
+import { UsageError } from "./errors.js";
 import { snapshotCommand } from "./snapshot/command.js";
 
 export const COMMANDS: Record<string, Command> = {
@@ -1795,7 +1807,7 @@ export async function runCli(argv: string[], io: Io): Promise<number> {
         });
         return await command.run(values as Values, positionals, io);
     } catch (error) {
-        if (error instanceof EvalError || isArgumentError(error)) {
+        if (error instanceof UsageError || isArgumentError(error)) {
             io.err(`eval: ${(error as Error).message}\n`);
             return 1;
         }
@@ -1823,7 +1835,8 @@ import { spawnSync } from "node:child_process";
 import { createInterface, type Interface } from "node:readline/promises";
 import { runCli } from "./cli.js";
 
-let reader: Interface | null = null;
+// Declared so, tsc does not narrow it to null at the top level.
+let reader = null as Interface | null;
 
 const ask = (prompt: string) =>
     new Promise<string | null>((done) => {
@@ -1907,7 +1920,7 @@ reads no file of memory's itself.
   `--from` names.
 - Tests build their archive with `writeFixtureData` or
   `snapshotFixture` from `src/testing.ts`, under a temporary root.
-- A failure the user can mend is an `EvalError`, said in one line by
+- A failure the user can mend is an `UsageError`, said in one line by
   `runCli`; anything else is a fault and keeps its stack.
 
 ## Files
@@ -1951,7 +1964,7 @@ directory, which every later command reads instead of her archive."
 
 **Interfaces:**
 
-- Consumes: `EvalError` (Task 2).
+- Consumes: `UsageError` (Task 2).
 - Produces:
   - `QUESTION_TYPES`, `type QuestionType` (the seven types)
   - `questionSchema` (zod), `type Question = { id: string; type:
@@ -1964,7 +1977,7 @@ directory, which every later command reads instead of her archive."
   - `readQuestions(work: string): Promise<{ questions: Question[];
     problems: string[] }>`
   - `readQuestionsToRewrite(work: string): Promise<Question[]>`, which
-    throws an `EvalError` naming each malformed line
+    throws an `UsageError` naming each malformed line
   - `writeQuestions(work: string, questions: Question[]): Promise<void>`
   - `mergeQuestions(existing: Question[], incoming: Question[]): {
     questions: Question[]; added: number }`
@@ -2143,7 +2156,7 @@ import { createHash } from "node:crypto";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
-import { EvalError } from "../errors.js";
+import { UsageError } from "../errors.js";
 
 export const QUESTION_TYPES = [
     "single-session",
@@ -2244,7 +2257,7 @@ export async function readQuestionsToRewrite(
 ): Promise<Question[]> {
     const { questions, problems } = await readQuestions(work);
     if (problems.length > 0) {
-        throw new EvalError(
+        throw new UsageError(
             `${problems.join("; ")}: mend or remove these lines first`,
         );
     }
@@ -2302,6 +2315,7 @@ git commit -m "feat(eval): Keep questions in a file"
 ```
 
 ---
+
 ### Task 4: mining her appraised reads
 
 **Files:**
@@ -2320,7 +2334,9 @@ git commit -m "feat(eval): Keep questions in a file"
   `snapshotFixture`, `fakeIo`, `tempRoot`, `TEA`, `READER` (Task 2).
 - Produces:
   - `lookupQuestions(reads: AppraisedRead[], projects: Map<string,
-    string | null>): Question[]` (projects by the reader's phrase)
+    string | null>, present: Set<string>): Question[]` (projects by the
+    reader's phrase; present, the ids of visible conversations and live
+    knowledge, which any system could give)
   - `mineCommand: Command`
 
 - [ ] **Step 1: Write the failing test**
@@ -2370,6 +2386,7 @@ describe("lookups", () => {
         const [question] = lookupQuestions(
             [read("which tea the user likes", "c:t")],
             new Map([["r", "github.com/me/app"]]),
+            new Set(["c:t"]),
         );
         expect(question).toMatchObject({
             type: "lookup",
@@ -2395,8 +2412,19 @@ describe("lookups", () => {
                 read("again", "c:t"),
             ],
             new Map(),
+            new Set(["c:r", "c:t"]),
         );
         expect(found.map((question) => question.question)).toEqual(["again"]);
+    });
+
+    it("leaves out what no system could give: hidden, gone or retired", () => {
+        expect(
+            lookupQuestions(
+                [read("an old editor", "k:personal/uses-vim")],
+                new Map(),
+                new Set(["c:t"]),
+            ),
+        ).toEqual([]);
     });
 });
 
@@ -2481,11 +2509,16 @@ import {
 export function lookupQuestions(
     reads: AppraisedRead[],
     projects: Map<string, string | null>,
+    present: Set<string>,
 ): Question[] {
     const made = new Map<string, Question>();
     for (const read of reads) {
         const question = read.purpose.trim();
-        if (question === "" || read.target === `c:${read.reader}`) {
+        if (
+            question === "" ||
+            read.target === `c:${read.reader}` ||
+            !present.has(read.target)
+        ) {
             continue;
         }
         const evidence = [read.target];
@@ -2519,14 +2552,22 @@ export const mineCommand: Command = {
         const existing = await readQuestionsToRewrite(work);
         const archive = await openArchive(workEnv(work));
         try {
+            const conversations = archive.conversations();
             const projects = new Map(
-                archive
-                    .conversations()
-                    .map((each) => [each.phrase, each.project] as const),
+                conversations.map((each) => [each.phrase, each.project] as const),
             );
+            // A hidden conversation or a retired file is in no system's
+            // reach, so a question on it would measure nothing.
+            const present = new Set([
+                ...conversations.map((each) => each.id),
+                ...(await archive.knowledge())
+                    .filter((each) => each.retired === null)
+                    .map((each) => each.id),
+            ]);
             const mined = lookupQuestions(
                 await archive.appraisedReads(),
                 projects,
+                present,
             );
             const merged = mergeQuestions(existing, mined);
             await writeQuestions(work, merged.questions);
@@ -2591,7 +2632,7 @@ git commit -m "feat(eval): Mine questions from appraised reads"
 
 **Interfaces:**
 
-- Consumes: `EvalError` (Task 2); `Env` (`@dorothy/core`).
+- Consumes: `UsageError` (Task 2); `Env` (`@dorothy/core`).
 - Produces:
   - `ROLES`, `type Role = "generate" | "answer" | "judge"`, `type
     RoleConfig = { baseUrl: string; model: string; key: string | null }`,
@@ -2602,7 +2643,7 @@ git commit -m "feat(eval): Mine questions from appraised reads"
   - `type Message = { role: "system" | "user"; content: string }`,
     `type Completion = { text: string; input: number; output: number;
     ms: number }`
-  - `class CallCap extends EvalError`
+  - `class CallCap extends UsageError`
   - `class Models` with `constructor(config: EvalConfig, options: {
     env: Env; maxCalls?: number | null; timeoutMs?: number; retryMs?:
     number })`, `calls: number` (getter), `chat(role: Role): ChatOpenAI`,
@@ -2616,7 +2657,7 @@ git commit -m "feat(eval): Mine questions from appraised reads"
     stop(): void }`, `type StubRequest = { path: string;
     authorization: string | null; body: Record<string, unknown> }`,
     `type StubReply = { status?: number; content?: string; json?:
-    unknown }`, `stubConfig(url: string, key?: string | null): string`
+    unknown; body?: string }`, `stubConfig(url: string, key?: string | null): string`
 
 - [ ] **Step 1: Add the dependencies**
 
@@ -2653,7 +2694,13 @@ export type StubRequest = {
     authorization: string | null;
     body: Record<string, unknown>;
 };
-export type StubReply = { status?: number; content?: string; json?: unknown };
+export type StubReply = {
+    status?: number;
+    content?: string;
+    json?: unknown;
+    // The body of a refusal.
+    body?: string;
+};
 
 // An OpenAI-compatible Chat Completions server on loopback, answering as
 // reply says: a status other than 200 refuses; json is sent as the
@@ -2675,7 +2722,9 @@ export function stubModels(
             requests.push(seen);
             const answer = reply(seen, requests.length);
             if (answer.status !== undefined && answer.status !== 200) {
-                return new Response("refused", { status: answer.status });
+                return new Response(answer.body ?? "refused", {
+                    status: answer.status,
+                });
             }
             return Response.json({
                 id: "stub",
@@ -2844,7 +2893,7 @@ describe("a model's vendor", () => {
 
 import { afterEach, describe, expect, it } from "bun:test";
 import { z } from "zod";
-import { EvalError } from "../errors.js";
+import { UsageError } from "../errors.js";
 import { type StubReply, stubModels } from "../testing.js";
 import { CallCap, failureOf, Models } from "./client.js";
 import type { EvalConfig } from "./config.js";
@@ -2913,6 +2962,24 @@ describe("Models", () => {
         expect(requests).toHaveLength(3);
     });
 
+    it("puts out a key a refusal echoes", async () => {
+        const { url } = serve(() => ({
+            status: 401,
+            body: "bad key secret-123",
+        }));
+        const models = new Models(configOf(url, "EVAL_KEY"), {
+            env: { EVAL_KEY: "secret-123" },
+        });
+        const error = await models.complete("answer", ask).catch((e) => e);
+        expect(failureOf(error)).toStartWith("401");
+        expect(failureOf(error)).not.toContain("secret-123");
+    });
+
+    it("turns LangSmith's tracing off", () => {
+        expect(process.env.LANGSMITH_TRACING).toBe("false");
+        expect(process.env.LANGCHAIN_TRACING_V2).toBe("false");
+    });
+
     it("never retries a request the server refuses", async () => {
         const { url, requests } = serve(() => ({ status: 400 }));
         const models = new Models(configOf(url), { env: {}, retryMs: 1 });
@@ -2940,7 +3007,11 @@ describe("Models", () => {
         );
         expect(done.value).toEqual({ n: 3 });
         expect(
-            (requests[0]?.body.response_format as { type: string }).type,
+            (
+                requests[0]?.body.response_format as
+                    | { type: string }
+                    | undefined
+            )?.type,
         ).toBe("json_schema");
     });
 
@@ -2954,7 +3025,7 @@ describe("Models", () => {
                 "count",
                 ask,
             ),
-        ).rejects.toThrow(EvalError);
+        ).rejects.toThrow(UsageError);
         expect(requests).toHaveLength(1);
     });
 });
@@ -2985,7 +3056,7 @@ Expected: FAIL, "Cannot find module './config.js'".
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { EvalError } from "../errors.js";
+import { UsageError } from "../errors.js";
 
 export const ROLES = ["generate", "answer", "judge"] as const;
 export type Role = (typeof ROLES)[number];
@@ -3003,24 +3074,24 @@ const isTable = (value: unknown): value is Record<string, unknown> =>
 function roleOf(role: Role, table: unknown): RoleConfig {
     const where = `eval.toml: [models.${role}]`;
     if (!isTable(table)) {
-        throw new EvalError(`${where} must be a table`);
+        throw new UsageError(`${where} must be a table`);
     }
     const extra = Object.keys(table).filter((key) => !SETTINGS.includes(key));
     if (extra.length > 0) {
-        throw new EvalError(`${where} has no setting ${extra.join(", ")}`);
+        throw new UsageError(`${where} has no setting ${extra.join(", ")}`);
     }
     const baseUrl = table["base-url"];
     const model = table.model;
     const key = table.key;
     if (typeof baseUrl !== "string" || !/^https?:\/\/\S+$/.test(baseUrl)) {
-        throw new EvalError(`${where} needs base-url, an http or https URL`);
+        throw new UsageError(`${where} needs base-url, an http or https URL`);
     }
     if (typeof model !== "string" || model.trim() === "") {
-        throw new EvalError(`${where} needs model`);
+        throw new UsageError(`${where} needs model`);
     }
     // The message never repeats what was written, which may be a key.
     if (key !== undefined && (typeof key !== "string" || !KEY_NAME.test(key))) {
-        throw new EvalError(
+        throw new UsageError(
             `${where}: key names a variable, such as "OPENROUTER_API_KEY", never the key itself`,
         );
     }
@@ -3039,17 +3110,17 @@ export async function readEvalConfig(work: string): Promise<EvalConfig> {
     try {
         parsed = Bun.TOML.parse(text);
     } catch (error) {
-        throw new EvalError(`eval.toml: ${(error as Error).message}`);
+        throw new UsageError(`eval.toml: ${(error as Error).message}`);
     }
     const models = isTable(parsed) ? (parsed.models ?? {}) : {};
     if (!isTable(models)) {
-        throw new EvalError("eval.toml: [models] must be a table");
+        throw new UsageError("eval.toml: [models] must be a table");
     }
     const unknown = Object.keys(models).filter(
         (name) => !(ROLES as readonly string[]).includes(name),
     );
     if (unknown.length > 0) {
-        throw new EvalError(
+        throw new UsageError(
             `eval.toml: no role ${unknown.join(", ")}; the roles are ${ROLES.join(", ")}`,
         );
     }
@@ -3064,7 +3135,7 @@ export async function readEvalConfig(work: string): Promise<EvalConfig> {
 export function requireRole(config: EvalConfig, role: Role): RoleConfig {
     const found = config[role];
     if (found === null) {
-        throw new EvalError(
+        throw new UsageError(
             `eval.toml has no [models.${role}]: the README's evaluation section shows one`,
         );
     }
@@ -3100,14 +3171,19 @@ export const vendorOf = (model: string) =>
 import type { Env } from "@dorothy/core";
 import { ChatOpenAI } from "@langchain/openai";
 import type { z } from "zod";
-import { EvalError } from "../errors.js";
+import { UsageError } from "../errors.js";
 import { type EvalConfig, type Role, type RoleConfig, requireRole } from "./config.js";
+
+// openevals wraps its judges in LangSmith's tracing, which reads these
+// from the environment; her data never goes there.
+process.env.LANGSMITH_TRACING = "false";
+process.env.LANGCHAIN_TRACING_V2 = "false";
 
 export type Message = { role: "system" | "user"; content: string };
 export type Completion = { text: string; input: number; output: number; ms: number };
 
 // --max-calls spent: what is done is kept, and a run resumes.
-export class CallCap extends EvalError {}
+export class CallCap extends UsageError {}
 
 export type ModelsOptions = {
     env: Env;
@@ -3122,14 +3198,20 @@ const statusOf = (error: unknown) => {
     return typeof status === "number" ? status : null;
 };
 
+const TRANSIENT = /timeout|timed out|connection|econn|socket|fetch failed|network/i;
+
 // A rate limit, a timeout, a server's fault or a lost connection may come
-// right; a refusal will not.
+// right; a refusal, or a fault of ours, will not.
 function retryable(error: unknown): boolean {
-    if (error instanceof EvalError) {
+    if (error instanceof UsageError) {
         return false;
     }
     const status = statusOf(error);
-    return status === null || status === 408 || status === 429 || status >= 500;
+    if (status === null) {
+        const { name, message } = error instanceof Error ? error : { name: "", message: String(error) };
+        return TRANSIENT.test(`${name} ${message}`);
+    }
+    return status === 408 || status === 429 || status >= 500;
 }
 
 // One line for a record: the status and the message's first line, which
@@ -3162,6 +3244,8 @@ type Usage = { input_tokens?: number; output_tokens?: number } | undefined;
 export class Models {
     #calls = 0;
     readonly #chats = new Map<Role, ChatOpenAI>();
+    // Every key read, so no failure carries one into a record.
+    readonly #keys = new Set<string>();
 
     constructor(
         readonly config: EvalConfig,
@@ -3179,10 +3263,11 @@ export class Models {
         }
         const key = this.options.env[found.key];
         if (key === undefined || key === "") {
-            throw new EvalError(
+            throw new UsageError(
                 `${found.key} is not set: set it with \`dotenvx set ${found.key}\`, then run under \`dotenvx run --\``,
             );
         }
+        this.#keys.add(key);
         return key;
     }
 
@@ -3215,11 +3300,29 @@ export class Models {
                 return await work();
             } catch (error) {
                 if (attempt >= 2 || !retryable(error)) {
-                    throw error;
+                    throw this.#redacted(error);
                 }
                 await Bun.sleep((this.options.retryMs ?? 2000) * (attempt + 1));
             }
         }
+    }
+
+    // A provider may echo a key in its refusal: the error is copied with
+    // every key read put out, its status kept.
+    #redacted(error: unknown): unknown {
+        if (!(error instanceof Error) || error instanceof UsageError) {
+            return error;
+        }
+        let message = error.message;
+        for (const key of this.#keys) {
+            message = message.replaceAll(key, "[key]");
+        }
+        if (message === error.message) {
+            return error;
+        }
+        const copy = new Error(message);
+        (copy as { status?: unknown }).status = statusOf(error) ?? undefined;
+        return copy;
     }
 
     async complete(role: Role, messages: Message[]): Promise<Completion> {
@@ -3251,13 +3354,13 @@ export class Models {
             } catch (error) {
                 // A reply that breaks the schema: no retry mends it.
                 if (Array.isArray((error as { issues?: unknown }).issues)) {
-                    throw new EvalError("the model's reply did not match its schema");
+                    throw new UsageError("the model's reply did not match its schema");
                 }
                 throw error;
             }
         })) as unknown as { raw: { usage_metadata?: Usage }; parsed: T | null };
         if (reply.parsed === null) {
-            throw new EvalError("the model's reply did not match its schema");
+            throw new UsageError("the model's reply did not match its schema");
         }
         return {
             value: reply.parsed,
@@ -3276,7 +3379,7 @@ Models section shows the shapes at run time.
 - [ ] **Step 7: Run them to see them pass**
 
 Run: `bun test packages/eval/src/models`
-Expected: PASS, 16 tests.
+Expected: PASS, 18 tests.
 
 - [ ] **Step 8: Add the files to the guide and commit**
 
@@ -3318,7 +3421,7 @@ role. Calls retry a rate limit or a fault twice and stop at a cap."
 **Interfaces:**
 
 - Consumes: `openArchive`, `Archive`, `ArchiveConversation`,
-  `ArchiveKnowledge`, `ArchiveTurn` (Task 1); `EvalError`, `workEnv`,
+  `ArchiveKnowledge`, `ArchiveTurn` (Task 1); `UsageError`, `workEnv`,
   `snapshotFixture`, `tempRoot`, `TEA`, `GARDEN`, `READER` (Task 2).
 - Produces:
   - `termsOf(text: string): string[]`, `scoreOf(text: string, terms:
@@ -3413,9 +3516,9 @@ describe("items", () => {
                 { id: "c:a", text: "x".repeat(50) },
                 { id: "c:b", text: "y".repeat(50) },
             ],
-            100,
+            120,
         );
-        expect(packed.length).toBeLessThanOrEqual(100);
+        expect(packed.length).toBeLessThanOrEqual(120);
         expect(packed).toStartWith('<item id="c:a">\n');
         expect(packed).toContain('<item id="c:b">');
     });
@@ -3472,6 +3575,8 @@ describe("the dorothy system", () => {
             8000,
         );
         expect(found.ranked).toContain(`c:${GARDEN}`);
+        // The block's knowledge, after the hits.
+        expect(found.ranked).toContain("k:personal/uses-helix");
         expect(found.context).toContain("<memory>");
         expect(found.context).toContain(`<item id="c:${GARDEN}">`);
         expect(found.context.length).toBeLessThanOrEqual(8000);
@@ -3695,7 +3800,7 @@ export function passage(
 // What every system meets: a question, a budget of characters, and back
 // its ids best first with the context the answering model reads.
 
-import { EvalError } from "../errors.js";
+import { UsageError } from "../errors.js";
 import type { Corpus } from "./corpus.js";
 import { dorothySystem } from "./dorothy.js";
 import { fullSystem } from "./full.js";
@@ -3729,7 +3834,7 @@ export const SYSTEM_NAMES = Object.keys(MAKERS) as (keyof typeof MAKERS)[];
 export function makeSystem(name: string, corpus: Corpus): System {
     const make = MAKERS[name as keyof typeof MAKERS];
     if (make === undefined) {
-        throw new EvalError(
+        throw new UsageError(
             `no system ${name}; the systems are ${SYSTEM_NAMES.join(", ")}`,
         );
     }
@@ -3913,7 +4018,8 @@ export function fullSystem(corpus: Corpus): System {
 
 // Her memory as a harness gets it today, without a model choosing the
 // calls: the opening block for the question's project, then search over
-// every scope, then the top hits opened until the budget is spent.
+// every scope, then the top hits opened until the budget is spent. Its
+// ranked ids are the hits, then the block's.
 
 import {
     type Corpus,
@@ -3959,8 +4065,13 @@ export function dorothySystem(corpus: Corpus): System {
                 };
             });
             const left = budget - block.text.length - 1;
+            const found = hits.map((hit) => hit.id);
             return {
-                ranked: hits.map((hit) => hit.id),
+                // Her search's hits, then what the block gave besides.
+                ranked: [
+                    ...found,
+                    ...block.ids.filter((id) => !found.includes(id)),
+                ],
                 context: clip(
                     `${block.text}\n${packItems(opened, Math.max(0, left))}`,
                     budget,
@@ -3994,12 +4105,13 @@ In `packages/eval/AGENTS.md`'s Files, after `models/client.ts`:
 ```bash
 bunx biome check --write packages/eval
 git add packages/eval
-git commit -m "feat(eval): Ask three systems through one interface" \
+git commit -m "feat(eval): Ask three systems through one door" \
   -m "Dorothy as a harness gets her today, a lexical bound from below and
 a full-context bound from above, each over the snapshot's archive."
 ```
 
 ---
+
 ### Task 7: generating questions
 
 **Files:**
@@ -4017,7 +4129,7 @@ a full-context bound from above, each over the snapshot's archive."
   `Models`, `CallCap`, `Message`, `readEvalConfig`, `requireRole`
   (Task 5); `Question`, `QuestionType`, `questionId`, `questionSchema`,
   `readQuestionsToRewrite`, `writeQuestions` (Task 3); `Command`,
-  `workOf`, `intOf`, `stringOf`, `readSnapshot`, `workEnv`, `EvalError`
+  `workOf`, `intOf`, `stringOf`, `readSnapshot`, `workEnv`, `UsageError`
   (Task 2); `stubModels`, `stubConfig`, `snapshotFixture`, `fakeIo`,
   `tempRoot` (Tasks 2, 5).
 - Produces:
@@ -4366,7 +4478,11 @@ describe("bun run eval -- generate", () => {
         );
         expect(record.at(-1)).toMatchObject({ seed: 5, model: "generate/model" });
         expect(
-            (stub.requests[0]?.body.response_format as { type: string }).type,
+            (
+                stub.requests[0]?.body.response_format as
+                    | { type: string }
+                    | undefined
+            )?.type,
         ).toBe("json_schema");
     });
 
@@ -4415,7 +4531,7 @@ Expected: FAIL, "Cannot find module './generate.js'".
 
 import type { ArchiveConversation } from "@dorothy/memory/evaluation";
 import { z } from "zod";
-import { EvalError } from "../errors.js";
+import { UsageError } from "../errors.js";
 import { CallCap, type Message } from "../models/client.js";
 import {
     clip,
@@ -4468,7 +4584,7 @@ export function parseTypeCounts(
         const match = /^([a-z-]+)=(\d{1,4})$/.exec(value);
         const type = match?.[1] as GeneratedType | undefined;
         if (match === null || type === undefined || !(type in SHARES)) {
-            throw new EvalError(
+            throw new UsageError(
                 `--type takes ${GENERATED_TYPES.join(", ")}, each as type=count`,
             );
         }
@@ -5018,7 +5134,8 @@ that sum, not the code.
 
 - [ ] **Step 6: Add the files to the guide and commit**
 
-In `packages/eval/AGENTS.md`'s Files, after `questions/mine.ts`:
+In `packages/eval/AGENTS.md`'s Files, after the `questions/mine.ts`
+bullet and before the `models/config.ts` one:
 
 ```markdown
 - `questions/generate.ts`: samples, prompts and checks for drafting
@@ -5452,6 +5569,7 @@ git commit -m "feat(eval): Review drafts one at a time"
 ```
 
 ---
+
 ### Task 9: records, the report and compare
 
 **Files:**
@@ -5467,7 +5585,7 @@ git commit -m "feat(eval): Review drafts one at a time"
 **Interfaces:**
 
 - Consumes: `QuestionType` (Task 3); `SnapshotInfo`, `Command`,
-  `workOf`, `EvalError` (Task 2); `fakeIo`, `tempRoot` (Task 2).
+  `workOf`, `UsageError` (Task 2); `fakeIo`, `tempRoot` (Task 2).
 - Produces:
   - `type Judged = { strict: boolean | null; lenient: boolean | null;
     declined: boolean | null; stale: boolean | null }`
@@ -5479,7 +5597,7 @@ git commit -m "feat(eval): Review drafts one at a time"
   - `type RunInfo = { id: string; at: string; systems: string[];
     budget: number; fullBudget: number; retrievalOnly: boolean; models:
     { answer: string | null; judge: string | null }; snapshot:
-    SnapshotInfo; questions: number }`
+    SnapshotInfo; questions: number; questionIds: string[] }`
   - `runDir(work, id)`, `recordsPath(work, id)`, `runInfoPath(work,
     id)`, `summaryPath(work, id)`, `reportPath(work, id)`;
     `checkRunId(id: string): string`; `readRecords(work: string, id:
@@ -5542,6 +5660,7 @@ const info = (id: string): RunInfo => ({
         knowledge: 3,
     },
     questions: 3,
+    questionIds: ["q-1", "q-2", "q-3"],
 });
 
 const record = (
@@ -5747,7 +5866,7 @@ Expected: FAIL, "Cannot find module '../run/record.js'".
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { EvalError } from "../errors.js";
+import { UsageError } from "../errors.js";
 import type { QuestionType } from "../questions/file.js";
 import type { SnapshotInfo } from "../snapshot/snapshot.js";
 
@@ -5784,12 +5903,14 @@ export type RunInfo = {
     models: { answer: string | null; judge: string | null };
     snapshot: SnapshotInfo;
     questions: number;
+    // The questions it asks, so a resumed run asks no others.
+    questionIds: string[];
 };
 
 // A run id names a directory, so it may hold nothing that leaves runs/.
 export function checkRunId(id: string): string {
     if (!/^[0-9A-Za-z-]{1,64}$/.test(id)) {
-        throw new EvalError(`${id} is no run id`);
+        throw new UsageError(`${id} is no run id`);
     }
     return id;
 }
@@ -5837,7 +5958,7 @@ export async function readRunInfo(work: string, id: string): Promise<RunInfo> {
             await readFile(runInfoPath(work, id), "utf8"),
         ) as RunInfo;
     } catch {
-        throw new EvalError(`no run ${id} in ${join(work, "runs")}`);
+        throw new UsageError(`no run ${id} in ${join(work, "runs")}`);
     }
 }
 ```
@@ -5878,6 +5999,9 @@ export type Cell = {
     // Means.
     retrievalMs: number;
     chars: number;
+    // Of the answered.
+    answerMs: number;
+    answered: number;
     // Sums.
     input: number;
     output: number;
@@ -5902,6 +6026,8 @@ const emptyCell = (): Cell => ({
     stale: rate(),
     retrievalMs: 0,
     chars: 0,
+    answerMs: 0,
+    answered: 0,
     input: 0,
     output: 0,
     failures: 0,
@@ -5927,6 +6053,8 @@ function add(cell: Cell, record: RunRecord): void {
     tally(cell.stale, record.judged.stale);
     cell.retrievalMs += record.retrieval.ms;
     cell.chars += record.retrieval.chars;
+    cell.answerMs += record.answer?.ms ?? 0;
+    cell.answered += record.answer === null ? 0 : 1;
     cell.input += record.answer?.input ?? 0;
     cell.output += record.answer?.output ?? 0;
     cell.failures +=
@@ -5941,6 +6069,10 @@ function settle(cell: Cell): Cell {
               ...cell,
               retrievalMs: Math.round(cell.retrievalMs / cell.n),
               chars: Math.round(cell.chars / cell.n),
+              answerMs:
+                  cell.answered === 0
+                      ? 0
+                      : Math.round(cell.answerMs / cell.answered),
           };
 }
 
@@ -6080,11 +6212,11 @@ export function reportOf(summary: Summary): string {
         "",
         "## Cost",
         "",
-        "| System | Retrieval ms | Characters | Input tokens | Output tokens | Failures |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| System | Retrieval ms | Characters | Answer ms | Input tokens | Output tokens | Failures |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
         ...systems.map(
             ([name, { all }]) =>
-                `| ${name} | ${all.retrievalMs} | ${all.chars} | ${all.input} | ${all.output} | ${all.failures} |`,
+                `| ${name} | ${all.retrievalMs} | ${all.chars} | ${all.answerMs} | ${all.input} | ${all.output} | ${all.failures} |`,
         ),
         "",
         "## Alone",
@@ -6191,7 +6323,7 @@ differ from this code; the arithmetic is the spec's rule.
 
 import { readFile, writeFile } from "node:fs/promises";
 import { type Command, workOf } from "../command.js";
-import { EvalError } from "../errors.js";
+import { UsageError } from "../errors.js";
 import {
     checkRunId,
     readRecords,
@@ -6223,7 +6355,7 @@ async function readSummary(work: string, id: string): Promise<Summary> {
     try {
         return JSON.parse(await readFile(summaryPath(work, id), "utf8"));
     } catch {
-        throw new EvalError(
+        throw new UsageError(
             `run ${id} has no summary: finish it with \`bun run eval -- run --work ${work} --resume ${id}\``,
         );
     }
@@ -6236,7 +6368,7 @@ export const compareCommand: Command = {
         const work = workOf(values);
         const [first, second] = positionals;
         if (first === undefined || second === undefined || positionals.length > 2) {
-            throw new EvalError("give two run ids: compare --work <dir> <run> <run>");
+            throw new UsageError("give two run ids: compare --work <dir> <run> <run>");
         }
         const a = await readSummary(work, checkRunId(first));
         const b = await readSummary(work, checkRunId(second));
@@ -6298,7 +6430,7 @@ git commit -m "feat(eval): Report runs and compare them"
   `runInfoPath`, `recordsPath`, `reportPath` (Task 9);
   `writeRunReport`, `Summary` (Task 9); `Command`, `workOf`,
   `stringOf`, `intOf`, `readSnapshot`, `workEnv`, `SnapshotInfo`,
-  `EvalError` (Task 2); `stubModels`, `stubConfig`, `snapshotFixture`,
+  `UsageError` (Task 2); `stubModels`, `stubConfig`, `snapshotFixture`,
   `fakeIo`, `tempRoot`, `GARDEN` (Tasks 2, 5).
 - Produces:
   - `LENIENT_PROMPT`, `ABSTENTION_PROMPT`, `STALE_PROMPT`; `type Judge
@@ -6774,7 +6906,7 @@ export function answerPrompt(question: Question, context: string): Message[] {
 
 import { createHash } from "node:crypto";
 import { appendFile, mkdir, stat, writeFile } from "node:fs/promises";
-import { EvalError } from "../errors.js";
+import { UsageError } from "../errors.js";
 import { CallCap, failureOf, type Models } from "../models/client.js";
 import type { EvalConfig } from "../models/config.js";
 import type { Question } from "../questions/file.js";
@@ -6829,12 +6961,14 @@ export function newRunInfo(
         .slice(0, 8);
     const at = now.toISOString();
     return {
-        id: `${at.replace(/[-:]/g, "").slice(0, 15)}-${hash}`,
+        // To the millisecond, so two runs a second apart stay apart.
+        id: `${at.replace(/[-:.]/g, "").slice(0, 18)}-${hash}`,
         at,
         ...settings,
         models,
         snapshot,
         questions: accepted.length,
+        questionIds: accepted.map((question) => question.id),
     };
 }
 
@@ -6966,9 +7100,12 @@ export async function runEvaluation(
         systems?: System[];
     },
 ): Promise<{ summary: Summary; stopped: string | null }> {
-    const accepted = deps.questions.filter((q) => q.status === "accepted");
+    const asked = new Set(info.questionIds);
+    const accepted = deps.questions.filter(
+        (q) => q.status === "accepted" && asked.has(q.id),
+    );
     if (accepted.length === 0) {
-        throw new EvalError(
+        throw new UsageError(
             "no accepted questions: mine or generate some, then review them",
         );
     }
@@ -7060,7 +7197,7 @@ export async function runEvaluation(
 //
 
 import { type Command, intOf, stringOf, workOf } from "../command.js";
-import { EvalError } from "../errors.js";
+import { UsageError } from "../errors.js";
 import { Models } from "../models/client.js";
 import { readEvalConfig, requireRole, vendorOf } from "../models/config.js";
 import { readQuestions } from "../questions/file.js";
@@ -7083,7 +7220,7 @@ function systemsOf(text: string): string[] {
         (name) => !(SYSTEM_NAMES as readonly string[]).includes(name),
     );
     if (names.length === 0 || unknown !== undefined) {
-        throw new EvalError(
+        throw new UsageError(
             `--systems takes some of ${SYSTEM_NAMES.join(", ")}, comma-separated`,
         );
     }
@@ -7137,8 +7274,10 @@ export const runCommand: Command = {
                       new Date(),
                   );
         if (values["dry-run"] === true) {
+            const asked = new Set(info.questionIds);
+            const theirs = accepted.filter((q) => asked.has(q.id));
             io.out(
-                `dry run: ${accepted.length} questions, ${info.systems.length} systems; ${modelCalls(info, accepted)} model calls\n`,
+                `dry run: ${theirs.length} questions, ${info.systems.length} systems; ${modelCalls(info, theirs)} model calls\n`,
             );
             return 0;
         }
@@ -7312,7 +7451,7 @@ In `packages/eval/AGENTS.md`, before `## Files`, add:
 `snapshot`, `mine`, `generate`, `review`, `run` and `compare`, in the
 order a user meets them; the README's "Measuring her memory" shows
 each. A new command is a `Command` in `cli.ts`'s table, with its
-options declared, its failures as `EvalError`s, and a test through
+options declared, its failures as `UsageError`s, and a test through
 `runCli` with `fakeIo`.
 ```
 
