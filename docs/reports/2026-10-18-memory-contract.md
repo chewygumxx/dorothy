@@ -352,6 +352,25 @@ final review:
 - Waiting records made in one millisecond may reorder; a kept block's
   path does not encode its host, and the fallback ignores the session.
 
+### Task 17: the stdio bridge
+
+Complete in `ab9846e` and `dea89ea`, after one fix round; the memory
+package passes 1263 of 1263. The review found stdout kept to the
+protocol, the token sent as a bearer alone, the service's defences
+passed, and a service that is down answered with a clear MCP error. It
+also found, by running the bridge, that it never exited when its stdin
+closed, as the SDK's stdio transport ignores the end of its input.
+Ruling: the bridge closes when its stdin ends. If wrong, a host that
+closes its input but still reads loses the bridge. The re-review found
+it addressed. Minor findings deferred to the final review:
+
+- A request sent just before the input ends is forwarded, but its
+  answer is cut off.
+- A refusal reads as "unreachable"; a request has no timeout of its
+  own; a failure before any output rejects instead of answering.
+- Tests do not cover the project and host passed on, a 4xx, or the
+  bearer header.
+
 ## Verification
 
 Recorded at the end of each part, with `bun run check`.
