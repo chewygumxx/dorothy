@@ -387,6 +387,18 @@ final review: the tests do not cover `--mcp` with `--serve`, `--host`
 alone or `--token-revoke` without a device, and a repeated option keeps
 its last value.
 
+### Task 19: the documentation
+
+Complete in `1d41cb2`; review clean. The README, the package guides, a
+new guide to `contract/` and the spec now describe the code as the
+rulings above left it; the bullets added early to `core` and `cli` were
+moved or kept, not repeated. The review checked each fact the new
+documents state against the code. Minor findings deferred to the final
+review: the contract's guide says the queue stops "only" on the listed
+failures, where any unlisted refusal stops it too, and the spec's
+Migration and Failures sections do not yet say what the migration and
+the client now do.
+
 ## Verification
 
 Recorded at the end of each part, with `bun run check`.
@@ -401,3 +413,7 @@ $ bun run check
  136103 expect() calls
 Ran 1759 tests across 104 files. [19.52s]
 ```
+
+Part 2, at `1d41cb2`, run by Task 19's implementer: `bun run check`
+exited 0, with 1876 tests passing, 1 skipped and none failing, across
+117 files.
