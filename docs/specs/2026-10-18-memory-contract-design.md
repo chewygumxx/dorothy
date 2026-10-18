@@ -187,7 +187,7 @@ server:
 | --- | --- | --- |
 | `brief` | `project?`, `budget?` | The opening block, for hosts with no hook |
 | `search` | `query`; `scope?` (`project`, `personal` or `all`; by default personal and the current project); `kind?` (`knowledge`, `episodes` or `all`); `after?`, `before?`; `limit?`, at most 20 | Ranked hits: id, kind, scope, title, snippet, date |
-| `open` | `id`; `from?`, `through?` for a conversation's turns | A knowledge file, a conversation's notes, or a window of its turns word for word, within a size cap as `open` has today |
+| `open` | `id`; `from?`, `through?` for a conversation's turns | A knowledge file, a conversation's notes, or a window of its turns word for word, within a size cap as `open` has today; another project's knowledge or conversation is refused (403), reached only through `search` with `scope: all` |
 | `remember` | `action` (`add`, `revise` or `retire`); `id` for revise and retire; `title`, `text`, `type` and `scope` for add and revise; `why` for retire | The file's id and status, or the validation error |
 
 Ids are opaque, stable strings that `search` and the block return:
@@ -220,7 +220,7 @@ baseline engine's own, and `recollect` serves her chat's compaction.
 | `parent` | Optional: the session this one resumed or forked from |
 | `private` | Optional: `true` for a session the host marks private |
 | `events` | The session's events, in her archive's vocabulary |
-| `transcript` | Instead of events, a path to the host's transcript, for the service's reader; accepted only over loopback |
+| `transcript` | Instead of events, a path to the host's transcript, for the service's reader; accepted only over loopback, and only a regular `.jsonl` file of at most 64 MiB under Claude Code's `projects` directory, by its real path |
 
 Each event carries a `sourceId` unique within its host session and its
 time. The service appends what it does not hold yet and answers with the
@@ -429,7 +429,12 @@ interface: the FTS5 index, `salience()` and the reviewer.
   POST that is not JSON, or one sent to a name other than the service's,
   as DNS rebinding sends.
 - Loopback by default; a token for anything else; tokens hashed at rest
-  and per device, so one can be withdrawn.
+  and per device, so one can be withdrawn. A local proxy or tunnel that
+  forwards to 127.0.0.1 makes remote traffic look like loopback, so none
+  may front the service without its own authentication.
+- A transcript path is confined to Claude Code's `projects` directory by
+  its real path, a regular `.jsonl` file of at most 64 MiB; anything else
+  gets one fixed 403, which says nothing of the file.
 - Scope is enforced by the service, never trusted to the host; export
   never carries personal knowledge.
 - Private sessions are neither stored nor extracted; records are scrubbed
