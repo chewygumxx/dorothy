@@ -258,7 +258,7 @@ describe("adopting", () => {
         put(
             root,
             path,
-            "---\nname: likes-tea\ntitle: Likes tea\ndescription: Prefers tea.\nmetadata:\n  type: user\n---\n\nTea.\n",
+            "---\ntype: user\ntitle: Likes tea\ndescription: Prefers tea.\n---\n\nTea.\n",
         );
         await history.sweep();
         const read = parseFact(
@@ -368,7 +368,7 @@ describe("facts in the sweep and in a record", () => {
         const history = await open();
         const path = "facts/projects/nohost/likes-tea.md";
         const text =
-            "---\nname: likes-tea\ntitle: Likes tea\ndescription: Prefers tea.\nmetadata:\n  type: user\n---\n\nTea.\n";
+            "---\ntype: user\ntitle: Likes tea\ndescription: Prefers tea.\n---\n\nTea.\n";
         put(root, path, text);
         await history.sweep();
         const folder = join(root, "broken", "facts/projects/nohost");

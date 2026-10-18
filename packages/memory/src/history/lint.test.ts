@@ -152,8 +152,8 @@ describe("facts and projects", () => {
         expect(
             lint("facts/personal/likes-tea.md", bytes(FACT), null),
         ).toBeNull();
-        expect(lint("facts/personal/other.md", bytes(FACT), null)).toBe(
-            "its name is likes-tea, not its file's, other",
+        expect(lint("facts/personal/Bad-Name.md", bytes(FACT), null)).toBe(
+            "its file's name, Bad-Name, is not a fact's name",
         );
         expect(
             lint("facts/projects/nohost/likes-tea.md", bytes(FACT), null),
