@@ -93,8 +93,8 @@ Five units:
    requests and responses below, the tools' schemas, the record envelope
    and the host profile. They name no harness's internals and no engine.
 2. **The memory service**, a new entry point of `memory`, `"./service"`,
-   run as `dorothy serve`: one long-running process per machine, and the
-   one writer of her data while it runs. It speaks the contract over MCP
+   run as `dorothy --serve`: one long-running process per machine,
+   through which every harness writes. It speaks the contract over MCP
    and over a hook API.
 3. **The knowledge store**: Markdown files in Google's Open Knowledge
    Format under `knowledge/` in her data directory, migrated from
@@ -317,15 +317,16 @@ disclosure.
 ### Transport and access
 
 - **MCP** at `/mcp` over Streamable HTTP, and over stdio through
-  `dorothy mcp`, a bridge for hosts that only launch processes, which
+  `dorothy --mcp`, a bridge for hosts that only launch processes, which
   identifies the project from the directory it runs in. `--recall-server`
-  remains a name for it.
+  keeps serving her chat's own tools, `recollect` and `tags` among them,
+  until her chat becomes a client of the service.
 - **The hook API** at `/v1/block`, `/v1/recall` and `/v1/record`, JSON
   over HTTP.
 - It listens on `127.0.0.1:4774` by default, and on further addresses
   set in `[service] listen` of `config.toml`.
 - Any request not from loopback carries a device token
-  (`Authorization: Bearer`). `dorothy serve --token-add <device>` makes
+  (`Authorization: Bearer`). `dorothy --serve --token-add <device>` makes
   one, shown once and kept hashed in her state directory, and
   `--token-revoke <device>` withdraws it. An adapter reads its token from
   a file mode `0600`, never from its command line.
@@ -337,12 +338,12 @@ disclosure.
 
 ### One writer
 
-While it runs, the service holds history's lock and is the only writer
-of the data directory: requests from every harness and machine are
-serialised inside it, and each change is committed as it is made. Her
-commands that write (`--memory`, `--retire`, `--edit-tags` and the rest)
-go through the service when it is up, and take the lock themselves, as
-today, when it is not. Reads need no lock.
+Every harness and machine writes through the service, which writes
+under the store's lock, the recall index's, as every writer does today,
+and commits each change as it is made. Her commands that write
+(`--memory`, `--retire`, `--edit-tags` and the rest) keep taking that
+lock themselves, so they and the service are serialised as writers are
+now; routing them through the service is later. Reads need no lock.
 
 ### Background work
 
@@ -388,9 +389,10 @@ In `memory`, `MemoryEngine`, which the service alone calls:
 
 | Method | Does |
 | --- | --- |
-| `index(change)` | Takes in a changed knowledge file or conversation |
+| `index()` | Takes in what changed in the files and the archive since it was last asked |
 | `search(query)` | Ranked hits for `search` and `/v1/recall`, within scope |
-| `rank(scope, kind, limit)` | Candidates for the opening block, most salient first |
+| `rankKnowledge(project)` | Knowledge for the opening block, most fitting first |
+| `rankEpisodes(project)` | Conversations for the opening block, most salient first |
 | `extract(conversation)` | Proposed knowledge and the conversation's notes |
 | `consolidate(scope)` | Proposed merges, revisions and retirements |
 
@@ -443,8 +445,8 @@ is passed in.
   against the service with the baseline engine; any engine must pass
   them, with fixtures for each engine method.
 - **Host fixtures**: each profiled host's hook payloads mapped to contract
-  requests, as `bodies/fixtures.ts` holds Claude Code's today, for the
-  adapters to test against.
+  requests, as `bodies/fixtures.ts` holds Claude Code's today; they arrive
+  with each host's adapter, in delivery.
 - **Cache stability**: `resume` returns a block byte for byte the same;
   `compact` renders anew.
 - **Failing open**: an unreachable service gives an empty hook result
@@ -457,10 +459,11 @@ is passed in.
 
 ## Migration
 
-- `facts/` becomes `knowledge/` in one conversion, committed as one
-  change in her history and so undone by `--rollback`:
+- `facts/` becomes `knowledge/` in one conversion, under the store's
+  lock, which history's next sweep commits, so that `--restore` puts any
+  file back:
   - `metadata.type` becomes `type`; `title` and `description` stay;
-  - tags' concept ids become their labels;
+  - tags keep their concept ids;
   - `provenance.by` and `at` become `generated`; `provenance.from`
     becomes `sources`;
   - `provenance.origin` becomes `dorothy.origin`, `dorothy` becoming
@@ -469,8 +472,8 @@ is passed in.
     `importance` becomes `dorothy.importance`;
   - `name` becomes the filename alone.
 - Each conversation's notes become its episode, unchanged.
-- The recall index is rebuilt; `recall-server.ts` becomes the service's
-  MCP face.
+- The recall index is rebuilt; `recall-server.ts` stays as it is for her
+  chat, and the service's MCP face is new.
 - `--facts`, `--retire`, `--revive` and `--sync` work on `knowledge/`
   under their present names.
 - The Claude Code hooks in `bodies/`, her chat's in-process memory and
@@ -489,8 +492,8 @@ is passed in.
 - **Remote access widens what can reach her memory**; the token and the
   private network are the guard.
 - **`brief` relies on the model** in hosts with MCP alone.
-- **Two write paths for commands**, through the service or under the lock,
-  until the service is always running.
+- **Two writers**: her commands write beside the service, serialised by
+  the store's lock, until they go through it.
 - **Projects without an `origin`** are named by a hash of their root,
   which differs between machines, so such a project is one per machine.
 
@@ -498,6 +501,7 @@ is passed in.
 
 - Knowledge extracted from conversations, and consolidation, beyond
   notes: the engine spec.
+- Her commands writing through the service.
 - OKF's `index.md` and `log.md` for `knowledge/`.
 - Encryption at rest of the data directory.
 - Exported forms for harnesses other than Claude Code.
