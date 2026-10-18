@@ -288,6 +288,40 @@ review:
   shape check is looser than the file's type.
 - Tests do not cover several devices or a store reopened.
 
+### Task 15: the memory service
+
+Complete in `d67cdb4` and `479b713`, after one fix round; the memory
+package passes 1242 of 1242. Beyond the plan, the service refuses a
+body over 8 MiB sent in chunks, and `runTokenRevoke` returns 1 on a
+token file it cannot read. The review found the defences against a web
+page sound (any `Origin`, a foreign `Host` and a body not JSON are
+refused), loopback judged by the socket's peer alone, and tokens
+compared in constant time. It found one fault in the plan's code: the
+Claude Code transcript reader followed any path a loopback caller
+named, through `..` and links, into pipes and files of any size, and
+echoed the system's error. Ruling: the service confines the path to
+Claude Code's `projects` directory, by its real path, to a regular
+`.jsonl` file of at most 64 MiB, and refuses anything else with one
+fixed 403. If wrong, a transcript kept elsewhere cannot be recorded by
+its path. The re-review found it addressed. Minor findings deferred to
+the final review:
+
+- Bun holds up to 16 MiB of a body before the 8 MiB check, a larger one
+  gets a 413 without the contract's shape, and the MCP route reads its
+  body unchecked.
+- The `Host` check refuses a device reaching the service by name; a
+  proxy or tunnel to loopback passes as loopback, which the docs should
+  say.
+- Session, version and block caches grow without bound; a host's
+  version is logged unsanitised; a record's project is not checked
+  before consolidation.
+- The confinement leaves a window between check and read, and a hard
+  link inside `projects` passes it; the Claude config directory is
+  found by a copy of the CLI's code, which Task 18 can pass in.
+- `startService` runs to some 400 lines, as the plan wrote it; tests
+  lack a wrong token, a real socket's peer and a foreign `Host` on a
+  POST.
+
 ## Verification
 
 Recorded at the end of each part, with `bun run check`.
