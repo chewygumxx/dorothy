@@ -78,6 +78,17 @@ Complete in `076fe1d`; review clean, and the whole suite passes 1750 of
 form until Task 19, and old fact files do not parse until Task 4
 migrates them.
 
+### Task 3: the knowledge directory
+
+Complete in `f21020e`; review clean, and the memory package passes 1145
+of 1145. A search found no hard-coded `facts/` data path left. Minor
+findings deferred to the final review:
+
+- A comment in `store.ts` says "today's `scopeDir`", as the plan wrote
+  it, and will go stale.
+- No test pins the old `facts/personal/` layout as `other` in the lint,
+  nor passes `under` a directory other than the default.
+
 ## Verification
 
 Recorded at the end of each part, with `bun run check`.
