@@ -13,12 +13,14 @@
 import { parseArgs } from "node:util";
 import type { Command, Io, Values } from "./command.js";
 import { UsageError } from "./errors.js";
+import { generateCommand } from "./questions/generate-command.js";
 import { mineCommand } from "./questions/mine.js";
 import { snapshotCommand } from "./snapshot/command.js";
 
 export const COMMANDS: Record<string, Command> = {
     snapshot: snapshotCommand,
     mine: mineCommand,
+    generate: generateCommand,
 };
 
 export function usage(): string {

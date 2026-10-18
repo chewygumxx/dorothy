@@ -54,6 +54,9 @@ reads no file of memory's itself.
   commands that rewrite it read it with `readQuestionsToRewrite`.
 - `questions/mine.ts`: lookup questions from her appraised reads, and
   the `mine` command.
+- `questions/generate.ts`: samples, prompts and checks for drafting
+  each type; `questions/generate-command.ts`: the `generate` command,
+  which records each generation's seed in `generated.json`.
 - `models/config.ts`: `eval.toml`, a base URL, model and key variable
   per role; `models/client.ts`: `Models`, one `ChatOpenAI` per role,
   with retries of its own (the client's are off: it does not retry a
