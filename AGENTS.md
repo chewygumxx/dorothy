@@ -20,8 +20,8 @@ tags:
 # AGENTS.md
 
 Dorothy is a conversational LLM interface: a terminal chat over a model,
-with a memory of her past conversations that she can search, compact and
-tag. Bun runs her from source; there is no build.
+with a memory she can search, compact and tag, which her service shares
+with other harnesses. Bun runs her from source; there is no build.
 
 ## Packages
 

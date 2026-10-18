@@ -52,13 +52,17 @@ In order; the first is next.
 
 ### Dorothy's Memory
 
-One memory wherever Dorothy goes: in chat, in Claude Code and in any body
-she takes later. Recall over MCP, persistent context and progressive
-disclosure let her remember and recollect efficiently and well, and a
-memory of facts and lessons joins the conversations she remembers. The
-memory system as it stands may be reworked rather than extended.
-Findings: [objectives](./reports/2026-10-15-objectives.md). The store:
-[spec](./specs/2026-10-15-memory-store-design.md),
+One memory wherever Dorothy goes: in her chat, in Claude Code and in
+every harness she is generated into, as she is protocol diverse
+([minutes](./reports/2026-10-18-protocol-diversity.md)). Recall over MCP,
+persistent context and progressive disclosure let her remember and
+recollect efficiently and well, and a memory of knowledge joins the
+conversations she remembers. It is judged by compatibility, then access,
+then progressive disclosure, then persistence, and may be reworked
+rather than extended. Findings:
+[objectives](./reports/2026-10-15-objectives.md),
+[open-source replacements](./notes/2026-10-18_open-source-replacements.md).
+The store: [spec](./specs/2026-10-15-memory-store-design.md),
 [plan](./plans/2026-10-15-memory-store.md),
 [report](./reports/2026-10-15-memory-store-implementation.md). Bodies:
 [spec](./specs/2026-10-15-memory-bodies-design.md),
@@ -66,15 +70,25 @@ Findings: [objectives](./reports/2026-10-15-objectives.md). The store:
 [recording plan](./plans/2026-10-15-memory-bodies-recording.md),
 [report](./reports/2026-10-15-memory-bodies.md),
 [deferred](./deferred/2026-10-16_memory-bodies-deferred.md); merged in #22
-and #24.
+and #24. The contract:
+[spec](./specs/2026-10-18-memory-contract-design.md),
+[plan](./plans/2026-10-18-memory-contract.md),
+[report](./reports/2026-10-18-memory-contract.md), with its deferred
+findings; merged in #69.
 
-- **Status**: Store and Bodies Built; Layers and Learning Pending Design
+The contract opened four more pieces, each with its own spec: the
+evaluation, which measures her memory against the field and chooses the
+engine; recording each harness's sessions; the engine; and delivery into
+the harnesses chosen.
+
+- **Status**: Store, Bodies and Contract Built; the Evaluation Next
 - **Required**: Requisites Fulfilled
-- **Rationale**: Wherever she goes, her memory follows with her. Claude
-  Code now has her memory and records her sessions, but facts reach her
-  only through recall: what is always in context, its budget, and
-  reviews that distil facts are the third part, and every objective
-  after this one builds on what she remembers.
+- **Rationale**: Wherever she goes, her memory follows with her. The
+  contract gives every harness one service and every engine one
+  interface, but her memory has never been measured, and the user judges
+  it weak. The evaluation goes first, as the engine waits on it and it
+  waits on no choice of harness; recording may follow it or run beside
+  it, and delivery follows the choice of harnesses.
 
 ### Model Providers
 
@@ -188,8 +202,13 @@ Found but not scheduled, each with its source.
 - Sweeps of deferred findings:
   [memory history](./deferred/2026-10-08_memory-history-deferred.md),
   [tags](./deferred/2026-10-08_tags-deferred.md),
-  [compaction test gaps](./deferred/2026-10-07_compaction-test-gaps.md)
-  and [memory bodies](./deferred/2026-10-16_memory-bodies-deferred.md).
+  [compaction test gaps](./deferred/2026-10-07_compaction-test-gaps.md),
+  [memory bodies](./deferred/2026-10-16_memory-bodies-deferred.md) and
+  the [memory contract](./reports/2026-10-18-memory-contract.md)'s.
+- The memory service's loose ends: `brief` clamped to a host's budget,
+  the hook API's `project` checked, idle sessions bounded with reviews
+  off, and the port bound before the history launch (memory contract,
+  final review).
 - Launch notes kept in the state directory rather than the runtime one,
   so a launch killed by a crash or a power-off is still caught up after
   a reboot (memory bodies report).
@@ -333,3 +352,11 @@ In order of completion.
   proxy, subagents' and forks' conversations, local dates for turn
   times, the store's open gaps, and a sweep of the bodies' deferred
   findings.
+- 2026-10-18: Dorothy is ruled protocol diverse, with no one harness
+  hosting her and pi not used, and her memory is designed before the
+  harnesses to target are chosen. Dorothy's Memory has built its
+  contract, which takes the place of layers and learning: one service,
+  four MCP tools, a hook API and knowledge as OKF files. The evaluation
+  is next within the phase, ahead of recording, the engine and delivery.
+  Candidates gain the contract's deferred findings and the service's
+  loose ends.
