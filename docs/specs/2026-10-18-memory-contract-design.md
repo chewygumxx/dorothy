@@ -413,7 +413,10 @@ interface: the FTS5 index, `salience()` and the reviewer.
 - **Records wait.** A record the service cannot take is left as a note
   (host, session, transcript or events, last `sourceId`) in her state
   directory and sent by the next hook or start, as launches are caught up
-  today.
+  today. The client drops a record the service refuses for good (400,
+  403, 404, 413, 415 or 422) and keeps the rest, a timeout, a rate, a
+  fault, an unknown token or a misdirected name (421) among them, to send
+  later.
 - **The last block per host and project** is kept as a file, which a host
   that loads files reads when the service is unreachable.
 - **An engine that fails** (an external one down, say) gives way to the
@@ -481,7 +484,9 @@ is passed in.
     `model`, or `extraction` where a review wrote it;
   - `retired` becomes `status: deprecated` and `dorothy.retired`;
     `importance` becomes `dorothy.importance`;
-  - `name` becomes the filename alone.
+  - `name` becomes the filename alone;
+  - a fact stays in `facts/`, with a warning, when its `knowledge/` twin
+    exists or its move fails; nothing is overwritten.
 - Each conversation's notes become its episode, unchanged.
 - The recall index is rebuilt; `recall-server.ts` stays as it is for her
   chat, and the service's MCP face is new.

@@ -323,6 +323,9 @@ port = 4774
 listen = ["100.64.0.1"]  # a private network's address, such as Tailscale's
 ```
 
+`DOROTHY_MEMORY_URL` must use an address listed in `listen` (or
+`127.0.0.1`): a request to any other name gets 421 and its records wait.
+
 ```sh
 bun run dev -- --serve --token-add laptop     # shown once
 bun run dev -- --serve --token-revoke laptop
