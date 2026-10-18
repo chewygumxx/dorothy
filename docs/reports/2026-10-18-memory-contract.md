@@ -371,6 +371,22 @@ it addressed. Minor findings deferred to the final review:
 - Tests do not cover the project and host passed on, a 4xx, or the
   bearer header.
 
+### Task 18: --serve and --mcp
+
+Complete in `b9b1a7e`; review clean, and `cli` passes 112 of 112. The
+implementer added the new modes' bullet to `packages/cli/AGENTS.md`,
+which Task 19 was to add. The CLI does not pass its Claude config
+directory to the service, whose runner takes none. Ruling: this stands,
+as memory finds the directory the same way. If wrong, the two copies
+drift and the service confines transcripts to the wrong directory. The
+review found stdout untouched under `--mcp`, conflicting options
+refused, and no secret printed. Run with its input closed, against
+temporary directories and an address beyond loopback, `--mcp` exited
+0 in 625 ms with nothing on stdout. Minor findings deferred to the
+final review: the tests do not cover `--mcp` with `--serve`, `--host`
+alone or `--token-revoke` without a device, and a repeated option keeps
+its last value.
+
 ## Verification
 
 Recorded at the end of each part, with `bun run check`.
