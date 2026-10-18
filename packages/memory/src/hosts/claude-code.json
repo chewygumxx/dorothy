@@ -1,0 +1,8 @@
+{
+    "id": "claude-code",
+    "checked": ["2.1.302"],
+    "blockBudget": 10000,
+    "recallBudget": 4000,
+    "delivery": ["hook", "mcp"],
+    "instructions": 2048
+}

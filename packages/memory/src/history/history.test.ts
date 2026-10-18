@@ -202,7 +202,7 @@ describe("adopting", () => {
     });
 
     it("rewrites a fact edited by hand as Dorothy writes one, and makes it the user's", async () => {
-        const path = "facts/personal/likes-tea.md";
+        const path = "knowledge/personal/likes-tea.md";
         const fact = {
             name: "likes-tea",
             title: "Likes tea",
@@ -254,11 +254,11 @@ describe("adopting", () => {
 
     it("takes a fact added by hand without provenance as the user's", async () => {
         const history = await open();
-        const path = "facts/personal/likes-tea.md";
+        const path = "knowledge/personal/likes-tea.md";
         put(
             root,
             path,
-            "---\nname: likes-tea\ntitle: Likes tea\ndescription: Prefers tea.\nmetadata:\n  type: user\n---\n\nTea.\n",
+            "---\ntype: user\ntitle: Likes tea\ndescription: Prefers tea.\n---\n\nTea.\n",
         );
         await history.sweep();
         const read = parseFact(
@@ -271,7 +271,7 @@ describe("adopting", () => {
 
     it("leaves a fact that is not UTF-8 to the lint, unrewritten", async () => {
         const history = await open();
-        const path = "facts/personal/likes-tea.md";
+        const path = "knowledge/personal/likes-tea.md";
         const bytes = Buffer.from([0x2d, 0x2d, 0x2d, 0x0a, 0xff, 0x0a]);
         put(root, path, "");
         writeFileSync(join(root, path), bytes);
@@ -284,11 +284,13 @@ describe("adopting", () => {
 
     it("keeps a copy of a fact edited into something that is no fact", async () => {
         const history = await open();
-        put(root, "facts/personal/likes-tea.md", "title: null\n");
+        put(root, "knowledge/personal/likes-tea.md", "title: null\n");
         await history.sweep();
-        expect(warnings[0]).toContain("facts/personal/likes-tea.md is broken");
+        expect(warnings[0]).toContain(
+            "knowledge/personal/likes-tea.md is broken",
+        );
         expect((await messages(history))[0]).toBe(
-            "broken: facts/personal/likes-tea.md kept, no good version",
+            "broken: knowledge/personal/likes-tea.md kept, no good version",
         );
     });
 });
@@ -311,7 +313,7 @@ const TEA = {
     retired: null,
     body: "Tea.",
 };
-const TEA_PATH = "facts/personal/likes-tea.md";
+const TEA_PATH = "knowledge/personal/likes-tea.md";
 const provenanceOf = (path: string) => {
     const read = parseFact(readFileSync(join(root, path), "utf8"), "likes-tea");
     return read.kind === "ok" ? read.fact.provenance : null;
@@ -331,16 +333,16 @@ describe("facts in the sweep and in a record", () => {
             },
         };
         put(root, TEA_PATH, renderFact(TEA));
-        put(root, "facts/personal/from-repo.md", renderFact(repo));
+        put(root, "knowledge/personal/from-repo.md", renderFact(repo));
         await history.sweep();
         expect(readFileSync(join(root, TEA_PATH), "utf8")).toBe(
             renderFact(TEA),
         );
         expect(
-            readFileSync(join(root, "facts/personal/from-repo.md"), "utf8"),
+            readFileSync(join(root, "knowledge/personal/from-repo.md"), "utf8"),
         ).toBe(renderFact(repo));
         expect((await messages(history)).slice(0, 2).sort()).toEqual([
-            "outside: facts/personal/from-repo.md",
+            "outside: knowledge/personal/from-repo.md",
             `outside: ${TEA_PATH}`,
         ]);
         expect(await history.repo.changed()).toEqual([]);
@@ -366,12 +368,12 @@ describe("facts in the sweep and in a record", () => {
 
     it("keeps a hand-made fact under no project id as it was written", async () => {
         const history = await open();
-        const path = "facts/projects/nohost/likes-tea.md";
+        const path = "knowledge/projects/nohost/likes-tea.md";
         const text =
-            "---\nname: likes-tea\ntitle: Likes tea\ndescription: Prefers tea.\nmetadata:\n  type: user\n---\n\nTea.\n";
+            "---\ntype: user\ntitle: Likes tea\ndescription: Prefers tea.\n---\n\nTea.\n";
         put(root, path, text);
         await history.sweep();
-        const folder = join(root, "broken", "facts/projects/nohost");
+        const folder = join(root, "broken", "knowledge/projects/nohost");
         const copies = readdirSync(folder);
         expect(copies).toHaveLength(1);
         expect(readFileSync(join(folder, copies[0] as string), "utf8")).toBe(
@@ -776,7 +778,7 @@ describe("a store write left uncommitted", () => {
             "likes-tea",
         ]);
         await history.sweep();
-        const path = "facts/projects/github.com/a/b/likes-tea.md";
+        const path = "knowledge/projects/github.com/a/b/likes-tea.md";
         expect(provenanceOf(path)).toMatchObject({
             origin: "repo",
             by: "repo",

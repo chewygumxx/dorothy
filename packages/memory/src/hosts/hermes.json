@@ -1,0 +1,8 @@
+{
+    "id": "hermes",
+    "checked": ["0.22.2"],
+    "blockBudget": 4000,
+    "recallBudget": 4000,
+    "delivery": ["plugin", "mcp"],
+    "instructions": 2048
+}

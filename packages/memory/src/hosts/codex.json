@@ -1,0 +1,8 @@
+{
+    "id": "codex",
+    "checked": ["0.163.0"],
+    "blockBudget": 10000,
+    "recallBudget": 4000,
+    "delivery": ["hook", "mcp"],
+    "instructions": 512
+}

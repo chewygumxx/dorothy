@@ -13,6 +13,7 @@
 
 export * from "./config.js";
 export * from "./contracts/editor.js";
+export * from "./contracts/memory.js";
 export * from "./contracts/notices.js";
 export * from "./contracts/recall.js";
 export * from "./contracts/session.js";

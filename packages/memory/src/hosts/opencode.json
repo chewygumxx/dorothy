@@ -1,0 +1,8 @@
+{
+    "id": "opencode",
+    "checked": ["1.19.3"],
+    "blockBudget": 8000,
+    "recallBudget": 4000,
+    "delivery": ["plugin", "mcp"],
+    "instructions": 2048
+}

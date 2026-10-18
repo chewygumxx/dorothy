@@ -1,6 +1,6 @@
 ---
 ctime: 2026-09-29
-mtime: 2026-10-15
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: "dorothy"
 description: "Conversational LLM interface"
@@ -191,6 +191,7 @@ idle-seconds = 60    # idle time before a review, 10 to 3600
 half-life-days = 30  # how fast a chat fades, 1 to 3650
 catch-up = 5         # unreviewed chats reviewed per launch, 0 to 50
 recall = true        # false: Dorothy cannot search past chats
+extract-cap = 10     # knowledge a review may propose from a chat, 1 to 100
 ```
 
 Her memory keeps its own history. The data directory is a git repository:
@@ -213,7 +214,7 @@ Each `--history` line starts with the commit's short sha, which is what
 
 Beside her notes on each chat, Dorothy keeps facts: what she knows of
 you, your work and what has worked, one Markdown file each under
-`facts/` in the data directory. A fact is personal or a project's, and a
+`knowledge/` in the data directory. A fact is personal or a project's, and a
 project is the git repository you are in, named by its `origin`. A
 project's facts are synced with its repository's `.agents/memory/`, the
 format Claude Code's auto-memory reads, so its other contributors' agents
@@ -297,6 +298,57 @@ bun run dev -- --claude --dump-context --model sonnet -- "Who are you?"
 upstream is a stand-in on a local port, so nothing reaches the API. Print
 mode's request can differ a little from an interactive session's. A
 warning on stderr says if the gateway found no marker to replace.
+
+### Her memory as a service
+
+`--serve` runs her memory as a service, which every harness's adapter
+and her own tools reach: an opening block for each session, recall for
+a message, four MCP tools (`brief`, `search`, `open`, `remember`) and
+records of each session. It listens on `127.0.0.1:4774`; the first
+`--mcp` starts it if it is not running.
+
+```sh
+bun run dev -- --serve
+bun run dev -- --mcp     # MCP over stdio, for a harness that launches it
+```
+
+To reach it from your other devices, list their addresses in
+`config.toml` and give each device a token, which it keeps in
+`~/.local/state/dorothy/device-token` (`$XDG_STATE_HOME` if set), mode
+0600, with `DOROTHY_MEMORY_URL` naming the service:
+
+```toml
+[service]
+port = 4774
+listen = ["100.64.0.1"]  # a private network's address, such as Tailscale's
+```
+
+`DOROTHY_MEMORY_URL` must use an address listed in `listen` (or
+`127.0.0.1`): a request to any other name gets 421 and its records wait.
+
+```sh
+bun run dev -- --serve --token-add laptop     # shown once
+bun run dev -- --serve --token-revoke laptop
+```
+
+The service serves no TLS: keep it on a private network, which encrypts
+the traffic, or behind a proxy that does. A request from loopback needs
+no token, so a local proxy or tunnel that forwards to `127.0.0.1` makes
+remote traffic look local: do not run one in front of it.
+
+A harness's hook may name a Claude Code transcript, which the service
+reads only under the `projects` directory of `CLAUDE_CONFIG_DIR` (else
+`~/.claude`) as the service found it. With another account's directory,
+list it too:
+
+```toml
+[service]
+claude-dirs = ["/home/me/.config/claude-2"]
+```
+
+Her knowledge lives in `knowledge/` in the data directory, one Markdown
+file each in the [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md),
+which you may read and edit; `facts/` is moved there once.
 
 ### Development mode
 

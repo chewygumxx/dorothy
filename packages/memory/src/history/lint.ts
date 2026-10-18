@@ -24,8 +24,8 @@ export type FileKind =
     | "projects"
     | "other";
 
-const PERSONAL_FACT = /^facts\/personal\/[^/]+\.md$/;
-const PROJECT_FACT = /^facts\/projects\/(.+)\/[^/]+\.md$/;
+const PERSONAL_FACT = /^knowledge\/personal\/[^/]+\.md$/;
+const PROJECT_FACT = /^knowledge\/projects\/(.+)\/[^/]+\.md$/;
 
 export function fileKind(path: string): FileKind {
     if (path === "tags.json") {

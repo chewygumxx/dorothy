@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-16
+mtime: 2026-10-18
 spdx: GPL-3.0-only
 title: packages/core/AGENTS.md
 description: >-
@@ -44,6 +44,8 @@ below. It declares `niceware` alone, and never imports another
 - `contracts/recall.ts`: the memory tools' names and shapes: chat's server
   and Claude Code's, `toolOf` on either server, the lookups, `remember`,
   and search and open over facts.
+- `contracts/memory.ts`: the memory contract's types, ids and constants,
+  which `memory` gives zod schemas.
 - `config.ts`: `config.toml` (`readConfig`, `parseConfig`).
 - `xdg.ts`: the XDG directories (`xdgDir`), the state directory among
   them.

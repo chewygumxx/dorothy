@@ -155,7 +155,7 @@ packs today:
    `feedback` first;
 2. knowledge of the project: the project's knowledge;
 3. episodes: notes on the conversations most salient to this project,
-   then on others;
+   then on personal ones, never another project's, which `open` refuses;
 4. always, one closing line naming `search` and `open`.
 
 It is rendered as today's `<memory>` section, whose first line says that
@@ -187,7 +187,7 @@ server:
 | --- | --- | --- |
 | `brief` | `project?`, `budget?` | The opening block, for hosts with no hook |
 | `search` | `query`; `scope?` (`project`, `personal` or `all`; by default personal and the current project); `kind?` (`knowledge`, `episodes` or `all`); `after?`, `before?`; `limit?`, at most 20 | Ranked hits: id, kind, scope, title, snippet, date |
-| `open` | `id`; `from?`, `through?` for a conversation's turns | A knowledge file, a conversation's notes, or a window of its turns word for word, within a size cap as `open` has today |
+| `open` | `id`; `from?`, `through?` for a conversation's turns | A knowledge file, a conversation's notes, or a window of its turns word for word, within a size cap as `open` has today; another project's knowledge or conversation is refused (403), reached only through `search` with `scope: all` |
 | `remember` | `action` (`add`, `revise` or `retire`); `id` for revise and retire; `title`, `text`, `type` and `scope` for add and revise; `why` for retire | The file's id and status, or the validation error |
 
 Ids are opaque, stable strings that `search` and the block return:
@@ -198,7 +198,10 @@ A tool call's project is, in order: its `project` argument, as an id or a
 path; the connection's, which the stdio bridge identifies from the
 directory it runs in and an HTTP client names in its URL
 (`/mcp?project=<id>`); else none, and only personal knowledge is in
-scope.
+scope. Where the connection names a project, `open` and `remember` keep
+to it: an argument naming another is refused (403), so a model cannot
+widen what the service enforces. A connection with none, as from a host
+with no directory, names its project by the argument.
 
 The server's instructions stay under 512 characters, the smallest any
 host allows, and say to call `brief` first where nothing else gave a
@@ -220,7 +223,7 @@ baseline engine's own, and `recollect` serves her chat's compaction.
 | `parent` | Optional: the session this one resumed or forked from |
 | `private` | Optional: `true` for a session the host marks private |
 | `events` | The session's events, in her archive's vocabulary |
-| `transcript` | Instead of events, a path to the host's transcript, for the service's reader; accepted only over loopback |
+| `transcript` | Instead of events, a path to the host's transcript, for the service's reader; accepted only over loopback, and only a regular `.jsonl` file of at most 64 MiB under Claude Code's `projects` directory, by its real path |
 
 Each event carries a `sourceId` unique within its host session and its
 time. The service appends what it does not hold yet and answers with the
@@ -413,7 +416,10 @@ interface: the FTS5 index, `salience()` and the reviewer.
 - **Records wait.** A record the service cannot take is left as a note
   (host, session, transcript or events, last `sourceId`) in her state
   directory and sent by the next hook or start, as launches are caught up
-  today.
+  today. The client drops a record the service refuses for good (400,
+  403, 404, 413, 415 or 422) and keeps the rest, a timeout, a rate, a
+  fault, an unknown token or a misdirected name (421) among them, to send
+  later.
 - **The last block per host and project** is kept as a file, which a host
   that loads files reads when the service is unreachable.
 - **An engine that fails** (an external one down, say) gives way to the
@@ -429,7 +435,15 @@ interface: the FTS5 index, `salience()` and the reviewer.
   POST that is not JSON, or one sent to a name other than the service's,
   as DNS rebinding sends.
 - Loopback by default; a token for anything else; tokens hashed at rest
-  and per device, so one can be withdrawn.
+  and per device, so one can be withdrawn. A local proxy or tunnel that
+  forwards to 127.0.0.1 makes remote traffic look like loopback, so none
+  may front the service without its own authentication.
+- A transcript path is confined to Claude Code's `projects` directory by
+  its real path, a regular `.jsonl` file of at most 64 MiB; anything else
+  gets one fixed 403, which says nothing of the file. The directory is
+  the service's own `CLAUDE_CONFIG_DIR` (else `~/.claude`) and any listed
+  in `[service] claude-dirs`, as for a second account; the service warns
+  once of a refusal.
 - Scope is enforced by the service, never trusted to the host; export
   never carries personal knowledge.
 - Private sessions are neither stored nor extracted; records are scrubbed
@@ -476,7 +490,9 @@ is passed in.
     `model`, or `extraction` where a review wrote it;
   - `retired` becomes `status: deprecated` and `dorothy.retired`;
     `importance` becomes `dorothy.importance`;
-  - `name` becomes the filename alone.
+  - `name` becomes the filename alone;
+  - a fact stays in `facts/`, with a warning, when its `knowledge/` twin
+    exists or its move fails; nothing is overwritten.
 - Each conversation's notes become its episode, unchanged.
 - The recall index is rebuilt; `recall-server.ts` stays as it is for her
   chat, and the service's MCP face is new.

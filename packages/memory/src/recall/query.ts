@@ -73,6 +73,9 @@ export type QueryOptions = {
     now: number;
     halfLifeDays: number;
     project?: string | null;
+    // The scope labels allowed, "personal" and project ids, applied before
+    // the cut to a search's limit; unset, all.
+    within?: readonly string[] | undefined;
 };
 
 type ConversationRow = {
@@ -342,15 +345,23 @@ function searchFacts(
     allowed: ReadonlySet<string> | null,
     span: { from: number; to: number; limit: number },
     project: string | null,
+    scopes?: readonly string[],
 ): Pick<SearchResult, "facts" | "moreFacts"> {
     const within = (rows: FactRow[]) =>
         allowed === null ? rows : rows.filter((row) => allowed.has(row.path));
-    let rows =
+    const scoped = (rows: FactRow[]) =>
+        scopes === undefined
+            ? rows
+            : rows.filter((row) => scopes.includes(row.scope));
+    let rows = scoped(
         terms.length === 0
             ? factsAt(index, allowed ?? new Set(), span.from, span.to)
-            : within(findFacts(index, terms.join(" "), span.from, span.to));
+            : within(findFacts(index, terms.join(" "), span.from, span.to)),
+    );
     if (rows.length === 0 && terms.length > 1) {
-        rows = within(findFacts(index, terms.join(" OR "), span.from, span.to));
+        rows = scoped(
+            within(findFacts(index, terms.join(" OR "), span.from, span.to)),
+        );
     }
     const far = (scope: string) =>
         scope === "personal" || scope === project ? 0 : 1;
@@ -430,6 +441,7 @@ export function search(
                   tagged(factRows.map((row) => [row.id, row.path] as const)),
                   { from, to, limit },
                   options.project ?? null,
+                  options.within,
               );
     if (kind === "facts") {
         return { ...facts, results: [], more: 0 };
@@ -440,6 +452,20 @@ export function search(
             .map((row) => [row.id, row.phrase] as const),
     );
     const hits = conversationHits(index, terms, allowed, { from, to, exclude });
+    if (options.within !== undefined) {
+        const scopes = options.within;
+        const project = index.db.query(
+            "SELECT project FROM conversations WHERE phrase = ?",
+        );
+        for (const phrase of [...hits.keys()]) {
+            const row = project.get(phrase) as {
+                project: string | null;
+            } | null;
+            if (!scopes.includes(row?.project ?? "personal")) {
+                hits.delete(phrase);
+            }
+        }
+    }
     return {
         ...facts,
         ...rankConversations(index, hits, limit, broken, options),

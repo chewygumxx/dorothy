@@ -9,7 +9,7 @@
 //
 
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { type Env, xdgDir } from "./xdg.js";
 
 export const MODULE_NAMES = [
@@ -35,6 +35,8 @@ export type MemoryConfig = {
     halfLifeDays: number;
     // Stale conversations reviewed per launch.
     catchUp: number;
+    // Knowledge one review may propose from a conversation, at most.
+    extractCap: number;
 };
 export type CompactionConfig = {
     enabled: boolean;
@@ -50,12 +52,22 @@ export type HistoryConfig = {
     // Seconds between pushes to the mirror, at most.
     pushSeconds: number;
 };
+export type ServiceConfig = {
+    // The memory service's port, on loopback and every address in listen.
+    port: number;
+    // Further addresses it listens on, where a private network reaches it.
+    listen: string[];
+    // Claude Code configuration directories besides the environment's,
+    // whose projects directories hold transcripts a record may name.
+    claudeDirs: string[];
+};
 export type Config = {
     statusline: LineConfig;
     replyStats: LineConfig;
     memory: MemoryConfig;
     compaction: CompactionConfig;
     history: HistoryConfig;
+    service: ServiceConfig;
 };
 
 // More would let a statusline crowd out the reply; five keeps the smallest
@@ -95,6 +107,7 @@ export const DEFAULT_CONFIG: Config = {
         idleSeconds: 60,
         halfLifeDays: 30,
         catchUp: 5,
+        extractCap: 10,
     },
     compaction: {
         enabled: true,
@@ -105,6 +118,11 @@ export const DEFAULT_CONFIG: Config = {
     history: {
         enabled: true,
         pushSeconds: 60,
+    },
+    service: {
+        port: 4774,
+        listen: [],
+        claudeDirs: [],
     },
 };
 
@@ -264,6 +282,7 @@ const parseMemory = (value: unknown, warnings: string[]): MemoryConfig =>
             idleSeconds: whole("idle-seconds", 10, 3600),
             halfLifeDays: whole("half-life-days", 1, 3650),
             catchUp: whole("catch-up", 0, 50),
+            extractCap: whole("extract-cap", 1, 100),
         },
         warnings,
     );
@@ -276,6 +295,43 @@ const parseHistory = (value: unknown, warnings: string[]): HistoryConfig =>
         {
             enabled: toggle("enabled"),
             pushSeconds: whole("push-seconds", 10, 86400),
+        },
+        warnings,
+    );
+
+// An address as Bun.serve takes it: a host name or an IP literal, with
+// no scheme and no port.
+const ADDRESS = /^[A-Za-z0-9.:-]{1,253}$/;
+
+const addresses = (key: string): FieldSpec<string[]> => ({
+    key,
+    read: (field) =>
+        Array.isArray(field) &&
+        field.every((each) => typeof each === "string" && ADDRESS.test(each))
+            ? [...new Set(field as string[])]
+            : undefined,
+    expected: 'a list of addresses, such as "100.64.0.1"',
+});
+
+const directories = (key: string): FieldSpec<string[]> => ({
+    key,
+    read: (field) =>
+        Array.isArray(field) &&
+        field.every((each) => typeof each === "string" && isAbsolute(each))
+            ? [...new Set(field as string[])]
+            : undefined,
+    expected: 'a list of absolute paths, such as "/home/me/.config/claude"',
+});
+
+const parseService = (value: unknown, warnings: string[]): ServiceConfig =>
+    parseTable(
+        "service",
+        value,
+        DEFAULT_CONFIG.service,
+        {
+            port: whole("port", 1024, 65535),
+            listen: addresses("listen"),
+            claudeDirs: directories("claude-dirs"),
         },
         warnings,
     );
@@ -354,6 +410,8 @@ export function parseConfig(text: string): {
             config.compaction = parseCompaction(value, warnings);
         } else if (key === "history") {
             config.history = parseHistory(value, warnings);
+        } else if (key === "service") {
+            config.service = parseService(value, warnings);
         } else {
             warnings.push(`config.toml: unknown key ${key}`);
         }

@@ -60,7 +60,7 @@ afterEach(async () => {
 
 // A personal fact in the store, and the facts the index then holds.
 async function putFact(): Promise<void> {
-    const facts = join(dir, "dorothy", "facts", "personal");
+    const facts = join(dir, "dorothy", "knowledge", "personal");
     await mkdir(facts, { recursive: true });
     await writeFile(
         join(facts, "likes-tea.md"),

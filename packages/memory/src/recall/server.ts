@@ -94,7 +94,7 @@ export type RecallServerOptions = {
     // tags.json, synced with the transcripts; null leaves tags as the
     // index last saw them.
     vocabulary?: string | null;
-    // The data directory, whose facts/ is synced with the transcripts;
+    // The data directory, whose knowledge/ is synced with the transcripts;
     // null leaves facts as the index last saw them.
     facts?: string | null;
     // The live conversation, never among the results.

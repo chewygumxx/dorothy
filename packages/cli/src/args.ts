@@ -13,7 +13,7 @@ import {
     parseArgs as parseOptions,
 } from "node:util";
 import type { PersonaMode } from "@dorothy/agent";
-import { isPhrase, isUuid } from "@dorothy/core";
+import { HOST_ID, isPhrase, isUuid } from "@dorothy/core";
 import type { HookMode } from "@dorothy/memory/claude-hook";
 
 export type Mode =
@@ -47,6 +47,10 @@ export type Mode =
           recollect: boolean;
           project: string | null;
       }
+    | { kind: "serve" }
+    | { kind: "token-add"; device: string }
+    | { kind: "token-revoke"; device: string }
+    | { kind: "mcp"; host: string | null }
     | { kind: "claude-hook"; hook: HookMode }
     | { kind: "claude"; args: string[] }
     | { kind: "claude-dump"; args: string[]; message: string }
@@ -77,6 +81,12 @@ export const USAGE = [
     "       dorothy --sync [<path>]    sync a project's facts with its repo",
     "       dorothy --projects         the projects Dorothy knows",
     "       dorothy --recall-server    memory tools for MCP clients (stdio)",
+    "       dorothy --serve            her memory service, until stopped",
+    "       dorothy --serve --token-add | --token-revoke <device>",
+    "                                  give or withdraw a device's token",
+    "       dorothy --mcp [--host <host>]",
+    "                                  her memory over MCP (stdio), through",
+    "                                  the service, for the host named",
     "       dorothy --claude-hook      internal: what --claude's hooks run",
     "       dorothy --claude-hook --reread | --dismiss <session>",
     "                                  read again the Claude Code lines she",
@@ -137,6 +147,8 @@ const COMMANDS: Record<string, Command> = {
             : usage("--sync takes [<path>]"),
     "--projects": noArguments("--projects", { kind: "projects" }),
     "--recall-server": parseRecallServer,
+    "--serve": parseServe,
+    "--mcp": parseMcp,
     "--claude-hook": parseHook,
     "--dump-context": parseDump,
     "--claude": parseClaude,
@@ -315,6 +327,48 @@ function parseRecallServer(rest: readonly string[]): Mode {
               project: root ?? null,
           }
         : usage(RECALL_USAGE);
+}
+
+const SERVE_USAGE =
+    "--serve takes nothing, --token-add <device> or --token-revoke <device>";
+
+function parseServe(rest: readonly string[]): Mode {
+    const parsed = options(rest, {
+        "token-add": { type: "string" },
+        "token-revoke": { type: "string" },
+    });
+    if (parsed === null || parsed.positionals.length > 0) {
+        return usage(SERVE_USAGE);
+    }
+    const { "token-add": add, "token-revoke": revoke } = parsed.values;
+    if (add !== undefined && revoke !== undefined) {
+        return usage(SERVE_USAGE);
+    }
+    if (add !== undefined) {
+        return add === ""
+            ? usage(SERVE_USAGE)
+            : { kind: "token-add", device: add };
+    }
+    if (revoke !== undefined) {
+        return revoke === ""
+            ? usage(SERVE_USAGE)
+            : { kind: "token-revoke", device: revoke };
+    }
+    return { kind: "serve" };
+}
+
+const MCP_USAGE = "--mcp takes [--host <host>], a host as its profile names it";
+
+function parseMcp(rest: readonly string[]): Mode {
+    const parsed = options(rest, { host: { type: "string" } });
+    if (parsed === null || parsed.positionals.length > 0) {
+        return usage(MCP_USAGE);
+    }
+    const { host } = parsed.values;
+    if (host !== undefined && !HOST_ID.test(host)) {
+        return usage(MCP_USAGE);
+    }
+    return { kind: "mcp", host: host ?? null };
 }
 
 const HOOK_USAGE =

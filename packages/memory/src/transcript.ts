@@ -20,8 +20,9 @@ import {
 } from "@dorothy/core";
 import { scrub } from "./scrub.js";
 
-// The body a session ran in. A session event without one is chat's.
-export type Source = "chat" | "claude-code";
+// The body a session ran in: chat, or a host as its profile names it.
+export type Source = string;
+const SOURCE = /^[a-z][a-z0-9-]{0,39}$/;
 export type SessionEvent = {
     v: 1;
     kind: "session";
@@ -35,6 +36,9 @@ export type SessionEvent = {
     // The body's own session id, so a resumed session continues its
     // conversation.
     sourceSession?: string;
+    // The host session this one resumed or forked from, keyed as
+    // sourceSession is.
+    parentSession?: string;
     // The project the session ran in; none for chat.
     project?: string;
 };
@@ -96,7 +100,9 @@ type Unstamped<E> = E extends unknown ? Omit<E, "v" | "at"> : never;
 export type TranscriptEntry = Unstamped<TranscriptEvent>;
 
 export const sourceOf = (event: { source?: unknown }): Source =>
-    event.source === "claude-code" ? "claude-code" : "chat";
+    typeof event.source === "string" && SOURCE.test(event.source)
+        ? event.source
+        : "chat";
 
 // Each side of a tool call keeps this many characters, counted in code
 // points.

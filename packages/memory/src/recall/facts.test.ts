@@ -74,7 +74,7 @@ describe("syncFacts", () => {
         expect(await syncFacts(index, root)).toEqual([]);
         expect(rows()).toEqual([
             {
-                path: "facts/personal/tea.md",
+                path: "knowledge/personal/tea.md",
                 scope: "personal",
                 name: "tea",
                 title: "About tea",
@@ -84,7 +84,7 @@ describe("syncFacts", () => {
                 retired: 0,
             },
             {
-                path: "facts/projects/github.com/chewygumxx/dorothy/gateway.md",
+                path: "knowledge/projects/github.com/chewygumxx/dorothy/gateway.md",
                 scope: "github.com/chewygumxx/dorothy",
                 name: "gateway",
                 title: "About gateway",
@@ -122,10 +122,13 @@ describe("syncFacts", () => {
     });
 
     it("leaves out a fact it cannot read, and says why", async () => {
-        await mkdir(join(root, "facts", "personal"), { recursive: true });
-        await writeFile(join(root, "facts", "personal", "tea.md"), "no fact\n");
+        await mkdir(join(root, "knowledge", "personal"), { recursive: true });
+        await writeFile(
+            join(root, "knowledge", "personal", "tea.md"),
+            "no fact\n",
+        );
         expect(await syncFacts(index, root)).toEqual([
-            `${join(root, "facts", "personal", "tea.md")}: it has no frontmatter`,
+            `${join(root, "knowledge", "personal", "tea.md")}: it has no frontmatter`,
         ]);
         expect(rows()).toEqual([]);
     });

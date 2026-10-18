@@ -600,3 +600,43 @@ describe("parseArgs", () => {
         }
     });
 });
+
+describe("--serve and --mcp", () => {
+    it("serves, or makes and withdraws a device's token", () => {
+        expect(parseArgs(["--serve"], false)).toEqual({ kind: "serve" });
+        expect(parseArgs(["--serve", "--token-add", "laptop"], false)).toEqual({
+            kind: "token-add",
+            device: "laptop",
+        });
+        expect(
+            parseArgs(["--serve", "--token-revoke", "laptop"], false),
+        ).toEqual({ kind: "token-revoke", device: "laptop" });
+    });
+
+    it("refuses both token commands at once, or words after --serve", () => {
+        for (const argv of [
+            ["--serve", "--token-add", "a", "--token-revoke", "b"],
+            ["--serve", "now"],
+            ["--serve", "--token-add"],
+        ]) {
+            expect(parseArgs(argv, false).kind).toBe("usage");
+        }
+    });
+
+    it("bridges MCP, naming the host that launched it if given", () => {
+        expect(parseArgs(["--mcp"], false)).toEqual({
+            kind: "mcp",
+            host: null,
+        });
+        expect(parseArgs(["--mcp", "--host", "codex"], false)).toEqual({
+            kind: "mcp",
+            host: "codex",
+        });
+        for (const argv of [
+            ["--mcp", "x"],
+            ["--mcp", "--host", "Not A Host"],
+        ]) {
+            expect(parseArgs(argv, false).kind).toBe("usage");
+        }
+    });
+});

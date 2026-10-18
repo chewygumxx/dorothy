@@ -44,6 +44,7 @@ export type Extra = string | number | boolean;
 export type FactProvenance = {
     origin: Origin;
     by: Writer;
+    host?: string;
     at: string;
     created: string;
     model?: string;
@@ -62,6 +63,10 @@ export type Fact = {
     provenance: FactProvenance;
     retired: Retired | null;
     body: string;
+    // Top-level keys another producer wrote, kept and written back.
+    foreign?: Record<string, unknown>;
+    // Sources other than the conversation the fact came from.
+    otherSources?: Record<string, unknown>[];
 };
 export type FactRead =
     | { kind: "ok"; fact: Fact }
@@ -71,7 +76,7 @@ export type FactRead =
 // whoever called them.
 export class Problem extends Error {}
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
+export const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
 
 // Controls but tab and newline, every format character (zero widths,
@@ -139,57 +144,15 @@ export const folded = (key: string, text: string, indent = ""): string[] => [
 
 const json = (value: Extra) => JSON.stringify(value);
 
-export function renderFact(fact: Fact): string {
-    const { provenance, retired } = fact;
-    return [
-        "---",
-        `name: ${fact.name}`,
-        ...folded("title", fact.title),
-        ...folded("description", fact.description),
-        "metadata:",
-        `  type: ${fact.type}`,
-        ...Object.entries(fact.extra).map(
-            ([key, value]) => `  ${key}: ${json(value)}`,
-        ),
-        ...(fact.tags.length === 0
-            ? []
-            : ["tags:", ...fact.tags.map((id) => `  - ${id}`)]),
-        ...(fact.importance === null ? [] : [`importance: ${fact.importance}`]),
-        "provenance:",
-        `  origin: ${provenance.origin}`,
-        `  by: ${provenance.by}`,
-        `  at: ${json(provenance.at)}`,
-        `  created: ${json(provenance.created)}`,
-        ...(provenance.model === undefined
-            ? []
-            : [`  model: ${json(provenance.model)}`]),
-        ...(provenance.from === undefined
-            ? []
-            : [`  from: ${json(provenance.from)}`]),
-        ...(retired === null
-            ? []
-            : [
-                  "retired:",
-                  `  at: ${json(retired.at)}`,
-                  `  by: ${retired.by}`,
-                  ...folded("why", retired.why, "  "),
-              ]),
-        "---",
-        "",
-        fact.body,
-        "",
-    ].join("\n");
-}
-
 // A decoded value may hold a character the source spelled as an escape.
-function visible(value: string, key: string): void {
+export function visible(value: string, key: string): void {
     const hidden = hiddenCharacter(value);
     if (hidden !== null) {
         throw new Problem(`${key} holds a hidden character, ${hidden}`);
     }
 }
 
-function text(value: unknown, key: string, limit: number): string {
+export function text(value: unknown, key: string, limit: number): string {
     if (typeof value !== "string") {
         throw new Problem(`${key} is not text`);
     }
@@ -206,7 +169,7 @@ function text(value: unknown, key: string, limit: number): string {
     return normal;
 }
 
-function oneOf<T extends string>(
+export function oneOf<T extends string>(
     value: unknown,
     key: string,
     set: readonly T[],
@@ -223,7 +186,7 @@ function oneOf<T extends string>(
 // The form Date#toISOString writes.
 const TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
-function time(value: unknown, key: string): string {
+export function time(value: unknown, key: string): string {
     if (
         typeof value !== "string" ||
         !TIME.test(value) ||
@@ -234,7 +197,7 @@ function time(value: unknown, key: string): string {
     return value;
 }
 
-function only(
+export function only(
     record: Record<string, unknown>,
     keys: readonly string[],
     where: string,
@@ -300,7 +263,9 @@ export function readCommon(
 
 // The metadata beside its type, kept as written: text, numbers and
 // booleans under plain keys.
-function readExtra(metadata: Record<string, unknown>): Record<string, Extra> {
+export function readExtra(
+    metadata: Record<string, unknown>,
+): Record<string, Extra> {
     const extra: Record<string, Extra> = {};
     for (const [key, value] of Object.entries(metadata)) {
         if (key === "type") {
@@ -324,68 +289,47 @@ const isExtra = (value: unknown): value is Extra =>
     typeof value === "boolean" ||
     (typeof value === "number" && Number.isFinite(value));
 
-const FROM = /^([a-z]+(?:-[a-z]+){3})(?:#[1-9][0-9]*)?$/;
-
-function readProvenance(value: unknown): FactProvenance {
-    if (!isRecord(value)) {
-        throw new Problem("provenance is not a mapping");
-    }
-    only(
-        value,
-        ["origin", "by", "at", "created", "model", "from"],
-        "provenance",
-    );
-    const provenance: FactProvenance = {
-        origin: oneOf(value.origin, "provenance.origin", ORIGINS),
-        by: oneOf(value.by, "provenance.by", WRITERS),
-        at: time(value.at, "provenance.at"),
-        created: time(value.created, "provenance.created"),
-    };
-    if (value.model !== undefined) {
-        if (typeof value.model !== "string" || value.model === "") {
-            throw new Problem("provenance.model is not text");
-        }
-        visible(value.model, "provenance.model");
-        provenance.model = value.model;
-    }
-    if (value.from !== undefined) {
-        const phrase =
-            typeof value.from === "string"
-                ? FROM.exec(value.from)?.[1]
-                : undefined;
-        if (phrase === undefined || !isPhrase(phrase)) {
-            throw new Problem("provenance.from is not a conversation");
-        }
-        provenance.from = value.from as string;
-    }
-    return provenance;
-}
-
-function readRetired(value: unknown): Retired | null {
+export function readRetired(value: unknown, where = "retired"): Retired | null {
     if (value === undefined) {
         return null;
     }
     if (!isRecord(value)) {
-        throw new Problem("retired is not a mapping");
+        throw new Problem(`${where} is not a mapping`);
     }
-    only(value, ["at", "by", "why"], "retired");
+    only(value, ["at", "by", "why"], where);
     return {
-        at: time(value.at, "retired.at"),
-        by: oneOf(value.by, "retired.by", WRITERS),
-        why: text(value.why, "retired.why", FACT_LIMITS.why),
+        at: time(value.at, `${where}.at`),
+        by: oneOf(value.by, `${where}.by`, WRITERS),
+        why: text(value.why, `${where}.why`, FACT_LIMITS.why),
     };
 }
 
-const STORE_KEYS = [
-    "name",
-    "title",
-    "description",
-    "metadata",
-    "tags",
-    "importance",
-    "provenance",
-    "retired",
-] as const;
+export function readTags(value: unknown): string[] {
+    const tags = value ?? [];
+    if (
+        !Array.isArray(tags) ||
+        !tags.every((id) => typeof id === "string" && CONCEPT_ID.test(id))
+    ) {
+        throw new Problem("tags are not concept ids");
+    }
+    return tags as string[];
+}
+
+export function readImportance(value: unknown): number | null {
+    const importance = value ?? null;
+    if (
+        importance !== null &&
+        !(
+            typeof importance === "number" &&
+            Number.isInteger(importance) &&
+            importance >= 1 &&
+            importance <= 10
+        )
+    ) {
+        throw new Problem("importance is not a whole number from 1 to 10");
+    }
+    return importance as number | null;
+}
 
 // The frontmatter as YAML, checked for hidden characters first.
 export function frontmatterOf(source: string): {
@@ -415,50 +359,304 @@ export function frontmatterOf(source: string): {
     return { data, body: parts.body };
 }
 
-function readFact(
-    source: string,
-    stem: string | undefined,
-    provenanceOf: (value: unknown) => FactProvenance,
-): Fact {
-    const { data, body } = frontmatterOf(source);
-    only(data, STORE_KEYS, "its frontmatter");
-    const tags = data.tags ?? [];
-    if (
-        !Array.isArray(tags) ||
-        !tags.every((id) => typeof id === "string" && CONCEPT_ID.test(id))
-    ) {
-        throw new Problem("tags are not concept ids");
+// Who wrote a fact, in OKF's actor convention: the user, the
+// repository's sync, a review, or a model through remember as
+// <host>/<model>.
+const USER_ACTOR = "human:owner";
+const REPO_ACTOR = "process:repo-sync";
+const EXTRACTION = "dorothy-extraction";
+const NO_MODEL = "unknown";
+const HOST = /^[a-z][a-z0-9-]{0,39}$/;
+
+export function actorOf(provenance: FactProvenance): string {
+    switch (provenance.by) {
+        case "user":
+            return USER_ACTOR;
+        case "repo":
+            return REPO_ACTOR;
+        case "review":
+            return `${EXTRACTION}/${provenance.model ?? NO_MODEL}`;
+        default:
+            return `${provenance.host ?? "dorothy"}/${provenance.model ?? NO_MODEL}`;
     }
-    const importance = data.importance ?? null;
+}
+
+type Writing = Pick<FactProvenance, "by" | "host" | "model">;
+
+function writingOf(actor: string): Writing {
+    if (actor.startsWith("human:")) {
+        return { by: "user" };
+    }
+    if (actor.startsWith("process:")) {
+        return { by: "repo" };
+    }
+    const slash = actor.indexOf("/");
+    const who = actor.slice(0, slash);
+    const model = actor.slice(slash + 1);
+    if (slash < 1 || model === "" || !HOST.test(who)) {
+        throw new Problem("generated.by is not an actor");
+    }
+    const known = model === NO_MODEL ? {} : { model };
+    if (who === EXTRACTION) {
+        return { by: "review", ...known };
+    }
+    return who === "dorothy"
+        ? { by: "dorothy", ...known }
+        : { by: "dorothy", host: who, ...known };
+}
+
+// Origins as a file names them: Dorothy's own split by how she wrote.
+export const FILE_ORIGINS = [
+    "external",
+    "repo",
+    "model",
+    "extraction",
+    "user",
+] as const;
+type FileOrigin = (typeof FILE_ORIGINS)[number];
+
+const fileOrigin = ({ origin, by }: FactProvenance): FileOrigin =>
+    origin !== "dorothy" ? origin : by === "review" ? "extraction" : "model";
+
+const memoryOrigin = (origin: FileOrigin): Origin =>
+    origin === "model" || origin === "extraction" ? "dorothy" : origin;
+
+const CONVERSATION = "dorothy:conversation/";
+const FROM = /^([a-z]+(?:-[a-z]+){3})(?:#[1-9][0-9]*)?$/;
+
+export function renderFact(fact: Fact): string {
+    const { provenance, retired } = fact;
+    const others = fact.otherSources ?? [];
+    const foreign = fact.foreign ?? {};
+    return [
+        "---",
+        `type: ${fact.type}`,
+        ...folded("title", fact.title),
+        ...folded("description", fact.description),
+        ...(fact.tags.length === 0
+            ? []
+            : ["tags:", ...fact.tags.map((id) => `  - ${id}`)]),
+        ...(provenance.from === undefined && others.length === 0
+            ? []
+            : [
+                  "sources:",
+                  ...(provenance.from === undefined
+                      ? []
+                      : [
+                            `  - resource: ${json(`${CONVERSATION}${provenance.from}`)}`,
+                        ]),
+                  ...others.map((source) => `  - ${JSON.stringify(source)}`),
+              ]),
+        "generated:",
+        `  by: ${json(actorOf(provenance))}`,
+        `  at: ${json(provenance.at)}`,
+        ...(retired === null ? [] : ["status: deprecated"]),
+        "dorothy:",
+        `  origin: ${fileOrigin(provenance)}`,
+        `  created: ${json(provenance.created)}`,
+        ...(fact.importance === null
+            ? []
+            : [`  importance: ${fact.importance}`]),
+        ...(Object.keys(fact.extra).length === 0
+            ? []
+            : [
+                  "  metadata:",
+                  ...Object.entries(fact.extra).map(
+                      ([key, value]) => `    ${key}: ${json(value)}`,
+                  ),
+              ]),
+        ...(retired === null
+            ? []
+            : [
+                  "  retired:",
+                  `    at: ${json(retired.at)}`,
+                  `    by: ${retired.by}`,
+                  ...folded("why", retired.why, "    "),
+              ]),
+        ...Object.keys(foreign)
+            .sort()
+            .map((key) => `${key}: ${JSON.stringify(foreign[key])}`),
+        "---",
+        "",
+        fact.body,
+        "",
+    ].join("\n");
+}
+
+function conversationFrom(text: string): string {
+    const phrase = FROM.exec(text)?.[1];
+    if (phrase === undefined || !isPhrase(phrase)) {
+        throw new Problem("a source is not a conversation");
+    }
+    return text;
+}
+
+// Decoded data, checked for hidden characters and prototype keys.
+function checkData(value: unknown, key: string): void {
+    if (typeof value === "string") {
+        visible(value, key);
+    } else if (Array.isArray(value)) {
+        for (const [at, each] of value.entries()) {
+            checkData(each, `${key}[${at}]`);
+        }
+    } else if (isRecord(value)) {
+        for (const [inner, each] of Object.entries(value)) {
+            if (inner === "__proto__") {
+                throw new Problem(`${key} has a key of __proto__`);
+            }
+            checkData(each, `${key}.${inner}`);
+        }
+    } else if (
+        value !== null &&
+        typeof value !== "number" &&
+        typeof value !== "boolean"
+    ) {
+        throw new Problem(`${key} is not data`);
+    }
+}
+
+// The first source naming a conversation gives from; the others are
+// kept as written.
+function readSources(value: unknown): {
+    from?: string;
+    others: Record<string, unknown>[];
+} {
+    if (value === undefined) {
+        return { others: [] };
+    }
     if (
-        importance !== null &&
-        !(
-            typeof importance === "number" &&
-            Number.isInteger(importance) &&
-            importance >= 1 &&
-            importance <= 10
+        !Array.isArray(value) ||
+        !value.every(
+            (entry) => isRecord(entry) && typeof entry.resource === "string",
         )
     ) {
-        throw new Problem("importance is not a whole number from 1 to 10");
+        throw new Problem("sources is not a list of mappings with a resource");
     }
-    const common = readCommon(data, body, stem);
+    checkData(value, "sources");
+    const others: Record<string, unknown>[] = [];
+    let from: string | undefined;
+    for (const entry of value as Record<string, unknown>[]) {
+        const resource = entry.resource as string;
+        if (
+            from === undefined &&
+            resource.startsWith(CONVERSATION) &&
+            Object.keys(entry).length === 1
+        ) {
+            from = conversationFrom(resource.slice(CONVERSATION.length));
+        } else {
+            others.push(entry);
+        }
+    }
+    return from === undefined ? { others } : { from, others };
+}
+
+const OKF_KEYS = [
+    "type",
+    "title",
+    "description",
+    "tags",
+    "sources",
+    "generated",
+    "status",
+    "dorothy",
+];
+const DOROTHY_KEYS = ["origin", "created", "importance", "metadata", "retired"];
+const STATUSES = ["stable", "deprecated"] as const;
+
+function readForeign(data: Record<string, unknown>): Record<string, unknown> {
+    const foreign: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data)) {
+        if (OKF_KEYS.includes(key)) {
+            continue;
+        }
+        if (key === "__proto__" || !EXTRA_KEY.test(key)) {
+            throw new Problem(`${key} is not a key the store can keep`);
+        }
+        checkData(value, key);
+        foreign[key] = value;
+    }
+    return foreign;
+}
+
+type ProvenanceReader = (
+    generated: unknown,
+    dorothy: Record<string, unknown>,
+    from: string | undefined,
+) => FactProvenance;
+
+function readGenerated(
+    generated: unknown,
+    dorothy: Record<string, unknown>,
+    from: string | undefined,
+): FactProvenance {
+    if (!isRecord(generated)) {
+        throw new Problem("generated is not a mapping");
+    }
+    only(generated, ["by", "at"], "generated");
+    if (typeof generated.by !== "string") {
+        throw new Problem("generated.by is not an actor");
+    }
+    visible(generated.by, "generated.by");
     return {
-        name: common.name,
-        title: text(data.title, "title", FACT_LIMITS.title),
-        description: common.description,
-        type: common.type,
-        extra: common.extra,
-        tags: tags as string[],
-        importance: importance as number | null,
-        provenance: provenanceOf(data.provenance),
-        retired: readRetired(data.retired),
-        body: common.body,
+        origin: memoryOrigin(
+            oneOf(dorothy.origin, "dorothy.origin", FILE_ORIGINS),
+        ),
+        ...writingOf(generated.by),
+        at: time(generated.at, "generated.at"),
+        created: time(dorothy.created, "dorothy.created"),
+        ...(from === undefined ? {} : { from }),
     };
 }
 
-export function parseFact(source: string, stem?: string): FactRead {
+function readOkf(
+    source: string,
+    stem: string,
+    provenanceOf: ProvenanceReader,
+): Fact {
+    if (!FACT_NAME.test(stem) || stem.length > FACT_LIMITS.name) {
+        throw new Problem(`its file's name, ${stem}, is not a fact's name`);
+    }
+    const { data, body } = frontmatterOf(source);
+    const dorothy = data.dorothy ?? {};
+    if (!isRecord(dorothy)) {
+        throw new Problem("dorothy is not a mapping");
+    }
+    only(dorothy, DOROTHY_KEYS, "dorothy");
+    const metadata = dorothy.metadata ?? {};
+    if (!isRecord(metadata)) {
+        throw new Problem("dorothy.metadata is not a mapping");
+    }
+    const retired = readRetired(dorothy.retired, "dorothy.retired");
+    const deprecated =
+        oneOf(data.status ?? "stable", "status", STATUSES) === "deprecated";
+    if (deprecated !== (retired !== null)) {
+        throw new Problem("status and dorothy.retired disagree");
+    }
+    const { from, others } = readSources(data.sources);
+    const foreign = readForeign(data);
+    return {
+        name: stem,
+        title: text(data.title, "title", FACT_LIMITS.title),
+        description: text(
+            data.description,
+            "description",
+            FACT_LIMITS.description,
+        ),
+        type: oneOf(data.type, "type", FACT_TYPES),
+        extra: readExtra(metadata),
+        tags: readTags(data.tags),
+        importance: readImportance(dorothy.importance),
+        provenance: provenanceOf(data.generated, dorothy, from),
+        retired,
+        body: checkBody(body),
+        ...(others.length === 0 ? {} : { otherSources: others }),
+        ...(Object.keys(foreign).length === 0 ? {} : { foreign }),
+    };
+}
+
+export function parseFact(source: string, stem: string): FactRead {
     try {
-        return { kind: "ok", fact: readFact(source, stem, readProvenance) };
+        return { kind: "ok", fact: readOkf(source, stem, readGenerated) };
     } catch (error) {
         if (error instanceof Problem) {
             return { kind: "unparseable", reason: error.message };
@@ -468,8 +666,8 @@ export function parseFact(source: string, stem?: string): FactRead {
 }
 
 // A fact the user added or edited by hand, rewritten as Dorothy writes
-// one and made the user's; null when it is no fact. It may omit
-// provenance, which a hand-added fact has none of.
+// one and made the user's; null when it is no fact. It may have no
+// generated key, which a hand-added fact lacks.
 export function handEdited(
     source: string,
     stem: string,
@@ -477,14 +675,17 @@ export function handEdited(
 ): string | null {
     const at = now.toISOString();
     try {
-        const fact = readFact(source, stem, (value) => {
-            const before = value === undefined ? null : readProvenance(value);
+        const fact = readOkf(source, stem, (generated, dorothy, from) => {
+            const before =
+                generated === undefined
+                    ? null
+                    : readGenerated(generated, dorothy, from);
             return {
                 origin: "user",
                 by: "user",
                 at,
                 created: before?.created ?? at,
-                ...(before?.from === undefined ? {} : { from: before.from }),
+                ...(from === undefined ? {} : { from }),
             };
         });
         return renderFact(fact);
