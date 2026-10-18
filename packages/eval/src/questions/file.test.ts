@@ -9,7 +9,7 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tempRoot } from "../testing.js";
 import {
     mergeQuestions,
@@ -92,6 +92,12 @@ describe("the question file", () => {
             questions: [],
             problems: [],
         });
+    });
+
+    it("fails on a file it cannot read, rather than reading it empty", async () => {
+        mkdirSync(questionsPath(temp.root));
+        await expect(readQuestions(temp.root)).rejects.toThrow();
+        await expect(readQuestionsToRewrite(temp.root)).rejects.toThrow();
     });
 
     it("writes and reads back, private to the user", async () => {

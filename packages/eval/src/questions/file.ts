@@ -89,8 +89,17 @@ export async function readQuestions(
     let text: string;
     try {
         text = await readFile(questionsPath(work), "utf8");
-    } catch {
-        return { questions: [], problems: [] };
+    } catch (error) {
+        // Only a missing file is empty; any other failure must not look
+        // like one, or a rewrite would overwrite what it could not read.
+        if (
+            error instanceof Error &&
+            "code" in error &&
+            error.code === "ENOENT"
+        ) {
+            return { questions: [], problems: [] };
+        }
+        throw error;
     }
     const questions: Question[] = [];
     const problems: string[] = [];
