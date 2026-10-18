@@ -15,3 +15,5 @@
   Fix the code a metric points at; never hide or gate the metric
 - [Memory priorities](./memory-priorities.md)
   Memory ranks compatibility, access, progressive disclosure, persistence
+- [Protocol-diverse Dorothy](./protocol-diverse-dorothy.md)
+  No one harness hosts Dorothy; her definition is generated into each; no pi
