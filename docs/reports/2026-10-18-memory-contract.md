@@ -156,6 +156,34 @@ Complete in `8cfd322`; review clean, and the profiles' tests pass 3 of
 - Codex's profile allows 512 characters of instructions, where the
   constraints say under 512; Task 13's instructions settle it.
 
+### Task 8: the engine interface and the baseline engine
+
+Complete in `556cfbb` and `f6ac009`, after one fix round; the memory
+package passes 1169 of 1169. The review found two faults:
+
+- The baseline narrowed a search to its scope only after recall cut it
+  to ten, so a scoped search could come back empty while matches
+  existed. Ruling: narrow before the cut, without changing recall for
+  its present callers. `recall/query.ts` gained an optional `within`.
+  If wrong, a costlier query.
+- Search gave retired facts as live, which the block's ranking leaves
+  out. Ruling: the baseline drops them. If wrong, a retired fact is
+  found by `--facts` alone.
+
+The re-review found both addressed. Minor findings deferred to the
+final review:
+
+- The baseline's `extract` lets the reviewer write notes and tags
+  itself, as the plan has it, and its index sync may run the facts
+  migration without the store's lock.
+- A project lookup runs once a hit, outside the index's exclusive
+  section; `rankEpisodes` uses the clock, not the `now` passed in, and
+  drops the catalogue's warnings; its comparator breaks on a bad date;
+  `extract` drops the review's outcome.
+- Tests do not cover the `all` and `episodes` kinds, `exclude` or a
+  missing reviewer; `knowledgePath` would sit better beside the
+  interface.
+
 ## Verification
 
 Recorded at the end of each part, with `bun run check`.
