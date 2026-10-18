@@ -68,8 +68,11 @@ a client with fail-open timeouts, and a stdio bridge; in `cli`, the
 - `@dorothy/memory` still depends on `core` alone of the `@dorothy`
   packages, and `core` declares `niceware` alone: the contract's types go
   in `core` as plain TypeScript, its zod schemas in `memory`.
-- `exactOptionalPropertyTypes` is on: an optional field is written
-  `field?: T | undefined` where zod's inferred type must match it.
+- An optional field of a contract type is written `field?: T |
+  undefined`, the form zod's inferred types take.
+- Before each commit, run `bunx biome check --write` on the task's
+  paths: the pre-commit hook runs `biome check --staged`, and the code
+  here is not formatted to the byte. Each commit step starts with it.
 - The service listens on `127.0.0.1` at port 4774 by default, and on
   each address in `[service] listen`; any request not from loopback
   carries `Authorization: Bearer <token>`.
@@ -206,7 +209,9 @@ In `config.test.ts`, inside `describe("parseConfig", ...)`, add:
 ```
 
 In the existing test "reads the memory table", add `extractCap: 10,`
-after `catchUp: 0,` in the expected `memory` object.
+after `catchUp: 0,` in the expected `memory` object, and in "reads both
+tables" add `service: DEFAULT_CONFIG.service,` after
+`history: DEFAULT_CONFIG.history,`.
 
 - [ ] **Step 2: Run the tests to see them fail**
 
@@ -294,6 +299,7 @@ Expected: PASS, no type errors.
 - [ ] **Step 5: Commit**
 
 ```bash
+bunx biome check --write --files-ignore-unknown=true --no-errors-on-unmatched packages/core/src/config.ts packages/core/src/config.test.ts
 git add packages/core/src/config.ts packages/core/src/config.test.ts
 git commit -m "feat(core): Add the service table and extract-cap"
 ```
@@ -307,7 +313,8 @@ git commit -m "feat(core): Add the service table and extract-cap"
 - Move: `packages/memory/src/facts/file.test.ts` to
   `packages/memory/src/facts/legacy.test.ts`
 - Create: `packages/memory/src/facts/file.test.ts`
-- Modify: `packages/memory/src/history/history.test.ts`
+- Modify: `packages/memory/src/history/history.test.ts`,
+  `packages/memory/src/history/lint.test.ts`
 
 **Interfaces:**
 
@@ -397,8 +404,10 @@ import {
 
 Delete the whole `describe("handEdited", ...)` block (from the line
 `describe("handEdited", () => {` to the `});` before
-`describe("nextOrigin"`). Fix its breadcrumb to
-`// ::: :/packages/memory/src/facts/legacy.test.ts`.
+`describe("nextOrigin"`), and in "refuses hidden characters spelled as
+YAML escapes" the line
+`expect(handEdited(text, "likes-tea", new Date(AT))).toBeNull();`. Fix
+its breadcrumb to `// ::: :/packages/memory/src/facts/legacy.test.ts`.
 
 - [ ] **Step 2: Write the OKF tests**
 
@@ -961,8 +970,8 @@ after `body`:
     otherSources?: Record<string, unknown>[];
 ```
 
-Replace today's `renderFact`, `readProvenance`, `STORE_KEYS`, `readFact`,
-`parseFact` and `handEdited` with:
+Replace today's `FROM` constant, `renderFact`, `readProvenance`,
+`STORE_KEYS`, `readFact`, `parseFact` and `handEdited` with:
 
 ```ts
 // Who wrote a fact, in OKF's actor convention: the user, the
@@ -1102,7 +1111,9 @@ function checkData(value: unknown, key: string): void {
     if (typeof value === "string") {
         visible(value, key);
     } else if (Array.isArray(value)) {
-        value.forEach((each, at) => checkData(each, `${key}[${at}]`));
+        for (const [at, each] of value.entries()) {
+            checkData(each, `${key}[${at}]`);
+        }
     } else if (isRecord(value)) {
         for (const [inner, each] of Object.entries(value)) {
             if (inner === "__proto__") {
@@ -1321,6 +1332,24 @@ now write the OKF hand-added form:
 "---\ntype: user\ntitle: Likes tea\ndescription: Prefers tea.\n---\n\nTea.\n"
 ```
 
+In `packages/memory/src/history/lint.test.ts`, "lints a fact against its
+file's name and scope" expects the old form's reason, as an OKF file has
+no `name`; replace
+
+```ts
+        expect(lint("facts/personal/other.md", bytes(FACT), null)).toBe(
+            "its name is likes-tea, not its file's, other",
+        );
+```
+
+with
+
+```ts
+        expect(lint("facts/personal/Bad-Name.md", bytes(FACT), null)).toBe(
+            "its file's name, Bad-Name, is not a fact's name",
+        );
+```
+
 - [ ] **Step 8: Run the tests to see them pass**
 
 Run: `bun test packages/memory/src && bun run typecheck`
@@ -1333,8 +1362,9 @@ still passes, as it writes and reads the same form. If `tsc` reports a
 - [ ] **Step 9: Commit**
 
 ```bash
-git add packages/memory/src/facts packages/memory/src/history/history.test.ts
-git commit -m "feat(memory): Write facts in the Open Knowledge Format" \
+bunx biome check --write --files-ignore-unknown=true --no-errors-on-unmatched packages/memory/src/facts packages/memory/src/history/history.test.ts
+git add packages/memory/src/facts packages/memory/src/history
+git commit -m "feat(memory): Write facts in Open Knowledge Format" \
   -m "The OKF keys first, Dorothy's under one dorothy key, and any other
 producer's kept; the old form survives as legacy.ts for migration."
 ```
@@ -1367,6 +1397,13 @@ grep -rnE 'facts/(personal|projects)|"facts", "(personal|projects)"' \
 ```
 
 Expected: `left: 1` (none left). `"facts"` as a search kind is untouched.
+
+The sed misses a path split across lines: in `facts/store.test.ts`, "writes
+a project's fact under its id" has `"facts",` on a line of its own inside
+`join(`; change it to `"knowledge",`. List any other with
+`grep -rnE '^\s*"facts",$' --include='*.test.ts' .`: the hits in
+`recall/store.test.ts` and `recall/query.test.ts` are SQL table lists,
+and stay.
 
 - [ ] **Step 2: Run them to see them fail**
 
@@ -1402,6 +1439,11 @@ export function scopeDir(
     if (scope.kind === "personal") {
         return join(root, under, "personal");
     }
+    // The guard today's scopeDir holds: an id with .. or an empty part
+    // would write outside the store.
+    if (!isProjectId(scope.id)) {
+        throw new Error(`${scope.id} is not a project id`);
+    }
     return join(root, under, "projects", ...scope.id.split("/"));
 }
 ```
@@ -1429,6 +1471,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
+bunx biome check --write --files-ignore-unknown=true --no-errors-on-unmatched packages/memory/src
 git add packages/memory/src
 git commit -m "feat(memory): Keep facts under knowledge/"
 ```
@@ -1441,6 +1484,7 @@ git commit -m "feat(memory): Keep facts under knowledge/"
 - Test: `packages/memory/src/facts/migrate.test.ts`
 - Modify: `packages/memory/src/recall/facts.ts`
 - Modify: `packages/memory/src/history/history.ts`
+- Modify: `packages/memory/src/memory/open.ts`
 
 **Interfaces:**
 
@@ -1611,16 +1655,23 @@ export async function migrateFacts(root: string): Promise<string[]> {
     const warnings: string[] = [];
     for (const file of files) {
         const shown = relative(root, file.path).split(sep).join("/");
-        const read = parseLegacyFact(
-            await readFile(file.path, "utf8"),
-            file.name,
-        );
+        let source: string;
+        try {
+            source = await readFile(file.path, "utf8");
+        } catch (error) {
+            // Another process moved it first.
+            if (codeOf(error) === "ENOENT") {
+                continue;
+            }
+            throw error;
+        }
+        const read = parseLegacyFact(source, file.name);
         if (read.kind !== "ok") {
             warnings.push(`${shown} was left in facts/: ${read.reason}`);
             continue;
         }
         await putFact(root, file.scope, read.fact);
-        await rm(file.path);
+        await rm(file.path, { force: true });
     }
     await prune(join(root, OLD));
     return warnings;
@@ -1656,6 +1707,10 @@ and before `MemoryHistory.open`, add:
 and pass `lock` to `MemoryHistory.open` in place of
 `index?.lock ?? (file as FileLock).lock`.
 
+In `memory/open.ts`, `launchHistory` calls `openHistory` without `warn`,
+so a chat's migration warnings would be lost; pass
+`warn: (message) => warnings.push(message),` in that call.
+
 - [ ] **Step 6: Run the tests to see them pass**
 
 Run: `bun test packages/memory/src && bun run typecheck`
@@ -1669,6 +1724,7 @@ Expected: every step passes, ending with the tests.
 - [ ] **Step 8: Commit**
 
 ```bash
+bunx biome check --write --files-ignore-unknown=true --no-errors-on-unmatched packages/memory/src
 git add packages/memory/src
 git commit -m "feat(memory): Move facts/ to knowledge/ once"
 ```
@@ -1988,6 +2044,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
+bunx biome check --write --files-ignore-unknown=true --no-errors-on-unmatched packages/core/src
 git add packages/core/src
 git commit -m "feat(core): Add the memory contract's types"
 ```
@@ -2027,6 +2084,7 @@ Create `packages/memory/src/contract/schemas.test.ts`:
 //
 
 import { describe, expect, it } from "bun:test";
+import type { BlockRequest, RecordRequest } from "@dorothy/core";
 import { ContractError } from "./errors.js";
 import {
     blockRequestSchema,
@@ -2038,7 +2096,7 @@ const AT = "2026-10-18T09:30:00.000Z";
 
 describe("blockRequestSchema", () => {
     it("takes a request and refuses unknown keys", () => {
-        const request = {
+        const request: BlockRequest = {
             host: "claude-code",
             session: "s1",
             project: "github.com/me/app",
@@ -2072,7 +2130,7 @@ describe("recordRequestSchema", () => {
     const base = { host: "codex", session: "s1" };
 
     it("takes events of each kind", () => {
-        const request = {
+        const request: RecordRequest = {
             ...base,
             events: [
                 { sourceId: "a", at: AT, kind: "user", text: "Hi" },
@@ -2348,6 +2406,7 @@ otherwise.
 - [ ] **Step 5: Commit**
 
 ```bash
+bunx biome check --write --files-ignore-unknown=true --no-errors-on-unmatched packages/memory/src/contract
 git add packages/memory/src/contract
 git commit -m "feat(memory): Add the contract's schemas"
 ```
@@ -2525,6 +2584,7 @@ Expected: PASS, and Biome finds the JSON formatted.
 - [ ] **Step 5: Commit**
 
 ```bash
+bunx biome check --write --files-ignore-unknown=true --no-errors-on-unmatched packages/memory/src/hosts
 git add packages/memory/src/hosts
 git commit -m "feat(memory): Add host profiles"
 ```
@@ -2961,6 +3021,10 @@ export function baselineEngine(deps: BaselineDeps): MemoryEngine {
 }
 ```
 
+`recall/query.ts` caps each group at 10 (`MAX_LIMIT`), so the baseline
+gives at most 10 knowledge and 10 conversation hits however high `limit`
+is; the contract's 20 is the most any engine may give.
+
 `FactHit.scope` is `"personal"` or the project's id, and `FactHit.id`
 is `personal/<name>` or `<project id>/<name>`, so the knowledge path is
 the id itself or `projects/` and the id. In the test's ordering,
@@ -2975,6 +3039,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
+bunx biome check --write --files-ignore-unknown=true --no-errors-on-unmatched packages/memory/src/engine
 git add packages/memory/src/engine
 git commit -m "feat(memory): Put today's memory behind an engine"
 ```
@@ -3226,7 +3291,7 @@ describe("buildBlock", () => {
         const frame = size(
             ["<memory>", BLOCK_INTRO, CLOSING, "</memory>"].join("\n"),
         );
-        // The personal section's tags cost 42; likes-tea in full needs 74,
+        // The personal section's tags cost 42; likes-tea in full needs 73,
         // in summary 53, so 60 left for it gives the summary.
         const block = await buildBlock(
             { project: APP.id, budget: frame + 102 },
@@ -3620,6 +3685,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
+bunx biome check --write --files-ignore-unknown=true --no-errors-on-unmatched packages/memory/src/contract
 git add packages/memory/src/contract
 git commit -m "feat(memory): Render the opening block"
 ```
@@ -3821,6 +3887,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
+bunx biome check --write --files-ignore-unknown=true --no-errors-on-unmatched packages/memory/src/contract
 git add packages/memory/src/contract
 git commit -m "feat(memory): Recall passages for a prompt"
 ```
@@ -3829,7 +3896,7 @@ git commit -m "feat(memory): Recall passages for a prompt"
 
 **Files:**
 
-- Modify: `packages/memory/src/transcript.ts`
+- Modify: `packages/memory/src/transcript.ts`, `transcript.test.ts`
 - Create: `packages/memory/src/contract/record.ts`
 - Test: `packages/memory/src/contract/record.test.ts`
 
@@ -4056,7 +4123,15 @@ and add to `SessionEvent`, after `sourceSession`:
 ```
 
 Run `bun run typecheck`; a comparison with `"claude-code"` still
-compiles, as `Source` is a string.
+compiles, as `Source` is a string. In `transcript.test.ts`, "reads chat
+when a session event names no source, or one unknown" now reads any
+host's name; replace its line
+`expect(sourceOf({ source: "telegram" })).toBe("chat");` with:
+
+```ts
+        expect(sourceOf({ source: "Not a host" })).toBe("chat");
+        expect(sourceOf({ source: "codex" })).toBe("codex");
+```
 
 - [ ] **Step 4: Write records**
 
@@ -4249,15 +4324,13 @@ test proves it.
 - [ ] **Step 5: Run it to see it pass**
 
 Run: `bun test packages/memory/src && bun run typecheck`
-Expected: PASS. If the restart test fails because the index does not
-take a non-Claude Code session's `sourceSession`, extend the insert at
-`recall/sync.ts` (the `INSERT OR IGNORE INTO conversation_sessions`
-line) to read `sourceSession` of every session event, not only Claude
-Code's, and rerun.
+Expected: PASS; the index takes any session event's `sourceSession`
+(`recall/sync.ts`), so the restart test finds the conversation.
 
 - [ ] **Step 6: Commit**
 
 ```bash
+bunx biome check --write --files-ignore-unknown=true --no-errors-on-unmatched packages/memory/src
 git add packages/memory/src
 git commit -m "feat(memory): Accept records from any host"
 ```
@@ -4385,6 +4458,40 @@ describe("contractRemember", () => {
         ).toEqual({ id: "k:personal/likes-tea", status: "revised" });
     });
 
+    it("keeps another producer's keys through a revise", async () => {
+        await putFact(root, PERSONAL, {
+            name: "likes-tea",
+            title: "Likes tea",
+            description: "Tea.",
+            type: "user",
+            extra: {},
+            tags: [],
+            importance: null,
+            provenance: {
+                origin: "dorothy",
+                by: "dorothy",
+                at: AT,
+                created: AT,
+            },
+            retired: null,
+            body: "Tea.",
+            foreign: { stale_after: "2027-01-01T00:00:00.000Z" },
+        });
+        await contractRemember(
+            {
+                action: "revise",
+                id: "k:personal/likes-tea",
+                title: "Likes tea",
+                text: "Green tea.",
+                type: "user",
+            },
+            deps(),
+        );
+        expect(file("personal/likes-tea")).toContain(
+            'stale_after: "2027-01-01T00:00:00.000Z"',
+        );
+    });
+
     it("refuses to change what the user wrote", async () => {
         await putFact(root, PERSONAL, {
             name: "likes-tea",
@@ -4486,6 +4593,16 @@ in `factOf`'s provenance, after `by: input.by,`:
 
 ```ts
             ...(input.host === undefined ? {} : { host: input.host }),
+```
+
+and, after `body: input.body.trim(),` in `factOf`, keep what other
+producers wrote, which a revise must not drop:
+
+```ts
+        ...(before?.foreign === undefined ? {} : { foreign: before.foreign }),
+        ...(before?.otherSources === undefined
+            ? {}
+            : { otherSources: before.otherSources }),
 ```
 
 In `recall/remember.ts`, export `guardFor` (add `export` before
@@ -4701,6 +4818,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
+bunx biome check --write --files-ignore-unknown=true --no-errors-on-unmatched packages/memory/src
 git add packages/memory/src
 git commit -m "feat(memory): Remember through the contract"
 ```
@@ -4958,9 +5076,11 @@ async function openId(input: MemoryOpenInput, deps: ToolDeps): Promise<unknown> 
         const fact = id.path.startsWith("personal/")
             ? id.path
             : id.path.slice("projects/".length);
-        return deps.index.exclusive(() =>
+        const opened = await deps.index.exclusive(() =>
             openFact(deps.index, { fact, purpose: PURPOSE }, deps.store.root),
         );
+        // The contract's id, not recall's.
+        return { ...opened, id: input.id };
     }
     const opened = await deps.index.exclusive(() =>
         openConversation(
@@ -5060,6 +5180,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
+bunx biome check --write --files-ignore-unknown=true --no-errors-on-unmatched packages/memory/src/contract
 git add packages/memory/src/contract
 git commit -m "feat(memory): Serve the contract's four tools"
 ```
@@ -5277,6 +5398,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
+bunx biome check --write --files-ignore-unknown=true --no-errors-on-unmatched packages/memory/src/service
 git add packages/memory/src/service
 git commit -m "feat(memory): Keep device tokens as hashes"
 ```
@@ -5300,8 +5422,7 @@ git commit -m "feat(memory): Keep device tokens as hashes"
   ServiceOptions`; `startService(options: ServiceOptions):
   Promise<RunningService>` with `{ url: string; ports: number[]; stop():
   Promise<void> }`; in `run.ts`, `runService`, `runTokenAdd`,
-  `runTokenRevoke`; the entry point `"./service"` exporting those and
-  `runBridge` (Task 17 adds it).
+  `runTokenRevoke`; the entry point `"./service"` exporting those.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -5427,6 +5548,70 @@ describe("the memory service", () => {
         const large = await post("/v1/record", "x".repeat(MAX_BODY + 1024));
         expect(large.status).toBe(413);
         expect((await fetch(`${running?.url}/v1/health`)).status).toBe(200);
+    });
+
+    it("refuses what a web page could send", async () => {
+        await start();
+        const record = {
+            host: "codex",
+            session: "s1",
+            events: [{ sourceId: "a", at: AT, kind: "user", text: "Hi" }],
+        };
+        const fromPage = await post("/v1/record", record, {
+            origin: "https://evil.example",
+        });
+        expect(fromPage.status).toBe(403);
+        const plain = await fetch(`${running?.url}/v1/record`, {
+            method: "POST",
+            headers: { "content-type": "text/plain" },
+            body: JSON.stringify(record),
+        });
+        expect(plain.status).toBe(415);
+        const rebound = await fetch(`${running?.url}/v1/health`, {
+            headers: { host: "evil.example" },
+        });
+        expect(rebound.status).toBe(403);
+    });
+
+    it("answers a GET on /mcp with 405, holding nothing open", async () => {
+        await start();
+        const response = await fetch(`${running?.url}/mcp`, {
+            headers: { accept: "text/event-stream" },
+        });
+        expect(response.status).toBe(405);
+    });
+
+    it("listens on loopback when a further address cannot be had", async () => {
+        const said: string[] = [];
+        running = await startService({
+            env,
+            config,
+            profiles: await loadProfiles(),
+            tokens,
+            review: null,
+            port: 0,
+            listen: ["192.0.2.55"],
+            warn: (message) => said.push(message),
+        });
+        expect((await fetch(`${running.url}/v1/health`)).status).toBe(200);
+        expect(said.some((message) => message.includes("192.0.2.55"))).toBe(
+            true,
+        );
+    });
+
+    it("recalls for a prompt", async () => {
+        await start();
+        const response = await post("/v1/recall", {
+            host: "codex",
+            session: "s1",
+            prompt: "tea",
+        });
+        expect(response.status).toBe(200);
+        expect(Object.keys(await response.json()).sort()).toEqual([
+            "ids",
+            "text",
+            "used",
+        ]);
     });
 
     it("records a session and opens the next with a block", async () => {
@@ -5667,6 +5852,9 @@ export async function startService(
             {
                 session: request.session,
                 transcript: request.transcript,
+                // The launch's directory, which a halt's note keeps, is not
+                // in the contract's envelope; until adapters send it
+                // (delivery), the transcript's own directory stands in.
                 dir: dirname(request.transcript),
                 since: null,
                 ended: false,
@@ -5691,34 +5879,48 @@ export async function startService(
                 throw new ContractError(503, "the store could not be locked");
         }
     };
+    // An engine's proposal, validated as a write: one naming no project,
+    // or refused, is dropped and said.
     const apply = async (proposal: Proposal) => {
-        const id = knowledgeId(knowledgePath(proposal.scope, proposal.name));
-        if (proposal.action === "retire") {
-            return retireFact(
-                store,
-                { scope: proposal.scope, name: proposal.name },
-                {
-                    by: "review",
-                    why: proposal.why,
-                    guard: guardFor(id, false, () => {}),
-                },
-            );
+        if (
+            proposal.scope.kind === "project" &&
+            !isProjectId(proposal.scope.id)
+        ) {
+            warn("a proposal named no project, and was dropped");
+            return;
         }
-        return writeFact(
-            store,
-            {
-                scope: proposal.scope,
-                name: proposal.name,
-                title: proposal.title,
-                description: proposal.description,
-                type: proposal.type,
-                body: proposal.body,
-                origin: "dorothy",
-                by: "review",
-                ...(proposal.from === undefined ? {} : { from: proposal.from }),
-            },
-            guardFor(id, true, () => {}),
-        );
+        const id = knowledgeId(knowledgePath(proposal.scope, proposal.name));
+        const result =
+            proposal.action === "retire"
+                ? await retireFact(
+                      store,
+                      { scope: proposal.scope, name: proposal.name },
+                      {
+                          by: "review",
+                          why: proposal.why,
+                          guard: guardFor(id, false, () => {}),
+                      },
+                  )
+                : await writeFact(
+                      store,
+                      {
+                          scope: proposal.scope,
+                          name: proposal.name,
+                          title: proposal.title,
+                          description: proposal.description,
+                          type: proposal.type,
+                          body: proposal.body,
+                          origin: "dorothy",
+                          by: "review",
+                          ...(proposal.from === undefined
+                              ? {}
+                              : { from: proposal.from }),
+                      },
+                      guardFor(id, true, () => {}),
+                  );
+        if (result.kind === "refused" || result.kind === "failed") {
+            warn(`a proposal for ${id} was dropped: ${result.reason}`);
+        }
     };
 
     const route = async (
@@ -5779,6 +5981,13 @@ export async function startService(
                 return json(200, result);
             }
             case SERVICE_PATHS.mcp: {
+                // Stateless: no stream for a GET to hold a server open.
+                if (request.method !== "POST") {
+                    return new Response(null, {
+                        status: 405,
+                        headers: { allow: "POST" },
+                    });
+                }
                 const project = url.searchParams.get("project");
                 const host = url.searchParams.get("host");
                 const server = createContractServer({
@@ -5802,6 +6011,9 @@ export async function startService(
         }
     };
 
+    // The names the service answers to, filled once it is listening: a
+    // request to any other, as DNS rebinding sends, is refused.
+    const allowedHosts = new Set<string>();
     const handle = async (
         request: Request,
         address: string,
@@ -5809,6 +6021,22 @@ export async function startService(
         const declared = Number(request.headers.get("content-length") ?? 0);
         if (declared > MAX_BODY) {
             return json(413, { error: "the body is over 8 MiB" });
+        }
+        // What a web page could send: no harness names an Origin, and a
+        // page cannot send JSON without one's leave.
+        if (request.headers.has("origin")) {
+            return json(403, { error: "a request from a web page is refused" });
+        }
+        if (!allowedHosts.has(request.headers.get("host") ?? "")) {
+            return json(403, { error: "a request to another name is refused" });
+        }
+        if (
+            request.method === "POST" &&
+            !(request.headers.get("content-type") ?? "").startsWith(
+                "application/json",
+            )
+        ) {
+            return json(415, { error: "the body must be JSON" });
         }
         const local = loopback(address);
         if (!local) {
@@ -5831,17 +6059,40 @@ export async function startService(
         }
     };
 
-    const port = options.port ?? config.service.port;
-    const servers = ["127.0.0.1", ...(options.listen ?? config.service.listen)]
-        .map((hostname) =>
-            Bun.serve({
-                hostname,
-                port,
-                maxRequestBodySize: MAX_BODY * 2,
-                fetch: (request, server) =>
-                    handle(request, server.requestIP(request)?.address ?? ""),
-            }),
-        );
+    const serve = (hostname: string, port: number) =>
+        Bun.serve({
+            hostname,
+            port,
+            maxRequestBodySize: MAX_BODY * 2,
+            fetch: (request, server) =>
+                handle(request, server.requestIP(request)?.address ?? ""),
+        });
+    // Loopback first: if it cannot listen, nothing else is left running.
+    let first: ReturnType<typeof Bun.serve>;
+    try {
+        first = serve("127.0.0.1", options.port ?? config.service.port);
+    } catch (error) {
+        await launched?.close();
+        index.close();
+        throw error;
+    }
+    const port = first.port ?? 0;
+    const servers = [first];
+    for (const name of ["127.0.0.1", "localhost", "[::1]"]) {
+        allowedHosts.add(`${name}:${port}`);
+    }
+    // A further address that cannot be had, as before a private network is
+    // up, is said and passed over.
+    for (const hostname of options.listen ?? config.service.listen) {
+        try {
+            servers.push(serve(hostname, port));
+            allowedHosts.add(
+                `${hostname.includes(":") ? `[${hostname}]` : hostname}:${port}`,
+            );
+        } catch (error) {
+            warn(`could not listen on ${hostname}: ${describeError(error)}`);
+        }
+    }
 
     const extraction = new AbortController();
     let extracting = false;
@@ -5921,7 +6172,7 @@ export async function startService(
     }, EXPORT_MS);
 
     return {
-        url: `http://127.0.0.1:${servers[0]?.port}`,
+        url: `http://127.0.0.1:${port}`,
         ports: servers.map((server) => server.port ?? 0),
         async stop() {
             clearInterval(tick);
@@ -6046,8 +6297,9 @@ export const deviceTokenPath = (env: Env) =>
 Create `packages/memory/src/service.ts`, with the house header:
 
 ```ts
-// The memory service and what the CLI runs of it: --serve, its device
-// tokens, and the --mcp bridge.
+// The memory service and what the CLI runs of it: --serve and its
+// device tokens. The --mcp bridge has an entry point of its own, so a
+// process a host launches each session loads none of this.
 
 export { runService, runTokenAdd, runTokenRevoke } from "./service/run.js";
 ```
@@ -6088,6 +6340,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
+bunx biome check --write --files-ignore-unknown=true --no-errors-on-unmatched packages/memory workspace.test.ts
 git add packages/memory workspace.test.ts
 git commit -m "feat(memory): Serve the contract over HTTP"
 ```
@@ -6103,7 +6356,9 @@ git commit -m "feat(memory): Serve the contract over HTTP"
 
 - Consumes: the schemas, `digestOf`, `size`, `SERVICE_PATHS`,
   `SERVICE_PORT`.
-- Produces: `DEFAULT_URL`, `TIMEOUTS` (`block` 1000, `recall` 500,
+- Produces: `DEFAULT_URL` (loopback at the default port; `clientOf`
+  reads `[service] port` when no URL is given), `TIMEOUTS` (`block` 1000,
+  `recall` 500,
   `record` 2000, `health` 300 ms), `type ClientOptions = { env?: Env;
   url?: string; token?: string | null; fetch?: typeof fetch }`,
   `deviceTokenPath(env)`, `requestBlock(request, options?):
@@ -6116,8 +6371,9 @@ git commit -m "feat(memory): Serve the contract over HTTP"
 The client never throws and never waits past its timeout. A block that
 cannot be fetched comes from the last one kept for its host and project;
 a record that cannot be sent waits in the state directory and goes,
-oldest first, with the next one sent; a record the service refuses (a
-4xx) is dropped, never retried.
+oldest first, with the next one sent; one the service refuses for good
+(400, 404, 413, 415, 422) is dropped. A 401, 403, 408 or 429 may come
+right, as a token is fixed, so that record waits.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -6241,6 +6497,12 @@ describe("sendRecord", () => {
         expect(await sendRecord(record, up())).toBeNull();
         expect(pending()).toEqual([]);
     });
+
+    it("keeps a record refused for its token, which may come right", async () => {
+        status = 401;
+        expect(await sendRecord(record, up())).toBeNull();
+        expect(pending()).toHaveLength(1);
+    });
 });
 ```
 
@@ -6280,6 +6542,7 @@ import {
     type RecallResponse,
     type RecordRequest,
     type RecordResponse,
+    readConfig,
     SERVICE_PATHS,
     SERVICE_PORT,
     xdgDir,
@@ -6303,7 +6566,7 @@ export const TIMEOUTS = {
 
 export type ClientOptions = {
     env?: Env;
-    // DOROTHY_MEMORY_URL, else loopback.
+    // DOROTHY_MEMORY_URL, else loopback at [service] port.
     url?: string;
     // The device's token file by default; null sends none.
     token?: string | null;
@@ -6341,9 +6604,13 @@ async function readToken(env: Env): Promise<string | null> {
 
 export async function clientOf(options: ClientOptions = {}): Promise<Client> {
     const env = options.env ?? process.env;
+    const url =
+        options.url ??
+        env.DOROTHY_MEMORY_URL ??
+        `http://127.0.0.1:${(await readConfig(env)).config.service.port}`;
     return {
         env,
-        url: options.url ?? env.DOROTHY_MEMORY_URL ?? DEFAULT_URL,
+        url,
         token:
             options.token === undefined ? await readToken(env) : options.token,
         fetch: options.fetch ?? fetch,
@@ -6381,7 +6648,9 @@ async function post<T>(
             body: JSON.stringify(body),
             signal: AbortSignal.timeout(timeout),
         });
-        if (response.status >= 400 && response.status < 500) {
+        // Refused for good: what the service cannot take. A token it
+        // does not know, or a rate, may come right, so those wait.
+        if ([400, 404, 413, 415, 422].includes(response.status)) {
             return { kind: "refused" };
         }
         if (!response.ok) {
@@ -6554,6 +6823,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
+bunx biome check --write --files-ignore-unknown=true --no-errors-on-unmatched packages/memory/src/service
 git add packages/memory/src/service
 git commit -m "feat(memory): Add the service's client"
 ```
@@ -6563,7 +6833,8 @@ git commit -m "feat(memory): Add the service's client"
 **Files:**
 
 - Create: `packages/memory/src/service/bridge.ts`
-- Modify: `packages/memory/src/service.ts`
+- Create: `packages/memory/src/bridge.ts` (the entry point)
+- Modify: `packages/memory/package.json`, `workspace.test.ts`
 - Test: `packages/memory/src/service/bridge.test.ts`
 
 **Interfaces:**
@@ -6571,8 +6842,10 @@ git commit -m "feat(memory): Add the service's client"
 - Consumes: `clientOf`, `ensureService`, `identify`, `SERVICE_PATHS`,
   the SDK's `StreamableHTTPClientTransport` and `StdioServerTransport`.
 - Produces: `type BridgeOptions = ClientOptions & { cwd: string; local?:
-  Transport; serve: readonly string[] | null }`; `runBridge(options:
-  BridgeOptions): Promise<number>`, exported from `"./service"`.
+  Transport; serve: readonly string[] | null; host?: string | null }`;
+  `runBridge(options: BridgeOptions): Promise<number>`, exported from the
+  entry point `"./bridge"`, which loads the client alone, never the
+  service.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -6698,6 +6971,8 @@ export type BridgeOptions = ClientOptions & {
     local?: Transport;
     // The command that starts the service here; null never starts it.
     serve: readonly string[] | null;
+    // The host that launched it, named in what its model remembers.
+    host?: string | null;
 };
 
 const describeError = (error: unknown) =>
@@ -6713,6 +6988,9 @@ export async function runBridge(options: BridgeOptions): Promise<number> {
     if (project !== null) {
         target.searchParams.set("project", project);
     }
+    if (options.host !== undefined && options.host !== null) {
+        target.searchParams.set("host", options.host);
+    }
     const remote = new StreamableHTTPClientTransport(target, {
         requestInit: {
             headers:
@@ -6725,7 +7003,7 @@ export async function runBridge(options: BridgeOptions): Promise<number> {
     const closed = new Promise<void>((resolve) => {
         local.onclose = () => resolve();
     });
-    local.onmessage = (message) => {
+    local.onmessage = (message: JSONRPCMessage) => {
         remote.send(message).catch((error: unknown) => {
             const { id } = message as { id?: string | number };
             if (id !== undefined) {
@@ -6740,7 +7018,7 @@ export async function runBridge(options: BridgeOptions): Promise<number> {
             }
         });
     };
-    remote.onmessage = (message) => {
+    remote.onmessage = (message: JSONRPCMessage) => {
         void local.send(message);
     };
     await remote.start();
@@ -6751,11 +7029,18 @@ export async function runBridge(options: BridgeOptions): Promise<number> {
 }
 ```
 
-In `packages/memory/src/service.ts`, add:
+Create `packages/memory/src/bridge.ts`, with the house header:
 
 ```ts
+// --mcp's bridge, its own entry point: a host launches it each session,
+// so it loads the client and the SDK's transports, never the service.
+
 export { runBridge } from "./service/bridge.js";
 ```
+
+In `packages/memory/package.json`, add `"./bridge": "./src/bridge.ts"`
+to `exports`, and in `workspace.test.ts` add `"./bridge",` after `"."`
+in the `memory` entry of `ENTRIES`.
 
 - [ ] **Step 4: Run it to see it pass**
 
@@ -6765,7 +7050,8 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/memory/src
+bunx biome check --write --files-ignore-unknown=true --no-errors-on-unmatched packages/memory/src
+git add packages/memory workspace.test.ts
 git commit -m "feat(memory): Bridge MCP over stdio to the service"
 ```
 
@@ -6779,12 +7065,13 @@ git commit -m "feat(memory): Bridge MCP over stdio to the service"
 
 **Interfaces:**
 
-- Consumes: `runService`, `runTokenAdd`, `runTokenRevoke`, `runBridge`
-  from `@dorothy/memory/service`; `loadDotenv` and `checkoutRoot` from
-  `./claude-hook.js`.
+- Consumes: `runService`, `runTokenAdd` and `runTokenRevoke` from
+  `@dorothy/memory/service`; `runBridge` from `@dorothy/memory/bridge`;
+  `loadDotenv`, `checkoutRoot` and `stripClaude` (exported in this task)
+  from `./claude-hook.js`.
 - Produces: the modes `{ kind: "serve" }`, `{ kind: "token-add"; device:
-  string }`, `{ kind: "token-revoke"; device: string }`, `{ kind:
-  "mcp" }`.
+  string }`, `{ kind: "token-revoke"; device: string }`, `{ kind: "mcp";
+  host: string | null }`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -6812,9 +7099,18 @@ describe("--serve and --mcp", () => {
         }
     });
 
-    it("bridges MCP, taking no arguments", () => {
-        expect(parseArgs(["--mcp"], false)).toEqual({ kind: "mcp" });
-        expect(parseArgs(["--mcp", "x"], false).kind).toBe("usage");
+    it("bridges MCP, naming the host that launched it if given", () => {
+        expect(parseArgs(["--mcp"], false)).toEqual({ kind: "mcp", host: null });
+        expect(parseArgs(["--mcp", "--host", "codex"], false)).toEqual({
+            kind: "mcp",
+            host: "codex",
+        });
+        for (const argv of [
+            ["--mcp", "x"],
+            ["--mcp", "--host", "Not A Host"],
+        ]) {
+            expect(parseArgs(argv, false).kind).toBe("usage");
+        }
     });
 });
 ```
@@ -6834,7 +7130,7 @@ In `args.ts`, add to `Mode` before `{ kind: "claude-hook"; ... }`:
     | { kind: "serve" }
     | { kind: "token-add"; device: string }
     | { kind: "token-revoke"; device: string }
-    | { kind: "mcp" }
+    | { kind: "mcp"; host: string | null }
 ```
 
 In `USAGE`, after the `--recall-server` line:
@@ -6843,15 +7139,16 @@ In `USAGE`, after the `--recall-server` line:
     "       dorothy --serve            her memory service, until stopped",
     "       dorothy --serve --token-add | --token-revoke <device>",
     "                                  give or withdraw a device's token",
-    "       dorothy --mcp              her memory over MCP (stdio), through",
-    "                                  the service",
+    "       dorothy --mcp [--host <host>]",
+    "                                  her memory over MCP (stdio), through",
+    "                                  the service, for the host named",
 ```
 
 In `COMMANDS`, after `"--recall-server": parseRecallServer,`:
 
 ```ts
     "--serve": parseServe,
-    "--mcp": noArguments("--mcp", { kind: "mcp" }),
+    "--mcp": parseMcp,
 ```
 
 and after `parseRecallServer`:
@@ -6882,7 +7179,23 @@ function parseServe(rest: readonly string[]): Mode {
     }
     return { kind: "serve" };
 }
+
+const MCP_USAGE = "--mcp takes [--host <host>], a host as its profile names it";
+
+function parseMcp(rest: readonly string[]): Mode {
+    const parsed = options(rest, { host: { type: "string" } });
+    if (parsed === null || parsed.positionals.length > 0) {
+        return usage(MCP_USAGE);
+    }
+    const { host } = parsed.values;
+    if (host !== undefined && !HOST_ID.test(host)) {
+        return usage(MCP_USAGE);
+    }
+    return { kind: "mcp", host: host ?? null };
+}
 ```
+
+Import `HOST_ID` from `@dorothy/core` in `args.ts`.
 
 - [ ] **Step 4: Run them**
 
@@ -6901,14 +7214,19 @@ const selfServe = () => [
     "--serve",
 ];
 
-// Reviews for the service: Dorothy's .env by path from this checkout,
-// then the agent; off, and said, when either fails.
+// Reviews for the service: Claude Code's variables dropped first, as a
+// service --mcp starts inside her Claude Code would inherit its gateway,
+// which dies with the session; then Dorothy's .env by path from this
+// checkout, then the agent. Off, and said, when either fails.
 async function reviewAgent(): Promise<{
     call: StructuredCall;
     persona: string;
 } | null> {
     try {
-        const { checkoutRoot, loadDotenv } = await import("./claude-hook.js");
+        const { checkoutRoot, loadDotenv, stripClaude } = await import(
+            "./claude-hook.js"
+        );
+        stripClaude(process.env);
         const failure = loadDotenv(
             join(checkoutRoot, ".env"),
             join(checkoutRoot, ".env.keys"),
@@ -6946,14 +7264,19 @@ and to `RUNNERS`:
         const { runTokenRevoke } = await service();
         return runTokenRevoke(mode.device);
     },
-    mcp: async () => {
-        const { runBridge } = await service();
-        return runBridge({ cwd: process.cwd(), serve: selfServe() });
+    mcp: async (mode) => {
+        const { runBridge } = await import("@dorothy/memory/bridge");
+        return runBridge({
+            cwd: process.cwd(),
+            serve: selfServe(),
+            host: mode.host,
+        });
     },
 ```
 
 Import `type StructuredCall` from `@dorothy/core` if `index.ts` does not
-yet.
+yet. In `claude-hook.ts`, export `stripClaude` (add `export` before
+`function stripClaude`).
 
 - [ ] **Step 5: Run the tests to see them pass**
 
@@ -6964,6 +7287,7 @@ Expected: PASS; `tsc` requires a runner for each new mode, which
 - [ ] **Step 6: Commit**
 
 ```bash
+bunx biome check --write --files-ignore-unknown=true --no-errors-on-unmatched packages/cli/src
 git add packages/cli/src
 git commit -m "feat(cli): Add --serve and --mcp"
 ```
@@ -7026,9 +7350,9 @@ In the `[memory]` table example, add after `recall = true ...`:
 extract-cap = 10     # knowledge a review may propose from a chat, 1 to 100
 ```
 
-and in the facts paragraph, replace "one Markdown file each under
-`facts/` in the data directory" with "one Markdown file each under
-`knowledge/` in the data directory".
+and in the paragraph on facts, whose second line begins
+`` `facts/` in the data directory ``, make that `` `knowledge/` in the data
+directory ``.
 
 - [ ] **Step 2: The contract's guide**
 
@@ -7060,9 +7384,10 @@ gives back, and the service that speaks it. The spec is
 - `../engine/`: `MemoryEngine`, and the baseline over today's index,
   salience and reviewer.
 - `../hosts/`: host profiles, one JSON file a harness.
-- `../service/`: the HTTP service (`service.ts`), device tokens
-  (`tokens.ts`), the client (`client.ts`), the stdio bridge
-  (`bridge.ts`) and the CLI's runners (`run.ts`). `recall/server.ts`,
+- `../service/`: the HTTP service (`service.ts`, refusing what a web
+  page could send), device tokens (`tokens.ts`), the client
+  (`client.ts`), the stdio bridge (`bridge.ts`, its own entry point,
+  `"./bridge"`) and the CLI's runners (`run.ts`). `recall/server.ts`,
   `tools.ts` and `../service/` alone import `@modelcontextprotocol/sdk`.
 
 ## Invariants
@@ -7086,23 +7411,23 @@ In `packages/memory/AGENTS.md`:
 
   ```markdown
   - `"./recall-server"` (`src/recall-server.ts`): `runRecallServer` alone;
-    `"./service"` and `"./client"`: read [the contract's guide](./src/contract/AGENTS.md).
+    `"./service"`, `"./client"`, `"./bridge"`: [the contract's guide](./src/contract/AGENTS.md).
   ```
 
 - replace the two lines "Of the `@dorothy` packages it depends on `core`
   alone. `recall/server.ts`" and "is the only file importing
   `@modelcontextprotocol/sdk`." with the one line "Of the `@dorothy`
   packages it depends on `core` alone.";
-- in the `facts/` bullet, replace "Markdown in one canonical form
-  (`file.ts`)" with "Markdown in the Open Knowledge Format under
-  `knowledge/` (`file.ts`; `legacy.ts`, the old form, which `migrate.ts`
-  moves once)", rewrapping the bullet at 80 columns.
+- replace the three-line `facts/` bullet with these three lines:
 
-Run `bun test agents.test.ts`: the file must stay within 150 lines. If
-the `facts/` bullet's rewrap adds a line, join the two `## Tests`
-bullets on the git binary and the contract test into one:
-"- The git binary's tests shut out the user's git configuration; one
-contract test runs against both history engines, and across them."
+  ```markdown
+  - `facts/`: facts as OKF Markdown under `knowledge/` (`file.ts`; `migrate.ts`
+    moves `legacy.ts`'s old form once), personal or a project's, written under the
+    lock, retired and revived (`store.ts`); `commands.ts` the commands.
+  ```
+
+Run `bun test agents.test.ts`: the file must stay within 150 lines,
+which these edits keep.
 
 In `packages/core/AGENTS.md`'s Files, after the `contracts/recall.ts`
 bullet, add:
@@ -7116,10 +7441,11 @@ In `packages/cli/AGENTS.md`'s Files, in the `args.ts` bullet, add after
 its last sentence:
 
 ```markdown
-  `--serve` (with `--token-add` and `--token-revoke`) and `--mcp` run
-  memory's service and its stdio bridge, loaded from
-  `@dorothy/memory/service`; the service loads Dorothy's `.env` by path
-  for reviews, as `--claude-hook` does.
+  `--serve` (with `--token-add` and `--token-revoke`) runs memory's
+  service from `@dorothy/memory/service`, which drops Claude Code's
+  variables and loads Dorothy's `.env` by path for reviews, as
+  `--claude-hook` does; `--mcp [--host <host>]` runs its stdio bridge
+  from `@dorothy/memory/bridge`.
 ```
 
 - [ ] **Step 4: Check everything**
@@ -7130,6 +7456,7 @@ Expected: every step passes, ending with the tests.
 - [ ] **Step 5: Commit**
 
 ```bash
+bunx biome check --write --files-ignore-unknown=true --no-errors-on-unmatched README.md packages
 git add README.md packages
 git commit -m "docs(memory): Document the memory service"
 ```
