@@ -129,7 +129,7 @@ export class Models {
         const key = this.options.env[found.key];
         if (key === undefined || key === "") {
             throw new UsageError(
-                `${found.key} is not set: set it with \`dotenvx set ${found.key}\`, then run under \`dotenvx run --\``,
+                `${found.key} is not set: set it with \`bunx dotenvx set ${found.key}\`, then run under \`bunx dotenvx run --\``,
             );
         }
         this.#keys.add(key);

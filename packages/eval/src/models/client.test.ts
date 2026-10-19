@@ -56,7 +56,7 @@ describe("Models", () => {
         const { url, requests } = serve(() => ({ content: "Hi." }));
         const models = new Models(configOf(url, "EVAL_KEY"), { env: {} });
         await expect(models.complete("answer", ask)).rejects.toThrow(
-            "EVAL_KEY is not set",
+            "EVAL_KEY is not set: set it with `bunx dotenvx set EVAL_KEY`, then run under `bunx dotenvx run --`",
         );
         expect(requests).toHaveLength(0);
     });
