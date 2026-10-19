@@ -92,6 +92,17 @@ describe("Models", () => {
         expect(failureOf(error)).not.toContain("secret-123");
     });
 
+    it("puts out a key in a thrown value that is no Error", async () => {
+        const models = new Models(configOf("http://127.0.0.1:9", "EVAL_KEY"), {
+            env: { EVAL_KEY: "secret-123" },
+        });
+        models.chat("answer");
+        const error = await models
+            .call(() => Promise.reject("bad key secret-123"))
+            .catch((e) => e);
+        expect(failureOf(error)).toBe("bad key [key]");
+    });
+
     it("turns LangSmith's tracing off", () => {
         for (const name of [
             "LANGSMITH_TRACING",

@@ -172,17 +172,19 @@ export class Models {
         }
     }
 
-    // A provider may echo a key in its refusal: the error is copied with
-    // every key read put out, its status kept.
+    // A provider may echo a key in its refusal: the error, or the string
+    // form of a value that is none, is copied with every key read put out,
+    // its status kept.
     #redacted(error: unknown): unknown {
-        if (!(error instanceof Error) || error instanceof UsageError) {
+        if (error instanceof UsageError) {
             return error;
         }
-        let message = error.message;
+        const original = error instanceof Error ? error.message : String(error);
+        let message = original;
         for (const key of this.#keys) {
             message = message.replaceAll(key, "[key]");
         }
-        if (message === error.message) {
+        if (message === original) {
             return error;
         }
         const copy = new Error(message);
