@@ -116,6 +116,46 @@ describe("sealPending", () => {
 });
 
 describe("Mirror", () => {
+    it("does not report a push when no sealed branch exists", async () => {
+        const repo = binaryRepo(join(tempRoot(), "empty"), { env: TEST_ENV });
+        await repo.init();
+        await repo.setRemote("mirror", await bareRepo());
+        const { mirror } = mirrorOf(repo);
+        expect((await mirror.push()).kind).toBe("nothing");
+    });
+    it.each([
+        ["plain text", "not a sealed bundle"],
+        ["dorothy-sealed 2\nnonce\nbody", "version 2"],
+    ])(
+        "reports the newest bundle's actual problem: %s",
+        async (bytes, reason) => {
+            const repo = await repoWith({ "tags.json": "{}\n" });
+            await repo.appendSealed(
+                sealedName(1),
+                new TextEncoder().encode(bytes),
+                SEALED_README,
+                "seal 1",
+            );
+            await repo.setRef(
+                SEALED_THROUGH,
+                (await repo.resolve(MAIN)) as string,
+            );
+            await repo.setRemote("mirror", await bareRepo());
+            const { mirror, warnings } = mirrorOf(repo);
+            await mirror.push();
+            expect(warnings.join("\n")).toContain(reason);
+            expect(await repo.sealedNames()).toEqual([sealedName(1)]);
+        },
+    );
+
+    it("warns of a wrong key even when no commit is waiting", async () => {
+        const repo = await repoWith({ "tags.json": "{}\n" });
+        await repo.setRemote("mirror", await bareRepo());
+        await mirrorOf(repo).mirror.push();
+        const { mirror, warnings } = mirrorOf(repo, { key: OTHER });
+        expect((await mirror.push()).kind).toBe("wrong-key");
+        expect(warnings.join("\n")).toContain("does not open");
+    });
     it("builds a fixed snapshot outside the write lock", async () => {
         const repo = await repoWith({ "tags.json": "{}\n" });
         const first = await repo.resolve(MAIN);
@@ -438,8 +478,11 @@ describe("recover", () => {
         // Whatever comes next never extends the broken chain.
         await commit(fresh, { "tags.json": "{  }\n" }, "three");
         await fresh.setRemote("mirror", bare);
-        const { mirror } = mirrorOf(fresh);
+        const { mirror, warnings } = mirrorOf(fresh);
         expect((await mirror.push()).kind).toBe("failed");
+        expect(warnings.join("\n")).toContain(
+            "--recover into an empty directory",
+        );
     });
 
     it("says why when the mirror can't be reached", async () => {

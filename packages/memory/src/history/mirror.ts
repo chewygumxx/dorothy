@@ -29,15 +29,21 @@ export const WRONG_KEY =
 
 // Whether the key opens the newest sealed bundle, as every bundle in the
 // chain must; true when nothing is sealed yet.
+export async function sealedProblem(
+    repo: MemoryRepo,
+    key: Uint8Array,
+): Promise<string | null> {
+    const newest = (await repo.sealedNames()).at(-1);
+    if (newest === undefined) return null;
+    const opened = await unseal(await repo.sealedFile(newest), key);
+    return opened.ok ? null : opened.reason;
+}
+
 export async function opensSealed(
     repo: MemoryRepo,
     key: Uint8Array,
 ): Promise<boolean> {
-    const newest = (await repo.sealedNames()).at(-1);
-    return (
-        newest === undefined ||
-        (await unseal(await repo.sealedFile(newest), key)).ok
-    );
+    return (await sealedProblem(repo, key)) === null;
 }
 
 export type Sealed = "sealed" | "nothing" | "wrong-key";
@@ -96,6 +102,7 @@ export async function waiting(repo: MemoryRepo): Promise<boolean> {
 
 export type PushOutcome =
     | { kind: "no-mirror" }
+    | { kind: "nothing" }
     | { kind: "no-key" }
     | { kind: "pushed"; sealed: boolean }
     // Nothing new was sealed; what was sealed before is pushed.
@@ -186,7 +193,11 @@ export class Mirror {
             if (this.#stopped) {
                 return { kind: "stopped" };
             }
-            const sealing = sealPending(repo, key, lock);
+            const problem = await sealedProblem(repo, key);
+            const sealing =
+                problem === null
+                    ? sealPending(repo, key, lock)
+                    : Promise.resolve("wrong-key" as const);
             this.#sealing = sealing.then(
                 () => {},
                 () => {},
@@ -198,16 +209,25 @@ export class Mirror {
                 this.#sealing = null;
             }
             if (sealed === "wrong-key") {
-                warn(WRONG_KEY);
+                warn(
+                    problem === null ||
+                        problem.startsWith("it does not open with this key")
+                        ? WRONG_KEY
+                        : `history: the newest sealed bundle cannot be opened (${problem}); nothing new was sealed`,
+                );
             }
-            if ((await repo.resolve(SEALED)) !== null) {
-                await repo.push(MIRROR, "sealed", this.#options.token());
-            }
+            if ((await repo.resolve(SEALED)) === null)
+                return { kind: "nothing" };
+            await repo.push(MIRROR, "sealed", this.#options.token());
             return sealed === "wrong-key"
                 ? { kind: "wrong-key" }
                 : { kind: "pushed", sealed: sealed === "sealed" };
         } catch (error) {
-            const reason = describeError(error);
+            const detail = describeError(error);
+            const reason =
+                /non-fast-forward|fetch first|not fast forward/i.test(detail)
+                    ? `${detail}; the mirror already holds sealed history: use its original key and --recover into an empty directory, or choose a new empty mirror`
+                    : detail;
             warn(`history: couldn't push to the mirror (${reason})`);
             this.schedule();
             return { kind: "failed", reason };

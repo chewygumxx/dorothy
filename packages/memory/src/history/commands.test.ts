@@ -11,6 +11,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "bun:test";
 import {
     appendFileSync,
+    chmodSync,
     existsSync,
     readdirSync,
     readFileSync,
@@ -375,6 +376,47 @@ describe("runCheck", () => {
 });
 
 describe("runMirror", () => {
+    it("checks the key when showing mirror status", async () => {
+        const bare = await bareRepo();
+        const key = newKey();
+        expect(
+            await runMirror(bare, {
+                ...options(),
+                env: { ...env, DOROTHY_MIRROR_KEY: key },
+            }),
+        ).toBe(0);
+        err = capture();
+        expect(
+            await runMirror(null, {
+                ...options(),
+                env: { ...env, DOROTHY_MIRROR_KEY: newKey() },
+            }),
+        ).toBe(1);
+        expect(err.text).toContain("does not open");
+    });
+
+    it("reports an unreadable local bundle without rejecting", async () => {
+        const bare = await bareRepo();
+        const keyed = {
+            ...options(),
+            env: { ...env, DOROTHY_MIRROR_KEY: newKey() },
+        };
+        expect(await runMirror(bare, keyed)).toBe(0);
+        const child = Bun.spawn(
+            ["git", "rev-parse", "refs/heads/sealed:bundles/000001.enc"],
+            { cwd: data(), env: TEST_ENV, stdout: "pipe" },
+        );
+        const oid = (await new Response(child.stdout).text()).trim();
+        expect(await child.exited).toBe(0);
+        const blob = data(`.git/objects/${oid.slice(0, 2)}/${oid.slice(2)}`);
+        chmodSync(blob, 0);
+        try {
+            await expect(runMirror(bare, keyed)).resolves.toBe(1);
+            expect(err.text).toContain("dorothy:");
+        } finally {
+            chmodSync(blob, 0o600);
+        }
+    });
     it("says when there is no mirror yet", async () => {
         expect(await runMirror(null, options())).toBe(0);
         expect(out.text).toBe(

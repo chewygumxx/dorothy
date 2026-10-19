@@ -26,7 +26,7 @@ import {
     openHistory,
 } from "./history.js";
 import { fileKind, lint } from "./lint.js";
-import { Mirror, opensSealed, recover, waiting } from "./mirror.js";
+import { Mirror, recover, sealedProblem, waiting } from "./mirror.js";
 import { openRepo } from "./open.js";
 import {
     type Engine,
@@ -619,6 +619,17 @@ export async function runMirror(
     const repo = history.repo;
     try {
         if (target === null) {
+            if ((await repo.remote(MIRROR)) !== null) {
+                const problem = await keyProblem(
+                    env.DOROTHY_MIRROR_KEY,
+                    repo,
+                    cwd,
+                );
+                if (problem !== null) {
+                    err.write(`dorothy: ${problem}\n`);
+                    return 1;
+                }
+            }
             return await showMirror(repo, out);
         }
         const existing = env.DOROTHY_MIRROR_KEY;
@@ -647,6 +658,11 @@ export async function runMirror(
         }
         out.write(`Pushed to ${target}\n`);
         return 0;
+    } catch (error) {
+        err.write(
+            `dorothy: couldn't set the mirror: ${describeError(error)}\n`,
+        );
+        return 1;
     } finally {
         opened.close();
     }
@@ -682,9 +698,11 @@ async function keyProblem(
         return "DOROTHY_MIRROR_KEY is set but is not 32 bytes of base64; it is left as it is, and no mirror is set";
     }
     if (key !== null) {
-        return (await opensSealed(repo, key))
-            ? null
-            : "DOROTHY_MIRROR_KEY does not open the bundles already sealed; set the key they were sealed with. Nothing was changed";
+        const problem = await sealedProblem(repo, key);
+        if (problem === null) return null;
+        return problem.startsWith("it does not open with this key")
+            ? "DOROTHY_MIRROR_KEY does not open the bundles already sealed; set the key they were sealed with. Nothing was changed"
+            : `the newest sealed bundle cannot be opened (${problem}); nothing was changed`;
     }
     if ((await repo.sealedNames()).length > 0) {
         return "DOROTHY_MIRROR_KEY is not set, and the bundles already sealed need the key they were sealed with; set that one with dotenvx set. Nothing was changed";
