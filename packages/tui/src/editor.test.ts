@@ -60,6 +60,7 @@ describe("editing a draft", () => {
 
     it("moves to the start or end of the logical line", () => {
         expect(lineStart(at("ab\ncd", 4)).cursor).toBe(3);
+        expect(lineStart(at("\nab", 0)).cursor).toBe(0);
         expect(lineEnd(at("ab\ncd", 1)).cursor).toBe(2);
         expect(lineEnd(at("ab\ncd", 4)).cursor).toBe(5);
     });
@@ -80,6 +81,10 @@ describe("editing a draft", () => {
         expect(killLineStart(at("ab\ncd"))).toEqual({
             draft: at("ab\n"),
             killed: "cd",
+        });
+        expect(killLineStart(at("\nhello", 0))).toEqual({
+            draft: at("\nhello", 0),
+            killed: "",
         });
         expect(killWordBack(at("one two"))).toEqual({
             draft: at("one "),

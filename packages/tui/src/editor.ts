@@ -101,9 +101,14 @@ export function wordRight(draft: Draft): Draft {
     return { ...draft, cursor };
 }
 
+// At offset zero there is no line to look back along: lastIndexOf clamps a
+// negative start to zero and would find a newline at the very start.
 export const lineStart = (draft: Draft): Draft => ({
     ...draft,
-    cursor: draft.text.lastIndexOf("\n", draft.cursor - 1) + 1,
+    cursor:
+        draft.cursor === 0
+            ? 0
+            : draft.text.lastIndexOf("\n", draft.cursor - 1) + 1,
 });
 
 export function lineEnd(draft: Draft): Draft {
