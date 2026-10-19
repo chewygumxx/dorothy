@@ -88,8 +88,14 @@ yet run: the owner reviews its generated questions, then runs her
 memory beside the lexical baseline and full context, with models named
 in `eval.toml`.
 
+The harnesses to target first are not yet chosen, as the minutes left
+open, with how her persona reaches each (generated files, the proxy or
+both) and how each one's sessions reach her memory (hooks, session
+files or the proxy). Existing tools, such as rulesync, are researched
+before anything bespoke is built.
+
 - **Status**: Store, Bodies, Contract and Evaluation Built; the First
-  Run Next, then the Engine
+  Run and the Choice of Harnesses Next, then the Engine
 - **Required**: Requisites Fulfilled
 - **Rationale**: Wherever she goes, her memory follows with her. The
   contract gives every harness one service and every engine one
@@ -97,8 +103,9 @@ in `eval.toml`.
   user judges weak. Its first run comes first, as the engine's spec
   chooses on its numbers; should those leave the choice open, the
   engine's spec may first ask for adapters to the field's systems.
-  Recording waits on no number and may run beside it, and delivery
-  follows the choice of harnesses.
+  With the contract built, memory no longer holds back the choice of
+  harnesses, which can be made beside the run. Recording and delivery
+  both follow that choice.
 
 ### Model Providers
 
@@ -378,7 +385,10 @@ In order of completion.
   loose ends.
 - 2026-10-19: Dorothy's Memory has built its evaluation, `@dorothy/eval`,
   with every finding it deferred addressed. Its first run, by the owner,
-  is next within the phase, and the engine follows on its numbers;
-  recording may run beside it. Candidates gain the evaluation's later
-  systems and checks, and the unlogged tool failure the contract's
-  final review left.
+  is next within the phase, and the engine follows on its numbers.
+  Candidates gain the evaluation's later systems and checks, and the
+  unlogged tool failure the contract's final review left.
+- 2026-10-19: The choice of harnesses, which the protocol diversity
+  minutes deferred until memory was designed, joins the first run as
+  next, with its open questions; recording and delivery both follow it,
+  as recording is of the harnesses chosen.
