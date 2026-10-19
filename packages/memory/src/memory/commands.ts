@@ -395,7 +395,7 @@ export async function runTagsEdit({
             return 1;
         }
         const shown = read.kind === "ok" ? read.vocabulary : EMPTY_VOCABULARY;
-        const counts = await viewCounts(index, env, now, path);
+        const counts = await viewCounts(index, env, now, path, err);
         return await editLoop(
             edit,
             err,
@@ -430,20 +430,25 @@ async function viewCounts(
     env: Env,
     now: () => Date,
     path: string,
+    err: Output,
 ): Promise<Map<string, number>> {
     if (index === null) {
         return new Map();
     }
     try {
-        await syncIndex(
+        for (const warning of await syncIndex(
             index,
             transcriptDir(env),
             now().getTime(),
             path,
             dataRoot(env),
-        );
+        ))
+            err.write(`dorothy: ${warning}\n`);
         return await index.exclusive(() => carrierCounts(index));
-    } catch {
+    } catch (error) {
+        err.write(
+            `dorothy: conversation counts are unavailable: ${describeError(error)}\n`,
+        );
         return new Map();
     }
 }

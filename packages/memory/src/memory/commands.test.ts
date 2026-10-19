@@ -8,7 +8,7 @@
 //
 //
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -476,6 +476,29 @@ describe("runMemoryEdit", () => {
 describe("runTags", () => {
     const tagsFile = () => join(dir, "dorothy", "tags.json");
 
+    it.each(["missing", "empty"])(
+        "prints nothing for a %s vocabulary",
+        async (kind) => {
+            if (kind === "empty")
+                await writeFile(
+                    tagsFile(),
+                    JSON.stringify({ v: 1, rev: 0, concepts: {} }),
+                );
+            const out = capture();
+            const err = capture();
+            expect(await runTags({ env, out, err })).toBe(0);
+            expect(out.text).toBe("");
+            expect(err.text).toBe("");
+        },
+    );
+
+    it("reports sync warnings while listing tags", async () => {
+        await mkdir(join(transcripts, `${phrase(1)}.jsonl`));
+        const err = capture();
+        expect(await runTags({ env, out: capture(), err })).toBe(0);
+        expect(err.text).toContain(`${phrase(1)}.jsonl`);
+    });
+
     it("prints the tree, counting hidden chats too", async () => {
         const [a, b] = [phrase(1), phrase(2)];
         await writeFile(
@@ -542,6 +565,92 @@ describe("runTagsEdit", () => {
             },
         },
     };
+
+    it.each([1, 2])(
+        "warns if index operation %s fails but still opens the editor",
+        async (at) => {
+            await writeFile(tagsFile(), JSON.stringify(vocabulary));
+            const index = RecallIndex.open(indexPath(env));
+            const opening = spyOn(RecallIndex, "open").mockReturnValue(index);
+            const exclusive = index.exclusive;
+            let calls = 0;
+            const broken = spyOn(index, "exclusive").mockImplementation(
+                <T>(work: () => T | Promise<T>) => {
+                    calls++;
+                    if (calls === at)
+                        return Promise.reject(
+                            new Error("fixture index failure"),
+                        );
+                    return exclusive(work);
+                },
+            );
+            const err = capture();
+            let shown = "";
+            try {
+                expect(
+                    await runTagsEdit({
+                        env,
+                        err,
+                        edit: async (text) => {
+                            shown = text;
+                            return { ok: true, text };
+                        },
+                    }),
+                ).toBe(0);
+                expect(shown).toContain("Tag: memory");
+                expect(err.text).toContain("fixture index failure");
+            } finally {
+                broken.mockRestore();
+                opening.mockRestore();
+            }
+        },
+    );
+
+    it("passes sync warnings into the editor command's diagnostics", async () => {
+        await writeFile(tagsFile(), JSON.stringify(vocabulary));
+        await mkdir(join(transcripts, `${phrase(1)}.jsonl`));
+        const err = capture();
+        expect(
+            await runTagsEdit({
+                env,
+                err,
+                edit: async (text) => ({ ok: true, text }),
+            }),
+        ).toBe(0);
+        expect(err.text).toContain(`${phrase(1)}.jsonl`);
+    });
+
+    it("reopens when applying the edit refuses an unknown parent", async () => {
+        await writeFile(tagsFile(), JSON.stringify(vocabulary));
+        const before = await readFile(tagsFile(), "utf8");
+        let calls = 0;
+        expect(
+            await runTagsEdit({
+                env,
+                err: capture(),
+                edit: async (text) => {
+                    calls++;
+                    if (calls === 1)
+                        return {
+                            ok: true,
+                            text: text.replace("Under:", "Under: missing"),
+                        };
+                    expect(text).toStartWith(
+                        "# error: Under names no concept: missing\n",
+                    );
+                    expect(await readFile(tagsFile(), "utf8")).toBe(before);
+                    return {
+                        ok: true,
+                        text: text
+                            .replace("Under: missing", "Under:")
+                            .replace("Tag: memory", "Tag: remembering"),
+                    };
+                },
+            }),
+        ).toBe(0);
+        expect(calls).toBe(2);
+        expect(await readFile(tagsFile(), "utf8")).toContain("remembering");
+    });
 
     it("records the edit, counting the concepts it changed", async () => {
         await writeFile(tagsFile(), JSON.stringify(vocabulary));
