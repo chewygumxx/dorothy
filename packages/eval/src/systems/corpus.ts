@@ -85,7 +85,8 @@ export function knowledgeText(knowledge: ArchiveKnowledge): string {
 }
 
 // The turns that best match terms, each with its neighbours, in order,
-// within chars; the first turns where none match.
+// within chars; the first turns where none match. A first turn too long
+// for chars is excerpted around its first match, not left out.
 export function passage(
     conversation: ArchiveConversation,
     terms: readonly string[],
@@ -113,9 +114,45 @@ export function passage(
             chosen.add(near);
             if (render().length > chars) {
                 chosen.delete(near);
-                return clip(render(), chars);
+                return chosen.size === 0
+                    ? excerpt(
+                          conversation,
+                          turns[near] as ArchiveTurn,
+                          terms,
+                          chars,
+                      )
+                    : clip(render(), chars);
             }
         }
     }
     return clip(render(), chars);
+}
+
+const ELLIPSIS = "\u2026";
+
+// One turn cut to the room chars leaves it, around the first of terms it
+// holds, or from its start.
+function excerpt(
+    conversation: ArchiveConversation,
+    turn: ArchiveTurn,
+    terms: readonly string[],
+    chars: number,
+): string {
+    const room =
+        chars -
+        conversationText(conversation, [{ ...turn, text: "" }]).length -
+        2 * ELLIPSIS.length;
+    if (room <= 0) {
+        return clip(conversationText(conversation, []), chars);
+    }
+    const hit = [...turn.text.matchAll(/[\p{L}\p{N}]+/gu)].find((word) =>
+        terms.includes(word[0].toLowerCase().normalize("NFKC")),
+    );
+    const end = Math.min(
+        turn.text.length,
+        Math.max(0, (hit?.index ?? 0) - Math.floor(room / 4)) + room,
+    );
+    const start = Math.max(0, end - room);
+    const text = `${start > 0 ? ELLIPSIS : ""}${turn.text.slice(start, end)}${end < turn.text.length ? ELLIPSIS : ""}`;
+    return conversationText(conversation, [{ ...turn, text }]);
 }
