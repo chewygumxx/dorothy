@@ -409,6 +409,42 @@ describe("Compaction: saves and other writers", () => {
         expect(armed).toEqual([1]);
     });
 
+    it("checks the turns about to leave, with the number of the first, before asking Dorothy", async () => {
+        const h = harness({ ready: { ok: true } });
+        const session = h.open();
+        session.send("abcd");
+        h.sessions[0]?.reply(250);
+        session.send("next");
+        await until(() => h.calls.length === 1);
+        // Four turns of history, an exchange, and a message held: the
+        // oldest two leave, as the tail of four tokens allows.
+        expect(h.checked).toEqual([{ from: 1, turns: HISTORY.slice(0, 2) }]);
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.saved.length === 1);
+    });
+
+    it("stops compacting, without asking Dorothy, when the turns leaving are not the conversation's own", async () => {
+        const h = harness({
+            ready: (outgoing) =>
+                outgoing?.from === 1
+                    ? {
+                          ok: false,
+                          reason: "turn 1 here is not turn 1 of its transcript",
+                      }
+                    : { ok: true },
+        });
+        const session = h.open();
+        session.send("abcd");
+        h.sessions[0]?.reply(250);
+        session.send("next");
+        await until(() => h.sessions[0]?.sent.includes("next") === true);
+        expect(h.calls).toHaveLength(0);
+        expect(h.saved).toHaveLength(0);
+        expect(warnings(h.events)[0]).toBe(
+            "compaction: off until the next launch; turn 1 here is not turn 1 of its transcript",
+        );
+    });
+
     it("stops compacting, without asking Dorothy, once the notes became unreadable after launch", async () => {
         const h = harness({
             ready: { ok: false, reason: "its notes can't be read (not JSON)" },

@@ -34,6 +34,10 @@ export type SaveResult =
     | { ok: true; clusters?: readonly Cluster[] }
     | { ok: false; reason: string };
 
+// The turns a run is about to compact, and the number of the first, as the
+// session counts them.
+export type Outgoing = { from: number; turns: readonly Turn[] };
+
 export type CompactionOptions = {
     config: Pick<CompactionConfig, "soft" | "hard" | "tail">;
     // The idle time before compacting, as reviews wait.
@@ -51,10 +55,12 @@ export type CompactionOptions = {
     record(entry: { through: number; clusters: number }): Promise<void>;
     // Estimated tokens of the prompt a session with this seed starts with.
     estimate(seed: Seed): number;
-    // Checked before each call to Dorothy: a refusal, such as notes that
-    // can no longer be read, turns compaction off until the next launch,
-    // and its reason ends the warning that says so.
-    ready?(): Promise<SaveResult>;
+    // Checked before each call to Dorothy, given the turns about to leave
+    // (null when none would): a refusal, such as notes that can no longer
+    // be read, or turns that are not the conversation's own, turns
+    // compaction off until the next launch, and its reason ends the warning
+    // that says so.
+    ready?(outgoing: Outgoing | null): Promise<SaveResult>;
     // A claim for one chain of runs, made afresh for each: chains, even two
     // of one TUI, exclude each other as two TUIs do. Each run of a chain
     // takes it: the first gets it, and the runs chained after it renew it.

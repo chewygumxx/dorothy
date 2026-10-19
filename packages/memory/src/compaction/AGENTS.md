@@ -28,9 +28,13 @@ verbatim tail into topical clusters with an abstract each.
 - `clusters.ts`: the prompt and its checks.
 - `plan.ts`: the turns' ranges and pressure.
 - `session.ts`: `Compaction` wraps the session.
-- `run.ts`, on `shared.ts`'s state: a pass appends the clusters to the
-  sidecar, writes a `compaction` transcript event, and swaps in a session
-  seeded with the abstracts and the turns after them.
+- `run.ts`, on `shared.ts`'s state: a pass first checks (`ready`) that the
+  notes can be read and the turns leaving are the transcript's own at
+  those numbers (`turnsAgree`, in `memory/open.ts`), for another chat on
+  the conversation puts its turns between this chat's, and compaction is
+  then off until the next launch. It appends the clusters to the sidecar,
+  writes a `compaction` transcript event, and swaps in a session seeded
+  with the abstracts and the turns after them.
 
 ## Tests
 

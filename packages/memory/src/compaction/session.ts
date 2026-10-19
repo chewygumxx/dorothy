@@ -20,7 +20,13 @@ import {
 } from "./shared.js";
 
 export { CLAIM_RETRY_MS } from "./run.js";
-export type { Claim, CompactionOptions, SaveResult, Seed } from "./shared.js";
+export type {
+    Claim,
+    CompactionOptions,
+    Outgoing,
+    SaveResult,
+    Seed,
+} from "./shared.js";
 export { MAX_FAILURES, QUIT_GRACE_MS } from "./shared.js";
 
 type Held = { text: string; interrupted: boolean };

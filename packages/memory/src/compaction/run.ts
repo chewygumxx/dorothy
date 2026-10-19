@@ -11,7 +11,7 @@
 import { sleep, type Turn } from "@dorothy/core";
 import type { Cluster } from "../memory/sidecar.js";
 import { type CompactOutcome, compact } from "./compact.js";
-import { callCap, covered } from "./plan.js";
+import { callCap, covered, outgoing } from "./plan.js";
 import {
     type Claim,
     describeError,
@@ -68,8 +68,8 @@ export type Landing =
 
 const NONE: Landing = { kind: "none" };
 
-// One run: the claim, the check that the notes are readable, Dorothy's
-// call, the wait for a reply streaming meanwhile, then saving or taking up
+// One run: the claim, the check that the notes are readable and the turns
+// leaving are the conversation's own, Dorothy's call, the wait for a reply streaming meanwhile, then saving or taking up
 // another writer's clusters, and recording. Throws, such as a claim's or a
 // save's, reach the caller.
 export async function compactOnce(
@@ -81,15 +81,27 @@ export async function compactOnce(
     if (chained !== null && !(await takeClaim(chained, shared, signal, host))) {
         return NONE;
     }
-    const ready = (await shared.options.ready?.()) ?? { ok: true };
+    // One snapshot of the turns, for the check and the call alike.
+    const turns = [...host.turns()];
+    const { config } = shared.options;
+    const cap = callCap(config);
+    const range = outgoing(turns, shared.clusters, config.tail, cap);
+    const ready = (await shared.options.ready?.(
+        range === null
+            ? null
+            : {
+                  from: range.from,
+                  turns: turns.slice(range.from - 1, range.through),
+              },
+    )) ?? { ok: true };
     if (!ready.ok) {
         return { kind: "off", reason: ready.reason };
     }
     const outcome = await compact({
-        turns: [...host.turns()],
+        turns,
         clusters: shared.clusters,
-        tail: shared.options.config.tail,
-        cap: callCap(shared.options.config),
+        tail: config.tail,
+        cap,
         persona: shared.options.persona,
         recollect: shared.options.recollect,
         call: shared.options.call,
@@ -119,7 +131,7 @@ export async function compactOnce(
     // the landing follow the compacted event, which clears compaction's
     // warnings.
     const after: string[] = [];
-    const turns = host.turns();
+    const sent = host.turns();
     // Quitting waits for the save and record up to QUIT_GRACE_MS, then
     // leaves them to go on.
     const saved = await shared.unlessStopped(
@@ -127,7 +139,7 @@ export async function compactOnce(
             keep(
                 shared,
                 outcome,
-                turns.findLastIndex((turn) => turn.role === "user") + 1,
+                sent.findLastIndex((turn) => turn.role === "user") + 1,
                 after,
             ),
         ),
