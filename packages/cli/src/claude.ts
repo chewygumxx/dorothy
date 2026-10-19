@@ -816,29 +816,49 @@ export async function runClaude(
     if (typeof launch === "number") {
         return launch;
     }
-    const child = spawn(launch.cmd, launch.env, launch.cwd);
     const ignore = () => {};
-    const handlers = FORWARDED.map(
-        (signal) => [signal, () => child.kill(signal)] as const,
-    );
-    signals.on("SIGINT", ignore);
-    for (const [signal, handler] of handlers) {
-        signals.on(signal, handler);
-    }
+    const handlers: (readonly [NodeJS.Signals, () => void])[] = [];
     try {
+        const child = spawn(launch.cmd, launch.env, launch.cwd);
+        signals.on("SIGINT", ignore);
+        for (const signal of FORWARDED) {
+            const handler = () => child.kill(signal);
+            handlers.push([signal, handler]);
+            signals.on(signal, handler);
+        }
         return await child.exited;
     } finally {
-        signals.off("SIGINT", ignore);
-        for (const [signal, handler] of handlers) {
-            signals.off(signal, handler);
+        runAll([
+            () => signals.off("SIGINT", ignore),
+            ...handlers.map(([signal, handler]) => () => {
+                signals.off(signal, handler);
+            }),
+            () => launch.gateway.stop(),
+            launch.cleanup,
+            () => warnDrift(launch.gateway.stats, write),
+            // Its sessions recorded, synced and reviewed as SessionEnd
+            // would, by a process that outlives this one: whatever
+            // failed above, and a claude that never started.
+            () => {
+                if (launch.launch !== null) {
+                    catchUp(launch.launch);
+                }
+            },
+        ]);
+    }
+}
+
+// Every step runs though one throws; the first error is thrown after.
+function runAll(steps: readonly (() => void)[]): void {
+    const failures: unknown[] = [];
+    for (const step of steps) {
+        try {
+            step();
+        } catch (error) {
+            failures.push(error);
         }
-        launch.gateway.stop();
-        launch.cleanup();
-        warnDrift(launch.gateway.stats, write);
-        // Its sessions recorded, synced and reviewed as SessionEnd would,
-        // by a process that outlives this one.
-        if (launch.launch !== null) {
-            catchUp(launch.launch);
-        }
+    }
+    if (failures.length > 0) {
+        throw failures[0];
     }
 }

@@ -493,6 +493,40 @@ describe("dorothy --claude records her sessions", () => {
         ]);
     });
 
+    it("catches up its launch though claude never started", async () => {
+        const { calls, deps } = harness(0, true);
+        deps.spawn = () => {
+            throw new Error("ENOENT: spawn claude");
+        };
+        await expect(runClaude([], deps)).rejects.toThrow("ENOENT");
+        expect(calls.stopped).toBe(true);
+        expect(calls.spawned).toEqual([
+            [...SELF, "--claude-hook", "--catch-up", LAUNCH],
+        ]);
+    });
+
+    it("cleans up and catches up though stopping the gateway throws", async () => {
+        const { calls, deps } = harness(0, true);
+        const removed: string[] = [];
+        deps.startGateway = () => ({
+            url: "http://127.0.0.1:4321",
+            stats: { injected: 0, drift: 0 },
+            stop: () => {
+                throw new Error("already closed");
+            },
+        });
+        deps.read = () => '{"model":"x"}';
+        deps.writePrivate = () => "/run/dorothy/settings-1.json";
+        deps.remove = (path) => removed.push(path);
+        await expect(
+            runClaude(["--settings", "mine.json"], deps),
+        ).rejects.toThrow("already closed");
+        expect(removed).toEqual(["/run/dorothy/settings-1.json"]);
+        expect(calls.spawned).toEqual([
+            [...SELF, "--claude-hook", "--catch-up", LAUNCH],
+        ]);
+    });
+
     it("catches up launches left behind and tells what hooks left, with memory off too", async () => {
         const { calls, deps, memory } = harness(0, false);
         memory.stale = [OTHER];
