@@ -64,7 +64,8 @@ function knowledgeCandidate(item: KnowledgeItem): Candidate {
         id: item.id,
         render: (tier) =>
             tier === "full" ? full : tier === "summary" ? summary : head,
-        richest: "full",
+        // A body that is only space adds nothing to the summary.
+        richest: fact.body.trim() === "" ? "summary" : "full",
     };
 }
 
@@ -84,11 +85,11 @@ function episodeCandidate(item: EpisodeItem): Candidate {
                 `<conversation id="${item.id}"`,
             ),
         richest:
-            note.description === null
-                ? "title"
-                : note.abstract === null
+            note.abstract !== null
+                ? "full"
+                : note.description !== null
                   ? "summary"
-                  : "full",
+                  : "title",
     };
 }
 

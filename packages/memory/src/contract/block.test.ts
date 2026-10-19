@@ -101,8 +101,11 @@ describe("buildBlock", () => {
             { project: null, budget: frame + 160 },
             many,
         );
-        expect(block.items[0]?.tier).not.toBe("full");
-        expect(block.items[1]?.tier ?? "title").not.toBe("full");
+        // The second would fit in full, but follows one cut to a summary.
+        expect(block.items).toEqual([
+            { id: "k:personal/first", tier: "summary" },
+            { id: "k:personal/second", tier: "summary" },
+        ]);
     });
 
     it("holds the closing line alone when the budget cannot hold the frame", async () => {
@@ -240,6 +243,48 @@ describe("buildBlock", () => {
         });
     });
 
+    it("never passes the budget past the closing line alone", async () => {
+        const rich = fakeEngine({
+            knowledge: [
+                knowledge("likes-tea", { body: "Tea. ".repeat(80) }),
+                knowledge("uses-rust", { type: "project" }, APP),
+            ],
+            episodes: [episode(PHRASE), episode("a-b-c-d")],
+        });
+        for (let budget = 1; budget <= 1500; budget += 7) {
+            const block = await buildBlock({ project: APP.id, budget }, rich);
+            expect({
+                budget,
+                over: block.used > budget && block.text !== CLOSING,
+            }).toEqual({ budget, over: false });
+            expect(block.used).toBe(size(block.text));
+            expect(
+                block.text.endsWith(
+                    block.text === CLOSING ? CLOSING : "</memory>",
+                ),
+            ).toBe(true);
+        }
+    });
+
+    it("shows no trailing space for an empty body, nor lose an abstract", async () => {
+        const block = await buildBlock(
+            { project: null, budget: 10_000 },
+            fakeEngine({
+                knowledge: [knowledge("bare", { body: "" })],
+                episodes: [episode(PHRASE, { description: null })],
+            }),
+        );
+        for (const line of block.text.split("\n")) {
+            expect(line).toBe(line.trimEnd());
+        }
+        expect(block.items[0]).toEqual({
+            id: "k:personal/bare",
+            tier: "summary",
+        });
+        expect(block.text).toContain(`What happened in ${PHRASE}.`);
+        expect(block.items[1]).toEqual({ id: `c:${PHRASE}`, tier: "full" });
+    });
+
     it("escapes what a note or a fact holds", async () => {
         const block = await buildBlock(
             { project: null, budget: 10_000 },
@@ -279,6 +324,72 @@ describe("openingBlock", () => {
             deps,
         );
         expect(after).toEqual(compacted);
+    });
+
+    it("renders a resume anew when nothing was kept, and keeps that", async () => {
+        const engine = fakeEngine({ knowledge: [knowledge("likes-tea")] });
+        const deps = { engine, profiles, frozen: new FrozenBlocks() };
+        const resumed = await openingBlock(
+            { host: "codex", session: "fresh", reason: "resume" },
+            deps,
+        );
+        expect(resumed.text).toContain("likes-tea");
+        engine.parts.knowledge.push(knowledge("new-fact"));
+        const again = await openingBlock(
+            { host: "codex", session: "fresh", reason: "resume" },
+            deps,
+        );
+        expect(again).toEqual(resumed);
+    });
+
+    it("gives a repeated startup the block it gave", async () => {
+        const engine = fakeEngine({ knowledge: [knowledge("likes-tea")] });
+        const deps = { engine, profiles, frozen: new FrozenBlocks() };
+        const request = {
+            host: "codex",
+            session: "s1",
+            reason: "startup" as const,
+        };
+        const first = await openingBlock(request, deps);
+        engine.parts.knowledge.push(knowledge("new-fact"));
+        expect(await openingBlock(request, deps)).toEqual(first);
+    });
+
+    it("renders a clear anew, and keeps that for a resume", async () => {
+        const engine = fakeEngine({ knowledge: [knowledge("likes-tea")] });
+        const deps = { engine, profiles, frozen: new FrozenBlocks() };
+        const at = { host: "codex", session: "s1" };
+        await openingBlock({ ...at, reason: "startup" }, deps);
+        engine.parts.knowledge.push(knowledge("new-fact"));
+        const cleared = await openingBlock({ ...at, reason: "clear" }, deps);
+        expect(cleared.text).toContain("new-fact");
+        expect(await openingBlock({ ...at, reason: "resume" }, deps)).toEqual(
+            cleared,
+        );
+    });
+
+    it("keeps one session id apart under two hosts", async () => {
+        const two = new Map([
+            ["codex", profile(10_000)],
+            ["hermes", { ...profile(10_000), id: "hermes" }],
+        ]);
+        const engine = fakeEngine({ knowledge: [knowledge("likes-tea")] });
+        const deps = { engine, profiles: two, frozen: new FrozenBlocks() };
+        await openingBlock(
+            { host: "codex", session: "same", reason: "startup" },
+            deps,
+        );
+        engine.parts.knowledge.push(knowledge("new-fact"));
+        const other = await openingBlock(
+            { host: "hermes", session: "same", reason: "startup" },
+            deps,
+        );
+        expect(other.text).toContain("new-fact");
+        const first = await openingBlock(
+            { host: "codex", session: "same", reason: "resume" },
+            deps,
+        );
+        expect(first.text).not.toContain("new-fact");
     });
 
     it("keeps to the smaller of the request's budget and the profile's", async () => {
