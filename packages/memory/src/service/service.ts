@@ -98,6 +98,8 @@ export type ServiceOptions = {
     tickMs?: number;
 };
 
+type Handler = (request: Request, address: string) => Promise<Response>;
+
 export type RunningService = {
     url: string;
     ports: number[];
@@ -137,10 +139,42 @@ export async function startService(
         options.warn ??
         ((message: string) => process.stderr.write(`dorothy: ${message}\n`));
     const loopback = options.loopback ?? isLoopback;
-    mkdirSync(dirname(indexPath(env)), { recursive: true, mode: 0o700 });
-    const index = RecallIndex.open(indexPath(env));
+    // Loopback first, before any work: a second service that cannot bind
+    // does none, and nothing else is left running. A request waits for
+    // the rest to be ready.
+    let open: (handler: Handler) => void = () => {};
+    const ready = new Promise<Handler>((resolve) => {
+        open = resolve;
+    });
+    const serve = (hostname: string, port: number) =>
+        Bun.serve({
+            hostname,
+            port,
+            maxRequestBodySize: MAX_BODY * 2,
+            fetch: async (request, server) =>
+                (await ready)(
+                    request,
+                    server.requestIP(request)?.address ?? "",
+                ),
+        });
+    const first = serve("127.0.0.1", options.port ?? config.service.port);
+    let index: RecallIndex;
+    try {
+        mkdirSync(dirname(indexPath(env)), { recursive: true, mode: 0o700 });
+        index = RecallIndex.open(indexPath(env));
+    } catch (error) {
+        first.stop(true);
+        throw error;
+    }
     const warnings: string[] = [];
-    const launched = await launchHistory({ config, index, warnings, env });
+    let launched: Awaited<ReturnType<typeof launchHistory>>;
+    try {
+        launched = await launchHistory({ config, index, warnings, env });
+    } catch (error) {
+        first.stop(true);
+        index.close();
+        throw error;
+    }
     for (const message of warnings) {
         warn(message);
     }
@@ -466,23 +500,6 @@ export async function startService(
         }
     };
 
-    const serve = (hostname: string, port: number) =>
-        Bun.serve({
-            hostname,
-            port,
-            maxRequestBodySize: MAX_BODY * 2,
-            fetch: (request, server) =>
-                handle(request, server.requestIP(request)?.address ?? ""),
-        });
-    // Loopback first: if it cannot listen, nothing else is left running.
-    let first: ReturnType<typeof Bun.serve>;
-    try {
-        first = serve("127.0.0.1", options.port ?? config.service.port);
-    } catch (error) {
-        await launched?.close();
-        index.close();
-        throw error;
-    }
     const port = first.port ?? 0;
     const servers = [first];
     for (const name of ["127.0.0.1", "localhost", "[::1]"]) {
@@ -500,6 +517,7 @@ export async function startService(
             warn(`could not listen on ${hostname}: ${describeError(error)}`);
         }
     }
+    open(handle);
 
     const extraction = new AbortController();
     let extracting = false;

@@ -10,6 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
+    existsSync,
     mkdirSync,
     mkdtempSync,
     rmSync,
@@ -230,6 +231,37 @@ describe("the memory service", () => {
         expect(said.some((message) => message.includes("192.0.2.55"))).toBe(
             true,
         );
+    });
+
+    it("does no history work when its port is taken", async () => {
+        const first = await start();
+        const second = mkdtempSync(join(tmpdir(), "dorothy-service-"));
+        try {
+            const other = {
+                HOME: second,
+                XDG_DATA_HOME: join(second, "data"),
+                XDG_CACHE_HOME: join(second, "cache"),
+                XDG_STATE_HOME: join(second, "state"),
+                XDG_CONFIG_HOME: join(second, "config"),
+            };
+            await expect(
+                startService({
+                    env: other,
+                    config: DEFAULT_CONFIG,
+                    profiles: await loadProfiles(),
+                    tokens,
+                    review: null,
+                    port: first.ports[0] as number,
+                    listen: [],
+                    warn: () => {},
+                }),
+            ).rejects.toThrow();
+            // Not even the data directory was made, let alone a repository.
+            expect(existsSync(join(second, "data"))).toBe(false);
+            expect(existsSync(join(second, "cache"))).toBe(false);
+        } finally {
+            rmSync(second, { recursive: true, force: true });
+        }
     });
 
     it("recalls for a prompt", async () => {
