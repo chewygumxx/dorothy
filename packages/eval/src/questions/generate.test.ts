@@ -475,7 +475,9 @@ describe("bun run eval -- generate", () => {
                 io,
             ),
         ).toBe(0);
-        expect(out.join("")).toContain("dry run: at least 62 calls");
+        expect(out.join("")).toContain(
+            "dry run: at least 62 calls to the generating model, each tried up to three times, for ",
+        );
         expect(stub.requests).toHaveLength(0);
     });
 });

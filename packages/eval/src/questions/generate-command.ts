@@ -98,7 +98,7 @@ export const generateCommand: Command = {
                 0,
             );
             io.out(
-                `dry run: at least ${calls} calls to the generating model, at most ${calls * 3}, for ${total} questions\n`,
+                `dry run: at least ${calls} calls to the generating model, each tried up to three times, for ${total} questions\n`,
             );
             return 0;
         }
