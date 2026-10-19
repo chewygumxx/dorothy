@@ -9,7 +9,7 @@
 //
 
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 // In code points, as JSON Schema's maxLength counts them.
@@ -405,16 +405,24 @@ export async function readSidecar(
 }
 
 // No reader ever sees half a file: the text lands under a temporary name in
-// the same directory, then replaces the sidecar in one rename.
+// the same directory, then replaces the sidecar in one rename. With keep
+// it links the text into place instead, and fails with EEXIST rather than
+// replace what a racing writer made.
 export async function writeAtomic(
     path: string,
     text: string | Uint8Array,
+    { keep = false }: { keep?: boolean } = {},
 ): Promise<void> {
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
     const temporary = `${path}.${randomBytes(4).toString("hex")}.tmp`;
     try {
         await writeFile(temporary, text, { mode: 0o600, flag: "wx" });
-        await rename(temporary, path);
+        if (keep) {
+            await link(temporary, path);
+            await rm(temporary, { force: true });
+        } else {
+            await rename(temporary, path);
+        }
     } catch (error) {
         await rm(temporary, { force: true });
         throw error;

@@ -195,12 +195,14 @@ export async function listFacts(
     return { facts, broken };
 }
 
-// Writes a fact where it belongs once it reads back as written. The
-// caller holds the lock and records the path.
+// Writes a fact where it belongs once it reads back as written, replacing
+// one there; with keep it fails with EEXIST instead. The caller holds the
+// lock and records the path.
 export async function putFact(
     root: string,
     scope: Scope,
     fact: Fact,
+    options: { keep?: boolean } = {},
 ): Promise<string> {
     const text = renderFact(fact);
     const read = parseFact(text, fact.name);
@@ -208,7 +210,7 @@ export async function putFact(
         throw new Error(`${scopeLabel(scope)}/${fact.name}: ${read.reason}`);
     }
     const path = factPath(root, scope, fact.name);
-    await writeAtomic(path, text);
+    await writeAtomic(path, text, options);
     return path;
 }
 

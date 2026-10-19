@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
     mkdir,
     mkdtemp,
+    readdir,
     readFile,
     rm,
     symlink,
@@ -29,6 +30,7 @@ import {
     moveFact,
     PERSONAL,
     parseTarget,
+    putFact,
     retireFact,
     retireFacts,
     reviveFact,
@@ -206,6 +208,48 @@ describe("writeFact", () => {
             reason: "it is broken: it has no frontmatter",
         });
         expect(await readFile(path, "utf8")).toBe("not a fact\n");
+    });
+});
+
+describe("putFact", () => {
+    const fact = (body: string): Fact => ({
+        name: "likes-tea",
+        title: "Likes tea",
+        description: "Prefers tea.",
+        type: "user",
+        extra: {},
+        tags: [],
+        importance: null,
+        provenance: {
+            origin: "user",
+            by: "user",
+            at: NOW.toISOString(),
+            created: NOW.toISOString(),
+        },
+        retired: null,
+        body,
+    });
+
+    it("replaces a fact, or with keep leaves one already there", async () => {
+        await putFact(root, PERSONAL, fact("First."));
+        const path = factPath(root, PERSONAL, "likes-tea");
+        const first = await readFile(path, "utf8");
+        await expect(
+            putFact(root, PERSONAL, fact("Second."), { keep: true }),
+        ).rejects.toMatchObject({ code: "EEXIST" });
+        expect(await readFile(path, "utf8")).toBe(first);
+        await putFact(root, PERSONAL, fact("Second."));
+        expect(await readFile(path, "utf8")).toContain("Second.");
+        // Nothing is left beside it.
+        const dir = join(root, "knowledge", "personal");
+        expect((await readdir(dir)).sort()).toEqual(["likes-tea.md"]);
+    });
+
+    it("with keep writes a fact that is not there", async () => {
+        await putFact(root, PERSONAL, fact("First."), { keep: true });
+        expect(
+            await readFile(factPath(root, PERSONAL, "likes-tea"), "utf8"),
+        ).toContain("First.");
     });
 });
 
