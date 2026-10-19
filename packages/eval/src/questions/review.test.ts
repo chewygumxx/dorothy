@@ -95,20 +95,126 @@ describe("bun run eval -- review", () => {
         expect(first?.status).toBe("accepted");
     });
 
-    it("refuses an edit that is no question, leaving it as it was", async () => {
+    // An edit of the question as the editor holds it, then quit.
+    const editing = (change: (question: Record<string, unknown>) => void) =>
+        fakeIo({
+            answers: ["e", "q"],
+            onEdit: (path) => {
+                const question = JSON.parse(readFileSync(path, "utf8"));
+                change(question);
+                writeFileSync(path, JSON.stringify(question));
+            },
+        });
+
+    const refused = async (
+        change: (question: Record<string, unknown>) => void,
+        why: string,
+    ) => {
+        const before = readFileSync(questionsPath(work), "utf8");
+        const { io, out } = editing(change);
+        expect(await runCli(["review", "--work", work], io)).toBe(0);
+        expect(out.join("")).toContain(
+            `that edit is not a question: ${why}; the question is unchanged`,
+        );
+        expect(readFileSync(questionsPath(work), "utf8")).toBe(before);
+    };
+
+    it("refuses an edit to evidence the snapshot lacks, leaving it as it was", async () => {
+        await refused((question) => {
+            question.evidence = ["c:nowhere"];
+        }, "c:nowhere is not in the snapshot");
+    });
+
+    it("says which field of an edit is wrong", async () => {
+        await refused((question) => {
+            question.asOf = "2026-02-30";
+        }, "asOf: not a real date, as YYYY-MM-DD");
+        await refused((question) => {
+            question.answer = null;
+        }, "only a lookup goes without an answer");
+        await refused((question) => {
+            question.question = 7;
+        }, "question: Invalid input: expected string, received number");
+    });
+
+    it("says an edit is not JSON, or not an object", async () => {
+        const text = (written: string) =>
+            fakeIo({
+                answers: ["e", "q"],
+                onEdit: (path) => writeFileSync(path, written),
+            });
+        for (const [written, why] of [
+            ["{not json", "it is not JSON"],
+            ["[1, 2]", "it is not a JSON object"],
+            ["null", "it is not a JSON object"],
+        ] as const) {
+            const { io, out } = text(written);
+            expect(await runCli(["review", "--work", work], io)).toBe(0);
+            expect(out.join("")).toContain(
+                `that edit is not a question: ${why}; the question is unchanged`,
+            );
+        }
+    });
+
+    it("says when the editor fails", async () => {
+        const { io, out } = fakeIo({
+            answers: ["e", "q"],
+            onEdit: () => {
+                throw new Error("editor exited 1");
+            },
+        });
+        expect(await runCli(["review", "--work", work], io)).toBe(0);
+        expect(out.join("")).toContain(
+            "that edit is not a question: the editor failed: editor exited 1;",
+        );
+    });
+
+    it("refuses an edit that gives a question another's text and evidence", async () => {
+        await refused((question) => {
+            question.question = "Where is my allotment?";
+        }, "another question has that text and evidence");
+    });
+
+    it("refuses an edit that sets the status, since only a decision does", async () => {
+        await refused((question) => {
+            question.status = "accepted";
+        }, "the status changes by accepting or rejecting, not by editing");
+    });
+
+    it("shows a question again after an edit, as edited or as it was", async () => {
         const { io, out } = fakeIo({
             answers: ["e", "q"],
             onEdit: (path) => {
                 const question = JSON.parse(readFileSync(path, "utf8"));
-                question.evidence = ["c:nowhere"];
+                question.question = "What number is my allotment plot?";
                 writeFileSync(path, JSON.stringify(question));
             },
         });
         expect(await runCli(["review", "--work", work], io)).toBe(0);
-        expect(out.join("")).toContain("the question is unchanged");
-        expect((await readQuestions(work)).questions[0]?.evidence).toEqual([
-            `c:${GARDEN}`,
-        ]);
+        const shown = out.join("");
+        expect(shown.match(/Draft 1 of 3/g)).toHaveLength(2);
+        expect(shown.split("Draft 1 of 3")[1]).toContain(
+            "Q: Which plot is my allotment?",
+        );
+        expect(shown.split("Draft 1 of 3")[2]).toContain(
+            "Q: What number is my allotment plot?",
+        );
+        expect(shown).toContain("edited 1");
+    });
+
+    it("tallies an edit once, and not as a decision", async () => {
+        const { io, out } = fakeIo({
+            answers: ["e", "q"],
+            onEdit: (path) => {
+                const question = JSON.parse(readFileSync(path, "utf8"));
+                question.answer = "Plot twelve.";
+                writeFileSync(path, JSON.stringify(question));
+            },
+        });
+        expect(await runCli(["review", "--work", work], io)).toBe(0);
+        expect(out.join("")).toEndWith(
+            "accepted 0, rejected 0, edited 1; 3 drafts left\n",
+        );
     });
 
     it("keeps a question the file gains between two decisions", async () => {

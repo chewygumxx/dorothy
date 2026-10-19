@@ -221,7 +221,9 @@ bun run eval -- review --work ~/eval
 
 A terminal loop over drafts, one at a time: the question, its answer,
 its evidence's titles and the passage it came from, then accept, edit
-(the line in `$EDITOR`), reject with a note, skip or quit. Each decision
+(the line in `$EDITOR`; an edit keeps the status, and one that is not
+JSON or a question, or repeats another's, is refused with its reason),
+reject with a note, skip or quit. Each decision
 is written at once, so quitting loses nothing. The note on the evaluation
 estimates three to five hours for 300.
 

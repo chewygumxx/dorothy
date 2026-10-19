@@ -68,7 +68,8 @@ options declared and described for `--help`, its failures as
   arrive and records each generation's seed in `generated.json`.
 - `questions/review.ts`: the owner's pass over the drafts, and the
   `review` command; an edit goes through `editing.json` in the work
-  directory, and takes a new id from its text and evidence.
+  directory, takes a new id from its text and evidence, cannot set the
+  status, and if refused says why.
 - `models/config.ts`: `eval.toml`, a base URL, model and key variable
   per role; `models/client.ts`: `Models`, one `ChatOpenAI` per role,
   with retries of its own (the client's are off: it does not retry a

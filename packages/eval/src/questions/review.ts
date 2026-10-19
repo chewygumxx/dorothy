@@ -25,10 +25,12 @@ import {
 } from "../systems/corpus.js";
 import { termsOf } from "../systems/terms.js";
 import {
+    issueOf,
     type Question,
     questionId,
     questionSchema,
     readQuestionsToRewrite,
+    sameQuestion,
     writeQuestions,
 } from "./file.js";
 
@@ -77,12 +79,15 @@ function shown(question: Question, at: number, of: number, corpus: Corpus) {
     ].join("\n");
 }
 
+const causeOf = (error: unknown) =>
+    (error as { code?: unknown } | null)?.code ??
+    (error instanceof Error ? error.message : String(error));
+
 // The question as the owner left it in the editor, or why it is not one.
 async function edited(
     work: string,
     question: Question,
     io: Io,
-    others: Set<string>,
     corpus: Corpus,
 ): Promise<Question | string> {
     const path = join(work, "editing.json");
@@ -90,14 +95,33 @@ async function edited(
         mode: 0o600,
     });
     try {
-        await io.edit(path);
-        const read = JSON.parse(await readFile(path, "utf8"));
-        const parsed = questionSchema.safeParse({
-            ...read,
-            id: questionId(String(read.question ?? ""), read.evidence ?? []),
-        });
+        try {
+            await io.edit(path);
+        } catch (error) {
+            return `the editor failed: ${causeOf(error)}`;
+        }
+        let text: string;
+        try {
+            text = await readFile(path, "utf8");
+        } catch (error) {
+            return `it cannot be read back: ${causeOf(error)}`;
+        }
+        let read: unknown;
+        try {
+            read = JSON.parse(text);
+        } catch {
+            return "it is not JSON";
+        }
+        if (typeof read !== "object" || read === null || Array.isArray(read)) {
+            return "it is not a JSON object";
+        }
+        // The id is of the text and evidence, whatever the editor holds.
+        const parsed = questionSchema.safeParse({ ...read, id: question.id });
         if (!parsed.success) {
-            return parsed.error.issues[0]?.message ?? "not a question";
+            return issueOf(parsed.error);
+        }
+        if (parsed.data.status !== question.status) {
+            return "the status changes by accepting or rejecting, not by editing";
         }
         const unknown = parsed.data.evidence.find(
             (id) => !corpus.conversations.has(id) && !corpus.knowledge.has(id),
@@ -105,25 +129,33 @@ async function edited(
         if (unknown !== undefined) {
             return `${unknown} is not in the snapshot`;
         }
-        if (others.has(parsed.data.id)) {
-            return "another question has that text and evidence";
-        }
-        return parsed.data;
-    } catch {
-        return "it is not JSON";
+        return {
+            ...parsed.data,
+            id: questionId(parsed.data.question, parsed.data.evidence),
+        };
     } finally {
         await rm(path, { force: true });
     }
 }
 
 // The decided question in the file as it is now, in place of the one
-// with the id it had, or at the end if that one has gone.
+// with the id it had, or at the end if that one has gone; or why it
+// cannot be there, when its new id is another question's.
 async function decide(
     work: string,
     id: string,
     decided: Question,
-): Promise<void> {
+): Promise<string | null> {
     const questions = await readQuestionsToRewrite(work);
+    const taken =
+        decided.id === id
+            ? undefined
+            : questions.find((question) => question.id === decided.id);
+    if (taken !== undefined) {
+        return sameQuestion(taken, decided)
+            ? "another question has that text and evidence"
+            : "its id is another question's: reword it";
+    }
     const at = questions.findIndex((question) => question.id === id);
     if (at === -1) {
         questions.push(decided);
@@ -131,14 +163,17 @@ async function decide(
         questions[at] = decided;
     }
     await writeQuestions(work, questions);
+    return null;
 }
 
+// The drafts of the questions the command has read; each decision is
+// then written into the file as it is at that moment.
 export async function reviewQuestions(
+    questions: Question[],
     work: string,
     io: Io,
     corpus: Corpus,
 ): Promise<Tally> {
-    const questions = await readQuestionsToRewrite(work);
     const drafts = questions
         .map((question, at) => ({ question, at }))
         .filter(({ question }) => question.status === "draft")
@@ -181,20 +216,19 @@ export async function reviewQuestions(
                 break;
             }
             if (choice === "e") {
-                const others = new Set(
-                    (await readQuestionsToRewrite(work))
-                        .map((q) => q.id)
-                        .filter((id) => id !== question.id),
-                );
-                const result = await edited(work, question, io, others, corpus);
-                if (typeof result === "string") {
+                const result = await edited(work, question, io, corpus);
+                // The edit, or why it is refused.
+                const outcome =
+                    typeof result === "string"
+                        ? result
+                        : ((await decide(work, question.id, result)) ?? result);
+                if (typeof outcome === "string") {
                     io.out(
-                        `eval: that edit is not a question: ${result}; the question is unchanged\n`,
+                        `eval: that edit is not a question: ${outcome}; the question is unchanged\n`,
                     );
                 } else {
-                    questions[at] = result;
+                    questions[at] = outcome;
                     tally.edited++;
-                    await decide(work, question.id, result);
                 }
                 continue;
             }
@@ -219,7 +253,7 @@ export const reviewCommand: Command = {
         }
         const corpus = await openCorpus(workEnv(work));
         try {
-            const tally = await reviewQuestions(work, io, corpus);
+            const tally = await reviewQuestions(questions, work, io, corpus);
             io.out(
                 `accepted ${tally.accepted}, rejected ${tally.rejected}, edited ${tally.edited}; ${tally.left} drafts left\n`,
             );
