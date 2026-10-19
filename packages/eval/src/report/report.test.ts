@@ -22,6 +22,7 @@ import { runCli } from "../cli.js";
 import {
     type RunInfo,
     type RunRecord,
+    readRecords,
     recordsPath,
     reportPath,
     runDir,
@@ -405,6 +406,35 @@ describe("bun run eval -- compare", () => {
         expect(readFileSync(reportPath(temp.root, "r1"), "utf8")).toContain(
             "# Memory evaluation r1",
         );
+    });
+
+    it("passes over a line whose answer or recall is not as written", async () => {
+        write("r1");
+        const damaged = (id: string, fields: object) =>
+            JSON.stringify({ ...record(id, "dorothy"), ...fields });
+        const lines = [
+            record("a", "dorothy", { answer: null, recall: null }),
+            record("b", "dorothy", {
+                recall: { at5: true, at10: true, inContext: false },
+            }),
+        ].map((each) => JSON.stringify(each));
+        const spoilt = [
+            damaged("c", { answer: undefined }),
+            damaged("d", { recall: undefined }),
+            damaged("e", { answer: { text: "x" } }),
+            damaged("f", { answer: "x" }),
+            damaged("g", { recall: { at5: true } }),
+            damaged("h", { recall: { at5: true, at10: 1 } }),
+            damaged("i", { recall: { at5: true, at10: true, inContext: 1 } }),
+            damaged("j", { recall: [] }),
+        ];
+        writeFileSync(
+            recordsPath(temp.root, "r1"),
+            [...lines, ...spoilt].map((line) => `${line}\n`).join(""),
+        );
+        expect(
+            (await readRecords(temp.root, "r1")).map((each) => each.question),
+        ).toEqual(["a", "b"]);
     });
 
     it("writes a report whole or leaves the old one", async () => {

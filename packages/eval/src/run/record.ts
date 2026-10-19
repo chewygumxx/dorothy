@@ -82,16 +82,35 @@ export const reportPath = (work: string, id: string) =>
     join(runDir(work, id), "report.md");
 
 // Whole JSON is not yet a record: what the report and a resume read of it.
+// An answer or recall that is absent or not as run.ts writes it would read
+// as answered, or break the summary, so the line is passed over instead.
 function isRunRecord(value: unknown): value is RunRecord {
     const record = value as Record<string, unknown> | null;
-    const table = (field: unknown) =>
+    const table = (field: unknown): field is Record<string, unknown> =>
         typeof field === "object" && field !== null && !Array.isArray(field);
+    const number = (field: unknown) => typeof field === "number";
+    const answer = (field: unknown) =>
+        field === null ||
+        (table(field) &&
+            typeof field.text === "string" &&
+            number(field.input) &&
+            number(field.output) &&
+            number(field.ms));
+    const recall = (field: unknown) =>
+        field === null ||
+        (table(field) &&
+            typeof field.at5 === "boolean" &&
+            typeof field.at10 === "boolean" &&
+            (field.inContext === undefined ||
+                typeof field.inContext === "boolean"));
     return (
         table(record) &&
-        typeof record?.question === "string" &&
+        typeof record.question === "string" &&
         typeof record.system === "string" &&
         typeof record.type === "string" &&
         table(record.retrieval) &&
+        answer(record.answer) &&
+        recall(record.recall) &&
         table(record.judged) &&
         Array.isArray(record.failures)
     );
