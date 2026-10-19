@@ -522,6 +522,9 @@ async function catchUp(
         return;
     }
     let notes = await launchSessions(env, launchId);
+    // A session no hook ran for, told once it is recorded: a launch whose
+    // store is locked out is tried again, and tells nothing yet.
+    let unhooked: string | null = null;
     if (only !== null) {
         notes = notes.filter((note) => note.session === only);
     } else if (
@@ -537,17 +540,7 @@ async function catchUp(
                 cwd: launch.dir,
                 seen: launch.started,
             });
-            log.warn(
-                `session ${launch.session}: Claude Code ran no hooks; recorded at the catch-up`,
-            );
-            await addNotice(
-                env,
-                `memory: Claude Code ran no hooks in session ${launch.session} (disableAllHooks, an untrusted folder, --bare or --safe-mode turn them off); it is recorded at the catch-up instead`,
-            ).catch((error: unknown) =>
-                log.warn(
-                    `session ${launch.session}: its notice can't be kept (${describeError(error)})`,
-                ),
-            );
+            unhooked = launch.session;
         }
     }
     const locked = await holding(env, log, deps, async (held) => {
@@ -557,7 +550,23 @@ async function catchUp(
     });
     // Notes of sessions that could not be recorded stay, for the next
     // start's catch-up.
-    if (only === null && locked) {
+    if (!locked) {
+        return;
+    }
+    if (unhooked !== null) {
+        log.warn(
+            `session ${unhooked}: Claude Code ran no hooks; recorded at the catch-up`,
+        );
+        await addNotice(
+            env,
+            `memory: Claude Code ran no hooks in session ${unhooked} (disableAllHooks, an untrusted folder, --bare or --safe-mode turn them off); it is recorded at the catch-up instead`,
+        ).catch((error: unknown) =>
+            log.warn(
+                `session ${unhooked}: its notice can't be kept (${describeError(error)})`,
+            ),
+        );
+    }
+    if (only === null) {
         await removeLaunch(env, launchId);
     }
 }

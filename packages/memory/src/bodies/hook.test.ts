@@ -501,6 +501,33 @@ describe("runClaudeHook", () => {
         expect(await readdir(legacyLaunchesDir(env))).toEqual([]);
     });
 
+    it("tells of a session no hook ran for once, though its catch-up is retried", async () => {
+        await mkdir(join(home, "config", "dorothy"), { recursive: true });
+        await writeFile(
+            join(home, "config", "dorothy", "config.toml"),
+            "[history]\nenabled = false\n",
+        );
+        await mkdir(indexPath(env), { recursive: true });
+        const catchUp = () =>
+            runClaudeHook(
+                { kind: "catch-up", launch: LAUNCH, session: null },
+                deps(""),
+            );
+        await catchUp();
+        await catchUp();
+        const locked = await startNotices(env);
+        expect(locked).toHaveLength(2);
+        expect(locked.join("\n")).not.toContain("ran no hooks");
+        expect(await readLaunch(env, LAUNCH)).not.toBeNull();
+        await rm(indexPath(env), { recursive: true });
+        await rm(join(home, "config"), { recursive: true });
+        await catchUp();
+        const told = await startNotices(env);
+        expect(told).toHaveLength(1);
+        expect(told[0]).toContain("ran no hooks");
+        expect(await readLaunch(env, LAUNCH)).toBeNull();
+    });
+
     it("keeps a launch's notes when neither the index nor history can lock", async () => {
         await noteSession(env, LAUNCH, {
             session: SESSION,
