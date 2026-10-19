@@ -18,6 +18,7 @@ export {
     runRetireFrom,
     runRevive,
     runSync,
+    runVerify,
 } from "./facts/commands.js";
 export {
     commandHistory,

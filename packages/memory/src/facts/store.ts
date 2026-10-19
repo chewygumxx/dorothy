@@ -17,6 +17,7 @@
 import { readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import type { Env } from "@dorothy/core";
+import { isConfirmed } from "../engine/engine.js";
 import {
     type Lock,
     normalise,
@@ -33,6 +34,7 @@ import {
     type Origin,
     parseFact,
     renderFact,
+    USER_ACTOR,
     type Writer,
 } from "./file.js";
 
@@ -431,6 +433,48 @@ export function reviveFact(
         const fact = { ...stamped(found.fact, at(store)), retired: null };
         const path = await putFact(store.root, target.scope, fact);
         await store.recorder?.([path], `revive: ${label(target)}`);
+        return { kind: "written", fact };
+    });
+}
+
+// The user's confirmation of a fact, OKF's verified entry beside any
+// another hand made, committed as theirs. The fact's own writing is
+// left as it was. Knowledge already confirmed is left alone.
+export type VerifyResult =
+    | { kind: "written"; fact: Fact }
+    | { kind: "confirmed"; fact: Fact }
+    | { kind: "missing" }
+    | { kind: "failed"; reason: string };
+
+export function verifyFact(
+    store: FactStore,
+    target: Target,
+): Promise<VerifyResult> {
+    return held(store, async (): Promise<VerifyResult> => {
+        const found = await existing(store, target);
+        if ("kind" in found) {
+            return found;
+        }
+        if (found.fact === null) {
+            return { kind: "missing" };
+        }
+        if (isConfirmed(found.fact)) {
+            return { kind: "confirmed", fact: found.fact };
+        }
+        const foreign = found.fact.foreign ?? {};
+        const before = foreign.verified ?? [];
+        if (!Array.isArray(before)) {
+            return { kind: "failed", reason: "its verified key is not a list" };
+        }
+        const fact: Fact = {
+            ...found.fact,
+            foreign: {
+                ...foreign,
+                verified: [...before, { by: USER_ACTOR, at: at(store) }],
+            },
+        };
+        const path = await putFact(store.root, target.scope, fact);
+        await store.recorder?.([path], `verify: ${label(target)} (user)`);
         return { kind: "written", fact };
     });
 }

@@ -12,8 +12,13 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { buildBlock } from "../contract/block.js";
+import { baselineEngine } from "../engine/baseline.js";
+import { isConfirmed } from "../engine/engine.js";
+import { authorOf } from "../history/commands.js";
 import type { HistoryHandle, OpenHistory } from "../memory/sidecar.js";
 import type { SyncReport } from "../projects/sync.js";
+import { indexPath, RecallIndex } from "../recall/store.js";
 import {
     formatReport,
     runFacts,
@@ -22,6 +27,7 @@ import {
     runRetireFrom,
     runRevive,
     runSync,
+    runVerify,
 } from "./commands.js";
 import type { Fact } from "./file.js";
 import {
@@ -199,6 +205,155 @@ describe("retiring and reviving", () => {
         );
         expect(await runRetireFrom(PHRASE, options())).toBe(0);
         expect(out.text).toBe(`Retired 1 fact from ${PHRASE}.\n`);
+    });
+});
+
+describe("runVerify", () => {
+    const MODEL = {
+        origin: "dorothy" as const,
+        by: "dorothy" as const,
+        at: NOW.toISOString(),
+        created: NOW.toISOString(),
+    };
+    const LATER = new Date("2026-10-16T09:30:00.000Z");
+    const read = async (scope: Scope, name: string) => {
+        const found = await readFactFile(
+            factPath(dataRoot(env), scope, name),
+            name,
+        );
+        return found.kind === "ok" ? found.fact : null;
+    };
+
+    it("confirms a model's knowledge as the user's, and says so", async () => {
+        await putFact(
+            dataRoot(env),
+            PROJECT,
+            fact("uses-bun", { provenance: MODEL }),
+        );
+        const id = "k:projects/github.com/chewygumxx/dorothy/uses-bun";
+        expect(await runVerify(id, { ...options(), now: () => LATER })).toBe(0);
+        expect(out.text).toBe(`Verified ${id}: it is confirmed now.\n`);
+        const verified = await read(PROJECT, "uses-bun");
+        expect(verified?.foreign).toEqual({
+            verified: [{ by: "human:owner", at: LATER.toISOString() }],
+        });
+        expect(verified?.provenance).toEqual(MODEL);
+        expect(verified !== null && isConfirmed(verified)).toBe(true);
+        expect(commits).toEqual([
+            "verify: github.com/chewygumxx/dorothy/uses-bun (user)",
+        ]);
+        expect(authorOf(commits[0] as string)).toBe("user");
+    });
+
+    it("keeps verifications another hand made", async () => {
+        await putFact(
+            dataRoot(env),
+            PERSONAL,
+            fact("likes-tea", {
+                provenance: MODEL,
+                foreign: { verified: [{ by: "agent:x", at: "then" }] },
+            }),
+        );
+        expect(await runVerify("k:personal/likes-tea", options())).toBe(0);
+        expect((await read(PERSONAL, "likes-tea"))?.foreign).toEqual({
+            verified: [
+                { by: "agent:x", at: "then" },
+                { by: "human:owner", at: NOW.toISOString() },
+            ],
+        });
+    });
+
+    it("changes nothing on confirmed knowledge, and says why", async () => {
+        const root = dataRoot(env);
+        await putFact(root, PERSONAL, fact("mine"));
+        await putFact(
+            root,
+            PERSONAL,
+            fact("synced", {
+                provenance: { ...MODEL, origin: "repo", by: "repo" },
+            }),
+        );
+        await putFact(
+            root,
+            PERSONAL,
+            fact("checked", {
+                provenance: MODEL,
+                foreign: {
+                    verified: [{ by: "human:owner", at: NOW.toISOString() }],
+                },
+            }),
+        );
+        const before = await Promise.all(
+            ["mine", "synced", "checked"].map((name) =>
+                Bun.file(factPath(root, PERSONAL, name)).text(),
+            ),
+        );
+        for (const name of ["mine", "synced", "checked"]) {
+            expect(await runVerify(`k:personal/${name}`, options())).toBe(0);
+        }
+        expect(out.text).toBe(
+            [
+                "k:personal/mine is confirmed already: it is yours.",
+                "k:personal/synced is confirmed already: it came from a project's repository.",
+                "k:personal/checked is confirmed already: you verified it.",
+                "",
+            ].join("\n"),
+        );
+        const after = await Promise.all(
+            ["mine", "synced", "checked"].map((name) =>
+                Bun.file(factPath(root, PERSONAL, name)).text(),
+            ),
+        );
+        expect(after).toEqual(before);
+        expect(commits).toEqual([]);
+    });
+
+    it("refuses an unknown id, and one that is no knowledge's", async () => {
+        expect(await runVerify("k:personal/nothing", options())).toBe(1);
+        expect(err.text).toBe(
+            "dorothy: there is no knowledge k:personal/nothing\n",
+        );
+        for (const id of ["personal/likes-tea", `c:${PHRASE}`, "k:x"]) {
+            expect(await runVerify(id, options())).toBe(1);
+            expect(err.text).toEndWith(
+                `dorothy: ${id} is no knowledge's id; give k:personal/<name> or k:projects/<project id>/<name>\n`,
+            );
+        }
+        expect(commits).toEqual([]);
+    });
+
+    it("shows the piece as confirmed in the next block", async () => {
+        await putFact(
+            dataRoot(env),
+            PERSONAL,
+            fact("likes-tea", { provenance: MODEL }),
+        );
+        const block = async () => {
+            const index = RecallIndex.open(indexPath(env));
+            try {
+                const engine = baselineEngine({
+                    env,
+                    index,
+                    halfLifeDays: 30,
+                    reviewer: null,
+                });
+                return (
+                    await buildBlock({ project: null, budget: 10_000 }, engine)
+                ).text;
+            } finally {
+                index.close();
+            }
+        };
+        const fenced = await block();
+        expect(fenced.indexOf("<unconfirmed-knowledge>")).toBeLessThan(
+            fenced.indexOf("k:personal/likes-tea"),
+        );
+        expect(await runVerify("k:personal/likes-tea", options())).toBe(0);
+        const confirmed = await block();
+        expect(confirmed).not.toContain("<unconfirmed-knowledge>");
+        expect(confirmed).toContain(
+            '<knowledge scope="personal">\n- likes-tea (k:personal/likes-tea)',
+        );
     });
 });
 

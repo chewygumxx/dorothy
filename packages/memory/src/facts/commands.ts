@@ -13,11 +13,12 @@
 
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Env } from "@dorothy/core";
+import { type Env, parseMemoryId } from "@dorothy/core";
 import type { OpenHistory } from "../memory/sidecar.js";
 import { projectsPath, readRegistry } from "../projects/registry.js";
 import { type SyncReport, syncProject } from "../projects/sync.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
+import type { Fact } from "./file.js";
 import {
     dataRoot,
     type FactResult,
@@ -30,6 +31,7 @@ import {
     type Scope,
     type StoredFact,
     scopeLabel,
+    verifyFact,
 } from "./store.js";
 
 export type Output = { write(text: string): unknown };
@@ -205,6 +207,67 @@ export async function runRetireFrom(
             `Retired ${count} ${count === 1 ? "fact" : "facts"} from ${phrase}.\n`,
         );
         return 0;
+    } finally {
+        opened.close();
+    }
+}
+
+// A knowledge id, as open and the block show it, as the store's target.
+function targetOfId(id: string): { scope: Scope; name: string } | null {
+    const parsed = parseMemoryId(id);
+    if (parsed?.kind !== "knowledge") {
+        return null;
+    }
+    const { path } = parsed;
+    return parseTarget(
+        path.startsWith("projects/") ? path.slice("projects/".length) : path,
+    );
+}
+
+// Why knowledge is confirmed already.
+const whyConfirmed = (fact: Fact) =>
+    fact.provenance.origin === "user"
+        ? "it is yours"
+        : fact.provenance.origin === "repo"
+          ? "it came from a project's repository"
+          : "you verified it";
+
+// --verify: the user confirms a piece of knowledge a model or an
+// outside writer gave, by its id.
+export async function runVerify(
+    id: string,
+    options: FactCommandOptions = {},
+): Promise<number> {
+    const { out = process.stdout, err = process.stderr } = options;
+    const target = targetOfId(id);
+    if (target === null) {
+        err.write(
+            `dorothy: ${id} is no knowledge's id; give k:personal/<name> or k:projects/<project id>/<name>\n`,
+        );
+        return 1;
+    }
+    const opened = await openStore(options);
+    if (opened === null) {
+        return 1;
+    }
+    try {
+        const result = await verifyFact(opened.store, target);
+        switch (result.kind) {
+            case "written":
+                out.write(`Verified ${id}: it is confirmed now.\n`);
+                return 0;
+            case "confirmed":
+                out.write(
+                    `${id} is confirmed already: ${whyConfirmed(result.fact)}.\n`,
+                );
+                return 0;
+            case "missing":
+                err.write(`dorothy: there is no knowledge ${id}\n`);
+                return 1;
+            default:
+                err.write(`dorothy: ${id}: ${result.reason}\n`);
+                return 1;
+        }
     } finally {
         opened.close();
     }
