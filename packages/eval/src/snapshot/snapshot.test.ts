@@ -380,32 +380,46 @@ describe("a snapshot", () => {
             now: () => new Date(stamp),
         });
 
-        it("never leaves the old record beside the new copy", async () => {
-            await takeSnapshot(data, work, at("2026-10-19T00:00:00.000Z"));
-            writeFileSync(join(data, "knowledge", "added.md"), "new\n");
-            // The new record cannot be written: a directory holds its name.
-            mkdirSync(`${record()}.tmp`);
-            await expect(
-                takeSnapshot(data, work, {
+        it.skipIf(getuid?.() === 0)(
+            "never leaves the old record beside the new copy",
+            async () => {
+                await takeSnapshot(data, work, at("2026-10-19T00:00:00.000Z"));
+                writeFileSync(join(data, "knowledge", "added.md"), "new\n");
+                // The old index cannot be removed, after the swap and
+                // before the new record is written.
+                const cache = join(work, "cache");
+                mkdirSync(join(cache, "dorothy"), { recursive: true });
+                chmodSync(cache, 0o500);
+                try {
+                    await expect(
+                        takeSnapshot(data, work, {
+                            replace: true,
+                            ...at("2026-10-20T00:00:00.000Z"),
+                        }),
+                    ).rejects.toThrow();
+                } finally {
+                    chmodSync(cache, 0o700);
+                }
+                expect(
+                    existsSync(
+                        join(snapshotDir(work), "knowledge", "added.md"),
+                    ),
+                ).toBe(true);
+                await expect(readSnapshot(work)).rejects.toThrow(
+                    "holds no snapshot",
+                );
+                const again = await takeSnapshot(data, work, {
                     replace: true,
-                    ...at("2026-10-20T00:00:00.000Z"),
-                }),
-            ).rejects.toThrow();
-            expect(
-                existsSync(join(snapshotDir(work), "knowledge", "added.md")),
-            ).toBe(true);
-            await expect(readSnapshot(work)).rejects.toThrow(
-                "holds no snapshot",
-            );
-            rmSync(`${record()}.tmp`, { recursive: true });
-            const again = await takeSnapshot(data, work, {
-                replace: true,
-                ...at("2026-10-21T00:00:00.000Z"),
-            });
-            expect((await readSnapshot(work)).at).toBe(again.at);
-            expect(readdirSync(work).sort()).toEqual(["data", "snapshot.json"]);
-            expect(readdirSync(join(work, "data"))).toEqual(["dorothy"]);
-        });
+                    ...at("2026-10-21T00:00:00.000Z"),
+                });
+                expect((await readSnapshot(work)).at).toBe(again.at);
+                expect(readdirSync(work).sort()).toEqual([
+                    "data",
+                    "snapshot.json",
+                ]);
+                expect(readdirSync(join(work, "data"))).toEqual(["dorothy"]);
+            },
+        );
 
         it("puts the old record back when the swap had not begun", async () => {
             const first = await takeSnapshot(data, work);

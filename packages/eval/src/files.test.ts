@@ -19,7 +19,7 @@ import {
     writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { writeAtomic } from "./files.js";
 
 describe("writeAtomic", () => {
@@ -31,13 +31,30 @@ describe("writeAtomic", () => {
         rmSync(root, { recursive: true, force: true });
     });
 
-    it("writes over the temporary file an interrupted write left", async () => {
+    it("removes the temporary file a dead process left", async () => {
         const path = join(root, "run.json");
-        writeFileSync(`${path}.tmp`, "torn", { mode: 0o600 });
+        const dead = Bun.spawnSync(["true"]).pid;
+        const stray = `${path}.${dead}.1.tmp`;
+        const live = `${path}.${process.pid}.999999.tmp`;
+        const other = join(root, `other.json.${dead}.1.tmp`);
+        for (const each of [stray, live, other]) {
+            writeFileSync(each, "torn", { mode: 0o600 });
+        }
         await writeAtomic(path, "whole");
         expect(readFileSync(path, "utf8")).toBe("whole");
-        expect(readdirSync(root)).toEqual(["run.json"]);
+        expect(readdirSync(root).sort()).toEqual(
+            [basename(live), basename(other), "run.json"].sort(),
+        );
         expect(statSync(path).mode & 0o777).toBe(0o600);
+    });
+
+    it("lets writers of one path go together, leaving no file", async () => {
+        const path = join(root, "summary.json");
+        await Promise.all(
+            ["a", "b", "c", "d"].map((text) => writeAtomic(path, text)),
+        );
+        expect(["a", "b", "c", "d"]).toContain(readFileSync(path, "utf8"));
+        expect(readdirSync(root)).toEqual(["summary.json"]);
     });
 
     it("leaves no temporary file when the write fails", async () => {

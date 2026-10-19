@@ -142,8 +142,9 @@ describe("the question file", () => {
         expect(readdirSync(temp.root)).toEqual(["questions.jsonl"]);
     });
 
-    it("writes over a temporary file a Ctrl-C left", async () => {
-        writeFileSync(`${questionsPath(temp.root)}.tmp`, "half a li");
+    it("removes a temporary file a dead process's Ctrl-C left", async () => {
+        const dead = Bun.spawnSync(["true"]).pid;
+        writeFileSync(`${questionsPath(temp.root)}.${dead}.1.tmp`, "half a li");
         await writeQuestions(temp.root, [lookup("Which tea?")]);
         expect(readdirSync(temp.root)).toEqual(["questions.jsonl"]);
     });
