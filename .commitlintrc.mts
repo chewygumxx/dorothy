@@ -72,5 +72,10 @@ export default defineConfig({
             fullName: "CLI",
             description: "The entry point, ie. packages/cli/",
         },
+        {
+            name: "eval",
+            fullName: "Eval",
+            description: "The memory evaluation, ie. packages/eval/",
+        },
     ],
 });

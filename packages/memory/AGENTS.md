@@ -34,7 +34,7 @@ text (`MemoryPrompts`).
   `--edit-tags`, `--facts`, `--retire`, `--revive`, `--sync`,
   `--projects`, the history commands and `commandHistory()`.
 - `"./recall-server"` (`src/recall-server.ts`): `runRecallServer` alone;
-  `"./service"`, `"./client"`, `"./bridge"`: [the contract's guide](./src/contract/AGENTS.md).
+  `"./service"`, `"./client"`, `"./bridge"`, `"./evaluation"`: [the contract's guide](./src/contract/AGENTS.md).
 
 Of the `@dorothy` packages it depends on `core` alone.
 

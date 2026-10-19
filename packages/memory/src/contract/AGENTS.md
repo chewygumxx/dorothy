@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-18
-mtime: 2026-10-18
+mtime: 2026-10-19
 spdx: GPL-3.0-only
 title: packages/memory/src/contract/AGENTS.md
 description: >-
@@ -74,3 +74,13 @@ gives back, and the service that speaks it. The spec is
   warns once per name. A web page's `Origin` is refused with 403.
 - Migration leaves a fact in `facts/`, with a warning, when its
   `knowledge/` target exists or the file fails; it overwrites nothing.
+
+## The evaluation's door
+
+`"./evaluation"` (`src/evaluation.ts`) is for `@dorothy/eval` alone:
+`openArchive` opens the baseline engine over an environment's roots and
+lists its conversations, knowledge and appraised reads as plain
+records; `writeArchive` writes a small archive for its tests. It writes
+only the recall index, where the environment points. Appraised reads
+leave out a hidden reader's, counted, and name a transcript it could
+not read.

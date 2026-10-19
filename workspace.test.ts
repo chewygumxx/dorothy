@@ -29,6 +29,7 @@ const GRAPH: Record<string, string[]> = {
     agent: ["core", "identity"],
     cli: ["agent", "core", "gateway", "memory", "tui"],
     core: [],
+    eval: ["core", "memory"],
     gateway: ["core", "identity"],
     identity: [],
     memory: ["core"],
@@ -39,6 +40,7 @@ const ENTRIES: Record<string, string[]> = {
     agent: ["."],
     cli: [],
     core: ["."],
+    eval: [],
     gateway: ["."],
     identity: ["."],
     memory: [
@@ -47,6 +49,7 @@ const ENTRIES: Record<string, string[]> = {
         "./claude-hook",
         "./client",
         "./commands",
+        "./evaluation",
         "./recall-server",
         "./service",
     ],
@@ -133,5 +136,9 @@ describe("the workspace", () => {
         expect(() =>
             Bun.resolveSync("@dorothy/agent", from("gateway")),
         ).toThrow();
+        expect(() =>
+            Bun.resolveSync("@dorothy/memory/evaluation", from("eval")),
+        ).not.toThrow();
+        expect(() => Bun.resolveSync("@dorothy/agent", from("eval"))).toThrow();
     });
 });

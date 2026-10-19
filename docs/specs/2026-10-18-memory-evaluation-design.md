@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-18
-mtime: 2026-10-18
+mtime: 2026-10-19
 spdx: GPL-3.0-only
 title: Dorothy's memory evaluation design
 description: >-
@@ -92,12 +92,23 @@ bun run eval -- snapshot --from ~/.local/share/dorothy --work ~/eval
   so that nothing reads her real data by default; `--work` a directory
   of the user's choosing, made if missing, refused if it holds a
   snapshot already unless `--replace` is given. Neither may hold the
-  other.
+  other, and `--work` may not lie in the checkout the evaluation runs
+  from or in another worktree of its repository; each is judged by real
+  path.
 - It copies `transcripts/` (conversations and their sidecars),
   `knowledge/`, `facts/` where a data directory has not yet moved it,
   and `tags.json`, and records what it copied in `<work>/snapshot.json`:
   the source, the time, and counts of conversations and knowledge files.
   It never writes to `--from`, and copies no `.git`, mirror or token.
+  An entry it takes that is itself a link (a stowed `knowledge/`) is
+  followed, and refused if it leads nowhere, into the work directory or
+  around it; below those, a symbolic link is neither followed nor kept,
+  and the count of those skipped is said and kept in `snapshot.json`.
+  A copy is made apart and swapped in whole, so a `--replace` that fails
+  leaves the old snapshot, and one that succeeds drops the index built
+  from it. The old record is set aside before the swap and the new one
+  written after it, so a cut leaves no record, or the record of the copy
+  there, never the old record beside new data.
 - Every later command takes `--work` and runs with `HOME`,
   `XDG_DATA_HOME`, `XDG_CACHE_HOME`, `XDG_STATE_HOME` and
   `XDG_CONFIG_HOME` under it, so recall's index is built fresh in the
@@ -127,9 +138,24 @@ bun run eval -- snapshot --from ~/.local/share/dorothy --work ~/eval
 | `note` | The reviewer's note; optional |
 
 Only accepted questions are run. A malformed line is reported with its
-number: `run` skips it, while the commands that rewrite the file
-(`mine`, `generate`, `review`) refuse until it is mended, so that none
-drops a line the owner wrote.
+number, one to a line: `run` skips it, while the commands that rewrite
+the file (`mine`, `generate`, `review`) refuse until it is mended, so
+that none drops a line the owner wrote. A line is malformed too if its
+`id` is not that of its text and evidence, its `asOf` is no real date,
+or an earlier line holds its `id`, as a repeat or as a different
+question with the same eight digits. A file that cannot be read, other
+than for being absent, stops those commands the same way, naming the
+path and the error's code.
+
+Those commands change the file under an advisory lock, a
+`questions.jsonl.lock` made beside it, reading the file again inside it,
+so that a review beside a generation or a mine loses neither's writes;
+`generated.json` is read and written back under the same lock. A
+writer waits some ten seconds for the lock. The lock holds its writer's
+pid and a token: it is taken over only when that process is gone (or,
+if it names none, when it is older than thirty seconds), never from a
+live writer, and released only while it holds its writer's token. A
+writer that gives up says which file to remove.
 
 ### Mined lookups
 
@@ -138,9 +164,16 @@ read as `none`, `slight`, `useful` or `essential`. Each read appraised
 useful or essential is a real question with a known answer: the purpose
 is the question, the opened conversation or knowledge file the evidence,
 the reading conversation the `exclude`, and the read's date the `asOf`.
-They have no reference answer, so they score retrieval alone. They are
-mined accepted, as the appraisal is her own review; the owner may reject
-one.
+They have no reference answer, so they score retrieval alone. A read of
+a hidden conversation is passed over, as no system reaches it, and of a
+retired file, as her engine cannot reach it, though `lexical` and `full`
+can. They are mined accepted, as the appraisal is her own review; the
+owner may reject one. A read by a hidden or absent conversation is
+passed over too, counted and reported, as its project is not in the
+snapshot. A purpose read from the same target by several conversations
+is one question, its `exclude` the first reader's, since a question
+excludes one conversation. A purpose that fails the question's schema,
+such as one over 2,000 characters, is dropped, counted and reported.
 
 ```sh
 bun run eval -- mine --work ~/eval
@@ -158,14 +191,24 @@ A generating model drafts the other types from samples of the snapshot:
   indirectly, as a request whose best answer the preference shapes.
 - **multi-session**: two or three conversations sharing a tag or a
   project; the answer needs more than one.
-- **knowledge-update**: a retired knowledge file beside the file that
-  replaced it, or a conversation that revises an earlier one; the answer
-  is the newer, and the older is named in the question's `note`.
+- **knowledge-update**: a retired knowledge file beside the live files
+  of its scope and type, one of which may have replaced it; or the
+  latest conversation of a project or tag beside an earlier one of it,
+  which ended before the latest began and which the latest may revise.
+  The latest alone, so that its answer is what is still true as of the
+  snapshot's last day. Each sample draws among every retired file and
+  every such latest conversation alike, so each source is drawn by how
+  much of it the snapshot holds, and one with few retirements can still
+  meet the type's share. The model asks only where the newer does
+  replace the older: the answer is the newer, its evidence the newer
+  alone, and the older is named in the question's `note`.
 - **temporal**: a conversation's dated turns; the answer is a date, an
   order or a span.
 - **abstention**: a plausible question on nothing in the snapshot, which
   the answer must decline; a lexical search of the snapshot for its key
-  terms must find nothing, or the draft is dropped.
+  terms must find nothing, or the draft is dropped. "Nothing" is a
+  turn or file holding at least half the terms (two at the least, or
+  all of a question of one term).
 
 ```sh
 bun run eval -- generate --work ~/eval --count 300
@@ -178,10 +221,20 @@ bun run eval -- generate --work ~/eval --count 300
   (`--type temporal=40`).
 - The model returns JSON, checked by a schema; a draft whose evidence
   ids are not in the snapshot, or whose answer is empty, is dropped and
-  counted.
+  counted, as is a reply with no questions; the command says each type
+  that made fewer than it was asked for.
 - Samples are drawn by a seed, which `<work>/generated.json` records
   with the model, the counts asked and made, and the drafts dropped and
-  why, so a generation can be repeated.
+  why, so a generation can be repeated. Each generation adds an entry
+  to that list. Each call's drafts join the question file as they
+  arrive, the file read again just before, so that a review meanwhile
+  loses nothing and Ctrl-C loses no draft a call has returned; the seed
+  is printed first, as the entry is written at the end, and a run
+  stopped by Ctrl-C records none. A draft whose id another command had
+  written by then is counted as not added, not as drafted.
+- A failed call is dropped with its reason, a line with no key in it.
+  Generation stops, keeping what it has made, at a 401 or a 403, at
+  three failed calls in a row, or at `--max-calls`, and says why.
 
 ### Review
 
@@ -191,7 +244,9 @@ bun run eval -- review --work ~/eval
 
 A terminal loop over drafts, one at a time: the question, its answer,
 its evidence's titles and the passage it came from, then accept, edit
-(the line in `$EDITOR`), reject with a note, skip or quit. Each decision
+(the line in `$EDITOR`; an edit keeps the status, and one that is not
+JSON or a question, or repeats another's, is refused with its reason),
+reject with a note, skip or quit. Each decision
 is written at once, so quitting loses nothing. The note on the evaluation
 estimates three to five hours for 300.
 
@@ -209,7 +264,7 @@ interface System {
 type Asked = { text: string; asOf: string; project: string | null;
     exclude: string | null };
 // Contract ids best first, for evidence recall, and the context the
-// answering model reads.
+// answering model reads; every ranked id is in the context.
 type Retrieved = { ranked: string[]; context: string };
 ```
 
@@ -220,18 +275,22 @@ opened once for the run:
    block for the question's project, then `search` over all scopes for
    the question, then `open` on the top hits, until the budget is spent.
    It is what a harness gets today, without a model choosing the calls.
+   The block takes 40% of the budget and the hits the rest; its ranked
+   ids are the hits that fitted, then what the block gave besides.
 2. **`lexical`**: a bound from below. Every conversation turn and
    knowledge file scored by how many of the question's terms it holds,
-   best first, no index: what plain `grep` would find.
+   best first, no index: what plain `grep` would find; its ranked
+   ids are the ones its context holds.
 3. **`full`**: a bound from above, where it fits. Every conversation and
    knowledge file, newest first, until a budget of its own
    (`--full-budget`, 400,000 characters by default, some 100,000
-   tokens); its ranked ids are what fitted, so its evidence recall says
-   how much of the snapshot that was.
+   tokens); its ranked ids are what fitted, so whether its evidence was
+   in context says how much of the snapshot that was.
 
 `exclude` is honoured by all three. Retrieval sees the whole snapshot;
 `asOf` dates the question for the answering model alone. A system that
 fails a question records the error and yields nothing; the run goes on.
+A failed retrieval spends no answer or judgement, and counts as a miss.
 
 Later systems, each in its own spec: Dorothy improved (the engine
 spec), Hindsight, OpenViking, EverOS and Honcho, each fed by replaying
@@ -260,11 +319,22 @@ key = "OPENROUTER_API_KEY"
 
 - A role's key is read from the named variable, which `dotenvx run`
   supplies from `.env`; a key is never written to a file, a log or a
-  report. A local server (llama.cpp, Ollama) needs no key.
+  report. A local server (llama.cpp, Ollama) needs no key, and is sent no
+  Authorization header. The variable's name is a role's `key` in
+  capitals, digits and underscores, and is said as written.
 - The client is `@langchain/openai`'s `ChatOpenAI`, which openevals
   takes as its judge; one client for all three roles.
 - Every call has a timeout and two retries on a 429 or 5xx; a call that
-  still fails is recorded as failed, never fatal.
+  still fails is recorded as failed, never fatal. The retries also
+  cover a 408, a timeout and a lost connection, wait 2 seconds and then
+  4, and each attempt spends one of `--max-calls`; a refusal, or a reply
+  that breaks its schema, is not retried; a failure with a status is
+  judged by it alone, and a cap reached between tries says the failure
+  it interrupted. A recorded failure is one line, with any key put out.
+- `eval.toml` that does not parse is said to be unparsable and no more:
+  the parser quotes the line it dislikes, which may hold a key. A file
+  that cannot be read, other than for being absent, is not taken for no
+  file.
 - The judge's vendor (the model id's prefix) must differ from the
   answering model's; the run warns if not.
 - openevals asks its judge for a `json_schema` response format, as a
@@ -286,7 +356,12 @@ For each accepted question and each system:
 1. **Retrieve** within the budget (8,000 characters by default, the
    block's own default), timing it.
 2. **Evidence recall**: whether any evidence id is among the first 5 and
-   the first 10 items, a conversation matching by phrase.
+   the first 10 items, a conversation matching by phrase, and whether it
+   is anywhere among them (in context); the record keeps the first ten.
+   The items are those the system's context holds, so recall at 5 and
+   10 depends on the budget, and a run recorded before ranked ids were
+   so limited (2026-10-19) is not comparable on them; `full`'s are as
+   they were.
 3. **Answer**, unless `--retrieval-only` or the question is a `lookup`:
    the answering model gets the retrieved items and the question, dated
    by `asOf`, with one fixed prompt that says to answer from the items
@@ -300,20 +375,59 @@ Records go to `<work>/runs/<run>/records.jsonl`, one per question and
 system, written as each completes, so an interrupted run resumes with
 `--resume <run>` and asks only what is missing. `<run>` is the start
 time and a short hash of the questions and settings, which
-`run.json` records with the models, the budget and the snapshot's
-counts.
+`run.json` records with the models, the base URL serving each (its
+scheme, host and path alone, as the rest may carry a key, so a change
+in its query alone is not seen), the budget and the snapshot's counts.
+
+- A question other than an abstention is judged declined wrongly by a
+  pattern (`declines`) on the answer, with no model asked. A
+  `knowledge-update` with an older answer in its `note` costs one more
+  judgement, whether the answer gives that older one.
+- A failed retrieval or answer leaves the record with its failure,
+  and nothing more is spent on that question and system; a failed
+  judgement is recorded and the other judgements still run.
+  `--dry-run` counts the calls, none for a `lookup`, two for an
+  abstention, three for the rest and four for an update with a `note`,
+  for each system, and needs no key; on a resume it counts only what is
+  left, a paid answer by the judgements it lacks, and says how many
+  questions and systems are left to ask or judge, as in
+  `dry run: 5 questions, 1 systems, 2 left to ask; 5 model calls`.
+- A resume takes the systems, budget and questions from `run.json`, and
+  refuses `--systems`, `--budget`, `--full-budget` or `--retrieval-only`
+  given with it. It refuses a snapshot taken at another time, or answer
+  and judge models or base URLs other than the run's, and says to start
+  a new run; a `run.json` written before base URLs were kept is held to
+  its models alone.
+  It asks again a record with a failure: whole where its retrieval or
+  answer failed, and where its answer was paid for, only the judgements
+  it lacks, reusing that answer, so no answer is paid for twice. Where
+  a question and system have two records the last stands. A run stopped
+  by `--max-calls` keeps its records and writes the report of what is
+  done; a cap reached at a judgement keeps that record, its answer and
+  the judgement's failure, whose judgements a resume completes.
+- A judge of the answering model's vendor warns on the error stream and
+  the run goes on.
 
 ## The report
 
 `<work>/runs/<run>/report.md`, and `summary.json` for comparison:
 
 - accuracy by type and overall, strict and lenient, for each system;
-- evidence recall at 5 and 10 by type, `lookup` included;
+- evidence recall at 5 and 10 and in context by type, `lookup`
+  included; in context is a dash for records written before it was kept;
 - abstention: how often an `abstention` question was declined, and how
   often another was declined wrongly;
 - for `knowledge-update`, how often the older answer was given;
 - retrieval time and characters, answer tokens and time, failed calls;
-- the questions each system alone got right or wrong, by id.
+- the questions each system alone got right or wrong, by id, on strict
+  accuracy, among those owed a strict judgement by two systems or more,
+  a system that failed one counting as wrong, as in the rates.
+
+A question that should have been judged but was not, as its retrieval,
+answer or judgement failed, counts as a miss in strict, lenient and, for
+an abstention, declined; so a flaky system does not score higher for
+its failures. Its rates are over every question owed, and its failed
+calls are counted beside them.
 
 ```sh
 bun run eval -- compare --work ~/eval <run> <run>
@@ -323,8 +437,12 @@ prints the two summaries side by side with their differences, and the
 note's rule for adopting a provider: ten points of strict accuracy over
 Dorothy improved, held with the smaller ingest model. The report gives
 counts with every rate, as 300 questions split seven ways leave some
-types small; a difference under the type's count's resolution is
-marked as such.
+types small; a difference under the type's count's resolution, two
+questions' worth of the smaller count, is marked as such. The
+comparison covers the systems both runs hold, and strict accuracy
+alone; the adoption rule is printed, not decided. Two runs of different
+snapshots or questions are compared with a warning, as the noise mark
+then means little.
 
 ## Failures
 
@@ -334,7 +452,8 @@ marked as such.
   command that would set it; nothing else is printed of the
   environment.
 - A malformed question, a failed system call or a failed model call is
-  recorded and counted in the report, never fatal.
+  recorded and counted in the report, never fatal; a failed call counts
+  as a miss in the rates.
 - An interrupted run leaves every completed record; `--resume` finishes
   it.
 

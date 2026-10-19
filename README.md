@@ -1,6 +1,6 @@
 ---
 ctime: 2026-09-29
-mtime: 2026-10-18
+mtime: 2026-10-19
 spdx: GPL-3.0-only
 title: "dorothy"
 description: "Conversational LLM interface"
@@ -349,6 +349,65 @@ claude-dirs = ["/home/me/.config/claude-2"]
 Her knowledge lives in `knowledge/` in the data directory, one Markdown
 file each in the [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md),
 which you may read and edit; `facts/` is moved there once.
+
+### Measuring her memory
+
+`bun run eval` measures her memory on questions drawn from her own
+data, as [the evaluation's
+spec](./docs/specs/2026-10-18-memory-evaluation-design.md) describes.
+It works on a copy: take a snapshot into a work directory of your
+choosing, kept as private as the data directory, since the copy, the
+questions and the reports hold her data in clear.
+
+```sh
+bun run eval -- snapshot --from ~/.local/share/dorothy --work ~/eval
+bun run eval -- mine --work ~/eval     # questions her own reads answer
+bun run eval -- run --work ~/eval --retrieval-only
+```
+
+`mine` and a retrieval-only run need no model. To draft questions of
+LongMemEval's types and to answer and judge them, name a model for each
+role in `~/eval/eval.toml`, any OpenAI-compatible Chat Completions
+endpoint, with the variable that holds its key:
+
+```toml
+[models.generate]
+base-url = "https://openrouter.ai/api/v1"
+model = "deepseek/deepseek-v3.2"
+key = "OPENROUTER_API_KEY"
+
+[models.answer]
+base-url = "https://openrouter.ai/api/v1"
+model = "openai/gpt-oss-120b"
+key = "OPENROUTER_API_KEY"
+
+[models.judge]
+base-url = "https://openrouter.ai/api/v1"
+model = "google/gemini-2.5-flash"
+key = "OPENROUTER_API_KEY"
+```
+
+Set the key with `bunx dotenvx set OPENROUTER_API_KEY`, and run under
+`bunx dotenvx run --`, so it is read from the encrypted `.env`:
+
+```sh
+bunx dotenvx run -- bun run eval -- generate --work ~/eval --count 300
+bun run eval -- review --work ~/eval   # accept, edit or reject each
+bun run eval -- run --work ~/eval --dry-run
+bunx dotenvx run -- bun run eval -- run --work ~/eval
+bun run eval -- compare --work ~/eval <run> <run>
+```
+
+These send passages of her data to the providers you name; a local
+server (llama.cpp, Ollama) keeps them home. The judge and the generator
+must support structured output. `--max-calls` caps the calls of
+`generate` or `run`, and a run stopped by it resumes with
+`--resume <run>`, the id the run printed; `--dry-run` beside it counts
+only what the run has left. A failed call counts as a miss. A system's
+ranked items are the ones that fit its budget, so recall at 5 and 10
+falls with a smaller `--budget`. Each run's report is
+`~/eval/runs/<run>/report.md`, and `bun run eval -- <command> --help`
+lists a command's options.
 
 ### Development mode
 
