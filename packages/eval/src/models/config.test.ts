@@ -72,6 +72,11 @@ describe("eval.toml", () => {
         await expect(readEvalConfig(temp.root)).rejects.toThrow(
             "needs base-url",
         );
+        // Shaped as one, but no URL a client could reach.
+        write('[models.answer]\nbase-url = "http://[bad"\nmodel = "m"\n');
+        await expect(readEvalConfig(temp.root)).rejects.toThrow(
+            "needs base-url",
+        );
         write(
             '[models.answer]\nbase-url = "http://x"\nmodel = "m"\ntemperature = 0\n',
         );

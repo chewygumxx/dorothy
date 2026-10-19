@@ -44,14 +44,13 @@ export type RunSettings = {
 };
 
 // A base URL as run.json keeps it: its user, password, query and
-// fragment may carry a key, so only the scheme, host and path stay.
+// fragment may carry a key, so only the scheme, host and path stay, the
+// path without a trailing slash. A change in the query alone, such as a
+// provider's API version, is therefore not seen. eval.toml admits only
+// a URL that parses.
 export function servedAt(baseUrl: string): string {
-    try {
-        const url = new URL(baseUrl);
-        return `${url.protocol}//${url.host}${url.pathname}`;
-    } catch {
-        return "(not a URL)";
-    }
+    const url = new URL(baseUrl);
+    return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, "")}`;
 }
 
 // The answer and judge roles' models and where they are served, or none

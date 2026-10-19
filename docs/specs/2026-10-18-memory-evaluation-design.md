@@ -330,8 +330,8 @@ system, written as each completes, so an interrupted run resumes with
 `--resume <run>` and asks only what is missing. `<run>` is the start
 time and a short hash of the questions and settings, which
 `run.json` records with the models, the base URL serving each (its
-scheme, host and path alone, as the rest may carry a key), the budget
-and the snapshot's counts.
+scheme, host and path alone, as the rest may carry a key, so a change
+in its query alone is not seen), the budget and the snapshot's counts.
 
 - A question other than an abstention is judged declined wrongly by a
   pattern (`declines`) on the answer, with no model asked. A

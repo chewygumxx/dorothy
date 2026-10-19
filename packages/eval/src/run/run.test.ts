@@ -31,7 +31,7 @@ import {
     tempRoot,
 } from "../testing.js";
 import { readRecords, recordsPath, reportPath, summaryPath } from "./record.js";
-import { newRunInfo, runEvaluation } from "./run.js";
+import { newRunInfo, runEvaluation, servedAt } from "./run.js";
 
 let temp: ReturnType<typeof tempRoot>;
 let work: string;
@@ -483,6 +483,15 @@ describe("a run", () => {
             judge: "http://127.0.0.1:8080/v1",
         });
         expect(JSON.stringify(info)).not.toContain("secret");
+        // A trailing slash moves no provider; a query is not kept, so a
+        // change in it alone is not refused.
+        expect(servedAt("http://127.0.0.1:8080/v1/")).toBe(
+            "http://127.0.0.1:8080/v1",
+        );
+        expect(servedAt("https://Example.test/")).toBe("https://example.test");
+        expect(servedAt("https://example.test/v1?api-version=2")).toBe(
+            "https://example.test/v1",
+        );
         const alone = newRunInfo(
             {
                 systems: ["lexical"],

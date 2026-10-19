@@ -40,7 +40,11 @@ function roleOf(role: Role, table: unknown): RoleConfig {
     const baseUrl = table["base-url"];
     const model = table.model;
     const key = table.key;
-    if (typeof baseUrl !== "string" || !/^https?:\/\/\S+$/.test(baseUrl)) {
+    if (
+        typeof baseUrl !== "string" ||
+        !/^https?:\/\/\S+$/.test(baseUrl) ||
+        !URL.canParse(baseUrl)
+    ) {
         throw new UsageError(`${where} needs base-url, an http or https URL`);
     }
     if (typeof model !== "string" || model.trim() === "") {
