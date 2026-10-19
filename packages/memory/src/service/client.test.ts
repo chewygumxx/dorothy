@@ -265,21 +265,66 @@ describe("the client's promises", () => {
 
     it("spends one record budget on a flush and a send together", async () => {
         wait("1-a");
-        const delays: number[] = [];
-        const options = {
-            ...serve(async () => {
-                delays.push(Date.now());
-                await Bun.sleep(150);
-                return Response.json(ACCEPTED);
-            }),
-            timeouts: { record: 200 },
-        };
-        const started = Date.now();
-        // The waiting record takes 150 ms; the new one has 50 left, and
-        // is cut off then rather than given 200 more.
-        expect(await sendRecord(record, options)).toBeNull();
-        expect(Date.now() - started).toBeLessThan(290);
-        expect(delays).toHaveLength(2);
+        // A clock the test moves, and the time each request is given: the
+        // waiting record takes 150 of the 200, leaving 50 for the new one.
+        let clock = 1_800_000_000_000;
+        const now = spyOn(Date, "now").mockImplementation(() => clock);
+        const given: number[] = [];
+        const timeout = spyOn(AbortSignal, "timeout").mockImplementation(
+            (ms: number) => {
+                given.push(ms);
+                return new AbortController().signal;
+            },
+        );
+        let calls = 0;
+        const fetcher = (async () => {
+            calls += 1;
+            if (calls === 1) {
+                clock += 150;
+            }
+            return Response.json(ACCEPTED);
+        }) as unknown as typeof fetch;
+        try {
+            const sent = await sendRecord(record, {
+                env,
+                url: "http://127.0.0.1:1",
+                token: null,
+                fetch: fetcher,
+                timeouts: { record: 200 },
+            });
+            expect(sent).toEqual(ACCEPTED);
+        } finally {
+            now.mockRestore();
+            timeout.mockRestore();
+        }
+        expect(calls).toBe(2);
+        expect(given).toEqual([200, 50]);
+    });
+
+    it("sends nothing further once a flush has spent the budget", async () => {
+        wait("1-a");
+        let clock = 1_800_000_000_000;
+        const now = spyOn(Date, "now").mockImplementation(() => clock);
+        let calls = 0;
+        const fetcher = (async () => {
+            calls += 1;
+            clock += 250;
+            return Response.json(ACCEPTED);
+        }) as unknown as typeof fetch;
+        try {
+            const sent = await sendRecord(record, {
+                env,
+                url: "http://127.0.0.1:1",
+                token: null,
+                fetch: fetcher,
+                timeouts: { record: 200 },
+            });
+            expect(sent).toBeNull();
+        } finally {
+            now.mockRestore();
+        }
+        // The new record waits for the next call rather than overrun.
+        expect(calls).toBe(1);
         expect(pending()).toHaveLength(1);
     });
 
