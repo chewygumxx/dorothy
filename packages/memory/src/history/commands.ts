@@ -73,13 +73,16 @@ export function commandHistory({
     env = process.env,
     err = process.stderr,
     hook = entryHook(),
-    // false for a short-lived process, which leaves the mirror to chat's launch.
+    // Whether to remind about a missing mirror.
     remindMirror = true,
+    pushOnClose = true,
 }: {
     env?: Env;
     err?: Output;
     hook?: HookCommand | null;
     remindMirror?: boolean;
+    // Hooks and background readers leave network work to chat.
+    pushOnClose?: boolean;
 } = {}): OpenHistory {
     return async (index) => {
         const { config } = await readConfig(env);
@@ -90,7 +93,8 @@ export function commandHistory({
         if (opened === null) return null;
         return opened.history.handle(async () => {
             try {
-                if (remindMirror) await pushForCommand(opened.history, env);
+                if (pushOnClose)
+                    await pushForCommand(opened.history, env, opened.tip);
             } finally {
                 opened.close();
             }
@@ -122,13 +126,19 @@ async function openSwept(
         warn(opened.reason);
         return null;
     }
+    const tip = await opened.history.repo.resolve(MAIN);
     await opened.history.sweep();
     if (remind) await remindOfMirror(opened.history, warn);
-    return opened;
+    return { ...opened, tip };
 }
 
-async function pushForCommand(history: MemoryHistory, env: Env): Promise<void> {
+async function pushForCommand(
+    history: MemoryHistory,
+    env: Env,
+    tip: string | null,
+): Promise<void> {
     try {
+        if ((await history.repo.resolve(MAIN)) === tip) return;
         if ((await history.repo.remote(MIRROR)) === null) return;
         const mirror = new Mirror({
             repo: history.repo,
@@ -163,9 +173,13 @@ async function remindOfMirror(
 
 // History for its own commands, swept under the combined write lock.
 // Null, said on err, when it is off or broken.
-async function session(options: CommandOptions, remind = true) {
+async function session(
+    options: CommandOptions,
+    remind = true,
+    pushOnClose = true,
+) {
     try {
-        return await openSession(options, remind);
+        return await openSession(options, remind, pushOnClose);
     } catch (error) {
         (options.err ?? process.stderr).write(
             `dorothy: couldn't open history: ${describeError(error)}\n`,
@@ -184,6 +198,7 @@ async function openSession(
     }: CommandOptions,
     // Whether to remind of a missing mirror: not when one is being set.
     remind = true,
+    pushOnClose = true,
 ): Promise<{ history: MemoryHistory; close(): Promise<void> } | null> {
     const { config } = await readConfig(env);
     if (!config.history.enabled) {
@@ -215,7 +230,8 @@ async function openSession(
         history: opened.history,
         close: async () => {
             try {
-                if (remind) await pushForCommand(opened.history, env);
+                if (pushOnClose)
+                    await pushForCommand(opened.history, env, opened.tip);
             } finally {
                 opened.close();
                 index?.close();
@@ -688,7 +704,7 @@ export async function runMirror(
     if (url !== null && target === null) {
         return 1;
     }
-    const opened = await session(options, false);
+    const opened = await session(options, false, false);
     if (opened === null) {
         return 1;
     }

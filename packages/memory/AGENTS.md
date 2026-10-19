@@ -98,8 +98,8 @@ Of the `@dorothy` packages it depends on `core` alone.
   orphan branch `sealed` and pushes it to the remote
   `mirror` under `DOROTHY_MIRROR_KEY`; `--recover` rebuilds from it.
   `commands.ts` has `commandHistory`, history/restore/rollback/check and
-  mirror/recover commands. User commands await a push on close; mirror
-  keys use dotenvx's `set`. `lock.ts` is the common `FileLock`.
+  mirror/recover commands. Commands that advance main await a push on close;
+  mirror keys use dotenvx's `set`. `lock.ts` is the common `FileLock`.
 - `sqlite-lock.ts`: `exclusiveLock`, a SQLite `BEGIN IMMEDIATE` lock.
 
 ## Invariants

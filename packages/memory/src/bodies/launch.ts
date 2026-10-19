@@ -71,7 +71,11 @@ export async function syncDirectory(
     dir: string,
     {
         env = process.env,
-        openHistory = commandHistory({ env, remindMirror: false }),
+        openHistory = commandHistory({
+            env,
+            remindMirror: false,
+            pushOnClose: false,
+        }),
     }: { env?: Env; openHistory?: OpenHistory } = {},
 ): Promise<string | null> {
     let index: RecallIndex | null = null;

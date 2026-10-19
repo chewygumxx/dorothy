@@ -283,6 +283,7 @@ async function holding(
     const versions = await commandHistory({
         env,
         remindMirror: false,
+        pushOnClose: false,
         err: { write: (text: string) => log.warn(text.trim()) },
     })(index);
     if (index === null && versions === null) {

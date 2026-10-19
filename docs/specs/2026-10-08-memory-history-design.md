@@ -371,7 +371,7 @@ Every mirror is sealed, local paths included.
 - A failure is warned of once per run, with its reason, and schedules a
   retry. A timer that fires during a running push leaves follow-up work
   scheduled, so later commits do not need another commit or launch.
-- User commands await one push on close, after releasing their write
+- Commands that advance main await one push on close, after their write
   transaction. Short-lived hook/launch handles keep their background
   policy. Chat shutdown still never waits for network completion.
 - With no key while a mirror is set, sealing stops with a warning naming

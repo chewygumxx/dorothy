@@ -375,7 +375,11 @@ export async function runRecallServer(
         project: found?.id ?? null,
         openHistory: async (index) => {
             const { commandHistory } = await import("../history/commands.js");
-            return commandHistory({ env, remindMirror: false })(index);
+            return commandHistory({
+                env,
+                remindMirror: false,
+                pushOnClose: false,
+            })(index);
         },
     });
     const closed = new Promise<void>((resolve) => {

@@ -125,6 +125,35 @@ it("leaves no retry timer after a failed mirror command", async () => {
     }
 });
 
+it.each(["history", "handle"])(
+    "does not push a read-only %s session",
+    async (kind) => {
+        env.DOROTHY_MIRROR_KEY = newKey();
+        write("tags.json", vocabulary(1));
+        expect(await runMirror(await bareRepo(), options())).toBe(0);
+        const original = Bun.spawn;
+        let pushes = 0;
+        const spy = spyOn(Bun, "spawn").mockImplementation(((
+            ...args: Parameters<typeof Bun.spawn>
+        ) => {
+            if (Array.isArray(args[0]) && args[0].includes("push")) pushes++;
+            return original(...args);
+        }) as typeof Bun.spawn);
+        try {
+            if (kind === "history") expect(await runHistory(options())).toBe(0);
+            else {
+                const handle = await commandHistory({ env, err, hook: null })(
+                    null,
+                );
+                await handle?.close();
+            }
+            expect(pushes).toBe(0);
+        } finally {
+            spy.mockRestore();
+        }
+    },
+);
+
 it.each(["restore", "rollback", "edit-tags"])(
     "pushes a %s commit before the command returns",
     async (operation) => {
