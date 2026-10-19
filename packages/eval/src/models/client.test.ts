@@ -189,6 +189,35 @@ describe("Models", () => {
         expect(error.message).toContain("500");
     });
 
+    it("never spends past --max-calls with callers retrying together", async () => {
+        // The first four requests fail, one for each caller; all four
+        // wait, then retry, with room for two more calls.
+        const { url, requests } = serve((count) =>
+            count <= 4 ? { status: 500 } : { content: "Hi." },
+        );
+        const models = new Models(configOf(url), {
+            env: {},
+            maxCalls: 6,
+            retryMs: 20,
+        });
+        const settled = await Promise.allSettled(
+            Array.from({ length: 4 }, () => models.complete("answer", ask)),
+        );
+        expect(models.calls).toBe(6);
+        expect(requests).toHaveLength(6);
+        expect(
+            settled.filter((each) => each.status === "fulfilled"),
+        ).toHaveLength(2);
+        const stopped = settled.filter(
+            (each): each is PromiseRejectedResult => each.status === "rejected",
+        );
+        expect(stopped).toHaveLength(2);
+        for (const { reason } of stopped) {
+            expect(reason).toBeInstanceOf(CallCap);
+            expect(reason.message).toContain("while retrying");
+        }
+    });
+
     it("names the variable as configured", async () => {
         // Models takes the name as eval.toml gave it; the config alone
         // decides what a name may be (capitals, digits, underscores).

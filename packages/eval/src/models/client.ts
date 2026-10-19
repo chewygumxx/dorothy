@@ -179,41 +179,43 @@ export class Models {
     // Each attempt spends one of --max-calls; a retryable failure is tried
     // twice more, waiting retryMs, then twice that. A cap reached between
     // the tries is said at once, with the failure that was being retried,
-    // not after a wait.
+    // not after a wait, and again after it: callers retrying together
+    // each look at the cap just before they spend, with nothing awaited
+    // between the look and the spend.
     async call<T>(work: () => Promise<T>): Promise<T> {
-        const capped = (failure: unknown) => {
-            const cap = this.options.maxCalls ?? null;
-            if (cap === null || this.#calls < cap) {
-                return null;
-            }
-            // The message alone: a failure's other properties may hold
-            // what no redaction reads.
-            return new CallCap(
-                failure === null
-                    ? `reached --max-calls (${cap})`
-                    : `reached --max-calls (${cap}) while retrying: ${failureOf(failure)}`,
-            );
-        };
-        const first = capped(null);
-        if (first !== null) {
-            throw first;
-        }
+        let failure: unknown = null;
         for (let attempt = 0; ; attempt++) {
-            this.#calls++;
+            this.#spend(failure);
             try {
                 return await work();
             } catch (error) {
                 if (attempt >= 2 || !retryable(error)) {
                     throw this.#redacted(error);
                 }
-                const failure = this.#redacted(error);
-                const stopped = capped(failure);
-                if (stopped !== null) {
-                    throw stopped;
-                }
+                failure = this.#redacted(error);
+                this.#room(failure);
                 await Bun.sleep((this.options.retryMs ?? 2000) * (attempt + 1));
             }
         }
+    }
+
+    // Throws the cap if it is spent; the message alone carries the failure
+    // being retried, as its other properties may hold what no redaction
+    // reads.
+    #room(failure: unknown): void {
+        const cap = this.options.maxCalls ?? null;
+        if (cap !== null && this.#calls >= cap) {
+            throw new CallCap(
+                failure === null
+                    ? `reached --max-calls (${cap})`
+                    : `reached --max-calls (${cap}) while retrying: ${failureOf(failure)}`,
+            );
+        }
+    }
+
+    #spend(failure: unknown): void {
+        this.#room(failure);
+        this.#calls++;
     }
 
     // A provider may echo a key in its refusal: the error, or the string
