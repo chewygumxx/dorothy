@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
     mkdirSync,
     mkdtempSync,
+    readdirSync,
     readFileSync,
     rmSync,
     statSync,
@@ -33,6 +34,41 @@ beforeEach(() => {
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("tokenStore", () => {
+    it("keeps several devices apart, and across a reopened store", async () => {
+        const laptop = await tokens.add("laptop");
+        const phone = await tokens.add("phone");
+        const again = tokenStore(path);
+        expect(await again.verify(laptop)).toBe("laptop");
+        expect(await again.verify(phone)).toBe("phone");
+        expect(await again.devices()).toEqual(["laptop", "phone"]);
+        expect(await again.revoke("laptop")).toBe(true);
+        expect(await tokenStore(path).verify(laptop)).toBeNull();
+        expect(await tokenStore(path).verify(phone)).toBe("phone");
+    });
+
+    it("loses no device when several are added or revoked at once", async () => {
+        const names = ["a", "b", "c", "d", "e", "f"];
+        const made = await Promise.all(
+            names.map((name) => tokenStore(path).add(name)),
+        );
+        expect(await tokens.devices()).toEqual(names);
+        await Promise.all(
+            names.slice(0, 3).map((name) => tokenStore(path).revoke(name)),
+        );
+        expect(await tokens.devices()).toEqual(["d", "e", "f"]);
+        expect(await tokens.verify(made[5] as string)).toBe("f");
+    });
+
+    it("leaves no temporary file where the swap fails", async () => {
+        const failing = tokenStore(path, () => new Date(), {
+            rename: async () => {
+                throw new Error("rename failed");
+            },
+        });
+        await expect(failing.add("phone")).rejects.toThrow("rename failed");
+        expect(readdirSync(dirname(path))).toEqual([]);
+    });
+
     it("makes a token, keeps only its hash, and knows its device", async () => {
         const token = await tokens.add("laptop");
         expect(token).toStartWith("dmt_");
@@ -80,6 +116,29 @@ describe("tokenStore", () => {
         expect(readFileSync(path, "utf8")).toBe("{ not json");
         expect(await tokens.verify("dmt_anything")).toBeNull();
         expect(await tokens.devices()).toEqual([]);
+    });
+
+    it("takes only a file of exactly its shape for tokens", async () => {
+        const hash = "a".repeat(64);
+        const at = "2026-10-18T09:30:00.000Z";
+        mkdirSync(dirname(path), { recursive: true });
+        for (const bad of [
+            { v: 1, devices: [] },
+            { v: 1, devices: { phone: { hash: "xyz", at } } },
+            { v: 1, devices: { phone: { hash } } },
+            { v: 1, devices: { phone: { hash, at: 5 } } },
+            { v: 1, devices: { phone: "x" } },
+            { v: 1, devices: { "Bad Name": { hash, at } } },
+        ]) {
+            writeFileSync(path, JSON.stringify(bad));
+            await expect(tokens.add("laptop")).rejects.toThrow(path);
+            expect(await tokens.devices()).toEqual([]);
+        }
+        writeFileSync(
+            path,
+            JSON.stringify({ v: 1, devices: { phone: { hash, at } } }),
+        );
+        expect(await tokens.devices()).toEqual(["phone"]);
     });
 
     it("will not revoke from a file of another shape", async () => {
