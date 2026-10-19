@@ -178,19 +178,27 @@ export class Models {
 
     // Each attempt spends one of --max-calls; a retryable failure is tried
     // twice more, waiting retryMs, then twice that. A cap reached between
-    // the tries keeps the failure that was being retried.
+    // the tries is said at once, with the failure that was being retried,
+    // not after a wait.
     async call<T>(work: () => Promise<T>): Promise<T> {
-        let failure: unknown = null;
-        for (let attempt = 0; ; attempt++) {
+        const capped = (failure: unknown) => {
             const cap = this.options.maxCalls ?? null;
-            if (cap !== null && this.#calls >= cap) {
-                throw failure === null
-                    ? new CallCap(`reached --max-calls (${cap})`)
-                    : new CallCap(
-                          `reached --max-calls (${cap}) while retrying: ${failureOf(failure)}`,
-                          { cause: failure },
-                      );
+            if (cap === null || this.#calls < cap) {
+                return null;
             }
+            // The message alone: a failure's other properties may hold
+            // what no redaction reads.
+            return new CallCap(
+                failure === null
+                    ? `reached --max-calls (${cap})`
+                    : `reached --max-calls (${cap}) while retrying: ${failureOf(failure)}`,
+            );
+        };
+        const first = capped(null);
+        if (first !== null) {
+            throw first;
+        }
+        for (let attempt = 0; ; attempt++) {
             this.#calls++;
             try {
                 return await work();
@@ -198,7 +206,11 @@ export class Models {
                 if (attempt >= 2 || !retryable(error)) {
                     throw this.#redacted(error);
                 }
-                failure = this.#redacted(error);
+                const failure = this.#redacted(error);
+                const stopped = capped(failure);
+                if (stopped !== null) {
+                    throw stopped;
+                }
                 await Bun.sleep((this.options.retryMs ?? 2000) * (attempt + 1));
             }
         }

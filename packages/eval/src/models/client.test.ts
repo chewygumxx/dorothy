@@ -154,9 +154,9 @@ describe("Models", () => {
         expect(failureOf(error)).toStartWith("reached --max-calls (2)");
         expect(failureOf(error)).toContain("500");
         expect(failureOf(error)).not.toContain("secret-123");
-        expect(
-            JSON.stringify([error.message, String(error.cause)]),
-        ).not.toContain("secret-123");
+        // The message alone carries the failure: a cause object might
+        // hold a key in a property no redaction reads.
+        expect(error.cause).toBeUndefined();
     });
 
     it("says only the cap when it is reached before any failure", async () => {
@@ -174,7 +174,24 @@ describe("Models", () => {
         expect(requests[0]?.authorization).toBeNull();
     });
 
-    it("keeps the case of the variable it names", async () => {
+    it("does not wait to say the cap is reached", async () => {
+        const { url, requests } = serve(() => ({ status: 500 }));
+        const models = new Models(configOf(url), {
+            env: {},
+            maxCalls: 1,
+            retryMs: 5000,
+        });
+        const started = performance.now();
+        const error = await models.complete("answer", ask).catch((e) => e);
+        expect(error).toBeInstanceOf(CallCap);
+        expect(performance.now() - started).toBeLessThan(2000);
+        expect(requests).toHaveLength(1);
+        expect(error.message).toContain("500");
+    });
+
+    it("names the variable as configured", async () => {
+        // Models takes the name as eval.toml gave it; the config alone
+        // decides what a name may be (capitals, digits, underscores).
         const { url } = serve(() => ({ content: "Hi." }));
         const models = new Models(configOf(url, "Eval_Key"), { env: {} });
         await expect(models.complete("answer", ask)).rejects.toThrow(
