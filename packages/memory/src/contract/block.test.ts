@@ -165,7 +165,7 @@ describe("buildBlock", () => {
             expect(confirmed).not.toContain("maybe-");
         });
 
-        it("is the first to go when the budget is tight", async () => {
+        it("ranks below all confirmed knowledge for the budget", async () => {
             const engine = fakeEngine({
                 knowledge: [
                     guess("maybe-tea"),
