@@ -237,6 +237,19 @@ describe("bun run eval -- run", () => {
         const answered = fakeIo();
         expect(await runCli(resume, answered.io)).toBe(1);
         expect(answered.err.join("")).toContain("the answer model is now");
+        // The same model from another provider is another model.
+        const url = stub?.url ?? "";
+        const moved = config.replace(
+            `[models.judge]\nbase-url = "${url}"`,
+            `[models.judge]\nbase-url = "${url.replace("/v1", "/v2")}"`,
+        );
+        expect(moved).not.toBe(config);
+        writeFileSync(configPath(work), moved);
+        const elsewhere = fakeIo();
+        expect(await runCli(resume, elsewhere.io)).toBe(1);
+        expect(elsewhere.err.join("")).toContain(
+            `the judge base URL is now ${url.replace("/v1", "/v2")}, but run ${id} used ${url}; start a new run`,
+        );
         writeFileSync(configPath(work), config);
 
         const path = join(work, "snapshot.json");
@@ -253,6 +266,30 @@ describe("bun run eval -- run", () => {
         expect(taken.err.join("")).toContain("start a new run");
         expect(await readRecords(work, id)).toHaveLength(kept);
         expect(requests).toHaveLength(calls);
+    });
+
+    it("resumes a run that recorded no base URL, whatever they are now", async () => {
+        serve({ content: "Plot twelve, by the river." });
+        const first = fakeIo();
+        const lexical = ["run", "--work", work, "--systems", "lexical"];
+        expect(await runCli([...lexical, "--max-calls", "4"], first.io)).toBe(
+            0,
+        );
+        const id = idOf(first.out);
+        const path = join(work, "runs", id, "run.json");
+        const { baseUrls, ...older } = JSON.parse(readFileSync(path, "utf8"));
+        expect(baseUrls).toEqual({
+            answer: stub?.url,
+            judge: stub?.url,
+        });
+        writeFileSync(path, JSON.stringify(older));
+        const config = readFileSync(configPath(work), "utf8");
+        writeFileSync(configPath(work), config.replaceAll("/v1", "/v1/"));
+        const again = fakeIo();
+        expect(
+            await runCli(["run", "--work", work, "--resume", id], again.io),
+        ).toBe(0);
+        expect(await readRecords(work, id)).toHaveLength(5);
     });
 
     it("refuses a run's settings given with --resume", async () => {
@@ -318,6 +355,51 @@ describe("bun run eval -- run", () => {
 });
 
 describe("a run", () => {
+    it("records each role's base URL with no credential in it", async () => {
+        const role = (baseUrl: string, model: string) => ({
+            baseUrl,
+            model,
+            key: "EVAL_KEY",
+        });
+        const info = newRunInfo(
+            {
+                systems: ["lexical"],
+                budget: 8000,
+                fullBudget: 400_000,
+                retrievalOnly: false,
+            },
+            [],
+            {
+                generate: null,
+                answer: role(
+                    "https://user:secret@example.test/api/v1?key=secret#x",
+                    "a/1",
+                ),
+                judge: role("http://127.0.0.1:8080/v1", "j/1"),
+            },
+            await readSnapshot(work),
+            new Date("2026-10-19T01:00:00.000Z"),
+        );
+        expect(info.baseUrls).toEqual({
+            answer: "https://example.test/api/v1",
+            judge: "http://127.0.0.1:8080/v1",
+        });
+        expect(JSON.stringify(info)).not.toContain("secret");
+        const alone = newRunInfo(
+            {
+                systems: ["lexical"],
+                budget: 8000,
+                fullBudget: 400_000,
+                retrievalOnly: true,
+            },
+            [],
+            await readEvalConfig(work),
+            await readSnapshot(work),
+            new Date("2026-10-19T01:00:00.000Z"),
+        );
+        expect(alone.baseUrls).toEqual({ answer: null, judge: null });
+    });
+
     it("records a system's failure and goes on", async () => {
         const corpus = await openCorpus(workEnv(work));
         try {

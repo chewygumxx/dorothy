@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 import { appendFile, mkdir, stat, writeFile } from "node:fs/promises";
 import { UsageError } from "../errors.js";
 import { CallCap, failureOf, type Models } from "../models/client.js";
-import type { EvalConfig } from "../models/config.js";
+import type { EvalConfig, RoleConfig } from "../models/config.js";
 import type { Question } from "../questions/file.js";
 import { writeRunReport } from "../report/command.js";
 import type { Summary } from "../report/summary.js";
@@ -48,6 +48,39 @@ export type RunSettings = {
     retrievalOnly: boolean;
 };
 
+// A base URL as run.json keeps it: its user, password, query and
+// fragment may carry a key, so only the scheme, host and path stay.
+export function servedAt(baseUrl: string): string {
+    try {
+        const url = new URL(baseUrl);
+        return `${url.protocol}//${url.host}${url.pathname}`;
+    } catch {
+        return "(not a URL)";
+    }
+}
+
+// The answer and judge roles' models and where they are served, or none
+// for a run that asks no model.
+function rolesOf(config: EvalConfig, retrievalOnly: boolean) {
+    const of = (
+        role: "answer" | "judge",
+        what: (found: RoleConfig) => string,
+    ) => {
+        const found = config[role];
+        return retrievalOnly || found === null ? null : what(found);
+    };
+    return {
+        models: {
+            answer: of("answer", (found) => found.model),
+            judge: of("judge", (found) => found.model),
+        },
+        baseUrls: {
+            answer: of("answer", (found) => servedAt(found.baseUrl)),
+            judge: of("judge", (found) => servedAt(found.baseUrl)),
+        },
+    };
+}
+
 export function newRunInfo(
     settings: RunSettings,
     accepted: Question[],
@@ -55,16 +88,14 @@ export function newRunInfo(
     snapshot: SnapshotInfo,
     now: Date,
 ): RunInfo {
-    const models = {
-        answer: settings.retrievalOnly ? null : (config.answer?.model ?? null),
-        judge: settings.retrievalOnly ? null : (config.judge?.model ?? null),
-    };
+    const { models, baseUrls } = rolesOf(config, settings.retrievalOnly);
     const hash = createHash("sha256")
         .update(
             JSON.stringify({
                 ids: accepted.map((question) => question.id),
                 settings,
                 models,
+                baseUrls,
             }),
         )
         .digest("hex")
@@ -76,14 +107,16 @@ export function newRunInfo(
         at,
         ...settings,
         models,
+        baseUrls,
         snapshot,
         questions: accepted.length,
         questionIds: accepted.map((question) => question.id),
     };
 }
 
-// A resumed run goes on with the snapshot and models it began with: a
-// record of another corpus or model would make run.json untrue.
+// A resumed run goes on with the snapshot, models and providers it began
+// with: a record of another corpus or model would make run.json untrue.
+// A run that kept no base URLs is held to its models alone.
 export function checkResumable(
     info: RunInfo,
     config: EvalConfig,
@@ -97,12 +130,20 @@ export function checkResumable(
     if (info.retrievalOnly) {
         return;
     }
-    for (const role of ["answer", "judge"] as const) {
-        const now = config[role]?.model ?? null;
-        if (now !== info.models[role]) {
-            throw new UsageError(
-                `the ${role} model is now ${now ?? "none"}, but run ${info.id} used ${info.models[role] ?? "none"}; start a new run`,
-            );
+    const now = rolesOf(config, false);
+    const kept = [
+        ["model", now.models, info.models],
+        ...(info.baseUrls === undefined
+            ? []
+            : [["base URL", now.baseUrls, info.baseUrls] as const]),
+    ] as const;
+    for (const [what, current, recorded] of kept) {
+        for (const role of ["answer", "judge"] as const) {
+            if (current[role] !== recorded[role]) {
+                throw new UsageError(
+                    `the ${role} ${what} is now ${current[role] ?? "none"}, but run ${info.id} used ${recorded[role] ?? "none"}; start a new run`,
+                );
+            }
         }
     }
 }

@@ -321,8 +321,9 @@ Records go to `<work>/runs/<run>/records.jsonl`, one per question and
 system, written as each completes, so an interrupted run resumes with
 `--resume <run>` and asks only what is missing. `<run>` is the start
 time and a short hash of the questions and settings, which
-`run.json` records with the models, the budget and the snapshot's
-counts.
+`run.json` records with the models, the base URL serving each (its
+scheme, host and path alone, as the rest may carry a key), the budget
+and the snapshot's counts.
 
 - A question other than an abstention is judged declined wrongly by a
   pattern (`declines`) on the answer, with no model asked. A
@@ -337,7 +338,9 @@ counts.
 - A resume takes the systems, budget and questions from `run.json`, and
   refuses `--systems`, `--budget`, `--full-budget` or `--retrieval-only`
   given with it. It refuses a snapshot taken at another time, or answer
-  and judge models other than the run's, and says to start a new run.
+  and judge models or base URLs other than the run's, and says to start
+  a new run; a `run.json` written before base URLs were kept is held to
+  its models alone.
   It asks again a record with a failure, and where a question and
   system have two records the last stands. A run stopped by
   `--max-calls` keeps its records and writes the report of what is

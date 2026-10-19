@@ -51,6 +51,9 @@ export type RunInfo = {
     fullBudget: number;
     retrievalOnly: boolean;
     models: { answer: string | null; judge: string | null };
+    // Where each model was served, with no credential or query; a run
+    // written before they were kept has none.
+    baseUrls?: { answer: string | null; judge: string | null };
     snapshot: SnapshotInfo;
     questions: number;
     // The questions it asks, so a resumed run asks no others.

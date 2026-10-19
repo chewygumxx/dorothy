@@ -82,8 +82,8 @@ options declared and described for `--help`, its failures as
 - `run/judges.ts`: the answering prompt, the judges (openevals' strict
   prompt and ours) and `declines`; `run/run.ts`: `runEvaluation`, which
   appends a record per question and system and resumes where a run
-  stopped, asking a failed record again and refusing a changed snapshot
-  or model; `run/command.ts`: the `run` command.
+  stopped, asking a failed record again and refusing a changed snapshot,
+  model or base URL; `run/command.ts`: the `run` command.
 - `report/`: `summarise`, the Markdown report and `compareOf`, and the
   `compare` command with `writeRunReport`.
 - `testing.ts`: `fakeIo`, temporary roots and the fixture archive.
