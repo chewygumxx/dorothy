@@ -314,6 +314,33 @@ describe("MemoryService", () => {
         );
     });
 
+    it("warns once a run that the chat's summaries and pins overrun the budget", () => {
+        const { memory, notices } = setup({
+            call: reviews().fn,
+            config: { ...DEFAULT_CONFIG.memory, budget: 200 },
+            entries: [
+                entry(phrase(1), {
+                    title: "Pinned",
+                    description: "A pin.",
+                    abstract: "x".repeat(100),
+                    pinned: true,
+                }),
+            ],
+        });
+        // Alone the pin fits; with the summaries charged first it does not.
+        expect(memory.warnings()).toEqual([]);
+        memory.block(150);
+        memory.block(300);
+        memory.block(150);
+        const warnings = notices.filter((notice) => notice.type === "warning");
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toMatchObject({
+            message: expect.stringContaining(
+                "this conversation's summaries take ~150 tokens",
+            ),
+        });
+    });
+
     it("on stop, cancels the review without a word", async () => {
         await transcript(LIVE, [user("Hi"), reply("Hello")]);
         const query = reviews("hang");

@@ -495,6 +495,21 @@ describe("reviewing a compacted conversation", () => {
         expect(prompt).not.toContain("Old one.");
     });
 
+    it("lists a read made in a compacted turn, with no mark in the text", () => {
+        const read = lookup("toolu_old", 3);
+        const withRead: ResumedTurn[] = turns.map((turn, at) =>
+            at === 1 ? { ...turn, lookups: [read] } : turn,
+        );
+        const reads = pendingReads(withRead, {}, () => "Old name");
+        expect(reads.map((pending) => pending.id)).toEqual(["toolu_old"]);
+        const prompt = reviewPrompt(withRead, current, reads);
+        expect(prompt).toContain(
+            '<read id="toolu_old" conversation="Old name" turns="3-5">why toolu_old</read>',
+        );
+        expect(prompt).not.toContain("[read");
+        expect(prompt).not.toContain("Old two.");
+    });
+
     it("says how to read them", () => {
         expect(CLUSTERS_INSTRUCTION).toContain("<earlier>");
     });
