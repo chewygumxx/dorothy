@@ -38,6 +38,23 @@ describe("the editor", () => {
         );
     });
 
+    it("says an editor that did not run or stopped, instead of an edit", () => {
+        expect(() =>
+            openEditor("f", { EDITOR: "typo" }, spawned({ status: 127 })),
+        ).toThrow("the editor (typo) exited with status 127");
+        expect(() =>
+            openEditor(
+                "f",
+                { VISUAL: "vim" },
+                spawned({ status: null, signal: "SIGKILL" }),
+            ),
+        ).toThrow("the editor (vim) was stopped by SIGKILL");
+        expect(() => openEditor("f", {}, spawned({ status: 0 }))).not.toThrow();
+        expect(() => openEditor("f", { EDITOR: "false" })).toThrow(
+            "the editor (false) exited with status 1",
+        );
+    });
+
     it("runs a real editor on the file", () => {
         expect(() => openEditor("f", { EDITOR: "true" })).not.toThrow();
     });

@@ -28,4 +28,15 @@ export function openEditor(
     if (result.error !== undefined) {
         throw new Error(`could not start the editor: ${result.error.message}`);
     }
+    // A typo in $EDITOR is a shell's 127, not a spawn failure.
+    if (result.signal !== null && result.signal !== undefined) {
+        throw new Error(
+            `the editor (${editor}) was stopped by ${result.signal}`,
+        );
+    }
+    if (typeof result.status === "number" && result.status !== 0) {
+        throw new Error(
+            `the editor (${editor}) exited with status ${result.status}`,
+        );
+    }
 }
