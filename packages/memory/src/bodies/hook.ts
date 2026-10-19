@@ -305,7 +305,7 @@ async function holding(
             now: deps.now ?? (() => new Date()),
         });
     } finally {
-        versions?.close();
+        await versions?.close();
         index?.close();
     }
     return true;

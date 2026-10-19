@@ -82,7 +82,7 @@ export type HistoryHandle = {
     sweep(): Promise<void>;
     // Restores a file found broken; true when it was. Takes the lock.
     heal(path: string): Promise<boolean>;
-    close(): void;
+    close(): void | Promise<void>;
 };
 // Canonical writes take history's combined lock when available, else
 // the index's alone; none with neither.

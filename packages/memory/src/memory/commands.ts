@@ -103,7 +103,7 @@ export async function runList({
         out.write(`${formatList(listRows(loaded.entries, tiered))}\n`);
         return 0;
     } finally {
-        versions?.close();
+        await versions?.close();
         index.close();
     }
 }
@@ -166,7 +166,7 @@ export async function runTags({
         );
         return 1;
     } finally {
-        versions?.close();
+        await versions?.close();
         index.close();
     }
 }
@@ -294,7 +294,7 @@ export async function runMemoryEdit(
             },
         );
     } finally {
-        versions?.close();
+        await versions?.close();
         index?.close();
     }
 }
@@ -417,7 +417,7 @@ export async function runTagsEdit({
             },
         );
     } finally {
-        versions?.close();
+        await versions?.close();
         index?.close();
     }
 }

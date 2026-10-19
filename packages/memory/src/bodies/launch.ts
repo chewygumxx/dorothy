@@ -95,7 +95,7 @@ export async function syncDirectory(
     } catch (error) {
         return describeError(error);
     } finally {
-        versions?.close();
+        await versions?.close();
         index?.close();
     }
 }

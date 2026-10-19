@@ -192,7 +192,7 @@ export class MemoryHistory {
         this.record(paths, message);
 
     // What memory sees of history; close is whoever opened it's.
-    handle(close: () => void = () => {}): HistoryHandle {
+    handle(close: () => void | Promise<void> = () => {}): HistoryHandle {
         return {
             recorder: this.recorder,
             lock: this.lock,

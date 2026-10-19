@@ -20,6 +20,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { keepHalt } from "../bodies/unread.js";
+import { runTagsEdit } from "../memory/commands.js";
 import { EMPTY_SIDECAR } from "../memory/sidecar.js";
 import { binaryRepo } from "./binary.js";
 import {
@@ -33,7 +34,8 @@ import {
     runRestore,
     runRollback,
 } from "./commands.js";
-import { newKey } from "./seal.js";
+import { recover } from "./mirror.js";
+import { newKey, parseKey } from "./seal.js";
 import { bareRepo, put, removeRoots, TEST_ENV, tempRoot } from "./testing.js";
 
 afterAll(removeRoots);
@@ -98,6 +100,68 @@ const messages = async () =>
     (await repo().log(undefined, 50)).map((commit) => commit.message);
 // A command that sweeps, to commit what the test wrote.
 const sweep = () => runHistory({ ...options(), out: capture() });
+
+it.each(["restore", "rollback", "edit-tags"])(
+    "pushes a %s commit before the command returns",
+    async (operation) => {
+        const key = newKey();
+        env.DOROTHY_MIRROR_KEY = key;
+        write("tags.json", vocabulary(1));
+        await sweep();
+        const first = (await repo().resolve("HEAD")) as string;
+        write(
+            "tags.json",
+            JSON.stringify({
+                v: 1,
+                rev: 2,
+                concepts: {
+                    k00000001: {
+                        prefLabel: "memory",
+                        scopeNote: "Remembering.",
+                        by: "dorothy",
+                        at: NOW.toISOString(),
+                    },
+                },
+            }),
+        );
+        await repo().commit(["tags.json"], "second");
+        const bare = await bareRepo();
+        expect(await runMirror(bare, options())).toBe(0);
+        const result =
+            operation === "restore"
+                ? await runRestore("tags.json", first, options())
+                : operation === "rollback"
+                  ? await runRollback(first, options())
+                  : await runTagsEdit({
+                        env,
+                        err,
+                        openHistory: commandHistory({ env, err, hook: null }),
+                        edit: async (text) => ({
+                            ok: true,
+                            text: text.replace(
+                                "Tag: memory",
+                                "Tag: remembering",
+                            ),
+                        }),
+                    });
+        expect(result).toBe(0);
+        const fresh = binaryRepo(join(tempRoot(), "recovered"), {
+            env: TEST_ENV,
+        });
+        const recovered = await recover({
+            repo: fresh,
+            url: bare,
+            key: parseKey(key) as Uint8Array,
+            token: null,
+        });
+        expect(recovered.tip).toBe(await repo().resolve("HEAD"));
+        expect(
+            new TextDecoder().decode(
+                (await fresh.show("tags.json", "HEAD")) ?? undefined,
+            ),
+        ).toBe(read("tags.json"));
+    },
+);
 
 it.each(["history", "restore", "rollback", "recover"])(
     "reports unexpected %s failures as command errors",
@@ -224,7 +288,7 @@ describe("commandHistory", () => {
         try {
             const handle = await commandHistory({ env, err, hook: null })(null);
             expect(handle).not.toBeNull();
-            handle?.close();
+            await handle?.close();
             expect(err.text).toContain("fixture mirror inspection failed");
         } finally {
             spy.mockRestore();
@@ -238,7 +302,7 @@ describe("commandHistory", () => {
         write("tags.json", vocabulary(2));
         await handle?.sweep();
         expect((await messages())[0]).toBe("outside: tags.json");
-        handle?.close();
+        await handle?.close();
         expect(err.text).toBe(
             "dorothy: memory has no mirror · dorothy --mirror <url>\n",
         );
@@ -251,7 +315,7 @@ describe("commandHistory", () => {
             hook: null,
             remindMirror: false,
         })(null);
-        handle?.close();
+        await handle?.close();
         expect(err.text).toBe("");
     });
 

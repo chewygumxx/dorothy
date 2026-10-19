@@ -53,7 +53,10 @@ async function openStore({
     err = process.stderr,
     now,
     openHistory,
-}: FactCommandOptions): Promise<{ store: FactStore; close(): void } | null> {
+}: FactCommandOptions): Promise<{
+    store: FactStore;
+    close(): Promise<void>;
+} | null> {
     let index: RecallIndex;
     try {
         index = RecallIndex.open(indexPath(env));
@@ -71,8 +74,8 @@ async function openStore({
             recorder: versions?.recorder ?? null,
             ...(now === undefined ? {} : { now }),
         },
-        close: () => {
-            versions?.close();
+        close: async () => {
+            await versions?.close();
             index.close();
         },
     };
@@ -119,7 +122,7 @@ export async function runFacts(
         out.write(formatFacts(facts));
         return 0;
     } finally {
-        opened.close();
+        await opened.close();
     }
 }
 
@@ -162,7 +165,7 @@ async function onTarget(
         );
         return 1;
     } finally {
-        opened.close();
+        await opened.close();
     }
 }
 
@@ -224,7 +227,7 @@ export async function runRetireFrom(
         );
         return 0;
     } finally {
-        opened.close();
+        await opened.close();
     }
 }
 
@@ -292,7 +295,7 @@ export async function runVerify(
                 return 1;
         }
     } finally {
-        opened.close();
+        await opened.close();
     }
 }
 
@@ -374,7 +377,7 @@ export async function runSync(
         out.write(formatReport(result.report));
         return 0;
     } finally {
-        opened.close();
+        await opened.close();
     }
 }
 

@@ -88,7 +88,13 @@ export function commandHistory({
         }
         const opened = await openSwept({ env, err, hook }, index, remindMirror);
         if (opened === null) return null;
-        return opened.history.handle(opened.close);
+        return opened.history.handle(async () => {
+            try {
+                if (remindMirror) await pushForCommand(opened.history, env);
+            } finally {
+                opened.close();
+            }
+        });
     };
 }
 
@@ -119,6 +125,29 @@ async function openSwept(
     await opened.history.sweep();
     if (remind) await remindOfMirror(opened.history, warn);
     return opened;
+}
+
+async function pushForCommand(history: MemoryHistory, env: Env): Promise<void> {
+    try {
+        if ((await history.repo.remote(MIRROR)) === null) return;
+        const mirror = new Mirror({
+            repo: history.repo,
+            lock: history.lock,
+            key: () => parseKey(env.DOROTHY_MIRROR_KEY),
+            token: () => env.DOROTHY_MIRROR_TOKEN ?? null,
+            warn: (message) => history.warn(message),
+            pushMs: 0,
+        });
+        try {
+            await mirror.push();
+        } finally {
+            await mirror.stop();
+        }
+    } catch (error) {
+        history.warn(
+            `history: couldn't push command changes (${describeError(error)})`,
+        );
+    }
 }
 
 async function remindOfMirror(
@@ -155,7 +184,7 @@ async function openSession(
     }: CommandOptions,
     // Whether to remind of a missing mirror: not when one is being set.
     remind = true,
-): Promise<{ history: MemoryHistory; close(): void } | null> {
+): Promise<{ history: MemoryHistory; close(): Promise<void> } | null> {
     const { config } = await readConfig(env);
     if (!config.history.enabled) {
         err.write("dorothy: history is off in config.toml\n");
@@ -184,9 +213,13 @@ async function openSession(
     }
     return {
         history: opened.history,
-        close: () => {
-            opened.close();
-            index?.close();
+        close: async () => {
+            try {
+                if (remind) await pushForCommand(opened.history, env);
+            } finally {
+                opened.close();
+                index?.close();
+            }
         },
     };
 }
@@ -262,7 +295,7 @@ export async function runHistory(
         err.write(`dorothy: couldn't history: ${describeError(error)}\n`);
         return 1;
     } finally {
-        opened.close();
+        await opened.close();
     }
 }
 
@@ -317,7 +350,7 @@ export async function runRestore(
         err.write(`dorothy: couldn't restore: ${describeError(error)}\n`);
         return 1;
     } finally {
-        opened.close();
+        await opened.close();
     }
 }
 
@@ -393,7 +426,7 @@ export async function runRollback(
         err.write(`dorothy: couldn't rollback: ${describeError(error)}\n`);
         return 1;
     } finally {
-        opened.close();
+        await opened.close();
     }
 }
 
@@ -708,7 +741,7 @@ export async function runMirror(
         );
         return 1;
     } finally {
-        opened.close();
+        await opened.close();
     }
 }
 
