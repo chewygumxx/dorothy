@@ -140,16 +140,17 @@ export async function contractRemember(
     input: MemoryRememberInput,
     deps: RememberDeps,
 ): Promise<MemoryRememberResult> {
-    // The host lands in the fact's provenance, which parsing accepts
-    // only in this form.
-    if (deps.host !== null && !HOST_ID.test(deps.host)) {
-        throw new ContractError(400, "host is not a profile's name");
-    }
     if (input.action === "retire") {
         const target = targetOf(input.id, deps.project);
         const why = normalise(input.why ?? "");
         if (why === "") {
             throw new ContractError(400, "say in why it no longer serves");
+        }
+        if ([...why].length > FACT_LIMITS.why) {
+            throw new ContractError(
+                400,
+                `the reason is over ${FACT_LIMITS.why} characters`,
+            );
         }
         const result = await retireFact(
             deps.store,
@@ -157,6 +158,11 @@ export async function contractRemember(
             { by: "dorothy", why, guard: guardFor(target.id, false, () => {}) },
         );
         return settle(result, target.id, "retired", deps.warn);
+    }
+    // The host lands in the fact's provenance, which parsing accepts
+    // only in this form; a retire writes none.
+    if (deps.host !== null && !HOST_ID.test(deps.host)) {
+        throw new ContractError(400, "host is not a profile's name");
     }
     const title = normalise(input.title ?? "");
     const text = (input.text ?? "").trim();

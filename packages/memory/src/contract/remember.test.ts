@@ -244,6 +244,77 @@ describe("contractRemember", () => {
         ).rejects.toThrow("another project's");
     });
 
+    it("refuses another project's id on a revise as it does on a retire", async () => {
+        const other = "k:projects/github.com/me/other/uses-go";
+        await expect(
+            contractRemember(
+                {
+                    action: "revise",
+                    id: other,
+                    title: "Uses Go",
+                    text: "Go.",
+                    type: "project",
+                },
+                deps(),
+            ),
+        ).rejects.toMatchObject({ status: 403 });
+        expect(existsSync(join(root, "knowledge"))).toBe(false);
+    });
+
+    it("refuses a why that the fact could not hold, as a 400", async () => {
+        await contractRemember(
+            {
+                action: "add",
+                title: "Likes tea",
+                text: "Tea.",
+                type: "user",
+                scope: "personal",
+            },
+            deps(),
+        );
+        await expect(
+            contractRemember(
+                {
+                    action: "retire",
+                    id: "k:personal/likes-tea",
+                    why: "x".repeat(161),
+                },
+                deps(),
+            ),
+        ).rejects.toMatchObject({
+            status: 400,
+            message: "the reason is over 160 characters",
+        });
+        expect(file("personal/likes-tea")).not.toContain("status: deprecated");
+        const done = await contractRemember(
+            {
+                action: "retire",
+                id: "k:personal/likes-tea",
+                why: "x".repeat(160),
+            },
+            deps(),
+        );
+        expect(done.status).toBe("retired");
+    });
+
+    it("retires whatever the host, which a retire does not write", async () => {
+        await contractRemember(
+            {
+                action: "add",
+                title: "Likes tea",
+                text: "Tea.",
+                type: "user",
+                scope: "personal",
+            },
+            deps(),
+        );
+        const done = await contractRemember(
+            { action: "retire", id: "k:personal/likes-tea", why: "Gone." },
+            deps({ host: "Bad Host/x" }),
+        );
+        expect(done.status).toBe("retired");
+    });
+
     it("refuses a malformed or traversal-shaped id", async () => {
         for (const id of [
             "k:personal/../../x",
