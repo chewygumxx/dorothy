@@ -642,10 +642,16 @@ function checkPurpose(text: string): void {
     }
 }
 
+// options.range, where given, is the turns to read, from the first to the
+// last of them: the window then begins at the first and keeps to the
+// last, rather than centring on input.turn.
 export function openConversation(
     index: RecallIndex,
     input: OpenInput & { conversation: string },
-    options: { exclude: string | null },
+    options: {
+        exclude: string | null;
+        range?: { from?: number | undefined; through?: number | undefined };
+    },
 ): OpenResult {
     checkPurpose(input.purpose);
     const row = index.db
@@ -676,7 +682,17 @@ export function openConversation(
         ),
         ...(row.abstract !== null ? { abstract: row.abstract } : {}),
         turns: turns.length,
-        window: isoWindow(turns, input.turn),
+        window:
+            options.range === undefined
+                ? isoWindow(turns, input.turn)
+                : isoWindow(
+                      turns.filter(
+                          ({ turn }) =>
+                              turn >= (options.range?.from ?? 1) &&
+                              turn <= (options.range?.through ?? Infinity),
+                      ),
+                      1,
+                  ),
     };
 }
 

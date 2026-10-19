@@ -145,21 +145,17 @@ async function openId(
         // The contract's id, not recall's.
         return { ...opened, id: input.id };
     }
-    const opened = await deps.index.exclusive(() => {
+    return deps.index.exclusive(() => {
         checkScope(conversationProject(deps.index, id.phrase), project);
         return openConversation(
             deps.index,
-            { conversation: id.phrase, purpose: PURPOSE, turn: input.from },
-            { exclude: null },
+            { conversation: id.phrase, purpose: PURPOSE },
+            {
+                exclude: null,
+                range: { from: input.from, through: input.through },
+            },
         );
     });
-    const { through } = input;
-    return through === undefined
-        ? opened
-        : {
-              ...opened,
-              window: opened.window.filter((turn) => turn.turn <= through),
-          };
 }
 
 export function createContractServer(deps: ToolDeps): McpServer {

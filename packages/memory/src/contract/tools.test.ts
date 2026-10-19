@@ -319,6 +319,54 @@ const converse = (name: string, project: string | null) => {
     );
 };
 
+describe("open reads a conversation's turns from from through through", () => {
+    const long = phrase(7);
+    const turnsOf = async (args: Record<string, unknown>) => {
+        const { isError, text } = await call("open", {
+            id: `c:${long}`,
+            ...args,
+        });
+        expect(isError).toBe(false);
+        const opened = JSON.parse(text) as {
+            turns: number;
+            window: { turn: number }[];
+        };
+        return { all: opened.turns, window: opened.window.map((t) => t.turn) };
+    };
+
+    beforeEach(() => {
+        converse(long, null);
+        for (let n = 2; n <= 10; n++) {
+            index.db.run(
+                "INSERT INTO turns (phrase, n, role, at, text) VALUES (?, ?, ?, 1, ?)",
+                [long, n, n % 2 === 0 ? "assistant" : "user", `Turn ${n}.`],
+            );
+        }
+        index.db.run("UPDATE conversations SET turns = 10 WHERE phrase = ?", [
+            long,
+        ]);
+    });
+
+    it("takes no turn before from, nor after through", async () => {
+        expect(await turnsOf({ from: 5, through: 7 })).toEqual({
+            all: 10,
+            window: [5, 6, 7],
+        });
+    });
+
+    it("goes forward from from to the end, or from the start to through", async () => {
+        expect((await turnsOf({ from: 8 })).window).toEqual([8, 9, 10]);
+        expect((await turnsOf({ through: 3 })).window).toEqual([1, 2, 3]);
+        expect((await turnsOf({})).window).toEqual([
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+        ]);
+    });
+
+    it("gives no turns for a from past the end, saying how many there are", async () => {
+        expect(await turnsOf({ from: 11 })).toEqual({ all: 10, window: [] });
+    });
+});
+
 describe("open keeps to the connection's scope", () => {
     const own = phrase(1);
     const elsewhere = phrase(2);
