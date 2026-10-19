@@ -184,9 +184,11 @@ export async function recordSession(
         if (phrase === null) {
             return { kind: "nothing", size };
         }
-        deps.log.info(
-            `session ${report.session}: ${read.events.length} events into ${phrase}`,
-        );
+        if (read.events.length > 0) {
+            deps.log.info(
+                `session ${report.session}: ${read.events.length} events into ${phrase}`,
+            );
+        }
         return {
             kind: "recorded",
             phrase,
@@ -281,10 +283,19 @@ async function keepNewTypes(
     { report, deps }: Recording,
 ): Promise<void> {
     for (const { line, type } of unknown) {
-        await keepNewType(deps.env, type, lines[from + line] ?? "");
-        deps.log.warn(
-            `session ${report.session}: line ${from + line + 1} is of a new type, ${type}; passed over`,
-        );
+        // A line after the last recorded is read at every reading until
+        // another is recorded: told the first time alone.
+        try {
+            if (await keepNewType(deps.env, type, lines[from + line] ?? "")) {
+                deps.log.warn(
+                    `session ${report.session}: line ${from + line + 1} is of a new type, ${type}; passed over`,
+                );
+            }
+        } catch (error) {
+            deps.log.warn(
+                `session ${report.session}: a line of a new type, ${type}, can't be kept (${describeError(error)})`,
+            );
+        }
     }
 }
 
@@ -335,7 +346,8 @@ async function appendEvents(
 }
 
 // A halt is kept aside with the lines from it on and logged; a reading
-// that did not halt resolves one kept before.
+// that did not halt resolves one kept before. What was recorded stands
+// whether or not the state directory can be written.
 async function noteHalt(
     halt: LinesRead["halt"],
     lines: readonly string[],
@@ -344,26 +356,38 @@ async function noteHalt(
     { report, deps, now }: Recording,
 ): Promise<void> {
     if (halt === null) {
-        await resolveHalt(deps.env, report.session);
+        try {
+            await resolveHalt(deps.env, report.session);
+        } catch (error) {
+            deps.log.warn(
+                `session ${report.session}: a halt kept before can't be cleared (${describeError(error)})`,
+            );
+        }
         return;
     }
     const line = from + halt.line;
-    await keepHalt(
-        deps.env,
-        {
-            session: report.session,
-            conversation: phrase,
-            transcript: report.transcript,
-            dir: report.dir,
-            since: report.since,
-            line: line + 1,
-            type: halt.type,
-            uuid: halt.uuid,
-            reason: halt.reason,
-            at: now().toISOString(),
-        },
-        lines.slice(line),
-    );
+    try {
+        await keepHalt(
+            deps.env,
+            {
+                session: report.session,
+                conversation: phrase,
+                transcript: report.transcript,
+                dir: report.dir,
+                since: report.since,
+                line: line + 1,
+                type: halt.type,
+                uuid: halt.uuid,
+                reason: halt.reason,
+                at: now().toISOString(),
+            },
+            lines.slice(line),
+        );
+    } catch (error) {
+        deps.log.warn(
+            `session ${report.session}: its halt can't be kept (${describeError(error)})`,
+        );
+    }
     deps.log.error(
         `session ${report.session}: halted at line ${line + 1} (${halt.type ?? "no type"}, ${halt.uuid ?? "no uuid"}): ${halt.reason}`,
     );

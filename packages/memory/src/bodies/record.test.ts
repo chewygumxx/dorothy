@@ -26,7 +26,7 @@ import {
     use,
     userLine,
 } from "./fixtures.js";
-import { hookLog } from "./log.js";
+import { hookLog, hookLogPath } from "./log.js";
 import {
     type RecordDeps,
     recordedUuids,
@@ -332,6 +332,37 @@ describe("recordSession", () => {
                 "utf8",
             ),
         ).toBe(`${meta("brand-new")}\n`);
+    });
+
+    it("warns of a new type after the last line recorded once, not at every reading", async () => {
+        await write([userLine("u1", 0, "a"), meta("brand-new")]);
+        for (let reading = 0; reading < 3; reading += 1) {
+            await recordSession(report(), deps());
+        }
+        const log = await readFile(hookLogPath(env), "utf8");
+        expect(log.match(/is of a new type/g)).toHaveLength(1);
+        // Nothing appended, nothing said of it.
+        expect(log.match(/events into/g)).toHaveLength(1);
+    });
+
+    it("records though the state directory cannot be written", async () => {
+        await writeFile(join(home, "state"), "a file, not a directory");
+        await write([meta("brand-new"), userLine("u1", 0, "fine")]);
+        expect(await recordSession(report(), deps())).toMatchObject({
+            kind: "recorded",
+            appended: 1,
+            halted: false,
+        });
+        await add([userLine("u2", 1, "x"), "{torn but whole"]);
+        expect(await recordSession(report(), deps())).toMatchObject({
+            kind: "recorded",
+            appended: 1,
+            halted: true,
+        });
+        const log = await readFile(hookLogPath(env), "utf8");
+        expect(log).toContain("can't be kept");
+        expect(log).toContain("its halt can't be kept");
+        expect(commits).toHaveLength(2);
     });
 
     it("continues the conversation of a session its lines name", async () => {

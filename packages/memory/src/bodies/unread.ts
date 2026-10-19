@@ -123,11 +123,12 @@ function typeFile(type: string): string {
 }
 
 // A line of a type the reader does not know: the first example of each.
+// Whether this one was it.
 export async function keepNewType(
     env: Env,
     type: string,
     line: string,
-): Promise<void> {
+): Promise<boolean> {
     await privateDir(typesDir(env));
     try {
         await writeFile(
@@ -135,10 +136,12 @@ export async function keepNewType(
             `${line}\n`,
             { mode: 0o600, flag: "wx" },
         );
+        return true;
     } catch (error) {
         if (codeOf(error) !== "EEXIST") {
             throw error;
         }
+        return false;
     }
 }
 
