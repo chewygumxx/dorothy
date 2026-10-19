@@ -31,6 +31,8 @@ export const FACT_LIMITS = {
     description: 160,
     why: 160,
     body: 8000,
+    // The keys and sources kept for another producer, each as JSON.
+    kept: 8000,
 } as const;
 // Written plain, so it must read back as text: it starts with a letter
 // (no number, `0x1f` or `1e3`) and is neither `null`, `true` nor `false`.
@@ -578,6 +580,16 @@ function readForeign(data: Record<string, unknown>): Record<string, unknown> {
     return foreign;
 }
 
+// What is kept for another producer, as it will be written back, within
+// a size.
+function keptWithin(kept: unknown, what: string): void {
+    if (JSON.stringify(kept).length > FACT_LIMITS.kept) {
+        throw new Problem(
+            `the ${what} it keeps for another producer are over ${FACT_LIMITS.kept} characters`,
+        );
+    }
+}
+
 type ProvenanceReader = (
     generated: unknown,
     dorothy: Record<string, unknown>,
@@ -626,6 +638,11 @@ function readOkf(
     if (!isRecord(metadata)) {
         throw new Problem("dorothy.metadata is not a mapping");
     }
+    if ("type" in metadata) {
+        throw new Problem(
+            "dorothy.metadata.type would be dropped: type is a top-level key",
+        );
+    }
     const retired = readRetired(dorothy.retired, "dorothy.retired");
     const deprecated =
         oneOf(data.status ?? "stable", "status", STATUSES) === "deprecated";
@@ -634,6 +651,8 @@ function readOkf(
     }
     const { from, others } = readSources(data.sources);
     const foreign = readForeign(data);
+    keptWithin(others, "sources");
+    keptWithin(foreign, "keys");
     return {
         name: stem,
         title: text(data.title, "title", FACT_LIMITS.title),

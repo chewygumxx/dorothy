@@ -268,6 +268,80 @@ describe("parseFact", () => {
         }
     });
 
+    it("refuses retired without a deprecated status", () => {
+        const text = renderFact(
+            fact({ retired: { at: AT, by: "user", why: "Gone." } }),
+        ).replace("status: deprecated\n", "");
+        const read = parseFact(text, "likes-tea");
+        expect(read).toEqual({
+            kind: "unparseable",
+            reason: "status and dorothy.retired disagree",
+        });
+    });
+
+    it("refuses a foreign key the store cannot keep", () => {
+        for (const key of ["has space", "null", "a.b", '"__proto__"']) {
+            const text = CANONICAL.replace(
+                "---\n\nAsked",
+                `${key}: x\n---\n\nAsked`,
+            );
+            expect({ key, kind: parseFact(text, "likes-tea").kind }).toEqual({
+                key,
+                kind: "unparseable",
+            });
+        }
+    });
+
+    it("refuses a file with no dorothy.origin, or no generated key", () => {
+        const noOrigin = CANONICAL.replace("  origin: user\n", "");
+        expect(parseFact(noOrigin, "likes-tea")).toEqual({
+            kind: "unparseable",
+            reason: "dorothy.origin is not one of external, repo, model, extraction, user",
+        });
+        const noGenerated = CANONICAL.replace(
+            `generated:\n  by: "dorothy/claude-opus-5-5"\n  at: "${AT}"\n`,
+            "",
+        );
+        expect(noGenerated).not.toBe(CANONICAL);
+        expect(parseFact(noGenerated, "likes-tea").kind).toBe("unparseable");
+    });
+
+    it("refuses a type among dorothy.metadata, which would be dropped", () => {
+        const text = CANONICAL.replace(
+            '    node_type: "memory"',
+            '    node_type: "memory"\n    type: "feedback"',
+        );
+        expect(parseFact(text, "likes-tea")).toEqual({
+            kind: "unparseable",
+            reason: "dorothy.metadata.type would be dropped: type is a top-level key",
+        });
+    });
+
+    it("caps what it keeps of another producer, foreign keys and sources", () => {
+        const big = "x".repeat(9000);
+        const foreign = CANONICAL.replace(
+            "---\n\nAsked",
+            `note: ${big}\n---\n\nAsked`,
+        );
+        expect(parseFact(foreign, "likes-tea")).toEqual({
+            kind: "unparseable",
+            reason: "the keys it keeps for another producer are over 8000 characters",
+        });
+        const sources = CANONICAL.replace(
+            "generated:",
+            `  - resource: https://example.com/${big}\ngenerated:`,
+        );
+        expect(parseFact(sources, "likes-tea")).toEqual({
+            kind: "unparseable",
+            reason: "the sources it keeps for another producer are over 8000 characters",
+        });
+        const fits = CANONICAL.replace(
+            "---\n\nAsked",
+            `note: ${"x".repeat(7000)}\n---\n\nAsked`,
+        );
+        expect(parseFact(fits, "likes-tea").kind).toBe("ok");
+    });
+
     it("refuses a file not named as a fact", () => {
         expect(parseFact(CANONICAL, "Likes Tea").kind).toBe("unparseable");
     });
@@ -312,6 +386,28 @@ describe("handEdited", () => {
             created: AT,
             from: `${PHRASE}#12`,
         });
+    });
+
+    it("keeps the foreign keys and other sources a hand edit carries", () => {
+        const text = CANONICAL.replace(
+            `  - resource: "dorothy:conversation/${PHRASE}#12"`,
+            [
+                `  - resource: "dorothy:conversation/${PHRASE}#12"`,
+                "  - resource: https://example.com/tea",
+            ].join("\n"),
+        ).replace("---\n\nAsked", `stale_after: ${LATER}\n---\n\nAsked`);
+        const canonical = handEdited(
+            text.replace("  Likes tea", "  Loves tea"),
+            "likes-tea",
+            now,
+        );
+        const read = parseFact(canonical as string, "likes-tea");
+        expect(read.kind === "ok" && read.fact.foreign).toEqual({
+            stale_after: LATER,
+        });
+        expect(read.kind === "ok" && read.fact.otherSources).toEqual([
+            { resource: "https://example.com/tea" },
+        ]);
     });
 
     it("gives null for a file that is no fact", () => {
