@@ -37,6 +37,7 @@ import {
     USER_ACTOR,
     type Writer,
 } from "./file.js";
+import { notePending } from "./pending.js";
 
 export type Scope = { kind: "personal" } | { kind: "project"; id: string };
 export const PERSONAL: Scope = Object.freeze({ kind: "personal" });
@@ -197,7 +198,8 @@ export async function listFacts(
 
 // Writes a fact where it belongs once it reads back as written, replacing
 // one there; with keep it fails with EEXIST instead. The caller holds the
-// lock and records the path.
+// lock and records the path; until history commits it, pending.ts has the
+// write as hers.
 export async function putFact(
     root: string,
     scope: Scope,
@@ -211,6 +213,7 @@ export async function putFact(
     }
     const path = factPath(root, scope, fact.name);
     await writeAtomic(path, text, options);
+    await notePending(root, relative(root, path).split(sep).join("/"), text);
     return path;
 }
 

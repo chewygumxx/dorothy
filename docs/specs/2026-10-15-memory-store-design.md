@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-15
-mtime: 2026-10-18
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Dorothy's memory store design
 description: >-
@@ -307,12 +307,13 @@ A fact rewritten in place keeps its earlier versions in history, where
 The user may edit or add a fact by hand in the data directory: history
 sweeps up outside changes before its next commit, and the lint heals a
 broken edit. A fact the user adds or edits by hand is `origin: user`: the
-sweep keeps a changed fact as Dorothy's own write only when it is in
-canonical form and its provenance differs from the committed version's,
-and otherwise makes it the user's. Every write of the store's, a move,
-retirement or revival and sync's own included, sets `provenance.at`, and
-`by` where the write names a writer, so one left uncommitted is still
-hers. A broken file kept in `broken/` keeps the user's bytes.
+sweep keeps a changed fact as Dorothy's own write only when its bytes
+are ones the store noted writing (`facts/pending.ts`, in `.git/`, until
+history commits them), so one left uncommitted by a crash is still hers.
+What a file says of its writer is a claim, and the sweep never trusts it:
+an outside writer's canonical bytes, whatever provenance or verification
+they claim, are an outside change and the user's. A broken file kept in
+`broken/` keeps the user's bytes.
 
 ### Retiring
 

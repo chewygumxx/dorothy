@@ -20,10 +20,10 @@ import {
     writeFile,
 } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
-import { isDeepStrictEqual } from "node:util";
 import type { Env } from "@dorothy/core";
-import { handEdited, parseFact, renderFact } from "../facts/file.js";
+import { handEdited } from "../facts/file.js";
 import { migrateFacts } from "../facts/migrate.js";
+import { clearPending, hashOf, pendingWrites } from "../facts/pending.js";
 import {
     type HistoryHandle,
     type Lock,
@@ -320,6 +320,7 @@ export class MemoryHistory {
         if ((await this.repo.commit(paths, message)) !== null) {
             this.#afterCommit();
         }
+        await clearPending(this.root, paths);
     }
 
     // Commits the paths that pass the lint; the rest are restored.
@@ -391,10 +392,10 @@ export class MemoryHistory {
             }
             throw error;
         }
-        const stem = basename(path, ".md");
-        if (await this.#dorothys(path, text, stem)) {
+        if (await this.#dorothys(path, text)) {
             return;
         }
+        const stem = basename(path, ".md");
         const canonical = handEdited(text, stem, this.#now());
         if (
             canonical !== null &&
@@ -407,27 +408,13 @@ export class MemoryHistory {
 
     // Whether a changed fact is Dorothy's own uncommitted write, which a
     // crash, a lost catch-up or a session with no history leaves behind:
-    // canonical to the byte, and either new or with a provenance other
-    // than the committed one's, as every write of hers sets a new time. A
-    // hand edit leaves the provenance as it was.
-    async #dorothys(
-        path: string,
-        text: string,
-        stem: string,
-    ): Promise<boolean> {
-        const read = parseFact(text, stem);
-        if (read.kind !== "ok" || renderFact(read.fact) !== text) {
-            return false;
-        }
-        const head = await this.repo.show(path, "HEAD");
-        if (head === null) {
-            return true;
-        }
-        const before = parseFact(new TextDecoder().decode(head), stem);
-        return (
-            before.kind !== "ok" ||
-            !isDeepStrictEqual(before.fact.provenance, read.fact.provenance)
-        );
+    // the very bytes she wrote and noted (facts/pending.ts). What the file
+    // says of its writer is a claim anyone able to write it can make, so
+    // it is never what decides; any other change is an outside one, the
+    // user's by hand.
+    async #dorothys(path: string, text: string): Promise<boolean> {
+        const noted = (await pendingWrites(this.root)).get(path);
+        return noted !== undefined && noted === hashOf(text);
     }
 
     async #recover(path: string, reason: string): Promise<boolean> {

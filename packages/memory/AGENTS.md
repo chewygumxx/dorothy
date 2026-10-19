@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-18
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: packages/memory/AGENTS.md
 description: >-
@@ -92,8 +92,8 @@ Of the `@dorothy` packages it depends on `core` alone.
   each logical change, sweeps up outside changes first, and restores a
   file that fails `lint.ts` (`heal.ts`), keeping its bytes under
   `broken/`. The lint knows facts and `projects.json`. The sweep keeps a
-  canonical changed fact whose provenance differs from HEAD's as hers;
-  else it is the user's, rewritten canonically only if that lints.
+  changed fact as hers only if its bytes are ones `facts/pending.ts` noted
+  her writing; else it is the user's, rewritten canonically if that lints.
   `mirror.ts` seals new commits as AES-256-GCM bundles (`seal.ts`) on the
   orphan branch `sealed` and pushes it to the remote
   `mirror` under `DOROTHY_MIRROR_KEY`; `--recover` rebuilds from it.
