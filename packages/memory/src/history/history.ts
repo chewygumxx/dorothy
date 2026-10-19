@@ -46,7 +46,7 @@ import {
     type Recorder,
     writeAtomic,
 } from "../memory/sidecar.js";
-import { transcriptDir } from "../transcript.js";
+import { readTranscript, transcriptDir } from "../transcript.js";
 import { recoverFile, stamp } from "./heal.js";
 import { fileKind, lint } from "./lint.js";
 import { FileLock } from "./lock.js";
@@ -245,10 +245,19 @@ export class MemoryHistory {
     }
 
     // A turn of the live conversation, once its transcript is flushed.
-    turn(path: string, count: number): Promise<void> {
-        return this.lock(() =>
-            this.record([path], `turn: ${basename(path, ".jsonl")} #${count}`),
-        ).catch((error) => {
+    turn(path: string, _count: number): Promise<void> {
+        return this.lock(async () => {
+            // Failed exchanges still added user events. Count the canonical
+            // transcript under the lock rather than only completed replies.
+            const read = await readTranscript(resolve(this.root, path));
+            const count = read.turns.filter(
+                (turn) => turn.role === "user",
+            ).length;
+            await this.record(
+                [path],
+                `turn: ${basename(path, ".jsonl")} #${count}`,
+            );
+        }).catch((error) => {
             this.warn(
                 `history: couldn't commit (${describeError(error)}); it will be committed with the next change`,
             );

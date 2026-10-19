@@ -45,6 +45,48 @@ describe("openMemory", () => {
         costUsd: 0,
     });
 
+    it("settles canonical turn counts after an error before closing history", async () => {
+        const inner = new FakeSession();
+        const opened = await openMemory({
+            resume: null,
+            call: quiet,
+            prompts,
+            connect: () => inner,
+            recallLaunch: () => ({ command: "x", args: [] }),
+            env,
+        });
+        if (!opened.ok) throw new Error(opened.message);
+        const session = opened.memory.createSession([]);
+        session.send("failed turn");
+        inner.emit({ type: "error", message: "failed", partial: "" });
+        session.send("successful turn");
+        inner.emit({
+            type: "turn-end",
+            reply: "done",
+            interrupted: false,
+            stats: {
+                inputTokens: 1,
+                cacheReadTokens: 0,
+                cacheWriteTokens: 0,
+                outputTokens: 1,
+                ttftMs: null,
+                durationMs: 1,
+                costUsd: 0,
+                sessionCostUsd: 0,
+            },
+        });
+        await opened.memory.close();
+        const child = Bun.spawn(["git", "log", "--format=%s"], {
+            cwd: dataRoot(env),
+            env: { ...env, GIT_CONFIG_GLOBAL: "/dev/null" },
+            stdout: "pipe",
+            stderr: "ignore",
+        });
+        const log = await new Response(child.stdout).text();
+        expect(await child.exited).toBe(0);
+        expect(log).toContain(`turn: ${opened.memory.phrase} #2`);
+    });
+
     it("reads and writes only under the test's directory", () => {
         // The cache holds the index and the CLI's home.
         const cache = xdgDir(process.env, "XDG_CACHE_HOME", ".cache");

@@ -868,10 +868,10 @@ describe("taking the lock itself", () => {
             indexLock.close();
         }
     });
-    it("commits a turn with its count", async () => {
+    it("commits a turn with its canonical count", async () => {
         const history = await open();
-        put(root, TRANSCRIPT, event("one"));
-        await history.turn(join(root, TRANSCRIPT), 3);
+        put(root, TRANSCRIPT, event("one") + event("two") + event("three"));
+        await history.turn(join(root, TRANSCRIPT), 1);
         expect((await messages(history))[0]).toBe(`turn: ${PHRASE} #3`);
     });
 
