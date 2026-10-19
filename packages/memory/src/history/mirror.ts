@@ -109,6 +109,7 @@ export class Mirror {
     #timer: unknown = null;
     #stopped = false;
     #running: Promise<PushOutcome> | null = null;
+    #again = false;
     // A seal under way, which stopping waits for; it never rejects.
     #sealing: Promise<unknown> | null = null;
 
@@ -128,8 +129,16 @@ export class Mirror {
     }
 
     push(): Promise<PushOutcome> {
+        if (this.#running !== null) {
+            this.#again = true;
+            return this.#running;
+        }
         this.#running ??= this.#push().finally(() => {
             this.#running = null;
+            if (this.#again) {
+                this.#again = false;
+                this.schedule();
+            }
         });
         return this.#running;
     }
@@ -185,6 +194,7 @@ export class Mirror {
         } catch (error) {
             const reason = describeError(error);
             warn(`history: couldn't push to the mirror (${reason})`);
+            this.schedule();
             return { kind: "failed", reason };
         }
     }

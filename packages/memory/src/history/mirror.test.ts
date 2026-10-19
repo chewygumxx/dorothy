@@ -116,6 +116,54 @@ describe("sealPending", () => {
 });
 
 describe("Mirror", () => {
+    it("reschedules an update whose timer fires during a push", async () => {
+        const repo = await repoWith({ "tags.json": "{}\n" });
+        const bare = await bareRepo();
+        await repo.setRemote("mirror", bare);
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const { mirror, timers } = mirrorOf({
+            ...repo,
+            push: async (...args) => {
+                entered.resolve();
+                await release.promise;
+                await repo.push(...args);
+            },
+        });
+        const first = mirror.push();
+        await entered.promise;
+        await commit(repo, { "tags.json": "{ }\n" }, "two");
+        mirror.schedule();
+        timers.fire();
+        release.resolve();
+        await first;
+        expect(timers.pending.size).toBe(1);
+        timers.fire();
+        await mirror.push();
+        const fresh = binaryRepo(join(tempRoot(), "data"), { env: TEST_ENV });
+        const recovered = await recover({
+            repo: fresh,
+            url: bare,
+            key: KEY,
+            token: null,
+        });
+        expect(recovered.applied).toBe(2);
+        expect(recovered.tip).toBe(await repo.resolve(MAIN));
+        await mirror.stop();
+    });
+
+    it("retries a failed push without another commit", async () => {
+        const repo = await repoWith({ "tags.json": "{}\n" });
+        await repo.setRemote("mirror", join(tempRoot(), "missing.git"));
+        const { mirror, timers } = mirrorOf(repo);
+        expect((await mirror.push()).kind).toBe("failed");
+        expect(timers.pending.size).toBe(1);
+        const bare = await bareRepo();
+        await repo.setRemote("mirror", bare);
+        timers.fire();
+        expect((await mirror.push()).kind).toBe("pushed");
+        await mirror.stop();
+    });
     it("pushes the sealed branch to the mirror", async () => {
         const bare = await bareRepo();
         const repo = await repoWith({ "tags.json": "{}\n" });
