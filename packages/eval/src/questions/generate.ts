@@ -11,7 +11,10 @@
 // Questions a model drafts from samples of the snapshot, in LongMemEval's
 // types, each checked before it is kept as a draft for the owner.
 
-import type { ArchiveConversation } from "@dorothy/memory/evaluation";
+import type {
+    ArchiveConversation,
+    ArchiveKnowledge,
+} from "@dorothy/memory/evaluation";
 import { z } from "zod";
 import { UsageError } from "../errors.js";
 import { CallCap, failureOf, type Message } from "../models/client.js";
@@ -107,6 +110,8 @@ export type Sample = {
     ids: string[];
     asOf: string;
     project: string | null;
+    // Guidance of its own, where its type's would not fit its items.
+    guidance?: string;
 };
 
 // Conversations by a project or a tag they share, two or more a group.
@@ -126,6 +131,79 @@ function groupsOf(conversations: ArchiveConversation[]) {
     return new Map(
         [...groups].filter(([, members]) => members.length >= 2).sort(),
     );
+}
+
+const projectOf = (key: string) =>
+    key.startsWith("project:") ? key.slice("project:".length) : null;
+
+// The live files of a retired one's scope and type: what may replace it.
+const peersOf = (knowledge: ArchiveKnowledge[], retired: ArchiveKnowledge) =>
+    knowledge.filter(
+        (each) =>
+            each.retired === null &&
+            each.scope === retired.scope &&
+            each.type === retired.type,
+    );
+
+// A retired file beside the live ones that may have replaced it.
+function retiredSample(
+    retired: ArchiveKnowledge,
+    knowledge: ArchiveKnowledge[],
+    random: () => number,
+    today: string,
+): Sample {
+    const live = shuffled(peersOf(knowledge, retired), random).slice(0, 6);
+    return {
+        type: "knowledge-update",
+        items: [retired, ...live].map((each) => ({
+            id: each.id,
+            text: knowledgeText(each),
+        })),
+        // The retired file is never the answer's evidence.
+        ids: live.map((each) => each.id),
+        asOf: today,
+        project: retired.scope === "personal" ? null : retired.scope,
+    };
+}
+
+// The members begun after another member ended: those that may revise
+// an earlier one.
+function laterOnes(members: ArchiveConversation[]): ArchiveConversation[] {
+    const ends = members.map((each) => each.lastAt);
+    const firstEnd = ends.reduce((a, b) => (b < a ? b : a), ends[0] ?? "");
+    return members.filter((each) => each.firstAt > firstEnd);
+}
+
+// A conversation beside an earlier one of its project or tag, ended
+// before it began, which it may revise.
+function revisedSample(
+    [key, members]: [string, ArchiveConversation[]],
+    random: () => number,
+    today: string,
+): Sample | null {
+    const later = pick(laterOnes(members), random);
+    const earlier =
+        later === undefined
+            ? undefined
+            : pick(
+                  members.filter((each) => each.lastAt < later.firstAt),
+                  random,
+              );
+    if (later === undefined || earlier === undefined) {
+        return null;
+    }
+    return {
+        type: "knowledge-update",
+        items: [earlier, later].map((each) => ({
+            id: each.id,
+            text: clip(conversationText(each), 7000),
+        })),
+        // The earlier is never the answer's evidence.
+        ids: [later.id],
+        asOf: today,
+        project: projectOf(key),
+        guidance: REVISED_GUIDANCE,
+    };
 }
 
 export function sampleFor(
@@ -196,42 +274,34 @@ export function sampleFor(
                 })),
                 ids: chosen.map((each) => each.id),
                 asOf: today,
-                project: key.startsWith("project:")
-                    ? key.slice("project:".length)
-                    : null,
+                project: projectOf(key),
             };
         }
         case "knowledge-update": {
-            const retired = pick(
-                knowledge.filter((each) => each.retired !== null),
-                random,
+            // Either source, evenly, where the snapshot holds both, so
+            // that one with few retired files still meets the share.
+            const retired = knowledge.filter(
+                (each) =>
+                    each.retired !== null &&
+                    peersOf(knowledge, each).length > 0,
             );
-            if (retired === undefined) {
-                return null;
+            const revisable = [...groupsOf(conversations)].filter(
+                ([, members]) => laterOnes(members).length > 0,
+            );
+            const sources = [
+                ...(retired.length > 0 ? ["retired"] : []),
+                ...(revisable.length > 0 ? ["revised"] : []),
+            ];
+            const source =
+                sources.length > 1 ? pick(sources, random) : sources[0];
+            if (source === "retired") {
+                const chosen = pick(retired, random) as ArchiveKnowledge;
+                return retiredSample(chosen, knowledge, random, today);
             }
-            const live = shuffled(
-                knowledge.filter(
-                    (each) =>
-                        each.retired === null &&
-                        each.scope === retired.scope &&
-                        each.type === retired.type,
-                ),
-                random,
-            ).slice(0, 6);
-            return live.length === 0
+            const group = pick(revisable, random);
+            return group === undefined
                 ? null
-                : {
-                      type,
-                      items: [retired, ...live].map((each) => ({
-                          id: each.id,
-                          text: knowledgeText(each),
-                      })),
-                      // The retired file is never the answer's evidence.
-                      ids: live.map((each) => each.id),
-                      asOf: today,
-                      project:
-                          retired.scope === "personal" ? null : retired.scope,
-                  };
+                : revisedSample(group, random, today);
         }
         case "abstention": {
             const titles = [
@@ -297,11 +367,15 @@ const GUIDANCE: Record<GeneratedType, string> = {
         "These are the topics the memory holds. Ask questions about the user's life that sound plausible but that nothing here could answer. The answer says the memory does not know; evidence is empty.",
 };
 
+// For an update drawn from two conversations rather than a retired file.
+const REVISED_GUIDANCE =
+    "The first conversation is the earlier. The later conversation may change something the earlier one said: a fact, a decision, a plan or a preference. If it does, ask what is true now: the answer is the later's, evidence the later conversation's id, and older the earlier claim. If it changes nothing, return no questions.";
+
 export function draftPrompt(sample: Sample, n: number): Message[] {
     return [
         {
             role: "system",
-            content: `${COMMON}\n\n${GUIDANCE[sample.type]}\n\nToday is ${sample.asOf}. Write at most ${n} questions.`,
+            content: `${COMMON}\n\n${sample.guidance ?? GUIDANCE[sample.type]}\n\nToday is ${sample.asOf}. Write at most ${n} questions.`,
         },
         { role: "user", content: packItems(sample.items, 16_000) },
     ];

@@ -11,6 +11,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { ArchiveConversation } from "@dorothy/memory/evaluation";
 import { runCli } from "../cli.js";
 import { CallCap } from "../models/client.js";
 import { configPath } from "../models/config.js";
@@ -29,6 +30,7 @@ import {
     acceptDraft,
     countsFor,
     type Draft,
+    draftPrompt,
     generateQuestions,
     parseTypeCounts,
     type Sample,
@@ -131,6 +133,20 @@ describe("samples", () => {
         expect(sample?.ids).toContain("k:personal/uses-helix");
     });
 
+    it("pass over a retired file nothing live may have replaced", () => {
+        const orphan: Corpus = {
+            ...corpus,
+            knowledge: new Map(
+                [...corpus.knowledge].filter(
+                    ([id]) => id === "k:personal/uses-vim",
+                ),
+            ),
+        };
+        expect(
+            sampleFor("knowledge-update", orphan, seeded(1), "2026-10-19"),
+        ).toBeNull();
+    });
+
     it("find nothing for many sessions where none share a project or tag", () => {
         expect(
             sampleFor("multi-session", corpus, seeded(1), "2026-10-19"),
@@ -141,6 +157,163 @@ describe("samples", () => {
         const sample = sampleFor("abstention", corpus, seeded(1), "2026-10-19");
         expect(sample?.ids).toEqual([]);
         expect(sample?.items[0]?.text).toContain("Tea at four");
+    });
+});
+
+describe("an update from a revising conversation", () => {
+    const talk = (
+        id: string,
+        project: string | null,
+        first: string,
+        last: string,
+        text: string,
+    ): ArchiveConversation => ({
+        id: `c:${id}`,
+        phrase: id,
+        project,
+        title: id,
+        tags: [],
+        firstAt: first,
+        lastAt: last,
+        turns: [
+            { n: 1, role: "user", at: first, text },
+            { n: 2, role: "assistant", at: last, text: "Noted." },
+        ],
+    });
+    // Two in one project, the later begun after the earlier ended; one
+    // overlapping the first; one alone.
+    const conversations = [
+        talk(
+            "plan-a",
+            "p",
+            "2026-09-01T10:00:00.000Z",
+            "2026-09-01T11:00:00.000Z",
+            "We deploy on Fridays.",
+        ),
+        talk(
+            "plan-b",
+            "p",
+            "2026-09-08T10:00:00.000Z",
+            "2026-09-08T11:00:00.000Z",
+            "We now deploy on Tuesdays instead.",
+        ),
+        talk(
+            "aside",
+            "q",
+            "2026-09-02T10:00:00.000Z",
+            "2026-09-02T11:00:00.000Z",
+            "Something else.",
+        ),
+    ];
+    const revising = (
+        knowledge = new Map(),
+        extra: ArchiveConversation[] = [],
+    ) =>
+        ({
+            ...corpus,
+            conversations: new Map(
+                [...conversations, ...extra].map((each) => [each.id, each]),
+            ),
+            knowledge,
+        }) as Corpus;
+
+    it("shows the earlier conversation before the later, the later its evidence", () => {
+        const sample = sampleFor(
+            "knowledge-update",
+            revising(),
+            seeded(1),
+            "2026-10-19",
+        );
+        expect(sample?.items.map((each) => each.id)).toEqual([
+            "c:plan-a",
+            "c:plan-b",
+        ]);
+        expect(sample?.ids).toEqual(["c:plan-b"]);
+        expect(sample?.project).toBe("p");
+        expect(sample?.items[1]?.text).toContain("Tuesdays");
+        const prompt = draftPrompt(sample as Sample, 3);
+        expect(prompt[0]?.content).toContain("The later conversation");
+        expect(prompt[0]?.content).not.toContain("was retired");
+    });
+
+    it("pairs no two conversations that overlap", () => {
+        const overlapping = revising(new Map(), [
+            talk(
+                "plan-c",
+                "r",
+                "2026-09-01T10:00:00.000Z",
+                "2026-09-03T10:00:00.000Z",
+                "One thing.",
+            ),
+            talk(
+                "plan-d",
+                "r",
+                "2026-09-02T10:00:00.000Z",
+                "2026-09-04T10:00:00.000Z",
+                "Another.",
+            ),
+        ]);
+        for (let seed = 0; seed < 20; seed++) {
+            const sample = sampleFor(
+                "knowledge-update",
+                overlapping,
+                seeded(seed),
+                "2026-10-19",
+            );
+            expect(sample?.ids).toEqual(["c:plan-b"]);
+        }
+    });
+
+    it("draws from retired files and revising conversations both", () => {
+        const both = revising(corpus.knowledge);
+        const firsts = new Set<string>();
+        for (let seed = 0; seed < 20; seed++) {
+            const sample = sampleFor(
+                "knowledge-update",
+                both,
+                seeded(seed),
+                "2026-10-19",
+            );
+            firsts.add(sample?.items[0]?.id ?? "none");
+        }
+        expect([...firsts].sort()).toEqual(["c:plan-a", "k:personal/uses-vim"]);
+    });
+
+    it("meet the type's count with no retired file at all", async () => {
+        const result = await generateQuestions({
+            corpus: revising(),
+            counts: {
+                "single-session": 0,
+                preference: 0,
+                "multi-session": 0,
+                "knowledge-update": 2,
+                temporal: 0,
+                abstention: 0,
+            },
+            random: seeded(4),
+            model: "m/1",
+            existing: [],
+            today: "2026-10-19",
+            draft: async (sample) => [
+                {
+                    question: "Which day do we deploy on?",
+                    answer: "Tuesdays.",
+                    evidence: sample.ids,
+                    older: "Fridays.",
+                },
+                {
+                    question: "When do our deploys go out?",
+                    answer: "On Tuesdays.",
+                    evidence: sample.ids,
+                    older: "On Fridays.",
+                },
+            ],
+        });
+        expect(result.made.map((each) => [each.evidence, each.note])).toEqual([
+            [["c:plan-b"], "Fridays."],
+            [["c:plan-b"], "On Fridays."],
+        ]);
+        expect(result.dropped).toEqual({});
     });
 });
 
