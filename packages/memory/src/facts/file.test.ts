@@ -526,6 +526,21 @@ describe("parseFact and repeated keys", () => {
         );
     });
 
+    it.each([
+        "metadata: {type: reference, type: feedback}",
+        'metadata: {type: reference, "\\u0074ype": feedback}',
+        'metadata:\n  type: reference\n  "\\u0074ype": feedback',
+        "foreign: [{type: conversation, type: url}]",
+        "foreign:\n  - type: conversation\n    type: url",
+        "foreign: {nested: {a: one, a: two}}",
+    ])("refuses duplicates in supported YAML mappings: %s", (mapping) => {
+        const text = CANONICAL.replace(
+            "---\n\nAsked",
+            `${mapping}\n---\n\nAsked`,
+        );
+        expect(parseFact(text, "likes-tea").kind).toBe("unparseable");
+    });
+
     it("takes the same key in sibling mappings and list items", () => {
         const text = CANONICAL.replace(
             "---\n\nAsked",

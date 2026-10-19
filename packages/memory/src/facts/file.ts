@@ -15,6 +15,7 @@
 // trap written by hand fails rather than being coerced.
 
 import { HOST_ID, isPhrase } from "@dorothy/core";
+import { parseDocument } from "yaml";
 import { CONCEPT_ID, characters, normalise } from "../memory/sidecar.js";
 
 export const FACT_TYPES = ["user", "feedback", "project", "reference"] as const;
@@ -350,83 +351,6 @@ export function readImportance(value: unknown): number | null {
     return importance as number | null;
 }
 
-// A key plain or quoted, opening a line, and what follows its colon.
-const KEY_LINE =
-    /^( *)(?:"((?:[^"\\]|\\.)*)"|'((?:[^']|'')*)'|([^\s#'"[\]{},&*!|>%@`?:-][^:#]*?))[ \t]*:(?:[ \t]+(.*))?$/;
-
-// The first key a block mapping holds twice, which YAML's reader would
-// settle by keeping the last. Only block mappings are read, by their
-// indentation; a block scalar's lines, a quoted scalar's, a flow mapping
-// and the maps of a list's items are not.
-export function repeatedKey(yaml: string): string | null {
-    const levels: { indent: number; keys: Set<string> }[] = [];
-    let scalar: number | null = null;
-    let quote: string | null = null;
-    for (const line of yaml.split("\n")) {
-        if (quote !== null) {
-            quote = closesQuote(line, quote) ? null : quote;
-            continue;
-        }
-        const indent = line.length - line.trimStart().length;
-        const text = line.trim();
-        if (text === "" || text.startsWith("#")) {
-            continue;
-        }
-        if (scalar !== null) {
-            if (indent > scalar) {
-                continue;
-            }
-            scalar = null;
-        }
-        while ((levels.at(-1)?.indent ?? -1) > indent) {
-            levels.pop();
-        }
-        if (text.startsWith("-")) {
-            continue;
-        }
-        const match = KEY_LINE.exec(line);
-        if (match === null) {
-            continue;
-        }
-        const key = match[2] ?? match[3] ?? match[4] ?? "";
-        const level = levels.at(-1);
-        if (level !== undefined && level.indent === indent) {
-            if (level.keys.has(key)) {
-                return key;
-            }
-            level.keys.add(key);
-        } else {
-            levels.push({ indent, keys: new Set([key]) });
-        }
-        const value = (match[5] ?? "").trim();
-        if (/^[|>]/.test(value)) {
-            scalar = indent;
-        } else if (
-            /^["']/.test(value) &&
-            !closesQuote(value.slice(1), value[0] as string)
-        ) {
-            quote = value[0] as string;
-        }
-    }
-    return null;
-}
-
-// Whether the rest of a quoted scalar's line holds its closing quote.
-function closesQuote(text: string, quote: string): boolean {
-    for (let at = 0; at < text.length; at += 1) {
-        if (quote === '"' && text[at] === "\\") {
-            at += 1;
-        } else if (text[at] === quote) {
-            if (quote === "'" && text[at + 1] === "'") {
-                at += 1;
-            } else {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
 // The frontmatter as YAML, checked for hidden characters first.
 export function frontmatterOf(source: string): {
     data: Record<string, unknown>;
@@ -441,9 +365,20 @@ export function frontmatterOf(source: string): {
     if (parts === null) {
         throw new Problem("it has no frontmatter");
     }
-    const repeated = repeatedKey(parts.yaml);
-    if (repeated !== null) {
-        throw new Problem(`its frontmatter repeats the key ${repeated}`);
+    // Validate mappings before Bun's last-value-wins decoder loses keys.
+    const document = parseDocument(parts.yaml);
+    const duplicate = document.errors.find(
+        (error) => error.code === "DUPLICATE_KEY",
+    );
+    if (duplicate !== undefined) {
+        throw new Problem(
+            `its frontmatter repeats the key (${duplicate.message})`,
+        );
+    }
+    if (document.errors.length > 0) {
+        throw new Problem(
+            `its frontmatter is not YAML (${document.errors[0]?.message})`,
+        );
     }
     let data: unknown;
     try {

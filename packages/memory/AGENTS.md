@@ -68,7 +68,7 @@ Of the `@dorothy` packages it depends on `core` alone.
   coins concepts inside the sidecar's lock.
 - `facts/`: facts as OKF Markdown under `knowledge/` (`file.ts`; `migrate.ts`
   moves `legacy.ts`'s old form once), personal or a project's, written under
-  the lock, retired, revived and verified (`store.ts`); `commands.ts` theirs.
+  the lock (`store.ts`); `yaml` checks duplicate keys; `commands.ts` theirs.
 - `projects/`: a project's identity, registry, exported form and sync
   with its repository; read [its own guide](./src/projects/AGENTS.md).
 - `recall/`: search over past conversations and facts. `store.ts` is a
