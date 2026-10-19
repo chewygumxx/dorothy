@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-15
-mtime: 2026-10-16
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Dorothy's memory in her bodies design
 description: >-
@@ -665,9 +665,6 @@ Recording:
 - Codex, OpenCode and other clients behind the gateway, given the block
   and recall (Dorothy's Gateway).
 - Subagents' transcripts as conversations of their own.
-- Store gaps still open: snake-case memory files are skipped,
-  regenerating `MEMORY.md` replaces hook lines, and history keeps the
-  provenance an outside writer of canonical bytes claims.
 
 ## Out of scope
 
