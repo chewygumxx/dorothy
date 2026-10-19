@@ -23,8 +23,14 @@ import { type Config, DEFAULT_CONFIG, type Env } from "@dorothy/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { userLine } from "../bodies/fixtures.js";
+import { hookLogPath } from "../bodies/log.js";
 import { loadProfiles } from "../hosts/profiles.js";
-import { MAX_BODY, type RunningService, startService } from "./service.js";
+import {
+    MAX_BODY,
+    type RunningService,
+    type ServiceOptions,
+    startService,
+} from "./service.js";
 import { type TokenStore, tokenStore } from "./tokens.js";
 
 const AT = "2026-10-18T09:30:00.000Z";
@@ -61,7 +67,11 @@ afterEach(async () => {
     rmSync(home, { recursive: true, force: true });
 });
 
-const start = async (remote = false, settings: Config = config) => {
+const start = async (
+    remote = false,
+    settings: Config = config,
+    extra: Partial<ServiceOptions> = {},
+) => {
     running = await startService({
         env,
         config: settings,
@@ -74,6 +84,7 @@ const start = async (remote = false, settings: Config = config) => {
         warn: (message) => warned.push(message),
         claudeDir: claude,
         maxTranscript: 4096,
+        ...extra,
     });
     return running;
 };
@@ -255,6 +266,38 @@ describe("the memory service", () => {
         });
         expect(block.status).toBe(200);
         expect((await block.json()).digest).toMatch(/^xxh3:/);
+    });
+
+    describe("with reviews off", () => {
+        const eager: Config = {
+            ...config,
+            memory: { ...config.memory, idleSeconds: 0 },
+        };
+        const sleep = (ms: number) =>
+            new Promise((resolve) => setTimeout(resolve, ms));
+
+        it("writes why to its log, which a detached service has", async () => {
+            await start(false, config, { noReviews: "no key was found" });
+            const log = await Bun.file(hookLogPath(env)).text();
+            expect(log).toMatch(
+                / warn \d+ reviews are off: no key was found\n/,
+            );
+        });
+
+        it("lets an idle conversation go, as with reviews on", async () => {
+            const service = await start(false, eager, { tickMs: 10 });
+            const sent = await post("/v1/record", {
+                host: "codex",
+                session: "s1",
+                events: [{ sourceId: "a", at: AT, kind: "user", text: "Tea?" }],
+            });
+            expect(sent.status).toBe(200);
+            for (let tries = 0; service.waiting() > 0 && tries < 100; tries++) {
+                await sleep(10);
+            }
+            expect(service.waiting()).toBe(0);
+            expect(warned).toEqual([]);
+        });
     });
 
     it("serves the four tools over MCP", async () => {

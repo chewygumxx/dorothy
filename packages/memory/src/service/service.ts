@@ -78,6 +78,8 @@ export type ServiceOptions = {
     tokens: TokenStore;
     // Reviews' model and persona; null leaves extraction off.
     review: { call: StructuredCall; persona: string } | null;
+    // Why review is null, for the service's log.
+    noReviews?: string;
     // config.service.port by default; 0 picks a free port.
     port?: number;
     // Addresses besides loopback; config.service.listen by default.
@@ -92,11 +94,15 @@ export type ServiceOptions = {
     claudeDir?: string;
     // The largest transcript read, in bytes; for tests.
     maxTranscript?: number;
+    // How often idle conversations are looked at; for tests.
+    tickMs?: number;
 };
 
 export type RunningService = {
     url: string;
     ports: number[];
+    // Conversations recorded and not yet taken up after their idle time.
+    waiting(): number;
     stop(): Promise<void>;
 };
 
@@ -174,6 +180,12 @@ export async function startService(
     // Projects recorded since the last export.
     const touched = new Set<string>();
     const log = hookLog(env);
+    if (reviewer === null) {
+        // The service is detached, its stderr ignored: the log is read.
+        log.warn(
+            `reviews are off: ${options.noReviews ?? "no model is wired"}`,
+        );
+    }
     // An unknown host version is served, and said once.
     const versions = new Set<string>();
     const noteVersion = (host: string, version: string | undefined) => {
@@ -492,7 +504,7 @@ export async function startService(
     const extraction = new AbortController();
     let extracting = false;
     const tick = setInterval(async () => {
-        if (extracting || reviewer === null) {
+        if (extracting) {
             return;
         }
         extracting = true;
@@ -501,7 +513,9 @@ export async function startService(
             const due = [...idle]
                 .filter(([, at]) => Date.now() - at >= wait)
                 .map(([phrase]) => phrase);
-            if (due.length > 0) {
+            // Without reviews the engine extracts nothing; only the
+            // reviewer reads the catalogue.
+            if (due.length > 0 && reviewer !== null) {
                 entries = (
                     await indexCatalogue(index, dir, vocabulary, root).load()
                 ).entries;
@@ -524,7 +538,7 @@ export async function startService(
         } finally {
             extracting = false;
         }
-    }, TICK_MS);
+    }, options.tickMs ?? TICK_MS);
     // Periodically: consolidation, personal and of each project recorded,
     // then export of those projects to their repositories.
     const exporting = setInterval(async () => {
@@ -571,6 +585,7 @@ export async function startService(
     return {
         url: `http://127.0.0.1:${port}`,
         ports: servers.map((server) => server.port ?? 0),
+        waiting: () => idle.size,
         async stop() {
             clearInterval(tick);
             clearInterval(exporting);

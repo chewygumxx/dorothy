@@ -38,11 +38,12 @@ const selfServe = () => [
 // Reviews for the service: Claude Code's variables dropped first, as a
 // service --mcp starts inside her Claude Code would inherit its gateway,
 // which dies with the session; then Dorothy's .env by path from this
-// checkout, then the agent. Off, and said, when either fails.
-async function reviewAgent(): Promise<{
-    call: StructuredCall;
-    persona: string;
-} | null> {
+// checkout, then the agent. Off, and said, when either fails; the
+// service keeps the reason in its log, as its stderr may be ignored.
+async function reviewAgent(): Promise<
+    | { review: { call: StructuredCall; persona: string } }
+    | { review: null; noReviews: string }
+> {
     try {
         const { checkoutRoot, loadDotenv, stripClaude } = await import(
             "./claude-hook.js"
@@ -60,12 +61,14 @@ async function reviewAgent(): Promise<{
             "@dorothy/agent"
         );
         prepareCliHome();
-        return { call: structuredCall(), persona: systemPrompt };
+        return {
+            review: { call: structuredCall(), persona: systemPrompt },
+        };
     } catch (error) {
-        process.stderr.write(
-            `dorothy: reviews are off: ${error instanceof Error ? error.message : String(error)}\n`,
-        );
-        return null;
+        const noReviews =
+            error instanceof Error ? error.message : String(error);
+        process.stderr.write(`dorothy: reviews are off: ${noReviews}\n`);
+        return { review: null, noReviews };
     }
 }
 
@@ -199,7 +202,7 @@ const RUNNERS: Runners = {
     },
     serve: async () => {
         const { runService } = await service();
-        return runService({ review: await reviewAgent() });
+        return runService(await reviewAgent());
     },
     "token-add": async (mode) => {
         const { runTokenAdd } = await service();
