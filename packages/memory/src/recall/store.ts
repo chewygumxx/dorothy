@@ -288,6 +288,11 @@ function noted(error: unknown, note: string): Error {
 // even an idle one, has it open. The proof lasts until the returned lock
 // is closed; null where it fails, as it does for a header SQLite cannot
 // read, which says nothing of who holds the file.
+//
+// The probe leaves WAL mode first, where it can, so that closing it later
+// has no -wal file to delete by name: that would take a new index's, were
+// another process to make one in the moment between the old files being
+// deleted and the probe closing.
 function soleHolder(path: string): { close(): void } | null {
     if (!existsSync(path)) {
         return { close() {} };
@@ -297,11 +302,49 @@ function soleHolder(path: string): { close(): void } | null {
         probe = new Database(path, { readwrite: true, strict: true });
         probe.run("PRAGMA busy_timeout = 0");
         probe.run("PRAGMA locking_mode = EXCLUSIVE");
+        try {
+            probe.run("PRAGMA journal_mode = DELETE");
+        } catch {
+            // A damaged log may not checkpoint; the proof below stands alone.
+        }
         probe.run("BEGIN EXCLUSIVE");
         return probe;
     } catch {
         probe?.close();
         return null;
+    }
+}
+
+const NOT_REBUILT =
+    "it is corrupt and another process may have it open, so it is not rebuilt; delete it once none has";
+
+// A new index in place of a corrupt one, where the proof shows no other
+// process has the old open; the error, noted, where it does not or the
+// deleting or making fails. The deleting happens while the proof holds.
+function rebuild(path: string, busyMs: number, error: unknown): Database {
+    const proof = soleHolder(path);
+    if (proof === null) {
+        throw noted(error, NOT_REBUILT);
+    }
+    try {
+        for (const suffix of FILES) {
+            rmSync(`${path}${suffix}`, { force: true });
+        }
+    } catch (failure) {
+        throw noted(
+            error,
+            `it is corrupt; deleting it failed: ${describeError(failure)}`,
+        );
+    } finally {
+        proof.close();
+    }
+    try {
+        return prepare(path, busyMs);
+    } catch (failure) {
+        throw noted(
+            error,
+            `it is corrupt; rebuilding it failed: ${describeError(failure)}`,
+        );
     }
 }
 
@@ -327,10 +370,12 @@ export class RecallIndex {
         return this.#db;
     }
 
-    // A file SQLite says is not a database is deleted and made again; it
-    // holds nothing that cannot be rebuilt. Any other failure, such as the
-    // write lock staying held, leaves the file alone: another process may
-    // be using it.
+    // A file SQLite says is not a database is deleted and made again: no
+    // valid index can be open on it, and it holds nothing that cannot be
+    // rebuilt. One it finds corrupt is rebuilt only where no other process
+    // has it open, as in use (see exclusive); where one may, or any other
+    // failure such as the write lock staying held, the file is left alone,
+    // for another process may be using it.
     static open(path: string, busyMs = 5000): RecallIndex {
         const dir = dirname(path);
         mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -340,6 +385,13 @@ export class RecallIndex {
         } catch (error) {
             if (!unusable(error)) {
                 throw error;
+            }
+            if ((error as { code?: unknown }).code !== "SQLITE_NOTADB") {
+                return new RecallIndex(
+                    rebuild(path, busyMs, error),
+                    path,
+                    busyMs,
+                );
             }
             for (const suffix of FILES) {
                 rmSync(`${path}${suffix}`, { force: true });
@@ -376,8 +428,15 @@ export class RecallIndex {
         } catch {
             // Closed already, or too damaged to say so.
         }
-        const proof = soleHolder(this.#path);
-        if (proof === null) {
+        try {
+            this.#db = rebuild(this.#path, this.#busyMs, error);
+            this.#lock = exclusiveLock(this.#db);
+            return noted(
+                error,
+                "it was corrupt and has been rebuilt; ask again",
+            );
+        } catch (failure) {
+            // Whatever is left is used as it was, failing as it did.
             try {
                 this.#db = new Database(this.#path, { strict: true });
                 this.#db.run(`PRAGMA busy_timeout = ${this.#busyMs}`);
@@ -385,28 +444,10 @@ export class RecallIndex {
             } catch {
                 // Left closed: every call says why.
             }
-            return noted(
-                error,
-                "it is corrupt and another process may have it open, so it is not rebuilt; delete it once none has",
-            );
+            return failure instanceof Error
+                ? failure
+                : noted(error, String(failure));
         }
-        try {
-            for (const suffix of FILES) {
-                rmSync(`${this.#path}${suffix}`, { force: true });
-            }
-        } finally {
-            proof.close();
-        }
-        try {
-            this.#db = prepare(this.#path, this.#busyMs);
-            this.#lock = exclusiveLock(this.#db);
-        } catch (rebuild) {
-            return noted(
-                error,
-                `it is corrupt; rebuilding it failed: ${describeError(rebuild)}`,
-            );
-        }
-        return noted(error, "it was corrupt and has been rebuilt; ask again");
     }
 
     // For updateSidecar: a sidecar's read, change and rename happen under

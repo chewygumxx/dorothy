@@ -69,9 +69,9 @@ export type Landing =
 const NONE: Landing = { kind: "none" };
 
 // One run: the claim, the check that the notes are readable and the turns
-// leaving are the conversation's own, Dorothy's call, the wait for a reply streaming meanwhile, then saving or taking up
-// another writer's clusters, and recording. Throws, such as a claim's or a
-// save's, reach the caller.
+// leaving are the conversation's own, Dorothy's call, the wait for a reply
+// streaming meanwhile, then saving or taking up another writer's clusters,
+// and recording. Throws, such as a claim's or a save's, reach the caller.
 export async function compactOnce(
     shared: Shared,
     chained: Chained | null,

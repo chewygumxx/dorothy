@@ -11,9 +11,9 @@
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { closeSync, openSync, writeSync } from "node:fs";
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { indexPath, RecallIndex, SCHEMA_VERSION, unusable } from "./store.js";
 
 let dir = "";
@@ -319,13 +319,9 @@ describe("RecallIndex", () => {
             index.db.run("PRAGMA wal_checkpoint(TRUNCATE)");
             // A header SQLite cannot read says nothing of who has it open.
             damage(index, Buffer.from("not a database at all, not even close"));
-            writeSync(
-                openSync(path, "r+"),
-                Buffer.from("x".repeat(100)),
-                0,
-                100,
-                0,
-            );
+            const fd = openSync(path, "r+");
+            writeSync(fd, Buffer.from("x".repeat(100)), 0, 100, 0);
+            closeSync(fd);
             const before = (await stat(path)).ino;
             const failure = await index
                 .exclusive(() => {
@@ -334,6 +330,31 @@ describe("RecallIndex", () => {
                 .catch((error: unknown) => error);
             expect(String(failure)).toContain("not rebuilt");
             expect((await stat(path)).ino).toBe(before);
+            index.close();
+        });
+
+        it("is reported, not deleted, when deleting it fails", async () => {
+            const index = RecallIndex.open(path);
+            insert(index, "a");
+            damage(index, Buffer.alloc(300, 0xff));
+            const before = (await stat(path)).ino;
+            // A directory nothing can be removed from.
+            await chmod(dirname(path), 0o500);
+            try {
+                const failure = await index
+                    .exclusive(() => {
+                        throw corruptError();
+                    })
+                    .catch((error: unknown) => error);
+                expect(String(failure)).toContain("deleting it failed");
+            } finally {
+                await chmod(dirname(path), 0o700);
+            }
+            expect((await stat(path)).ino).toBe(before);
+            // Reopened as it was, failing as it did, not closed.
+            expect(() => index.db.query("SELECT 1").get()).not.toThrow(
+                /closed/i,
+            );
             index.close();
         });
 
@@ -351,6 +372,68 @@ describe("RecallIndex", () => {
             expect((await stat(path)).ino).toBe(before);
             expect(count(index)).toBe(1);
             index.close();
+        });
+    });
+
+    describe("opening a file that is corrupt", () => {
+        const holder = (release: string) =>
+            Bun.spawn(
+                [
+                    process.execPath,
+                    "-e",
+                    `const { Database } = require("bun:sqlite");
+                     const { existsSync } = require("node:fs");
+                     const db = new Database(${JSON.stringify(path)});
+                     db.run("PRAGMA journal_mode = WAL");
+                     db.query("SELECT count(*) FROM conversations").get();
+                     console.log("holding");
+                     while (!existsSync(${JSON.stringify(release)})) Bun.sleepSync(10);`,
+                ],
+                { stdout: "pipe" },
+            );
+        const damageSchema = () => {
+            const fd = openSync(path, "r+");
+            writeSync(fd, Buffer.alloc(300, 0xff), 0, 300, 100);
+            closeSync(fd);
+        };
+        const made = () => {
+            const first = RecallIndex.open(path);
+            insert(first, "a");
+            first.db.run("PRAGMA wal_checkpoint(TRUNCATE)");
+            return first;
+        };
+
+        it("rebuilds it where no other process has it open", async () => {
+            made().close();
+            damageSchema();
+            const before = (await stat(path)).ino;
+            const index = RecallIndex.open(path);
+            expect((await stat(path)).ino).not.toBe(before);
+            expect(count(index)).toBe(0);
+            index.close();
+        });
+
+        it("is left alone while another process holds it", async () => {
+            const first = made();
+            const release = join(dir, "release");
+            const child = holder(release);
+            let failure: unknown;
+            const before = (await stat(path)).ino;
+            try {
+                await child.stdout.getReader().read();
+                first.close();
+                damageSchema();
+                try {
+                    RecallIndex.open(path);
+                } catch (error) {
+                    failure = error;
+                }
+            } finally {
+                await writeFile(release, "");
+                await child.exited;
+            }
+            expect(String(failure)).toContain("not rebuilt");
+            expect((await stat(path)).ino).toBe(before);
         });
     });
 
