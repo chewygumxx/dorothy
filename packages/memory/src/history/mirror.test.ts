@@ -75,7 +75,13 @@ function mirrorOf(
         key = KEY,
         timers = new FakeTimers(),
         locked = lock,
-    }: { key?: Uint8Array | null; timers?: FakeTimers; locked?: Lock } = {},
+        pushMs = 60_000,
+    }: {
+        key?: Uint8Array | null;
+        timers?: FakeTimers;
+        locked?: Lock;
+        pushMs?: number;
+    } = {},
 ) {
     const warnings: string[] = [];
     const mirror = new Mirror({
@@ -84,7 +90,7 @@ function mirrorOf(
         key: () => key,
         token: () => null,
         warn: (message) => warnings.push(message),
-        pushMs: 60_000,
+        pushMs,
         timers,
     });
     return { mirror, warnings, timers };
@@ -295,6 +301,40 @@ describe("Mirror", () => {
         expect(recovered.applied).toBe(2);
         expect(recovered.tip).toBe(await repo.resolve(MAIN));
         await mirror.stop();
+    });
+
+    it("does not retry a one-shot push failure", async () => {
+        const repo = await repoWith({ "tags.json": "{}\n" });
+        await repo.setRemote("mirror", join(tempRoot(), "missing.git"));
+        const { mirror, timers } = mirrorOf(repo, { pushMs: 0 });
+        try {
+            expect((await mirror.push()).kind).toBe("failed");
+            expect(timers.pending.size).toBe(0);
+        } finally {
+            await mirror.stop();
+        }
+    });
+
+    it("does not retry a push that fails after stopping", async () => {
+        const repo = await repoWith({ "tags.json": "{}\n" });
+        await repo.setRemote("mirror", await bareRepo());
+        const entered = Promise.withResolvers<void>();
+        const gate = Promise.withResolvers<void>();
+        const wrapped = {
+            ...repo,
+            push: async () => {
+                entered.resolve();
+                await gate.promise;
+                throw new Error("disconnected");
+            },
+        };
+        const { mirror, timers } = mirrorOf(wrapped);
+        const pushed = mirror.push();
+        await entered.promise;
+        await mirror.stop();
+        gate.resolve();
+        expect((await pushed).kind).toBe("failed");
+        expect(timers.pending.size).toBe(0);
     });
 
     it("retries a failed push without another commit", async () => {
