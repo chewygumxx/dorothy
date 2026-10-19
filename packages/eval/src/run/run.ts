@@ -178,6 +178,11 @@ async function ask(
                           retrieved.ranked.slice(0, 10),
                           question.evidence,
                       ),
+                      // For full, whether it fitted the context.
+                      inContext: hasEvidence(
+                          retrieved.ranked,
+                          question.evidence,
+                      ),
                   },
         answer: null,
         judged: {

@@ -21,6 +21,9 @@ export type Cell = {
     lenient: Rate;
     at5: Rate;
     at10: Rate;
+    // Anywhere in the ranked ids, as full's are what fitted; null where a
+    // record was written before it was kept.
+    inContext: Rate | null;
     // Of abstentions, those declined; of the rest, those declined wrongly.
     declined: Rate;
     wronglyDeclined: Rate;
@@ -51,6 +54,7 @@ const emptyCell = (): Cell => ({
     lenient: rate(),
     at5: rate(),
     at10: rate(),
+    inContext: rate(),
     declined: rate(),
     wronglyDeclined: rate(),
     stale: rate(),
@@ -83,6 +87,11 @@ function add(cell: Cell, record: RunRecord, judging: boolean): void {
     tally(cell.lenient, record.judged.lenient, graded);
     tally(cell.at5, record.recall?.at5 ?? null);
     tally(cell.at10, record.recall?.at10 ?? null);
+    if (record.recall !== null && record.recall.inContext === undefined) {
+        cell.inContext = null;
+    } else if (cell.inContext !== null) {
+        tally(cell.inContext, record.recall?.inContext ?? null);
+    }
     tally(
         record.type === "abstention" ? cell.declined : cell.wronglyDeclined,
         record.judged.declined,

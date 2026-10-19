@@ -28,20 +28,22 @@ export const percent = (rate: Rate) =>
         : `${((100 * rate.hits) / rate.of).toFixed(1)}% (${rate.hits}/${rate.of})`;
 
 const ACCURACY = [
-    "| System | Strict | Lenient | Recall@5 | Recall@10 | Abstained | Declined wrongly | Older answer |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| System | Strict | Lenient | Recall@5 | Recall@10 | In context | Abstained | Declined wrongly | Older answer |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
 ];
+// In context is a dash for records written before it was kept.
 const accuracyRow = (name: string, cell: Cell) =>
     `| ${name} | ${[
         cell.strict,
         cell.lenient,
         cell.at5,
         cell.at10,
+        cell.inContext,
         cell.declined,
         cell.wronglyDeclined,
         cell.stale,
     ]
-        .map(percent)
+        .map((each) => (each === null ? "-" : percent(each)))
         .join(" | ")} |`;
 
 export function reportOf(summary: Summary): string {

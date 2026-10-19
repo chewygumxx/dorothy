@@ -237,8 +237,8 @@ opened once for the run:
 3. **`full`**: a bound from above, where it fits. Every conversation and
    knowledge file, newest first, until a budget of its own
    (`--full-budget`, 400,000 characters by default, some 100,000
-   tokens); its ranked ids are what fitted, so its evidence recall says
-   how much of the snapshot that was.
+   tokens); its ranked ids are what fitted, so whether its evidence was
+   in context says how much of the snapshot that was.
 
 `exclude` is honoured by all three. Retrieval sees the whole snapshot;
 `asOf` dates the question for the answering model alone. A system that
@@ -306,7 +306,8 @@ For each accepted question and each system:
 1. **Retrieve** within the budget (8,000 characters by default, the
    block's own default), timing it.
 2. **Evidence recall**: whether any evidence id is among the first 5 and
-   the first 10 items, a conversation matching by phrase.
+   the first 10 items, a conversation matching by phrase, and whether it
+   is anywhere among them (in context); the record keeps the first ten.
 3. **Answer**, unless `--retrieval-only` or the question is a `lookup`:
    the answering model gets the retrieved items and the question, dated
    by `asOf`, with one fixed prompt that says to answer from the items
@@ -347,7 +348,8 @@ counts.
 `<work>/runs/<run>/report.md`, and `summary.json` for comparison:
 
 - accuracy by type and overall, strict and lenient, for each system;
-- evidence recall at 5 and 10 by type, `lookup` included;
+- evidence recall at 5 and 10 and in context by type, `lookup`
+  included; in context is a dash for records written before it was kept;
 - abstention: how often an `abstention` question was declined, and how
   often another was declined wrongly;
 - for `knowledge-update`, how often the older answer was given;

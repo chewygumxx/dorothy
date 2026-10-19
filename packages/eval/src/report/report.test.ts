@@ -161,6 +161,26 @@ describe("the report", () => {
         expect(text).toContain("| n/a |");
     });
 
+    it("shows whether the evidence was in context, or a dash before", () => {
+        const text = reportOf(
+            summarise(info("r1"), [
+                ...RECORDS,
+                record("q-4", "lexical", {
+                    type: "temporal",
+                    recall: { at5: false, at10: false, inContext: true },
+                }),
+            ]),
+        );
+        expect(text).toContain("| Recall@10 | In context |");
+        // The rest were written before it was kept.
+        expect(text).toContain(
+            "| dorothy | 50.0% (1/2) | 50.0% (1/2) | 100.0% (2/2) | 100.0% (2/2) | - |",
+        );
+        expect(text).toContain(
+            "| lexical | 100.0% (1/1) | 100.0% (1/1) | 0.0% (0/1) | 0.0% (0/1) | 100.0% (1/1) |",
+        );
+    });
+
     it("compares two runs, marking what two questions could undo", () => {
         const before = summarise(info("r1"), RECORDS);
         const after = summarise(info("r2"), [

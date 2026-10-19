@@ -35,8 +35,10 @@ export type RunRecord = {
         ms: number;
         error: string | null;
     };
-    // Null for a question with no evidence.
-    recall: { at5: boolean; at10: boolean } | null;
+    // Null for a question with no evidence. inContext: whether any
+    // evidence id is anywhere in the system's ranked ids, past the ten
+    // kept; a record written before it was kept has none.
+    recall: { at5: boolean; at10: boolean; inContext?: boolean } | null;
     answer: { text: string; input: number; output: number; ms: number } | null;
     judged: Judged;
     failures: string[];

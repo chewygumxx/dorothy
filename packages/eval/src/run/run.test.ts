@@ -322,6 +322,61 @@ describe("a run", () => {
         }
     });
 
+    it("says whether the evidence was in context past the first ten", async () => {
+        const corpus = await openCorpus(workEnv(work));
+        try {
+            const { questions } = await readQuestions(work);
+            const info = newRunInfo(
+                {
+                    systems: ["wide"],
+                    budget: 8000,
+                    fullBudget: 400_000,
+                    retrievalOnly: true,
+                },
+                questions,
+                await readEvalConfig(work),
+                await readSnapshot(work),
+                new Date("2026-10-19T01:00:00.000Z"),
+            );
+            // As full ranks what fitted, newest first: the evidence fitted,
+            // but twelfth.
+            const ranked = [
+                ...Array.from({ length: 11 }, (_, at) => `k:filler/${at}`),
+                `c:${GARDEN}`,
+            ];
+            const { summary } = await runEvaluation(info, {
+                work,
+                corpus,
+                questions,
+                models: null,
+                concurrency: 1,
+                systems: [
+                    {
+                        name: "wide",
+                        retrieve: async () => ({ ranked, context: "" }),
+                    },
+                ],
+            });
+            const garden = (await readRecords(work, info.id)).find(
+                (each) => each.type === "single-session",
+            );
+            expect(garden?.retrieval.ranked).toEqual(ranked.slice(0, 10));
+            expect(garden?.recall).toEqual({
+                at5: false,
+                at10: false,
+                inContext: true,
+            });
+            expect(
+                summary.systems.wide?.byType["single-session"]?.inContext,
+            ).toEqual({ hits: 1, of: 1 });
+            expect(readFileSync(reportPath(work, info.id), "utf8")).toContain(
+                "| Recall@10 | In context |",
+            );
+        } finally {
+            corpus.close();
+        }
+    });
+
     it("records a model's failure and goes on", async () => {
         serve({ status: 500 });
         const corpus = await openCorpus(workEnv(work));
