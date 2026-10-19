@@ -370,7 +370,8 @@ and the snapshot's counts.
 - for `knowledge-update`, how often the older answer was given;
 - retrieval time and characters, answer tokens and time, failed calls;
 - the questions each system alone got right or wrong, by id, on strict
-  accuracy, among those judged by two systems or more.
+  accuracy, among those owed a strict judgement by two systems or more,
+  a system that failed one counting as wrong, as in the rates.
 
 A question that should have been judged but was not, as its retrieval,
 answer or judgement failed, counts as a miss in strict, lenient and, for

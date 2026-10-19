@@ -142,6 +142,61 @@ describe("a summary", () => {
         expect(dorothy?.alone.right).toEqual(["q-1"]);
         expect(lexical?.alone.wrong).toEqual(["q-1"]);
     });
+
+    it("counts a failed system's question as missed, as the rates do", () => {
+        const three = {
+            ...info("r1"),
+            systems: ["dorothy", "lexical", "full"],
+        };
+        const failed = record("q-5", "full", {
+            answer: null,
+            judged: {
+                strict: null,
+                lenient: null,
+                declined: null,
+                stale: null,
+            },
+            failures: ["answer: 500 refused"],
+        });
+        const split = summarise(three, [
+            record("q-5", "dorothy"),
+            record("q-5", "lexical", {
+                judged: {
+                    strict: false,
+                    lenient: false,
+                    declined: false,
+                    stale: null,
+                },
+            }),
+            failed,
+        ]).systems;
+        // full missed it too, so lexical is not alone in missing it.
+        expect(split.dorothy?.alone.right).toEqual(["q-5"]);
+        expect(split.lexical?.alone.wrong).toEqual([]);
+        expect(split.full?.all.strict).toEqual({ hits: 0, of: 1 });
+        // Of two, the one that failed alone missed it.
+        const two = summarise(info("r1"), [
+            record("q-5", "dorothy"),
+            { ...failed, system: "lexical" },
+        ]).systems;
+        expect(two.dorothy?.alone.right).toEqual(["q-5"]);
+        expect(two.lexical?.alone.wrong).toEqual(["q-5"]);
+        // A run that judged nothing names nothing.
+        const retrieval = summarise({ ...three, retrievalOnly: true }, [
+            { ...failed, system: "dorothy" },
+            record("q-5", "lexical", {
+                answer: null,
+                judged: {
+                    strict: null,
+                    lenient: null,
+                    declined: null,
+                    stale: null,
+                },
+            }),
+        ]).systems;
+        expect(retrieval.dorothy?.alone).toEqual({ right: [], wrong: [] });
+        expect(retrieval.lexical?.alone).toEqual({ right: [], wrong: [] });
+    });
 });
 
 describe("the report", () => {

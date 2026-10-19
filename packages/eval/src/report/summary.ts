@@ -79,12 +79,15 @@ function tally(into: Rate, value: boolean | null, owed = false): void {
     }
 }
 
+// Whether a record owes a strict verdict: a run that judges owes one to
+// every question with a reference answer.
+const graded = (record: RunRecord, judging: boolean) =>
+    judging && record.type !== "lookup" && record.type !== "abstention";
+
 function add(cell: Cell, record: RunRecord, judging: boolean): void {
     cell.n++;
-    const graded =
-        judging && record.type !== "lookup" && record.type !== "abstention";
-    tally(cell.strict, record.judged.strict, graded);
-    tally(cell.lenient, record.judged.lenient, graded);
+    tally(cell.strict, record.judged.strict, graded(record, judging));
+    tally(cell.lenient, record.judged.lenient, graded(record, judging));
     tally(cell.at5, record.recall?.at5 ?? null);
     tally(cell.at10, record.recall?.at10 ?? null);
     if (record.recall !== null && record.recall.inContext === undefined) {
@@ -133,7 +136,9 @@ export function summarise(info: RunInfo, records: RunRecord[]): Summary {
     for (const name of info.systems) {
         cells.set(name, { all: emptyCell(), byType: new Map() });
     }
-    // Each question's strict verdict by system, for what one alone got.
+    // Each question's strict verdict by system, for what one alone got:
+    // of every system that owed one, a failure counting as a miss, as it
+    // does in the rates.
     const verdicts = new Map<string, Map<string, boolean>>();
     for (const record of records) {
         const cell = cells.get(record.system);
@@ -144,9 +149,9 @@ export function summarise(info: RunInfo, records: RunRecord[]): Summary {
         const byType = cell.byType.get(record.type) ?? emptyCell();
         add(byType, record, judging);
         cell.byType.set(record.type, byType);
-        if (record.judged.strict !== null) {
+        if (graded(record, judging)) {
             const of = verdicts.get(record.question) ?? new Map();
-            of.set(record.system, record.judged.strict);
+            of.set(record.system, record.judged.strict === true);
             verdicts.set(record.question, of);
         }
     }
