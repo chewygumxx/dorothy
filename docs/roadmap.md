@@ -245,6 +245,17 @@ Found but not scheduled, each with its source.
   memory surviving a re-ingest, and two clients writing while a second
   machine reads; and a second ingest model (memory evaluation spec,
   Later).
+- Knowledge told apart by its source before it reaches the opening
+  block: `remember` runs without a prompt and the block takes every
+  piece of knowledge, framed only as background, so text injected
+  through a page or a tool reaches every later session. Layers was to
+  settle it, and the contract took Layers' place without doing so
+  (memory bodies spec, Known risks).
+- The contract's later work: her commands writing through the service;
+  OKF's `index.md` and `log.md` for `knowledge/`; encryption at rest;
+  `superseded_by`, and a command by which the user confirms a piece of
+  knowledge; a project without an `origin` being one across machines;
+  and a user beyond one (memory contract spec, Later and Known risks).
 - Launch notes kept in the state directory rather than the runtime one,
   so a launch killed by a crash or a power-off is still caught up after
   a reboot (memory bodies report).
@@ -257,14 +268,37 @@ Found but not scheduled, each with its source.
 - Turn times stored in UTC while `dateCreated` and the `after` and
   `before` filters use the local date (memory bodies, delivery's hand
   check).
+- The recording's rough edges: a branch the user rewinds from stays; a
+  session's plain `claude` turns are recorded as hers once it is resumed
+  in her launch; reviews fail under another `XDG_CONFIG_HOME`; a resumed
+  chat does not redraw its `remember` lines; and the recall server
+  answers out of order (memory bodies report).
 - The store's open gaps: snake-case memory files skipped, regenerating
   `MEMORY.md` replacing hook lines, and history keeping the provenance
-  an outside writer claims; and a `--fact` editor like `--memory`
-  (memory store and bodies specs, Later).
+  an outside writer claims; a `--fact` editor like `--memory`; and the
+  minors its reviews set aside, in scrub, the fact file, sync and the
+  commands (memory store and bodies specs, Later; the store's report,
+  Known gaps).
 - Forgetting a conversation, which must reach history and the mirror
   (memory history spec, Later).
 - Consolidating sealed bundles, and more than one mirror (memory history
   spec, Later).
+- History's own later work: a first seal built outside the lock, a fixed
+  committer date on the sealed branch, commands' commits pushed without
+  waiting for a chat, and history that grows without bound (memory
+  history deferred findings, Later work).
+- Compaction's gaps: the CLI's failed compactions unwatched, the seed's
+  size estimated rather than measured, and a `/compact` command, edited
+  abstracts and regrouped clusters (compaction report and spec).
+- The catalogue's and recall's remaining limits: a review can cost more
+  than the turn it follows, a hidden conversation may still be named in
+  others' notes, a corrupted index is not rebuilt by itself, and hidden
+  conversations' text stays in the cache index (catalogue spec, recall
+  report).
+- The vocabulary's limits, for maintenance to weigh: labels compare
+  without case, deleted concepts' tombstones accumulate, a recap chat is
+  tagged with the topics it recalls, and a renamed concept's old label
+  may be coined again (tags spec and report).
 - A proposer and supervisor in maintenance: a cheaper model proposes and
   Dorothy approves (the maintenance design's approach C).
 - A provisional title from a cheap model, editing memory from inside the
@@ -280,16 +314,29 @@ Found but not scheduled, each with its source.
   that a package cannot import something only the root declares: the
   isolated linker leaves the root's declarations visible to every package
   (workspace modularity, final review).
+- Ink's kitty keyboard query, `[?0u`, reaching the input draft under
+  Herdr, and `--memory` and `--edit-tags` loading all of `tui` for its
+  editor, which a `./editor` entry point would spare (workspace
+  modularity report).
+- The TUI's deferred features: undo, rendering while streaming, OSC 8
+  links, a theme, and configuration reloaded live (TUI chat, input
+  editor, Markdown replies and status line specs, Out of scope).
 - Dorothy's own tool loop, should serving behind clients fall short
   (agentic asset refactor).
 - Checking that every file of a headed type carries the house header, not
   only that existing headers are in sync (agentic asset refactor).
 - `repo-memory` preferring `.agents/memory/` upstream, so other
   repositories can move their memory too (agentic asset refactor).
+- herdr pinned like superpowers, as it follows its upstream's default
+  branch; and the two probes left: a session started inside a package,
+  and a fresh session reading `.agents/memory/MEMORY.md` (agentic asset
+  refactor report).
 - An OpenAI-protocol adapter for the gateway, and `--codex` and
   `--opencode` launchers beside `--claude` (identity spec, Later).
 - Checking that Claude Code's forks keep the identity marker, which the
-  probes could not observe without a model reply (Dorothy's identity).
+  probes could not observe without a model reply, that interactive
+  sessions behave as `-p` did, and that a user's `HTTP_PROXY` leaves the
+  loopback gateway alone (Dorothy's identity).
 - Probing how open models from featherless.ai or OpenRouter do behind
   Claude Code's prompt and tool schemas, before fallback leans on them
   (objectives).
@@ -405,3 +452,11 @@ In order of completion.
   minutes deferred until memory was designed, joins the first run as
   next, with its open questions; recording and delivery both follow it,
   as recording is of the harnesses chosen.
+- 2026-10-19: A sweep of every spec's and report's later work, known
+  limits and open questions against Candidates. Model Providers gains
+  the question of her own runtime, maintenance a link to its agreed
+  design, and Relations and Embeddings the evaluation as its evidence.
+  Candidates gain knowledge told apart by its source before it reaches
+  the block, the contract's later work, and the limits of recording,
+  the store, history, compaction, recall, the vocabulary, the TUI, the
+  asset refactor and the identity.
