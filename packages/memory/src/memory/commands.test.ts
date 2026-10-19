@@ -288,6 +288,152 @@ describe("runMemoryEdit", () => {
         expect(err.text).toContain("editor exited with 1");
     });
 
+    it("hands an emptied tag set back to Dorothy", async () => {
+        await writeFile(join(transcripts, `${a}.jsonl`), chat);
+        await writeFile(
+            join(dir, "dorothy", "tags.json"),
+            JSON.stringify({
+                v: 1,
+                concepts: {
+                    k00000001: {
+                        prefLabel: "memory",
+                        scopeNote: "Remembering.",
+                        by: "user",
+                        at: NOW.toISOString(),
+                    },
+                },
+            }),
+        );
+        await writeFile(
+            sidecarPath(transcripts, a),
+            JSON.stringify({
+                v: 1,
+                tags: ["k00000001"],
+                reviewedThrough: 12,
+                fields: { tags: { by: "user", at: NOW.toISOString() } },
+            }),
+        );
+        expect(
+            await run(async (text) => ({
+                ok: true,
+                text: text.replace(/^Tags:.*$/m, "Tags:"),
+            })),
+        ).toBe(0);
+        expect(await sidecar()).toMatchObject({ tags: [], reviewedThrough: 0 });
+        expect((await sidecar())?.fields.tags).toBeUndefined();
+    });
+
+    it("reopens for an unknown tag label and saves only the corrected edit", async () => {
+        await writeFile(join(transcripts, `${a}.jsonl`), chat);
+        let calls = 0;
+        expect(
+            await run(async (text) => {
+                calls++;
+                if (calls === 1)
+                    return {
+                        ok: true,
+                        text: text.replace(/^Tags:.*$/m, "Tags: unknown"),
+                    };
+                expect(text).toStartWith(
+                    "# error: No tag by that name: unknown\n",
+                );
+                expect(await sidecar()).toBeNull();
+                return {
+                    ok: true,
+                    text: text
+                        .replace("Tags: unknown", "Tags:")
+                        .replace("Pinned: no", "Pinned: yes"),
+                };
+            }),
+        ).toBe(0);
+        expect(calls).toBe(2);
+        expect((await sidecar())?.pinned).toBe(true);
+    });
+
+    it("edits notes while an initially broken vocabulary keeps tags intact", async () => {
+        await writeFile(join(transcripts, `${a}.jsonl`), chat);
+        await writeFile(join(dir, "dorothy", "tags.json"), "{ broken");
+        await writeFile(
+            sidecarPath(transcripts, a),
+            JSON.stringify({ v: 1, tags: ["k00000001"] }),
+        );
+        expect(
+            await run(async (text) => {
+                expect(text).not.toMatch(/^Tags:/m);
+                return {
+                    ok: true,
+                    text: text.replace("Pinned: no", "Pinned: yes"),
+                };
+            }),
+        ).toBe(0);
+        expect(await sidecar()).toMatchObject({
+            pinned: true,
+            tags: ["k00000001"],
+        });
+    });
+
+    it.each(["renamed", "deleted"])(
+        "saves an untouched Tags line after a concept is %s",
+        async (change) => {
+            await writeFile(join(transcripts, `${a}.jsonl`), chat);
+            const path = join(dir, "dorothy", "tags.json");
+            await writeFile(
+                path,
+                JSON.stringify({
+                    v: 1,
+                    concepts: {
+                        k00000001: {
+                            prefLabel: "memory",
+                            scopeNote: "Remembering.",
+                            by: "user",
+                            at: NOW.toISOString(),
+                        },
+                    },
+                }),
+            );
+            await writeFile(
+                sidecarPath(transcripts, a),
+                JSON.stringify({
+                    v: 1,
+                    tags: ["k00000001"],
+                    fields: { tags: { by: "user", at: NOW.toISOString() } },
+                }),
+            );
+            const before = await readFile(sidecarPath(transcripts, a), "utf8");
+            let calls = 0;
+            expect(
+                await run(async (text) => {
+                    calls++;
+                    await writeFile(
+                        path,
+                        JSON.stringify({
+                            v: 1,
+                            concepts: {
+                                k00000001:
+                                    change === "deleted"
+                                        ? {
+                                              deleted: NOW.toISOString(),
+                                              labels: ["memory"],
+                                          }
+                                        : {
+                                              prefLabel: "remembering",
+                                              scopeNote: "Remembering.",
+                                              by: "user",
+                                              at: NOW.toISOString(),
+                                          },
+                            },
+                        }),
+                    );
+                    return { ok: true, text };
+                }),
+            ).toBe(0);
+            expect(calls).toBe(1);
+            expect(await readFile(sidecarPath(transcripts, a), "utf8")).toBe(
+                before,
+            );
+        },
+    );
+
     it("sets a chat's tags by label", async () => {
         await writeFile(join(transcripts, `${a}.jsonl`), chat);
         await writeFile(

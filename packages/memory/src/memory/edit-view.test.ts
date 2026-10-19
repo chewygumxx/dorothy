@@ -126,6 +126,14 @@ describe("renderEditView", () => {
 });
 
 describe("wrap", () => {
+    it("keeps Tags off the start of a wrapped paragraph", () => {
+        expect(wrap("one two Tags: memory", 7)).toEqual([
+            "one two Tags:",
+            "memory",
+        ]);
+        expect(wrap("Tags: memory", 7)).toEqual([" Tags:", "memory"]);
+    });
+
     it("never starts a line with a field name", () => {
         const lines = wrap(`${"word ".repeat(14)}Title: inside`);
         expect(lines.some((line) => line.startsWith("Title:"))).toBe(false);
