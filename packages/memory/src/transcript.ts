@@ -12,7 +12,9 @@ import { type FileHandle, mkdir, open, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
     type Env,
+    REMEMBER_TOOL,
     type RecallEvent,
+    type ResumedRemember,
     type ResumedTurn,
     type Turn,
     type TurnStats,
@@ -55,6 +57,9 @@ export type ToolEvent = {
     ok: boolean;
     cut: { input: number; output: number };
     memory?: true;
+    // Where in the reply a call to remember happened, as a lookup's
+    // offset, so a resumed chat can place it.
+    offset?: number;
 };
 export type UserEvent = { v: 1; kind: "user"; at: string; text: string };
 export type AssistantEvent = {
@@ -126,12 +131,14 @@ export function toolEntry({
     output,
     ok,
     memory = false,
+    offset,
 }: {
     name: string;
     input: string;
     output: string;
     ok: boolean;
     memory?: boolean;
+    offset?: number;
 }): Extract<TranscriptEntry, { kind: "tool" }> {
     const inside = trimmed(scrub(input));
     const outside = trimmed(scrub(output));
@@ -143,6 +150,7 @@ export function toolEntry({
         ok,
         cut: { input: inside.cut, output: outside.cut },
         ...(memory ? { memory: true as const } : {}),
+        ...(offset === undefined ? {} : { offset }),
     };
 }
 
@@ -350,6 +358,7 @@ export function parseTranscript(text: string): TranscriptRead {
         read: { turns: [], skipped: 0, costUsd: 0, claudeSession: null },
         reply: null,
         lookups: [],
+        remembers: [],
     };
     for (const line of text.split("\n")) {
         if (line.trim() === "") {
@@ -373,6 +382,8 @@ function takeEvent(event: unknown, parsing: Parsing): void {
         takeStats(event as Written, parsing);
     } else if (kind === "recall") {
         takeRecall(event, parsing);
+    } else if (kind === "tool") {
+        takeTool(event as Written, parsing);
     } else {
         if (kind === "session") {
             takeSession(event as Written, parsing);
@@ -390,11 +401,13 @@ function takeSession(event: Written, parsing: Parsing): void {
 }
 
 // What reading a transcript has read so far, the reply a stats line
-// would belong to, and the lookups awaiting the reply after them.
+// would belong to, and the lookups and remembers awaiting the reply after
+// them.
 type Parsing = {
     read: TranscriptRead;
     reply: ResumedTurn | null;
     lookups: RecallEvent[];
+    remembers: ResumedRemember[];
 };
 
 function takeStats(fields: Written, parsing: Parsing): void {
@@ -419,8 +432,34 @@ function takeRecall(event: unknown, parsing: Parsing): void {
     }
 }
 
-// Lookups belong to the reply after them; a user message means the reply
-// they began never came.
+// Only her own calls to remember are told again, and only those that say
+// where in the reply they happened; the rest of a body's tool calls are
+// not turns.
+function takeTool(event: Written, parsing: Parsing): void {
+    const { name, input, output, ok, memory, offset } = event;
+    if (
+        name !== REMEMBER_TOOL ||
+        memory !== true ||
+        typeof input !== "string" ||
+        typeof output !== "string" ||
+        typeof ok !== "boolean" ||
+        typeof offset !== "number" ||
+        !Number.isInteger(offset) ||
+        offset < 0
+    ) {
+        return;
+    }
+    let given: unknown = {};
+    try {
+        given = JSON.parse(input);
+    } catch {
+        // Cut short at the trim: the output still says what was kept.
+    }
+    parsing.remembers.push({ ok, offset, input: given, output });
+}
+
+// Lookups and remembers belong to the reply after them; a user message
+// means the reply they began never came.
 function takeTurn(event: unknown, parsing: Parsing): void {
     const turn = toTurn(event);
     if (turn === "malformed") {
@@ -434,7 +473,11 @@ function takeTurn(event: unknown, parsing: Parsing): void {
     if (turn.role === "assistant" && parsing.lookups.length > 0) {
         resumed.lookups = parsing.lookups;
     }
+    if (turn.role === "assistant" && parsing.remembers.length > 0) {
+        resumed.remembers = parsing.remembers;
+    }
     parsing.lookups = [];
+    parsing.remembers = [];
     parsing.read.turns.push(resumed);
     parsing.reply = turn.role === "assistant" ? resumed : null;
 }

@@ -610,6 +610,38 @@ describe("lookups in a resumed reply", () => {
         ]);
     });
 
+    it("places a remember where it happened, among the lookups", () => {
+        const lines = initialState([
+            {
+                role: "assistant",
+                text: "One.\n\nTwo.",
+                remembers: [
+                    {
+                        ok: true,
+                        offset: 4,
+                        input: { action: "write", name: "tea" },
+                        output: '{"action":"written","id":"personal/tea"}',
+                    },
+                    {
+                        ok: false,
+                        offset: 10,
+                        input: { action: "retire", name: "coffee" },
+                        output: "No fact by that name.",
+                    },
+                ],
+            },
+        ]).lines;
+        expect(
+            lines.map((line) => [line.role, line.text, line.detail]),
+        ).toEqual([
+            ["dorothy", "One.", undefined],
+            ["lookup", "✎ remembered personal/tea", undefined],
+            ["dorothy", "Two.", undefined],
+            ["lookup", "✎ couldn't retire coffee", "No fact by that name."],
+            ["dorothy", "", undefined],
+        ]);
+    });
+
     it("labels the first text of a resumed reply that opens with a lookup", () => {
         const lines = initialState([
             {

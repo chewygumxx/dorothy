@@ -82,6 +82,7 @@ export function sessionRecorder({
                     output: event.output,
                     ok: event.ok,
                     memory: true,
+                    offset: event.offset,
                 }),
             );
         } else if (event.type === "turn-end") {

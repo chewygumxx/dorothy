@@ -475,6 +475,74 @@ describe("cutTornTail", () => {
     });
 });
 
+describe("remember events", () => {
+    const line = (fields: object) =>
+        JSON.stringify({ v: 1, at: "2026-10-03T00:00:00.000Z", ...fields });
+    const user = line({ kind: "user", text: "keep this" });
+    const reply = line({
+        kind: "assistant",
+        text: "Noted.\n\nDone.",
+        interrupted: false,
+    });
+    const remembered = (fields: object = {}) =>
+        line({
+            kind: "tool",
+            name: "mcp__memory__remember",
+            input: '{"action":"write","name":"tea"}',
+            output: '{"action":"written","id":"personal/tea"}',
+            ok: true,
+            cut: { input: 0, output: 0 },
+            memory: true,
+            offset: 7,
+            ...fields,
+        });
+
+    it("gives the reply that follows them their remembers", () => {
+        const read = parseTranscript([user, remembered(), reply].join("\n"));
+        expect(read.skipped).toBe(0);
+        expect(read.turns[1]?.remembers).toEqual([
+            {
+                ok: true,
+                offset: 7,
+                input: { action: "write", name: "tea" },
+                output: '{"action":"written","id":"personal/tea"}',
+            },
+        ]);
+        expect(read.turns[0]?.remembers).toBeUndefined();
+    });
+
+    it("drops remembers whose reply never came", () => {
+        const read = parseTranscript(
+            [user, remembered(), user, reply].join("\n"),
+        );
+        expect(read.turns[2]?.remembers).toBeUndefined();
+    });
+
+    it("leaves out a remember that cannot be placed or is not hers", () => {
+        const read = parseTranscript(
+            [
+                user,
+                remembered({ offset: undefined }),
+                remembered({ offset: -1 }),
+                remembered({ memory: undefined }),
+                remembered({ name: "mcp__memory__search" }),
+                reply,
+            ].join("\n"),
+        );
+        expect(read.skipped).toBe(0);
+        expect(read.turns[1]?.remembers).toBeUndefined();
+    });
+
+    it("keeps a remember whose input was cut short", () => {
+        const read = parseTranscript(
+            [user, remembered({ input: '{"action":"wri' }), reply].join("\n"),
+        );
+        expect(read.turns[1]?.remembers).toEqual([
+            expect.objectContaining({ input: {}, offset: 7 }),
+        ]);
+    });
+});
+
 describe("recall events", () => {
     const line = (fields: object) =>
         JSON.stringify({ v: 1, at: "2026-10-03T00:00:00.000Z", ...fields });

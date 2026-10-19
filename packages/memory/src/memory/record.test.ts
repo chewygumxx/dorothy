@@ -85,7 +85,7 @@ describe("sessionRecorder", () => {
             type: "remember",
             id: "t1",
             ok: true,
-            offset: 0,
+            offset: 12,
             input: { action: "write", name: "tea" },
             output: '{"action":"written","id":"personal/tea"}',
         });
@@ -99,6 +99,7 @@ describe("sessionRecorder", () => {
                 ok: true,
                 cut: { input: 0, output: 0 },
                 memory: true,
+                offset: 12,
             },
         ]);
     });

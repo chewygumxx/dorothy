@@ -186,12 +186,20 @@ export function rememberLine(
     return { text: `✎ ${retiring ? "retired" : "remembered"} ${id}` };
 }
 
-// A resumed reply, split where its lookups happened, as it was shown live.
+// A resumed reply, split where its lookups and remembers happened, as it
+// was shown live.
 function replyLines(turn: ResumedTurn): Omit<Line, "id">[] {
-    const lookups = [...(turn.lookups ?? [])].sort(
-        (a, b) => a.offset - b.offset,
-    );
-    if (lookups.length === 0) {
+    const memory = [
+        ...(turn.lookups ?? []).map((lookup) => ({
+            offset: lookup.offset,
+            line: lookupLine(lookup.ok, lookup),
+        })),
+        ...(turn.remembers ?? []).map((made) => ({
+            offset: made.offset,
+            line: rememberLine(made.ok, made.input, made.output),
+        })),
+    ].sort((a, b) => a.offset - b.offset);
+    if (memory.length === 0) {
         return [
             {
                 role: "dorothy",
@@ -205,14 +213,14 @@ function replyLines(turn: ResumedTurn): Omit<Line, "id">[] {
     let from = 0;
     // Whether a dorothy line, which carries the label, is already out.
     let shown = false;
-    for (const lookup of lookups) {
-        const at = Math.min(Math.max(lookup.offset, from), turn.text.length);
+    for (const { offset, line } of memory) {
+        const at = Math.min(Math.max(offset, from), turn.text.length);
         const segment = turn.text.slice(from, at).trim();
         if (segment !== "") {
             lines.push({ role: "dorothy", text: segment, continued: shown });
             shown = true;
         }
-        lines.push({ role: "lookup", ...lookupLine(lookup.ok, lookup) });
+        lines.push({ role: "lookup", ...line });
         from = at;
     }
     lines.push({
