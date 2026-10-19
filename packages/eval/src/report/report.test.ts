@@ -211,9 +211,12 @@ describe("bun run eval -- compare", () => {
     });
     afterEach(() => temp.remove());
 
-    const write = (id: string) => {
+    const write = (id: string, fields: Partial<RunInfo> = {}) => {
         mkdirSync(runDir(temp.root, id), { recursive: true });
-        writeFileSync(runInfoPath(temp.root, id), JSON.stringify(info(id)));
+        writeFileSync(
+            runInfoPath(temp.root, id),
+            JSON.stringify({ ...info(id), ...fields }),
+        );
         writeFileSync(
             recordsPath(temp.root, id),
             RECORDS.map((each) => `${JSON.stringify(each)}\n`).join(""),
@@ -228,11 +231,44 @@ describe("bun run eval -- compare", () => {
         expect(readFileSync(reportPath(temp.root, "r1"), "utf8")).toContain(
             "# Memory evaluation r1",
         );
-        const { io, out } = fakeIo();
+        const { io, out, err } = fakeIo();
         expect(
             await runCli(["compare", "--work", temp.root, "r1", "r2"], io),
         ).toBe(0);
         expect(out.join("")).toContain("Comparing r1 with r2");
+        expect(err.join("")).toBe("");
+    });
+
+    it("warns when the runs differ in snapshot or questions", async () => {
+        write("r1");
+        write("r2", {
+            snapshot: {
+                ...info("r2").snapshot,
+                at: "2026-10-19T00:00:00.000Z",
+            },
+        });
+        write("r3", { questionIds: ["q-1", "q-2", "q-4"] });
+        // The same questions in another order are the same set.
+        write("r4", { questionIds: ["q-3", "q-2", "q-1"] });
+        for (const id of ["r1", "r2", "r3", "r4"]) {
+            await writeRunReport(temp.root, id);
+        }
+        for (const [other, warned] of [
+            ["r2", true],
+            ["r3", true],
+            ["r4", false],
+        ] as const) {
+            const { io, out, err } = fakeIo();
+            expect(
+                await runCli(["compare", "--work", temp.root, "r1", other], io),
+            ).toBe(0);
+            expect(out.join("")).toContain(`Comparing r1 with ${other}`);
+            expect(err.join("")).toBe(
+                warned
+                    ? `eval: r1 and ${other} differ in their snapshot or questions; the noise mark then means little\n`
+                    : "",
+            );
+        }
     });
 
     it("says how to finish a run with no summary", async () => {

@@ -374,7 +374,9 @@ counts with every rate, as 300 questions split seven ways leave some
 types small; a difference under the type's count's resolution, two
 questions' worth of the smaller count, is marked as such. The
 comparison covers the systems both runs hold, and strict accuracy
-alone; the adoption rule is printed, not decided.
+alone; the adoption rule is printed, not decided. Two runs of different
+snapshots or questions are compared with a warning, as the noise mark
+then means little.
 
 ## Failures
 
