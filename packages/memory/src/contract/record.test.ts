@@ -10,11 +10,13 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
+    appendFileSync,
     existsSync,
     mkdirSync,
     mkdtempSync,
     readFileSync,
     rmSync,
+    writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -140,6 +142,65 @@ describe("acceptRecord", () => {
                 .filter((line) => line.kind === "user")
                 .map((line) => line.sourceUuid),
         ).toEqual(["a", "b", "c"]);
+    });
+
+    describe("reading only what was appended", () => {
+        const path = () => transcriptPath(PHRASE, env);
+        const line = (id: string) =>
+            `${JSON.stringify({ v: 1, kind: "user", at: AT, text: "x", sourceUuid: id })}\n`;
+
+        it("trusts what it read before, and reads what came after", async () => {
+            const shared = deps({ held: new Map() });
+            await acceptRecord(request([user("a")]), shared);
+            // A second record reads the file once, and keeps what it found.
+            await acceptRecord(request([user("a")]), shared);
+            // Garble the first event in place, its length kept: a read of
+            // the whole file would no longer find "a" there.
+            const text = readFileSync(path(), "utf8");
+            const garbled = text.replace(
+                '"sourceUuid":"a"',
+                '"sourceUuid":"z"',
+            );
+            expect(garbled).not.toBe(text);
+            writeFileSync(path(), garbled);
+            appendFileSync(path(), line("x"));
+            const again = await acceptRecord(
+                request([user("a"), user("x"), user("b")]),
+                shared,
+            );
+            expect(again).toEqual({ accepted: 1, duplicates: 2, through: "b" });
+            // Without what was read before, the whole file is read.
+            const cold = await acceptRecord(
+                request([user("a")]),
+                deps({ sessions: shared.sessions, held: new Map() }),
+            );
+            expect(cold.accepted).toBe(1);
+        });
+
+        it("reads it all again when the file shrank or was replaced", async () => {
+            const shared = deps({ held: new Map() });
+            await acceptRecord(request([user("a"), user("b")]), shared);
+            // Replaced by a shorter file of other events.
+            rmSync(path());
+            writeFileSync(path(), line("q"));
+            const again = await acceptRecord(
+                request([user("a"), user("q")]),
+                shared,
+            );
+            expect(again).toMatchObject({ accepted: 1, duplicates: 1 });
+        });
+
+        it("reads it all again when the last read ended inside a line", async () => {
+            const shared = deps({ held: new Map() });
+            await acceptRecord(request([user("a")]), shared);
+            const torn = line("t1");
+            appendFileSync(path(), torn.slice(0, 20));
+            await acceptRecord(request([user("a")]), shared);
+            appendFileSync(path(), torn.slice(20));
+            // Read on from the middle of the line, t1 would not be found.
+            const again = await acceptRecord(request([user("t1")]), shared);
+            expect(again).toMatchObject({ accepted: 0, duplicates: 1 });
+        });
     });
 
     it("writes the session's header again where its file is gone", async () => {

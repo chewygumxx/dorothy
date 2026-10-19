@@ -31,7 +31,7 @@ import { openingBlock } from "../contract/block.js";
 import { ContractError } from "../contract/errors.js";
 import { FrozenBlocks } from "../contract/frozen.js";
 import { recallFor } from "../contract/recall.js";
-import { acceptRecord, sessionKey } from "../contract/record.js";
+import { acceptRecord, type Held, sessionKey } from "../contract/record.js";
 import {
     blockRequestSchema,
     parseWith,
@@ -61,6 +61,7 @@ export { isLoopback, MAX_BODY };
 
 const MAX_SESSIONS = 10_000;
 const MAX_VERSIONS = 128;
+const MAX_HELD = 200;
 
 export type ServiceOptions = {
     env: Env;
@@ -179,6 +180,8 @@ export async function startService(
     // Host sessions' conversations, found again through the index when
     // one has gone; a host chooses the keys, so only the latest are kept.
     const sessions = new Recent<string, string>(MAX_SESSIONS);
+    // The source ids last read from each conversation's file.
+    const held = new Recent<string, Held>(MAX_HELD);
     // Conversations recorded and not yet extracted, by their last record.
     const idle = new Map<string, number>();
     // Projects recorded since the last export.
@@ -319,6 +322,7 @@ export async function startService(
                     sync: () => engine.index(),
                     claudeTranscript,
                     sessions,
+                    held,
                     now,
                 });
                 const phrase = sessions.get(

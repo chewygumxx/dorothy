@@ -12,7 +12,7 @@
 // event once by its sourceId, in the order sent. Under the store's lock,
 // so two records of one session never interleave.
 
-import { readFile } from "node:fs/promises";
+import { open } from "node:fs/promises";
 import {
     type Env,
     newPhrase,
@@ -52,6 +52,9 @@ export type RecordDeps = {
     sessions: Map<string, string>;
     now?: () => Date;
     phrase?: () => string;
+    // What was last read of each conversation's file, so that a record
+    // reads only what was appended; none reads the whole file each time.
+    held?: Map<string, Held>;
 };
 
 export const sessionKey = (host: string, session: string) =>
@@ -79,15 +82,65 @@ function entryOf(event: RecordEvent): TranscriptEntry {
     }
 }
 
-// The source ids a transcript holds, or null where there is no file.
-async function heldIn(path: string): Promise<Set<string> | null> {
+// The source ids a conversation's file held when last read, and the
+// file it was read from.
+export type Held = { ino: number; size: number; ids: Set<string> };
+
+// Whether the byte before offset ends a line, so that reading on from it
+// starts one.
+async function endsLine(
+    handle: Awaited<ReturnType<typeof open>>,
+    offset: number,
+): Promise<boolean> {
+    const byte = Buffer.alloc(1);
+    await handle.read(byte, 0, 1, offset - 1);
+    return byte[0] === 0x0a;
+}
+
+// The source ids a transcript holds, or null where there is no file. Only
+// what was appended since the last read is read, unless the file shrank,
+// was replaced, or its last read ended inside a line: then all of it.
+async function heldIn(
+    path: string,
+    cache: Map<string, Held>,
+): Promise<Set<string> | null> {
+    let handle: Awaited<ReturnType<typeof open>>;
     try {
-        return recordedUuids(await readFile(path, "utf8")).uuids;
+        handle = await open(path, "r");
     } catch (error) {
         if ((error as { code?: unknown }).code === "ENOENT") {
+            cache.delete(path);
             return null;
         }
         throw error;
+    }
+    try {
+        const { ino, size } = await handle.stat();
+        const kept = cache.get(path);
+        const resume =
+            kept !== undefined &&
+            kept.ino === ino &&
+            kept.size <= size &&
+            (kept.size === 0 || (await endsLine(handle, kept.size)));
+        const ids = resume ? kept.ids : new Set<string>();
+        const from = resume ? kept.size : 0;
+        if (size > from) {
+            const bytes = Buffer.alloc(size - from);
+            const { bytesRead } = await handle.read(
+                bytes,
+                0,
+                bytes.length,
+                from,
+            );
+            const text = bytes.subarray(0, bytesRead).toString("utf8");
+            for (const id of recordedUuids(text).uuids) {
+                ids.add(id);
+            }
+        }
+        cache.set(path, { ino, size, ids });
+        return ids;
+    } finally {
+        await handle.close();
     }
 }
 
@@ -130,12 +183,17 @@ export async function acceptRecord(
         const path = transcriptPath(phrase, deps.env);
         // A file may be gone that the session cache or index still names,
         // as history removes one it heals: the conversation starts over.
-        const held = found === null ? null : await heldIn(path);
+        const cache = deps.held ?? new Map<string, Held>();
+        const held = found === null ? null : await heldIn(path, cache);
         const starting = held === null;
-        const seen = held ?? new Set<string>();
+        // This request's own ids join the cache's only once written.
+        const seen = new Set<string>();
         const fresh: RecordEvent[] = [];
         for (const event of events) {
-            if (!seen.has(event.sourceId)) {
+            if (
+                !(held?.has(event.sourceId) ?? false) &&
+                !seen.has(event.sourceId)
+            ) {
                 seen.add(event.sourceId);
                 fresh.push(event);
             }
@@ -177,6 +235,9 @@ export async function acceptRecord(
                 await writer.close();
             }
             await deps.recorder?.([path], `turn: ${phrase} (${request.host})`);
+        }
+        for (const id of seen) {
+            held?.add(id);
         }
         deps.sessions.set(key, phrase);
         return {
