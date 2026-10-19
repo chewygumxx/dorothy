@@ -98,6 +98,18 @@ describe("Input", () => {
         expect(frame()).not.toContain("enter send");
     });
 
+    it("keeps a late kitty keyboard reply out of the draft", async () => {
+        // Ink asks the terminal for the protocol and stops listening after
+        // 200 ms; herdr's answer comes later and would arrive as typing.
+        const { keys, frame, submitted } = setup();
+        await keys("\u001B[?0u", "[?0u");
+        expect(frame()).toContain(KEY_HINTS.slice(0, 40));
+        await keys("hi \u001B[?0u there", "\u001B[?1u");
+        expect(frame()).toContain("› hi  there▏");
+        await keys("\r");
+        expect(submitted).toEqual(["hi  there"]);
+    });
+
     it("inserts a newline on Shift+Enter and sends on Enter", async () => {
         const { keys, frame, submitted } = setup();
         await keys("a", SHIFT_ENTER, "b");
