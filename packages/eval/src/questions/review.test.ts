@@ -111,6 +111,43 @@ describe("bun run eval -- review", () => {
         ]);
     });
 
+    it("keeps a question the file gains between two decisions", async () => {
+        const { io } = fakeIo({
+            answers: ["a", "e", "a", "q"],
+            onEdit: (path) => {
+                const question = JSON.parse(readFileSync(path, "utf8"));
+                question.question = "Where is my allotment plot?";
+                writeFileSync(path, JSON.stringify(question));
+            },
+        });
+        const ask = io.ask;
+        let prompts = 0;
+        io.ask = async (prompt) => {
+            if (prompt.startsWith("[a]ccept") && ++prompts === 2) {
+                const { questions } = await readQuestions(work);
+                await writeQuestions(work, [
+                    ...questions,
+                    drafted("Which river runs by my allotment?"),
+                ]);
+            }
+            return ask(prompt);
+        };
+        expect(await runCli(["review", "--work", work], io)).toBe(0);
+        const { questions } = await readQuestions(work);
+        expect(questions.map((question) => question.question)).toEqual([
+            "Which plot is my allotment?",
+            "Where is my allotment plot?",
+            "By what is my allotment?",
+            "Which river runs by my allotment?",
+        ]);
+        expect(questions.map((question) => question.status)).toEqual([
+            "accepted",
+            "accepted",
+            "draft",
+            "draft",
+        ]);
+    });
+
     it("asks again for a key it does not know", async () => {
         const { io, out } = fakeIo({ answers: ["x", "q"] });
         expect(await runCli(["review", "--work", work], io)).toBe(0);

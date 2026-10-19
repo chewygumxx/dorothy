@@ -9,7 +9,9 @@
 //
 
 // The owner's pass over the drafts, one at a time: each decision is
-// written at once, so quitting, or the end of input, loses nothing.
+// written at once, so quitting, or the end of input, loses nothing, and
+// into the file as it is then, so a generate or mine meanwhile loses
+// nothing either.
 
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -114,6 +116,23 @@ async function edited(
     }
 }
 
+// The decided question in the file as it is now, in place of the one
+// with the id it had, or at the end if that one has gone.
+async function decide(
+    work: string,
+    id: string,
+    decided: Question,
+): Promise<void> {
+    const questions = await readQuestionsToRewrite(work);
+    const at = questions.findIndex((question) => question.id === id);
+    if (at === -1) {
+        questions.push(decided);
+    } else {
+        questions[at] = decided;
+    }
+    await writeQuestions(work, questions);
+}
+
 export async function reviewQuestions(
     work: string,
     io: Io,
@@ -125,8 +144,10 @@ export async function reviewQuestions(
         .filter(({ question }) => question.status === "draft")
         .map(({ at }) => at);
     const tally: Tally = { accepted: 0, rejected: 0, edited: 0, left: 0 };
-    const finish = () => {
-        tally.left = questions.filter((q) => q.status === "draft").length;
+    const finish = async () => {
+        tally.left = (await readQuestionsToRewrite(work)).filter(
+            (q) => q.status === "draft",
+        ).length;
         return tally;
     };
     for (const [count, at] of drafts.entries()) {
@@ -135,33 +156,35 @@ export async function reviewQuestions(
             io.out(shown(question, count + 1, drafts.length, corpus));
             const choice = (await io.ask(PROMPT))?.trim().toLowerCase() ?? "q";
             if (choice === "q") {
-                return finish();
+                return await finish();
             }
             if (choice === "s") {
                 break;
             }
             if (choice === "a") {
-                questions[at] = { ...question, status: "accepted" };
+                const accepted: Question = { ...question, status: "accepted" };
+                questions[at] = accepted;
                 tally.accepted++;
-                await writeQuestions(work, questions);
+                await decide(work, question.id, accepted);
                 break;
             }
             if (choice === "r") {
                 const why = ((await io.ask("Why? ")) ?? "").trim();
-                questions[at] = {
+                const rejected: Question = {
                     ...question,
                     status: "rejected",
                     note: why === "" ? question.note : why.slice(0, 2000),
                 };
+                questions[at] = rejected;
                 tally.rejected++;
-                await writeQuestions(work, questions);
+                await decide(work, question.id, rejected);
                 break;
             }
             if (choice === "e") {
                 const others = new Set(
-                    questions
-                        .filter((_, other) => other !== at)
-                        .map((q) => q.id),
+                    (await readQuestionsToRewrite(work))
+                        .map((q) => q.id)
+                        .filter((id) => id !== question.id),
                 );
                 const result = await edited(work, question, io, others, corpus);
                 if (typeof result === "string") {
@@ -171,14 +194,14 @@ export async function reviewQuestions(
                 } else {
                     questions[at] = result;
                     tally.edited++;
-                    await writeQuestions(work, questions);
+                    await decide(work, question.id, result);
                 }
                 continue;
             }
             io.out("Type a, e, r, s or q.\n");
         }
     }
-    return finish();
+    return await finish();
 }
 
 export const reviewCommand: Command = {
