@@ -78,7 +78,8 @@ text (`MemoryPrompts`).
   `recollect` (a hidden chat's turns from its transcript); `tags.ts`
   mirrors the vocabulary; `remember.ts` writes her facts; `server.ts`
   serves them over MCP on stdio as `dorothy --recall-server`, one call at
-  a time, history opened without the mirror; `rank.ts` weighs appraised reads.
+  a time, history opened without the mirror. Reviews appraise each read
+  into the sidecar, and `salience()` (`rank.ts`) weighs appraised reads.
 - `compaction/`: past `[compaction] soft` tokens, at the next idle (past
   `hard`, before the next message), `compact()` splits the turns before
   the verbatim tail into topical clusters with an abstract each; read
