@@ -78,7 +78,7 @@ export const REVIEW_CLAIM_RETRY_MS = 2000;
 
 // It has turns no review has covered, or was reviewed before tags while
 // Dorothy tags; she may review it, and its back-off is over.
-function isStale(entry: Entry, now: number, tagging: boolean): boolean {
+export function isStale(entry: Entry, now: number, tagging: boolean): boolean {
     if (entry.sidecar.kind === "none") {
         return entry.turns > 0;
     }

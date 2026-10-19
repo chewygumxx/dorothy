@@ -25,7 +25,12 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { userLine } from "../bodies/fixtures.js";
 import { hookLogPath } from "../bodies/log.js";
+import { dataRoot } from "../facts/store.js";
 import { loadProfiles } from "../hosts/profiles.js";
+import { type Entry, indexCatalogue } from "../memory/catalogue.js";
+import { isStale } from "../memory/service.js";
+import { vocabularyPath } from "../memory/vocabulary.js";
+import { indexPath, RecallIndex } from "../recall/store.js";
 import { transcriptDir } from "../transcript.js";
 import {
     MAX_BODY,
@@ -409,6 +414,37 @@ describe("the memory service", () => {
             expect(log).toMatch(
                 / warn \d+ reviews are off: no key was found\n/,
             );
+        });
+
+        it("leaves the conversation stale for her chat's catch-up", async () => {
+            const service = await start(false, eager, { tickMs: 10 });
+            await post("/v1/record", {
+                host: "codex",
+                session: "s1",
+                events: [{ sourceId: "a", at: AT, kind: "user", text: "Tea?" }],
+            });
+            for (let tries = 0; service.waiting() > 0 && tries < 100; tries++) {
+                await sleep(10);
+            }
+            // Dropped from the idle list unreviewed, it has no notes; the
+            // catalogue her chat's launch reads finds it, and the catch-up
+            // takes the stale ones, most recent first.
+            const index = RecallIndex.open(indexPath(env));
+            try {
+                const { entries } = await indexCatalogue(
+                    index,
+                    transcriptDir(env),
+                    vocabularyPath(env),
+                    dataRoot(env),
+                ).load();
+                expect(entries).toHaveLength(1);
+                expect(entries[0]?.sidecar.kind).toBe("none");
+                expect(isStale(entries[0] as Entry, Date.now(), false)).toBe(
+                    true,
+                );
+            } finally {
+                index.close();
+            }
         });
 
         it("lets an idle conversation go, as with reviews on", async () => {
