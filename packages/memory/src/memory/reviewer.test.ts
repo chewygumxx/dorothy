@@ -13,8 +13,9 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CONFIG, newPhrase, type StructuredCall } from "@dorothy/core";
+import type { Entry } from "./catalogue.js";
 import { Reviewer, type ReviewProblem } from "./reviewer.js";
-import { readSidecar } from "./sidecar.js";
+import { EMPTY_SIDECAR, readSidecar } from "./sidecar.js";
 
 const NOW = new Date("2026-10-15T09:00:00.000Z");
 const PHRASE = newPhrase(() => Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]));
@@ -83,6 +84,75 @@ describe("Reviewer", () => {
         const read = await readSidecar(dir, PHRASE);
         expect(read.kind === "ok" && read.sidecar.title).toBe("Tea");
         expect(spent).toEqual([0.25]);
+    });
+
+    it("names each read from the catalogue, looking at it once however many", async () => {
+        const other = "amber-otter-quietly-sings";
+        const reads = Array.from({ length: 6 }, (_, n) => ({
+            v: 1,
+            kind: "recall",
+            at: NOW.toISOString(),
+            id: `toolu_${n}`,
+            ok: true,
+            offset: 0,
+            tool: "open",
+            conversation: other,
+            name: other,
+            purpose: `why ${n}`,
+            turns: null,
+        }));
+        await writeFile(
+            join(dir, `${PHRASE}.jsonl`),
+            `${[
+                { v: 1, kind: "user", at: NOW.toISOString(), text: "tea?" },
+                ...reads,
+                {
+                    v: 1,
+                    kind: "assistant",
+                    at: NOW.toISOString(),
+                    text: "At four.",
+                    interrupted: false,
+                },
+            ]
+                .map((event) => JSON.stringify(event))
+                .join("\n")}\n`,
+        );
+        const entry: Entry = {
+            phrase: other,
+            sidecar: {
+                kind: "ok",
+                sidecar: { ...EMPTY_SIDECAR, title: "Amber evenings" },
+            },
+            visits: [],
+            reads: [],
+            turns: 2,
+            lastActive: NOW.getTime(),
+        };
+        let looked = 0;
+        const prompts: string[] = [];
+        await new Reviewer({
+            dir,
+            config: DEFAULT_CONFIG.memory,
+            index: null,
+            vocabulary: null,
+            versions: null,
+            call: async ({ prompt }) => {
+                prompts.push(prompt);
+                return { ok: true, output: NOTES, model: "m", costUsd: 0 };
+            },
+            persona: "You are Dorothy.",
+            now: () => NOW,
+            entries: () => {
+                looked += 1;
+                return [entry];
+            },
+            warn: () => {},
+            cost: () => {},
+        }).review(PHRASE, new AbortController().signal);
+        expect(prompts[0]).toContain("Amber evenings");
+        expect(prompts[0]).not.toContain(`"${other}"`);
+        // The block, and the names: not once a read besides.
+        expect(looked).toBeLessThanOrEqual(3);
     });
 
     it("marks a failure and says why", async () => {

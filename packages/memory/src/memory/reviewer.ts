@@ -43,13 +43,14 @@ import {
     markReviewed,
     mergeReview,
     ownsAll,
-    type Recording,
     readSidecar,
+    recordingFor,
     reviewDue,
     type Sidecar,
     sidecarPath,
     untagged,
     updateSidecar,
+    writeLock,
 } from "./sidecar.js";
 import { applyTagging, reviewConcepts, type TagOutput } from "./tagging.js";
 import {
@@ -114,19 +115,12 @@ export class Reviewer {
         this.#options = options;
     }
 
-    // The lock writes take: the index's, or history's own without it.
     get #lock(): Lock | undefined {
-        return this.#options.index?.lock ?? this.#options.versions?.lock;
+        return writeLock(this.#options.index, this.#options.versions);
     }
 
-    #recording(
-        message: string,
-        also: readonly string[] = [],
-    ): Recording | undefined {
-        const versions = this.#options.versions;
-        return versions === null
-            ? undefined
-            : { recorder: versions.recorder, message, also };
+    #recording(message: string, also: readonly string[] = []) {
+        return recordingFor(this.#options.versions, message, also);
     }
 
     // The vocabulary as the file holds it, empty when there is none; null
@@ -211,17 +205,21 @@ export class Reviewer {
         return tagged.tags;
     }
 
-    #nameOf(phrase: string): string {
-        for (const entry of this.#options.entries()) {
-            if (entry.phrase === phrase) {
-                return (
+    // A conversation's name, a title or else its phrase, as last seen:
+    // the catalogue is read once, when the first is asked for.
+    #nameOf(): (phrase: string) => string {
+        let names: Map<string, string> | undefined;
+        return (phrase) => {
+            names ??= new Map(
+                [...this.#options.entries()].map((entry) => [
+                    entry.phrase,
                     (entry.sidecar.kind === "ok"
                         ? entry.sidecar.sidecar.title
-                        : null) ?? phrase
-                );
-            }
-        }
-        return phrase;
+                        : null) ?? entry.phrase,
+                ]),
+            );
+            return names.get(phrase) ?? phrase;
+        };
     }
 
     // The block a review is given: every note but its own conversation's.
@@ -256,8 +254,10 @@ export class Reviewer {
             fail(describeError(error), "transcript");
             return { kind: "none" };
         }
-        const reads = pendingReads(turns, current?.appraisals ?? {}, (of) =>
-            this.#nameOf(of),
+        const reads = pendingReads(
+            turns,
+            current?.appraisals ?? {},
+            this.#nameOf(),
         );
         if (!reviewable(current, turns, reads, tagging) || signal.aborted) {
             return { kind: "none" };

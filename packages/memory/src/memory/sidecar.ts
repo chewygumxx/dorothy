@@ -84,6 +84,21 @@ export type HistoryHandle = {
     heal(path: string): Promise<boolean>;
     close(): void;
 };
+// The lock memory's writes take: the index's, or history's own without
+// it; none with neither.
+export const writeLock = (
+    index: { lock: Lock } | null,
+    versions: HistoryHandle | null,
+): Lock | undefined => index?.lock ?? versions?.lock;
+// A write's commit through history; none without it.
+export const recordingFor = (
+    versions: HistoryHandle | null,
+    message: string,
+    also: readonly string[] = [],
+): Recording | undefined =>
+    versions === null
+        ? undefined
+        : { recorder: versions.recorder, message, also };
 // For a command: history with the index's lock, or null when it is off.
 export type OpenHistory = (
     index: { lock: Lock } | null,

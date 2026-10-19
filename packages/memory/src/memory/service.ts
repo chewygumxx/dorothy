@@ -28,12 +28,13 @@ import {
     type HistoryHandle,
     type Lock,
     provisionalTitle,
-    type Recording,
+    recordingFor,
     reviewDue,
     type Sidecar,
     untagged,
     updateSidecar,
     withProvisional,
+    writeLock,
 } from "./sidecar.js";
 import type { MemoryHooks } from "./track.js";
 
@@ -292,18 +293,12 @@ export class MemoryService implements MemoryHooks {
         this.#emit({ type: "warning", message });
     }
 
-    // The lock writes take: the index's, or history's own without it.
     get #lock(): Lock | undefined {
-        return this.#index?.lock ?? this.#versions?.lock;
+        return writeLock(this.#index, this.#versions);
     }
 
-    #recording(
-        message: string,
-        also: readonly string[] = [],
-    ): Recording | undefined {
-        return this.#versions === null
-            ? undefined
-            : { recorder: this.#versions.recorder, message, also };
+    #recording(message: string, also: readonly string[] = []) {
+        return recordingFor(this.#versions, message, also);
     }
 
     #build(
