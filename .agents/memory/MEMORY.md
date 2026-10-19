@@ -17,3 +17,5 @@
   Memory ranks compatibility, access, progressive disclosure, persistence
 - [Protocol-diverse Dorothy](./protocol-diverse-dorothy.md)
   No one harness hosts Dorothy; her definition is generated into each; no pi
+- [Target harnesses](./target-harnesses.md)
+  Built for and tested against Claude Code, Codex, OpenClaw and Hermes
