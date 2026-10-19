@@ -65,6 +65,17 @@ describe("bun run eval", () => {
         expect(more.join("")).toMatch(/--type <value> +.*repeat/);
     });
 
+    it("takes --help as an option's value for no help", async () => {
+        const { io, out, err } = fakeIo();
+        expect(await runCli(["run", "--work", "--help"], io)).toBe(1);
+        expect(out).toEqual([]);
+        expect(err.join("")).toStartWith("eval: ");
+        expect(err.join("")).toContain("--work");
+        const asked = fakeIo();
+        expect(await runCli(["help", "--help"], asked.io)).toBe(0);
+        expect(asked.out.join("")).toContain("Commands:");
+    });
+
     it("describes every option of every command", () => {
         for (const [name, command] of Object.entries(COMMANDS)) {
             for (const [option, spec] of Object.entries(command.options)) {

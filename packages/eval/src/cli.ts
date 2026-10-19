@@ -65,6 +65,24 @@ export function commandUsage(name: string, command: Command): string {
     ].join("\n")}\n`;
 }
 
+// Whether --help is among a command's arguments as an option of its
+// own, not the value of one, such as --work's.
+function asksHelp(args: string[], command: Command): boolean {
+    for (let at = 0; at < args.length; at++) {
+        const arg = args[at] as string;
+        if (arg === "--help") {
+            return true;
+        }
+        if (arg === "--") {
+            return false;
+        }
+        if (command.options[arg.slice(2)]?.type === "string") {
+            at++;
+        }
+    }
+    return false;
+}
+
 // node:util's parseArgs marks its own errors with these codes.
 const isArgumentError = (error: unknown) =>
     String((error as { code?: unknown }).code ?? "").startsWith(
@@ -73,7 +91,10 @@ const isArgumentError = (error: unknown) =>
 
 export async function runCli(argv: string[], io: Io): Promise<number> {
     const [name, ...rest] = argv;
-    if (name === "--help" || (name === "help" && rest.length === 0)) {
+    if (
+        name === "--help" ||
+        (name === "help" && (rest.length === 0 || rest[0] === "--help"))
+    ) {
         io.out(usage());
         return 0;
     }
@@ -87,7 +108,7 @@ export async function runCli(argv: string[], io: Io): Promise<number> {
         );
         return 1;
     }
-    if (name === "help" || rest.includes("--help")) {
+    if (name === "help" || asksHelp(rest, command)) {
         io.out(commandUsage(asked as string, command));
         return 0;
     }
