@@ -165,10 +165,88 @@ describe("the contract's MCP server", () => {
         expect(text).toContain("no project here");
     });
 
+    it("gives search ten hits by default, and no more than it is asked", async () => {
+        const hits = Array.from({ length: 25 }, (_, at) => ({
+            id: `k:personal/fact-${at}`,
+            kind: "knowledge" as const,
+            scope: "personal",
+            title: `fact-${at}`,
+            snippet: "Tea.",
+        }));
+        await client.close();
+        await connect(null, fakeEngine({ hits }));
+        const count = async (args: Record<string, unknown>) =>
+            JSON.parse((await call("search", { query: "tea", ...args })).text)
+                .length;
+        expect(await count({})).toBe(10);
+        expect(await count({ limit: 3 })).toBe(3);
+        expect(await count({ limit: 20 })).toBe(20);
+        // Beyond the contract's twenty, the schema refuses.
+        const refused = await client
+            .callTool({
+                name: "search",
+                arguments: { query: "tea", limit: 21 },
+            })
+            .catch((error: unknown) => error);
+        expect(
+            refused instanceof Error ||
+                (refused as { isError?: boolean }).isError === true,
+        ).toBe(true);
+    });
+
+    it("says a search's date is no date, as a tool error", async () => {
+        for (const args of [{ after: "yesterday" }, { before: "2026-02-31" }]) {
+            await client.close();
+            await connect(
+                null,
+                baselineEngine({
+                    env: {
+                        HOME: root,
+                        XDG_DATA_HOME: join(root, "data"),
+                        XDG_CACHE_HOME: join(root, "cache"),
+                        XDG_STATE_HOME: join(root, "state"),
+                    },
+                    index,
+                    halfLifeDays: 30,
+                    reviewer: null,
+                }),
+            );
+            const { isError, text } = await call("search", {
+                query: "tea",
+                ...args,
+            });
+            expect(isError).toBe(true);
+            expect(text).toMatch(/^(after|before) must be a date like/);
+        }
+    });
+
     it("refuses to open what is no memory id", async () => {
         const { isError, text } = await call("open", { id: "likes-tea" });
         expect(isError).toBe(true);
         expect(text).toContain("is not a memory id");
+    });
+
+    it("refuses an open whose from is past its through", async () => {
+        const { isError, text } = await call("open", {
+            id: "c:bingo-overabundance-mazer-kasha",
+            from: 5,
+            through: 2,
+        });
+        expect(isError).toBe(true);
+        expect(text).toBe("from is after through");
+    });
+
+    it("tells the client why a remember was refused", async () => {
+        const gone = await call("remember", {
+            action: "retire",
+            id: "k:personal/never-was",
+            why: "It was wrong.",
+        });
+        expect(gone.isError).toBe(true);
+        expect(gone.text).toBe("there is no k:personal/never-was");
+        const bare = await call("remember", { action: "add", text: "Tea." });
+        expect(bare.isError).toBe(true);
+        expect(bare.text).toBe("give the knowledge's title and text");
     });
 
     it("refuses a traversal-shaped id", async () => {

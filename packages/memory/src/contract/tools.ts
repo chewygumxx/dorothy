@@ -120,6 +120,13 @@ async function openId(
             `${input.id} is not a memory id: k:... or c:...`,
         );
     }
+    if (
+        input.from !== undefined &&
+        input.through !== undefined &&
+        input.from > input.through
+    ) {
+        throw new ContractError(400, "from is after through");
+    }
     await deps.engine.index();
     if (id.kind === "knowledge") {
         // A project's id may hold slashes: projects/<id>/<name>.

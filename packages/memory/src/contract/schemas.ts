@@ -188,6 +188,8 @@ z.object(searchShape) satisfies z.ZodType<MemorySearchInput>;
 z.object(openShape) satisfies z.ZodType<MemoryOpenInput>;
 z.object(rememberShape) satisfies z.ZodType<MemoryRememberInput>;
 
+const MESSAGE_LIMIT = 120;
+
 export function parseWith<T>(schema: z.ZodType<T>, value: unknown): T {
     const parsed = schema.safeParse(value);
     if (parsed.success) {
@@ -195,10 +197,15 @@ export function parseWith<T>(schema: z.ZodType<T>, value: unknown): T {
     }
     const issue = parsed.error.issues[0];
     const where = issue?.path.join(".") ?? "";
+    // A message may carry what the client sent, an unknown key as long as
+    // the body allows; it comes back short.
+    const message = (issue?.message ?? "invalid").slice(0, MESSAGE_LIMIT);
     throw new ContractError(
         400,
         where === ""
-            ? (issue?.message ?? "the request is not the contract's")
-            : `${where}: ${issue?.message ?? "invalid"}`,
+            ? issue === undefined
+                ? "the request is not the contract's"
+                : message
+            : `${where.slice(0, MESSAGE_LIMIT)}: ${message}`,
     );
 }
