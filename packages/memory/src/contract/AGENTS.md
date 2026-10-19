@@ -77,7 +77,8 @@ gives back, and the service that speaks it. The spec is
   the user verified it (`isConfirmed`, `../engine/engine.ts`); the rest
   sits in the block's own fenced section, below every confirmed piece
   for the budget, and `search` and `open` carry `UNCONFIRMED` on it.
-  Only `--verify`, the user's, adds a `verified` entry.
+  Only `--verify`, the user's, adds a `verified` entry; a write by
+  anyone else drops it.
 - Migration leaves a fact in `facts/`, with a warning, when its
   `knowledge/` target exists or the file fails; it overwrites nothing.
 
