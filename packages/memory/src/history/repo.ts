@@ -98,7 +98,9 @@ export const definedEnv = (env: Env): Record<string, string> =>
 
 export async function hasGitBinary(env: Env = process.env): Promise<boolean> {
     try {
-        const proc = Bun.spawn(["git", "--version"], {
+        const executable = Bun.which("git", { PATH: env.PATH ?? "" });
+        if (executable === null) return false;
+        const proc = Bun.spawn([executable, "--version"], {
             env: definedEnv(env),
             stdout: "ignore",
             stderr: "ignore",
