@@ -217,6 +217,8 @@ describe("openMemory", () => {
             expect(starts[0]).toMatchObject({
                 history: [],
                 earlier: "",
+                // Recall is on, but no clusters give it a recollect.
+                recall: { command: "x", args: [memory.phrase] },
                 recollect: false,
             });
             expect(inner.sent).toEqual(["hello"]);

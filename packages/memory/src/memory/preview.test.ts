@@ -88,6 +88,23 @@ describe("previewStart", () => {
         expect(preview.start.recollect).toBe(true);
     });
 
+    it("offers no recollect to a chat with recall on and no clusters", async () => {
+        const preview = await previewStart({
+            resume: null,
+            recallLaunch: (of) => ({ command: "x", args: [of] }),
+            env,
+        });
+        if (!preview.ok) {
+            throw new Error(preview.message);
+        }
+        expect(preview.start.recall).toEqual({
+            command: "x",
+            args: [preview.phrase],
+        });
+        expect(preview.start.earlier).toBe("");
+        expect(preview.start.recollect).toBe(false);
+    });
+
     it("fails on a chat that cannot be resumed", async () => {
         const preview = await previewStart({
             resume: "tumble-orchid-vapor-lantern",
