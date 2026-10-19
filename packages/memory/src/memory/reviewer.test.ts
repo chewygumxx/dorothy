@@ -151,8 +151,8 @@ describe("Reviewer", () => {
         }).review(PHRASE, new AbortController().signal);
         expect(prompts[0]).toContain("Amber evenings");
         expect(prompts[0]).not.toContain(`"${other}"`);
-        // The block, and the names: not once a read besides.
-        expect(looked).toBeLessThanOrEqual(3);
+        // The block's, and the names': once each, not once a read.
+        expect(looked).toBe(2);
     });
 
     it("marks a failure and says why", async () => {

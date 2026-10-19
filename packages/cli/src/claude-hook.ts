@@ -141,6 +141,9 @@ const FALLBACK_LOG_LIMIT = 1_000_000;
 
 // The hook's log, from memory; if memory cannot load, a bare append to
 // the same file, so that the failure still has somewhere to be said.
+// The fallback follows memory's bodies/log.ts: `rotate` for the limit and
+// the .1 file, `oneLine` for a message that is one line however it breaks.
+// Change them together.
 async function openLog(env: Env, deps: HookCliDeps): Promise<HookLog> {
     try {
         return (await (deps.memory ?? loadMemory)()).hookLog(env);
