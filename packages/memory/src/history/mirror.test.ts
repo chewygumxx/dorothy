@@ -116,6 +116,42 @@ describe("sealPending", () => {
 });
 
 describe("Mirror", () => {
+    it("builds a fixed snapshot outside the write lock", async () => {
+        const repo = await repoWith({ "tags.json": "{}\n" });
+        const first = await repo.resolve(MAIN);
+        await repo.setRemote("mirror", await bareRepo());
+        let held = false;
+        const locked: Lock = async (work) => {
+            held = true;
+            try {
+                return await work();
+            } finally {
+                held = false;
+            }
+        };
+        let heldDuringBundle = true;
+        const wrapped = {
+            ...repo,
+            bundle: async (...args: Parameters<MemoryRepo["bundle"]>) => {
+                heldDuringBundle = held;
+                await commit(repo, { "tags.json": "{ }\n" }, "two");
+                return repo.bundle(...args);
+            },
+        };
+        const { mirror } = mirrorOf(wrapped, { locked });
+        expect((await mirror.push()).kind).toBe("pushed");
+        expect(heldDuringBundle).toBe(false);
+        const fresh = binaryRepo(join(tempRoot(), "fresh"), { env: TEST_ENV });
+        const recovered = await recover({
+            repo: fresh,
+            url: (await repo.remote("mirror")) as string,
+            key: KEY,
+            token: null,
+        });
+        expect(recovered.tip).toBe(first);
+        expect(await waiting(repo)).toBe(true);
+        await mirror.stop();
+    });
     it("reschedules an update whose timer fires during a push", async () => {
         const repo = await repoWith({ "tags.json": "{}\n" });
         const bare = await bareRepo();

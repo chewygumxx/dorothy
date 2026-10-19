@@ -45,32 +45,47 @@ export type Sealed = "sealed" | "nothing" | "wrong-key";
 // The commits on main since the last sealed one, sealed as the next bundle
 // on the sealed branch: "nothing" when there were none, "wrong-key" when
 // the key does not open the bundles before it, since recovery would stop
-// at the first sealed under another. The caller holds the lock.
+// at the first sealed under another. Only snapshot and append hold the lock.
 export async function sealPending(
     repo: MemoryRepo,
     key: Uint8Array,
+    lock: Lock = (work) => work(),
 ): Promise<Sealed> {
-    const since = await repo.resolve(SEALED_THROUGH);
-    const tip = await repo.resolve(MAIN);
-    if (tip === null || tip === since) {
-        return "nothing";
+    for (;;) {
+        const snapshot = await lock(async () => {
+            const since = await repo.resolve(SEALED_THROUGH);
+            const tip = await repo.resolve(MAIN);
+            if (tip === null || tip === since) return "nothing" as const;
+            if (!(await opensSealed(repo, key))) return "wrong-key" as const;
+            return {
+                since,
+                tip,
+                head: await repo.resolve(SEALED),
+                sequence: (await repo.sealedNames()).length + 1,
+            };
+        });
+        if (typeof snapshot === "string") return snapshot;
+        // Both main's tip and its prerequisite are immutable commits.
+        const bundle = await repo.bundle(snapshot.since, snapshot.tip);
+        if (bundle === null) return "nothing";
+        const bytes = await seal(bundle, key);
+        const appended = await lock(async () => {
+            if (
+                (await repo.resolve(SEALED_THROUGH)) !== snapshot.since ||
+                (await repo.resolve(SEALED)) !== snapshot.head
+            )
+                return false;
+            await repo.appendSealed(
+                sealedName(snapshot.sequence),
+                bytes,
+                SEALED_README,
+                `seal ${snapshot.sequence}`,
+            );
+            await repo.setRef(SEALED_THROUGH, snapshot.tip);
+            return true;
+        });
+        if (appended) return "sealed";
     }
-    if (!(await opensSealed(repo, key))) {
-        return "wrong-key";
-    }
-    const bundle = await repo.bundle(since);
-    if (bundle === null) {
-        return "nothing";
-    }
-    const sequence = (await repo.sealedNames()).length + 1;
-    await repo.appendSealed(
-        sealedName(sequence),
-        await seal(bundle, key),
-        SEALED_README,
-        `seal ${sequence}`,
-    );
-    await repo.setRef(SEALED_THROUGH, tip);
-    return "sealed";
 }
 
 // Whether main has commits not yet sealed.
@@ -171,7 +186,7 @@ export class Mirror {
             if (this.#stopped) {
                 return { kind: "stopped" };
             }
-            const sealing = lock(() => sealPending(repo, key));
+            const sealing = sealPending(repo, key, lock);
             this.#sealing = sealing.then(
                 () => {},
                 () => {},

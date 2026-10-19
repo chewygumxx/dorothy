@@ -335,19 +335,38 @@ export function binaryRepo(
         async deleteRef(name) {
             await must(["update-ref", "-d", name]);
         },
-        async bundle(since) {
-            const tip = await resolve(MAIN);
+        async bundle(since, at) {
+            const tip = at ?? (await resolve(MAIN));
             if (tip === null || tip === since) {
                 return null;
             }
-            const ran = await must([
-                "bundle",
-                "create",
-                "-q",
-                "-",
-                since === null ? "main" : `${since}..main`,
-            ]);
-            return ran.stdout;
+            const snapshot = `refs/dorothy/bundling-${crypto.randomUUID()}`;
+            await must(["update-ref", snapshot, tip]);
+            try {
+                const ran = await must([
+                    "bundle",
+                    "create",
+                    "-q",
+                    "-",
+                    snapshot,
+                    ...(since === null ? [] : [`^${since}`]),
+                ]);
+                // Advertise main while building from the immutable private ref.
+                const marker = Buffer.from(`${tip} ${snapshot}\n`);
+                const bytes = Buffer.from(ran.stdout);
+                const position = bytes.indexOf(marker);
+                if (position < 0)
+                    throw new Error("the bundle has no snapshot reference");
+                return new Uint8Array(
+                    Buffer.concat([
+                        bytes.subarray(0, position),
+                        Buffer.from(`${tip} ${MAIN}\n`),
+                        bytes.subarray(position + marker.length),
+                    ]),
+                );
+            } finally {
+                await must(["update-ref", "-d", snapshot]);
+            }
         },
         async unbundle(bundle) {
             const file = join(root, ".git", "dorothy-incoming.bundle");

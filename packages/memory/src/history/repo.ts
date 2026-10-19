@@ -46,7 +46,7 @@ export type MemoryRepo = {
     deleteRef(name: string): Promise<void>;
     // The commits on main after since (all of them for null) as a git
     // bundle; null when there are none.
-    bundle(since: string | null): Promise<Uint8Array | null>;
+    bundle(since: string | null, tip?: string): Promise<Uint8Array | null>;
     // Applies a bundle to main; returns main's new tip.
     unbundle(bundle: Uint8Array): Promise<string>;
     // Adds a file to the sealed branch in a commit of its own, with
