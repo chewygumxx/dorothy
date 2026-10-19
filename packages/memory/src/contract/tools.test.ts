@@ -22,7 +22,7 @@ import { newPhrase } from "@dorothy/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { baselineEngine } from "../engine/baseline.js";
-import type { MemoryEngine } from "../engine/engine.js";
+import { type MemoryEngine, UNCONFIRMED } from "../engine/engine.js";
 import { PERSONAL, putFact } from "../facts/store.js";
 import { EMPTY_SIDECAR, updateSidecar } from "../memory/sidecar.js";
 import { RecallIndex } from "../recall/store.js";
@@ -149,6 +149,18 @@ describe("the contract's MCP server", () => {
         expect(existsSync(join(root, "knowledge/personal/likes-tea.md"))).toBe(
             true,
         );
+    });
+
+    it("opens what a model remembered marked unconfirmed", async () => {
+        await call("remember", {
+            action: "add",
+            title: "Likes tea",
+            text: "Tea at four.",
+            type: "user",
+            scope: "personal",
+        });
+        const { text } = await call("open", { id: "k:personal/likes-tea" });
+        expect(JSON.parse(text).unconfirmed).toBe(UNCONFIRMED);
     });
 });
 

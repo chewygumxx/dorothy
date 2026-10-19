@@ -13,6 +13,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { newPhrase } from "@dorothy/core";
+import { UNCONFIRMED } from "../engine/engine.js";
 import type { Fact } from "../facts/file.js";
 import { PERSONAL, putFact, type Scope } from "../facts/store.js";
 import { EMPTY_SIDECAR, type Sidecar, sidecarPath } from "../memory/sidecar.js";
@@ -555,7 +556,43 @@ describe("search over facts", () => {
             description: "What she knows of tea.",
             origin: "dorothy",
             snippet: expect.stringContaining("«tea»"),
+            unconfirmed: UNCONFIRMED,
         });
+    });
+
+    it("marks only knowledge the user has not confirmed", async () => {
+        await putFact(
+            dir,
+            PERSONAL,
+            fact("milk", {
+                body: "Render milk.",
+                provenance: {
+                    origin: "user",
+                    by: "user",
+                    at: day(5),
+                    created: day(5),
+                },
+            }),
+        );
+        await putFact(
+            dir,
+            PERSONAL,
+            fact("sugar", {
+                body: "Render sugar.",
+                foreign: { verified: [{ by: "human:owner", at: day(6) }] },
+            }),
+        );
+        await syncFactsToo();
+        const marks = Object.fromEntries(
+            search(
+                index,
+                { query: "render", kind: "facts" },
+                withProject,
+            ).facts.map((hit) => [hit.id, hit.unconfirmed ?? null]),
+        );
+        expect(marks["personal/tea"]).toBe(UNCONFIRMED);
+        expect(marks["personal/milk"]).toBeNull();
+        expect(marks["personal/sugar"]).toBeNull();
     });
 
     it("searches one group alone by kind, and caps each at the limit", () => {
@@ -704,7 +741,25 @@ describe("openFact", () => {
             },
             retired: null,
             body: "Four o'clock.",
+            unconfirmed: UNCONFIRMED,
         });
+    });
+
+    it("leaves confirmed knowledge unmarked", async () => {
+        await putFact(
+            dir,
+            PERSONAL,
+            fact("tea", {
+                foreign: { verified: [{ by: "human:owner", at: day(6) }] },
+            }),
+        );
+        await syncFactsToo();
+        const opened = await openFact(
+            index,
+            { fact: "personal/tea", purpose: "her tea" },
+            dir,
+        );
+        expect(opened.unconfirmed).toBeUndefined();
     });
 
     it("relays a fact that is not there, and asks for a purpose", async () => {

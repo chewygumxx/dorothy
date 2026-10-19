@@ -111,6 +111,8 @@ export type FactHit = {
     origin: string;
     snippet: string;
     retired?: true;
+    // Knowledge the user has not confirmed carries a warning.
+    unconfirmed?: string;
 };
 // Two groups, each ranked and capped at the limit: FTS5's scores from
 // two tables do not compare.
@@ -152,6 +154,8 @@ export type OpenFactResult = {
     };
     retired: { at: string; by: string; why: string } | null;
     body: string;
+    // Knowledge the user has not confirmed carries a warning.
+    unconfirmed?: string;
 };
 // A concept, under schema.org's name for a term in a vocabulary.
 export type TagObject = {

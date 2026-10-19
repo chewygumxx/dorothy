@@ -18,6 +18,7 @@ import { dataRoot, PERSONAL, putFact, type Scope } from "../facts/store.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { transcriptDir, transcriptPath } from "../transcript.js";
 import { baselineEngine } from "./baseline.js";
+import { UNCONFIRMED } from "./engine.js";
 
 const AT = "2026-10-15T09:30:00.000Z";
 const fact = (name: string, fields: Partial<Fact> = {}): Fact => ({
@@ -148,6 +149,35 @@ describe("search", () => {
             "k:projects/github.com/me/app/uses-rust",
             "k:projects/github.com/me/other/uses-go",
         ]);
+    });
+
+    it("marks knowledge the user has not confirmed", async () => {
+        await putFact(
+            dataRoot(env),
+            PERSONAL,
+            fact("guesses-tea", {
+                provenance: {
+                    origin: "dorothy",
+                    by: "dorothy",
+                    at: AT,
+                    created: AT,
+                },
+            }),
+        );
+        const hits = await engine().search({
+            query: "tea",
+            within: ["personal"],
+            kind: "knowledge",
+            limit: 10,
+            project: null,
+        });
+        const marks = Object.fromEntries(
+            hits.map((hit) => [hit.id, hit.unconfirmed ?? null]),
+        );
+        expect(marks).toEqual({
+            "k:personal/guesses-tea": UNCONFIRMED,
+            "k:personal/likes-tea": null,
+        });
     });
 });
 

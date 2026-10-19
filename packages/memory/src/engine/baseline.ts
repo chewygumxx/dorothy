@@ -120,6 +120,9 @@ export function baselineEngine(deps: BaselineDeps): MemoryEngine {
                     scope: hit.scope,
                     title: hit.title,
                     snippet: hit.snippet,
+                    ...(hit.unconfirmed === undefined
+                        ? {}
+                        : { unconfirmed: hit.unconfirmed }),
                 });
             }
             for (const hit of found.results) {

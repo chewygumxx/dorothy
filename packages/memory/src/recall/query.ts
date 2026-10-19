@@ -25,6 +25,7 @@ import {
     type TagsResult,
     type WindowTurn,
 } from "@dorothy/core";
+import { isConfirmed, UNCONFIRMED } from "../engine/engine.js";
 import {
     factPath,
     parseTarget,
@@ -285,11 +286,12 @@ type FactRow = {
     type: string;
     origin: string;
     retired: number;
+    confirmed: number;
     score: number;
     snippet: string;
 };
 const FACT_COLUMNS =
-    "f.path AS path, f.scope AS scope, f.name AS name, f.title AS title, f.description AS description, f.type AS type, f.origin AS origin, f.retired AS retired";
+    "f.path AS path, f.scope AS scope, f.name AS name, f.title AS title, f.description AS description, f.type AS type, f.origin AS origin, f.retired AS retired, f.confirmed AS confirmed";
 
 // BM25 is lower for a better match; the snippet is from whichever of
 // title, description and body matched best.
@@ -335,6 +337,7 @@ const factHit = (row: FactRow): FactHit => ({
     origin: row.origin,
     snippet: row.snippet,
     ...(row.retired !== 0 ? { retired: true as const } : {}),
+    ...(row.confirmed === 0 ? { unconfirmed: UNCONFIRMED } : {}),
 });
 
 // Live facts before retired ones, personal and this project's before
@@ -685,6 +688,7 @@ export async function openFact(
         provenance: fact.provenance,
         retired: fact.retired,
         body: fact.body,
+        ...(isConfirmed(fact) ? {} : { unconfirmed: UNCONFIRMED }),
     };
 }
 

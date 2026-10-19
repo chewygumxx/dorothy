@@ -15,7 +15,7 @@ import { type Env, xdgDir } from "@dorothy/core";
 import type { Lock } from "../memory/sidecar.js";
 import { exclusiveLock } from "../sqlite-lock.js";
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 // Times are milliseconds since the epoch. Each FTS table takes its text
 // from the table beside it, which triggers keep them in step with.
@@ -113,7 +113,8 @@ const SCHEMA = [
         PRIMARY KEY (phrase, id)
     )`,
     // Every fact in the store, retired ones too; scope is "personal" or a
-    // project id, created milliseconds since the epoch.
+    // project id, created milliseconds since the epoch, confirmed 1 for
+    // knowledge the user has confirmed.
     `CREATE TABLE facts (
         path TEXT PRIMARY KEY,
         scope TEXT NOT NULL,
@@ -126,6 +127,7 @@ const SCHEMA = [
         importance INTEGER,
         created INTEGER NOT NULL,
         retired INTEGER NOT NULL,
+        confirmed INTEGER NOT NULL,
         mtime REAL NOT NULL
     )`,
     `CREATE TABLE fact_tags (

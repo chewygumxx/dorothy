@@ -14,6 +14,7 @@
 
 import { readFile, stat } from "node:fs/promises";
 import { relative, sep } from "node:path";
+import { isConfirmed } from "../engine/engine.js";
 import { type Fact, parseFact } from "../facts/file.js";
 import { migrateFacts } from "../facts/migrate.js";
 import { factFiles, scopeLabel } from "../facts/store.js";
@@ -131,7 +132,7 @@ function insertFact(
     mtime: number,
 ): void {
     index.db.run(
-        "INSERT INTO facts (path, scope, name, title, description, type, body, origin, importance, created, retired, mtime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO facts (path, scope, name, title, description, type, body, origin, importance, created, retired, confirmed, mtime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
             key,
             scopeLabel(file.scope),
@@ -144,6 +145,7 @@ function insertFact(
             fact.importance,
             Date.parse(fact.provenance.created),
             fact.retired === null ? 0 : 1,
+            isConfirmed(fact) ? 1 : 0,
             mtime,
         ],
     );
