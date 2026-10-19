@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-code-review/cli.probe.txt
+#
+
+import { mkdtempSync, writeFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { DEFAULT_CONFIG } from '/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/core/src/index.ts';
+import { dorothyFlags, runClaude } from '/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/cli/src/claude.ts';
+const flags = dorothyFlags(['--settings={"model":"haiku"}', '--settings={"model":"sonnet"}'], {settings:{permissions:{allow:['a']}},mcpConfig:null}, {cwd:'/tmp',read:()=>{throw Error('unexpected read')},writePrivate:()=>{throw Error('unexpected write')}});
+console.log(JSON.stringify({ repeatedSettings: flags.args }));
+const dir = mkdtempSync('/tmp/dorothy-review-spawn-');
+let stopped=false;
+try {
+  writeFileSync(join(dir,'claude'),'#!/definitely/missing/interpreter\n', {mode:0o700});
+  const memory={stale:async()=>[],notices:async()=>[],sync:async()=>null,block:async()=>({block:'',warnings:[]}),note:async()=>{}};
+  try {
+    await runClaude(['--settings','mine.json'], {
+      env:{PATH:dir,HOME:dir,XDG_RUNTIME_DIR:dir},cwd:dir,self:['/bin/unused'],
+      config:async()=>({config:DEFAULT_CONFIG,warnings:[]}),memory,
+      startGateway:()=>({url:'http://127.0.0.1:9',stats:{injected:0,drift:0},stop:()=>{stopped=true}}),
+      read:()=>'{"env":{"TOKEN":"fixture-value"}}', write:()=>{},spawnDetached:()=>{},
+    });
+    console.log('unexpected success');
+  } catch (e) {
+    const files=existsSync(join(dir,'dorothy'))?readdirSync(join(dir,'dorothy')):[];
+    console.log(JSON.stringify({spawnError:(e as any).code,stopped,remainingSettings:files.length}));
+  }
+} finally {rmSync(dir,{recursive:true,force:true});}

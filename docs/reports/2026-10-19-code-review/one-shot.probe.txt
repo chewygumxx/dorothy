@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-code-review/one-shot.probe.txt
+#
+
+import { mock } from "bun:test";
+const scripts = [
+    [{ type: "result", subtype: "success", is_error: true, result: "Invalid API key", total_cost_usd: 0 }],
+    [{ type: "result", subtype: "error_during_execution", is_error: true, errors: ["Overloaded"], total_cost_usd: 0 }],
+];
+let current = scripts[0];
+mock.module("@anthropic-ai/claude-agent-sdk", () => ({ query: () => (async function* () { yield* current; })() }));
+const { runOneShot } = await import("/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/agent/src/one-shot.ts");
+const stdoutWrite = process.stdout.write;
+const stderrWrite = process.stderr.write;
+const evidence = [];
+for (const script of scripts) {
+    current = script;
+    let stdout = "", stderr = "";
+    process.stdout.write = ((text) => { stdout += text; return true; }) as typeof process.stdout.write;
+    process.stderr.write = ((text) => { stderr += text; return true; }) as typeof process.stderr.write;
+    process.exitCode = 0;
+    await runOneShot("hello", "chat");
+    evidence.push({ subtype: script[0].subtype, stdout, stderr, exitCode: process.exitCode });
+}
+process.stdout.write = stdoutWrite;
+process.stderr.write = stderrWrite;
+console.log(JSON.stringify(evidence));

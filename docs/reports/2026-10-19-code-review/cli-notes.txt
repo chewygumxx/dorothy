@@ -1,0 +1,89 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-code-review/cli-notes.txt
+#
+
+# R01: CLI and gateway review
+
+Reviewed HEAD 7602316f9dd3e1d8a46f0b1b885162a759d4ea58.
+Review only: no repository file changes, fixes, commits, pushes or subagents.
+
+## Verified findings
+
+### P2: Repeated --settings silently uses the first value
+
+Location: packages/cli/src/claude.ts:393 (mergeTheirs).
+
+With memory settings enabled, passing --settings='{"model":"haiku"}' followed by
+--settings='{"model":"sonnet"}' produces model haiku. Each iteration merges the
+new user's JSON underneath values[flag], which already contains the first user's
+JSON. The repository documents that Claude only uses the last --settings value.
+This can select the wrong model or preserve superseded environment and permission
+settings. Keep Dorothy's own overrides separate from effective user settings until
+the final merge.
+
+Evidence: /tmp/dorothy-review-cli-probe.ts, direct Bun 1.4.2 --no-env-file,
+no network or real data. Actual output:
+
+    {"repeatedSettings":["--settings={\"model\":\"haiku\",\"permissions\":{\"allow\":[\"a\"]}}"]}
+
+### P3: Failed Claude spawn leaves private settings files behind
+
+Location: packages/cli/src/claude.ts:810 (spawn precedes cleanup try/finally).
+Related location: packages/cli/src/claude-dump.ts:67-71 (gateway cleanup gap).
+
+A claude executable found on PATH whose shebang interpreter is missing makes real
+Bun.spawn throw ENOENT. Since spawning precedes the try/finally, gateway.stop and
+Launch.cleanup are skipped. The merged private settings file remains on disk and
+may contain credentials from the user's settings. Cover spawning with launch
+cleanup as well. Dump launches do not create merged settings files but have the
+same gateway cleanup gap.
+
+Evidence: /tmp/dorothy-review-cli-probe.ts injects a temporary HOME/PATH/runtime,
+fake memory and gateway; it uses real Bun.spawn on a temporary executable naming
+a nonexistent interpreter. Actual output:
+
+    {"spawnError":"ENOENT","stopped":false,"remainingSettings":1}
+
+Temporary fixture directory removed by the probe. Only synthetic fixture values
+were used, no real credentials or .env access.
+
+## Coverage
+
+All 11 production TypeScript files, 2,482 lines:
+packages/cli/src/{args,claude-dump,claude-hook,claude,dump,index,recall-launch,run-tui}.ts
+packages/gateway/src/{anthropic,index,server}.ts
+
+All 9 test files inspected:
+packages/cli/src/{args,claude-dump,claude-hook,claude,dump,recall-launch,run-tui}.test.ts
+packages/gateway/src/{anthropic,server}.test.ts
+
+Read package manifests, root and both package AGENTS.md files. Traced agent
+conversation/persona cwd behavior and memory preview/open/recall-server callers.
+Examined launch/auth/environment boundaries, flags and CLI dispatch, settings
+merging/private files, process cleanup/signals, gateway path/query/header/body
+rewrites, streaming/cancellation, compression and error output.
+
+## Commands and results
+
+Selected tests using direct Bun 1.4.2 and injected temporary XDG roots:
+
+    env XDG_DATA_HOME=/tmp/dorothy-review-cli-data XDG_CACHE_HOME=/tmp/dorothy-review-cli-cache XDG_CONFIG_HOME=/tmp/dorothy-review-cli-config /home/chewygumxx/.local/share/mise/installs/bun/1.4.2/bin/bun test packages/cli/src/args.test.ts packages/cli/src/claude.test.ts packages/cli/src/claude-hook.test.ts packages/cli/src/recall-launch.test.ts packages/cli/src/run-tui.test.ts packages/gateway/src/anthropic.test.ts
+
+114 pass, 0 fail; 312 expect calls across 6 files. Parent separately confirmed full
+baseline outside sandbox: 2154 pass, 5 skip, 0 fail.
+
+Probe command:
+
+    /home/chewygumxx/.local/share/mise/installs/bun/1.4.2/bin/bun --no-env-file /tmp/dorothy-review-cli-probe.ts
+
+Exit 0, output shown above.
+
+## Discarded or unverified concerns
+
+No further actionable gateway bug found in this pass. Native recallLaunch lacks
+--no-env-file, but SDK caller uses private cache cwd, disproving the proposed
+project-.env contamination trigger. Native dump omits --project, but this affects
+later MCP behavior rather than establishing a captured-first-request defect; not
+reported as a finding. External/live Claude behavior was not exercised.

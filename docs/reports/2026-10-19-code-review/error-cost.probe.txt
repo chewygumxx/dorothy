@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-code-review/error-cost.probe.txt
+#
+
+import { Conversation } from "/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/agent/src/conversation.ts";
+const events = [];
+const failed = Promise.withResolvers<void>();
+const c = new Conversation({ queryFn: ({ prompt }) => Object.assign((async function* () {
+  for await (const _ of prompt) {
+    yield { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "Checking..." } } } as any;
+    yield { type: "result", subtype: "error_during_execution", is_error: true, errors: ["network unavailable after tool round"], usage: { input_tokens: 10, output_tokens: 10 }, total_cost_usd: 0.25, duration_ms: 100 } as any;
+  }
+})(), { interrupt: async () => {}, close: () => {} }) });
+c.subscribe((event) => { if (event.type !== "sdk") events.push(event); if (event.type === "error") failed.resolve(); });
+c.start(); c.send("hello");
+await failed.promise;
+await c.close();
+console.log(JSON.stringify(events));

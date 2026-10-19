@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-code-review/tail-editor.probe.txt
+#
+
+// SPDX-License-Identifier: GPL-3.0-only
+// Review probe with temporary fixture roots only.
+import {mkdtemp,mkdir,appendFile,readFile,rm} from "node:fs/promises";
+import {join} from "node:path";
+const repo="/home/chewygumxx/dev/_worktree/dorothy/codex-code-review";
+const {RecallIndex}=await import(`${repo}/packages/memory/src/recall/store.ts`);
+const {acceptRecord}=await import(`${repo}/packages/memory/src/contract/record.ts`);
+const {readTranscript,transcriptPath}=await import(`${repo}/packages/memory/src/transcript.ts`);
+const {lineStart,killLineStart}=await import(`${repo}/packages/tui/src/editor.ts`);
+const draft={text:"\nhello",cursor:0};
+console.log("leading-newline-editor",{initial:draft,home:lineStart(draft),kill:killLineStart(draft)});
+const root=await mkdtemp("/tmp/dorothy-review-tail-");
+const env={HOME:root,XDG_DATA_HOME:join(root,"data"),XDG_CACHE_HOME:join(root,"cache"),XDG_STATE_HOME:join(root,"state"),XDG_CONFIG_HOME:join(root,"config")};
+await mkdir(join(root,"cache","dorothy"),{recursive:true});
+const index=RecallIndex.open(join(root,"cache","dorothy","recall.sqlite"));
+const phrase="bingo-overabundance-mazer-kasha";
+const deps={env,index,recorder:null,loopback:true,sync:async()=>{},claudeTranscript:null,sessions:new Map(),phrase:()=>phrase};
+const record=(id,text)=>({host:"codex",session:"s1",events:[{sourceId:id,at:"2026-10-18T00:00:00.000Z",kind:"user",text}]});
+await acceptRecord(record("first","First message"),deps);
+const path=transcriptPath(phrase,env);
+await appendFile(path,'{"v":1,"kind":"user","text":"torn');
+const accepted=await acceptRecord(record("second","Second message"),deps);
+const read=await readTranscript(path);
+console.log("torn-tail-record",{accepted,readTurns:read.turns.map(turn=>turn.text),issues:read.issues});
+index.close();
+await rm(root,{recursive:true,force:true});
