@@ -44,6 +44,7 @@ describe("the house header", () => {
             ".commitlintrc.mts",
             "scripts/prepare.sh",
             ".moxide.toml",
+            ".repo-metadata.jsonc",
             ".github/workflows/ci.yaml",
             "docs/roadmap.md",
         ]) {
