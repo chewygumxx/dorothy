@@ -9,6 +9,7 @@
 //
 
 import { readFile } from "node:fs/promises";
+import { isIP } from "node:net";
 import { isAbsolute, join } from "node:path";
 import { type Env, xdgDir } from "./xdg.js";
 
@@ -301,13 +302,16 @@ const parseHistory = (value: unknown, warnings: string[]): HistoryConfig =>
 
 // An address as Bun.serve takes it: a host name or an IP literal, with
 // no scheme and no port.
-const ADDRESS = /^[A-Za-z0-9.:-]{1,253}$/;
+const HOST_NAME =
+    /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
+const isAddress = (text: string) =>
+    text.length <= 253 && (isIP(text) !== 0 || HOST_NAME.test(text));
 
 const addresses = (key: string): FieldSpec<string[]> => ({
     key,
     read: (field) =>
         Array.isArray(field) &&
-        field.every((each) => typeof each === "string" && ADDRESS.test(each))
+        field.every((each) => typeof each === "string" && isAddress(each))
             ? [...new Set(field as string[])]
             : undefined,
     expected: 'a list of addresses, such as "100.64.0.1"',

@@ -119,14 +119,70 @@ describe("parseConfig", () => {
         ]);
     });
 
+    it("keeps a listen to names and IP literals", () => {
+        const good = ["100.64.0.1", "fd7a::1", "::1", "box.example.com", "box"];
+        const { config, warnings } = parseConfig(
+            `[service]\nlisten = ${JSON.stringify(good)}\n`,
+        );
+        expect(warnings).toEqual([]);
+        expect(config.service.listen).toEqual(good);
+        for (const bad of ["-", ":", "a:b", "-box", "box-", "a..b", "1:2:3"]) {
+            const parsed = parseConfig(`[service]\nlisten = ["${bad}"]\n`);
+            expect(parsed.config.service.listen).toEqual([]);
+            expect(parsed.warnings).toHaveLength(1);
+        }
+    });
+
+    it("lists each listen address once", () => {
+        const { config } = parseConfig(
+            '[service]\nlisten = ["100.64.0.1", "100.64.0.1", "fd7a::1"]\n',
+        );
+        expect(config.service.listen).toEqual(["100.64.0.1", "fd7a::1"]);
+    });
+
+    it("warns of a listen that is not a list at all", () => {
+        for (const value of ['"100.64.0.1"', "5", "true"]) {
+            const { config, warnings } = parseConfig(
+                `[service]\nlisten = ${value}\n`,
+            );
+            expect(config.service.listen).toEqual([]);
+            expect(warnings).toEqual([
+                'config.toml: service.listen must be a list of addresses, such as "100.64.0.1"',
+            ]);
+        }
+    });
+
+    it("keeps the port from 1024 to 65535", () => {
+        for (const port of ["80", "1023", "65536", "-1", '"4774"', "1.5"]) {
+            const { config, warnings } = parseConfig(
+                `[service]\nport = ${port}\n`,
+            );
+            expect(config.service.port).toBe(4774);
+            expect(warnings).toEqual([
+                "config.toml: service.port must be a whole number from 1024 to 65535",
+            ]);
+        }
+        expect(parseConfig("[service]\nport = 65535\n").warnings).toEqual([]);
+    });
+
     it("reads memory's extract-cap, 10 by default", () => {
         expect(parseConfig("").config.memory.extractCap).toBe(10);
         expect(
             parseConfig("[memory]\nextract-cap = 3\n").config.memory.extractCap,
         ).toBe(3);
-        expect(parseConfig("[memory]\nextract-cap = 0\n").warnings).toEqual([
-            "config.toml: memory.extract-cap must be a whole number from 1 to 100",
-        ]);
+        for (const cap of ["0", "101", "1000"]) {
+            const { config, warnings } = parseConfig(
+                `[memory]\nextract-cap = ${cap}\n`,
+            );
+            expect(config.memory.extractCap).toBe(10);
+            expect(warnings).toEqual([
+                "config.toml: memory.extract-cap must be a whole number from 1 to 100",
+            ]);
+        }
+        expect(
+            parseConfig("[memory]\nextract-cap = 100\n").config.memory
+                .extractCap,
+        ).toBe(100);
     });
 
     it("reads the memory table", () => {
