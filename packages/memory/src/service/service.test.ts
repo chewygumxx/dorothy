@@ -364,6 +364,45 @@ describe("the memory service", () => {
         expect(warned).toHaveLength(1);
     });
 
+    it("leaves nothing bound when its start fails", async () => {
+        const probe = Bun.serve({
+            port: 0,
+            hostname: "127.0.0.1",
+            fetch: () => new Response("x"),
+        });
+        const port = probe.port as number;
+        probe.stop(true);
+        const failing: Config = {
+            ...config,
+            service: {
+                ...config.service,
+                get claudeDirs(): string[] {
+                    throw new Error("injected failure");
+                },
+            },
+        };
+        await expect(
+            startService({
+                env,
+                config: failing,
+                profiles: await loadProfiles(),
+                tokens,
+                review: null,
+                port,
+                listen: [],
+                warn: () => {},
+            }),
+        ).rejects.toThrow("injected failure");
+        // The port is free again, so no request waits on a service that
+        // will never be ready.
+        const again = Bun.serve({
+            port,
+            hostname: "127.0.0.1",
+            fetch: () => new Response("x"),
+        });
+        again.stop(true);
+    });
+
     it("recalls for a prompt", async () => {
         await start();
         const response = await post("/v1/recall", {

@@ -146,86 +146,91 @@ export async function startService(
     for (const message of warnings) {
         warn(message);
     }
-    const recorder = launched?.history.recorder ?? null;
-    const root = dataRoot(env);
-    const dir = transcriptDir(env);
-    const vocabulary = vocabularyPath(env);
-    let entries: Entry[] = [];
-    const reviewer =
-        options.review === null
-            ? null
-            : new Reviewer({
-                  dir,
-                  config: config.memory,
-                  index,
-                  vocabulary,
-                  versions: launched?.history.handle() ?? null,
-                  call: options.review.call,
-                  persona: options.review.persona,
-                  now,
-                  entries: () => entries,
-                  warn: (message) => warn(message),
-                  cost: () => {},
-              });
-    const engine = baselineEngine({
-        env,
-        index,
-        halfLifeDays: config.memory.halfLifeDays,
-        reviewer,
-        warn,
-        now: () => now().getTime(),
-    });
-    const frozen = new FrozenBlocks();
-    const store: FactStore = { root, lock: index.lock, recorder, now };
-    // Host sessions' conversations, found again through the index when
-    // one has gone; a host chooses the keys, so only the latest are kept.
-    const sessions = new Recent<string, string>(MAX_SESSIONS);
-    // The source ids last read from each conversation's file.
-    const held = new Recent<string, Held>(MAX_HELD);
-    // Conversations recorded and not yet extracted, by their last record.
-    const idle = new Map<string, number>();
-    // Projects recorded since the last export.
-    const touched = new Set<string>();
-    const log = hookLog(env);
-    if (reviewer === null) {
-        // The service is detached, its stderr ignored: the log is read.
-        log.warn(
-            `reviews are off: ${options.noReviews ?? "no model is wired"}`,
-        );
-    }
-    // An unknown host version is served, and said once, while recent.
-    const versions = new Recent<string, true>(MAX_VERSIONS);
-    const noteVersion = (host: string, version: string | undefined) => {
-        const checked = profiles.get(host)?.checked ?? [];
-        const key = `${host} ${version}`;
-        if (
-            version === undefined ||
-            checked.includes(version) ||
-            versions.has(key)
-        ) {
-            return;
+    const servers = [first];
+    try {
+        const recorder = launched?.history.recorder ?? null;
+        const root = dataRoot(env);
+        const dir = transcriptDir(env);
+        const vocabulary = vocabularyPath(env);
+        let entries: Entry[] = [];
+        const reviewer =
+            options.review === null
+                ? null
+                : new Reviewer({
+                      dir,
+                      config: config.memory,
+                      index,
+                      vocabulary,
+                      versions: launched?.history.handle() ?? null,
+                      call: options.review.call,
+                      persona: options.review.persona,
+                      now,
+                      entries: () => entries,
+                      warn: (message) => warn(message),
+                      cost: () => {},
+                  });
+        const engine = baselineEngine({
+            env,
+            index,
+            halfLifeDays: config.memory.halfLifeDays,
+            reviewer,
+            warn,
+            now: () => now().getTime(),
+        });
+        const frozen = new FrozenBlocks();
+        const store: FactStore = { root, lock: index.lock, recorder, now };
+        // Host sessions' conversations, found again through the index when
+        // one has gone; a host chooses the keys, so only the latest are kept.
+        const sessions = new Recent<string, string>(MAX_SESSIONS);
+        // The source ids last read from each conversation's file.
+        const held = new Recent<string, Held>(MAX_HELD);
+        // Conversations recorded and not yet extracted, by their last record.
+        const idle = new Map<string, number>();
+        // Projects recorded since the last export.
+        const touched = new Set<string>();
+        const log = hookLog(env);
+        if (reviewer === null) {
+            // The service is detached, its stderr ignored: the log is read.
+            log.warn(
+                `reviews are off: ${options.noReviews ?? "no model is wired"}`,
+            );
         }
-        versions.set(key, true);
-        // The version is the client's text: quoted, it forges no line.
-        warn(
-            `${host} ${JSON.stringify(version)} is not a version its profile was checked against`,
-        );
-    };
-    const resolveProject = async (value: string) =>
-        isProjectId(value)
-            ? value
-            : ((await identify(value).catch(() => null))?.id ?? null);
-    const claudeDirs = [
-        options.claudeDir ?? claudeConfigDir(env),
-        ...config.service.claudeDirs,
-    ];
-    // A refusal says nothing to the caller; the service's log says once
-    // where a transcript must be, as another account's directory is not
-    // known until it is listed.
-    let refusedOnce = false;
-    const confined = (transcript: string) =>
-        confineTranscript(transcript, claudeDirs, options.maxTranscript).catch(
-            (error: unknown) => {
+        // An unknown host version is served, and said once, while recent.
+        const versions = new Recent<string, true>(MAX_VERSIONS);
+        const noteVersion = (host: string, version: string | undefined) => {
+            const checked = profiles.get(host)?.checked ?? [];
+            const key = `${host} ${version}`;
+            if (
+                version === undefined ||
+                checked.includes(version) ||
+                versions.has(key)
+            ) {
+                return;
+            }
+            versions.set(key, true);
+            // The version is the client's text: quoted, it forges no line.
+            warn(
+                `${host} ${JSON.stringify(version)} is not a version its profile was checked against`,
+            );
+        };
+        const resolveProject = async (value: string) =>
+            isProjectId(value)
+                ? value
+                : ((await identify(value).catch(() => null))?.id ?? null);
+        const claudeDirs = [
+            options.claudeDir ?? claudeConfigDir(env),
+            ...config.service.claudeDirs,
+        ];
+        // A refusal says nothing to the caller; the service's log says once
+        // where a transcript must be, as another account's directory is not
+        // known until it is listed.
+        let refusedOnce = false;
+        const confined = (transcript: string) =>
+            confineTranscript(
+                transcript,
+                claudeDirs,
+                options.maxTranscript,
+            ).catch((error: unknown) => {
                 if (!refusedOnce) {
                     refusedOnce = true;
                     warn(
@@ -233,203 +238,224 @@ export async function startService(
                     );
                 }
                 throw error;
-            },
-        );
-    const claudeTranscript = async (
-        request: RecordRequest & { transcript: string },
-    ): Promise<RecordResponse> => {
-        const transcript = await confined(request.transcript);
-        const found = await recordSession(
-            {
-                session: request.session,
-                transcript,
-                // The launch's directory, which a halt's note keeps, is not
-                // in the contract's envelope; until adapters send it
-                // (delivery), the transcript's own directory stands in.
-                dir: dirname(transcript),
-                since: null,
-                ended: false,
-            },
-            {
-                env,
-                index,
-                versions: launched?.history.handle() ?? null,
-                log,
-                project: request.project ?? null,
-            },
-        );
-        switch (found.kind) {
-            case "recorded":
-                idle.set(found.phrase, Date.now());
-                return {
-                    accepted: found.appended,
-                    duplicates: 0,
-                    through: null,
-                };
-            case "nothing":
-                return { accepted: 0, duplicates: 0, through: null };
-            case "missing":
-                // Only a race now: the path was confined and found a file.
-                throw new ContractError(403, "that transcript cannot be read");
-            default:
-                throw new ContractError(503, "the store could not be locked");
-        }
-    };
-    const route = async (
-        request: Request,
-        url: URL,
-        local: boolean,
-    ): Promise<Response> => {
-        switch (url.pathname) {
-            case SERVICE_PATHS.health:
-                return json(200, { ok: true });
-            case SERVICE_PATHS.block: {
-                const block = parseWith(
-                    blockRequestSchema,
-                    await bodyOf(request),
-                );
-                noteVersion(block.host, block.hostVersion);
-                return json(
-                    200,
-                    await openingBlock(block, { engine, profiles, frozen }),
-                );
-            }
-            case SERVICE_PATHS.recall:
-                return json(
-                    200,
-                    await recallFor(
-                        parseWith(recallRequestSchema, await bodyOf(request)),
-                        { engine, profiles },
-                    ),
-                );
-            case SERVICE_PATHS.record: {
-                const record = parseWith(
-                    recordRequestSchema,
-                    await bodyOf(request),
-                );
-                if (!profiles.has(record.host)) {
-                    throw new ContractError(
-                        400,
-                        `no profile for host ${record.host}`,
-                    );
-                }
-                noteVersion(record.host, record.hostVersion);
-                const result = await acceptRecord(record, {
+            });
+        const claudeTranscript = async (
+            request: RecordRequest & { transcript: string },
+        ): Promise<RecordResponse> => {
+            const transcript = await confined(request.transcript);
+            const found = await recordSession(
+                {
+                    session: request.session,
+                    transcript,
+                    // The launch's directory, which a halt's note keeps, is not
+                    // in the contract's envelope; until adapters send it
+                    // (delivery), the transcript's own directory stands in.
+                    dir: dirname(transcript),
+                    since: null,
+                    ended: false,
+                },
+                {
                     env,
                     index,
-                    recorder,
-                    loopback: local,
-                    sync: () => engine.index(),
-                    claudeTranscript,
-                    sessions,
-                    held,
-                    now,
-                });
-                const phrase = sessions.get(
-                    sessionKey(record.host, record.session),
-                );
-                if (phrase !== undefined && result.accepted > 0) {
-                    idle.set(phrase, Date.now());
-                }
-                if (record.project !== undefined) {
-                    touched.add(record.project);
-                }
-                return json(200, result);
-            }
-            case SERVICE_PATHS.mcp: {
-                // Stateless: no stream for a GET to hold a server open.
-                if (request.method !== "POST") {
-                    return new Response(null, {
-                        status: 405,
-                        headers: { allow: "POST" },
-                    });
-                }
-                // Read here, within the cap, as the other routes are.
-                const parsedBody = await bodyOf(request);
-                const project = url.searchParams.get("project");
-                const host = url.searchParams.get("host");
-                const server = createContractServer({
-                    engine,
-                    index,
-                    store,
-                    project:
-                        project === null ? null : await resolveProject(project),
-                    host: host !== null && HOST_ID.test(host) ? host : null,
-                    profiles,
-                    resolveProject,
-                    warn,
-                });
-                const transport = new WebStandardStreamableHTTPServerTransport({
-                    sessionIdGenerator: undefined,
-                    enableJsonResponse: true,
-                });
-                await server.connect(transport);
-                return transport.handleRequest(request, { parsedBody });
-            }
-            default:
-                return json(404, { error: `nothing at ${url.pathname}` });
-        }
-    };
-
-    const { handle, allowedHosts } = guarded({
-        route,
-        tokens,
-        loopback,
-        warn,
-    });
-    const port = first.port ?? 0;
-    const servers = [first];
-    for (const name of ["127.0.0.1", "localhost", "[::1]"]) {
-        allowedHosts.add(`${name}:${port}`);
-    }
-    // A further address that cannot be had, as before a private network is
-    // up, is said and passed over.
-    for (const hostname of options.listen ?? config.service.listen) {
-        try {
-            servers.push(serve(hostname, port));
-            allowedHosts.add(
-                `${hostname.includes(":") ? `[${hostname}]` : hostname}:${port}`,
+                    versions: launched?.history.handle() ?? null,
+                    log,
+                    project: request.project ?? null,
+                },
             );
-        } catch (error) {
-            warn(`could not listen on ${hostname}: ${describeError(error)}`);
-        }
-    }
-    open(handle);
-
-    const jobs = startJobs({
-        config,
-        engine,
-        store,
-        idle,
-        touched,
-        warn,
-        tickMs: options.tickMs,
-        loadCatalogue:
-            reviewer === null
-                ? null
-                : async () => {
-                      entries = (
-                          await indexCatalogue(
-                              index,
-                              dir,
-                              vocabulary,
-                              root,
-                          ).load()
-                      ).entries;
-                  },
-    });
-
-    return {
-        url: `http://127.0.0.1:${port}`,
-        ports: servers.map((server) => server.port ?? 0),
-        waiting: () => idle.size,
-        async stop() {
-            jobs.stop();
-            for (const server of servers) {
-                server.stop(true);
+            switch (found.kind) {
+                case "recorded":
+                    idle.set(found.phrase, Date.now());
+                    return {
+                        accepted: found.appended,
+                        duplicates: 0,
+                        through: null,
+                    };
+                case "nothing":
+                    return { accepted: 0, duplicates: 0, through: null };
+                case "missing":
+                    // Only a race now: the path was confined and found a file.
+                    throw new ContractError(
+                        403,
+                        "that transcript cannot be read",
+                    );
+                default:
+                    throw new ContractError(
+                        503,
+                        "the store could not be locked",
+                    );
             }
-            await launched?.close();
-            index.close();
-        },
-    };
+        };
+        const route = async (
+            request: Request,
+            url: URL,
+            local: boolean,
+        ): Promise<Response> => {
+            switch (url.pathname) {
+                case SERVICE_PATHS.health:
+                    return json(200, { ok: true });
+                case SERVICE_PATHS.block: {
+                    const block = parseWith(
+                        blockRequestSchema,
+                        await bodyOf(request),
+                    );
+                    noteVersion(block.host, block.hostVersion);
+                    return json(
+                        200,
+                        await openingBlock(block, { engine, profiles, frozen }),
+                    );
+                }
+                case SERVICE_PATHS.recall:
+                    return json(
+                        200,
+                        await recallFor(
+                            parseWith(
+                                recallRequestSchema,
+                                await bodyOf(request),
+                            ),
+                            { engine, profiles },
+                        ),
+                    );
+                case SERVICE_PATHS.record: {
+                    const record = parseWith(
+                        recordRequestSchema,
+                        await bodyOf(request),
+                    );
+                    if (!profiles.has(record.host)) {
+                        throw new ContractError(
+                            400,
+                            `no profile for host ${record.host}`,
+                        );
+                    }
+                    noteVersion(record.host, record.hostVersion);
+                    const result = await acceptRecord(record, {
+                        env,
+                        index,
+                        recorder,
+                        loopback: local,
+                        sync: () => engine.index(),
+                        claudeTranscript,
+                        sessions,
+                        held,
+                        now,
+                    });
+                    const phrase = sessions.get(
+                        sessionKey(record.host, record.session),
+                    );
+                    if (phrase !== undefined && result.accepted > 0) {
+                        idle.set(phrase, Date.now());
+                    }
+                    if (record.project !== undefined) {
+                        touched.add(record.project);
+                    }
+                    return json(200, result);
+                }
+                case SERVICE_PATHS.mcp: {
+                    // Stateless: no stream for a GET to hold a server open.
+                    if (request.method !== "POST") {
+                        return new Response(null, {
+                            status: 405,
+                            headers: { allow: "POST" },
+                        });
+                    }
+                    // Read here, within the cap, as the other routes are.
+                    const parsedBody = await bodyOf(request);
+                    const project = url.searchParams.get("project");
+                    const host = url.searchParams.get("host");
+                    const server = createContractServer({
+                        engine,
+                        index,
+                        store,
+                        project:
+                            project === null
+                                ? null
+                                : await resolveProject(project),
+                        host: host !== null && HOST_ID.test(host) ? host : null,
+                        profiles,
+                        resolveProject,
+                        warn,
+                    });
+                    const transport =
+                        new WebStandardStreamableHTTPServerTransport({
+                            sessionIdGenerator: undefined,
+                            enableJsonResponse: true,
+                        });
+                    await server.connect(transport);
+                    return transport.handleRequest(request, { parsedBody });
+                }
+                default:
+                    return json(404, { error: `nothing at ${url.pathname}` });
+            }
+        };
+
+        const { handle, allowedHosts } = guarded({
+            route,
+            tokens,
+            loopback,
+            warn,
+        });
+        const port = first.port ?? 0;
+        for (const name of ["127.0.0.1", "localhost", "[::1]"]) {
+            allowedHosts.add(`${name}:${port}`);
+        }
+        // A further address that cannot be had, as before a private network is
+        // up, is said and passed over.
+        for (const hostname of options.listen ?? config.service.listen) {
+            try {
+                servers.push(serve(hostname, port));
+                allowedHosts.add(
+                    `${hostname.includes(":") ? `[${hostname}]` : hostname}:${port}`,
+                );
+            } catch (error) {
+                warn(
+                    `could not listen on ${hostname}: ${describeError(error)}`,
+                );
+            }
+        }
+        open(handle);
+
+        const jobs = startJobs({
+            config,
+            engine,
+            store,
+            idle,
+            touched,
+            warn,
+            tickMs: options.tickMs,
+            loadCatalogue:
+                reviewer === null
+                    ? null
+                    : async () => {
+                          entries = (
+                              await indexCatalogue(
+                                  index,
+                                  dir,
+                                  vocabulary,
+                                  root,
+                              ).load()
+                          ).entries;
+                      },
+        });
+
+        return {
+            url: `http://127.0.0.1:${port}`,
+            ports: servers.map((server) => server.port ?? 0),
+            waiting: () => idle.size,
+            async stop() {
+                jobs.stop();
+                for (const server of servers) {
+                    server.stop(true);
+                }
+                await launched?.close();
+                index.close();
+            },
+        };
+    } catch (error) {
+        // A start that fails leaves nothing bound or open.
+        for (const server of servers) {
+            server.stop(true);
+        }
+        await launched?.close();
+        index.close();
+        throw error;
+    }
 }
