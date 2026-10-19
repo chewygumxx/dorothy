@@ -31,9 +31,11 @@ carried out on the branch `feat/memory-evaluation`, from `main` at
 `8458420`, one subagent at a time: an implementer per task, then a
 reviewer of its diff, then a whole-branch review and one fix wave. Two
 sessions shared the work: one ran Tasks 1 to 10's review, and the
-other, after a usage limit, Task 10's fix round onwards.
+other, after a usage limit, Task 10's fix round onwards. Every finding
+deferred along the way was then addressed, in three reviewed batches
+and a review of the whole range.
 
-`bun run check` passes at `ab18278`: 2013 tests pass, 1 is skipped and
+`bun run check` passes at `70d3fa8`: 2158 tests pass, 1 is skipped and
 none fail.
 
 ## Tasks
@@ -52,9 +54,8 @@ none fail.
 | 10 | the run | `96e8721` to `3efc2ab` |
 | 11 | documentation | `97a9025`, `e866e6c` |
 
-Every task's review ended clean. Minor findings each review deferred
-are kept in the plan's ledger; the whole-branch review weighed them and
-raised none above Minor.
+Every task's review ended clean. The Minor findings each review deferred
+were addressed later, under Deferred work.
 
 ## Rulings
 
@@ -92,8 +93,8 @@ its cost if wrong.
     its Minor ones; three are deferred (below). If wrong, a few lines of
     extra code.
 12. A resume asks a record the cap stopped mid-judging again from the
-    start, paying its answer twice. If wrong, at most `--concurrency`
-    answers are repaid per cap.
+    start, paying its answer twice. Superseded: a resume now judges a
+    paid answer again rather than asking it again.
 
 ## Final review
 
@@ -107,10 +108,58 @@ fixed in `d8ed969` to `ab18278` and confirmed by a scoped re-review:
   fitted, which its Recall@10 cannot;
 - `snapshot` refuses a work directory inside the repository.
 
-Deferred, for a later branch:
+Three of its Minor findings were deferred, then addressed under
+Deferred work.
 
-- per-command `--help` listing each command's options;
-- a run's base URLs in `run.json`, so a resume also refuses a role
-  moved to another provider serving the same model;
-- knowledge-update questions drawn from conversations that revise an
-  earlier one, not only retired files: a spec decision for the owner.
+## Deferred work
+
+Every finding deferred by a task review, the whole-branch review or its
+re-review was addressed in `8ac2a68` to `70d3fa8`, in three batches.
+Each batch was reviewed and re-reviewed, and the whole range had a
+final review that found nothing above Minor; its Minor findings were
+fixed too.
+
+- **A, features and the run** (`1af109e` to `8776d89`): per-command
+  `--help`; base URLs in `run.json`, checked on resume;
+  knowledge-update questions drawn also from the latest of a group of
+  conversations that revise one another, as the owner decided; a
+  resume judges a paid answer again rather than asking it again; a
+  resumed dry run counts only what is left; a failed append stops every
+  worker; a cut-short record line is ended before the next.
+- **B, the question pipeline** (`eb26d66` to `a10e427`): ids, dates
+  and reads of the question file checked; mining and generation report
+  what they drop; each paid draft is kept as it arrives; every rewrite
+  of the question file is serialised by a lock beside it, taken over
+  only from a dead writer.
+- **C, the rest** (`9f9831e` to `4fcf9a2`): hidden readers' reads
+  skipped; the snapshot follows a top-level link, counts the nested
+  links it skips and refuses a work directory in any worktree; the cap
+  is checked just before each spend, so concurrent retries never pass
+  it; `ranked` holds only the ids in a system's context; run files told
+  apart when missing, unreadable or invalid.
+- **The final review's Minor findings** (`ed97da3` to `70d3fa8`): one
+  atomic write with a temporary file per process and write; the
+  snapshot swap ordered so a cut never pairs an old record with new
+  data; `generated.json` written under the lock.
+
+Further rulings, each with its cost if wrong:
+
+1. "Address all deferred" covers every deferred finding. If wrong,
+   more change than wanted, each its own commit to revert.
+2. `compare` stays on strict accuracy alone, as the spec says. If
+   wrong, lenient accuracy is read from each run's report instead.
+3. A group's latest revision is its latest-begun conversation. If
+   wrong, an occasional stale reference answer.
+4. A purpose read again keeps its first reader's exclusion, as a
+   question and every system take one. If wrong, a repeated purpose may
+   surface another reader's own conversation.
+5. Residual lock races need a crashed writer and a sub-millisecond
+   race. If wrong, a rare lost write after a crash.
+6. Recall@5 and Recall@10 count only what fits a system's budget. If
+   wrong, a smaller `--budget` lowers them.
+7. A variable named for a key stays capitals, digits and underscores,
+   so a pasted key cannot pass for a name. If wrong, a lower-case name
+   is refused.
+8. A work directory already holding a record without a copy, cut
+   mid-swap, may pair the old record with new data. If wrong, one wrong
+   resume check until the next `--replace`.
