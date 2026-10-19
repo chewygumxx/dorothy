@@ -124,6 +124,8 @@ export async function credentialHelpers(
                   .filter(Boolean)
                   .map((entry) => {
                       const separator = entry.indexOf("\n");
+                      // A valueless helper is an empty reset, with no newline.
+                      if (separator < 0) return [entry, ""];
                       return [
                           entry.slice(0, separator),
                           entry.slice(separator + 1),
