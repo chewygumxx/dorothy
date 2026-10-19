@@ -98,7 +98,9 @@ options declared and described for `--help`, its failures as
   appends a record per question and system and resumes where a run
   stopped, asking a failed record again (a paid answer only for the
   judgements it lacks) and refusing a changed snapshot, model or base
-  URL; `run/command.ts`: the `run` command.
+  URL, or a question removed or edited since the run began (its
+  `definitions` in `run.json`, a digest of each, gold answer included);
+  `run/command.ts`: the `run` command.
 - `report/`: `summarise`, the Markdown report and `compareOf`, and the
   `compare` command with `writeRunReport`.
 - `testing.ts`: `fakeIo`, temporary roots and the fixture archive.

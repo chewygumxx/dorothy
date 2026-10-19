@@ -18,7 +18,7 @@ import { UsageError } from "../errors.js";
 import { writeAtomic } from "../files.js";
 import { CallCap, failureOf, type Models } from "../models/client.js";
 import type { EvalConfig, RoleConfig } from "../models/config.js";
-import type { Question } from "../questions/file.js";
+import { definitionOf, type Question } from "../questions/file.js";
 import { writeRunReport } from "../report/command.js";
 import type { Summary } from "../report/summary.js";
 import type { SnapshotInfo } from "../snapshot/snapshot.js";
@@ -106,17 +106,24 @@ export function newRunInfo(
         snapshot,
         questions: accepted.length,
         questionIds: accepted.map((question) => question.id),
+        definitions: Object.fromEntries(
+            accepted.map((question) => [question.id, definitionOf(question)]),
+        ),
     };
 }
 
-// A resumed run goes on with the snapshot, models and providers it began
-// with: a record of another corpus or model would make run.json untrue.
-// A run that kept no base URLs is held to its models alone.
+// A resumed run goes on with the questions, snapshot, models and
+// providers it began with: a record of another corpus, model or
+// definition would make run.json untrue. A run that kept no base URLs is
+// held to its models alone, and one that kept no definitions to its
+// question ids.
 export function checkResumable(
     info: RunInfo,
     config: EvalConfig,
     snapshot: SnapshotInfo,
+    accepted: readonly Question[],
 ): void {
+    checkQuestions(info, accepted);
     if (snapshot.at !== info.snapshot.at) {
         throw new UsageError(
             `the snapshot was taken at ${snapshot.at}, but run ${info.id} used ${info.snapshot.at}; start a new run`,
@@ -140,6 +147,37 @@ export function checkResumable(
                 );
             }
         }
+    }
+}
+
+// The questions a run began with, each still accepted and as it was
+// defined: one removed, rejected or edited would be skipped, or asked
+// and judged by another gold answer, in a run reported as one.
+function checkQuestions(info: RunInfo, accepted: readonly Question[]): void {
+    const now = new Map(accepted.map((question) => [question.id, question]));
+    const problems = info.questionIds.flatMap((id) => {
+        const question = now.get(id);
+        if (question === undefined) {
+            return [`${id}: no longer in the accepted questions`];
+        }
+        const began = info.definitions?.[id];
+        return began !== undefined && began !== definitionOf(question)
+            ? [`${id}: changed since the run began`]
+            : [];
+    });
+    if (problems.length > 0) {
+        const shown = problems.slice(0, 10).map((problem) => `  ${problem}`);
+        const more =
+            problems.length > shown.length
+                ? [`  and ${problems.length - shown.length} more`]
+                : [];
+        throw new UsageError(
+            [
+                `run ${info.id} began with questions that are removed or changed; start a new run:`,
+                ...shown,
+                ...more,
+            ].join("\n"),
+        );
     }
 }
 

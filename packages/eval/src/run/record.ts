@@ -60,6 +60,10 @@ export type RunInfo = {
     questions: number;
     // The questions it asks, so a resumed run asks no others.
     questionIds: string[];
+    // Each of them as it was defined, by id (`definitionOf`), so a resume
+    // sees one edited since; absent from a run written before they were
+    // kept.
+    definitions?: Record<string, string>;
 };
 
 // A run id names a directory, so it may hold nothing that leaves runs/.
@@ -204,6 +208,7 @@ export const runInfoSchema = z.object({
     snapshot: z.object({ source: z.string(), at: z.string() }),
     questions: z.number(),
     questionIds: z.array(z.string()),
+    definitions: z.record(z.string(), z.string()).optional(),
 });
 
 // A run's settings as run.json holds them, or why it does not.

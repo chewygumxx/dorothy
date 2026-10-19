@@ -280,6 +280,113 @@ describe("bun run eval -- run", () => {
         expect(requests).toHaveLength(calls);
     });
 
+    describe("refuses to resume when a question", () => {
+        // A finished retrieval-only run, and its resume's outcome.
+        const begun = async () => {
+            const first = fakeIo();
+            expect(
+                await runCli(
+                    ["run", "--work", work, "--retrieval-only"],
+                    first.io,
+                ),
+            ).toBe(0);
+            const id = idOf(first.out);
+            const kept = (await readRecords(work, id)).length;
+            const resume = async () => {
+                const again = fakeIo();
+                const status = await runCli(
+                    ["run", "--work", work, "--resume", id],
+                    again.io,
+                );
+                return { status, err: again.err.join("") };
+            };
+            return { id, kept, resume };
+        };
+        const edit = async (change: (all: Question[]) => Question[]) => {
+            const { questions } = await readQuestions(work);
+            await writeQuestions(work, change(questions));
+        };
+        const GARDEN_ID = questionId("Which plot is my allotment?", [
+            `c:${GARDEN}`,
+        ]);
+
+        it("was removed since the run began", async () => {
+            const { id, kept, resume } = await begun();
+            await edit((all) => all.filter((each) => each.id !== GARDEN_ID));
+            const { status, err } = await resume();
+            expect(status).toBe(1);
+            expect(err).toContain(`run ${id} began with questions`);
+            expect(err).toContain(
+                `${GARDEN_ID}: no longer in the accepted questions`,
+            );
+            expect(await readRecords(work, id)).toHaveLength(kept);
+        });
+
+        it("was rejected since the run began", async () => {
+            const { resume } = await begun();
+            await edit((all) =>
+                all.map((each) =>
+                    each.id === GARDEN_ID
+                        ? { ...each, status: "rejected" }
+                        : each,
+                ),
+            );
+            const { status, err } = await resume();
+            expect(status).toBe(1);
+            expect(err).toContain(GARDEN_ID);
+        });
+
+        it("has another gold answer, though its id is the same", async () => {
+            const { id, kept, resume } = await begun();
+            await edit((all) =>
+                all.map((each) =>
+                    each.id === GARDEN_ID
+                        ? { ...each, answer: "Plot thirteen." }
+                        : each,
+                ),
+            );
+            const { status, err } = await resume();
+            expect(status).toBe(1);
+            expect(err).toContain(`${GARDEN_ID}: changed since the run began`);
+            expect(await readRecords(work, id)).toHaveLength(kept);
+        });
+
+        it("is new, or a run's other fields are as they were", async () => {
+            const { resume } = await begun();
+            await edit((all) => [
+                ...all.map((each) =>
+                    each.id === GARDEN_ID
+                        ? { ...each, source: "generated:m/2" }
+                        : each,
+                ),
+                accepted("What is my cat called?", {
+                    type: "abstention",
+                    answer: "The memory does not say.",
+                }),
+            ]);
+            expect((await resume()).status).toBe(0);
+        });
+
+        it("was kept by a run that kept no definitions, by its id alone", async () => {
+            const { id, resume } = await begun();
+            const path = join(work, "runs", id, "run.json");
+            const { definitions: _, ...old } = JSON.parse(
+                readFileSync(path, "utf8"),
+            );
+            writeFileSync(path, JSON.stringify(old));
+            await edit((all) =>
+                all.map((each) =>
+                    each.id === GARDEN_ID
+                        ? { ...each, answer: "Plot thirteen." }
+                        : each,
+                ),
+            );
+            expect((await resume()).status).toBe(0);
+            await edit((all) => all.filter((each) => each.id !== GARDEN_ID));
+            expect((await resume()).status).toBe(1);
+        });
+    });
+
     it("resumes a run that recorded no base URL, whatever they are now", async () => {
         serve({ content: "Plot twelve, by the river." });
         const first = fakeIo();
