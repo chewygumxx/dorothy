@@ -20,7 +20,7 @@ import {
     type MemoryRememberResult,
     parseMemoryId,
 } from "@dorothy/core";
-import { knowledgePath } from "../engine/baseline.js";
+import { knowledgePath } from "../engine/engine.js";
 import { FACT_LIMITS, FACT_NAME } from "../facts/file.js";
 import {
     type FactResult,

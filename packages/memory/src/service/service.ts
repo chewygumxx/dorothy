@@ -40,8 +40,8 @@ import {
     recordRequestSchema,
 } from "../contract/schemas.js";
 import { createContractServer } from "../contract/tools.js";
-import { baselineEngine, knowledgePath } from "../engine/baseline.js";
-import type { Proposal } from "../engine/engine.js";
+import { baselineEngine } from "../engine/baseline.js";
+import { knowledgePath, type Proposal } from "../engine/engine.js";
 import {
     dataRoot,
     type FactStore,
@@ -204,6 +204,7 @@ export async function startService(
         index,
         halfLifeDays: config.memory.halfLifeDays,
         reviewer,
+        warn,
         now: () => now().getTime(),
     });
     const frozen = new FrozenBlocks();

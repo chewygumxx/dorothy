@@ -26,8 +26,8 @@ import { dataRoot, listFacts } from "../facts/store.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { keywordsOf, vocabularyBroken } from "../recall/tags.js";
 import { readTranscript, transcriptPath } from "../transcript.js";
-import { baselineEngine, knowledgePath } from "./baseline.js";
-import type { MemoryEngine } from "./engine.js";
+import { baselineEngine } from "./baseline.js";
+import { knowledgePath, type MemoryEngine } from "./engine.js";
 
 export type ArchiveTurn = {
     n: number;
