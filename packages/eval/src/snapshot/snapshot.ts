@@ -17,11 +17,12 @@ import {
     mkdir,
     readdir,
     readFile,
+    realpath,
     rm,
     stat,
     writeFile,
 } from "node:fs/promises";
-import { basename, join, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import type { Env } from "@dorothy/core";
 import { UsageError } from "../errors.js";
 
@@ -58,6 +59,31 @@ const exists = (path: string) =>
 const within = (path: string, dir: string) =>
     path === dir || path.startsWith(dir + sep);
 
+// A path's real path, through the nearest ancestor that exists.
+async function realOf(path: string): Promise<string> {
+    try {
+        return await realpath(path);
+    } catch {
+        const parent = dirname(path);
+        return parent === path
+            ? path
+            : join(await realOf(parent), basename(path));
+    }
+}
+
+// The checkout this runs from: the nearest directory above holding .git,
+// or else its root by the package's place in it.
+async function repositoryRoot(): Promise<string> {
+    for (let dir = import.meta.dir; ; dir = dirname(dir)) {
+        if (await exists(join(dir, ".git"))) {
+            return realOf(dir);
+        }
+        if (dirname(dir) === dir) {
+            return realOf(resolve(import.meta.dir, "../../../.."));
+        }
+    }
+}
+
 async function count(
     dir: string,
     keep: (name: string) => boolean,
@@ -85,6 +111,12 @@ export async function takeSnapshot(
     if (within(target, source) || within(source, target)) {
         throw new UsageError(
             "the work directory and the data directory must not contain each other",
+        );
+    }
+    // Her data in clear must not land where git or the checks sweep it.
+    if (within(await realOf(target), await repositoryRoot())) {
+        throw new UsageError(
+            `${target} is in the repository: choose a work directory outside it`,
         );
     }
     const copy = snapshotDir(target);

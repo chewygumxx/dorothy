@@ -56,8 +56,8 @@ options declared, its failures as `UsageError`s, and a test through
 - `main.ts`: the process around `runCli`, with the real terminal.
 - `cli.ts`: the command table and `runCli`.
 - `command.ts`: `Io`, `Command` and the options' readers.
-- `snapshot/`: `takeSnapshot`, `readSnapshot`, `workEnv`, and the
-  `snapshot` command.
+- `snapshot/`: `takeSnapshot`, which refuses a work directory in the
+  repository, `readSnapshot`, `workEnv`, and the `snapshot` command.
 - `questions/file.ts`: the question file, its schema and ids; the
   commands that rewrite it read it with `readQuestionsToRewrite`.
 - `questions/mine.ts`: lookup questions from her appraised reads, and

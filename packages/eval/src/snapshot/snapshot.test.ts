@@ -16,9 +16,10 @@ import {
     readFileSync,
     rmSync,
     statSync,
+    symlinkSync,
     writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { UsageError } from "../errors.js";
 import { tempRoot, writeFixtureData } from "../testing.js";
 import {
@@ -109,6 +110,30 @@ describe("a snapshot", () => {
             "must not contain each other",
         );
         expect(existsSync(join(data, "eval"))).toBe(false);
+    });
+
+    it("refuses a work directory in the repository, by its real path", async () => {
+        const repository = resolve(import.meta.dir, "../../../..");
+        const inside = join(import.meta.dir, `eval-work-${process.pid}`);
+        const link = join(temp.root, "link");
+        symlinkSync(import.meta.dir, link);
+        try {
+            for (const target of [
+                inside,
+                join(link, `eval-work-${process.pid}`),
+                repository,
+            ]) {
+                await expect(takeSnapshot(data, target)).rejects.toThrow(
+                    new UsageError(
+                        `${resolve(target)} is in the repository: choose a work directory outside it`,
+                    ),
+                );
+            }
+            expect(existsSync(inside)).toBe(false);
+            expect(existsSync(join(repository, "snapshot.json"))).toBe(false);
+        } finally {
+            rmSync(inside, { recursive: true, force: true });
+        }
     });
 
     it("says what to run when there is none", async () => {
