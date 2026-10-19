@@ -63,8 +63,7 @@ export function scopeDir(
     if (scope.kind === "personal") {
         return join(root, under, "personal");
     }
-    // The guard today's scopeDir holds: an id with .. or an empty part
-    // would write outside the store.
+    // An id with .. or an empty part would write outside the store.
     if (!isProjectId(scope.id)) {
         throw new Error(`${scope.id} is not a project id`);
     }

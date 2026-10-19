@@ -33,6 +33,7 @@ import {
     retireFacts,
     reviveFact,
     type Scope,
+    scopeDir,
     writeFact,
 } from "./store.js";
 
@@ -205,6 +206,51 @@ describe("writeFact", () => {
             reason: "it is broken: it has no frontmatter",
         });
         expect(await readFile(path, "utf8")).toBe("not a fact\n");
+    });
+});
+
+describe("a directory other than knowledge/", () => {
+    it("lists and names scopes under the one passed", async () => {
+        await writeFact(store(), input());
+        await writeFact(store(), input({ scope: PROJECT }));
+        const old = join(root, "facts");
+        const copy = async (scope: Scope) => {
+            const dir = scopeDir(root, scope, "facts");
+            await mkdir(dir, { recursive: true });
+            await writeFile(
+                join(dir, "likes-tea.md"),
+                await readFile(factPath(root, scope, "likes-tea")),
+            );
+        };
+        await copy(PERSONAL);
+        await copy(PROJECT);
+        expect(scopeDir(root, PERSONAL, "facts")).toBe(join(old, "personal"));
+        const listed = await factFiles(root, undefined, "facts");
+        expect(
+            listed.map(({ scope, name, path }) => ({
+                scope,
+                name,
+                path: path.slice(root.length + 1),
+            })),
+        ).toEqual([
+            {
+                scope: PERSONAL,
+                name: "likes-tea",
+                path: "facts/personal/likes-tea.md",
+            },
+            {
+                scope: PROJECT,
+                name: "likes-tea",
+                path: "facts/projects/github.com/chewygumxx/dorothy/likes-tea.md",
+            },
+        ]);
+        expect(await factFiles(root, PROJECT, "facts")).toHaveLength(1);
+        // Neither listing reads the other's directory.
+        expect(
+            (await factFiles(root)).every(({ path }) =>
+                path.startsWith(join(root, "knowledge")),
+            ),
+        ).toBe(true);
     });
 });
 

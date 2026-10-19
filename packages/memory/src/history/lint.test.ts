@@ -145,6 +145,14 @@ describe("facts and projects", () => {
         );
         expect(fileKind("projects.json")).toBe("projects");
         expect(fileKind("facts/likes-tea.md")).toBe("other");
+        // The layout before knowledge/ is no fact's place.
+        expect(fileKind("facts/personal/likes-tea.md")).toBe("other");
+        expect(fileKind("facts/projects/github.com/a/b/likes-tea.md")).toBe(
+            "other",
+        );
+        expect(lint("facts/personal/likes-tea.md", bytes("x\n"), null)).toBe(
+            null,
+        );
         expect(fileKind("knowledge/personal/sub/likes-tea.md")).toBe("other");
     });
 
