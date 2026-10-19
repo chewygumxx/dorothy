@@ -119,6 +119,14 @@ describe("scrub", () => {
         }
     });
 
+    it("takes linear time over whitespace after an authorization header", () => {
+        const spaces = " ".repeat(100000);
+        const start = performance.now();
+        const scrubbed = scrub(`authorization:${spaces}x`);
+        expect(performance.now() - start).toBeLessThan(500);
+        expect(scrubbed).toBe(`authorization:${spaces}[secret]`);
+    });
+
     it("leaves text with no secret's shape alone", () => {
         const text = "git status --short\n M docs/roadmap.md\n";
         expect(scrub(text)).toBe(text);

@@ -23,8 +23,10 @@ const PRIVATE_KEY =
 // Schemes are case-insensitive in Authorization headers. Outside a
 // header, lowercase schemes are also ordinary words, so require a
 // credential's shape rather than redacting "basic understanding".
+// Whitespace on either side of a value's quote must be separated by
+// that quote: adjacent optional runs backtrack quadratically without it.
 const BEARER =
-    /(?:\b((?:proxy-)?authorization["']?\s*[:=]\s*["']?\s*))?\b(Bearer|Basic|token)\s+([A-Za-z0-9._~+/=-]{8,})/gi;
+    /(?:\b((?:proxy-)?authorization["']?\s*[:=]\s*(?:["']\s*)?))?\b(Bearer|Basic|token)\s+([A-Za-z0-9._~+/=-]{8,})/gi;
 
 function redactScheme(
     whole: string,
