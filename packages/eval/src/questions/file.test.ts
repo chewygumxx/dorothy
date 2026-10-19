@@ -10,16 +10,25 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
+    existsSync,
     mkdirSync,
     readdirSync,
     readFileSync,
     statSync,
+    utimesSync,
     writeFileSync,
 } from "node:fs";
 import { runCli } from "../cli.js";
 import { UsageError } from "../errors.js";
-import { fakeIo, snapshotFixture, tempRoot } from "../testing.js";
 import {
+    collidingTexts,
+    fakeIo,
+    snapshotFixture,
+    tempRoot,
+} from "../testing.js";
+import {
+    type Locking,
+    locking,
     mergeQuestions,
     type Question,
     questionId,
@@ -27,6 +36,7 @@ import {
     questionsPath,
     readQuestions,
     readQuestionsToRewrite,
+    updateQuestions,
     writeQuestions,
 } from "./file.js";
 
@@ -130,6 +140,12 @@ describe("the question file", () => {
         expect(readdirSync(temp.root)).toEqual(["questions.jsonl"]);
     });
 
+    it("writes over a temporary file a Ctrl-C left", async () => {
+        writeFileSync(`${questionsPath(temp.root)}.tmp`, "half a li");
+        await writeQuestions(temp.root, [lookup("Which tea?")]);
+        expect(readdirSync(temp.root)).toEqual(["questions.jsonl"]);
+    });
+
     it("writes and reads back, private to the user", async () => {
         const questions = [lookup("Which tea?"), lookup("Which plot?")];
         await writeQuestions(temp.root, questions);
@@ -183,7 +199,19 @@ describe("the question file", () => {
         const { questions, problems } = await readQuestions(temp.root);
         expect(questions).toEqual([]);
         expect(problems).toEqual([
-            "questions.jsonl:1: q-00000000 is not the id of its text and evidence",
+            `questions.jsonl:1: q-00000000 is not the id of its text and evidence (it should be ${lookup("Which tea?").id})`,
+        ]);
+    });
+
+    it("reports an id another question's text gives, at the later line", async () => {
+        const [a, b] = collidingTexts();
+        const [first, second] = [lookup(a), lookup(b)];
+        expect(second.id).toBe(first.id);
+        writeLines(first, second);
+        const { questions, problems } = await readQuestions(temp.root);
+        expect(questions).toEqual([first]);
+        expect(problems).toEqual([
+            `questions.jsonl:2: ${first.id} is also the id of a different question on line 1`,
         ]);
     });
 
@@ -223,11 +251,134 @@ describe("the question file", () => {
     });
 
     it("counts an incoming question whose id is another's, not a repeat", () => {
-        const held = lookup("Which tea?");
-        const other = { ...lookup("Which plot?"), id: held.id };
+        const [a, b] = collidingTexts();
+        const held = lookup(a);
+        const other = lookup(b);
         const merged = mergeQuestions([held], [held, other]);
         expect(merged.added).toBe(0);
         expect(merged.collided).toBe(1);
         expect(merged.questions).toEqual([held]);
+    });
+});
+
+describe("changing the question file", () => {
+    const lock = () => `${questionsPath(temp.root)}.lock`;
+    const adding = (question: Question) => (questions: Question[]) => ({
+        questions: [...questions, question],
+        result: questions.length,
+    });
+    // Waits no time, as far as a test can see.
+    const instant = (sleep: Locking["sleep"]): Locking => ({
+        staleMs: 30_000,
+        tries: 5,
+        pauseMs: 1,
+        sleep,
+    });
+
+    it("reads, changes and writes under a lock it then releases", async () => {
+        await writeQuestions(temp.root, [lookup("Which tea?")]);
+        const seen = await updateQuestions(temp.root, (questions) => {
+            expect(existsSync(lock())).toBe(true);
+            return adding(lookup("Which plot?"))(questions);
+        });
+        expect(seen).toBe(1);
+        expect(existsSync(lock())).toBe(false);
+        expect(
+            (await readQuestions(temp.root)).questions.map((q) => q.question),
+        ).toEqual(["Which tea?", "Which plot?"]);
+    });
+
+    it("releases the lock when the change fails, or the file is unreadable", async () => {
+        await expect(
+            updateQuestions(temp.root, () => {
+                throw new Error("no");
+            }),
+        ).rejects.toThrow("no");
+        expect(existsSync(lock())).toBe(false);
+        writeFileSync(questionsPath(temp.root), "not json\n");
+        await expect(
+            updateQuestions(temp.root, adding(lookup("Which tea?"))),
+        ).rejects.toThrow("questions.jsonl:1: ");
+        expect(existsSync(lock())).toBe(false);
+        expect(readFileSync(questionsPath(temp.root), "utf8")).toBe(
+            "not json\n",
+        );
+    });
+
+    it("keeps both writes when two writers race, the second waiting", async () => {
+        await writeQuestions(temp.root, [lookup("Which tea?")]);
+        let open!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            open = resolve;
+        });
+        let inside!: () => void;
+        const entered = new Promise<void>((resolve) => {
+            inside = resolve;
+        });
+        let waits = 0;
+        let first!: Promise<number>;
+        // The second writer's wait lets the first finish, then goes on.
+        const timing = instant(async () => {
+            waits++;
+            open();
+            await first;
+        });
+        first = updateQuestions(temp.root, async (questions) => {
+            inside();
+            await gate;
+            return adding(lookup("Which plot?"))(questions);
+        });
+        await entered;
+        // The first holds the lock, with the file read and not yet written.
+        const second = updateQuestions(
+            temp.root,
+            adding(lookup("Which bike?")),
+            timing,
+        );
+        expect(await first).toBe(1);
+        expect(await second).toBe(2);
+        expect(waits).toBe(1);
+        expect(
+            (await readQuestions(temp.root)).questions.map((q) => q.question),
+        ).toEqual(["Which tea?", "Which plot?", "Which bike?"]);
+    });
+
+    it("gives up after its tries, saying whose lock it is", async () => {
+        writeFileSync(lock(), "1\n");
+        let slept = 0;
+        await expect(
+            updateQuestions(
+                temp.root,
+                adding(lookup("Which tea?")),
+                instant(async () => {
+                    slept++;
+                }),
+            ),
+        ).rejects.toThrow(`${lock()} is held by another command`);
+        expect(slept).toBe(4);
+        // Not its lock to release.
+        expect(existsSync(lock())).toBe(true);
+    });
+
+    it("takes over a lock older than its stale age", async () => {
+        writeFileSync(lock(), "1\n");
+        const old = new Date(Date.now() - 60_000);
+        utimesSync(lock(), old, old);
+        await updateQuestions(
+            temp.root,
+            adding(lookup("Which tea?")),
+            instant(async () => {
+                throw new Error("it should not wait");
+            }),
+        );
+        expect(existsSync(lock())).toBe(false);
+        expect((await readQuestions(temp.root)).questions).toHaveLength(1);
+    });
+
+    it("has defaults that wait a few seconds, and call a lock stale after a while", () => {
+        expect(locking.tries * locking.pauseMs).toBeGreaterThanOrEqual(5000);
+        expect(locking.staleMs).toBeGreaterThan(
+            locking.tries * locking.pauseMs,
+        );
     });
 });

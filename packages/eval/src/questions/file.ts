@@ -12,7 +12,7 @@
 // the owner's decision on it.
 
 import { createHash } from "node:crypto";
-import { readFile, rename, rm, writeFile } from "node:fs/promises";
+import { open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { UsageError } from "../errors.js";
@@ -148,7 +148,9 @@ export async function readQuestions(
             continue;
         }
         if (question.id !== questionId(question.question, question.evidence)) {
-            problem(`${question.id} is not the id of its text and evidence`);
+            problem(
+                `${question.id} is not the id of its text and evidence (it should be ${questionId(question.question, question.evidence)})`,
+            );
             continue;
         }
         const held = byId.get(question.id);
@@ -182,24 +184,115 @@ export async function readQuestionsToRewrite(
     return questions;
 }
 
-export async function writeQuestions(
-    work: string,
-    questions: Question[],
+// A file written whole or not at all: the new text beside it, then
+// renamed over. The temporary name is fixed, so one a Ctrl-C leaves is
+// written over by the next write, and the writers are serialised.
+export async function writeFileAtomic(
+    path: string,
+    text: string,
 ): Promise<void> {
-    const path = questionsPath(work);
-    const temporary = `${path}.${process.pid}.tmp`;
+    const temporary = `${path}.tmp`;
     try {
-        await writeFile(
-            temporary,
-            questions
-                .map((question) => `${JSON.stringify(question)}\n`)
-                .join(""),
-            { mode: 0o600 },
-        );
+        await writeFile(temporary, text, { mode: 0o600 });
         await rename(temporary, path);
     } catch (error) {
         await rm(temporary, { force: true });
         throw error;
+    }
+}
+
+export async function writeQuestions(
+    work: string,
+    questions: Question[],
+): Promise<void> {
+    await writeFileAtomic(
+        questionsPath(work),
+        questions.map((question) => `${JSON.stringify(question)}\n`).join(""),
+    );
+}
+
+// How long a writer waits for the lock on the file: tries, a pause
+// between them, and the age after which a lock is taken over as left by
+// a writer that died. Mutable so that tests can play the wait.
+export type Locking = {
+    staleMs: number;
+    tries: number;
+    pauseMs: number;
+    sleep(ms: number): Promise<void>;
+};
+export const locking: Locking = {
+    staleMs: 30_000,
+    tries: 200,
+    pauseMs: 50,
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+};
+
+const codeOf = (error: unknown) => (error as { code?: unknown } | null)?.code;
+
+// An advisory lock beside the file, made exclusively; returns its release.
+async function lockQuestions(
+    work: string,
+    timing: Locking,
+): Promise<() => Promise<void>> {
+    const path = `${questionsPath(work)}.lock`;
+    for (let attempt = 1; ; attempt++) {
+        try {
+            const handle = await open(path, "wx", 0o600);
+            try {
+                await handle.writeFile(`${process.pid}\n`);
+            } finally {
+                await handle.close();
+            }
+            return () => rm(path, { force: true });
+        } catch (error) {
+            if (codeOf(error) !== "EEXIST") {
+                throw typeof codeOf(error) === "string"
+                    ? new UsageError(`cannot lock ${path}: ${codeOf(error)}`)
+                    : error;
+            }
+        }
+        try {
+            const age = Date.now() - (await stat(path)).mtimeMs;
+            if (age > timing.staleMs) {
+                await rm(path, { force: true });
+                continue;
+            }
+        } catch (error) {
+            if (codeOf(error) !== "ENOENT") {
+                throw error;
+            }
+            continue;
+        }
+        if (attempt >= timing.tries) {
+            throw new UsageError(
+                `${path} is held by another command; if none is running, remove it`,
+            );
+        }
+        await timing.sleep(timing.pauseMs);
+    }
+}
+
+// The one way the question file is changed: under its lock, the file as
+// it is then is read, changed and written back, so that no two commands
+// (a review beside a generation) overwrite each other's writes.
+export async function updateQuestions<T>(
+    work: string,
+    change: (
+        questions: Question[],
+    ) =>
+        | { questions: Question[]; result: T }
+        | Promise<{ questions: Question[]; result: T }>,
+    timing: Locking = locking,
+): Promise<T> {
+    const release = await lockQuestions(work, timing);
+    try {
+        const { questions, result } = await change(
+            await readQuestionsToRewrite(work),
+        );
+        await writeQuestions(work, questions);
+        return result;
+    } finally {
+        await release();
     }
 }
 

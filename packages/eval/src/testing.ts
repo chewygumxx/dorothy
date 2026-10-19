@@ -23,6 +23,7 @@ import {
 } from "@dorothy/memory/evaluation";
 import type { Io } from "./command.js";
 import { ROLES } from "./models/config.js";
+import { questionId } from "./questions/file.js";
 import { takeSnapshot } from "./snapshot/snapshot.js";
 
 export function fakeIo(
@@ -211,6 +212,27 @@ export async function snapshotFixture(
     const work = join(root, "work");
     await takeSnapshot(await writeFixtureData(root, fixture), work);
     return work;
+}
+
+let colliding: [string, string] | null = null;
+
+// Two question texts that have one id with the evidence `c:x`: a 32-bit
+// hash gives one among some 100,000 texts.
+export function collidingTexts(): [string, string] {
+    if (colliding === null) {
+        const seen = new Map<string, string>();
+        for (let n = 0; colliding === null; n++) {
+            const text = `Which thing, number ${n}?`;
+            const id = questionId(text, ["c:x"]);
+            const other = seen.get(id);
+            if (other === undefined) {
+                seen.set(id, text);
+            } else {
+                colliding = [other, text];
+            }
+        }
+    }
+    return colliding;
 }
 
 export type StubRequest = {
