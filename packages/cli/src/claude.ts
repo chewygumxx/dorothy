@@ -355,8 +355,8 @@ export type DorothyFlags = { settings: Json | null; mcpConfig: Json | null };
 
 // Dorothy's --settings and --mcp-config, each in its = form so that a
 // variadic flag never takes the user's prompt, before the user's
-// arguments. A user's own value of a flag in MERGED is merged into it,
-// Dorothy's keys winning; one that cannot be read is passed on after
+// arguments. A user's own values of a flag in MERGED are merged, the last
+// winning as Claude Code's do, and into Dorothy's, her keys winning; one that cannot be read is passed on after
 // hers, with a warning. Anything after -- is the user's alone.
 export function dorothyFlags(
     args: readonly string[],
@@ -395,10 +395,12 @@ function mergeTheirs(
     flags: DorothyFlags,
     { cwd, read }: { cwd: string; read: (path: string) => string },
 ): Merged {
-    const values: Record<string, Json | null> = {
+    const dorothy: Record<string, Json | null> = {
         [SETTINGS]: flags.settings,
         [MCP_CONFIG]: flags.mcpConfig,
     };
+    // Each flag's values from the user, the last above the earlier ones.
+    const users: Record<string, Json> = {};
     const filed: string[][] = [];
     const rest: string[] = [];
     const warnings: string[] = [];
@@ -409,7 +411,7 @@ function mergeTheirs(
             break;
         }
         const { flag, value, words } = flagAt(args, index);
-        const ours = MERGED.has(flag) ? (values[flag] ?? null) : null;
+        const ours = MERGED.has(flag) ? (dorothy[flag] ?? null) : null;
         if (ours === null || value === undefined) {
             rest.push(arg);
             continue;
@@ -425,10 +427,14 @@ function mergeTheirs(
             );
             continue;
         }
-        values[flag] = mergeJson(theirs as Json, ours);
+        users[flag] = mergeJson(users[flag] ?? {}, theirs as Json);
         if (!isInline(value)) {
             filed.push(given);
         }
+    }
+    const values = { ...dorothy };
+    for (const [flag, theirs] of Object.entries(users)) {
+        values[flag] = mergeJson(theirs, dorothy[flag] as Json);
     }
     return { values, filed, rest, warnings };
 }

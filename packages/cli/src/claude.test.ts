@@ -836,6 +836,30 @@ describe("dorothyFlags", () => {
         expect(written).toEqual([]);
     });
 
+    it("keeps the last of repeated settings, Dorothy's above all", () => {
+        written.length = 0;
+        const flags = dorothyFlags(
+            [
+                `--settings={"model":"haiku","effort":"low"}`,
+                "--settings",
+                "mine.json",
+                `--settings={"model":"sonnet","permissions":{"deny":["d"]}}`,
+            ],
+            {
+                settings: { permissions: { allow: ["a"] }, effort: "high" },
+                mcpConfig: null,
+            },
+            io({ "/work/mine.json": '{"model":"opus","theme":"dark"}' }),
+        );
+        expect(flags.args).toEqual(["--settings=/run/dorothy/s1.json"]);
+        expect(JSON.parse(written[0] as string)).toEqual({
+            model: "sonnet",
+            theme: "dark",
+            effort: "high",
+            permissions: { allow: ["a"], deny: ["d"] },
+        });
+    });
+
     it("passes a file on as given, saying so, if the private file fails", () => {
         const failing = {
             ...io({ "/work/mine.json": '{"model":"x"}' }),
