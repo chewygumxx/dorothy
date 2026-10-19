@@ -76,7 +76,8 @@ gives back, and the service that speaks it. The spec is
 - Knowledge is confirmed when the user or a repository wrote it, or
   the user verified it (`isConfirmed`, `../engine/engine.ts`); the rest
   sits in the block's own fenced section, below every confirmed piece
-  for the budget, and `search` and `open` carry `UNCONFIRMED` on it.
+  for the budget, and `search`, `open` and recall carry `UNCONFIRMED`
+  on it.
   Only `--verify`, the user's, adds a `verified` entry; a write by
   anyone else drops it.
 - Migration leaves a fact in `facts/`, with a warning, when its

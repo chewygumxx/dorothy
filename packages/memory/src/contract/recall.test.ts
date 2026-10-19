@@ -10,6 +10,7 @@
 
 import { describe, expect, it } from "bun:test";
 import type { HostProfile, MemoryHit } from "@dorothy/core";
+import { UNCONFIRMED } from "../engine/engine.js";
 import { ContractError } from "./errors.js";
 import { RECALL_INTRO, recallFor } from "./recall.js";
 import { fakeEngine } from "./testing.js";
@@ -47,6 +48,24 @@ describe("recallFor", () => {
         expect(recalled.text).toContain(RECALL_INTRO);
         expect(recalled.ids).toEqual(["k:personal/a", "k:personal/b"]);
         expect(engine.calls).toContain("search tea or coffee?");
+    });
+
+    it("marks a passage of unconfirmed knowledge, as search does", async () => {
+        const engine = fakeEngine({
+            hits: [
+                { ...hit("k:personal/a", "Tea."), unconfirmed: UNCONFIRMED },
+                hit("k:personal/b", "Coffee."),
+            ],
+        });
+        const recalled = await recallFor(
+            { host: "codex", session: "s", prompt: "tea or coffee?" },
+            { engine, profiles },
+        );
+        const lines = recalled.text.split("\n");
+        expect(lines).toContain(
+            `- k:personal/a (k:personal/a) [${UNCONFIRMED}]: Tea.`,
+        );
+        expect(lines).toContain("- k:personal/b (k:personal/b): Coffee.");
     });
 
     it("skips a passage too long and keeps a shorter one", async () => {
