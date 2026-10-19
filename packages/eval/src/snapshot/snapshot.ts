@@ -221,6 +221,8 @@ export async function takeSnapshot(
         now?: () => Date;
         // Where the checkout is looked for from; the package's own place.
         checkout?: string;
+        // The rename that puts the new copy in place, for a test to fail.
+        putIn?: (from: string, to: string) => Promise<void>;
     } = {},
 ): Promise<SnapshotInfo> {
     const source = resolve(from);
@@ -316,7 +318,7 @@ export async function takeSnapshot(
             await rename(copy, old);
         }
         try {
-            await rename(partial, copy);
+            await (options.putIn ?? rename)(partial, copy);
         } catch (error) {
             if (await exists(old)) {
                 await rename(old, copy);

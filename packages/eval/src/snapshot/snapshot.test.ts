@@ -431,6 +431,25 @@ describe("a snapshot", () => {
             );
         });
 
+        it("puts the old copy and record back when the swap fails", async () => {
+            const first = await takeSnapshot(data, work);
+            const before = tree(work);
+            writeFileSync(join(data, "knowledge", "added.md"), "new\n");
+            await expect(
+                takeSnapshot(data, work, {
+                    replace: true,
+                    putIn: async () => {
+                        throw new Error("rename failed");
+                    },
+                }),
+            ).rejects.toThrow("rename failed");
+            expect(await readSnapshot(work)).toEqual(first);
+            expect(tree(work)).toEqual(before);
+            expect(existsSync(`${snapshotDir(work)}.old`)).toBe(false);
+            expect(existsSync(`${record()}.old`)).toBe(false);
+            expect(existsSync(`${snapshotDir(work)}.partial`)).toBe(false);
+        });
+
         it("keeps no old record once the new copy is in place", async () => {
             await takeSnapshot(data, work);
             // A cut after the new copy went in, before its record.
