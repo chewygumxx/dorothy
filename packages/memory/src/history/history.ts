@@ -22,7 +22,15 @@ import {
     utimes,
     writeFile,
 } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
+import {
+    basename,
+    dirname,
+    isAbsolute,
+    join,
+    relative,
+    resolve,
+    sep,
+} from "node:path";
 import type { Env } from "@dorothy/core";
 import { handEdited } from "../facts/file.js";
 import { migrateFacts } from "../facts/migrate.js";
@@ -135,6 +143,7 @@ export class MemoryHistory {
     readonly #waiting: string[] = [];
     readonly #warned = new Set<string>();
     readonly #catchUp = new Set<string>();
+    readonly #unrecoverable = new Map<string, string>();
     #afterCommit: () => void = () => {};
 
     private constructor(options: HistoryOptions) {
@@ -166,6 +175,7 @@ export class MemoryHistory {
                 await history.#adopt();
             }
             await keepPrivate(history.root);
+            await history.#ignoreTemps();
         });
         if (options.hook) {
             await history.#installHook(options.hook);
@@ -268,8 +278,8 @@ export class MemoryHistory {
         });
     }
 
-    warn(message: string): void {
-        if (this.#warned.has(message)) {
+    warn(message: string, repeat = false): void {
+        if (!repeat && this.#warned.has(message)) {
             return;
         }
         this.#warned.add(message);
@@ -302,10 +312,11 @@ export class MemoryHistory {
     #relative(paths: readonly string[]): string[] {
         const named = new Set<string>();
         for (const path of paths) {
-            const inside = isAbsolute(path) ? relative(this.root, path) : path;
+            const inside = relative(this.root, resolve(this.root, path));
             if (
                 inside !== "" &&
-                !inside.startsWith("..") &&
+                inside !== ".." &&
+                !inside.startsWith(`..${sep}`) &&
                 !isAbsolute(inside)
             ) {
                 named.add(inside.split(sep).join("/"));
@@ -389,6 +400,7 @@ export class MemoryHistory {
     async #settle(except: ReadonlySet<string>): Promise<void> {
         const pending = await pendingWrites(this.root);
         const committed: string[] = [];
+        let unsettled = false;
         if (this.#catchUp.size > 0) {
             const paths = [...this.#catchUp];
             await this.#commitChecked(paths, `catch-up: ${paths.join(", ")}`);
@@ -399,12 +411,34 @@ export class MemoryHistory {
             if (except.has(path)) {
                 continue;
             }
-            if (fileKind(path) === "fact") {
-                await this.#canonicalise(path, pending);
+            let problem: string | null;
+            try {
+                if (
+                    fileKind(path) === "transcript" &&
+                    existsSync(join(this.root, path)) &&
+                    (await stat(join(this.root, path))).size === 0 &&
+                    (await this.repo.show(path, "HEAD")) === null
+                )
+                    continue;
+                if (fileKind(path) === "fact")
+                    await this.#canonicalise(path, pending);
+                problem = await this.#problem(path);
+            } catch (error) {
+                this.warn(
+                    `history: couldn't read ${path} (${describeError(error)}); left for a later sweep`,
+                );
+                unsettled = true;
+                continue;
             }
-            const problem = await this.#problem(path);
             if (problem !== null) {
-                await this.#recover(path, problem);
+                try {
+                    await this.#recover(path, problem);
+                } catch (error) {
+                    this.warn(
+                        `history: couldn't restore ${path} (${describeError(error)})`,
+                    );
+                    unsettled = true;
+                }
                 continue;
             }
             await this.#commit(
@@ -415,7 +449,7 @@ export class MemoryHistory {
             );
             committed.push(path);
         }
-        await this.#clearPending(committed);
+        if (!unsettled) await this.#clearPending(committed);
     }
 
     // A fact added or edited by hand is rewritten as Dorothy writes one,
@@ -462,19 +496,30 @@ export class MemoryHistory {
     }
 
     async #recover(path: string, reason: string): Promise<boolean> {
+        const full = join(this.root, path);
+        const bytes = existsSync(full)
+            ? hashOf(await readFile(full))
+            : "missing";
+        const version = (await this.repo.log(path, 1))[0]?.sha ?? "";
+        const fingerprint = `${bytes}:${version}`;
+        if (this.#unrecoverable.get(path) === fingerprint) return false;
+        const before = await this.repo.resolve(MAIN);
         const healed = await recoverFile(
             this.repo,
             this.root,
             path,
             this.#now(),
         );
-        this.#afterCommit();
+        if ((await this.repo.resolve(MAIN)) !== before) this.#afterCommit();
         if (healed.kind === "restored") {
+            this.#unrecoverable.delete(path);
             this.warn(
                 `Restored ${path} from ${healed.from.slice(0, 7)} (${localTime(healed.at).slice(0, 10)}); the broken copy is in broken/`,
+                true,
             );
             return true;
         }
+        this.#unrecoverable.set(path, fingerprint);
         this.warn(
             `history: ${path} is broken (${reason}) and has no good version; a copy is in broken/`,
         );
@@ -486,14 +531,13 @@ export class MemoryHistory {
             await this.repo.init();
         }
         await keepPrivate(this.root);
-        const ignore = join(this.root, ".gitignore");
-        if (!existsSync(ignore)) {
-            await writeFile(ignore, "*.tmp\n", { mode: 0o600 });
-        }
+        await this.#ignoreTemps();
         const kept: string[] = [];
         for (const path of await this.repo.changed()) {
             const full = join(this.root, path);
-            const problem = lint(path, await readFile(full), null);
+            const bytes = await readFile(full);
+            if (fileKind(path) === "transcript" && bytes.length === 0) continue;
+            const problem = lint(path, bytes, null);
             if (problem === null) {
                 kept.push(path);
                 continue;
@@ -521,6 +565,22 @@ export class MemoryHistory {
         }
         await this.#commit(kept, `adopt: ${kept.length} files`);
         await this.#clearPending(kept);
+    }
+
+    async #ignoreTemps(): Promise<void> {
+        const path = join(this.root, ".gitignore");
+        let current = "";
+        try {
+            current = await readFile(path, "utf8");
+        } catch (error) {
+            if ((error as { code?: string }).code !== "ENOENT") throw error;
+        }
+        if (!current.split("\n").some((line) => line.trim() === "*.tmp")) {
+            await writeAtomic(
+                path,
+                `${current}${current === "" || current.endsWith("\n") ? "" : "\n"}*.tmp\n`,
+            );
+        }
     }
 
     async #installHook({ exec, script }: HookCommand): Promise<void> {

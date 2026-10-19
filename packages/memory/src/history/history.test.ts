@@ -122,6 +122,25 @@ const record = (history: MemoryHistory, paths: string[], message: string) =>
     );
 
 describe("adopting", () => {
+    it("adds temporary-file ignores without losing existing patterns", async () => {
+        put(root, ".gitignore", "# hand kept\nprivate/\n");
+        const history = await open();
+        put(root, "leftover.tmp", "incomplete");
+        expect(readFileSync(join(root, ".gitignore"), "utf8")).toContain(
+            "# hand kept\nprivate/\n",
+        );
+        expect(await history.repo.changed()).not.toContain("leftover.tmp");
+    });
+
+    it("leaves an empty new transcript uncommitted until it has an event", async () => {
+        const history = await open();
+        put(root, TRANSCRIPT, "");
+        await history.sweep();
+        expect(await history.repo.show(TRANSCRIPT, "HEAD")).toBeNull();
+        put(root, TRANSCRIPT, event("one"));
+        await history.sweep();
+        expect((await messages(history))[0]).toBe(`turn: ${PHRASE}`);
+    });
     it("commits what the directory holds, once", async () => {
         put(root, "tags.json", vocabulary(1));
         put(root, TRANSCRIPT, event("hi"));
@@ -492,6 +511,90 @@ describe("facts in the sweep and in a record", () => {
 });
 
 describe("recording", () => {
+    it("normalises relative paths before excluding a named write", async () => {
+        const history = await open();
+        put(root, "tags.json", vocabulary(1));
+        await history.lock(() =>
+            history.record(["./other/../tags.json"], "tags: normalised"),
+        );
+        expect((await messages(history))[0]).toBe("tags: normalised");
+        expect(await history.repo.changed()).toEqual([]);
+    });
+
+    it("warns for an unreadable outside file and records other changes", async () => {
+        const history = await open();
+        put(root, "a-unreadable.txt", "held");
+        chmodSync(join(root, "a-unreadable.txt"), 0);
+        put(root, "tags.json", vocabulary(1));
+        put(root, SIDECAR, sidecar("One"));
+        await record(history, [SIDECAR], "review: readable");
+        expect((await messages(history))[0]).toBe("review: readable");
+        expect(warnings.join("\n")).toContain("a-unreadable.txt");
+        expect(await history.repo.changed()).toEqual(["a-unreadable.txt"]);
+    });
+
+    it("commits an outside tracked deletion as outside", async () => {
+        put(root, "tags.json", vocabulary(1));
+        const history = await open();
+        rmSync(join(root, "tags.json"));
+        await history.sweep();
+        expect((await messages(history))[0]).toBe("outside: tags.json");
+        expect(await history.repo.show("tags.json", "HEAD")).toBeNull();
+    });
+
+    it("avoids repeated recovery walks and callbacks with no new commit", async () => {
+        const history = await open();
+        put(root, "tags.json", "{");
+        let commits = 0;
+        history.afterCommit(() => {
+            commits += 1;
+        });
+        const original = history.repo.log;
+        let walks = 0;
+        const spy = spyOn(history.repo, "log").mockImplementation(
+            (path, limit) => {
+                if (limit === 200) walks += 1;
+                return original(path, limit);
+            },
+        );
+        try {
+            await history.sweep();
+            await history.sweep();
+        } finally {
+            spy.mockRestore();
+        }
+        expect(commits).toBe(1);
+        expect(walks).toBe(1);
+    });
+
+    it("reports each actual restoration even with identical warning text", async () => {
+        put(root, "tags.json", vocabulary(1));
+        const history = await open();
+        for (let count = 0; count < 2; count += 1) {
+            put(root, "tags.json", "{");
+            await history.heal("tags.json");
+        }
+        expect(
+            warnings.filter((warning) =>
+                warning.startsWith("Restored tags.json"),
+            ),
+        ).toHaveLength(2);
+    });
+
+    it("degrades a recovery read failure to a warning", async () => {
+        put(root, "tags.json", vocabulary(1));
+        const history = await open();
+        put(root, "tags.json", "{");
+        const spy = spyOn(history.repo, "show").mockRejectedValue(
+            new Error("recovery unavailable"),
+        );
+        try {
+            expect(await history.heal("tags.json")).toBe(false);
+        } finally {
+            spy.mockRestore();
+        }
+        expect(warnings.join("\n")).toContain("recovery unavailable");
+    });
     it("leaves a stale index lock while git is running in the repository", async () => {
         const history = await open();
         const editor = join(tempRoot(), "editor.sh");
