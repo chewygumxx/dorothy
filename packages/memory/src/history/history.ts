@@ -85,16 +85,17 @@ async function runningGit(root: string): Promise<boolean | null> {
         return null;
     }
     const directory = await realpath(root);
+    let unknown = false;
     for (const pid of processes.filter((name) => /^\d+$/.test(name))) {
         try {
             if ((await readFile(`/proc/${pid}/comm`, "utf8")).trim() !== "git")
                 continue;
             if ((await readlink(`/proc/${pid}/cwd`)) === directory) return true;
         } catch (error) {
-            if ((error as { code?: string }).code !== "ENOENT") return null;
+            if ((error as { code?: string }).code !== "ENOENT") unknown = true;
         }
     }
-    return false;
+    return unknown ? null : false;
 }
 
 // A hook carrying this line is Dorothy's to rewrite; one without it is the
@@ -345,8 +346,8 @@ export class MemoryHistory {
 
     // A git that stopped mid-commit leaves .git/index.lock, and every
     // commit after fails on it. Under Dorothy's lock no git of hers is
-    // running, so one older than a minute is taken as a crash's; a git of
-    // the user's may hold one that long only while its editor is open.
+    // running. Inspect other Git processes after a minute, or wait ten
+    // minutes if inspection is unavailable. An active Git keeps its lock.
     async #clearStaleLock(): Promise<void> {
         const path = join(this.root, ".git", "index.lock");
         let changed: number;

@@ -664,6 +664,48 @@ describe("recording", () => {
         }
         expect((await messages(history))[0]).toBe("user commit");
     });
+    it("keeps known running git after an unreadable process", async () => {
+        const history = await open();
+        const path = join(root, ".git", "index.lock");
+        writeFileSync(path, "");
+        const old = Date.now() / 1000 - 660;
+        utimesSync(path, old, old);
+        const readdir = filesystem.readdir;
+        const readFile = filesystem.readFile;
+        const readlink = filesystem.readlink;
+        const directory = spyOn(filesystem, "readdir").mockImplementation(((
+            ...args: Parameters<typeof readdir>
+        ) =>
+            args[0] === "/proc"
+                ? Promise.resolve(["100", "200"])
+                : readdir(...args)) as typeof readdir);
+        const file = spyOn(filesystem, "readFile").mockImplementation(((
+            ...args: Parameters<typeof readFile>
+        ) => {
+            if (args[0] === "/proc/100/comm")
+                return Promise.reject(
+                    Object.assign(new Error("denied"), { code: "EACCES" }),
+                );
+            if (args[0] === "/proc/200/comm") return Promise.resolve("git\n");
+            return readFile(...args);
+        }) as typeof readFile);
+        const link = spyOn(filesystem, "readlink").mockImplementation(((
+            ...args: Parameters<typeof readlink>
+        ) =>
+            args[0] === "/proc/200/cwd"
+                ? Promise.resolve(realpathSync(root))
+                : readlink(...args)) as typeof readlink);
+        try {
+            put(root, "tags.json", vocabulary(1));
+            await record(history, ["tags.json"], "active git");
+            expect(existsSync(path)).toBe(true);
+        } finally {
+            directory.mockRestore();
+            file.mockRestore();
+            link.mockRestore();
+        }
+    });
+
     it.each([
         [false, 120, false],
         [true, 660, true],
