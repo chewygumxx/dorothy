@@ -39,6 +39,7 @@ import {
 } from "./hook.js";
 import {
     launchesDir,
+    legacyLaunchesDir,
     liveSession,
     noteLaunch,
     noteSession,
@@ -50,6 +51,7 @@ import type { Recorded } from "./record.js";
 import { keepHalt, readRecord, startNotices } from "./unread.js";
 
 const LAUNCH = "6c84fb90-12c4-11e1-840d-7b25c5ee775a";
+const OLD = "7d95fc01-23d5-42f2-951e-8c36d6ff886b";
 const NOTES = {
     title: "Hello",
     description: "A greeting.",
@@ -372,6 +374,31 @@ describe("runClaudeHook", () => {
         expect(reviews).toHaveLength(1);
         expect(await readLaunch(env, LAUNCH)).toBeNull();
         expect(await readdir(launchesDir(env))).toEqual([]);
+    });
+
+    it("catches up a launch an earlier Dorothy left in the runtime directory", async () => {
+        const before = { ...env, XDG_STATE_HOME: join(home, "run") };
+        await noteLaunch(before, {
+            launch: OLD,
+            pid: 1,
+            started: "2026-10-15T09:00:00.000Z",
+            dir: join(home, "work"),
+            session: SESSION,
+            claude: join(home, "claude"),
+        });
+        await noteSession(env, OLD, {
+            session: SESSION,
+            transcript: claude,
+            cwd: join(home, "work"),
+            seen: "2026-10-15T09:03:00.000Z",
+        });
+        await runClaudeHook(
+            { kind: "catch-up", launch: OLD, session: null },
+            deps(""),
+        );
+        expect(await conversations()).toHaveLength(1);
+        expect(await readLaunch(env, OLD)).toBeNull();
+        expect(await readdir(legacyLaunchesDir(env))).toEqual([]);
     });
 
     it("catches up one session and keeps the launch's notes", async () => {
