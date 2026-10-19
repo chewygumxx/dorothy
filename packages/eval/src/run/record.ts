@@ -81,6 +81,22 @@ export const summaryPath = (work: string, id: string) =>
 export const reportPath = (work: string, id: string) =>
     join(runDir(work, id), "report.md");
 
+// Whole JSON is not yet a record: what the report and a resume read of it.
+function isRunRecord(value: unknown): value is RunRecord {
+    const record = value as Record<string, unknown> | null;
+    const table = (field: unknown) =>
+        typeof field === "object" && field !== null && !Array.isArray(field);
+    return (
+        table(record) &&
+        typeof record?.question === "string" &&
+        typeof record.system === "string" &&
+        typeof record.type === "string" &&
+        table(record.retrieval) &&
+        table(record.judged) &&
+        Array.isArray(record.failures)
+    );
+}
+
 // A line cut short by an interrupted write is passed over; its question
 // is asked again on resume. A question asked again leaves two records
 // for a system; the last stands.
@@ -99,7 +115,7 @@ export async function readRecords(
             return [];
         }
         throw new UsageError(
-            `cannot read ${recordsPath(work, id)}: ${code ?? "failed"}; mend it, or remove the run's directory`,
+            `cannot read ${recordsPath(work, id)}: ${code ?? "failed"}; mend it, or start a new run`,
         );
     }
     const records = new Map<string, RunRecord>();
@@ -108,8 +124,10 @@ export async function readRecords(
             continue;
         }
         try {
-            const record = JSON.parse(line) as RunRecord;
-            records.set(`${record.question}\t${record.system}`, record);
+            const record = JSON.parse(line) as unknown;
+            if (isRunRecord(record)) {
+                records.set(`${record.question}\t${record.system}`, record);
+            }
         } catch {
             // Cut short.
         }
@@ -149,7 +167,7 @@ export async function endRecords(work: string, id: string): Promise<void> {
 export const succeeded = (record: RunRecord) =>
     record.failures.length === 0 && record.retrieval.error === null;
 
-const runInfoSchema = z.object({
+export const runInfoSchema = z.object({
     id: z.string(),
     at: z.string(),
     systems: z.array(z.string()),
@@ -170,7 +188,8 @@ export const readRunInfo = (work: string, id: string): Promise<RunInfo> =>
     readRecord(runInfoPath(work, id), {
         missing: `no run ${id} in ${join(work, "runs")}`,
         what: "a run record",
-        again: "remove the run's directory to start it again",
+        // Its records are paid for and stay where they are.
+        again: "start a new run (this run's records stay in records.jsonl)",
         check: (read) => {
             const parsed = runInfoSchema.safeParse(read);
             const issue = parsed.success ? null : parsed.error.issues[0];

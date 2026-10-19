@@ -16,6 +16,7 @@ import {
     readRecords,
     readRunInfo,
     reportPath,
+    runInfoSchema,
     summaryPath,
 } from "../run/record.js";
 import { compareOf, reportOf } from "./markdown.js";
@@ -55,10 +56,15 @@ const readSummary = (work: string, id: string): Promise<Summary> =>
         missing: `run ${id} has no summary: finish it with \`bun run eval -- run --work ${work} --resume ${id}\``,
         what: "a summary",
         again: `write it again with \`bun run eval -- run --work ${work} --resume ${id}\``,
-        check: (read) =>
-            isTable(read) && isTable(read.run) && isTable(read.systems)
+        check: (read) => {
+            if (!isTable(read) || !isTable(read.systems)) {
+                return "it lacks run or systems";
+            }
+            const run = runInfoSchema.safeParse(read.run);
+            return run.success
                 ? (read as unknown as Summary)
-                : "it lacks run or systems",
+                : `run.${run.error.issues[0]?.path.join(".") || "run"}: ${run.error.issues[0]?.message}`;
+        },
     });
 
 export const compareCommand: Command = {

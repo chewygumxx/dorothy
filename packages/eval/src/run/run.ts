@@ -13,8 +13,9 @@
 // appended as it completes, so a stopped run resumes where it stopped.
 
 import { createHash } from "node:crypto";
-import { appendFile, mkdir, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, stat } from "node:fs/promises";
 import { UsageError } from "../errors.js";
+import { writeAtomic } from "../files.js";
 import { CallCap, failureOf, type Models } from "../models/client.js";
 import type { EvalConfig, RoleConfig } from "../models/config.js";
 import type { Question } from "../questions/file.js";
@@ -389,10 +390,9 @@ export async function runEvaluation(
         () => false,
     );
     if (!written) {
-        await writeFile(
+        await writeAtomic(
             runInfoPath(deps.work, info.id),
             `${JSON.stringify(info, null, 4)}\n`,
-            { mode: 0o600 },
         );
     }
     const systems =

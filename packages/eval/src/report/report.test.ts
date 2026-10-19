@@ -446,6 +446,33 @@ describe("bun run eval -- compare", () => {
         );
     });
 
+    it("never advises deleting a run whose run.json is bad", async () => {
+        write("r1");
+        const path = runInfoPath(temp.root, "r1");
+        for (const bad of ['{"id": "r1"', "{}"]) {
+            writeFileSync(path, bad);
+            const error = await writeRunReport(temp.root, "r1").catch((e) => e);
+            expect(error.message).toStartWith(path);
+            expect(error.message).toEndWith(
+                "start a new run (this run's records stay in records.jsonl)",
+            );
+            expect(error.message).not.toMatch(/remove|delete/i);
+        }
+        rmSync(path);
+        mkdirSync(path);
+        const unreadable = await writeRunReport(temp.root, "r1").catch(
+            (e) => e,
+        );
+        expect(unreadable.message).toContain(
+            "mend it, or start a new run (this run's records stay in records.jsonl)",
+        );
+        expect(unreadable.message).not.toMatch(/remove|delete/i);
+        // Its records are where they were.
+        expect(readFileSync(recordsPath(temp.root, "r1"), "utf8")).toContain(
+            "q-1",
+        );
+    });
+
     it("does not read an unreadable records file as an empty run", async () => {
         write("r1");
         rmSync(recordsPath(temp.root, "r1"));
@@ -453,6 +480,8 @@ describe("bun run eval -- compare", () => {
         await expect(writeRunReport(temp.root, "r1")).rejects.toThrow(
             `cannot read ${recordsPath(temp.root, "r1")}: EISDIR`,
         );
+        const records = await writeRunReport(temp.root, "r1").catch((e) => e);
+        expect(records.message).not.toMatch(/remove|delete/i);
         rmSync(recordsPath(temp.root, "r1"), { recursive: true });
         // A run that has asked nothing yet has no records file.
         expect(
@@ -471,7 +500,8 @@ describe("bun run eval -- compare", () => {
         ).toBe(1);
         expect(err.join("")).toContain(`${path} is not JSON`);
         expect(err.join("")).not.toContain("has no summary");
-        writeFileSync(path, "{}");
+        // Objects, but not a run: alike() would meet a TypeError.
+        writeFileSync(path, '{"run": {}, "systems": {}}');
         const second = fakeIo();
         expect(
             await runCli(

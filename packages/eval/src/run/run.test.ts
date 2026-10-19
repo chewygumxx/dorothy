@@ -9,7 +9,13 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import {
+    existsSync,
+    readdirSync,
+    readFileSync,
+    statSync,
+    writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { runCli } from "../cli.js";
 import { Models } from "../models/client.js";
@@ -283,6 +289,13 @@ describe("bun run eval -- run", () => {
         );
         const id = idOf(first.out);
         const path = join(work, "runs", id, "run.json");
+        // Written whole, through a temporary file that is gone.
+        expect(
+            readdirSync(join(work, "runs", id)).filter((name) =>
+                name.endsWith(".tmp"),
+            ),
+        ).toEqual([]);
+        expect(statSync(path).mode & 0o777).toBe(0o600);
         const { baseUrls, ...older } = JSON.parse(readFileSync(path, "utf8"));
         expect(baseUrls).toEqual({
             answer: stub?.url,
