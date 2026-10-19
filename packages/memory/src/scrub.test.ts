@@ -72,6 +72,10 @@ describe("scrub", () => {
         "Some basic understanding.",
         "bearer authentication is supported",
         "token accounting is useful",
+        "basic read-only access",
+        "see basic file/dir layout",
+        "bearer read-only access",
+        "token file/dir layout",
     ])("keeps ordinary prose: %s", (text) => {
         expect(scrub(text)).toBe(text);
     });
@@ -80,6 +84,11 @@ describe("scrub", () => {
         ["bearer opaque1234567890", "bearer [secret]"],
         ["basic dXNlcjpwYXNz", "basic [secret]"],
         ["token abc_defghijk", "token [secret]"],
+        ["Authorization: basic read-only", "Authorization: basic [secret]"],
+        ["authorization: basic file/dir", "authorization: basic [secret]"],
+        ["Basic read-only", "Basic [secret]"],
+        ["bAsIc file/dir", "bAsIc [secret]"],
+        ['"authorization": "  basic file/dir"', '"authorization": "[secret]"'],
         [
             '{"authorization":"basic opaquecredential"}',
             '{"authorization":"basic [secret]"}',

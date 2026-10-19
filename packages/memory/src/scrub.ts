@@ -34,8 +34,9 @@ function redactScheme(
     scheme: string,
     credential: string,
 ): string {
+    // A hyphen or slash alone also occurs in ordinary words and paths.
     const shaped =
-        /[0-9_~+/=-]|\.(?=.)/.test(credential) ||
+        /[0-9_~+=]|\.(?=.)/.test(credential) ||
         (scheme.toLowerCase() === "basic" &&
             /^[A-Za-z0-9+/]+={0,2}$/.test(credential) &&
             /^[\x20-\x7e]+:[\x20-\x7e]*$/.test(
