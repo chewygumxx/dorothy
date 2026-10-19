@@ -92,7 +92,10 @@ The harnesses to target first are not yet chosen, as the minutes left
 open, with how her persona reaches each (generated files, the proxy or
 both) and how each one's sessions reach her memory (hooks, session
 files or the proxy). Existing tools, such as rulesync, are researched
-before anything bespoke is built.
+before anything bespoke is built: research on
+[cross-harness](./reports/2026-10-18-protocol-diversity/cross-harness.md)
+tooling names rulesync, Hindsight's adapters and Letta's transcript
+parser.
 
 - **Status**: Store, Bodies, Contract and Evaluation Built; the First
   Run and the Choice of Harnesses Next, then the Engine
@@ -114,9 +117,15 @@ OpenAI-compatible implementation, and per-role routing in `config.toml`,
 so chat, reviews, compaction and maintenance each take a model fit for
 them. When Anthropic's usage runs out, requests fall back to another
 provider, such as featherless.ai or OpenRouter. Replaces the move to the
-Messages API alone (the `api` commit scope). Findings:
+Messages API alone (the `api` commit scope). Its design settles what
+the protocol diversity minutes left open: whether Dorothy keeps a
+runtime of her own for chat, reviews and compaction, and on what, such
+as LangChain.js, whose middleware covers fallback. The evaluation
+already reaches any OpenAI-compatible model through LangChain's
+`ChatOpenAI`, a client per role. Findings:
 [context leak](./reports/2026-10-07-context-leak.md),
-[objectives](./reports/2026-10-15-objectives.md).
+[objectives](./reports/2026-10-15-objectives.md),
+[LangChain](./reports/2026-10-18-protocol-diversity/langchain-and-standards.md).
 
 - **Status**: Pending Design
 - **Required**: Requisites Fulfilled
@@ -150,7 +159,9 @@ Code; Dorothy's Memory may bring her memory to it first. Notes:
 Dorothy revises, merges and prunes the tag vocabulary and deep-tags
 conversations from their notes, in background passes that can be undone.
 Its undo and log are to be revisited against memory history, and what it
-maintains against Dorothy's Memory.
+maintains against Dorothy's Memory, whose engine is to consolidate
+knowledge. The design agreed so far is in
+[agent memory](../.agents/memory/maintenance-design-agreed.md).
 
 - **Status**: Design Agreed, Pending Specification
 - **Required**: Dorothy's Memory, Model Providers
@@ -210,7 +221,9 @@ Links between conversations and semantic search beside FTS5.
 - **Status**: Conditional
 - **Required**: Requisites Fulfilled
 - **Rationale**: Only worth building once recall shows FTS5 falling short;
-  there is no such evidence yet. Dorothy's Memory may take it up.
+  there is no such evidence yet, and the evaluation's first run is where
+  it would show. Dorothy's Memory may take it up, as an engine with
+  embeddings would.
 
 ## Candidates
 
