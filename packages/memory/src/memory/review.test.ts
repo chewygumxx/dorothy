@@ -8,7 +8,7 @@
 //
 //
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import type {
     ResumedTurn,
     StructuredCall,
@@ -537,9 +537,9 @@ describe("tags in the review", () => {
     };
     const turns: Turn[] = [{ role: "user", text: "Hi" }];
 
-    it("renders a large vocabulary without repeated full scans", () => {
+    it("scans a vocabulary once for IDs and once for rendering", () => {
         const concepts: [string, Concept][] = Array.from(
-            { length: 12000 },
+            { length: 512 },
             (_, n) => [
                 `k${n.toString(16).padStart(8, "0")}`,
                 concept(`tag${n}`),
@@ -550,14 +550,18 @@ describe("tags in the review", () => {
             rev: 1,
             concepts: Object.fromEntries(concepts),
         };
-        const began = performance.now();
-        const prompt = reviewPrompt([], null, [], {
-            vocabulary: many,
-            concepts,
-        });
-        const elapsed = performance.now() - began;
-        expect(prompt.match(/<concept /g)).toHaveLength(12000);
-        expect(elapsed).toBeLessThan(1000);
+        const scans = spyOn(concepts, "map");
+        try {
+            const prompt = reviewPrompt([], null, [], {
+                vocabulary: many,
+                concepts,
+            });
+            expect(prompt.match(/<concept /g)).toHaveLength(512);
+            // One pass builds the visible-ID set; one renders every concept.
+            expect(scans).toHaveBeenCalledTimes(2);
+        } finally {
+            scans.mockRestore();
+        }
     });
 
     it("lists the vocabulary she may see, escaped", () => {
