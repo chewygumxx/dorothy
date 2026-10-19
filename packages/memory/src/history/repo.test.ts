@@ -10,7 +10,7 @@
 
 import { afterAll, describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { readFileSync, rmSync } from "node:fs";
+import { chmodSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { binaryRepo } from "./binary.js";
 import { isoRepo } from "./iso.js";
@@ -30,6 +30,72 @@ function contract(make: (root: string) => MemoryRepo): void {
         await repo.init();
         return repo;
     };
+
+    it("uses a fixed author and committer time for sealed commits", async () => {
+        const repo = await fresh();
+        await repo.appendSealed(
+            "bundles/000001.enc",
+            new Uint8Array([1]),
+            "readme",
+            "seal 1",
+        );
+        const dates = execFileSync(
+            "git",
+            ["show", "-s", "--format=%at %ct", SEALED],
+            { cwd: repo.root, env: TEST_ENV, encoding: "utf8" },
+        ).trim();
+        expect(dates).toBe("946684800 946684800");
+    });
+
+    it("lists the whole first paragraph as a commit subject", async () => {
+        const repo = await fresh();
+        put(repo.root, "a.txt", "one");
+        await repo.commit(["a.txt"], "first line\nsecond line\n\nbody");
+        expect((await repo.log())[0]?.message).toBe("first line second line");
+    });
+
+    it("commits the index without reading unrelated working files", async () => {
+        const repo = await fresh();
+        put(repo.root, "a.txt", "one");
+        put(repo.root, "unreadable.txt", "unrelated");
+        await repo.commit(["a.txt", "unreadable.txt"], "one");
+        put(repo.root, "a.txt", "two");
+        put(repo.root, "unreadable.txt", "modified");
+        chmodSync(join(repo.root, "unreadable.txt"), 0);
+        expect(await repo.commit(["a.txt"], "two")).not.toBeNull();
+        expect(text(await repo.show("a.txt", "HEAD"))).toBe("two");
+    });
+
+    it("keeps other remote settings when changing its URL", async () => {
+        const repo = await fresh();
+        await repo.setRemote("mirror", "/old");
+        execFileSync("git", ["config", "remote.mirror.pushurl", "/push"], {
+            cwd: repo.root,
+            env: TEST_ENV,
+        });
+        await repo.setRemote("mirror", "/new");
+        expect(await repo.remote("mirror")).toBe("/new");
+        expect(
+            execFileSync("git", ["config", "remote.mirror.pushurl"], {
+                cwd: repo.root,
+                env: TEST_ENV,
+                encoding: "utf8",
+            }).trim(),
+        ).toBe("/push");
+    });
+
+    it("refuses a bundle since a commit outside main's ancestry", async () => {
+        const repo = await fresh();
+        put(repo.root, "a.txt", "one");
+        await repo.commit(["a.txt"], "one");
+        const unrelated = await repo.appendSealed(
+            "bundles/000001.enc",
+            new Uint8Array([1]),
+            "readme",
+            "seal 1",
+        );
+        await expect(repo.bundle(unrelated)).rejects.toThrow();
+    });
 
     it("resolves only commits it holds", async () => {
         const repo = await fresh();

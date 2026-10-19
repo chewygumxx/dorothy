@@ -20,6 +20,7 @@ import {
     type MemoryRepo,
     NEEDS_BINARY,
     SEALED,
+    SEALED_AUTHOR,
 } from "./repo.js";
 
 const encoder = new TextEncoder();
@@ -27,11 +28,11 @@ const decoder = new TextDecoder();
 
 type StatusRow = [string, 0 | 1, 0 | 1 | 2, 0 | 1 | 2 | 3];
 
-// A staged path differs from HEAD: added, deleted or changed in the index.
-const staged = ([, head, , stage]: StatusRow) =>
-    head === 0 ? stage !== 0 : stage !== 1;
-
-const firstLine = (message: string) => message.trim().split("\n")[0] ?? "";
+const subject = (message: string) =>
+    (message.trim().split(/\n\s*\n/)[0] ?? "")
+        .split("\n")
+        .map((line) => line.trim())
+        .join(" ");
 
 // Where the blank line that ends a bundle's header sits.
 function headerEnd(bundle: Uint8Array): number {
@@ -175,8 +176,28 @@ export function isoRepo(location: string): MemoryRepo {
             }
             // The whole index, as the binary decides: a change the user
             // staged by hand rides along.
-            const rows = (await git.statusMatrix({ fs, dir })) as StatusRow[];
-            if (!rows.some(staged)) {
+            const changes =
+                (await resolve(MAIN)) === null
+                    ? await git.listFiles({ fs, dir })
+                    : await git.walk({
+                          fs,
+                          dir,
+                          trees: [git.TREE({ ref: MAIN }), git.STAGE()],
+                          map: async (path, [head, stage]) => {
+                              if (
+                                  path === "." ||
+                                  (await head?.type()) === "tree" ||
+                                  (await stage?.type()) === "tree"
+                              )
+                                  return;
+                              return (
+                                  (await head?.oid()) !==
+                                      (await stage?.oid()) ||
+                                  (await head?.mode()) !== (await stage?.mode())
+                              );
+                          },
+                      });
+            if (!changes.some(Boolean)) {
                 return null;
             }
             return git.commit({
@@ -215,7 +236,7 @@ export function isoRepo(location: string): MemoryRepo {
                     at: new Date(
                         entry.commit.committer.timestamp * 1000,
                     ).toISOString(),
-                    message: firstLine(entry.commit.message),
+                    message: subject(entry.commit.message),
                 }),
             );
         },
@@ -366,8 +387,8 @@ export function isoRepo(location: string): MemoryRepo {
                 fs,
                 dir,
                 message,
-                author: AUTHOR,
-                committer: AUTHOR,
+                author: SEALED_AUTHOR,
+                committer: SEALED_AUTHOR,
                 tree,
                 parent: tip === null ? [] : [tip],
                 ref: SEALED,

@@ -12,7 +12,15 @@ import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import type { Env } from "@dorothy/core";
-import { AUTHOR, type Commit, MAIN, type MemoryRepo, SEALED } from "./repo.js";
+import {
+    AUTHOR,
+    type Commit,
+    definedEnv,
+    MAIN,
+    type MemoryRepo,
+    SEALED,
+    SEALED_AUTHOR,
+} from "./repo.js";
 
 // Before every command: the user's signing, hooks and automatic garbage
 // collection never reach Dorothy's repository, and paths print as they
@@ -101,12 +109,7 @@ export async function credentialHelpers(
                 "^credential(\\..*)?\\.helper$",
             ],
             {
-                env: Object.fromEntries(
-                    Object.entries(env).filter(
-                        (entry): entry is [string, string] =>
-                            entry[1] !== undefined,
-                    ),
-                ),
+                env: definedEnv(env),
                 stdout: "pipe",
                 stderr: "ignore",
             },
@@ -340,6 +343,13 @@ export function binaryRepo(
             if (tip === null || tip === since) {
                 return null;
             }
+            if (
+                since !== null &&
+                (await run(["merge-base", "--is-ancestor", since, tip]))
+                    .code !== 0
+            ) {
+                throw new Error(`${since} is not in main's history`);
+            }
             const snapshot = `refs/dorothy/bundling-${crypto.randomUUID()}`;
             await must(["update-ref", snapshot, tip]);
             try {
@@ -430,13 +440,21 @@ export function binaryRepo(
                 }
                 const tree = text(await must(["write-tree"], { extra })).trim();
                 const commit = text(
-                    await must([
-                        "commit-tree",
-                        tree,
-                        ...(tip === null ? [] : ["-p", tip]),
-                        "-m",
-                        message,
-                    ]),
+                    await must(
+                        [
+                            "commit-tree",
+                            tree,
+                            ...(tip === null ? [] : ["-p", tip]),
+                            "-m",
+                            message,
+                        ],
+                        {
+                            extra: {
+                                GIT_AUTHOR_DATE: `@${SEALED_AUTHOR.timestamp} +0000`,
+                                GIT_COMMITTER_DATE: `@${SEALED_AUTHOR.timestamp} +0000`,
+                            },
+                        },
+                    ),
                 ).trim();
                 await must(["update-ref", SEALED, commit]);
                 return commit;
@@ -469,8 +487,7 @@ export function binaryRepo(
                 .stdout;
         },
         async setRemote(name, url) {
-            await run(["remote", "remove", name]);
-            await must(["remote", "add", name, url]);
+            await must(["config", "--replace-all", `remote.${name}.url`, url]);
         },
         async remote(name) {
             const ran = await run(["remote", "get-url", name]);

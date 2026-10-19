@@ -75,6 +75,11 @@ export type MemoryRepo = {
 };
 
 export const AUTHOR = { name: "Dorothy", email: "dorothy@localhost" } as const;
+export const SEALED_AUTHOR = {
+    ...AUTHOR,
+    timestamp: 946684800,
+    timezoneOffset: 0,
+} as const;
 export const MAIN = "refs/heads/main";
 export const SEALED = "refs/heads/sealed";
 export const SEALED_THROUGH = "refs/dorothy/sealed-through";
@@ -84,7 +89,7 @@ export const MIRROR = "mirror";
 // Said at each launch, and by each command, until a mirror is set.
 export const NO_MIRROR = "memory has no mirror · dorothy --mirror <url>";
 
-const defined = (env: Env): Record<string, string> =>
+export const definedEnv = (env: Env): Record<string, string> =>
     Object.fromEntries(
         Object.entries(env).filter(
             (entry): entry is [string, string] => entry[1] !== undefined,
@@ -94,7 +99,7 @@ const defined = (env: Env): Record<string, string> =>
 export async function hasGitBinary(env: Env = process.env): Promise<boolean> {
     try {
         const proc = Bun.spawn(["git", "--version"], {
-            env: defined(env),
+            env: definedEnv(env),
             stdout: "ignore",
             stderr: "ignore",
         });
