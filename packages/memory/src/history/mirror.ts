@@ -29,14 +29,16 @@ export const WRONG_KEY =
 
 // Why the newest sealed bundle cannot be opened; null when it opens or
 // nothing is sealed yet.
+export type SealedProblem = { kind: "format" | "key"; reason: string };
+
 export async function sealedProblem(
     repo: MemoryRepo,
     key: Uint8Array,
-): Promise<string | null> {
+): Promise<SealedProblem | null> {
     const newest = (await repo.sealedNames()).at(-1);
     if (newest === undefined) return null;
     const opened = await unseal(await repo.sealedFile(newest), key);
-    return opened.ok ? null : opened.reason;
+    return opened.ok ? null : { kind: opened.kind, reason: opened.reason };
 }
 
 export async function opensSealed(
@@ -56,17 +58,23 @@ export async function sealPending(
     repo: MemoryRepo,
     key: Uint8Array,
     lock: Lock = (work) => work(),
+    checked?: { head: string | null; problem: SealedProblem | null },
 ): Promise<Sealed> {
     for (;;) {
         const snapshot = await lock(async () => {
             const since = await repo.resolve(SEALED_THROUGH);
             const tip = await repo.resolve(MAIN);
             if (tip === null || tip === since) return "nothing" as const;
-            if (!(await opensSealed(repo, key))) return "wrong-key" as const;
+            const head = await repo.resolve(SEALED);
+            const problem =
+                checked !== undefined && checked.head === head
+                    ? checked.problem
+                    : await sealedProblem(repo, key);
+            if (problem !== null) return "wrong-key" as const;
             return {
                 since,
                 tip,
-                head: await repo.resolve(SEALED),
+                head,
                 sequence: (await repo.sealedNames()).length + 1,
             };
         });
@@ -197,11 +205,12 @@ export class Mirror {
             if (this.#stopped) {
                 return { kind: "stopped" };
             }
+            const head = await repo.resolve(SEALED);
             const problem = await sealedProblem(repo, key);
             if (this.#stopped) return { kind: "stopped" };
             const sealing =
                 problem === null
-                    ? sealPending(repo, key, lock)
+                    ? sealPending(repo, key, lock, { head, problem })
                     : Promise.resolve("wrong-key" as const);
             this.#sealing = sealing.then(
                 () => {},
@@ -215,10 +224,9 @@ export class Mirror {
             }
             if (sealed === "wrong-key") {
                 warn(
-                    problem === null ||
-                        problem.startsWith("it does not open with this key")
+                    problem === null || problem.kind === "key"
                         ? WRONG_KEY
-                        : `history: the newest sealed bundle cannot be opened (${problem}); nothing new was sealed`,
+                        : `history: the newest sealed bundle cannot be opened (${problem.reason}); nothing new was sealed`,
                 );
             }
             if ((await repo.resolve(SEALED)) === null)

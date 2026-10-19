@@ -15,7 +15,13 @@ import type { Timers } from "@dorothy/core";
 import type { Lock } from "../memory/sidecar.js";
 import { binaryRepo } from "./binary.js";
 import { isoRepo } from "./iso.js";
-import { Mirror, recover, sealPending, waiting } from "./mirror.js";
+import {
+    Mirror,
+    recover,
+    sealedProblem,
+    sealPending,
+    waiting,
+} from "./mirror.js";
 import { MAIN, type MemoryRepo, SEALED, SEALED_THROUGH } from "./repo.js";
 import { SEALED_README, seal, sealedName } from "./seal.js";
 import { bareRepo, put, removeRoots, TEST_ENV, tempRoot } from "./testing.js";
@@ -178,6 +184,38 @@ describe("Mirror", () => {
             expect(await repo.sealedNames()).toEqual([sealedName(1)]);
         },
     );
+
+    it("decrypts the existing bundle only once per push", async () => {
+        const repo = await repoWith({ "tags.json": "{}\n" });
+        const bare = await bareRepo();
+        await repo.setRemote("mirror", bare);
+        const { mirror } = mirrorOf(repo);
+        await mirror.push();
+        await commit(repo, { "tags.json": "{ }\n" }, "two");
+        const decrypt = spyOn(crypto.subtle, "decrypt");
+        try {
+            expect((await mirror.push()).kind).toBe("pushed");
+            expect(decrypt).toHaveBeenCalledTimes(1);
+        } finally {
+            decrypt.mockRestore();
+            await mirror.stop();
+        }
+    });
+
+    it("classifies key and format failures", async () => {
+        const repo = await repoWith({ "tags.json": "{}\n" });
+        await sealPending(repo, KEY);
+        expect(await sealedProblem(repo, OTHER)).toMatchObject({ kind: "key" });
+        await repo.appendSealed(
+            sealedName(2),
+            new TextEncoder().encode("bad"),
+            SEALED_README,
+            "bad",
+        );
+        expect(await sealedProblem(repo, KEY)).toMatchObject({
+            kind: "format",
+        });
+    });
 
     it("warns of a wrong key even when no commit is waiting", async () => {
         const repo = await repoWith({ "tags.json": "{}\n" });

@@ -796,9 +796,9 @@ async function keyProblem(
     if (key !== null) {
         const problem = await sealedProblem(repo, key);
         if (problem === null) return null;
-        return problem.startsWith("it does not open with this key")
+        return problem.kind === "key"
             ? "DOROTHY_MIRROR_KEY does not open the bundles already sealed; set the key they were sealed with. Nothing was changed"
-            : `the newest sealed bundle cannot be opened (${problem}); nothing was changed`;
+            : `the newest sealed bundle cannot be opened (${problem.reason}); nothing was changed`;
     }
     if ((await repo.sealedNames()).length > 0) {
         return "DOROTHY_MIRROR_KEY is not set, and the bundles already sealed need the key they were sealed with; set that one with dotenvx set. Nothing was changed";

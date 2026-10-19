@@ -87,6 +87,7 @@ describe("seal", () => {
     it("never opens with another key", async () => {
         expect(await unseal(await seal(BUNDLE, KEY), OTHER)).toEqual({
             ok: false,
+            kind: "key",
             reason: "it does not open with this key, or it was changed",
         });
     });
@@ -115,6 +116,7 @@ describe("seal", () => {
         ).toBe(false);
         expect(await unseal(sealed.subarray(0, 10), KEY)).toEqual({
             ok: false,
+            kind: "format",
             reason: "it is not a sealed bundle",
         });
     });
@@ -125,11 +127,16 @@ describe("seal", () => {
         later[15] = "2".charCodeAt(0);
         expect(await unseal(later, KEY)).toEqual({
             ok: false,
+            kind: "format",
             reason: "it is sealed as version 2, not 1",
         });
         expect(
             await unseal(new TextEncoder().encode("hello\nthere\nyou"), KEY),
-        ).toEqual({ ok: false, reason: "it is not a sealed bundle" });
+        ).toEqual({
+            ok: false,
+            kind: "format",
+            reason: "it is not a sealed bundle",
+        });
     });
 });
 

@@ -22,7 +22,7 @@ const base64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");
 
 export type Opened =
     | { ok: true; bundle: Uint8Array }
-    | { ok: false; reason: string };
+    | { ok: false; kind: "format" | "key"; reason: string };
 
 // A new DOROTHY_MIRROR_KEY: 32 random bytes, as base64.
 export function newKey(): string {
@@ -79,11 +79,16 @@ export async function unseal(
         "utf8",
     );
     if (second === -1 || !magic.startsWith(PREFIX)) {
-        return { ok: false, reason: "it is not a sealed bundle" };
+        return {
+            ok: false,
+            kind: "format",
+            reason: "it is not a sealed bundle",
+        };
     }
     if (magic !== MAGIC) {
         return {
             ok: false,
+            kind: "format",
             reason: `it is sealed as version ${magic.slice(PREFIX.length)}, not ${VERSION}`,
         };
     }
@@ -92,7 +97,11 @@ export async function unseal(
         "base64",
     );
     if (nonce.length !== NONCE_BYTES) {
-        return { ok: false, reason: "its nonce is not 12 bytes" };
+        return {
+            ok: false,
+            kind: "format",
+            reason: "its nonce is not 12 bytes",
+        };
     }
     try {
         const bundle = await crypto.subtle.decrypt(
@@ -108,6 +117,7 @@ export async function unseal(
     } catch {
         return {
             ok: false,
+            kind: "key",
             reason: "it does not open with this key, or it was changed",
         };
     }
