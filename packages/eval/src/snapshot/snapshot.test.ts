@@ -190,12 +190,30 @@ describe("a snapshot", () => {
             join(linked, ".git"),
             `gitdir: ${join(main, ".git", "worktrees", "linked")}\n`,
         );
-        const all = [linked, main, other].sort();
+        // A gitdir may be relative to the file that holds it (git's
+        // relative worktrees), and an entry that cannot be read costs only
+        // itself.
+        const kin = join(temp.root, "kin");
+        mkdirSync(nested(kin), { recursive: true });
+        mkdirSync(join(main, ".git", "worktrees", "kin"));
+        writeFileSync(
+            join(main, ".git", "worktrees", "kin", "gitdir"),
+            "../../../../kin/.git\n",
+        );
+        mkdirSync(join(main, ".git", "worktrees", "a-stale"));
+        mkdirSync(join(main, ".git", "worktrees", "a-unreadable", "gitdir"), {
+            recursive: true,
+        });
+        writeFileSync(
+            join(linked, ".git"),
+            "gitdir: ../main/.git/worktrees/linked\n",
+        );
+        const all = [kin, linked, main, other].sort();
         expect((await checkoutRoots(nested(main))).sort()).toEqual(all);
         // A worktree knows the main checkout and its siblings.
         expect((await checkoutRoots(nested(linked))).sort()).toEqual(all);
         // So a work directory in any of them is refused.
-        for (const root of [main, other, linked]) {
+        for (const root of [main, other, linked, kin]) {
             await expect(
                 takeSnapshot(data, join(root, "eval"), {
                     checkout: nested(main),
@@ -292,6 +310,40 @@ describe("a snapshot", () => {
         expect(tree(join(copy, "knowledge"))).toEqual(
             tree(join(kept, "knowledge")),
         );
+    });
+
+    it("copies a followed entry that is itself named .git", async () => {
+        const stowed = join(temp.root, "stow", ".git");
+        mkdirSync(join(temp.root, "stow"));
+        renameSync(join(data, "knowledge"), stowed);
+        symlinkSync(stowed, join(data, "knowledge"));
+        const info = await takeSnapshot(data, work);
+        expect(info.knowledge).toBe(3);
+        expect(readdirSync(join(snapshotDir(work), "knowledge")).length).toBe(
+            readdirSync(stowed).length,
+        );
+    });
+
+    it("names a top link that leads nowhere, or round in a loop", async () => {
+        symlinkSync(join(temp.root, "gone"), join(data, "tags.json"));
+        await expect(takeSnapshot(data, work)).rejects.toThrow(
+            `${join(data, "tags.json")} is a link that leads nowhere (ENOENT)`,
+        );
+        rmSync(join(data, "tags.json"));
+        symlinkSync(join(data, "facts"), join(data, "facts"));
+        await expect(takeSnapshot(data, work)).rejects.toThrow(
+            `${join(data, "facts")} is a link that leads nowhere (ELOOP)`,
+        );
+        rmSync(join(data, "facts"));
+        const stowed = join(temp.root, "stowed");
+        renameSync(join(data, "knowledge"), stowed);
+        symlinkSync(stowed, join(data, "knowledge"));
+        rmSync(stowed, { recursive: true });
+        await expect(takeSnapshot(data, work)).rejects.toThrow(
+            `${join(data, "knowledge")} is a link that leads nowhere (ENOENT)`,
+        );
+        expect(existsSync(join(work, "snapshot.json"))).toBe(false);
+        expect(existsSync(`${snapshotDir(work)}.partial`)).toBe(false);
     });
 
     it("refuses a top link into the work directory, or around it", async () => {

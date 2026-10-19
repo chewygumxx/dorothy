@@ -91,8 +91,8 @@ export const checkoutRoot = (here = import.meta.dir) =>
 export async function checkoutRoots(here = import.meta.dir): Promise<string[]> {
     const root = await checkoutRoot(here);
     const roots = [root];
+    let common = join(root, ".git");
     try {
-        let common = join(root, ".git");
         if ((await stat(common)).isFile()) {
             const named = /^gitdir:\s*(.+)$/m.exec(
                 await readFile(common, "utf8"),
@@ -100,21 +100,34 @@ export async function checkoutRoots(here = import.meta.dir): Promise<string[]> {
             if (named?.[1] === undefined) {
                 return roots;
             }
-            // <main>/.git/worktrees/<name> to <main>/.git.
-            common = resolve(root, named[1], "..", "..");
+            // <main>/.git/worktrees/<name> to <main>/.git, the path
+            // relative to the directory of the file that holds it.
+            common = resolve(dirname(common), named[1], "..", "..");
             if (basename(common) === ".git") {
                 roots.push(await realOf(dirname(common)));
             }
         }
-        for (const name of await readdir(join(common, "worktrees"))) {
-            const listed = await readFile(
-                join(common, "worktrees", name, "gitdir"),
-                "utf8",
-            );
-            roots.push(await realOf(dirname(listed.trim())));
-        }
     } catch {
-        // No git layout to read, or a worktree entry gone stale.
+        // No git layout to read.
+        return roots;
+    }
+    let names: string[];
+    try {
+        names = await readdir(join(common, "worktrees"));
+    } catch {
+        return [...new Set(roots)];
+    }
+    for (const name of names) {
+        // An entry gone stale or unreadable costs only itself.
+        try {
+            const entry = join(common, "worktrees", name);
+            const listed = (
+                await readFile(join(entry, "gitdir"), "utf8")
+            ).trim();
+            roots.push(await realOf(dirname(resolve(entry, listed))));
+        } catch {
+            // Not listed.
+        }
     }
     return [...new Set(roots)];
 }
@@ -141,13 +154,17 @@ async function count(
 // which would lead it out of the data directory or keep a way back into
 // it; each link is counted. The entries a snapshot takes are followed if
 // they are links themselves (see `entryOf`), but nothing below them.
-function copying(): {
+function copying(entry: string): {
     filter: (path: string) => Promise<boolean>;
     skipped: () => number;
 } {
     let skipped = 0;
     return {
         filter: async (path) => {
+            // The entry itself is what was asked for, whatever it is named.
+            if (path === entry) {
+                return true;
+            }
             if (basename(path) === ".git") {
                 return false;
             }
@@ -170,10 +187,24 @@ async function entryOf(
     realTarget: string,
 ): Promise<string | null> {
     const path = join(source, name);
-    if (!(await exists(path))) {
-        return null;
+    try {
+        await lstat(path);
+    } catch (error) {
+        const code = codeOf(error);
+        if (code === "ENOENT") {
+            return null;
+        }
+        throw new UsageError(`cannot read ${path}: ${code ?? "failed"}`);
     }
-    const real = await realpath(path);
+    // A link that dangles or loops is there, and leads to nothing.
+    let real: string;
+    try {
+        real = await realpath(path);
+    } catch (error) {
+        throw new UsageError(
+            `${path} is a link that leads nowhere (${codeOf(error) ?? "failed"}); mend or remove it`,
+        );
+    }
     if (within(real, realTarget) || within(realTarget, real)) {
         throw new UsageError(
             `${path} leads to ${real}, and it and the work directory must not contain each other`,
@@ -235,14 +266,16 @@ export async function takeSnapshot(
     await rm(partial, { recursive: true, force: true });
     await mkdir(partial, { recursive: true, mode: 0o700 });
     try {
-        const links = copying();
+        let skippedLinks = 0;
         for (const name of COPIED) {
             const real = await entryOf(source, name, realTarget);
             if (real !== null) {
+                const links = copying(real);
                 await cp(real, join(partial, name), {
                     recursive: true,
                     filter: links.filter,
                 });
+                skippedLinks += links.skipped();
             }
         }
         const markdown = (name: string) => name.endsWith(".md");
@@ -255,7 +288,7 @@ export async function takeSnapshot(
             knowledge:
                 (await count(join(partial, "knowledge"), markdown)) +
                 (await count(join(partial, "facts"), markdown)),
-            skippedLinks: links.skipped(),
+            skippedLinks,
         };
         if (await exists(copy)) {
             // Any `old` left is stale: the copy it was aside from is back.
