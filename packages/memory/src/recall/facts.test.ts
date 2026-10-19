@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { chmod, mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Fact } from "../facts/file.js";
+import { type Fact, renderFact } from "../facts/file.js";
 import { factPath, PERSONAL, putFact, type Scope } from "../facts/store.js";
 import { syncFacts } from "./facts.js";
 import { RecallIndex } from "./store.js";
@@ -120,6 +120,26 @@ describe("syncFacts", () => {
         expect(search("assam")).toEqual(["tea"]);
         expect(rows()).toHaveLength(1);
     });
+
+    it.each(["Assam tea.", "Assam tea, with a longer description."])(
+        "reindexes changed bytes with a preserved timestamp: %s",
+        async (body) => {
+            const path = await putFact(
+                root,
+                PERSONAL,
+                fact("tea", { body: "Darjeeling" }),
+            );
+            const timestamp = new Date(AT);
+            await utimes(path, timestamp, timestamp);
+            await syncFacts(index, root);
+            expect(search("darjeeling")).toEqual(["tea"]);
+            await writeFile(path, renderFact(fact("tea", { body })));
+            await utimes(path, timestamp, timestamp);
+            expect(await syncFacts(index, root)).toEqual([]);
+            expect(search("darjeeling")).toEqual([]);
+            expect(search("assam")).toEqual(["tea"]);
+        },
+    );
 
     it("leaves out a fact it cannot read, and says why", async () => {
         await mkdir(join(root, "knowledge", "personal"), { recursive: true });

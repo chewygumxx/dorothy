@@ -100,10 +100,10 @@ describe("RecallIndex", () => {
         index.close();
     });
 
-    it("is at schema version 6, with clusters, vocabulary and facts tables", () => {
+    it("is at schema version 7, with clusters, vocabulary and facts tables", () => {
         const index = RecallIndex.open(path);
         try {
-            expect(SCHEMA_VERSION).toBe(6);
+            expect(SCHEMA_VERSION).toBe(7);
             const tables = (
                 index.db
                     .query(
@@ -148,7 +148,7 @@ describe("RecallIndex", () => {
         const old = RecallIndex.open(path);
         insert(old, "a");
         old.db.run("CREATE TABLE extra (x)");
-        old.db.run("PRAGMA user_version = 7");
+        old.db.run("PRAGMA user_version = 6");
         old.close();
         const before = (await stat(path)).ino;
         const index = RecallIndex.open(path);
@@ -197,7 +197,7 @@ describe("RecallIndex", () => {
     it("leaves a file that needs migrating alone when the lock stays held", async () => {
         const first = RecallIndex.open(path);
         insert(first, "a");
-        first.db.run("PRAGMA user_version = 7");
+        first.db.run("PRAGMA user_version = 6");
         first.close();
         const before = (await stat(path)).ino;
         const child = holdLock(0.6);

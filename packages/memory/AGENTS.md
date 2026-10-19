@@ -75,7 +75,7 @@ Of the `@dorothy` packages it depends on `core` alone.
   derived SQLite FTS5 index in the XDG cache; `sync.ts` syncs it from the
   transcripts and sidecars before every query, a conversation's source
   and project from its first session, its body sessions (`sessionPhrase`)
-  too, and `facts.ts` the store's facts by mtime; `query.ts` has `search`
+  too, and `facts.ts` the store's facts by content hash; `query.ts` has `search`
   and `open`, of either; `tags.ts` mirrors the vocabulary; `remember.ts`
   writes her own facts; `server.ts` serves them over MCP on stdio as
   `dorothy --recall-server`, one call at a time in the order sent, history
