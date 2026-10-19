@@ -65,6 +65,27 @@ describe("isolatedEnv", () => {
 });
 
 describe("the git binary engine", () => {
+    it("isolates post-commit hooks that no-verify does not skip", async () => {
+        const home = tempRoot();
+        const marker = join(home, "hook-ran");
+        const config = join(home, "gitconfig");
+        put(home, "hooks/post-commit", `#!/bin/sh\ntouch '${marker}'\n`);
+        chmodSync(join(home, "hooks/post-commit"), 0o700);
+        writeFileSync(config, `[core]\n hooksPath = ${join(home, "hooks")}\n`);
+        const repo = binaryRepo(join(tempRoot(), "data"), {
+            env: { ...TEST_ENV, GIT_CONFIG_GLOBAL: config },
+        });
+        await repo.init();
+        put(
+            repo.root,
+            ".git/hooks/post-commit",
+            `#!/bin/sh\ntouch '${marker}'\n`,
+        );
+        chmodSync(join(repo.root, ".git/hooks/post-commit"), 0o700);
+        put(repo.root, "a.txt", "one");
+        expect(await repo.commit(["a.txt"], "one")).not.toBeNull();
+        expect(existsSync(marker)).toBe(false);
+    });
     it("keeps the user's signing and hooks away from its commits", async () => {
         const home = tempRoot();
         const hook = join(home, "hooks", "pre-commit");
