@@ -71,15 +71,20 @@ export type HookMode =
 
 export type Output = { write(text: string): unknown };
 
+// What reviews need, as chat's: the agent's call and the persona
+// without recall.
+export type ReviewAgent = { call: StructuredCall; persona: string };
+
 export type HookDeps = {
     env?: Env;
     stdin?: () => Promise<string>;
-    // Reviews, as chat's: the agent's call and the persona without recall.
-    call: StructuredCall;
-    persona: string;
+    // Asked for when a review runs, and not before: a hook that never
+    // reviews, a SessionEnd's among them, loads no agent.
+    agent: () => Promise<ReviewAgent>;
     // This program as a command, for the detached catch-up.
     self: readonly string[];
-    spawnDetached?: (cmd: string[]) => void;
+    // Starts a process of its own session, in the environment given.
+    spawnDetached?: (cmd: string[], env: Env) => void;
     timers?: Timers;
     now?: () => Date;
     // For --reread and --dismiss alone.
@@ -376,6 +381,7 @@ async function stepsFor(
             for (const warning of loaded.warnings) {
                 log.warn(warning);
             }
+            const agent = await deps.agent();
             const owner = `${process.pid}-${randomBytes(4).toString("hex")}`;
             const claimed = await index.claim(
                 phrase,
@@ -394,8 +400,8 @@ async function stepsFor(
                     index,
                     vocabulary: vocabularyPath(env),
                     versions,
-                    call: deps.call,
-                    persona: deps.persona,
+                    call: agent.call,
+                    persona: agent.persona,
                     now,
                     entries: () => loaded.entries,
                     // The log names the phrase, the kind and a call's
@@ -469,14 +475,20 @@ async function onHook(env: Env, log: HookLog, deps: HookDeps): Promise<void> {
         ...(input.event === "SessionEnd" ? { ended: true } : {}),
     });
     if (input.event === "SessionEnd") {
-        (deps.spawnDetached ?? spawnDetached)([
+        const command = [
             ...deps.self,
             "--claude-hook",
             "--catch-up",
             launchId,
             "--session",
             input.session,
-        ]);
+        ];
+        // The environment claude gave this hook, which holds none of
+        // Dorothy's credentials: the catch-up loads those itself.
+        (deps.spawnDetached ?? ((cmd, to) => spawnDetached(cmd, to, log)))(
+            command,
+            env,
+        );
         return;
     }
     if (input.event !== "Stop") {
@@ -538,12 +550,14 @@ async function catchUp(
             );
         }
     }
-    await holding(env, log, deps, async (held) => {
+    const locked = await holding(env, log, deps, async (held) => {
         for (const note of notes) {
             await afterEnd(await stepsFor(held, reportOf(note, launch)));
         }
     });
-    if (only === null) {
+    // Notes of sessions that could not be recorded stay, for the next
+    // start's catch-up.
+    if (only === null && locked) {
         await removeLaunch(env, launchId);
     }
 }
@@ -561,14 +575,14 @@ async function reread(
         return 0;
     }
     let failed = 0;
-    const held = await holding(env, log, deps, async (held) => {
+    const locked = await holding(env, log, deps, async (held) => {
         for (const record of records) {
             if (!(await rereadOne(env, held, record, { out, err }))) {
                 failed += 1;
             }
         }
     });
-    if (!held) {
+    if (!locked) {
         err.write(
             "dorothy: neither the memory index nor history can lock the store\n",
         );
@@ -628,15 +642,27 @@ async function readToEnd(
     );
 }
 
-function spawnDetached(cmd: string[]): void {
+// A process of its own session, so claude's teardown does not take it,
+// in the environment given and not this process's. A start that fails
+// is logged, not thrown: the launch's own catch-up makes it good.
+export function spawnDetached(cmd: string[], env: Env, log: HookLog): void {
     const [command, ...args] = cmd;
     if (command === undefined) {
         return;
     }
-    // Its own session, so claude's teardown does not take it.
-    spawn(command, args, { detached: true, stdio: "ignore" })
-        .on("error", () => {})
-        .unref();
+    const failed = (error: unknown) =>
+        log.error(`the catch-up could not start (${describeError(error)})`);
+    try {
+        spawn(command, args, {
+            detached: true,
+            stdio: "ignore",
+            env: env as NodeJS.ProcessEnv,
+        })
+            .on("error", failed)
+            .unref();
+    } catch (error) {
+        failed(error);
+    }
 }
 
 export async function runClaudeHook(
