@@ -10,18 +10,22 @@
 
 import { describe, expect, it } from "bun:test";
 import type { HostProfile } from "@dorothy/core";
+import { PERSONAL, type Scope } from "../facts/store.js";
 import {
     BLOCK_INTRO,
     buildBlock,
     CLOSING,
     openingBlock,
     size,
+    UNCONFIRMED_INTRO,
 } from "./block.js";
 import { ContractError } from "./errors.js";
 import { FrozenBlocks } from "./frozen.js";
 import { episode, fakeEngine, knowledge } from "./testing.js";
 
 const APP = { kind: "project" as const, id: "github.com/me/app" };
+const PERSONAL_SCOPE: Scope = PERSONAL;
+const UNCONFIRMED_OPEN = "<unconfirmed-knowledge>";
 const PHRASE = "bingo-overabundance-mazer-kasha";
 
 const profile = (blockBudget: number): HostProfile => ({
@@ -114,6 +118,98 @@ describe("buildBlock", () => {
         );
         expect(block.text).not.toContain("<knowledge");
         expect(block.text).toContain("<conversations>");
+    });
+
+    describe("unconfirmed knowledge", () => {
+        const MODEL = {
+            origin: "dorothy" as const,
+            by: "dorothy" as const,
+            at: "2026-10-15T09:30:00.000Z",
+            created: "2026-10-15T09:30:00.000Z",
+        };
+        const guess = (name: string, scope = PERSONAL_SCOPE) =>
+            knowledge(name, { provenance: MODEL }, scope);
+        const frame = size(
+            ["<memory>", BLOCK_INTRO, CLOSING, "</memory>"].join("\n"),
+        );
+
+        it("follows every confirmed piece, in a section of its own", async () => {
+            const block = await buildBlock(
+                { project: APP.id, budget: 10_000 },
+                fakeEngine({
+                    knowledge: [
+                        guess("maybe-tea"),
+                        knowledge("likes-tea"),
+                        guess("maybe-rust", APP),
+                        knowledge("uses-rust", { type: "project" }, APP),
+                    ],
+                    episodes: [episode(PHRASE)],
+                }),
+            );
+            const at = (text: string) => block.text.indexOf(text);
+            expect(at('<knowledge scope="project">')).toBeLessThan(
+                at(UNCONFIRMED_OPEN),
+            );
+            expect(at(UNCONFIRMED_OPEN)).toBeLessThan(at("<conversations>"));
+            expect(block.text).toContain(
+                `${UNCONFIRMED_OPEN}\n${UNCONFIRMED_INTRO}\n- maybe-tea`,
+            );
+            expect(block.items.map((item) => item.id)).toEqual([
+                "k:personal/likes-tea",
+                "k:projects/github.com/me/app/uses-rust",
+                "k:personal/maybe-tea",
+                "k:projects/github.com/me/app/maybe-rust",
+                `c:${PHRASE}`,
+            ]);
+            const confirmed = block.text.slice(0, at(UNCONFIRMED_OPEN));
+            expect(confirmed).not.toContain("maybe-");
+        });
+
+        it("is the first to go when the budget is tight", async () => {
+            const engine = fakeEngine({
+                knowledge: [
+                    guess("maybe-tea"),
+                    knowledge("uses-rust", { type: "project" }, APP),
+                ],
+            });
+            const full = await buildBlock(
+                { project: APP.id, budget: 10_000 },
+                engine,
+            );
+            // Room for the confirmed section, not the unconfirmed one.
+            const confirmedOnly =
+                full.text.indexOf(UNCONFIRMED_OPEN) -
+                full.text.indexOf('<knowledge scope="project">');
+            const block = await buildBlock(
+                { project: APP.id, budget: frame + confirmedOnly + 20 },
+                engine,
+            );
+            expect(block.items).toEqual([
+                { id: "k:projects/github.com/me/app/uses-rust", tier: "full" },
+            ]);
+            expect(block.text).not.toContain(UNCONFIRMED_OPEN);
+        });
+
+        it("leaves out either section when it has nothing", async () => {
+            const none = await buildBlock(
+                { project: null, budget: 10_000 },
+                fakeEngine({ episodes: [episode(PHRASE)] }),
+            );
+            expect(none.text).not.toContain("<knowledge");
+            expect(none.text).not.toContain(UNCONFIRMED_OPEN);
+            const unconfirmed = await buildBlock(
+                { project: null, budget: 10_000 },
+                fakeEngine({ knowledge: [guess("maybe-tea")] }),
+            );
+            expect(unconfirmed.text).not.toContain("<knowledge");
+            expect(unconfirmed.text).toContain(UNCONFIRMED_OPEN);
+            const confirmed = await buildBlock(
+                { project: null, budget: 10_000 },
+                fakeEngine({ knowledge: [knowledge("likes-tea")] }),
+            );
+            expect(confirmed.text).toContain('<knowledge scope="personal">');
+            expect(confirmed.text).not.toContain(UNCONFIRMED_OPEN);
+        });
     });
 
     it("escapes what a note or a fact holds", async () => {
