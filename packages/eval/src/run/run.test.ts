@@ -557,6 +557,17 @@ describe("a run", () => {
             let calls = 0;
             let closed = false;
             let lateCalls = 0;
+            // The second retrieval waits until the first has returned and
+            // every task queued meanwhile has run: by then the first
+            // append has failed. No timing is relied on.
+            let firstBack = () => {};
+            const first = new Promise<void>((done) => {
+                firstBack = done;
+            });
+            let secondBack = () => {};
+            const second = new Promise<void>((done) => {
+                secondBack = done;
+            });
             const run = runEvaluation(info, {
                 work,
                 corpus,
@@ -568,13 +579,16 @@ describe("a run", () => {
                         name: "odd",
                         retrieve: async () => {
                             const call = ++calls;
-                            await Bun.sleep(call === 1 ? 1 : 20);
+                            if (call === 1) {
+                                firstBack();
+                                // The first record cannot be written.
+                                return { ranked: [1n as never], context: "" };
+                            }
+                            await first;
+                            await Bun.sleep(0);
                             lateCalls += closed ? 1 : 0;
-                            // The first record cannot be written.
-                            return {
-                                ranked: call === 1 ? [1n as never] : [],
-                                context: "",
-                            };
+                            secondBack();
+                            return { ranked: [], context: "" };
                         },
                         close: async () => {
                             closed = true;
@@ -583,13 +597,11 @@ describe("a run", () => {
                 ],
             });
             await expect(run).rejects.toThrow("BigInt");
-            expect(closed).toBe(true);
+            await second;
             // Nothing was still retrieving when the system closed, and
-            // nothing is asked after.
-            const seen = calls;
-            await Bun.sleep(50);
+            // the second worker took no task after the fault.
+            expect(closed).toBe(true);
             expect(lateCalls).toBe(0);
-            expect(calls).toBe(seen);
             expect(calls).toBe(2);
         } finally {
             corpus.close();
