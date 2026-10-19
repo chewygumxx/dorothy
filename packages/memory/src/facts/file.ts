@@ -14,7 +14,7 @@
 // JSON.stringify. Read, every value is checked for its type, so a YAML
 // trap written by hand fails rather than being coerced.
 
-import { isPhrase } from "@dorothy/core";
+import { HOST_ID, isPhrase } from "@dorothy/core";
 import { CONCEPT_ID, characters, normalise } from "../memory/sidecar.js";
 
 export const FACT_TYPES = ["user", "feedback", "project", "reference"] as const;
@@ -368,7 +368,6 @@ export const USER_ACTOR = "human:owner";
 const REPO_ACTOR = "process:repo-sync";
 const EXTRACTION = "dorothy-extraction";
 const NO_MODEL = "unknown";
-const HOST = /^[a-z][a-z0-9-]{0,39}$/;
 
 export function actorOf(provenance: FactProvenance): string {
     switch (provenance.by) {
@@ -395,7 +394,7 @@ function writingOf(actor: string): Writing {
     const slash = actor.indexOf("/");
     const who = actor.slice(0, slash);
     const model = actor.slice(slash + 1);
-    if (slash < 1 || model === "" || !HOST.test(who)) {
+    if (slash < 1 || model === "" || !HOST_ID.test(who)) {
         throw new Problem("generated.by is not an actor");
     }
     const known = model === NO_MODEL ? {} : { model };
