@@ -39,6 +39,7 @@ export type Mode =
     | { kind: "retire"; target: string }
     | { kind: "retire-from"; phrase: string }
     | { kind: "revive"; target: string }
+    | { kind: "verify"; id: string }
     | { kind: "sync"; path: string | null }
     | { kind: "projects" }
     | {
@@ -78,6 +79,7 @@ export const USAGE = [
     "                                  retire a fact, or what a chat gave",
     "       dorothy --revive <scope>/<name>",
     "                                  bring a retired fact back",
+    "       dorothy --verify <id>      confirm knowledge a model gave",
     "       dorothy --sync [<path>]    sync a project's facts with its repo",
     "       dorothy --projects         the projects Dorothy knows",
     "       dorothy --recall-server    memory tools for MCP clients (stdio)",
@@ -141,6 +143,7 @@ const COMMANDS: Record<string, Command> = {
     "--facts": noArguments("--facts", { kind: "facts" }),
     "--retire": parseRetire,
     "--revive": parseRevive,
+    "--verify": parseVerify,
     "--sync": ([path, ...extra]) =>
         extra.length === 0
             ? { kind: "sync", path: path ?? null }
@@ -297,6 +300,15 @@ function parseRevive(rest: readonly string[]): Mode {
     return target !== undefined && extra.length === 0
         ? { kind: "revive", target }
         : usage("--revive takes <scope>/<name>");
+}
+
+// A knowledge id, k:..., as open and the block show it; checked where
+// it is looked up.
+function parseVerify(rest: readonly string[]): Mode {
+    const [id, ...extra] = options(rest, {})?.positionals ?? [];
+    return id !== undefined && extra.length === 0
+        ? { kind: "verify", id }
+        : usage("--verify takes one knowledge id, k:...");
 }
 
 const RECALL_USAGE =

@@ -569,6 +569,16 @@ describe("parseArgs", () => {
             kind: "usage",
             message: "--revive takes <scope>/<name>",
         });
+        expect(parseArgs(["--verify", "k:personal/likes-tea"], false)).toEqual({
+            kind: "verify",
+            id: "k:personal/likes-tea",
+        });
+        for (const rest of [[], ["a", "b"], ["-x"]]) {
+            expect(parseArgs(["--verify", ...rest], false)).toEqual({
+                kind: "usage",
+                message: "--verify takes one knowledge id, k:...",
+            });
+        }
         expect(parseArgs(["--sync"], false)).toEqual({
             kind: "sync",
             path: null,
@@ -593,6 +603,7 @@ describe("parseArgs", () => {
             "dorothy --facts            what Dorothy knows, by scope",
             "dorothy --retire <scope>/<name> | --from <phrase>",
             "dorothy --revive <scope>/<name>",
+            "dorothy --verify <id>      confirm knowledge a model gave",
             "dorothy --sync [<path>]    sync a project's facts with its repo",
             "dorothy --projects         the projects Dorothy knows",
         ]) {

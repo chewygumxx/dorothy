@@ -175,6 +175,10 @@ const RUNNERS: Runners = {
         const { commandHistory, runRevive } = await commands();
         return runRevive(mode.target, { openHistory: commandHistory() });
     },
+    verify: async (mode) => {
+        const { commandHistory, runVerify } = await commands();
+        return runVerify(mode.id, { openHistory: commandHistory() });
+    },
     sync: async (mode) => {
         const { commandHistory, runSync } = await commands();
         return runSync(mode.path, { openHistory: commandHistory() });
