@@ -368,6 +368,41 @@ describe("syncIndex", () => {
     });
 });
 
+describe("a failure while syncing", () => {
+    // Makes the statements starting as a key does throw its error, others
+    // as they were.
+    const failing = (faults: Record<string, Error>) => {
+        const run = index.db.run.bind(index.db);
+        return spyOn(index.db, "run").mockImplementation(((
+            statement: string,
+            ...rest: never[]
+        ) => {
+            for (const [sql, error] of Object.entries(faults)) {
+                if (statement.startsWith(sql)) {
+                    throw error;
+                }
+            }
+            return run(statement, ...rest);
+        }) as typeof index.db.run);
+    };
+
+    it("is told as it was when the savepoint's rollback cannot be", async () => {
+        await writeFile(transcript(A), user(1, "hello"));
+        // A statement that aborts the whole transaction leaves no savepoint
+        // to roll back to.
+        const failure = failing({
+            "INSERT INTO turns": new Error("disk full"),
+            "ROLLBACK TO": new Error("no such savepoint: sync"),
+        });
+        const error = await syncIndex(index, dir).catch(
+            (caught: unknown) => caught,
+        );
+        failure.mockRestore();
+        expect(String(error)).toContain("disk full");
+        expect(String(error)).not.toContain("no such savepoint");
+    });
+});
+
 describe("clusters", () => {
     const cluster = (from: number, through: number) => ({
         from,

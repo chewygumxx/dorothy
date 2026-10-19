@@ -146,21 +146,28 @@ async function syncConversation(
     );
 }
 
-// Work that fails is undone alone, and says why; null when it succeeds.
+// Work that fails is undone alone, and says why; null when it succeeds. A
+// failure that leaves no savepoint to undo it to, because SQLite ended the
+// transaction, is the whole sync's: it is thrown as it was, for the lock
+// to roll back.
 async function inSavepoint(
     index: RecallIndex,
     work: () => Promise<void>,
 ): Promise<string | null> {
     index.db.run("SAVEPOINT sync");
-    let problem: string | null = null;
     try {
         await work();
     } catch (error) {
-        index.db.run("ROLLBACK TO sync");
-        problem = describeError(error);
+        try {
+            index.db.run("ROLLBACK TO sync");
+        } catch {
+            throw error;
+        }
+        index.db.run("RELEASE sync");
+        return describeError(error);
     }
     index.db.run("RELEASE sync");
-    return problem;
+    return null;
 }
 
 // A file's mtime; null for one that is not there.
