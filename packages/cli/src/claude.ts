@@ -191,29 +191,58 @@ const RESUMING: ReadonlySet<string> = new Set([
     "--from-pr",
 ]);
 
+// The flags whose value is free text, which may itself look like a flag
+// (--system-prompt -c): the word after one is its value, not a flag.
+const TEXTUAL: ReadonlySet<string> = new Set([
+    "--append-system-prompt",
+    "--system-prompt",
+    "--agents",
+    "--settings",
+    "--mcp-config",
+    "--json-schema",
+    "-n",
+    "--name",
+]);
+
 const uuidOf = (value: string | undefined) =>
     value !== undefined && isUuid(value) ? value : null;
 
+// -r with its value attached, as -r<uuid> (the form's other short flags
+// take none).
+const attachedResume = (word: string) =>
+    word.startsWith("-r") && !word.startsWith("--") && word.length > 2;
+
+// The session the arguments name, from the flags before --. A resume
+// decides it wherever a --session-id stands, which beside --fork-session
+// names the copy's.
 export function claudeSession(args: readonly string[]): ClaudeSession {
+    let named: ClaudeSession | null = null;
     for (let index = 0; index < args.length; index += 1) {
-        if (args[index] === "--") {
+        const word = args[index] as string;
+        if (word === "--") {
             break;
         }
-        const { flag, value } = flagAt(args, index);
-        const id = uuidOf(value);
-        if (flag === "--session-id") {
-            return id === null
-                ? { kind: "resumed", id: null }
-                : { kind: "named", id };
+        if (attachedResume(word)) {
+            return { kind: "resumed", id: uuidOf(word.slice(2)) };
         }
-        if (RESUMING.has(flag)) {
+        const { flag, value, words } = flagAt(args, index);
+        if (TEXTUAL.has(flag)) {
+            index += words - 1;
+        } else if (flag === "--session-id") {
+            const id = uuidOf(value);
+            // Claude Code keeps the last it is given.
+            named =
+                id === null
+                    ? { kind: "resumed", id: null }
+                    : { kind: "named", id };
+        } else if (RESUMING.has(flag)) {
             return {
                 kind: "resumed",
-                id: flag === "-r" || flag === "--resume" ? id : null,
+                id: flag === "-r" || flag === "--resume" ? uuidOf(value) : null,
             };
         }
     }
-    return { kind: "new" };
+    return named ?? { kind: "new" };
 }
 
 // SessionEnd's hook only hands its session to a detached catch-up.

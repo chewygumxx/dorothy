@@ -37,6 +37,7 @@ import {
 const LAUNCH = "6c84fb90-12c4-11e1-840d-7b25c5ee775a";
 const SESSION = "0f8fad5b-d9cb-469f-a165-70867728950e";
 const OTHER = "7d95fc01-23d5-42f2-951e-8c36d6ff886b";
+const SESSION2 = "1a9fbe6c-eadc-4a7f-b276-81978839a61f";
 const SELF = ["/bin/bun", "/d/index.ts"];
 
 function harness(exit: number | Promise<number> = 0, memoryOn = false) {
@@ -555,6 +556,20 @@ describe("dorothy --claude records her sessions", () => {
             [["--session-id", OTHER], OTHER, null],
             [[`--session-id=${OTHER}`], OTHER, null],
             [["-p", "--", "--resume", OTHER], SESSION, null],
+            // -r with its value attached, as claude takes it.
+            [[`-r${OTHER}`], null, OTHER],
+            [["-rmy-title"], null, null],
+            // A resume decides it wherever a --session-id stands.
+            [["--session-id", SESSION2, "--resume", OTHER], null, OTHER],
+            [["--resume", OTHER, "--session-id", SESSION2], null, OTHER],
+            [["-c", "--session-id", SESSION2], null, null],
+            // The last --session-id, as Claude Code keeps it.
+            [["--session-id", SESSION2, "--session-id", OTHER], OTHER, null],
+            // A value that is itself a flag is not one.
+            [["--system-prompt", "-c"], SESSION, null],
+            [["--append-system-prompt=-c"], SESSION, null],
+            [["--name", "--resume", "-p"], SESSION, null],
+            [["--settings", "-r", "-p", "x"], SESSION, null],
         ];
         for (const [args, noted, left] of cases) {
             const { calls, deps, memory } = harness(0, true);
