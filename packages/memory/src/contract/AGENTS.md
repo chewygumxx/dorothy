@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-18
-mtime: 2026-10-18
+mtime: 2026-10-19
 spdx: GPL-3.0-only
 title: packages/memory/src/contract/AGENTS.md
 description: >-
