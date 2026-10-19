@@ -8,8 +8,9 @@
 //
 //
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import {
+    existsSync,
     mkdirSync,
     mkdtempSync,
     readdirSync,
@@ -23,6 +24,7 @@ import {
     ensureService,
     flushPending,
     requestBlock,
+    requestRecall,
     sendRecord,
 } from "./client.js";
 import { isLoopbackUrl } from "./loopback.js";
@@ -233,6 +235,89 @@ describe("the queue of records", () => {
         expect(await sendRecord(record, options)).toBeNull();
         expect(Date.now() - started).toBeLessThan(600);
         expect(pending()).toHaveLength(3);
+    });
+});
+
+describe("the client's promises", () => {
+    // An environment that fails on every read, as a broken one might.
+    const broken = new Proxy({} as Env, {
+        get() {
+            throw new Error("environment unreadable");
+        },
+    });
+
+    it("never throws, whatever it is given", async () => {
+        const request = {
+            host: "codex",
+            session: "s1",
+            reason: "startup" as const,
+        };
+        const options = { env: broken };
+        expect(await requestBlock(request, options)).toBeNull();
+        expect(
+            await requestRecall(
+                { host: "codex", session: "s1", prompt: "tea" },
+                options,
+            ),
+        ).toBeNull();
+        expect(await sendRecord(record, options)).toBeNull();
+    });
+
+    it("spends one record budget on a flush and a send together", async () => {
+        wait("1-a");
+        const delays: number[] = [];
+        const options = {
+            ...serve(async () => {
+                delays.push(Date.now());
+                await Bun.sleep(150);
+                return Response.json(ACCEPTED);
+            }),
+            timeouts: { record: 200 },
+        };
+        const started = Date.now();
+        // The waiting record takes 150 ms; the new one has 50 left, and
+        // is cut off then rather than given 200 more.
+        expect(await sendRecord(record, options)).toBeNull();
+        expect(Date.now() - started).toBeLessThan(290);
+        expect(delays).toHaveLength(2);
+        expect(pending()).toHaveLength(1);
+    });
+
+    it("keeps records made in one millisecond in the order sent", async () => {
+        const now = spyOn(Date, "now").mockReturnValue(1_800_000_000_000);
+        try {
+            for (let at = 0; at < 30; at++) {
+                await sendRecord({ ...record, session: `n${at}` }, down());
+            }
+        } finally {
+            now.mockRestore();
+        }
+        expect(pending()).toHaveLength(30);
+        const sent: string[] = [];
+        const options = serve(async (request) => {
+            sent.push(await sessionOf(request));
+            return Response.json(ACCEPTED);
+        });
+        expect(
+            await flushPending({ ...options, timeouts: { record: 5000 } }),
+        ).toBe(0);
+        expect(sent).toEqual(Array.from({ length: 30 }, (_, at) => `n${at}`));
+    });
+
+    it("keeps a block apart for a host a path could name", async () => {
+        const request = {
+            host: "../../escape",
+            session: "s1",
+            reason: "startup" as const,
+        };
+        await requestBlock(request, up());
+        expect(existsSync(join(home, "state", "escape"))).toBe(false);
+        expect(
+            existsSync(
+                join(home, "state", "dorothy", "blocks", "..%2F..%2Fescape"),
+            ),
+        ).toBe(true);
+        expect((await requestBlock(request, down()))?.text).toBe(BLOCK.text);
     });
 });
 

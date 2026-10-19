@@ -85,7 +85,7 @@ const blockPath = (env: Env, host: string, project: string | undefined) =>
     join(
         stateDir(env),
         "blocks",
-        host,
+        encodeURIComponent(host),
         `${encodeURIComponent(project ?? "personal")}.md`,
     );
 
@@ -172,11 +172,19 @@ async function post<T>(
     }
 }
 
+// The client of these options, or null where they cannot be read: the
+// calls below promise never to throw.
+const clientOrNull = (options: ClientOptions) =>
+    clientOf(options).catch(() => null);
+
 export async function requestBlock(
     request: BlockRequest,
     options: ClientOptions = {},
 ): Promise<BlockResponse | null> {
-    const client = await clientOf(options);
+    const client = await clientOrNull(options);
+    if (client === null) {
+        return null;
+    }
     const path = blockPath(client.env, request.host, request.project);
     const posted = await post(
         client,
@@ -201,7 +209,10 @@ export async function requestRecall(
     request: RecallRequest,
     options: ClientOptions = {},
 ): Promise<RecallResponse | null> {
-    const client = await clientOf(options);
+    const client = await clientOrNull(options);
+    if (client === null) {
+        return null;
+    }
     const posted = await post(
         client,
         SERVICE_PATHS.recall,
@@ -218,14 +229,14 @@ export async function flushPending(
     options: ClientOptions = {},
 ): Promise<number> {
     try {
-        return await flush(await clientOf(options));
+        const client = await clientOf(options);
+        return await flush(client, Date.now() + client.timeouts.record);
     } catch {
         return 0;
     }
 }
 
-async function flush(client: Client): Promise<number> {
-    const deadline = Date.now() + client.timeouts.record;
+async function flush(client: Client, deadline: number): Promise<number> {
     let names: string[];
     try {
         names = (await readdir(pendingDir(client.env)))
@@ -262,19 +273,28 @@ async function flush(client: Client): Promise<number> {
     return 0;
 }
 
+// Breaks a tie between records made in one millisecond, in order.
+let queued = 0;
+
 export async function sendRecord(
     request: RecordRequest,
     options: ClientOptions = {},
 ): Promise<RecordResponse | null> {
-    const client = await clientOf(options);
-    const waiting = await flushPending({ ...options, ...client });
+    const client = await clientOrNull(options);
+    if (client === null) {
+        return null;
+    }
+    // One budget for the flush and the send together.
+    const deadline = Date.now() + client.timeouts.record;
+    const waiting = await flush(client, deadline);
+    const left = deadline - Date.now();
     const posted =
-        waiting === 0
+        waiting === 0 && left > 0
             ? await post(
                   client,
                   SERVICE_PATHS.record,
                   request,
-                  client.timeouts.record,
+                  left,
                   recordResponseSchema,
               )
             : ({ kind: "unreachable" } as const);
@@ -283,7 +303,10 @@ export async function sendRecord(
     }
     if (posted.kind === "unreachable") {
         await writePrivate(
-            join(pendingDir(client.env), `${Date.now()}-${randomUUID()}.json`),
+            join(
+                pendingDir(client.env),
+                `${Date.now()}-${String(queued++).padStart(8, "0")}-${randomUUID()}.json`,
+            ),
             JSON.stringify(request),
         ).catch(() => {});
     }
