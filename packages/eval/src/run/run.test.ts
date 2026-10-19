@@ -472,6 +472,64 @@ describe("a run", () => {
         }
     });
 
+    it("stops every worker at a failed append, before closing", async () => {
+        const corpus = await openCorpus(workEnv(work));
+        try {
+            const { questions } = await readQuestions(work);
+            const info = newRunInfo(
+                {
+                    systems: ["odd"],
+                    budget: 8000,
+                    fullBudget: 400_000,
+                    retrievalOnly: true,
+                },
+                questions,
+                await readEvalConfig(work),
+                await readSnapshot(work),
+                new Date("2026-10-19T01:00:00.000Z"),
+            );
+            let calls = 0;
+            let closed = false;
+            let lateCalls = 0;
+            const run = runEvaluation(info, {
+                work,
+                corpus,
+                questions,
+                models: null,
+                concurrency: 2,
+                systems: [
+                    {
+                        name: "odd",
+                        retrieve: async () => {
+                            const call = ++calls;
+                            await Bun.sleep(call === 1 ? 1 : 20);
+                            lateCalls += closed ? 1 : 0;
+                            // The first record cannot be written.
+                            return {
+                                ranked: call === 1 ? [1n as never] : [],
+                                context: "",
+                            };
+                        },
+                        close: async () => {
+                            closed = true;
+                        },
+                    },
+                ],
+            });
+            await expect(run).rejects.toThrow("BigInt");
+            expect(closed).toBe(true);
+            // Nothing was still retrieving when the system closed, and
+            // nothing is asked after.
+            const seen = calls;
+            await Bun.sleep(50);
+            expect(lateCalls).toBe(0);
+            expect(calls).toBe(seen);
+            expect(calls).toBe(2);
+        } finally {
+            corpus.close();
+        }
+    });
+
     it("says whether the evidence was in context past the first ten", async () => {
         const corpus = await openCorpus(workEnv(work));
         try {

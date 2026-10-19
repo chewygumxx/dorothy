@@ -433,34 +433,46 @@ export async function runEvaluation(
         await system.prepare?.();
     }
     let stopped: string | null = null;
+    // The first fault in any worker: the others stop at their next task,
+    // and it is thrown once all have, after the systems are closed.
+    // Declared so, tsc does not narrow it to null after the workers.
+    let fault = null as { error: unknown } | null;
     let next = 0;
     // Appends one at a time, in the order records complete.
     let writing = Promise.resolve();
     const append = (record: RunRecord) => {
-        writing = writing.then(() =>
+        const done = writing.then(() =>
             appendFile(
                 recordsPath(deps.work, info.id),
                 `${JSON.stringify(record)}\n`,
                 { mode: 0o600 },
             ),
         );
-        return writing;
+        // Its failure is its worker's to report, not the next append's.
+        writing = done.catch(() => undefined);
+        return done;
     };
     const worker = async () => {
-        while (stopped === null && next < tasks.length) {
-            const task = tasks[next++] as (typeof tasks)[number];
-            try {
-                await append(await settle(task));
-            } catch (error) {
-                if (error instanceof CallCap) {
-                    if (error instanceof Capped) {
-                        await append(error.record);
+        try {
+            while (stopped === null && fault === null && next < tasks.length) {
+                const task = tasks[next++] as Pending;
+                let record: RunRecord;
+                try {
+                    record = await settle(task);
+                } catch (error) {
+                    if (!(error instanceof CallCap)) {
+                        throw error;
                     }
                     stopped = error.message;
-                    return;
+                    if (!(error instanceof Capped)) {
+                        return;
+                    }
+                    record = error.record;
                 }
-                throw error;
+                await append(record);
             }
+        } catch (error) {
+            fault ??= { error };
         }
     };
     try {
@@ -480,6 +492,9 @@ export async function runEvaluation(
         for (const system of systems) {
             await system.close?.();
         }
+    }
+    if (fault !== null) {
+        throw fault.error;
     }
     return { summary: await writeRunReport(deps.work, info.id), stopped };
 }
