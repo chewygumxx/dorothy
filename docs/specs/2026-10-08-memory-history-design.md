@@ -235,10 +235,10 @@ share their transaction. Canonical writers prefer this combined lock.
 A hook with the index and one without therefore exclude each other.
 isomorphic-git does not reliably honour Git's own lock files.
 
-An old `.git/index.lock` is cleared only when no Git process is running
-in this repository. If the process table cannot be inspected, it is left
-in place conservatively. Linux uses `/proc` process names and working
-directories; other hosts may require manual stale-lock removal.
+A `.git/index.lock` older than a minute is cleared when no Git process
+is running in this repository. If the process table cannot be inspected,
+it is cleared only after ten minutes. Linux uses `/proc` process names
+and working directories. A known running Git always keeps its lock.
 
 ## The lint
 

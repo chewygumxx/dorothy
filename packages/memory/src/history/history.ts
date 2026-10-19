@@ -73,15 +73,16 @@ export const historyRoot = (env: Env = process.env) =>
 
 // How old an index.lock must be before history takes it for a crash's.
 const STALE_LOCK_MS = 60_000;
+const UNINSPECTED_LOCK_MS = 600_000;
 
 // Linux exposes a process's executable name and actual working directory.
-// If the process table cannot be inspected, keep the lock conservatively.
-async function runningGit(root: string): Promise<boolean> {
+// A null result means the process table cannot be inspected.
+async function runningGit(root: string): Promise<boolean | null> {
     let processes: string[];
     try {
         processes = await readdir("/proc");
     } catch {
-        return true;
+        return null;
     }
     const directory = await realpath(root);
     for (const pid of processes.filter((name) => /^\d+$/.test(name))) {
@@ -90,7 +91,7 @@ async function runningGit(root: string): Promise<boolean> {
                 continue;
             if ((await readlink(`/proc/${pid}/cwd`)) === directory) return true;
         } catch (error) {
-            if ((error as { code?: string }).code !== "ENOENT") return true;
+            if ((error as { code?: string }).code !== "ENOENT") return null;
         }
     }
     return false;
@@ -127,6 +128,8 @@ export type HistoryOptions = {
     repo: MemoryRepo;
     lock: Lock;
     now?: () => Date;
+    // Platform process inspection: null when unavailable.
+    gitRunning?: (root: string) => Promise<boolean | null>;
     // Where warnings go; without it they wait for a subscriber.
     warn?: (message: string) => void;
     // The command the pre-commit hook runs Dorothy with.
@@ -142,6 +145,7 @@ export class MemoryHistory {
     readonly root: string;
     readonly lock: Lock;
     readonly #now: () => Date;
+    readonly #gitRunning: (root: string) => Promise<boolean | null>;
     readonly #warnTo: ((message: string) => void) | undefined;
     readonly #listeners = new Set<(notice: HistoryNotice) => void>();
     readonly #waiting: string[] = [];
@@ -165,6 +169,7 @@ export class MemoryHistory {
         this.lock = options.lock;
         this.#now = options.now ?? (() => new Date());
         this.#warnTo = options.warn;
+        this.#gitRunning = options.gitRunning ?? runningGit;
     }
 
     // Adopts the directory first when it holds no commits yet. Throws when
@@ -353,7 +358,11 @@ export class MemoryHistory {
         if (Date.now() - changed <= STALE_LOCK_MS) {
             return;
         }
-        if (await runningGit(this.root)) {
+        const running = await this.#gitRunning(this.root);
+        if (
+            running === true ||
+            (running === null && Date.now() - changed <= UNINSPECTED_LOCK_MS)
+        ) {
             return;
         }
         await rm(path, { force: true });

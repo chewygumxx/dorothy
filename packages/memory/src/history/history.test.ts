@@ -664,6 +664,29 @@ describe("recording", () => {
         }
         expect((await messages(history))[0]).toBe("user commit");
     });
+    it.each([
+        [false, 120, false],
+        [true, 660, true],
+        [null, 120, true],
+        [null, 660, false],
+    ] as const)(
+        "handles stale locks with reader %s at age %s",
+        async (running, age, kept) => {
+            const history = await MemoryHistory.open({
+                repo: binaryRepo(root, { env: TEST_ENV }),
+                lock: (work) => work(),
+                gitRunning: async () => running,
+            });
+            const path = join(root, ".git", "index.lock");
+            writeFileSync(path, "");
+            const old = Date.now() / 1000 - age;
+            utimesSync(path, old, old);
+            put(root, "tags.json", vocabulary(1));
+            await record(history, ["tags.json"], "reader test");
+            expect(existsSync(path)).toBe(kept);
+        },
+    );
+
     it("clears a lock a crashed git left, and only a stale one", async () => {
         const history = await open();
         const lock = join(root, ".git", "index.lock");
