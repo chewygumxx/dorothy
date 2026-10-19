@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-10-18
+mtime: 2026-10-19
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -74,21 +74,31 @@ and #24. The contract:
 [spec](./specs/2026-10-18-memory-contract-design.md),
 [plan](./plans/2026-10-18-memory-contract.md),
 [report](./reports/2026-10-18-memory-contract.md), with its deferred
-findings; merged in #69.
+findings; merged in #69. The evaluation:
+[spec](./specs/2026-10-18-memory-evaluation-design.md),
+[plan](./plans/2026-10-18-memory-evaluation.md),
+[report](./reports/2026-10-18-memory-evaluation.md), whose deferred
+findings were all addressed; merged in #71 and #72.
 
 The contract opened four more pieces, each with its own spec: the
 evaluation, which measures her memory against the field and chooses the
 engine; recording each harness's sessions; the engine; and delivery into
-the harnesses chosen.
+the harnesses chosen. The evaluation is built as `@dorothy/eval` but not
+yet run: the owner reviews its generated questions, then runs her
+memory beside the lexical baseline and full context, with models named
+in `eval.toml`.
 
-- **Status**: Store, Bodies and Contract Built; the Evaluation Next
+- **Status**: Store, Bodies, Contract and Evaluation Built; the First
+  Run Next, then the Engine
 - **Required**: Requisites Fulfilled
 - **Rationale**: Wherever she goes, her memory follows with her. The
   contract gives every harness one service and every engine one
-  interface, but her memory has never been measured, and the user judges
-  it weak. The evaluation goes first, as the engine waits on it and it
-  waits on no choice of harness; recording may follow it or run beside
-  it, and delivery follows the choice of harnesses.
+  interface, and the evaluation can now measure her memory, which the
+  user judges weak. Its first run comes first, as the engine's spec
+  chooses on its numbers; should those leave the choice open, the
+  engine's spec may first ask for adapters to the field's systems.
+  Recording waits on no number and may run beside it, and delivery
+  follows the choice of harnesses.
 
 ### Model Providers
 
@@ -207,8 +217,14 @@ Found but not scheduled, each with its source.
   the [memory contract](./reports/2026-10-18-memory-contract.md)'s.
 - The memory service's loose ends: `brief` clamped to a host's budget,
   the hook API's `project` checked, idle sessions bounded with reviews
-  off, and the port bound before the history launch (memory contract,
-  final review).
+  off, the port bound before the history launch, and an unexpected tool
+  failure logged (memory contract, final review).
+- The evaluation's later systems and checks: adapters for Hindsight,
+  OpenViking, EverOS, Honcho and an improved Dorothy; an agentic mode
+  driving the MCP tools; LongMemEval-S as a public anchor; a corrected
+  memory surviving a re-ingest, and two clients writing while a second
+  machine reads; and a second ingest model (memory evaluation spec,
+  Later).
 - Launch notes kept in the state directory rather than the runtime one,
   so a launch killed by a crash or a power-off is still caught up after
   a reboot (memory bodies report).
@@ -360,3 +376,9 @@ In order of completion.
   is next within the phase, ahead of recording, the engine and delivery.
   Candidates gain the contract's deferred findings and the service's
   loose ends.
+- 2026-10-19: Dorothy's Memory has built its evaluation, `@dorothy/eval`,
+  with every finding it deferred addressed. Its first run, by the owner,
+  is next within the phase, and the engine follows on its numbers;
+  recording may run beside it. Candidates gain the evaluation's later
+  systems and checks, and the unlogged tool failure the contract's
+  final review left.
