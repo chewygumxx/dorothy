@@ -84,12 +84,12 @@ export type HistoryHandle = {
     heal(path: string): Promise<boolean>;
     close(): void;
 };
-// The lock memory's writes take: the index's, or history's own without
-// it; none with neither.
+// Canonical writes take history's combined lock when available, else
+// the index's alone; none with neither.
 export const writeLock = (
     index: { lock: Lock } | null,
     versions: HistoryHandle | null,
-): Lock | undefined => index?.lock ?? versions?.lock;
+): Lock | undefined => versions?.lock ?? index?.lock;
 // A write's commit through history; none without it.
 export const recordingFor = (
     versions: HistoryHandle | null,

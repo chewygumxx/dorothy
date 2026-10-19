@@ -105,9 +105,9 @@ Of the `@dorothy` packages it depends on `core` alone.
 ## Invariants
 
 - The recall index doubles as the sidecar write lock and holds review
-  claims, so two TUIs never review one conversation at once. Without the
-  index, history's `FileLock` (`.git/dorothy.lock`) is the lock; both are
-  `exclusiveLock`. History commits a change inside the lock it was written
+  claims, so two TUIs never review one conversation at once. History's
+  `FileLock` (`.git/dorothy.lock`) excludes all history writers, with the
+  index's lock taken first when available. History commits inside the lock
   under; healing takes the lock, so it happens only outside it.
 - `updateSidecar`'s change may be async, so coining a concept inside its
   lock means two runs never coin one label twice.

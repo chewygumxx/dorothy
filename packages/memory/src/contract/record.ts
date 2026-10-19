@@ -21,7 +21,7 @@ import {
     type RecordResponse,
 } from "@dorothy/core";
 import { recordedUuids } from "../bodies/record.js";
-import type { Recorder } from "../memory/sidecar.js";
+import type { Lock, Recorder } from "../memory/sidecar.js";
 import type { RecallIndex } from "../recall/store.js";
 import { sessionPhrase } from "../recall/sync.js";
 import {
@@ -37,6 +37,7 @@ export type RecordDeps = {
     env: Env;
     index: RecallIndex;
     recorder: Recorder | null;
+    lock?: Lock;
     // Whether the request came over loopback.
     loopback: boolean;
     // Brings the index up to date, so a session recorded before a
@@ -180,7 +181,7 @@ export async function acceptRecord(
     if (!deps.sessions.has(key)) {
         await deps.sync();
     }
-    return deps.index.lock(async () => {
+    return (deps.lock ?? deps.index.lock)(async () => {
         const found = deps.sessions.get(key) ?? sessionPhrase(deps.index, key);
         const phrase = found ?? (deps.phrase ?? newPhrase)();
         const path = transcriptPath(phrase, deps.env);

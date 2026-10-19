@@ -207,7 +207,7 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
             const result = await work(
                 {
                     root,
-                    lock: index.lock,
+                    lock: versions?.lock ?? index.lock,
                     recorder: versions?.recorder ?? null,
                     now: () => new Date(now()),
                 },

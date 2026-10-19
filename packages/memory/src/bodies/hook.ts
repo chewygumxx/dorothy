@@ -334,7 +334,7 @@ async function stepsFor(
             return recorded;
         },
         sync: async () => {
-            const lock = index?.lock ?? versions?.lock;
+            const lock = versions?.lock ?? index?.lock;
             if (lock === undefined) {
                 return;
             }

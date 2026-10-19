@@ -152,7 +152,7 @@ export async function recordSession(
     report: SessionReport,
     deps: RecordDeps,
 ): Promise<Recorded> {
-    const lock: Lock | undefined = deps.index?.lock ?? deps.versions?.lock;
+    const lock: Lock | undefined = deps.versions?.lock ?? deps.index?.lock;
     if (lock === undefined) {
         return { kind: "unlocked" };
     }

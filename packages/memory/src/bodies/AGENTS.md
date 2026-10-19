@@ -95,8 +95,8 @@ reader, the store and reviews alone. The CLI loads both lazily.
 - What is kept aside stays outside the data directory, so history, the
   mirror and the index never see it: directories `0700`, files `0600`.
 - A transcript has one writer at a time: recording takes the store's
-  lock, the index's or history's; with neither, nothing is recorded and
-  the next start says so.
+  lock, history's combined lock or the index's; with neither, nothing is
+  recorded, and the next start says so.
 - A session new to Dorothy is hers from the launch's start; one she
   recorded continues its conversation.
 - The recall server reads the launch's notes (`DOROTHY_LAUNCH`) to leave

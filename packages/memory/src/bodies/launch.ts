@@ -82,7 +82,7 @@ export async function syncDirectory(
     }
     const versions = await openHistory(index);
     try {
-        const lock = index?.lock ?? versions?.lock;
+        const lock = versions?.lock ?? index?.lock;
         if (lock === undefined) {
             return "neither the memory index nor history can lock the store";
         }

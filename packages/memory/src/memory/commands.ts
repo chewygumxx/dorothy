@@ -286,7 +286,7 @@ export async function runMemoryEdit(
                 return saveNotes(phrase, parsed.changes, {
                     dir,
                     path,
-                    lock: index?.lock ?? versions?.lock,
+                    lock: versions?.lock ?? index?.lock,
                     versions,
                     at: now().toISOString(),
                     err,
@@ -409,7 +409,7 @@ export async function runTagsEdit({
                 }
                 return saveTags(parsed.edit, {
                     path,
-                    lock: index?.lock ?? versions?.lock,
+                    lock: versions?.lock ?? index?.lock,
                     versions,
                     at: now().toISOString(),
                     err,

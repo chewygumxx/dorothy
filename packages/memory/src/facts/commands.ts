@@ -67,7 +67,7 @@ async function openStore({
     return {
         store: {
             root: dataRoot(env),
-            lock: index.lock,
+            lock: versions?.lock ?? index.lock,
             recorder: versions?.recorder ?? null,
             ...(now === undefined ? {} : { now }),
         },

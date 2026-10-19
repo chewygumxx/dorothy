@@ -526,9 +526,9 @@ export type OpenedHistory =
     | { ok: true; history: MemoryHistory; close(): void }
     | { ok: false; reason: string };
 
-// History under the index's lock when the index is open, otherwise under
-// a lock of its own in .git; not ok, with the reason, when it can't be
-// used at all.
+// Every history writer takes the common lock in .git, including writers
+// with the index. Its lock is taken first when available, so canonical
+// writes and the index update share a transaction as well.
 export async function openHistory({
     root,
     index,
@@ -550,10 +550,10 @@ export async function openHistory({
             root,
             engine === undefined ? {} : { engine },
         );
-        if (index === null) {
-            file = FileLock.open(join(root, ".git", "dorothy.lock"));
-        }
-        const lock = index?.lock ?? (file as FileLock).lock;
+        file = FileLock.open(join(root, ".git", "dorothy.lock"));
+        const shared = file.lock;
+        const lock: Lock =
+            index === null ? shared : (work) => index.lock(() => shared(work));
         for (const warning of await lock(() => migrateFacts(root))) {
             warn?.(warning);
         }

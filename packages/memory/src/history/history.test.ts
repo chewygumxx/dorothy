@@ -60,6 +60,7 @@ import {
     openHistory,
 } from "./history.js";
 import { isoRepo } from "./iso.js";
+import { FileLock } from "./lock.js";
 import { openRepo } from "./open.js";
 import { put, removeRoots, TEST_ENV, tempRoot } from "./testing.js";
 
@@ -667,6 +668,34 @@ describe("recording", () => {
 });
 
 describe("taking the lock itself", () => {
+    it("excludes a fallback writer while an indexed writer holds history", async () => {
+        const indexLock = FileLock.open(join(tempRoot(), "index.sqlite"), 20);
+        const opened = await openHistory({
+            root,
+            index: indexLock,
+            engine: "git",
+        });
+        if (!opened.ok) throw new Error(opened.reason);
+        const fallback = FileLock.open(join(root, ".git", "dorothy.lock"), 20);
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const writing = opened.history.lock(async () => {
+            entered.resolve();
+            await release.promise;
+        });
+        try {
+            await entered.promise;
+            await expect(
+                fallback.lock(async () => "overlap"),
+            ).rejects.toThrow();
+        } finally {
+            release.resolve();
+            await writing;
+            opened.close();
+            fallback.close();
+            indexLock.close();
+        }
+    });
     it("commits a turn with its count", async () => {
         const history = await open();
         put(root, TRANSCRIPT, event("one"));

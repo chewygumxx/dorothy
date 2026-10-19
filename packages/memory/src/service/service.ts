@@ -178,7 +178,12 @@ export async function startService(
             now: () => now().getTime(),
         });
         const frozen = new FrozenBlocks();
-        const store: FactStore = { root, lock: index.lock, recorder, now };
+        const store: FactStore = {
+            root,
+            lock: launched?.history.lock ?? index.lock,
+            recorder,
+            now,
+        };
         // Host sessions' conversations, found again through the index when
         // one has gone; a host chooses the keys, so only the latest are kept.
         const sessions = new Recent<string, string>(MAX_SESSIONS);
@@ -331,6 +336,7 @@ export async function startService(
                         env,
                         index,
                         recorder,
+                        lock: store.lock,
                         loopback: local,
                         sync: () => engine.index(),
                         claudeTranscript,

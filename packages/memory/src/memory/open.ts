@@ -577,7 +577,7 @@ export async function openMemory({
     const claims = index;
     // Writes outside memory's service take the index's lock, or
     // history's own without it.
-    const writeLock = claims?.lock ?? launched?.history.lock;
+    const writeLock = launched?.history.lock ?? claims?.lock;
     const channel = noticeChannel();
     // Chat syncs its project at its start and after each turn; with
     // memory off, or without a lock to sync under, it does not.

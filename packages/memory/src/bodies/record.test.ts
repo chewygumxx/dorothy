@@ -110,6 +110,15 @@ const events = async (phrase: string) =>
         .map((line) => JSON.parse(line));
 
 describe("recordSession", () => {
+    it("takes history's combined lock when the index is available", async () => {
+        await write([userLine("u1", 0, "hello")]);
+        const holding: Lock = async () => {
+            throw new Error("shared history lock busy");
+        };
+        await expect(
+            recordSession(report(), deps({ versions: versions(holding) })),
+        ).rejects.toThrow("shared history lock busy");
+    });
     it("records a new session as a conversation of its own, from its lines", async () => {
         await write([
             userLine("u1", 0, "hello"),
