@@ -28,13 +28,24 @@ export async function loadProfiles(
     const files = (await readdir(dir))
         .filter((name) => name.endsWith(".json"))
         .sort();
+    if (files.length === 0) {
+        throw new Error(`no host profile in ${dir}`);
+    }
     for (const file of files) {
-        const parsed = hostProfileSchema.safeParse(
-            await Bun.file(join(dir, file)).json(),
-        );
-        if (!parsed.success) {
+        let json: unknown;
+        try {
+            json = await Bun.file(join(dir, file)).json();
+        } catch (error) {
             throw new Error(
-                `hosts/${file}: ${parsed.error.issues[0]?.message ?? "not a profile"}`,
+                `hosts/${file}: not JSON (${error instanceof Error ? error.message : String(error)})`,
+            );
+        }
+        const parsed = hostProfileSchema.safeParse(json);
+        if (!parsed.success) {
+            const issue = parsed.error.issues[0];
+            const field = issue?.path.join(".") ?? "";
+            throw new Error(
+                `hosts/${file}: ${field === "" ? "" : `${field}: `}${issue?.message ?? "not a profile"}`,
             );
         }
         if (parsed.data.id !== basename(file, ".json")) {
