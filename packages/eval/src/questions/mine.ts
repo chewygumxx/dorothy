@@ -25,12 +25,23 @@ import {
     writeQuestions,
 } from "./file.js";
 
+// The reads that make questions, and the reads dropped for a reason
+// worth saying. A read passed over as the spec says (of its own reader,
+// of what no system reaches, with no purpose or a repeat) is not
+// counted. A question has one `exclude`: a purpose read from the same
+// target by several conversations keeps the first's.
+const HIDDEN_READER = "a read by a hidden or absent conversation";
+
 export function lookupQuestions(
     reads: AppraisedRead[],
     projects: Map<string, string | null>,
     present: Set<string>,
-): Question[] {
+): { questions: Question[]; dropped: Record<string, number> } {
     const made = new Map<string, Question>();
+    const dropped: Record<string, number> = {};
+    const drop = (reason: string) => {
+        dropped[reason] = (dropped[reason] ?? 0) + 1;
+    };
     for (const read of reads) {
         const question = read.purpose.trim();
         if (
@@ -38,6 +49,13 @@ export function lookupQuestions(
             read.target === `c:${read.reader}` ||
             !present.has(read.target)
         ) {
+            continue;
+        }
+        // Hidden conversations are not in the snapshot's list, so neither
+        // is their project: asked in none, the question would score
+        // differently from the one she met.
+        if (!projects.has(read.reader)) {
+            drop(HIDDEN_READER);
             continue;
         }
         const evidence = [read.target];
@@ -55,11 +73,13 @@ export function lookupQuestions(
             status: "accepted",
             note: null,
         });
-        if (parsed.success && !made.has(id)) {
+        if (!parsed.success) {
+            drop("a purpose that is not a question");
+        } else if (!made.has(id)) {
             made.set(id, parsed.data);
         }
     }
-    return [...made.values()];
+    return { questions: [...made.values()], dropped };
 }
 
 export const mineCommand: Command = {
@@ -88,7 +108,7 @@ export const mineCommand: Command = {
                     .filter((each) => each.retired === null)
                     .map((each) => each.id),
             ]);
-            const mined = lookupQuestions(
+            const { questions: mined, dropped } = lookupQuestions(
                 await archive.appraisedReads(),
                 projects,
                 present,
@@ -98,6 +118,14 @@ export const mineCommand: Command = {
             io.out(
                 `mined ${mined.length} lookups, ${merged.added} new; ${merged.questions.length} questions in all\n`,
             );
+            for (const [reason, n] of Object.entries(dropped)) {
+                io.out(`  dropped ${n}: ${reason}\n`);
+            }
+            if (merged.collided > 0) {
+                io.out(
+                    `  not added ${merged.collided}: their ids are other questions' ids\n`,
+                );
+            }
             return 0;
         } finally {
             archive.close();

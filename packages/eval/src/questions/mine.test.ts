@@ -10,8 +10,19 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
+import {
+    type FixtureConversation,
+    fixturePhrase,
+} from "@dorothy/memory/evaluation";
 import { runCli } from "../cli.js";
-import { fakeIo, READER, snapshotFixture, TEA, tempRoot } from "../testing.js";
+import {
+    FIXTURE,
+    fakeIo,
+    READER,
+    snapshotFixture,
+    TEA,
+    tempRoot,
+} from "../testing.js";
 import { questionsPath, readQuestions } from "./file.js";
 import { lookupQuestions } from "./mine.js";
 
@@ -35,7 +46,7 @@ describe("lookups", () => {
             [read("which tea the user likes", "c:t")],
             new Map([["r", "github.com/me/app"]]),
             new Set(["c:t"]),
-        );
+        ).questions;
         expect(question).toMatchObject({
             type: "lookup",
             question: "which tea the user likes",
@@ -59,20 +70,59 @@ describe("lookups", () => {
                 read("again", "c:t"),
                 read("again", "c:t"),
             ],
-            new Map(),
+            new Map([["r", null]]),
             new Set(["c:r", "c:t"]),
         );
-        expect(found.map((question) => question.question)).toEqual(["again"]);
+        expect(found.questions.map((each) => each.question)).toEqual(["again"]);
+        expect(found.dropped).toEqual({});
     });
 
     it("leaves out what no system could give: hidden, gone or retired", () => {
         expect(
             lookupQuestions(
                 [read("an old editor", "k:personal/uses-vim")],
-                new Map(),
+                new Map([["r", null]]),
                 new Set(["c:t"]),
-            ),
+            ).questions,
         ).toEqual([]);
+    });
+
+    it("counts a purpose too long to be a question", () => {
+        const found = lookupQuestions(
+            [read("x".repeat(2001), "c:t"), read("which tea", "c:t")],
+            new Map([["r", null]]),
+            new Set(["c:t"]),
+        );
+        expect(found.questions.map((each) => each.question)).toEqual([
+            "which tea",
+        ]);
+        expect(found.dropped).toEqual({
+            "a purpose that is not a question": 1,
+        });
+    });
+
+    it("keeps the first reader's exclusion when two read the same purpose", () => {
+        const found = lookupQuestions(
+            [read("which tea", "c:t", "r"), read("which tea", "c:t", "s")],
+            new Map([
+                ["r", null],
+                ["s", null],
+            ]),
+            new Set(["c:t"]),
+        );
+        expect(found.questions.map((each) => each.exclude)).toEqual(["r"]);
+    });
+
+    it("passes over a read by a conversation the snapshot lacks", () => {
+        const found = lookupQuestions(
+            [read("which tea", "c:t", "hidden")],
+            new Map([["r", null]]),
+            new Set(["c:t"]),
+        );
+        expect(found.questions).toEqual([]);
+        expect(found.dropped).toEqual({
+            "a read by a hidden or absent conversation": 1,
+        });
     });
 });
 
@@ -94,6 +144,65 @@ describe("bun run eval -- mine", () => {
         expect(await runCli(["mine", "--work", work], again.io)).toBe(0);
         expect(again.out.join("")).toBe(
             "mined 2 lookups, 0 new; 2 questions in all\n",
+        );
+    });
+
+    it("passes over reads of, and by, hidden conversations", async () => {
+        const [SECRET, SECRET_READER] = [5, 6].map(fixturePhrase) as [
+            string,
+            string,
+        ];
+        const turns = (text: string) => [
+            { role: "user" as const, text, at: "2026-10-02T09:00:00.000Z" },
+            {
+                role: "assistant" as const,
+                text: "Noted.",
+                at: "2026-10-02T09:00:05.000Z",
+            },
+        ];
+        const [first, ...others] = FIXTURE.conversations;
+        const fixture = {
+            ...FIXTURE,
+            conversations: [
+                {
+                    ...(first as FixtureConversation),
+                    reads: [
+                        {
+                            id: "h1",
+                            target: { conversation: SECRET },
+                            purpose: "what the user keeps private",
+                            served: "useful" as const,
+                        },
+                    ],
+                },
+                ...others,
+                {
+                    phrase: SECRET,
+                    title: "Private",
+                    turns: turns("A private matter."),
+                    hidden: true,
+                },
+                {
+                    phrase: SECRET_READER,
+                    title: "Private reader",
+                    turns: turns("Looking for the tea."),
+                    hidden: true,
+                    reads: [
+                        {
+                            id: "h2",
+                            target: { conversation: TEA },
+                            purpose: "when the user drinks tea in private",
+                            served: "essential" as const,
+                        },
+                    ],
+                },
+            ],
+        };
+        const work = await snapshotFixture(temp.root, fixture);
+        const { io, out } = fakeIo();
+        expect(await runCli(["mine", "--work", work], io)).toBe(0);
+        expect(out.join("")).toBe(
+            "mined 2 lookups, 2 new; 2 questions in all\n  dropped 1: a read by a hidden or absent conversation\n",
         );
     });
 

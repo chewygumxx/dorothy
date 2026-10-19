@@ -188,7 +188,10 @@ export const FIXTURE: ArchiveFixture = {
 };
 
 // A data directory holding FIXTURE, under root/source; returns its path.
-export async function writeFixtureData(root: string): Promise<string> {
+export async function writeFixtureData(
+    root: string,
+    fixture: ArchiveFixture = FIXTURE,
+): Promise<string> {
     const env = {
         HOME: join(root, "source"),
         XDG_DATA_HOME: join(root, "source", "data"),
@@ -196,14 +199,17 @@ export async function writeFixtureData(root: string): Promise<string> {
         XDG_STATE_HOME: join(root, "source", "state"),
         XDG_CONFIG_HOME: join(root, "source", "config"),
     };
-    await writeArchive(env, FIXTURE);
+    await writeArchive(env, fixture);
     return join(root, "source", "data", "dorothy");
 }
 
 // A work directory under root/work holding a snapshot of FIXTURE.
-export async function snapshotFixture(root: string): Promise<string> {
+export async function snapshotFixture(
+    root: string,
+    fixture: ArchiveFixture = FIXTURE,
+): Promise<string> {
     const work = join(root, "work");
-    await takeSnapshot(await writeFixtureData(root), work);
+    await takeSnapshot(await writeFixtureData(root, fixture), work);
     return work;
 }
 
