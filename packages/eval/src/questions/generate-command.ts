@@ -21,6 +21,7 @@ import {
     mergeQuestions,
     type Question,
     readQuestionsToRewrite,
+    underLock,
     updateQuestions,
 } from "./file.js";
 import {
@@ -64,13 +65,16 @@ async function readGenerations(work: string): Promise<unknown[]> {
     return read;
 }
 
-async function recordGeneration(work: string, entry: object): Promise<void> {
-    const entries = await readGenerations(work);
-    await writeAtomic(
-        join(work, "generated.json"),
-        `${JSON.stringify([...entries, entry], null, 4)}\n`,
-    );
-}
+// Under the question file's lock, as two generations can end together
+// and each read the list before the other wrote it back.
+export const recordGeneration = (work: string, entry: object): Promise<void> =>
+    underLock(work, async () => {
+        const entries = await readGenerations(work);
+        await writeAtomic(
+            join(work, "generated.json"),
+            `${JSON.stringify([...entries, entry], null, 4)}\n`,
+        );
+    });
 
 const byType = (questions: Question[]) => {
     const counts: Record<string, number> = {};

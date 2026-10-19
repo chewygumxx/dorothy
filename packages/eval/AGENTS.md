@@ -68,7 +68,8 @@ options declared and described for `--help`, its failures as
   bad one; `workEnv`; and the `snapshot` command.
 - `questions/file.ts`: the question file, its schema and ids; the
   commands that rewrite it do so through `updateQuestions`, which reads,
-  changes and writes it under a lock file beside it, held by pid.
+  changes and writes it under a lock file beside it, held by pid; the
+  same lock, as `underLock`, serves `generated.json`.
 - `questions/mine.ts`: lookup questions from her appraised reads, and
   the `mine` command.
 - `questions/generate.ts`: samples, prompts and checks for drafting

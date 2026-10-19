@@ -350,11 +350,27 @@ async function lockQuestions(
     }
 }
 
+// Runs act under the lock, which serves every file of the work directory
+// that is read, changed and written back: the question file, and the
+// list of generations. It is released however act ends.
+export async function underLock<T>(
+    work: string,
+    act: () => Promise<T>,
+    timing: Locking = locking,
+): Promise<T> {
+    const release = await lockQuestions(work, timing);
+    try {
+        return await act();
+    } finally {
+        await release();
+    }
+}
+
 // The one way the question file is changed: under its lock, the file as
 // it is then is read, changed and written back, so that no two commands
 // (a review beside a generation) overwrite each other's writes. A change
 // that gives no questions leaves the file as it is.
-export async function updateQuestions<T>(
+export const updateQuestions = <T>(
     work: string,
     change: (
         questions: Question[],
@@ -362,20 +378,20 @@ export async function updateQuestions<T>(
         | { questions: Question[] | null; result: T }
         | Promise<{ questions: Question[] | null; result: T }>,
     timing: Locking = locking,
-): Promise<T> {
-    const release = await lockQuestions(work, timing);
-    try {
-        const { questions, result } = await change(
-            await readQuestionsToRewrite(work),
-        );
-        if (questions !== null) {
-            await writeQuestions(work, questions);
-        }
-        return result;
-    } finally {
-        await release();
-    }
-}
+): Promise<T> =>
+    underLock(
+        work,
+        async () => {
+            const { questions, result } = await change(
+                await readQuestionsToRewrite(work),
+            );
+            if (questions !== null) {
+                await writeQuestions(work, questions);
+            }
+            return result;
+        },
+        timing,
+    );
 
 // The incoming questions whose ids are new join the existing; one whose
 // id is held by a different question is counted as collided, not added.

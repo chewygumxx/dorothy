@@ -47,6 +47,7 @@ import {
     sampleFor,
     seeded,
 } from "./generate.js";
+import { recordGeneration } from "./generate-command.js";
 
 let temp: ReturnType<typeof tempRoot>;
 let work: string;
@@ -1138,5 +1139,20 @@ describe("bun run eval -- generate", () => {
             "dry run: at least 62 calls to the generating model, each tried up to three times, for ",
         );
         expect(stub.requests).toHaveLength(0);
+    });
+});
+
+describe("recording a generation", () => {
+    it("keeps every entry when generations finish together", async () => {
+        const here = join(temp.root, "recorded");
+        mkdirSync(here);
+        await Promise.all(
+            [1, 2, 3].map((seed) => recordGeneration(here, { seed })),
+        );
+        const entries = JSON.parse(
+            readFileSync(join(here, "generated.json"), "utf8"),
+        ) as { seed: number }[];
+        expect(entries.map((entry) => entry.seed).sort()).toEqual([1, 2, 3]);
+        expect(existsSync(join(here, "questions.jsonl.lock"))).toBe(false);
     });
 });
