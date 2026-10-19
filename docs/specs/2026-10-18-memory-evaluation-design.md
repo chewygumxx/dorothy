@@ -139,8 +139,11 @@ path and the error's code.
 Those commands change the file under an advisory lock, a
 `questions.jsonl.lock` made beside it, reading the file again inside it,
 so that a review beside a generation or a mine loses neither's writes. A
-writer waits some ten seconds for the lock, and takes over one older
-than thirty.
+writer waits some ten seconds for the lock. The lock holds its writer's
+pid and a token: it is taken over only when that process is gone (or,
+if it names none, when it is older than thirty seconds), never from a
+live writer, and released only while it holds its writer's token. A
+writer that gives up says which file to remove.
 
 ### Mined lookups
 

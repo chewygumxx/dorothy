@@ -14,6 +14,7 @@ import {
     mkdirSync,
     readdirSync,
     readFileSync,
+    rmSync,
     statSync,
     utimesSync,
     writeFileSync,
@@ -268,12 +269,23 @@ describe("changing the question file", () => {
         result: questions.length,
     });
     // Waits no time, as far as a test can see.
-    const instant = (sleep: Locking["sleep"]): Locking => ({
-        staleMs: 30_000,
+    const instant = (
+        sleep: Locking["sleep"],
+        more: Partial<Locking> = {},
+    ): Locking => ({
+        ...locking,
         tries: 5,
         pauseMs: 1,
         sleep,
+        ...more,
     });
+    const aged = (path: string, ms: number) => {
+        const old = new Date(Date.now() - ms);
+        utimesSync(path, old, old);
+    };
+    const nobody = async () => {
+        throw new Error("it should not wait");
+    };
 
     it("reads, changes and writes under a lock it then releases", async () => {
         await writeQuestions(temp.root, [lookup("Which tea?")]);
@@ -344,7 +356,7 @@ describe("changing the question file", () => {
     });
 
     it("gives up after its tries, saying whose lock it is", async () => {
-        writeFileSync(lock(), "1\n");
+        writeFileSync(lock(), `${process.pid} theirs\n`);
         let slept = 0;
         await expect(
             updateQuestions(
@@ -357,28 +369,121 @@ describe("changing the question file", () => {
         ).rejects.toThrow(`${lock()} is held by another command`);
         expect(slept).toBe(4);
         // Not its lock to release.
-        expect(existsSync(lock())).toBe(true);
+        expect(readFileSync(lock(), "utf8")).toBe(`${process.pid} theirs\n`);
     });
 
-    it("takes over a lock older than its stale age", async () => {
-        writeFileSync(lock(), "1\n");
-        const old = new Date(Date.now() - 60_000);
-        utimesSync(lock(), old, old);
+    it("never takes a live writer's lock, however old", async () => {
+        writeFileSync(lock(), `${process.pid} theirs\n`);
+        aged(lock(), 3_600_000);
+        await expect(
+            updateQuestions(
+                temp.root,
+                adding(lookup("Which tea?")),
+                instant(async () => {}),
+            ),
+        ).rejects.toThrow("is held by another command");
+        expect(readFileSync(lock(), "utf8")).toBe(`${process.pid} theirs\n`);
+        expect(readdirSync(temp.root)).toEqual(["questions.jsonl.lock"]);
+    });
+
+    it("takes the lock of a writer that is dead, at once", async () => {
+        writeFileSync(lock(), "4194999 theirs\n");
+        const asked: number[] = [];
         await updateQuestions(
             temp.root,
             adding(lookup("Which tea?")),
-            instant(async () => {
-                throw new Error("it should not wait");
+            instant(nobody, {
+                alive: (pid) => {
+                    asked.push(pid);
+                    return false;
+                },
             }),
+        );
+        expect(asked).toEqual([4194999]);
+        expect(readdirSync(temp.root)).toEqual(["questions.jsonl"]);
+        expect((await readQuestions(temp.root)).questions).toHaveLength(1);
+    });
+
+    it("takes an empty or unreadable lock only when it is old", async () => {
+        writeFileSync(lock(), "");
+        await expect(
+            updateQuestions(
+                temp.root,
+                adding(lookup("Which tea?")),
+                instant(async () => {}, { tries: 2 }),
+            ),
+        ).rejects.toThrow("is held by another command");
+        aged(lock(), 60_000);
+        await updateQuestions(
+            temp.root,
+            adding(lookup("Which tea?")),
+            instant(nobody),
         );
         expect(existsSync(lock())).toBe(false);
         expect((await readQuestions(temp.root)).questions).toHaveLength(1);
     });
 
-    it("has defaults that wait a few seconds, and call a lock stale after a while", () => {
+    it("puts back a fresh lock it moved aside, taking it for the stale one", async () => {
+        writeFileSync(lock(), "4194999 theirs\n");
+        let asked = 0;
+        // Between judging the lock stale and moving it, another writer
+        // takes it over.
+        const fresh = `${process.pid} fresh\n`;
+        const timing = instant(async () => {}, {
+            tries: 2,
+            alive: () => {
+                if (++asked === 1) {
+                    rmSync(lock());
+                    writeFileSync(lock(), fresh);
+                    return false;
+                }
+                return true;
+            },
+        });
+        await expect(
+            updateQuestions(temp.root, adding(lookup("Which tea?")), timing),
+        ).rejects.toThrow("is held by another command");
+        expect(readFileSync(lock(), "utf8")).toBe(fresh);
+        expect(readdirSync(temp.root)).toEqual(["questions.jsonl.lock"]);
+    });
+
+    it("leaves a lock that holds another token when it releases", async () => {
+        await updateQuestions(temp.root, (questions) => {
+            writeFileSync(lock(), `${process.pid} another\n`);
+            return adding(lookup("Which tea?"))(questions);
+        });
+        expect(readFileSync(lock(), "utf8")).toBe(`${process.pid} another\n`);
+    });
+
+    it("leaves no lock when it cannot write its pid into it", async () => {
+        await expect(
+            updateQuestions(
+                temp.root,
+                adding(lookup("Which tea?")),
+                instant(nobody, {
+                    write: async () => {
+                        throw new Error("disk full");
+                    },
+                }),
+            ),
+        ).rejects.toThrow("disk full");
+        expect(readdirSync(temp.root)).toEqual([]);
+    });
+
+    it("leaves the file as it is when the change gives no questions", async () => {
+        await writeQuestions(temp.root, [lookup("Which tea?")]);
+        const before = statSync(questionsPath(temp.root)).ino;
+        const result = await updateQuestions(temp.root, () => ({
+            questions: null,
+            result: "refused",
+        }));
+        expect(result).toBe("refused");
+        expect(statSync(questionsPath(temp.root)).ino).toBe(before);
+        expect(existsSync(lock())).toBe(false);
+    });
+
+    it("has defaults that wait a few seconds, and know a live process", () => {
         expect(locking.tries * locking.pauseMs).toBeGreaterThanOrEqual(5000);
-        expect(locking.staleMs).toBeGreaterThan(
-            locking.tries * locking.pauseMs,
-        );
+        expect(locking.alive(process.pid)).toBe(true);
     });
 });

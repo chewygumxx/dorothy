@@ -11,8 +11,17 @@
 // <work>/questions.jsonl: one question a line, mined or generated, and
 // the owner's decision on it.
 
-import { createHash } from "node:crypto";
-import { open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import {
+    type FileHandle,
+    link,
+    open,
+    readFile,
+    rename,
+    rm,
+    stat,
+    writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { UsageError } from "../errors.js";
@@ -211,39 +220,129 @@ export async function writeQuestions(
     );
 }
 
-// How long a writer waits for the lock on the file: tries, a pause
-// between them, and the age after which a lock is taken over as left by
-// a writer that died. Mutable so that tests can play the wait.
+// How a writer waits for the lock on the file: tries, and a pause
+// between them. A lock is stale when the process named in it is gone, or,
+// where it names none, when it is older than staleMs. The rest are the
+// world's, passed in so that tests can play it.
 export type Locking = {
     staleMs: number;
     tries: number;
     pauseMs: number;
     sleep(ms: number): Promise<void>;
+    alive(pid: number): boolean;
+    now(): number;
+    write(handle: FileHandle, text: string): Promise<void>;
 };
 export const locking: Locking = {
     staleMs: 30_000,
     tries: 200,
     pauseMs: 50,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    alive(pid) {
+        try {
+            process.kill(pid, 0);
+            return true;
+        } catch (error) {
+            // EPERM: there, and not ours.
+            return codeOf(error) !== "ESRCH";
+        }
+    },
+    now: () => Date.now(),
+    write: (handle, text) => handle.writeFile(text),
 };
 
-const codeOf = (error: unknown) => (error as { code?: unknown } | null)?.code;
+function codeOf(error: unknown) {
+    return (error as { code?: unknown } | null)?.code;
+}
 
-// An advisory lock beside the file, made exclusively; returns its release.
+// What a lock file holds: undefined if there is none, null if it cannot
+// be read.
+async function readLock(path: string): Promise<string | null | undefined> {
+    try {
+        return await readFile(path, "utf8");
+    } catch (error) {
+        return codeOf(error) === "ENOENT" ? undefined : null;
+    }
+}
+
+// Whether the lock is stale, and if so removed, by moving it aside under
+// a name of our own, which one writer alone can do. If what was moved is
+// not what was judged, another writer took the lock first: it is put
+// back, unless a lock is there again.
+async function takenOver(
+    path: string,
+    judged: string | null,
+): Promise<boolean> {
+    const aside = `${path}.stale.${process.pid}.${randomUUID()}`;
+    try {
+        await rename(path, aside);
+    } catch (error) {
+        return codeOf(error) === "ENOENT";
+    }
+    if ((await readLock(aside)) === judged) {
+        await rm(aside, { force: true });
+        return true;
+    }
+    try {
+        await link(aside, path);
+    } catch (error) {
+        if (codeOf(error) !== "EEXIST") {
+            await rm(aside, { force: true });
+            throw error;
+        }
+    }
+    await rm(aside, { force: true });
+    return false;
+}
+
+// Whether a lock held is a dead writer's, and so removed.
+async function staleLock(path: string, timing: Locking): Promise<boolean> {
+    const text = await readLock(path);
+    if (text === undefined) {
+        return true;
+    }
+    const owner = /^(\d+) \S+\n$/.exec(text ?? "");
+    let stale: boolean;
+    if (owner !== null) {
+        stale = !timing.alive(Number(owner[1]));
+    } else {
+        try {
+            stale = timing.now() - (await stat(path)).mtimeMs > timing.staleMs;
+        } catch (error) {
+            if (codeOf(error) !== "ENOENT") {
+                throw error;
+            }
+            return true;
+        }
+    }
+    return stale && (await takenOver(path, text));
+}
+
+// An advisory lock beside the file, made exclusively with this writer's
+// pid and a token of its own; returns its release, which removes the lock
+// only while it holds that token.
 async function lockQuestions(
     work: string,
     timing: Locking,
 ): Promise<() => Promise<void>> {
     const path = `${questionsPath(work)}.lock`;
+    const held = `${process.pid} ${randomUUID()}\n`;
     for (let attempt = 1; ; attempt++) {
         try {
             const handle = await open(path, "wx", 0o600);
             try {
-                await handle.writeFile(`${process.pid}\n`);
+                await timing.write(handle, held);
+            } catch (error) {
+                await rm(path, { force: true });
+                throw error;
             } finally {
                 await handle.close();
             }
-            return () => rm(path, { force: true });
+            return async () => {
+                if ((await readLock(path)) === held) {
+                    await rm(path, { force: true });
+                }
+            };
         } catch (error) {
             if (codeOf(error) !== "EEXIST") {
                 throw typeof codeOf(error) === "string"
@@ -251,16 +350,7 @@ async function lockQuestions(
                     : error;
             }
         }
-        try {
-            const age = Date.now() - (await stat(path)).mtimeMs;
-            if (age > timing.staleMs) {
-                await rm(path, { force: true });
-                continue;
-            }
-        } catch (error) {
-            if (codeOf(error) !== "ENOENT") {
-                throw error;
-            }
+        if (await staleLock(path, timing)) {
             continue;
         }
         if (attempt >= timing.tries) {
@@ -274,14 +364,15 @@ async function lockQuestions(
 
 // The one way the question file is changed: under its lock, the file as
 // it is then is read, changed and written back, so that no two commands
-// (a review beside a generation) overwrite each other's writes.
+// (a review beside a generation) overwrite each other's writes. A change
+// that gives no questions leaves the file as it is.
 export async function updateQuestions<T>(
     work: string,
     change: (
         questions: Question[],
     ) =>
-        | { questions: Question[]; result: T }
-        | Promise<{ questions: Question[]; result: T }>,
+        | { questions: Question[] | null; result: T }
+        | Promise<{ questions: Question[] | null; result: T }>,
     timing: Locking = locking,
 ): Promise<T> {
     const release = await lockQuestions(work, timing);
@@ -289,7 +380,9 @@ export async function updateQuestions<T>(
         const { questions, result } = await change(
             await readQuestionsToRewrite(work),
         );
-        await writeQuestions(work, questions);
+        if (questions !== null) {
+            await writeQuestions(work, questions);
+        }
         return result;
     } finally {
         await release();
