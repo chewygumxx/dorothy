@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-18
-mtime: 2026-10-18
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Dorothy's memory contract design
 description: >-
@@ -492,7 +492,9 @@ is passed in.
     `importance` becomes `dorothy.importance`;
   - `name` becomes the filename alone;
   - a fact stays in `facts/`, with a warning, when its `knowledge/` twin
-    exists or its move fails; nothing is overwritten.
+    exists or its move fails; nothing is overwritten, and anything else
+    left in `facts/` (a file the store does not list, a link) is named
+    in a warning too.
 - Each conversation's notes become its episode, unchanged.
 - The recall index is rebuilt; `recall-server.ts` stays as it is for her
   chat, and the service's MCP face is new.

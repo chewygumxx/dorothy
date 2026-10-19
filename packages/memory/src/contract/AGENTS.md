@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-18
-mtime: 2026-10-19
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: packages/memory/src/contract/AGENTS.md
 description: >-
@@ -83,7 +83,13 @@ gives back, and the service that speaks it. The spec is
   Only `--verify`, the user's, adds a `verified` entry; a write by
   anyone else drops it.
 - Migration leaves a fact in `facts/`, with a warning, when its
-  `knowledge/` target exists or the file fails; it overwrites nothing.
+  `knowledge/` target exists or the file fails; it overwrites nothing,
+  and names what else it finds there.
+- A hook request's `project` is a project's id as the client makes it,
+  or a 400; the tools take an id or a path. `brief` keeps to the named
+  host's `blockBudget`, as the opening block does.
+- With reviews off the service still takes idle conversations off its
+  list, and writes why to its log (`claude-hook.log`).
 
 ## The evaluation's door
 
