@@ -9,7 +9,13 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Env, RecordEvent, RecordRequest } from "@dorothy/core";
@@ -129,7 +135,29 @@ describe("acceptRecord", () => {
             acceptRecord(request(events), shared),
         ]);
         expect((first?.accepted ?? 0) + (second?.accepted ?? 0)).toBe(3);
-        expect(lines().filter((line) => line.kind === "user")).toHaveLength(3);
+        expect(
+            lines()
+                .filter((line) => line.kind === "user")
+                .map((line) => line.sourceUuid),
+        ).toEqual(["a", "b", "c"]);
+    });
+
+    it("writes the session's header again where its file is gone", async () => {
+        const shared = deps();
+        await acceptRecord(request([user("a")]), shared);
+        // History may remove a file a session cache still names.
+        rmSync(transcriptPath(PHRASE, env));
+        const again = await acceptRecord(
+            request([user("a"), user("b")]),
+            shared,
+        );
+        expect(again).toEqual({ accepted: 2, duplicates: 0, through: "b" });
+        expect(lines().map((line) => line.kind)).toEqual([
+            "session",
+            "user",
+            "user",
+        ]);
+        expect(lines()[0]).toMatchObject({ source: "codex", phrase: PHRASE });
     });
 
     it("finds the conversation again after a restart, through the index", async () => {
@@ -152,12 +180,41 @@ describe("acceptRecord", () => {
     });
 
     it("stores nothing of a private session", async () => {
+        const sessions = new Map<string, string>();
+        let read = 0;
+        const shared = deps({
+            sessions,
+            sync: async () => {
+                read += 1;
+            },
+            claudeTranscript: async () => {
+                read += 1;
+                return { accepted: 1, duplicates: 0, through: null };
+            },
+        });
+        const nothing = { accepted: 0, duplicates: 0, through: null };
+        for (const body of [
+            { events: [user("a")] },
+            { transcript: "/tmp/x.jsonl" },
+        ]) {
+            expect(
+                await acceptRecord(
+                    {
+                        host: "claude-code",
+                        session: "s1",
+                        private: true,
+                        ...body,
+                    },
+                    shared,
+                ),
+            ).toEqual(nothing);
+        }
+        expect(read).toBe(0);
+        expect(sessions.size).toBe(0);
+        expect(existsSync(transcriptDir(env))).toBe(false);
         expect(
-            await acceptRecord(
-                { ...request([user("a")]), private: true },
-                deps(),
-            ),
-        ).toEqual({ accepted: 0, duplicates: 0, through: null });
+            index.db.query("SELECT COUNT(*) AS n FROM conversations").get(),
+        ).toEqual({ n: 0 });
     });
 
     it("refuses a transcript path from beyond loopback, or with no reader", async () => {

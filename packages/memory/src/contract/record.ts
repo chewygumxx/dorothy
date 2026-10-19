@@ -79,12 +79,13 @@ function entryOf(event: RecordEvent): TranscriptEntry {
     }
 }
 
-async function heldIn(path: string): Promise<Set<string>> {
+// The source ids a transcript holds, or null where there is no file.
+async function heldIn(path: string): Promise<Set<string> | null> {
     try {
         return recordedUuids(await readFile(path, "utf8")).uuids;
     } catch (error) {
         if ((error as { code?: unknown }).code === "ENOENT") {
-            return new Set();
+            return null;
         }
         throw error;
     }
@@ -127,7 +128,11 @@ export async function acceptRecord(
         const found = deps.sessions.get(key) ?? sessionPhrase(deps.index, key);
         const phrase = found ?? (deps.phrase ?? newPhrase)();
         const path = transcriptPath(phrase, deps.env);
-        const seen = found === null ? new Set<string>() : await heldIn(path);
+        // A file may be gone that the session cache or index still names,
+        // as history removes one it heals: the conversation starts over.
+        const held = found === null ? null : await heldIn(path);
+        const starting = held === null;
+        const seen = held ?? new Set<string>();
         const fresh: RecordEvent[] = [];
         for (const event of events) {
             if (!seen.has(event.sourceId)) {
@@ -138,7 +143,7 @@ export async function acceptRecord(
         if (fresh.length > 0) {
             const writer = await TranscriptWriter.open(path, deps.now);
             try {
-                if (found === null) {
+                if (starting) {
                     await writer.append({
                         kind: "session",
                         phrase,
