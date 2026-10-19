@@ -20,10 +20,29 @@ const SECRET = "[secret]";
 // headers with no end is crossed once, not once per header.
 const PRIVATE_KEY =
     /-----BEGIN [A-Z ]{0,40}PRIVATE KEY(?: BLOCK)?-----[\s\S]*?(?:-----END [A-Z ]{0,40}PRIVATE KEY(?: BLOCK)?-----|$)/g;
-// GitHub's API takes `Authorization: token <credential>`. A scheme is
-// not case-sensitive, so neither is this; it costs prose such as "basic
-// functionality" a redaction, as "token budget" always did.
-const BEARER = /\b(Bearer|Basic|token)\s+[A-Za-z0-9._~+/=-]{8,}/gi;
+// Schemes are case-insensitive in Authorization headers. Outside a
+// header, lowercase schemes are also ordinary words, so require a
+// credential's shape rather than redacting "basic understanding".
+const BEARER =
+    /(?:\b((?:proxy-)?authorization["']?\s*[:=]\s*["']?\s*))?\b(Bearer|Basic|token)\s+([A-Za-z0-9._~+/=-]{8,})/gi;
+
+function redactScheme(
+    whole: string,
+    header: string | undefined,
+    scheme: string,
+    credential: string,
+): string {
+    const shaped =
+        /[0-9_~+/=-]|\.(?=.)/.test(credential) ||
+        (scheme.toLowerCase() === "basic" &&
+            /^[A-Za-z0-9+/]+={0,2}$/.test(credential) &&
+            /^[\x20-\x7e]+:[\x20-\x7e]*$/.test(
+                Buffer.from(credential, "base64").toString("utf8"),
+            ));
+    return header !== undefined || scheme !== scheme.toLowerCase() || shaped
+        ? `${header ?? ""}${scheme} ${SECRET}`
+        : whole;
+}
 // The prefixes providers give their keys.
 const PREFIXED =
     /\b(?:sk-ant-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,})/g;
@@ -111,7 +130,7 @@ export function scrub(text: string): string {
     return redactNamed(
         text
             .replace(PRIVATE_KEY, SECRET)
-            .replace(BEARER, (_, scheme: string) => `${scheme} ${SECRET}`)
+            .replace(BEARER, redactScheme)
             .replace(PREFIXED, SECRET),
     );
 }

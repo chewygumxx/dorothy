@@ -67,6 +67,32 @@ describe("scrub", () => {
     });
 
     it.each([
+        "basic functionality is useful",
+        "basic understanding of this system",
+        "Some basic understanding.",
+        "bearer authentication is supported",
+        "token accounting is useful",
+    ])("keeps ordinary prose: %s", (text) => {
+        expect(scrub(text)).toBe(text);
+    });
+
+    it.each([
+        ["bearer opaque1234567890", "bearer [secret]"],
+        ["basic dXNlcjpwYXNz", "basic [secret]"],
+        ["token abc_defghijk", "token [secret]"],
+        [
+            '{"authorization":"basic opaquecredential"}',
+            '{"authorization":"basic [secret]"}',
+        ],
+        [
+            "proxy-authorization: token opaquecredential",
+            "proxy-authorization: token [secret]",
+        ],
+    ])("redacts header context or credential shape: %s", (text, expected) => {
+        expect(scrub(text)).toBe(expected);
+    });
+
+    it.each([
         ["author: Jane Doe", "author: Jane Doe"],
         ["monkey: banana", "monkey: banana"],
         ["authority=example.com", "authority=example.com"],
