@@ -338,6 +338,32 @@ describe("bun run eval -- run", () => {
         expect(requests).toHaveLength(0);
     });
 
+    it("counts on a resume's dry run only what is left", async () => {
+        const { requests } = serve({ content: "Plot twelve, by the river." });
+        const first = fakeIo();
+        const lexical = ["run", "--work", work, "--systems", "lexical"];
+        expect(
+            await runCli(
+                [...lexical, "--concurrency", "1", "--max-calls", "4"],
+                first.io,
+            ),
+        ).toBe(0);
+        const id = idOf(first.out);
+        const asked = requests.length;
+        const { io, out } = fakeIo();
+        expect(
+            await runCli(
+                ["run", "--work", work, "--resume", id, "--dry-run"],
+                io,
+            ),
+        ).toBe(0);
+        // The capped abstention's judgement, and the update whole.
+        expect(out.join("")).toBe(
+            "dry run: 5 questions, 1 systems, 2 left to ask; 5 model calls\n",
+        );
+        expect(requests).toHaveLength(asked);
+    });
+
     it("names a key's variable that is not set", async () => {
         stub = stubModels(() => ({ content: "x" }));
         writeFileSync(configPath(work), stubConfig(stub.url, "EVAL_KEY"));

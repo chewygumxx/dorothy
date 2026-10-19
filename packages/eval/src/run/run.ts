@@ -207,20 +207,28 @@ export function pendingOf(
 
 // The model calls a run would make: none for a lookup, an answer and a
 // judgement for an abstention, an answer and two judgements for the rest,
-// and one more for an update with an older answer.
-export function modelCalls(info: RunInfo, accepted: Question[]): number {
+// and one more for an update with an older answer; on a resume, only
+// for what is left, a paid answer only its missing judgements.
+export function modelCalls(
+    info: RunInfo,
+    accepted: Question[],
+    records: RunRecord[] = [],
+): number {
     if (info.retrievalOnly) {
         return 0;
     }
-    const each = accepted.reduce(
-        (sum, question) =>
+    return pendingOf(info, accepted, records).reduce(
+        (sum, { question, answered }) =>
             sum +
             (question.type === "lookup"
                 ? 0
-                : 1 + owedVerdicts(question).length),
+                : answered === null
+                  ? 1 + owedVerdicts(question).length
+                  : owedVerdicts(question).filter(
+                        (name) => answered.judged[name] === null,
+                    ).length),
         0,
     );
-    return each * info.systems.length;
 }
 
 // Asks each verdict the record lacks; a failed one is recorded and the

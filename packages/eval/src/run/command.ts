@@ -16,11 +16,12 @@ import { readQuestions } from "../questions/file.js";
 import { readSnapshot, workEnv } from "../snapshot/snapshot.js";
 import { openCorpus } from "../systems/corpus.js";
 import { SYSTEM_NAMES } from "../systems/system.js";
-import { readRunInfo, reportPath } from "./record.js";
+import { readRecords, readRunInfo, reportPath } from "./record.js";
 import {
     checkResumable,
     modelCalls,
     newRunInfo,
+    pendingOf,
     runEvaluation,
 } from "./run.js";
 
@@ -130,8 +131,14 @@ export const runCommand: Command = {
         if (values["dry-run"] === true) {
             const asked = new Set(info.questionIds);
             const theirs = accepted.filter((q) => asked.has(q.id));
+            const records =
+                resume === null ? [] : await readRecords(work, info.id);
+            const left =
+                resume === null
+                    ? ""
+                    : `, ${pendingOf(info, theirs, records).length} left to ask`;
             io.out(
-                `dry run: ${theirs.length} questions, ${info.systems.length} systems; ${modelCalls(info, theirs)} model calls\n`,
+                `dry run: ${theirs.length} questions, ${info.systems.length} systems${left}; ${modelCalls(info, theirs, records)} model calls\n`,
             );
             return 0;
         }

@@ -340,7 +340,8 @@ and the snapshot's counts.
   judgement is recorded and the other judgements still run.
   `--dry-run` counts the calls, none for a `lookup`, two for an
   abstention, three for the rest and four for an update with a `note`,
-  for each system, and needs no key.
+  for each system, and needs no key; on a resume it counts only what is
+  left, a paid answer by the judgements it lacks.
 - A resume takes the systems, budget and questions from `run.json`, and
   refuses `--systems`, `--budget`, `--full-budget` or `--retrieval-only`
   given with it. It refuses a snapshot taken at another time, or answer
