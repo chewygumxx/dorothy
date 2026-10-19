@@ -8,7 +8,7 @@
 //
 //
 
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Command, intOf, workOf } from "../command.js";
 import { UsageError } from "../errors.js";
@@ -20,7 +20,8 @@ import {
     mergeQuestions,
     type Question,
     readQuestionsToRewrite,
-    writeQuestions,
+    updateQuestions,
+    writeFileAtomic,
 } from "./file.js";
 import {
     BATCH,
@@ -40,8 +41,14 @@ async function readGenerations(work: string): Promise<unknown[]> {
     try {
         text = await readFile(join(work, "generated.json"), "utf8");
     } catch (error) {
-        if ((error as { code?: unknown }).code === "ENOENT") {
+        const code = (error as { code?: unknown } | null)?.code;
+        if (code === "ENOENT") {
             return [];
+        }
+        if (typeof code === "string") {
+            throw new UsageError(
+                `cannot read ${join(work, "generated.json")}: ${code}; mend it, or remove it to start again`,
+            );
         }
         throw error;
     }
@@ -59,10 +66,9 @@ async function readGenerations(work: string): Promise<unknown[]> {
 
 async function recordGeneration(work: string, entry: object): Promise<void> {
     const entries = await readGenerations(work);
-    await writeFile(
+    await writeFileAtomic(
         join(work, "generated.json"),
         `${JSON.stringify([...entries, entry], null, 4)}\n`,
-        { mode: 0o600 },
     );
 }
 
@@ -142,14 +148,19 @@ export const generateCommand: Command = {
         );
         // Said before the first call, so that the seed survives a Ctrl-C.
         io.out(`seed ${seed}\n`);
-        // Each call's drafts join the file as it is then, so a review
-        // meanwhile loses nothing and stopping loses no paid draft.
+        // Each call's drafts join the file as it is then, under its lock,
+        // so a review meanwhile loses nothing and stopping loses no paid
+        // draft. Those another command's writes made redundant are
+        // counted, not claimed.
+        let notAdded = 0;
         const keep = async (drafts: Question[]) => {
-            const current = await readQuestionsToRewrite(work);
-            await writeQuestions(
-                work,
-                mergeQuestions(current, drafts).questions,
-            );
+            notAdded += await updateQuestions(work, (current) => {
+                const merged = mergeQuestions(current, drafts);
+                return {
+                    questions: merged.questions,
+                    result: drafts.length - merged.added,
+                };
+            });
         };
         const corpus = await openCorpus(workEnv(work));
         try {
@@ -171,11 +182,13 @@ export const generateCommand: Command = {
                     ).value.questions,
                 keep,
             });
+            let stopped = result.stopped;
             if (result.unkept.length > 0) {
                 // Tried once more; failing again, the drafts are said, so
                 // that what was paid for can be kept by hand.
                 try {
                     await keep(result.unkept);
+                    stopped = `${stopped}; kept at the end, on a second try`;
                 } catch (error) {
                     io.err(
                         `${result.unkept.map((each) => JSON.stringify(each)).join("\n")}\n`,
@@ -183,6 +196,7 @@ export const generateCommand: Command = {
                     throw error;
                 }
             }
+            const drafted = result.made.length - notAdded;
             try {
                 await recordGeneration(work, {
                     at: new Date().toISOString(),
@@ -190,19 +204,21 @@ export const generateCommand: Command = {
                     model: role.model,
                     asked: counts,
                     made: byType(result.made),
+                    notAdded,
                     dropped: result.dropped,
-                    stopped: result.stopped,
+                    stopped,
                 });
             } catch (error) {
-                if (error instanceof UsageError) {
-                    throw new UsageError(
-                        `${error.message}; the ${result.made.length} drafts are in questions.jsonl`,
-                    );
-                }
-                throw error;
+                const why =
+                    error instanceof UsageError
+                        ? error.message
+                        : `cannot write generated.json: ${(error as { code?: unknown } | null)?.code ?? "failed"}`;
+                throw new UsageError(
+                    `${why}; the ${drafted} drafts are in questions.jsonl`,
+                );
             }
             io.out(
-                `drafted ${result.made.length} questions (seed ${seed}); review them with \`bun run eval -- review --work ${work}\`\n`,
+                `drafted ${drafted} questions (seed ${seed}); review them with \`bun run eval -- review --work ${work}\`\n`,
             );
             for (const [reason, n] of Object.entries(result.dropped)) {
                 io.out(`  dropped ${n}: ${reason}\n`);
@@ -215,8 +231,13 @@ export const generateCommand: Command = {
                     );
                 }
             }
-            if (result.stopped !== null) {
-                io.out(`stopped: ${result.stopped}\n`);
+            if (notAdded > 0) {
+                io.out(
+                    `  not added ${notAdded}: another command had written the same ids\n`,
+                );
+            }
+            if (stopped !== null) {
+                io.out(`stopped: ${stopped}\n`);
             }
             return 0;
         } finally {

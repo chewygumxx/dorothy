@@ -59,7 +59,8 @@ options declared and described for `--help`, its failures as
 - `snapshot/`: `takeSnapshot`, which refuses a work directory in the
   repository, `readSnapshot`, `workEnv`, and the `snapshot` command.
 - `questions/file.ts`: the question file, its schema and ids; the
-  commands that rewrite it read it with `readQuestionsToRewrite`.
+  commands that rewrite it do so through `updateQuestions`, which reads,
+  changes and writes it under a lock file beside it.
 - `questions/mine.ts`: lookup questions from her appraised reads, and
   the `mine` command.
 - `questions/generate.ts`: samples, prompts and checks for drafting

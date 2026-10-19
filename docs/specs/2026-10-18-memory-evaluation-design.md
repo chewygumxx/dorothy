@@ -136,6 +136,12 @@ question with the same eight digits. A file that cannot be read, other
 than for being absent, stops those commands the same way, naming the
 path and the error's code.
 
+Those commands change the file under an advisory lock, a
+`questions.jsonl.lock` made beside it, reading the file again inside it,
+so that a review beside a generation or a mine loses neither's writes. A
+writer waits some ten seconds for the lock, and takes over one older
+than thirty.
+
 ### Mined lookups
 
 Her `open` calls carry a purpose, and her next review appraises each
@@ -208,7 +214,9 @@ bun run eval -- generate --work ~/eval --count 300
   to that list. Each call's drafts join the question file as they
   arrive, the file read again just before, so that a review meanwhile
   loses nothing and Ctrl-C loses no draft a call has returned; the seed
-  is printed first, as the entry is written at the end.
+  is printed first, as the entry is written at the end, and a run
+  stopped by Ctrl-C records none. A draft whose id another command had
+  written by then is counted as not added, not as drafted.
 - A failed call is dropped with its reason, a line with no key in it.
   Generation stops, keeping what it has made, at a 401 or a 403, at
   three failed calls in a row, or at `--max-calls`, and says why.

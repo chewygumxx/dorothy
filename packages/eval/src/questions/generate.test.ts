@@ -9,7 +9,13 @@
 //
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import {
+    existsSync,
+    mkdirSync,
+    readFileSync,
+    rmSync,
+    writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import type { ArchiveConversation } from "@dorothy/memory/evaluation";
 import { runCli } from "../cli.js";
@@ -18,14 +24,16 @@ import { configPath } from "../models/config.js";
 import { workEnv } from "../snapshot/snapshot.js";
 import { type Corpus, openCorpus } from "../systems/corpus.js";
 import {
+    extraQuestion,
     fakeIo,
     GARDEN,
     snapshotFixture,
     stubConfig,
     stubModels,
     tempRoot,
+    whileLocked,
 } from "../testing.js";
-import { type Question, questionId, readQuestions } from "./file.js";
+import { locking, type Question, questionId, readQuestions } from "./file.js";
 import {
     acceptDraft,
     answerable,
@@ -868,12 +876,12 @@ describe("bun run eval -- generate", () => {
     // One question a call, each its own, citing the first item shown.
     const oneEach = (
         tag: string,
-        between: (count: number) => void = () => {},
+        between: (count: number, evidence: string) => void = () => {},
     ) =>
         stubModels((request, count) => {
-            between(count);
             const content = JSON.stringify(request.body.messages);
             const id = /<item id=\\"([^\\]+)\\">/.exec(content)?.[1] ?? "";
+            between(count, id);
             return {
                 json: {
                     questions: [
@@ -953,6 +961,125 @@ describe("bun run eval -- generate", () => {
             ).toBe(6);
             expect(readFileSync(path, "utf8")).toBe("{not json");
         } finally {
+            writeFileSync(path, before);
+        }
+    });
+
+    it("waits for another writer's lock, and keeps what it wrote", async () => {
+        stub = oneEach("Waiting");
+        writeFileSync(configPath(work), stubConfig(stub.url));
+        const extra = extraQuestion("Which river runs by the allotment?");
+        const run = await whileLocked(work, extra, async () => {
+            const each = generate("--type", "single-session=5", "--seed", "15");
+            expect(await each.code).toBe(0);
+            return each;
+        });
+        expect(run.out.join("")).toContain("drafted 3 questions");
+        const { questions } = await readQuestions(work);
+        expect(questions.map((each) => each.question)).toContain(
+            extra.question,
+        );
+        expect(
+            questions.filter((each) => each.question.startsWith("Waiting"))
+                .length,
+        ).toBe(3);
+    });
+
+    it("does not count a draft another command had written", async () => {
+        stub = oneEach("Twice", (count, evidence) => {
+            if (count === 1) {
+                const text = "Twice number 1?";
+                const path = join(work, "questions.jsonl");
+                const there = {
+                    ...extraQuestion(text),
+                    id: questionId(text, [evidence]),
+                    evidence: [evidence],
+                };
+                writeFileSync(
+                    path,
+                    `${readFileSync(path, "utf8")}${JSON.stringify(there)}\n`,
+                );
+            }
+        });
+        writeFileSync(configPath(work), stubConfig(stub.url));
+        const run = generate("--type", "single-session=5", "--seed", "16");
+        expect(await run.code).toBe(0);
+        const shown = run.out.join("");
+        expect(shown).toContain("drafted 2 questions (seed 16)");
+        expect(shown).toContain(
+            "  not added 1: another command had written the same ids\n",
+        );
+        const record = JSON.parse(
+            readFileSync(join(work, "generated.json"), "utf8"),
+        );
+        expect(record.at(-1)).toMatchObject({ notAdded: 1 });
+    });
+
+    it("says the drafts were kept on a second try, when they were", async () => {
+        const lock = join(work, "questions.jsonl.lock");
+        stub = oneEach("Retried", () => writeFileSync(lock, "1\n"));
+        writeFileSync(configPath(work), stubConfig(stub.url));
+        const kept = { ...locking };
+        let sleeps = 0;
+        // The lock is there for the first keep and gone for the second.
+        Object.assign(locking, {
+            tries: 2,
+            sleep: async () => {
+                if (++sleeps === 2) {
+                    rmSync(lock);
+                }
+            },
+        });
+        try {
+            const run = generate("--type", "single-session=10", "--seed", "17");
+            expect(await run.code).toBe(0);
+            const shown = run.out.join("");
+            expect(shown).toContain("drafted 1 questions (seed 17)");
+            expect(shown).toContain("stopped: could not keep the drafts: ");
+            expect(shown).toEndWith("; kept at the end, on a second try\n");
+            expect(stub.requests).toHaveLength(1);
+            expect(existsSync(lock)).toBe(false);
+        } finally {
+            Object.assign(locking, kept);
+        }
+    });
+
+    it("refuses a generated.json it cannot read, before any call", async () => {
+        const path = join(work, "generated.json");
+        const before = readFileSync(path, "utf8");
+        stub = oneEach("Unread");
+        writeFileSync(configPath(work), stubConfig(stub.url));
+        rmSync(path);
+        mkdirSync(path);
+        try {
+            const run = generate("--type", "single-session=5");
+            expect(await run.code).toBe(1);
+            expect(run.err.join("")).toContain(`cannot read ${path}: EISDIR`);
+            expect(stub.requests).toHaveLength(0);
+        } finally {
+            rmSync(path, { recursive: true });
+            writeFileSync(path, before);
+        }
+    });
+
+    it("says where the drafts are when generated.json cannot be read at the end", async () => {
+        const path = join(work, "generated.json");
+        const before = readFileSync(path, "utf8");
+        stub = oneEach("Unrecorded", (count) => {
+            if (count === 1) {
+                rmSync(path);
+                mkdirSync(path);
+            }
+        });
+        writeFileSync(configPath(work), stubConfig(stub.url));
+        try {
+            const run = generate("--type", "single-session=10", "--seed", "18");
+            expect(await run.code).toBe(1);
+            expect(run.err.join("")).toContain(
+                `cannot read ${path}: EISDIR; mend it, or remove it to start again; the 6 drafts are in questions.jsonl`,
+            );
+        } finally {
+            rmSync(path, { recursive: true });
             writeFileSync(path, before);
         }
     });
