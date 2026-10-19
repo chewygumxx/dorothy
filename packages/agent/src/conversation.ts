@@ -58,6 +58,13 @@ type PendingRemember = { input: unknown; offset: number };
 export const COMPACTED_BY_CLI =
     "the CLI compacted this session itself, despite DISABLE_COMPACT";
 
+// The CLI reports a compaction it tried and failed only in a status
+// message, with no boundary after it.
+export const cliCompactFailed = (error: string | undefined) =>
+    `the CLI tried to compact this session itself, despite DISABLE_COMPACT, and failed${
+        error === undefined || error === "" ? "" : `: ${error}`
+    }`;
+
 // Characters as the note limits count them, four to a token.
 const estimate = (text: string) => Math.ceil([...text].length / 4);
 
@@ -300,6 +307,15 @@ export class Conversation implements ChatSession {
             // longer measures it.
             this.#lastInput = null;
             this.#emit({ type: "warning", message: COMPACTED_BY_CLI });
+            return;
+        }
+        if (message.subtype === "status") {
+            if (message.compact_result === "failed") {
+                this.#emit({
+                    type: "warning",
+                    message: cliCompactFailed(message.compact_error),
+                });
+            }
             return;
         }
         if (message.subtype !== "init") {

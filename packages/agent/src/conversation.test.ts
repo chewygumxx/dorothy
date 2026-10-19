@@ -14,6 +14,7 @@ import { type ConversationEvent, type Turn, withSection } from "@dorothy/core";
 import {
     COMPACTED_BY_CLI,
     Conversation,
+    cliCompactFailed,
     conversationOptions,
     type QueryFn,
 } from "./conversation.js";
@@ -92,6 +93,19 @@ const compactBoundary = () =>
         type: "system",
         subtype: "compact_boundary",
         compact_metadata: { trigger: "auto", pre_tokens: 100 },
+    }) as unknown as SDKMessage;
+
+const compactStatus = (
+    status: "compacting" | null,
+    fields: { compact_result?: "success" | "failed"; compact_error?: string },
+) =>
+    ({
+        type: "system",
+        subtype: "status",
+        status,
+        ...fields,
+        uuid: "u",
+        session_id: "sdk-1",
     }) as unknown as SDKMessage;
 
 type Fake = {
@@ -487,6 +501,52 @@ describe("Conversation", () => {
         // The measurement before the boundary is stale: the result's usage,
         // 10 + 3000 + 400, and 5 characters of reply.
         expect(end?.contextTokens).toBe(3412);
+    });
+
+    it("warns of a compaction the CLI tried and failed, by its status", async () => {
+        const fake = fakeQuery([
+            [
+                compactStatus("compacting", {}),
+                compactStatus(null, {
+                    compact_result: "failed",
+                    compact_error: "prompt too long",
+                }),
+                delta("Hello"),
+                result(0.001),
+            ],
+        ]);
+        const { conversation, events } = started(fake);
+        conversation.send("hi");
+        await until(() => of(events, "turn-end").length === 1);
+        expect(of(events, "warning").map((e) => e.message)).toEqual([
+            cliCompactFailed("prompt too long"),
+        ]);
+        expect(cliCompactFailed("prompt too long")).toContain(
+            "DISABLE_COMPACT",
+        );
+        expect(cliCompactFailed("prompt too long")).toContain(
+            "prompt too long",
+        );
+        expect(of(events, "error")).toEqual([]);
+        expect(of(events, "turn-end")[0]?.reply).toBe("Hello");
+    });
+
+    it("says nothing of other statuses, or a failure with no error text", async () => {
+        const fake = fakeQuery([
+            [
+                compactStatus("compacting", {}),
+                compactStatus(null, { compact_result: "success" }),
+                compactStatus(null, { compact_result: "failed" }),
+                delta("Hi"),
+                result(0.001),
+            ],
+        ]);
+        const { conversation, events } = started(fake);
+        conversation.send("hi");
+        await until(() => of(events, "turn-end").length === 1);
+        expect(of(events, "warning").map((e) => e.message)).toEqual([
+            cliCompactFailed(undefined),
+        ]);
     });
 
     it("hands the partial reply to the error when the session dies", async () => {
