@@ -20,8 +20,10 @@ const SECRET = "[secret]";
 // headers with no end is crossed once, not once per header.
 const PRIVATE_KEY =
     /-----BEGIN [A-Z ]{0,40}PRIVATE KEY(?: BLOCK)?-----[\s\S]*?(?:-----END [A-Z ]{0,40}PRIVATE KEY(?: BLOCK)?-----|$)/g;
-// GitHub's API takes `Authorization: token <credential>`.
-const BEARER = /\b(Bearer|Basic|[Tt]oken)\s+[A-Za-z0-9._~+/=-]{8,}/g;
+// GitHub's API takes `Authorization: token <credential>`. A scheme is
+// not case-sensitive, so neither is this; it costs prose such as "basic
+// functionality" a redaction, as "token budget" always did.
+const BEARER = /\b(Bearer|Basic|token)\s+[A-Za-z0-9._~+/=-]{8,}/gi;
 // The prefixes providers give their keys.
 const PREFIXED =
     /\b(?:sk-ant-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,})/g;
@@ -31,9 +33,31 @@ const PREFIXED =
 // in the pattern costs the engine a frame a character, and past some
 // hundred thousand it stops matching and the secret is kept.
 // The runs round the key word are bounded, as an unbounded pair
-// backtracks quadratically on long text.
+// backtracks quadratically on long text. An unquoted value's first
+// character is matched here too, and runEnd takes the rest, so that a
+// key skipped as no secret's costs no more than its own length.
 const NAMED =
-    /\b([\w.-]{0,64}(?:token|key|secret|password|passwd|auth)[\w.-]{0,64})(["']?\s*[=:]\s*)(["']?)(?!(?:Bearer|Basic|token)\s)((?<=")(?:\\[^\n]|[^"\\\n])|(?<=')(?:\\[^\n]|[^'\\\n])|[^\s"'&,;]+)/gi;
+    /\b([\w.-]{0,64}(?:token|key|secret|password|passwd|auth)[\w.-]{0,64})(["']?\s*[=:]\s*)(["']?)(?!(?:Bearer|Basic|token)\s)((?<=")(?:\\[^\n]|[^"\\\n])|(?<=')(?:\\[^\n]|[^'\\\n])|[^\s"'&,;])/gi;
+
+// Whether a matched key names a secret: one of its words does, a word
+// being a run of letters and digits between separators or a change of
+// case, and it ends in a secret's word. `author`, `authority`,
+// `keyboard` and `monkey` match the pattern and are no secrets.
+const SECRET_WORD =
+    /^(?:o?auth|authorization|authentication|[a-z0-9]*(?:(?<!mon|don|tur|hoc|joc|whis|lac|pok|hok)keys?|tokens?|secrets?|passwords?|passwd))$/;
+const isSecretKey = (key: string): boolean =>
+    key
+        .split(/[^A-Za-z0-9]+|(?<=[a-z0-9])(?=[A-Z])/)
+        .some((word) => SECRET_WORD.test(word.toLowerCase()));
+
+// Where an unquoted value ends.
+function runEnd(text: string, from: number): number {
+    let at = from;
+    while (at < text.length && !/[\s"'&,;]/.test(text[at] as string)) {
+        at += 1;
+    }
+    return at;
+}
 
 // Where a quoted value ends: before its closing quote, a line feed or a
 // backslash with nothing after it on its line, whichever comes first.
@@ -65,8 +89,17 @@ function redactNamed(text: string): string {
     NAMED.lastIndex = 0;
     for (let match = NAMED.exec(text); match; match = NAMED.exec(text)) {
         const [whole, key, separator, quote] = match as unknown as string[];
+        if (!isSecretKey(key as string)) {
+            NAMED.lastIndex =
+                match.index +
+                (key as string).length +
+                (separator as string).length;
+            continue;
+        }
         const matched = match.index + (whole as string).length;
-        const end = quote ? quotedEnd(text, matched, quote) : matched;
+        const end = quote
+            ? quotedEnd(text, matched, quote)
+            : runEnd(text, matched);
         scrubbed += `${text.slice(kept, match.index)}${key}${separator}${quote}${SECRET}`;
         kept = end;
         NAMED.lastIndex = end;

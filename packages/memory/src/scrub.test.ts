@@ -52,9 +52,45 @@ const CASES: [string, string][] = [
     ],
 ];
 
+// An HTTP authentication scheme is not case-sensitive.
+const SCHEMES = ["Bearer", "bearer", "BEARER", "Basic", "basic", "TOKEN"];
+
 describe("scrub", () => {
     it.each(CASES)("replaces the secret in %p", (input, expected) => {
         expect(scrub(input)).toBe(expected);
+    });
+
+    it.each(SCHEMES)("redacts a credential after the scheme %s", (scheme) => {
+        expect(
+            scrub(`curl -H 'Authorization: ${scheme} opaque1234567890'`),
+        ).toBe(`curl -H 'Authorization: ${scheme} [secret]'`);
+    });
+
+    it.each([
+        ["author: Jane Doe", "author: Jane Doe"],
+        ["monkey: banana", "monkey: banana"],
+        ["authority=example.com", "authority=example.com"],
+        ["keyboard: qwerty", "keyboard: qwerty"],
+        ["apiKey: abc123", "apiKey: [secret]"],
+        ["apikey=abc123", "apikey=[secret]"],
+        ["AWS_SECRET_ACCESS_KEY=abc123", "AWS_SECRET_ACCESS_KEY=[secret]"],
+        ["X-Auth-Token: abc123", "X-Auth-Token: [secret]"],
+        ["db.passwd = abc123", "db.passwd = [secret]"],
+        ["auth: abc123", "auth: [secret]"],
+        ["authorization=abc123", "authorization=[secret]"],
+    ])("reads the key of %p as a word, not a substring", (input, expected) => {
+        expect(scrub(input)).toBe(expected);
+    });
+
+    it("takes linear time over keys that are no secrets", () => {
+        for (const text of [
+            "author:".repeat(100000),
+            "monkey=a ".repeat(50000),
+        ]) {
+            const start = performance.now();
+            expect(scrub(text)).toBe(text);
+            expect(performance.now() - start).toBeLessThan(500);
+        }
     });
 
     it("leaves text with no secret's shape alone", () => {
