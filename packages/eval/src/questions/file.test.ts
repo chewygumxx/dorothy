@@ -16,6 +16,7 @@ import {
     readFileSync,
     rmSync,
     statSync,
+    symlinkSync,
     utimesSync,
     writeFileSync,
 } from "node:fs";
@@ -445,6 +446,51 @@ describe("changing the question file", () => {
         ).rejects.toThrow("is held by another command");
         expect(readFileSync(lock(), "utf8")).toBe(fresh);
         expect(readdirSync(temp.root)).toEqual(["questions.jsonl.lock"]);
+    });
+
+    it("puts back an empty lock that another writer made after its judgement", async () => {
+        // Old and empty, so stale; but between the judgement and the move
+        // another writer made a fresh one, also empty, so only its time
+        // (and its inode) tell it from the first.
+        writeFileSync(lock(), "");
+        aged(lock(), 60_000);
+        let judged = 0;
+        const timing = instant(async () => {}, {
+            tries: 2,
+            now: () => {
+                if (++judged === 1) {
+                    rmSync(lock());
+                    writeFileSync(lock(), "");
+                    return Date.now() + 3_600_000;
+                }
+                return Date.now();
+            },
+        });
+        await expect(
+            updateQuestions(temp.root, adding(lookup("Which tea?")), timing),
+        ).rejects.toThrow("is held by another command");
+        expect(readFileSync(lock(), "utf8")).toBe("");
+        expect(readdirSync(temp.root)).toEqual(["questions.jsonl.lock"]);
+    });
+
+    it("gives up on a lock it keeps taking over", async () => {
+        // A dangling link: no file to read, none to open, and it is
+        // always judged gone.
+        symlinkSync("nowhere", lock());
+        let slept = 0;
+        await expect(
+            updateQuestions(
+                temp.root,
+                adding(lookup("Which tea?")),
+                instant(
+                    async () => {
+                        slept++;
+                    },
+                    { tries: 3 },
+                ),
+            ),
+        ).rejects.toThrow(`${lock()} is held by another command`);
+        expect(slept).toBeLessThanOrEqual(2);
     });
 
     it("leaves a lock that holds another token when it releases", async () => {

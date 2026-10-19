@@ -265,25 +265,31 @@ async function readLock(path: string): Promise<string | null | undefined> {
     }
 }
 
-// Whether the lock is stale, and if so removed, by moving it aside under
-// a name of our own, which one writer alone can do. If what was moved is
-// not what was judged, another writer took the lock first: it is put
-// back, unless a lock is there again.
-async function takenOver(
-    path: string,
-    judged: string | null,
-): Promise<boolean> {
+// A lock as it was judged: what it held, and when and as which file.
+type Judged = { text: string | null; ino: number; mtimeMs: number };
+
+// Removes a stale lock by moving it aside under a name of our own, which
+// one writer alone can do. If what was moved is not what was judged, in
+// content, file or time (a fresh lock is empty for an instant, as old
+// as the last), another writer took the lock first: it is put back,
+// unless a lock is there again.
+async function takenOver(path: string, judged: Judged): Promise<boolean> {
     const aside = `${path}.stale.${process.pid}.${randomUUID()}`;
     try {
         await rename(path, aside);
     } catch (error) {
         return codeOf(error) === "ENOENT";
     }
-    if ((await readLock(aside)) === judged) {
-        await rm(aside, { force: true });
-        return true;
-    }
     try {
+        const moved = await stat(aside);
+        if (
+            (await readLock(aside)) === judged.text &&
+            moved.ino === judged.ino &&
+            moved.mtimeMs === judged.mtimeMs
+        ) {
+            await rm(aside, { force: true });
+            return true;
+        }
         await link(aside, path);
     } catch (error) {
         if (codeOf(error) !== "EEXIST") {
@@ -295,27 +301,28 @@ async function takenOver(
     return false;
 }
 
-// Whether a lock held is a dead writer's, and so removed.
+// Whether a lock held is a dead writer's, and so removed. A lock already
+// gone counts as stale: the caller tries to make its own again.
 async function staleLock(path: string, timing: Locking): Promise<boolean> {
     const text = await readLock(path);
+    let seen: { ino: number; mtimeMs: number };
+    try {
+        seen = await stat(path);
+    } catch (error) {
+        if (codeOf(error) !== "ENOENT") {
+            throw error;
+        }
+        return true;
+    }
     if (text === undefined) {
         return true;
     }
     const owner = /^(\d+) \S+\n$/.exec(text ?? "");
-    let stale: boolean;
-    if (owner !== null) {
-        stale = !timing.alive(Number(owner[1]));
-    } else {
-        try {
-            stale = timing.now() - (await stat(path)).mtimeMs > timing.staleMs;
-        } catch (error) {
-            if (codeOf(error) !== "ENOENT") {
-                throw error;
-            }
-            return true;
-        }
-    }
-    return stale && (await takenOver(path, text));
+    const stale =
+        owner !== null
+            ? !timing.alive(Number(owner[1]))
+            : timing.now() - seen.mtimeMs > timing.staleMs;
+    return stale && (await takenOver(path, { text, ...seen }));
 }
 
 // An advisory lock beside the file, made exclusively with this writer's
@@ -350,15 +357,17 @@ async function lockQuestions(
                     : error;
             }
         }
-        if (await staleLock(path, timing)) {
-            continue;
-        }
+        // A takeover counts as a try, so that a lock which cannot be
+        // taken over for good still ends in giving up.
+        const taken = await staleLock(path, timing);
         if (attempt >= timing.tries) {
             throw new UsageError(
                 `${path} is held by another command; if none is running, remove it`,
             );
         }
-        await timing.sleep(timing.pauseMs);
+        if (!taken) {
+            await timing.sleep(timing.pauseMs);
+        }
     }
 }
 
