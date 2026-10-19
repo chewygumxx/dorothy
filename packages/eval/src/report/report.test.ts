@@ -446,6 +446,31 @@ describe("bun run eval -- compare", () => {
         );
     });
 
+    it("refuses base URLs of the wrong form by the run file's message", async () => {
+        write("r1");
+        const path = runInfoPath(temp.root, "r1");
+        const info = JSON.parse(readFileSync(path, "utf8"));
+        for (const bad of [
+            null,
+            {},
+            { answer: "x" },
+            { answer: 1, judge: null },
+        ]) {
+            writeFileSync(path, JSON.stringify({ ...info, baseUrls: bad }));
+            await expect(writeRunReport(temp.root, "r1")).rejects.toThrow(
+                `${path} is not a run record (baseUrls`,
+            );
+        }
+        // Absent, as an older run left it, or whole, it reads.
+        for (const good of [
+            undefined,
+            { answer: null, judge: "http://h/v1" },
+        ]) {
+            writeFileSync(path, JSON.stringify({ ...info, baseUrls: good }));
+            await writeRunReport(temp.root, "r1");
+        }
+    });
+
     it("never advises deleting a run whose run.json is bad", async () => {
         write("r1");
         const path = runInfoPath(temp.root, "r1");

@@ -178,6 +178,10 @@ export const runInfoSchema = z.object({
         answer: z.string().nullable(),
         judge: z.string().nullable(),
     }),
+    // Absent from a run written before they were kept.
+    baseUrls: z
+        .object({ answer: z.string().nullable(), judge: z.string().nullable() })
+        .optional(),
     snapshot: z.object({ source: z.string(), at: z.string() }),
     questions: z.number(),
     questionIds: z.array(z.string()),
