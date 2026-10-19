@@ -52,6 +52,24 @@ const FORM: ExportedFact = {
 };
 
 describe("parseExported", () => {
+    it.each([
+        "metadata: {type: reference, type: feedback}",
+        'metadata: {type: reference, "\\u0074ype": feedback}',
+        'metadata:\n  type: reference\n  "\\u0074ype": feedback',
+    ])(
+        "rejects duplicate exported keys, including decoded keys: %s",
+        (metadata) => {
+            const text =
+                NATIVE.slice(0, NATIVE.indexOf("metadata:")) +
+                `${metadata}\n---\n\nNotes.\n`;
+            const read = parseExported(text, "bg-session-force-color");
+            expect(read.kind).toBe("unparseable");
+            expect(read.kind === "unparseable" && read.reason).toContain(
+                "repeats the key",
+            );
+        },
+    );
+
     it("reads a fact as Claude Code's auto-memory writes one", () => {
         expect(parseExported(NATIVE, "bg-session-force-color")).toEqual({
             kind: "ok",
