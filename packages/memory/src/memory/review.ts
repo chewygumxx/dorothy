@@ -140,25 +140,33 @@ export function pendingReads(
     appraised: Readonly<Record<string, unknown>>,
     nameOf: (phrase: string) => string,
 ): PendingRead[] {
+    // An id the API repeated is appraised once, at its first read; a review
+    // asked for it twice could never be answered.
+    const seen = new Set<string>();
     return turns.flatMap((turn) =>
-        (turn.lookups ?? []).flatMap((lookup) =>
-            lookup.tool === "open" &&
-            lookup.ok &&
-            !Object.hasOwn(appraised, lookup.id)
-                ? [
-                      {
-                          id: lookup.id,
-                          name:
-                              "fact" in lookup
-                                  ? lookup.name
-                                  : nameOf(lookup.conversation),
-                          purpose: lookup.purpose,
-                          turns: lookup.turns,
-                          fact: "fact" in lookup,
-                      },
-                  ]
-                : [],
-        ),
+        (turn.lookups ?? []).flatMap((lookup) => {
+            if (
+                lookup.tool !== "open" ||
+                !lookup.ok ||
+                Object.hasOwn(appraised, lookup.id) ||
+                seen.has(lookup.id)
+            ) {
+                return [];
+            }
+            seen.add(lookup.id);
+            return [
+                {
+                    id: lookup.id,
+                    name:
+                        "fact" in lookup
+                            ? lookup.name
+                            : nameOf(lookup.conversation),
+                    purpose: lookup.purpose,
+                    turns: lookup.turns,
+                    fact: "fact" in lookup,
+                },
+            ];
+        }),
     );
 }
 

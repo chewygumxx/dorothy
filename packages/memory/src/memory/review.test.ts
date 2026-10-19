@@ -321,6 +321,37 @@ describe("pendingReads", () => {
         expect(pendingReads(READ_TURNS, { toolu_1: {} }, String)).toEqual([]);
     });
 
+    it("lists an id once, however often it was recorded", () => {
+        const again: ResumedTurn[] = [
+            ...READ_TURNS,
+            {
+                role: "assistant",
+                text: "Again.",
+                lookups: [lookup("toolu_1", 0), lookup("toolu_4", 0)],
+            },
+        ];
+        const reads = pendingReads(again, {}, () => "Name");
+        expect(reads.map((read) => read.id)).toEqual(["toolu_1", "toolu_4"]);
+        // So a review can answer them all: two appraisals, one each.
+        const ids = reads.map((read) => read.id);
+        expect(
+            (reviewSchema(ids) as { properties: { appraisals: object } })
+                .properties.appraisals,
+        ).toMatchObject({ minItems: 2, maxItems: 2 });
+        expect(
+            validateReview(
+                {
+                    ...NOTES,
+                    appraisals: [
+                        { id: "toolu_4", served: "none" },
+                        { id: "toolu_1", served: "useful" },
+                    ],
+                },
+                ids,
+            ).ok,
+        ).toBe(true);
+    });
+
     it("awaits the appraisal of a fact's read, named by its title", () => {
         const turns: ResumedTurn[] = [
             { role: "user", text: "tea?" },
