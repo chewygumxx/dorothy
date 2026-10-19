@@ -176,6 +176,7 @@ export class Reviewer {
         latest: Sidecar | null,
         output: TagOutput,
         stamp: { at: string; model: string },
+        written: string[],
     ): Promise<string[] | undefined> {
         const path = this.#options.vocabulary;
         if (path === null) {
@@ -201,6 +202,7 @@ export class Reviewer {
                 ...tagged.vocabulary,
                 rev: vocabulary.rev + 1,
             });
+            written.push(path);
         }
         return tagged.tags;
     }
@@ -383,6 +385,7 @@ export class Reviewer {
         }: { at: string; turns: number; signal: AbortSignal },
     ): Promise<Reviewed> {
         const tagOutput = outcome.tags;
+        const written: string[] = [];
         const result = await updateSidecar(
             this.#options.dir,
             phrase,
@@ -393,10 +396,15 @@ export class Reviewer {
                 const tags =
                     tagOutput === undefined
                         ? undefined
-                        : await this.#tag(latest, tagOutput, {
-                              at,
-                              model: outcome.model,
-                          });
+                        : await this.#tag(
+                              latest,
+                              tagOutput,
+                              {
+                                  at,
+                                  model: outcome.model,
+                              },
+                              written,
+                          );
                 return mergeReview(latest, outcome.notes, {
                     model: outcome.model,
                     at,
@@ -409,9 +417,7 @@ export class Reviewer {
             this.#lock,
             this.#recording(
                 `review: ${phrase} (dorothy, ${outcome.model})`,
-                this.#options.vocabulary === null
-                    ? []
-                    : [this.#options.vocabulary],
+                written,
             ),
         );
         if (result.kind === "failed") {

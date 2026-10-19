@@ -15,7 +15,13 @@ import { join } from "node:path";
 import { DEFAULT_CONFIG, newPhrase, type StructuredCall } from "@dorothy/core";
 import type { Entry } from "./catalogue.js";
 import { Reviewer, type ReviewProblem } from "./reviewer.js";
-import { EMPTY_SIDECAR, readSidecar } from "./sidecar.js";
+import {
+    EMPTY_SIDECAR,
+    type HistoryHandle,
+    mergeEdit,
+    readSidecar,
+    sidecarPath,
+} from "./sidecar.js";
 
 const NOW = new Date("2026-10-15T09:00:00.000Z");
 const PHRASE = newPhrase(() => Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]));
@@ -68,6 +74,104 @@ const reviewer = (
     });
 
 describe("Reviewer", () => {
+    it.each([false, true])(
+        "records the vocabulary only when it wrote concepts (%s)",
+        async (coin) => {
+            const vocabulary = join(dir, "tags.json");
+            await writeFile(vocabulary, '{"v":1,"rev":0,"concepts":{}}\n');
+            const recorded: (readonly string[])[] = [];
+            const versions: HistoryHandle = {
+                lock: (work) => work(),
+                recorder: async (paths) => {
+                    recorded.push(paths);
+                },
+                heal: async () => false,
+                sweep: async () => {},
+                close: () => {},
+            };
+            const review = new Reviewer({
+                dir,
+                config: DEFAULT_CONFIG.memory,
+                index: null,
+                vocabulary,
+                versions,
+                call: async () => ({
+                    ok: true,
+                    output: {
+                        ...NOTES,
+                        tags: coin ? ["memory"] : [],
+                        coined: coin
+                            ? [
+                                  {
+                                      prefLabel: "memory",
+                                      scopeNote: "Remembering.",
+                                  },
+                              ]
+                            : [],
+                    },
+                    model: "m",
+                    costUsd: 0,
+                }),
+                persona: "Dorothy",
+                now: () => NOW,
+                entries: () => [],
+                warn: () => {},
+                cost: () => {},
+            });
+            expect(
+                (await review.review(PHRASE, new AbortController().signal))
+                    .kind,
+            ).toBe("reviewed");
+            expect(recorded).toEqual([
+                [sidecarPath(dir, PHRASE), ...(coin ? [vocabulary] : [])],
+            ]);
+        },
+    );
+
+    it("records nothing-new marking inside its write lock", async () => {
+        await writeFile(
+            sidecarPath(dir, PHRASE),
+            JSON.stringify(mergeEdit(EMPTY_SIDECAR, NOTES, NOW.toISOString())),
+        );
+        let held = false;
+        const records: string[] = [];
+        const versions: HistoryHandle = {
+            lock: async (work) => {
+                held = true;
+                try {
+                    return await work();
+                } finally {
+                    held = false;
+                }
+            },
+            recorder: async (_paths, message) => {
+                expect(held).toBe(true);
+                records.push(message);
+            },
+            heal: async () => false,
+            sweep: async () => {},
+            close: () => {},
+        };
+        const review = new Reviewer({
+            dir,
+            config: DEFAULT_CONFIG.memory,
+            index: null,
+            vocabulary: null,
+            versions,
+            call: async () => {
+                throw new Error("owned notes need no model");
+            },
+            persona: "Dorothy",
+            now: () => NOW,
+            entries: () => [],
+            warn: () => {},
+            cost: () => {},
+        });
+        expect(
+            (await review.review(PHRASE, new AbortController().signal)).kind,
+        ).toBe("marked");
+        expect(records).toEqual([`review: ${PHRASE} (dorothy, nothing new)`]);
+    });
     it("reviews a conversation alone, writing its notes and saying what it cost", async () => {
         const spent: number[] = [];
         const reviewed = await reviewer(

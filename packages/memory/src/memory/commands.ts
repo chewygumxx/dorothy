@@ -350,7 +350,6 @@ async function saveNotes(
             : {
                   recorder: versions.recorder,
                   message: `edit: ${phrase} (user)`,
-                  also: [path],
               },
     );
     if (refused.tags) {

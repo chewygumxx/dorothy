@@ -320,7 +320,7 @@ describe("runMemoryEdit", () => {
         expect(read.kind === "ok" && read.sidecar.fields.tags?.by).toBe("user");
     });
 
-    it("records the user's edit with the vocabulary beside it", async () => {
+    it("records only the notes the user's edit wrote", async () => {
         await writeFile(join(transcripts, `${a}.jsonl`), chat);
         const history = fakeHistory();
         const { edit } = editor((text) => ({
@@ -338,10 +338,7 @@ describe("runMemoryEdit", () => {
         ).toBe(0);
         expect(history.recorded).toEqual([
             {
-                paths: [
-                    sidecarPath(transcripts, a),
-                    join(dir, "dorothy", "tags.json"),
-                ],
+                paths: [sidecarPath(transcripts, a)],
                 message: `edit: ${a} (user)`,
             },
         ]);
