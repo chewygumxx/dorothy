@@ -11,7 +11,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { runCli } from "../cli.js";
-import { fakeIo, GARDEN, snapshotFixture, tempRoot } from "../testing.js";
+import {
+    extraQuestion,
+    fakeIo,
+    GARDEN,
+    snapshotFixture,
+    tempRoot,
+    whileLocked,
+} from "../testing.js";
 import {
     type Question,
     questionId,
@@ -252,6 +259,22 @@ describe("bun run eval -- review", () => {
             "draft",
             "draft",
         ]);
+    });
+
+    it("waits for another writer, and keeps what it wrote", async () => {
+        const { io } = fakeIo({ answers: ["a", "q"] });
+        const extra = extraQuestion("Which river runs by my allotment?");
+        await whileLocked(work, extra, () =>
+            runCli(["review", "--work", work], io),
+        );
+        const { questions } = await readQuestions(work);
+        expect(questions.map((question) => question.status)).toEqual([
+            "accepted",
+            "draft",
+            "draft",
+            "draft",
+        ]);
+        expect(questions.at(-1)?.question).toBe(extra.question);
     });
 
     it("asks again for a key it does not know", async () => {

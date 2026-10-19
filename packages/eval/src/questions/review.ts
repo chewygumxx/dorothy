@@ -31,7 +31,7 @@ import {
     questionSchema,
     readQuestionsToRewrite,
     sameQuestion,
-    writeQuestions,
+    updateQuestions,
 } from "./file.js";
 
 export type Tally = {
@@ -146,24 +146,27 @@ async function decide(
     id: string,
     decided: Question,
 ): Promise<string | null> {
-    const questions = await readQuestionsToRewrite(work);
-    const taken =
-        decided.id === id
-            ? undefined
-            : questions.find((question) => question.id === decided.id);
-    if (taken !== undefined) {
-        return sameQuestion(taken, decided)
-            ? "another question has that text and evidence"
-            : "its id is another question's: reword it";
-    }
-    const at = questions.findIndex((question) => question.id === id);
-    if (at === -1) {
-        questions.push(decided);
-    } else {
-        questions[at] = decided;
-    }
-    await writeQuestions(work, questions);
-    return null;
+    return await updateQuestions(work, (questions) => {
+        const taken =
+            decided.id === id
+                ? undefined
+                : questions.find((question) => question.id === decided.id);
+        if (taken !== undefined) {
+            return {
+                questions,
+                result: sameQuestion(taken, decided)
+                    ? "another question has that text and evidence"
+                    : "its id is another question's: reword it",
+            };
+        }
+        const at = questions.findIndex((question) => question.id === id);
+        if (at === -1) {
+            questions.push(decided);
+        } else {
+            questions[at] = decided;
+        }
+        return { questions, result: null };
+    });
 }
 
 // The drafts of the questions the command has read; each decision is

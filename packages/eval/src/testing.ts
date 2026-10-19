@@ -23,7 +23,12 @@ import {
 } from "@dorothy/memory/evaluation";
 import type { Io } from "./command.js";
 import { ROLES } from "./models/config.js";
-import { questionId } from "./questions/file.js";
+import {
+    locking,
+    type Question,
+    questionId,
+    updateQuestions,
+} from "./questions/file.js";
 import { takeSnapshot } from "./snapshot/snapshot.js";
 
 export function fakeIo(
@@ -212,6 +217,68 @@ export async function snapshotFixture(
     const work = join(root, "work");
     await takeSnapshot(await writeFixtureData(root, fixture), work);
     return work;
+}
+
+// A single-session draft of the allotment conversation, for tests that
+// need a question the file does not hold.
+export function extraQuestion(text: string): Question {
+    return {
+        id: questionId(text, [`c:${GARDEN}`]),
+        type: "single-session",
+        question: text,
+        answer: "Plot twelve.",
+        evidence: [`c:${GARDEN}`],
+        exclude: null,
+        asOf: "2026-10-19",
+        project: null,
+        source: "generated:m/1",
+        status: "draft",
+        note: null,
+    };
+}
+
+// Runs act while another writer holds the question file's lock, having
+// read the file and not yet written it. The first time act waits for the
+// lock, the other writer is let finish (adding extra) and act goes on:
+// with no lock, act would write first and the other write would
+// overwrite it. Fails if act never waits.
+export async function whileLocked<T>(
+    work: string,
+    extra: Question,
+    act: () => Promise<T>,
+): Promise<T> {
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => {
+        open = resolve;
+    });
+    let inside!: () => void;
+    const entered = new Promise<void>((resolve) => {
+        inside = resolve;
+    });
+    let waited = false;
+    const holder = updateQuestions(work, async (questions) => {
+        inside();
+        await gate;
+        return { questions: [...questions, extra], result: null };
+    });
+    const sleep = locking.sleep;
+    locking.sleep = async () => {
+        waited = true;
+        open();
+        await holder;
+    };
+    try {
+        await entered;
+        const result = await act();
+        if (!waited) {
+            open();
+            await holder;
+            throw new Error("it never waited for the question file's lock");
+        }
+        return result;
+    } finally {
+        locking.sleep = sleep;
+    }
 }
 
 let colliding: [string, string] | null = null;

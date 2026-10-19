@@ -22,7 +22,8 @@ import {
     questionId,
     questionSchema,
     readQuestionsToRewrite,
-    writeQuestions,
+    sameQuestion,
+    updateQuestions,
 } from "./file.js";
 
 // The reads that make questions, and the reads dropped for a reason
@@ -75,8 +76,14 @@ export function lookupQuestions(
         });
         if (!parsed.success) {
             drop("a purpose that is not a question");
-        } else if (!made.has(id)) {
-            made.set(id, parsed.data);
+        } else {
+            const held = made.get(id);
+            if (held === undefined) {
+                made.set(id, parsed.data);
+            } else if (!sameQuestion(held, parsed.data)) {
+                // Eight hex digits: two purposes may share an id.
+                drop("a purpose whose id is another question's");
+            }
         }
     }
     return { questions: [...made.values()], dropped };
@@ -90,7 +97,9 @@ export const mineCommand: Command = {
     async run(values, _positionals, io) {
         const work = workOf(values);
         await readSnapshot(work);
-        const existing = await readQuestionsToRewrite(work);
+        // Refused before any work if the file wants mending; the merge
+        // below reads it again, under the lock.
+        await readQuestionsToRewrite(work);
         const archive = await openArchive(workEnv(work));
         try {
             const conversations = archive.conversations();
@@ -113,8 +122,10 @@ export const mineCommand: Command = {
                 projects,
                 present,
             );
-            const merged = mergeQuestions(existing, mined);
-            await writeQuestions(work, merged.questions);
+            const merged = await updateQuestions(work, (current) => {
+                const result = mergeQuestions(current, mined);
+                return { questions: result.questions, result };
+            });
             io.out(
                 `mined ${mined.length} lookups, ${merged.added} new; ${merged.questions.length} questions in all\n`,
             );

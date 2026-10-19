@@ -16,12 +16,15 @@ import {
 } from "@dorothy/memory/evaluation";
 import { runCli } from "../cli.js";
 import {
+    collidingTexts,
+    extraQuestion,
     FIXTURE,
     fakeIo,
     READER,
     snapshotFixture,
     TEA,
     tempRoot,
+    whileLocked,
 } from "../testing.js";
 import { questionsPath, readQuestions } from "./file.js";
 import { lookupQuestions } from "./mine.js";
@@ -111,6 +114,19 @@ describe("lookups", () => {
             new Set(["c:t"]),
         );
         expect(found.questions.map((each) => each.exclude)).toEqual(["r"]);
+    });
+
+    it("counts a purpose whose id is another purpose's", () => {
+        const [a, b] = collidingTexts();
+        const found = lookupQuestions(
+            [read(a, "c:x"), read(b, "c:x"), read(a, "c:x")],
+            new Map([["r", null]]),
+            new Set(["c:x"]),
+        );
+        expect(found.questions.map((each) => each.question)).toEqual([a]);
+        expect(found.dropped).toEqual({
+            "a purpose whose id is another question's": 1,
+        });
     });
 
     it("passes over a read by a conversation the snapshot lacks", () => {
@@ -204,6 +220,24 @@ describe("bun run eval -- mine", () => {
         expect(out.join("")).toBe(
             "mined 2 lookups, 2 new; 2 questions in all\n  dropped 1: a read by a hidden or absent conversation\n",
         );
+    });
+
+    it("waits for another writer, and keeps what it wrote", async () => {
+        const work = await snapshotFixture(temp.root);
+        const extra = extraQuestion("Which river runs by my allotment?");
+        const { io, out } = fakeIo();
+        await whileLocked(work, extra, () =>
+            runCli(["mine", "--work", work], io),
+        );
+        expect(out.join("")).toBe(
+            "mined 2 lookups, 2 new; 3 questions in all\n",
+        );
+        const { questions } = await readQuestions(work);
+        expect(questions.map((question) => question.type)).toEqual([
+            "single-session",
+            "lookup",
+            "lookup",
+        ]);
     });
 
     it("writes nothing while the file has a malformed line", async () => {
