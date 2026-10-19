@@ -327,8 +327,9 @@ counts.
   pattern (`declines`) on the answer, with no model asked. A
   `knowledge-update` with an older answer in its `note` costs one more
   judgement, whether the answer gives that older one.
-- A failed retrieval, answer or judgement leaves the record with its
-  failure, and nothing more is spent on that question and system.
+- A failed retrieval or answer leaves the record with its failure,
+  and nothing more is spent on that question and system; a failed
+  judgement is recorded and the other judgements still run.
   `--dry-run` counts the calls, none for a `lookup`, two for an
   abstention, three for the rest and four for an update with a `note`,
   for each system, and needs no key.
