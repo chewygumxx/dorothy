@@ -190,6 +190,34 @@ describe("buildBlock", () => {
             expect(block.text).not.toContain(UNCONFIRMED_OPEN);
         });
 
+        it("lets conversations fill when its frame does not fit", async () => {
+            const talk = episode(PHRASE, { description: null, abstract: null });
+            const alone = await buildBlock(
+                { project: null, budget: 10_000 },
+                fakeEngine({ episodes: [talk] }),
+            );
+            const at = alone.text.indexOf("<conversations>");
+            const conversations =
+                alone.text.indexOf("</conversations>") +
+                "</conversations>\n".length -
+                at;
+            const fence =
+                size(UNCONFIRMED_OPEN) +
+                size(UNCONFIRMED_INTRO) +
+                size("</unconfirmed-knowledge>") +
+                3;
+            expect(conversations).toBeLessThan(fence);
+            const block = await buildBlock(
+                { project: null, budget: frame + conversations + 1 },
+                fakeEngine({
+                    knowledge: [guess("maybe-tea")],
+                    episodes: [talk],
+                }),
+            );
+            expect(block.text).not.toContain(UNCONFIRMED_OPEN);
+            expect(block.items).toEqual([{ id: `c:${PHRASE}`, tier: "title" }]);
+        });
+
         it("leaves out either section when it has nothing", async () => {
             const none = await buildBlock(
                 { project: null, budget: 10_000 },
