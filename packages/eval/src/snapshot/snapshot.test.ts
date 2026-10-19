@@ -10,6 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
+    chmodSync,
     existsSync,
     mkdirSync,
     readdirSync,
@@ -20,9 +21,11 @@ import {
     writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
+import { getuid } from "node:process";
 import { UsageError } from "../errors.js";
 import { tempRoot, writeFixtureData } from "../testing.js";
 import {
+    checkoutRoot,
     readSnapshot,
     snapshotDir,
     takeSnapshot,
@@ -136,10 +139,162 @@ describe("a snapshot", () => {
         }
     });
 
+    it("finds the checkout by the package's place, not by a .git above", async () => {
+        const outer = join(temp.root, "outer");
+        const here = join(
+            outer,
+            "checkout",
+            "packages",
+            "eval",
+            "src",
+            "snapshot",
+        );
+        mkdirSync(here, { recursive: true });
+        mkdirSync(join(outer, ".git"));
+        expect(await checkoutRoot(here)).toBe(join(outer, "checkout"));
+        // And for the real checkout, the same by position.
+        expect(await checkoutRoot()).toBe(
+            resolve(import.meta.dir, "../../../.."),
+        );
+    });
+
+    it("refuses a work directory reached through a link into the data", async () => {
+        const link = join(temp.root, "into-data");
+        symlinkSync(data, link);
+        await expect(takeSnapshot(data, join(link, "eval"))).rejects.toThrow(
+            "must not contain each other",
+        );
+        const around = join(temp.root, "around");
+        symlinkSync(temp.root, around);
+        await expect(
+            takeSnapshot(join(around, "source", "data", "dorothy"), temp.root),
+        ).rejects.toThrow("must not contain each other");
+        expect(existsSync(join(data, "eval"))).toBe(false);
+    });
+
+    it("copies facts/ where the data has not moved them", async () => {
+        mkdirSync(join(data, "facts"));
+        writeFileSync(join(data, "facts", "old.md"), "# old\n");
+        const info = await takeSnapshot(data, work);
+        expect(info.knowledge).toBe(4);
+        expect(
+            readFileSync(join(snapshotDir(work), "facts", "old.md"), "utf8"),
+        ).toBe("# old\n");
+    });
+
+    it("keeps the copy private, at each level it makes", async () => {
+        await takeSnapshot(data, join(work, "deeper"));
+        for (const dir of [
+            join(work, "deeper", "data"),
+            join(work, "deeper", "data", "dorothy"),
+        ]) {
+            expect(statSync(dir).mode & 0o777).toBe(0o700);
+        }
+        expect(
+            statSync(join(work, "deeper", "snapshot.json")).mode & 0o777,
+        ).toBe(0o600);
+    });
+
+    it("neither follows nor keeps a symbolic link", async () => {
+        const outside = join(temp.root, "outside");
+        mkdirSync(outside);
+        writeFileSync(join(outside, "secret.md"), "outside\n");
+        symlinkSync(outside, join(data, "knowledge", "away"));
+        symlinkSync(
+            join(outside, "secret.md"),
+            join(data, "knowledge", "secret.md"),
+        );
+        const info = await takeSnapshot(data, work);
+        expect(info.knowledge).toBe(3);
+        const found = readdirSync(snapshotDir(work), { recursive: true });
+        expect(found.some((name) => String(name).includes("secret"))).toBe(
+            false,
+        );
+        expect(found).not.toContain(join("knowledge", "away"));
+    });
+
+    it("drops the old cache and files when replacing", async () => {
+        await takeSnapshot(data, work);
+        mkdirSync(join(work, "cache", "dorothy"), { recursive: true });
+        writeFileSync(join(work, "cache", "dorothy", "recall.sqlite"), "old");
+        writeFileSync(join(snapshotDir(work), "stale.txt"), "old");
+        await takeSnapshot(data, work, { replace: true });
+        expect(existsSync(join(work, "cache"))).toBe(false);
+        expect(existsSync(join(snapshotDir(work), "stale.txt"))).toBe(false);
+        expect(readdirSync(join(work, "data"))).toEqual(["dorothy"]);
+    });
+
+    it.skipIf(getuid?.() === 0)(
+        "keeps the old snapshot when the new copy fails",
+        async () => {
+            await takeSnapshot(data, work);
+            mkdirSync(join(work, "cache"));
+            writeFileSync(join(work, "cache", "kept"), "kept");
+            const before = tree(work);
+            const transcripts = join(data, "transcripts");
+            const unreadable = join(
+                transcripts,
+                readdirSync(transcripts).find((name) =>
+                    name.endsWith(".jsonl"),
+                ) as string,
+            );
+            chmodSync(unreadable, 0o000);
+            try {
+                await expect(
+                    takeSnapshot(data, work, { replace: true }),
+                ).rejects.toThrow();
+            } finally {
+                chmodSync(unreadable, 0o600);
+            }
+            expect(tree(work)).toEqual(before);
+        },
+    );
+
     it("says what to run when there is none", async () => {
         await expect(readSnapshot(work)).rejects.toThrow(
             "holds no snapshot: run `bun run eval -- snapshot",
         );
+    });
+
+    it("tells an unreadable or invalid record from a missing one", async () => {
+        mkdirSync(work, { recursive: true });
+        const path = join(work, "snapshot.json");
+        mkdirSync(path);
+        await expect(readSnapshot(work)).rejects.toThrow(
+            `cannot read ${path}: EISDIR; mend it, or take the snapshot again with --replace`,
+        );
+        rmSync(path, { recursive: true });
+        writeFileSync(path, '{"source": "x"');
+        await expect(readSnapshot(work)).rejects.toThrow(
+            `${path} is not JSON; take the snapshot again with --replace`,
+        );
+        writeFileSync(
+            path,
+            JSON.stringify({
+                source: "x",
+                at: "t",
+                conversations: "4",
+                knowledge: 1,
+            }),
+        );
+        await expect(readSnapshot(work)).rejects.toThrow(
+            `${path} is not a snapshot record (conversations: `,
+        );
+        writeFileSync(path, "null");
+        await expect(readSnapshot(work)).rejects.toThrow(
+            "is not a snapshot record",
+        );
+    });
+
+    it("says a directory it cannot count", async () => {
+        // A transcripts file that is no directory cannot be counted.
+        const odd = join(temp.root, "odd");
+        mkdirSync(join(odd, "transcripts"), { recursive: true });
+        writeFileSync(join(odd, "knowledge"), "not a directory");
+        await expect(takeSnapshot(odd, work)).rejects.toThrow(
+            /cannot count .*knowledge: ENOTDIR/,
+        );
+        expect(existsSync(join(work, "snapshot.json"))).toBe(false);
     });
 
     it("points every root into the work directory", () => {
