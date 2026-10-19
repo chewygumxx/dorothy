@@ -354,6 +354,10 @@ For each accepted question and each system:
 2. **Evidence recall**: whether any evidence id is among the first 5 and
    the first 10 items, a conversation matching by phrase, and whether it
    is anywhere among them (in context); the record keeps the first ten.
+   The items are those the system's context holds, so recall at 5 and
+   10 depends on the budget, and a run recorded before ranked ids were
+   so limited (2026-10-19) is not comparable on them; `full`'s are as
+   they were.
 3. **Answer**, unless `--retrieval-only` or the question is a `lookup`:
    the answering model gets the retrieved items and the question, dated
    by `asOf`, with one fixed prompt that says to answer from the items

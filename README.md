@@ -403,9 +403,12 @@ server (llama.cpp, Ollama) keeps them home. The judge and the generator
 must support structured output. `--max-calls` caps the calls of
 `generate` or `run`, and a run stopped by it resumes with
 `--resume <run>`, the id the run printed; `--dry-run` beside it counts
-only what the run has left. A failed call counts as a miss. Each run's
-report is `~/eval/runs/<run>/report.md`, and
-`bun run eval -- <command> --help` lists a command's options.
+only what the run has left. A failed call counts as a miss. A system's
+ranked items are the ones that fit its budget, so recall at 5 and 10
+falls with a smaller `--budget`, and runs made before that (2026-10-19)
+are not comparable on them. Each run's report is
+`~/eval/runs/<run>/report.md`, and `bun run eval -- <command> --help`
+lists a command's options.
 
 ### Development mode
 
