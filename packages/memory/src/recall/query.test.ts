@@ -396,6 +396,53 @@ describe("windowOf", () => {
     });
 });
 
+describe("search within scopes", () => {
+    const HERE = "github.com/u/here";
+    const THERE = "github.com/u/there";
+    // A, B and C are in the fixtures of the other tests; these are not.
+    const P = phrase(4);
+    const Q = phrase(5);
+    const R = phrase(6);
+    const inProject = (project: string | null, at: string) =>
+        line("session", at, {
+            phrase: "p",
+            sdkSessionId: "s",
+            model: "m",
+            promptHash: "h",
+            resumed: false,
+            ...(project === null ? {} : { project }),
+        });
+    const scoped = (query: string, within: string[]) =>
+        search(index, { query }, { ...OPTIONS, within }).results.map(
+            (hit) => hit.identifier,
+        );
+
+    it("falls back to any word among the scopes' own conversations, whatever lies outside", async () => {
+        await conversation(P, [
+            inProject(HERE, day(4)),
+            user(day(4), "alpha only, in this project"),
+        ]);
+        await conversation(Q, [
+            inProject(THERE, day(5)),
+            user(day(5), "alpha and beta together, in another project"),
+        ]);
+        await conversation(R, [
+            inProject(null, day(6)),
+            user(day(6), "alpha beta, personal"),
+        ]);
+        await syncIndex(index, dir);
+        // All the words are in other scopes' conversations; here only one is.
+        expect(scoped("alpha beta", [HERE])).toEqual([P]);
+        // With the others allowed, their full matches still come first alone.
+        expect(scoped("alpha beta", [HERE, THERE]).sort()).toEqual([Q]);
+        expect(scoped("alpha beta", ["personal"])).toEqual([R]);
+        expect(scoped("alpha beta", [THERE, "personal"]).sort()).toEqual(
+            [Q, R].sort(),
+        );
+        expect(scoped("alpha beta", ["github.com/u/nowhere"])).toEqual([]);
+    });
+});
+
 describe("recollect", () => {
     const cluster = (from: number, through: number) => ({
         from,

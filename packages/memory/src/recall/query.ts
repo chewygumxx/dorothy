@@ -456,21 +456,12 @@ export function search(
             .filter((row) => !row.hidden && row.phrase !== exclude)
             .map((row) => [row.id, row.phrase] as const),
     );
-    const hits = conversationHits(index, terms, allowed, { from, to, exclude });
-    if (options.within !== undefined) {
-        const scopes = options.within;
-        const project = index.db.query(
-            "SELECT project FROM conversations WHERE phrase = ?",
-        );
-        for (const phrase of [...hits.keys()]) {
-            const row = project.get(phrase) as {
-                project: string | null;
-            } | null;
-            if (!scopes.includes(row?.project ?? "personal")) {
-                hits.delete(phrase);
-            }
-        }
-    }
+    const hits = conversationHits(index, terms, allowed, {
+        from,
+        to,
+        exclude,
+        inScope: scopeFilter(index, options.within),
+    });
     return {
         ...facts,
         ...rankConversations(index, hits, limit, broken, options),
@@ -511,21 +502,57 @@ function searchQuery(
     return { terms, labels, kind, broken };
 }
 
+// Whether a conversation is in one of the scopes allowed, "personal" for
+// one outside any project; every conversation when none are named.
+function scopeFilter(
+    index: RecallIndex,
+    within: readonly string[] | undefined,
+): (phrase: string) => boolean {
+    if (within === undefined) {
+        return () => true;
+    }
+    const project = index.db.query(
+        "SELECT project FROM conversations WHERE phrase = ?",
+    );
+    return (phrase) => {
+        const row = project.get(phrase) as { project: string | null } | null;
+        return within.includes(row?.project ?? "personal");
+    };
+}
+
 // Conversations with every word, else any of them; with no words, those
-// active in the dates. allowed: the conversations tags leave, or null.
+// active in the dates. allowed: the conversations tags leave, or null. Both
+// the tags and the scopes narrow the conversations found before the choice
+// of any word, so that a match outside them cannot stand in for the
+// matches within.
 function conversationHits(
     index: RecallIndex,
     terms: readonly string[],
     allowed: Set<string> | null,
-    { from, to, exclude }: { from: number; to: number; exclude: string },
+    {
+        from,
+        to,
+        exclude,
+        inScope,
+    }: {
+        from: number;
+        to: number;
+        exclude: string;
+        inScope: (phrase: string) => boolean;
+    },
 ): Map<string, Hit> {
     if (terms.length === 0) {
-        return activeIn(index, allowed ?? new Set(), from, to);
+        const active = activeIn(index, allowed ?? new Set(), from, to);
+        return new Map([...active].filter(([phrase]) => inScope(phrase)));
     }
     const within = (found: Map<string, Hit>) =>
-        allowed === null
-            ? found
-            : new Map([...found].filter(([phrase]) => allowed.has(phrase)));
+        new Map(
+            [...found].filter(
+                ([phrase]) =>
+                    inScope(phrase) &&
+                    (allowed === null || allowed.has(phrase)),
+            ),
+        );
     const hits = within(findHits(index, terms.join(" "), from, to, exclude));
     return hits.size === 0 && terms.length > 1
         ? within(findHits(index, terms.join(" OR "), from, to, exclude))
