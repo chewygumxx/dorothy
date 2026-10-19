@@ -63,7 +63,7 @@ export type ClaudeDeps = {
     remove?: (path: string) => void;
     // Starts a process that outlives dorothy and the terminal, for a
     // catch-up.
-    spawnDetached?: (cmd: string[]) => void;
+    spawnDetached?: (cmd: string[], env: Env) => void;
     // A new uuid, for a launch and a new session.
     newId?: () => string;
     now?: () => Date;
@@ -286,14 +286,18 @@ const selfCommand = () => [
 ];
 
 // A process of its own session, which outlives dorothy and a terminal
-// that hangs up. One that cannot start is not an error here: the next
-// start's catch-up makes good.
-export function spawnDetached(cmd: string[]): void {
+// that hangs up, in the environment given. One that cannot start is not
+// an error here: the next start's catch-up makes good.
+export function spawnDetached(cmd: string[], env: Env): void {
     const [command, ...rest] = cmd;
     if (command === undefined) {
         return;
     }
-    spawnChild(command, rest, { detached: true, stdio: "ignore" })
+    spawnChild(command, rest, {
+        detached: true,
+        stdio: "ignore",
+        env: env as NodeJS.ProcessEnv,
+    })
         .on("error", () => {})
         .unref();
 }
@@ -761,13 +765,9 @@ function launchEnv(
     on: boolean,
     noted: string | null,
 ): Env {
-    const proxy = env.ANTHROPIC_BASE_URL;
     const launchEnv: Env = {
         ...shellEnv,
         ANTHROPIC_BASE_URL: url,
-        ...(proxy === undefined || proxy === ""
-            ? {}
-            : { DOROTHY_ANTHROPIC_BASE_URL: proxy }),
         // Claude Code turns tool search off for a base URL not
         // Anthropic's; a user's own choice stands.
         ENABLE_TOOL_SEARCH: env.ENABLE_TOOL_SEARCH ?? "1",
@@ -780,11 +780,20 @@ function launchEnv(
         // A launch this one runs inside is not this one's.
         delete launchEnv.DOROTHY_LAUNCH;
     }
-    if (proxy === undefined || proxy === "") {
-        // Nor is its proxy.
-        delete launchEnv.DOROTHY_ANTHROPIC_BASE_URL;
-    }
+    withReviewBaseUrl(launchEnv, env);
     return launchEnv;
+}
+
+// The user's own base URL, taken from env, as the one reviews use; none
+// is none, and an outer launch's is not this one's.
+function withReviewBaseUrl(target: Env, env: Env): Env {
+    const proxy = env.ANTHROPIC_BASE_URL;
+    if (proxy === undefined || proxy === "") {
+        delete target.DOROTHY_ANTHROPIC_BASE_URL;
+    } else {
+        target.DOROTHY_ANTHROPIC_BASE_URL = proxy;
+    }
+    return target;
 }
 
 function removeAll(
@@ -826,8 +835,11 @@ export async function runClaude(
         self = selfCommand(),
         spawnDetached: detach = spawnDetached,
     } = deps;
+    // Its reviews go through the user's own proxy, which the hook finds
+    // in DOROTHY_ANTHROPIC_BASE_URL, as it does in a launch's.
+    const catchUpEnv = withReviewBaseUrl({ ...env }, env);
     const catchUp = (launch: string) =>
-        detach([...self, "--claude-hook", "--catch-up", launch]);
+        detach([...self, "--claude-hook", "--catch-up", launch], catchUpEnv);
     // Launches whose dorothy was killed before its catch-up, with memory
     // off too: their notes were written with it on.
     for (const launch of await memory.stale(env).catch(() => [])) {

@@ -53,6 +53,7 @@ function harness(exit: number | Promise<number> = 0, memoryOn = false) {
         killed: [] as string[],
         err: "",
         spawned: [] as string[][],
+        spawnedEnv: [] as Record<string, string | undefined>[],
     };
     const signals = new EventEmitter();
     const stats = { injected: 0, drift: 0 };
@@ -116,8 +117,9 @@ function harness(exit: number | Promise<number> = 0, memoryOn = false) {
             stale: async () => memory.stale,
             notices: async () => memory.notices,
         },
-        spawnDetached: (cmd) => {
+        spawnDetached: (cmd, env) => {
             calls.spawned.push(cmd);
+            calls.spawnedEnv.push(env);
         },
         newId: (() => {
             const ids = [LAUNCH, SESSION];
@@ -494,6 +496,33 @@ describe("dorothy --claude records her sessions", () => {
         expect(calls.spawned).toEqual([
             [...SELF, "--claude-hook", "--catch-up", LAUNCH],
         ]);
+    });
+
+    it("starts its catch-ups where reviews find the user's own proxy", async () => {
+        const { calls, deps, memory } = harness(0, true);
+        deps.env = {
+            ...deps.env,
+            ANTHROPIC_BASE_URL: "http://proxy/x",
+            DOROTHY_ANTHROPIC_BASE_URL: "http://outer/x",
+        };
+        memory.stale = [OTHER];
+        await runClaude([], deps);
+        // The stale launch's and its own.
+        expect(calls.spawned).toHaveLength(2);
+        for (const env of calls.spawnedEnv) {
+            expect(env.DOROTHY_ANTHROPIC_BASE_URL).toBe("http://proxy/x");
+            expect(env.HOME).toBe("/home/u");
+        }
+        // With no proxy of the user's, an outer launch's is not passed on.
+        const bare = harness(0, true);
+        bare.deps.env = {
+            ...bare.deps.env,
+            DOROTHY_ANTHROPIC_BASE_URL: "http://outer/x",
+        };
+        await runClaude([], bare.deps);
+        expect(
+            "DOROTHY_ANTHROPIC_BASE_URL" in (bare.calls.spawnedEnv[0] ?? {}),
+        ).toBe(false);
     });
 
     it("catches up its launch though claude never started", async () => {
@@ -874,7 +903,7 @@ describe("spawnDetached", () => {
                     "",
                 ].join("\n"),
             );
-            spawnDetached([process.execPath, script, out, "--catch-up"]);
+            spawnDetached([process.execPath, script, out, "--catch-up"], {});
             let seen: { stat: string; arg: string } | null = null;
             for (let tries = 0; tries < 200 && seen === null; tries += 1) {
                 try {
@@ -897,8 +926,10 @@ describe("spawnDetached", () => {
     });
 
     it("does not throw for a program that cannot start, or for none", async () => {
-        expect(() => spawnDetached(["/nonexistent/dorothy-x"])).not.toThrow();
-        expect(() => spawnDetached([])).not.toThrow();
+        expect(() =>
+            spawnDetached(["/nonexistent/dorothy-x"], {}),
+        ).not.toThrow();
+        expect(() => spawnDetached([], {})).not.toThrow();
         // The failed start is an event, not an unhandled error.
         await Bun.sleep(100);
     });
