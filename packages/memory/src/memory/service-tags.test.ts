@@ -171,6 +171,36 @@ describe("tagging", () => {
         expect(Object.keys(await conceptsIn())).toHaveLength(3);
     });
 
+    it("prunes unresolved user tags when all fields are fixed", async () => {
+        await writeVocabularyFile({
+            k00000001: concept("memory"),
+            k00000002: { mergedInto: "k00000001", at: AT },
+            k00000003: { deleted: AT, labels: ["misc"] },
+        });
+        const owned = mergeEdit(
+            null,
+            { ...NOTES, tags: ["k00000002", "k00000003"] },
+            AT,
+        );
+        await transcript(OTHER, [user("a"), reply("b")]);
+        await saved(OTHER, owned);
+        const fake = reviews(NOTES);
+        const { memory } = setup({
+            call: fake.fn,
+            vocabulary,
+            entries: [entry(OTHER, owned)],
+        });
+        memory.ready();
+        await until(
+            async () => (await sidecarOf(OTHER))?.reviewedThrough === 2,
+        );
+        expect(fake.calls).toHaveLength(0);
+        expect((await sidecarOf(OTHER))?.tags).toEqual(["k00000001"]);
+        expect((await sidecarOf(OTHER))?.fields.tags).toEqual(
+            owned.fields.tags,
+        );
+    });
+
     it("pauses tags while the vocabulary is broken, saying so once", async () => {
         await writeFile(vocabulary, "{ broken");
         await transcript(OTHER, [user("a"), reply("b")]);

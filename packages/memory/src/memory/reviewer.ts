@@ -40,7 +40,6 @@ import {
     type HistoryHandle,
     type Lock,
     markFailed,
-    markReviewed,
     mergeReview,
     ownsAll,
     readSidecar,
@@ -346,10 +345,24 @@ export class Reviewer {
         const skipped = await updateSidecar(
             this.#options.dir,
             phrase,
-            (latest) =>
-                latest === null || latest.hidden
-                    ? null
-                    : markReviewed(latest, turns),
+            async (latest) => {
+                if (latest === null || latest.hidden) return null;
+                const marked = { ...latest, reviewedThrough: turns };
+                const path = this.#options.vocabulary;
+                if (path === null) return marked;
+                const read = await readVocabulary(path);
+                return read.kind === "unparseable"
+                    ? marked
+                    : {
+                          ...marked,
+                          tags: resolveTags(
+                              read.kind === "ok"
+                                  ? read.vocabulary
+                                  : EMPTY_VOCABULARY,
+                              marked.tags,
+                          ),
+                      };
+            },
             this.#lock,
             this.#recording(`review: ${phrase} (dorothy, nothing new)`),
         );
