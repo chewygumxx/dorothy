@@ -18,8 +18,6 @@
 
 import {
     appendFile,
-    chmod,
-    mkdir,
     readdir,
     readFile,
     rename,
@@ -27,8 +25,9 @@ import {
     writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
-import { type Env, isUuid, xdgDir } from "@dorothy/core";
+import { type Env, isUuid } from "@dorothy/core";
 import { hookLogPath, logHasErrors } from "./log.js";
+import { beside, privateDir, stateDir, writePrivate } from "./state.js";
 
 export type UnreadRecord = {
     v: 1;
@@ -50,8 +49,6 @@ export type UnreadRecord = {
 
 const codeOf = (error: unknown) => (error as { code?: unknown }).code;
 
-export const stateDir = (env: Env) =>
-    join(xdgDir(env, "XDG_STATE_HOME", ".local/state"), "dorothy");
 export const unreadDir = (env: Env) => join(stateDir(env), "unread");
 const typesDir = (env: Env) => join(unreadDir(env), "types");
 const noticesPath = (env: Env) => join(stateDir(env), "notices.jsonl");
@@ -66,17 +63,6 @@ export const copyPath = (env: Env, session: string) =>
     sessionFile(env, session, ".jsonl");
 const recordPath = (env: Env, session: string) =>
     sessionFile(env, session, ".json");
-
-async function privateDir(path: string): Promise<void> {
-    await mkdir(path, { recursive: true, mode: 0o700 });
-    await chmod(path, 0o700);
-}
-
-async function writePrivate(path: string, text: string): Promise<void> {
-    const making = `${path}.${process.pid}.tmp`;
-    await writeFile(making, text, { mode: 0o600 });
-    await rename(making, path);
-}
 
 async function list(dir: string): Promise<string[]> {
     try {
@@ -226,7 +212,7 @@ export async function startNotices(env: Env): Promise<string[]> {
         );
     }
     // Taken away first, so a notice added meanwhile waits for the next.
-    const taking = `${noticesPath(env)}.${process.pid}.taking`;
+    const taking = beside(noticesPath(env), "taking");
     try {
         await rename(noticesPath(env), taking);
     } catch {

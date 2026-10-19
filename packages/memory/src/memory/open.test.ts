@@ -19,7 +19,8 @@ import {
     withSection,
     xdgDir,
 } from "@dorothy/core";
-import { addNotice, stateDir } from "../bodies/unread.js";
+import { stateDir } from "../bodies/state.js";
+import { addNotice } from "../bodies/unread.js";
 import { dataRoot, putFact } from "../facts/store.js";
 import { projectsPath } from "../projects/registry.js";
 import { transcriptDir, transcriptPath } from "../transcript.js";
