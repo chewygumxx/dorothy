@@ -277,6 +277,7 @@ export async function runMemoryEdit(
                     edited,
                     shown,
                     fresh.kind === "ok" ? fresh : tags,
+                    tags,
                 );
                 if (parsed.kind !== "edit") {
                     return parsed.kind === "unchanged"

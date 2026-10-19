@@ -16,7 +16,7 @@ import {
     wrap,
 } from "./edit-view.js";
 import { EMPTY_SIDECAR, type Sidecar } from "./sidecar.js";
-import type { Vocabulary } from "./vocabulary.js";
+import type { Concept, Vocabulary } from "./vocabulary.js";
 
 const PHRASE = "bingo-overabundance-mazer-kasha";
 // Local midday on the day, so dates read the same in every time zone.
@@ -347,6 +347,46 @@ describe("the Tags line", () => {
         expect(edited("Tags: memory;tui")).toEqual({ kind: "unchanged" });
     });
 
+    it.each(["renamed", "deleted"])(
+        "keeps a Tags line unchanged after its concept is %s",
+        (change) => {
+            const fresh: TagsContext = {
+                kind: "ok",
+                vocabulary: {
+                    ...vocabulary,
+                    concepts: {
+                        ...vocabulary.concepts,
+                        k00000001:
+                            change === "deleted"
+                                ? { deleted: AT, labels: ["memory", "recall"] }
+                                : {
+                                      ...(vocabulary.concepts
+                                          .k00000001 as Concept),
+                                      prefLabel: "remembering",
+                                  },
+                    },
+                },
+            };
+            expect(parseEditView(shown, tagged, fresh, ok)).toEqual({
+                kind: "unchanged",
+            });
+            expect(
+                parseEditView(
+                    shown.replace("Pinned: no", "Pinned: yes"),
+                    tagged,
+                    fresh,
+                    ok,
+                ),
+            ).toEqual({ kind: "edit", changes: { pinned: true } });
+        },
+    );
+
+    it("collapses alternative labels before applying the tag limit", () => {
+        expect(
+            edited("Tags: recall; memory; tui; recall; memory; tui"),
+        ).toEqual({ kind: "unchanged" });
+    });
+
     it("hands an emptied line back to Dorothy", () => {
         expect(edited("Tags:")).toEqual({
             kind: "edit",
@@ -362,9 +402,12 @@ describe("the Tags line", () => {
         };
         const view = renderEditView(PHRASE, gone, ok);
         expect(view).toContain("# Tags (empty)\nTags:\n");
-        expect(parseEditView(view, gone, ok)).toEqual({
+        expect(parseEditView(view, gone, ok)).toEqual({ kind: "unchanged" });
+        expect(
+            parseEditView(view.replace("Pinned: no", "Pinned: yes"), gone, ok),
+        ).toEqual({
             kind: "edit",
-            changes: { tags: null },
+            changes: { pinned: true, tags: null },
         });
         const hers: Sidecar = {
             ...gone,

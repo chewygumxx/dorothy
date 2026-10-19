@@ -186,6 +186,7 @@ export function parseEditView(
     text: string,
     shown: Sidecar | null,
     tags?: TagsContext,
+    renderedTags = tags,
 ): EditParse {
     const lines = viewLines(text);
     if (lines === null) {
@@ -200,7 +201,7 @@ export function parseEditView(
     const problem =
         textChanges(found, base, changes) ??
         flagChanges(found, base, changes) ??
-        tagsChange(found.get("Tags"), tags, base, changes);
+        tagsChange(found.get("Tags"), tags, base, changes, renderedTags);
     if (problem !== null) {
         return { kind: "error", reason: problem };
     }
@@ -292,6 +293,7 @@ function tagsChange(
     tags: TagsContext | undefined,
     base: Sidecar,
     changes: EditChanges,
+    rendered: TagsContext | undefined,
 ): string | null {
     if (given === undefined) {
         return null;
@@ -301,6 +303,20 @@ function tagsChange(
     }
     if (tags.kind === "broken") {
         return TAGS_BROKEN;
+    }
+    // An untouched line names what was rendered, even after a rename or
+    // deletion. An already lapsed fixed set returns only with another edit.
+    if (
+        rendered?.kind === "ok" &&
+        given === tagsText(rendered.vocabulary, base)
+    ) {
+        if (
+            given === "" &&
+            base.fields.tags?.by === "user" &&
+            Object.keys(changes).length > 0
+        )
+            changes.tags = null;
+        return null;
     }
     const ids = tagIds(given, tags.vocabulary);
     if (typeof ids === "string") {
