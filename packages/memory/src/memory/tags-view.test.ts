@@ -138,6 +138,30 @@ describe("renderTagsTree", () => {
         );
     });
 
+    it("prints a shared concept's children only on its first occurrence", () => {
+        const diamond: Vocabulary = {
+            ...TREE,
+            concepts: {
+                ...TREE.concepts,
+                k00000010: concept("types", { broader: [K.tagging] }),
+            },
+        };
+        expect(renderTagsTree(diamond, COUNTS)).toBe(
+            [
+                "dorothy (12)",
+                "  memory (7)",
+                "    compaction (3)",
+                "    tagging (2)",
+                "      types (0)",
+                "  persona (4)",
+                "misc (0)",
+                "tui (5)",
+                "  rendering (3)",
+                "  tagging (2, see above)",
+            ].join("\n"),
+        );
+    });
+
     it("prints nothing for an empty vocabulary", () => {
         expect(renderTagsTree(EMPTY_VOCABULARY, new Map())).toBe("");
     });
@@ -244,6 +268,29 @@ describe("the edit view", () => {
                 "",
             ].join("\n"),
         );
+    });
+
+    it("keeps parent reordering unchanged and its provenance intact", () => {
+        const view = renderTagsView(TREE, new Map());
+        expect(
+            parseTagsView(
+                view.replace("Under: memory; tui", "Under: tui; memory"),
+                TREE,
+            ),
+        ).toEqual({ kind: "unchanged" });
+    });
+
+    it("drops a survivor's edge to itself after merging its parent", () => {
+        const result = vocabularyOf(
+            applied(parse(["Tag: dorothy", "Tag: dorothy\nMerge: memory"])),
+        );
+        expect(result.concepts.k00000002).toMatchObject({
+            broader: [],
+            altLabel: ["recall", "dorothy"],
+        });
+        expect(result.concepts.k00000001).toMatchObject({
+            mergedInto: "k00000002",
+        });
     });
 
     it("finds nothing changed in the view as rendered", () => {

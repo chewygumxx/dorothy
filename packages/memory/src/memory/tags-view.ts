@@ -12,6 +12,7 @@ import { viewLines, wrap } from "./edit-view.js";
 import { localDay as day } from "./list.js";
 import { normalise } from "./sidecar.js";
 import {
+    byLabel,
     type Concept,
     isConcept,
     isDeleted,
@@ -357,7 +358,7 @@ function changeOf(
     }
     if (
         under !== undefined &&
-        list(under) !== list(parentLabels(shown, concept))
+        list([...under].sort(byLabel)) !== list(parentLabels(shown, concept))
     ) {
         change.under = under;
     }
