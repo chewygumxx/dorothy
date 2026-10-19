@@ -195,6 +195,53 @@ describe("search", () => {
         ).toEqual([A, B].sort());
     });
 
+    it("reads turns' UTC times as the local day they fell on", async () => {
+        const zone = process.env.TZ;
+        try {
+            // One zone a day ahead of UTC and one half a day behind, so the
+            // same instants fall on a different day in each.
+            const NEXT = {
+                "2026-10-05": "2026-10-06",
+                "2026-10-04": "2026-10-05",
+            };
+            const PREVIOUS = {
+                "2026-10-05": "2026-10-04",
+                "2026-10-04": "2026-10-03",
+            };
+            const cases = [
+                [
+                    "Pacific/Kiritimati",
+                    "2026-10-04T23:30:00.000Z",
+                    "2026-10-05",
+                ],
+                ["Etc/GMT+12", "2026-10-05T05:00:00.000Z", "2026-10-04"],
+            ] as const;
+            for (const [n, [tz, at, local]] of cases.entries()) {
+                const word = n === 0 ? "eastword" : "westword";
+                process.env.TZ = tz;
+                await conversation(phrase(40 + n), [
+                    session(at),
+                    user(at, `A ${word} turn.`),
+                ]);
+                await syncIndex(index, dir);
+                const asked = (bounds: object) =>
+                    search(index, { query: word, ...bounds }, OPTIONS).results;
+                const [hit] = asked({});
+                expect(hit?.dateCreated).toBe(local);
+                expect(asked({ after: local })).toHaveLength(1);
+                expect(asked({ before: local })).toHaveLength(1);
+                expect(asked({ after: NEXT[local] })).toHaveLength(0);
+                expect(asked({ before: PREVIOUS[local] })).toHaveLength(0);
+            }
+        } finally {
+            if (zone === undefined) {
+                delete process.env.TZ;
+            } else {
+                process.env.TZ = zone;
+            }
+        }
+    });
+
     it("refuses dates written loosely", () => {
         for (const after of ["last week", "2026-02-30", "2026-1-5"]) {
             expect(() => search(index, { query: "x", after }, OPTIONS)).toThrow(
