@@ -59,6 +59,57 @@ describe("tokenStore", () => {
         expect(await tokens.verify(made[5] as string)).toBe("f");
     });
 
+    // Each process adds its device, but swaps the file in only once the
+    // gate is open, having noted that it is ready: were the changes not
+    // serialised, all would read the file before any wrote it.
+    it("loses no device when separate processes change it at once", async () => {
+        const names = ["a", "b", "c"];
+        const gate = join(dir, "gate");
+        mkdirSync(join(dir, "ready"));
+        const script = `const { existsSync, writeFileSync } = require("node:fs");
+            const { rename } = require("node:fs/promises");
+            const { tokenStore } = await import(process.argv[1]);
+            const [, , path, name, gate, ready] = process.argv;
+            const store = tokenStore(path, () => new Date(), {
+                rename: async (from, to) => {
+                    writeFileSync(ready + "/" + name, "");
+                    while (!existsSync(gate)) await Bun.sleep(5);
+                    await rename(from, to);
+                },
+            });
+            await store.add(name);`;
+        const children = names.map((name) =>
+            Bun.spawn(
+                [
+                    process.execPath,
+                    "--no-env-file",
+                    "-e",
+                    script,
+                    join(import.meta.dir, "tokens.ts"),
+                    path,
+                    name,
+                    gate,
+                    join(dir, "ready"),
+                ],
+                { stdout: "inherit", stderr: "inherit" },
+            ),
+        );
+        // Unserialised, every child is ready at once; serialised, only the
+        // first is, and the rest wait on it.
+        const until = Date.now() + 800;
+        while (
+            readdirSync(join(dir, "ready")).length < names.length &&
+            Date.now() < until
+        ) {
+            await Bun.sleep(10);
+        }
+        writeFileSync(gate, "");
+        expect(
+            await Promise.all(children.map((child) => child.exited)),
+        ).toEqual([0, 0, 0]);
+        expect(await tokens.devices()).toEqual(names);
+    });
+
     it("leaves no temporary file where the swap fails", async () => {
         const failing = tokenStore(path, () => new Date(), {
             rename: async () => {
@@ -66,7 +117,9 @@ describe("tokenStore", () => {
             },
         });
         await expect(failing.add("phone")).rejects.toThrow("rename failed");
-        expect(readdirSync(dirname(path))).toEqual([]);
+        expect(
+            readdirSync(dirname(path)).filter((name) => name.endsWith(".tmp")),
+        ).toEqual([]);
     });
 
     it("makes a token, keeps only its hash, and knows its device", async () => {
@@ -74,6 +127,8 @@ describe("tokenStore", () => {
         expect(token).toStartWith("dmt_");
         expect(readFileSync(path, "utf8")).not.toContain(token);
         expect(statSync(path).mode & 0o777).toBe(0o600);
+        expect(statSync(`${path}.lock`).mode & 0o777).toBe(0o600);
+        expect(statSync(dirname(path)).mode & 0o777).toBe(0o700);
         expect(await tokens.verify(token)).toBe("laptop");
         expect(await tokens.verify(`${token}x`)).toBeNull();
         expect(await tokens.devices()).toEqual(["laptop"]);

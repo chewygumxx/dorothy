@@ -12,10 +12,12 @@
 // once, kept only as SHA-256 hashes in the state directory, mode 0600. A
 // file that cannot be read trusts no device.
 
+import { Database } from "bun:sqlite";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { chmod, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { type Env, xdgDir } from "@dorothy/core";
+import { exclusiveLock } from "../sqlite-lock.js";
 
 export const DEVICE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 
@@ -59,10 +61,12 @@ const isTokenFile = (value: unknown): value is TokenFile =>
             typeof entry.at === "string",
     );
 
-// Changes to one file take turns, whichever store makes them.
+// Changes to one file take turns, whichever store or process makes them.
 const queues = new Map<string, Promise<unknown>>();
 function inTurn<T>(path: string, work: () => Promise<T>): Promise<T> {
-    const result = (queues.get(path) ?? Promise.resolve()).then(work);
+    const result = (queues.get(path) ?? Promise.resolve()).then(() =>
+        underLock(path, work),
+    );
     const tail = result.catch(() => {});
     queues.set(path, tail);
     void tail.then(() => {
@@ -71,6 +75,26 @@ function inTurn<T>(path: string, work: () => Promise<T>): Promise<T> {
         }
     });
     return result;
+}
+
+// How long a change waits for another process's.
+const LOCK_WAIT_MS = 5000;
+
+// Changes of all processes take turns: SQLite's write lock on a file of
+// its own beside the tokens, as the index and history hold theirs, which
+// other processes wait for and SQLite lets go if the holder dies. The
+// whole read, change and write runs under it.
+async function underLock<T>(path: string, work: () => Promise<T>): Promise<T> {
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+    const lockPath = `${path}.lock`;
+    const db = new Database(lockPath, { create: true });
+    try {
+        await chmod(lockPath, 0o600);
+        db.run(`PRAGMA busy_timeout = ${LOCK_WAIT_MS}`);
+        return await exclusiveLock(db)(work);
+    } finally {
+        db.close();
+    }
 }
 
 export function tokenStore(
