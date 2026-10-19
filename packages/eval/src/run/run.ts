@@ -130,6 +130,17 @@ export function modelCalls(info: RunInfo, accepted: Question[]): number {
     return each * info.systems.length;
 }
 
+// The cap reached at a judgement: the answer was paid for, so its record
+// is kept, with that judgement's failure, before the run stops.
+class Capped extends CallCap {
+    constructor(
+        message: string,
+        readonly record: RunRecord,
+    ) {
+        super(message);
+    }
+}
+
 const hasEvidence = (ranked: string[], evidence: string[]) =>
     ranked.some((id) => evidence.includes(id));
 
@@ -233,10 +244,10 @@ async function ask(
                 };
             }
         } catch (caught) {
-            if (caught instanceof CallCap) {
-                throw caught;
-            }
             record.failures.push(`${name}: ${failureOf(caught)}`);
+            if (caught instanceof CallCap) {
+                throw new Capped(caught.message, record);
+            }
         }
     };
     if (question.type === "abstention") {
@@ -327,6 +338,9 @@ export async function runEvaluation(
                 );
             } catch (error) {
                 if (error instanceof CallCap) {
+                    if (error instanceof Capped) {
+                        await append(error.record);
+                    }
                     stopped = error.message;
                     return;
                 }

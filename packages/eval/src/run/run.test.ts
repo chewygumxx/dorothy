@@ -166,7 +166,7 @@ describe("bun run eval -- run", () => {
         expect(asked).toContain("Which plot is my allotment?");
     });
 
-    it("stops at --max-calls and resumes without asking twice", async () => {
+    it("stops at --max-calls, keeping a paid answer, and resumes", async () => {
         serve({ content: "Plot twelve, by the river." });
         const first = fakeIo();
         expect(
@@ -189,14 +189,25 @@ describe("bun run eval -- run", () => {
         expect(first.out.join("")).toContain(
             "stopped: reached --max-calls (4); resume with",
         );
-        expect(await readRecords(work, id)).toHaveLength(3);
+        // The abstention's answer was the fourth call: its record is kept
+        // with the judgement the cap stopped.
+        const kept = await readRecords(work, id);
+        expect(kept).toHaveLength(4);
+        const capped = kept.find((each) => each.type === "abstention");
+        expect(capped?.answer?.text).toBe("Plot twelve, by the river.");
+        expect(capped?.failures).toEqual(["declined: reached --max-calls (4)"]);
         const again = fakeIo();
         expect(
             await runCli(["run", "--work", work, "--resume", id], again.io),
         ).toBe(0);
+        // A record with a failure is asked again, its answer with it.
         const records = await readRecords(work, id);
         expect(records).toHaveLength(5);
         expect(new Set(records.map((each) => each.question)).size).toBe(5);
+        expect(records.every((each) => each.failures.length === 0)).toBe(true);
+        expect(
+            readFileSync(recordsPath(work, id), "utf8").trim().split("\n"),
+        ).toHaveLength(6);
     });
 
     it("refuses to resume on another snapshot or model", async () => {
