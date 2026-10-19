@@ -13,6 +13,7 @@ import type { Env } from "@dorothy/core";
 import {
     type ClaudeDeps,
     launchClaude,
+    runAll,
     type Spawned,
     warnDrift,
 } from "./claude.js";
@@ -64,19 +65,28 @@ export async function runClaudeDump(
         if (typeof launch === "number") {
             return launch;
         }
-        const child = spawn(
-            [...launch.cmd, "-p", "--no-session-persistence", "--", message],
-            launch.env,
-            launch.cwd,
-        );
         let code: number;
         try {
-            await Promise.race([capture.first, child.exited]);
+            const child = spawn(
+                [
+                    ...launch.cmd,
+                    "-p",
+                    "--no-session-persistence",
+                    "--",
+                    message,
+                ],
+                launch.env,
+                launch.cwd,
+            );
+            try {
+                await Promise.race([capture.first, child.exited]);
+            } finally {
+                child.kill();
+                code = await child.exited;
+            }
         } finally {
-            child.kill();
-            code = await child.exited;
-            launch.gateway.stop();
-            launch.cleanup();
+            // Whether claude started, or its spawn threw.
+            runAll([() => launch.gateway.stop(), launch.cleanup]);
         }
         const [body] = capture.bodies;
         if (body === undefined) {

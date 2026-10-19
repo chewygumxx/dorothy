@@ -901,7 +901,7 @@ export async function runClaude(
 }
 
 // Every step runs though one throws; the first error is thrown after.
-function runAll(steps: readonly (() => void)[]): void {
+export function runAll(steps: readonly (() => void)[]): void {
     const failures: unknown[] = [];
     for (const step of steps) {
         try {
