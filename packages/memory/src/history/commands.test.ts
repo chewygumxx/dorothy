@@ -257,6 +257,8 @@ it.each(["history", "restore", "rollback", "recover"])(
             await expect(result).resolves.toBe(1);
             expect(err.text).toContain("dorothy:");
             expect(err.text).toContain("fixture git failure");
+            if (operation === "history")
+                expect(err.text).toContain("couldn't list history:");
         } finally {
             spy.mockRestore();
         }

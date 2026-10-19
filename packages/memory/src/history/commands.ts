@@ -308,7 +308,7 @@ export async function runHistory(
         }
         return 0;
     } catch (error) {
-        err.write(`dorothy: couldn't history: ${describeError(error)}\n`);
+        err.write(`dorothy: couldn't list history: ${describeError(error)}\n`);
         return 1;
     } finally {
         await opened.close();
