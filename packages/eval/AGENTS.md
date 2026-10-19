@@ -48,8 +48,8 @@ reads no file of memory's itself.
 `snapshot`, `mine`, `generate`, `review`, `run` and `compare`, in the
 order a user meets them; the README's "Measuring her memory" shows
 each. A new command is a `Command` in `cli.ts`'s table, with its
-options declared, its failures as `UsageError`s, and a test through
-`runCli` with `fakeIo`.
+options declared and described for `--help`, its failures as
+`UsageError`s, and a test through `runCli` with `fakeIo`.
 
 ## Files
 

@@ -50,15 +50,39 @@ const SETTINGS = ["systems", "budget", "full-budget", "retrieval-only"];
 export const runCommand: Command = {
     summary: "ask the accepted questions of each system, and report",
     options: {
-        work: { type: "string" },
-        systems: { type: "string" },
-        budget: { type: "string" },
-        "full-budget": { type: "string" },
-        "retrieval-only": { type: "boolean" },
-        resume: { type: "string" },
-        concurrency: { type: "string" },
-        "max-calls": { type: "string" },
-        "dry-run": { type: "boolean" },
+        work: { type: "string", description: "the evaluation's directory" },
+        systems: {
+            type: "string",
+            description: "the systems to ask, comma-separated; all by default",
+        },
+        budget: {
+            type: "string",
+            description: "characters each system may retrieve, 8000 by default",
+        },
+        "full-budget": {
+            type: "string",
+            description: "characters full may retrieve, 400000 by default",
+        },
+        "retrieval-only": {
+            type: "boolean",
+            description: "measure retrieval alone, with no model",
+        },
+        resume: {
+            type: "string",
+            description: "the id of a stopped run, to finish it",
+        },
+        concurrency: {
+            type: "string",
+            description: "questions asked at once, 4 by default",
+        },
+        "max-calls": {
+            type: "string",
+            description: "stop after this many model calls",
+        },
+        "dry-run": {
+            type: "boolean",
+            description: "count the model calls, and make none",
+        },
     },
     async run(values, _positionals, io) {
         const work = workOf(values);

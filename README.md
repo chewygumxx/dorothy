@@ -403,7 +403,8 @@ server (llama.cpp, Ollama) keeps them home. The judge and the generator
 must support structured output. `--max-calls` caps the calls of
 `generate` or `run`, and a run stopped by it resumes with
 `--resume <run>`, the id the run printed. A failed call counts as a
-miss. Each run's report is `~/eval/runs/<run>/report.md`.
+miss. Each run's report is `~/eval/runs/<run>/report.md`, and
+`bun run eval -- <command> --help` lists a command's options.
 
 ### Development mode
 

@@ -206,7 +206,9 @@ export async function reviewQuestions(
 
 export const reviewCommand: Command = {
     summary: "accept, edit or reject the drafts, one at a time",
-    options: { work: { type: "string" } },
+    options: {
+        work: { type: "string", description: "the evaluation's directory" },
+    },
     async run(values, _positionals, io) {
         const work = workOf(values);
         await readSnapshot(work);

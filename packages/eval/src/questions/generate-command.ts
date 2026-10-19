@@ -77,12 +77,29 @@ const byType = (questions: Question[]) => {
 export const generateCommand: Command = {
     summary: "draft questions of each type with a model",
     options: {
-        work: { type: "string" },
-        count: { type: "string" },
-        type: { type: "string", multiple: true },
-        seed: { type: "string" },
-        "max-calls": { type: "string" },
-        "dry-run": { type: "boolean" },
+        work: { type: "string", description: "the evaluation's directory" },
+        count: {
+            type: "string",
+            description: "questions to draft in all, 300 by default",
+        },
+        type: {
+            type: "string",
+            multiple: true,
+            description: "a type's own count, as temporal=40",
+        },
+        seed: {
+            type: "string",
+            description:
+                "the seed samples are drawn by, to repeat a generation",
+        },
+        "max-calls": {
+            type: "string",
+            description: "stop after this many model calls",
+        },
+        "dry-run": {
+            type: "boolean",
+            description: "count the model calls, and make none",
+        },
     },
     async run(values, _positionals, io) {
         const work = workOf(values);

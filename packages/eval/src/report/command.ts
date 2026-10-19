@@ -58,7 +58,10 @@ async function readSummary(work: string, id: string): Promise<Summary> {
 
 export const compareCommand: Command = {
     summary: "compare two runs' summaries",
-    options: { work: { type: "string" } },
+    args: "<run> <run>",
+    options: {
+        work: { type: "string", description: "the evaluation's directory" },
+    },
     async run(values, positionals, io) {
         const work = workOf(values);
         const [first, second] = positionals;

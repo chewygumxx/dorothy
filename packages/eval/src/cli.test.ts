@@ -10,7 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { join } from "node:path";
-import { runCli } from "./cli.js";
+import { COMMANDS, runCli } from "./cli.js";
 import { fakeIo, tempRoot, writeFixtureData } from "./testing.js";
 
 let temp: ReturnType<typeof tempRoot>;
@@ -31,6 +31,51 @@ describe("bun run eval", () => {
         const { io, out } = fakeIo();
         expect(await runCli(["--help"], io)).toBe(0);
         expect(out.join("")).toContain("Usage:");
+    });
+
+    it("gives its usage on help, and succeeds", async () => {
+        const { io, out } = fakeIo();
+        expect(await runCli(["help"], io)).toBe(0);
+        expect(out.join("")).toContain("Usage: bun run eval -- <command>");
+        expect(out.join("")).toContain("compare");
+    });
+
+    it("gives a command's usage and options on --help", async () => {
+        const { io, out, err } = fakeIo();
+        expect(await runCli(["run", "--help"], io)).toBe(0);
+        const text = out.join("");
+        expect(text).toStartWith("Usage: bun run eval -- run [options]\n");
+        expect(text).toContain("ask the accepted questions");
+        expect(text).toMatch(/\n {2}--work <value> +the evaluation's /);
+        expect(text).toMatch(/\n {2}--dry-run +count the model calls/);
+        expect(text).toContain("--max-calls <value>");
+        expect(err).toEqual([]);
+    });
+
+    it("gives a command's usage on help <command>, with its arguments", async () => {
+        const { io, out } = fakeIo();
+        expect(await runCli(["help", "compare"], io)).toBe(0);
+        expect(out.join("")).toStartWith(
+            "Usage: bun run eval -- compare [options] <run> <run>\n",
+        );
+        const { io: other, out: more } = fakeIo();
+        expect(await runCli(["generate", "--work", "w", "--help"], other)).toBe(
+            0,
+        );
+        expect(more.join("")).toMatch(/--type <value> +.*repeat/);
+    });
+
+    it("describes every option of every command", () => {
+        for (const [name, command] of Object.entries(COMMANDS)) {
+            for (const [option, spec] of Object.entries(command.options)) {
+                expect([name, option, typeof spec.description]).toEqual([
+                    name,
+                    option,
+                    "string",
+                ]);
+                expect(spec.description.trim()).not.toBe("");
+            }
+        }
     });
 
     it("names a command it lacks", async () => {

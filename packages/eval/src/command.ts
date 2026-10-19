@@ -24,13 +24,16 @@ export type Io = {
     // Opens the editor on a file and waits for it to close.
     edit(path: string): Promise<void>;
 };
+// Each option as parseArgs takes it, with a line for --help.
 export type Options = Record<
     string,
-    { type: "string" | "boolean"; multiple?: boolean }
+    { type: "string" | "boolean"; multiple?: boolean; description: string }
 >;
 export type Values = Record<string, string | boolean | string[] | undefined>;
 export type Command = {
     summary: string;
+    // What follows the options in its usage, such as "<run> <run>".
+    args?: string;
     options: Options;
     run(values: Values, positionals: string[], io: Io): Promise<number>;
 };

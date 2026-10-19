@@ -15,9 +15,18 @@ import { takeSnapshot } from "./snapshot.js";
 export const snapshotCommand: Command = {
     summary: "copy a data directory into the work directory",
     options: {
-        from: { type: "string" },
-        work: { type: "string" },
-        replace: { type: "boolean" },
+        from: {
+            type: "string",
+            description: "her data directory, such as ~/.local/share/dorothy",
+        },
+        work: {
+            type: "string",
+            description: "the evaluation's directory, made if missing",
+        },
+        replace: {
+            type: "boolean",
+            description: "replace a snapshot the work directory holds",
+        },
     },
     async run(values, _positionals, io) {
         // Never a default: nothing reads her real data unless named.

@@ -38,7 +38,31 @@ export function usage(): string {
     for (const [name, command] of Object.entries(COMMANDS)) {
         lines.push(`  ${name.padEnd(10)}${command.summary}`);
     }
+    lines.push(
+        "",
+        "`bun run eval -- <command> --help` gives a command's options.",
+    );
     return `${lines.join("\n")}\n`;
+}
+
+// A command's usage, and each option with its kind and what it does.
+export function commandUsage(name: string, command: Command): string {
+    const args = command.args === undefined ? "" : ` ${command.args}`;
+    const flags = Object.entries(command.options).map(([option, spec]) => ({
+        flag: `--${option}${spec.type === "string" ? " <value>" : ""}`,
+        description: `${spec.description}${spec.multiple === true ? "; repeatable" : ""}`,
+    }));
+    const width = Math.max(...flags.map(({ flag }) => flag.length)) + 2;
+    return `${[
+        `Usage: bun run eval -- ${name} [options]${args}`,
+        "",
+        `${name}: ${command.summary}`,
+        "",
+        "Options:",
+        ...flags.map(
+            ({ flag, description }) => `  ${flag.padEnd(width)}${description}`,
+        ),
+    ].join("\n")}\n`;
 }
 
 // node:util's parseArgs marks its own errors with these codes.
@@ -49,18 +73,23 @@ const isArgumentError = (error: unknown) =>
 
 export async function runCli(argv: string[], io: Io): Promise<number> {
     const [name, ...rest] = argv;
-    if (name === "--help") {
+    if (name === "--help" || (name === "help" && rest.length === 0)) {
         io.out(usage());
         return 0;
     }
-    const command = name === undefined ? undefined : COMMANDS[name];
+    const asked = name === "help" ? rest[0] : name;
+    const command = asked === undefined ? undefined : COMMANDS[asked];
     if (command === undefined) {
         io.err(
-            name === undefined
+            asked === undefined
                 ? usage()
-                : `eval: no command ${name}\n${usage()}`,
+                : `eval: no command ${asked}\n${usage()}`,
         );
         return 1;
+    }
+    if (name === "help" || rest.includes("--help")) {
+        io.out(commandUsage(asked as string, command));
+        return 0;
     }
     try {
         const { values, positionals } = parseArgs({
