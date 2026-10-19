@@ -8,6 +8,7 @@
 //
 //
 
+import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
     chmod,
@@ -21,6 +22,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { exclusiveLock } from "../sqlite-lock.js";
 import {
     appendClusters,
     type Cluster,
@@ -218,32 +220,69 @@ describe("updateSidecar", () => {
     it("round-trips tags through two mutually exclusive async changes", async () => {
         const gate = Promise.withResolvers<void>();
         const entered = Promise.withResolvers<void>();
-        const first = updateSidecar(dir, PHRASE, async (current) => {
-            entered.resolve();
-            await gate.promise;
-            return mergeEdit(current, { tags: ["k00000001"] }, AT);
-        });
-        await entered.promise;
-        let secondEntered = false;
-        const second = updateSidecar(dir, PHRASE, async (current) => {
-            secondEntered = true;
-            expect(current?.tags).toEqual(["k00000001"]);
-            return mergeEdit(current, { pinned: true }, AT);
-        });
-        await Promise.resolve();
-        expect(secondEntered).toBe(false);
-        gate.resolve();
-        expect((await first).kind).toBe("written");
-        expect((await second).kind).toBe("written");
-        expect(await readSidecar(dir, PHRASE)).toMatchObject({
-            kind: "ok",
-            sidecar: {
-                rev: 2,
-                tags: ["k00000001"],
-                pinned: true,
-                fields: { tags: { by: "user", at: AT } },
+        const secondQueued = Promise.withResolvers<void>();
+        const db = new Database(":memory:");
+        const exclusive = exclusiveLock(db);
+        let requests = 0;
+        const lock: Lock = (work) => {
+            const pending = exclusive(work);
+            if (++requests === 2) secondQueued.resolve();
+            return pending;
+        };
+        const first = updateSidecar(
+            dir,
+            PHRASE,
+            async (current) => {
+                entered.resolve();
+                await gate.promise;
+                return mergeEdit(current, { tags: ["k00000001"] }, AT);
             },
-        });
+            lock,
+        );
+        let second: ReturnType<typeof updateSidecar> | undefined;
+        try {
+            await entered.promise;
+            let secondEntered = false;
+            // Separate paths avoid the per-path queue masking a missing lock.
+            const other = "amber-otter-quietly-sings";
+            second = updateSidecar(
+                dir,
+                other,
+                async (current) => {
+                    secondEntered = true;
+                    const read = await readSidecar(dir, PHRASE);
+                    expect(read.kind === "ok" && read.sidecar.tags).toEqual([
+                        "k00000001",
+                    ]);
+                    return mergeEdit(
+                        current,
+                        { tags: ["k00000001"], pinned: true },
+                        AT,
+                    );
+                },
+                lock,
+            );
+            // An unlocked writer finishes while the first is still gated;
+            // a locked one reaches the contention signal instead.
+            await Promise.race([secondQueued.promise, second]);
+            expect(secondEntered).toBe(false);
+            gate.resolve();
+            expect((await first).kind).toBe("written");
+            expect((await second).kind).toBe("written");
+            expect(await readSidecar(dir, other)).toMatchObject({
+                kind: "ok",
+                sidecar: {
+                    rev: 1,
+                    tags: ["k00000001"],
+                    pinned: true,
+                    fields: { tags: { by: "user", at: AT } },
+                },
+            });
+        } finally {
+            gate.resolve();
+            await Promise.all([first, second]);
+            db.close();
+        }
     });
 
     it("never writes over an unparseable sidecar", async () => {
