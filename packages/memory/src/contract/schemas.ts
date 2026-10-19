@@ -38,7 +38,11 @@ import { z } from "zod";
 import { isProjectId } from "../facts/store.js";
 import { ContractError } from "./errors.js";
 
-const host = z.string().regex(HOST_ID, "host is not a profile's name");
+// "chat" is the source of her own conversations: no host may be named so.
+const host = z
+    .string()
+    .regex(HOST_ID, "host is not a profile's name")
+    .refine((name) => name !== "chat", "chat is her own conversations' source");
 const session = z.string().min(1).max(256);
 // A tool's project is an id or a path, which the service resolves; a hook
 // request's is the id the client made, which is all a record may land under.

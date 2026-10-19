@@ -15,6 +15,7 @@ import { ContractError } from "./errors.js";
 import {
     blockRequestSchema,
     blockResponseSchema,
+    hostProfileSchema,
     openShape,
     parseWith,
     recallRequestSchema,
@@ -111,6 +112,35 @@ describe("recordRequestSchema", () => {
                 events: [{ sourceId: "a", kind: "user", text: "Hi" }],
             }),
         ).toThrow(ContractError);
+    });
+});
+
+describe("a host named chat", () => {
+    it("is refused, as it would read as her own conversations", () => {
+        expect(() =>
+            parseWith(blockRequestSchema, {
+                host: "chat",
+                session: "s1",
+                reason: "startup",
+            }),
+        ).toThrow("chat is her own conversations' source");
+        expect(() =>
+            parseWith(recordRequestSchema, {
+                host: "chat",
+                session: "s1",
+                private: true,
+            }),
+        ).toThrow(ContractError);
+        expect(
+            hostProfileSchema.safeParse({
+                id: "chat",
+                checked: [],
+                blockBudget: 1000,
+                recallBudget: 0,
+                delivery: ["mcp"],
+                instructions: 512,
+            }).success,
+        ).toBe(false);
     });
 });
 
