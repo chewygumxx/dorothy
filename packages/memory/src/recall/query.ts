@@ -25,7 +25,7 @@ import {
     type TagsResult,
     type WindowTurn,
 } from "@dorothy/core";
-import { isConfirmed, UNCONFIRMED } from "../engine/engine.js";
+import { isConfirmed, UNCONFIRMED } from "../facts/file.js";
 import {
     factPath,
     parseTarget,

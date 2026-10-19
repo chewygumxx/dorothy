@@ -13,8 +13,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { newPhrase } from "@dorothy/core";
-import { UNCONFIRMED } from "../engine/engine.js";
-import type { Fact } from "../facts/file.js";
+import { type Fact, UNCONFIRMED } from "../facts/file.js";
 import { PERSONAL, putFact, type Scope } from "../facts/store.js";
 import { EMPTY_SIDECAR, type Sidecar, sidecarPath } from "../memory/sidecar.js";
 import {

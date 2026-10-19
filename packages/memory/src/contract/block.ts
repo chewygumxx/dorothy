@@ -20,12 +20,12 @@ import {
     ITEM_TIERS,
     type ItemTier,
 } from "@dorothy/core";
-import {
-    type EpisodeItem,
-    isConfirmed,
-    type KnowledgeItem,
-    type MemoryEngine,
+import type {
+    EpisodeItem,
+    KnowledgeItem,
+    MemoryEngine,
 } from "../engine/engine.js";
+import { isConfirmed } from "../facts/file.js";
 import type { Profiles } from "../hosts/profiles.js";
 import { escapeXml, renderEntry, type Tier } from "../memory/block.js";
 import { ContractError } from "./errors.js";

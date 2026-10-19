@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "bun:test";
 import type { HostProfile, MemoryHit } from "@dorothy/core";
-import { UNCONFIRMED } from "../engine/engine.js";
+import { UNCONFIRMED } from "../facts/file.js";
 import { ContractError } from "./errors.js";
 import { RECALL_INTRO, recallFor } from "./recall.js";
 import { fakeEngine } from "./testing.js";

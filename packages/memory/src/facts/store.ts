@@ -17,7 +17,6 @@
 import { readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import type { Env } from "@dorothy/core";
-import { isConfirmed } from "../engine/engine.js";
 import {
     type Lock,
     normalise,
@@ -30,6 +29,7 @@ import {
     type Fact,
     type FactRead,
     type FactType,
+    isConfirmed,
     nextOrigin,
     type Origin,
     parseFact,

@@ -14,8 +14,7 @@
 
 import { readFile, stat } from "node:fs/promises";
 import { relative, sep } from "node:path";
-import { isConfirmed } from "../engine/engine.js";
-import { type Fact, parseFact } from "../facts/file.js";
+import { type Fact, isConfirmed, parseFact } from "../facts/file.js";
 import { migrateFacts } from "../facts/migrate.js";
 import { factFiles, scopeLabel } from "../facts/store.js";
 import type { RecallIndex } from "./store.js";

@@ -14,6 +14,7 @@ import {
     type Fact,
     type FactProvenance,
     handEdited,
+    isConfirmed,
     parseFact,
     renderFact,
 } from "./file.js";
@@ -315,5 +316,61 @@ describe("handEdited", () => {
 
     it("gives null for a file that is no fact", () => {
         expect(handEdited("title: null\n", "likes-tea", now)).toBeNull();
+    });
+});
+
+// A fact as its origin and writer leave it.
+const confirmable = (
+    provenance: Pick<FactProvenance, "origin" | "by">,
+    fields: Partial<Fact> = {},
+): Fact =>
+    fact({ provenance: { ...provenance, at: AT, created: AT }, ...fields });
+
+describe("isConfirmed", () => {
+    it("takes the user's and a repository's knowledge as confirmed", () => {
+        expect(isConfirmed(confirmable({ origin: "user", by: "user" }))).toBe(
+            true,
+        );
+        expect(isConfirmed(confirmable({ origin: "repo", by: "repo" }))).toBe(
+            true,
+        );
+    });
+
+    it("takes a model's, extraction's and an outside writer's as unconfirmed", () => {
+        expect(
+            isConfirmed(confirmable({ origin: "dorothy", by: "dorothy" })),
+        ).toBe(false);
+        expect(
+            isConfirmed(confirmable({ origin: "dorothy", by: "review" })),
+        ).toBe(false);
+        expect(
+            isConfirmed(confirmable({ origin: "external", by: "dorothy" })),
+        ).toBe(false);
+    });
+
+    it("takes a model's knowledge the user verified as confirmed", () => {
+        const verified = confirmable(
+            { origin: "dorothy", by: "dorothy" },
+            { foreign: { verified: [{ by: "human:owner", at: LATER }] } },
+        );
+        expect(isConfirmed(verified)).toBe(true);
+    });
+
+    it("counts only a person's verification", () => {
+        for (const verified of [
+            [],
+            [{ by: "claude-code/opus", at: LATER }],
+            [{ by: "human:owner" }],
+            "human:owner",
+        ]) {
+            expect(
+                isConfirmed(
+                    confirmable(
+                        { origin: "dorothy", by: "dorothy" },
+                        { foreign: { verified } },
+                    ),
+                ),
+            ).toBe(false);
+        }
     });
 });

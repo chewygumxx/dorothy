@@ -13,12 +13,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Env, newPhrase } from "@dorothy/core";
-import type { Fact } from "../facts/file.js";
+import { type Fact, UNCONFIRMED } from "../facts/file.js";
 import { dataRoot, PERSONAL, putFact, type Scope } from "../facts/store.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { transcriptDir, transcriptPath } from "../transcript.js";
 import { baselineEngine } from "./baseline.js";
-import { UNCONFIRMED } from "./engine.js";
 
 const AT = "2026-10-15T09:30:00.000Z";
 const fact = (name: string, fields: Partial<Fact> = {}): Fact => ({

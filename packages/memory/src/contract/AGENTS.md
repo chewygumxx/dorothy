@@ -74,7 +74,7 @@ gives back, and the service that speaks it. The spec is
   a client reaching it by another name keeps its records; the service
   warns once per name. A web page's `Origin` is refused with 403.
 - Knowledge is confirmed when the user or a repository wrote it, or
-  the user verified it (`isConfirmed`, `../engine/engine.ts`); the rest
+  the user verified it (`isConfirmed`, `../facts/file.ts`); the rest
   sits in the block's own fenced section, below every confirmed piece
   for the budget, and `search`, `open` and recall carry `UNCONFIRMED`
   on it.

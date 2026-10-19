@@ -14,7 +14,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildBlock } from "../contract/block.js";
 import { baselineEngine } from "../engine/baseline.js";
-import { isConfirmed } from "../engine/engine.js";
 import { authorOf } from "../history/commands.js";
 import type { HistoryHandle, OpenHistory } from "../memory/sidecar.js";
 import type { SyncReport } from "../projects/sync.js";
@@ -29,7 +28,7 @@ import {
     runSync,
     runVerify,
 } from "./commands.js";
-import type { Fact } from "./file.js";
+import { type Fact, isConfirmed } from "./file.js";
 import {
     dataRoot,
     factPath,

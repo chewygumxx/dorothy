@@ -12,8 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isConfirmed } from "../engine/engine.js";
-import { parseFact } from "../facts/file.js";
+import { isConfirmed, parseFact } from "../facts/file.js";
 import { type FactStore, PERSONAL, putFact } from "../facts/store.js";
 import { ContractError } from "./errors.js";
 import {
