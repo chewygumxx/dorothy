@@ -976,9 +976,13 @@ function findWords(
     );
 }
 
+// The words of a text, lowercased: runs of letters and digits.
+const wordsOf = (text: string): string[] =>
+    text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+
 // The first turn from start to last with every word, else any of them,
 // among turns read from the transcript rather than found by FTS: the words
-// match whole, lowercased, without stemming.
+// match whole, in any case, without stemming.
 function findWordsIn(
     turns: readonly TurnRow[],
     words: string,
@@ -988,22 +992,21 @@ function findWordsIn(
     if (normalise(words) === "") {
         throw new RecallError("Give some words to look for.");
     }
-    const terms = normalise(words)
-        .toLowerCase()
-        .split(" ")
-        .filter((term) => term !== "")
-        .slice(0, MAX_TERMS);
-    const within = turns.filter((row) => row.turn >= start && row.turn <= last);
+    const terms = wordsOf(words).slice(0, MAX_TERMS);
+    const within = turns
+        .filter((row) => row.turn >= start && row.turn <= last)
+        .map((row) => ({ turn: row.turn, words: new Set(wordsOf(row.text)) }));
     const find = (every: boolean) => {
-        const found = within.find((row) => {
-            const text = row.text.toLowerCase();
-            return every
-                ? terms.every((term) => text.includes(term))
-                : terms.some((term) => text.includes(term));
-        });
+        const found = within.find((row) =>
+            every
+                ? terms.every((term) => row.words.has(term))
+                : terms.some((term) => row.words.has(term)),
+        );
         return found === undefined ? null : { n: found.turn };
     };
-    return find(true) ?? (terms.length > 1 ? find(false) : null);
+    return terms.length === 0
+        ? null
+        : (find(true) ?? (terms.length > 1 ? find(false) : null));
 }
 
 // kept: the conversation's turns read from its transcript, for one the

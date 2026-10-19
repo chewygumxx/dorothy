@@ -582,6 +582,15 @@ describe("recollect", () => {
         });
         expect(ask({ cluster: 1, words: "mat dog" }).matched).toBe(true);
         expect(ask({ cluster: 1, words: "kiln" }).matched).toBe(false);
+        // Whole words: "cat" is not "category", "mat" not "format".
+        expect(ask({ cluster: 1, words: "cat" })).toMatchObject({
+            matched: true,
+            window: [{ turn: 1 }, { turn: 2 }, { turn: 3 }],
+        });
+        expect(ask({ cluster: 1, words: "ca" }).matched).toBe(false);
+        expect(ask({ cluster: 1, words: "bu" }).matched).toBe(false);
+        expect(ask({ cluster: 1, words: "bug." }).matched).toBe(true);
+        expect(ask({ cluster: 1, words: "?!" }).matched).toBe(false);
         // Only from the turn asked for, and within the cluster.
         expect(ask({ cluster: 1, words: "cat", turn: 2 }).matched).toBe(false);
         expect(ask({ cluster: 1, words: "dog" }).matched).toBe(false);
