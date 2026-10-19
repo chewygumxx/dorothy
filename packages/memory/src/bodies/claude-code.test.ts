@@ -329,6 +329,20 @@ describe("readLines", () => {
             });
         });
 
+        it("halts at a user text block without its text", () => {
+            const read = readLines([
+                userLine("u1", 0, [{ type: "text", text: { new: "shape" } }]),
+                assistantLine("a1", 1, [text("Hi.")]),
+            ]);
+            expect(read.events).toEqual([]);
+            expect(read.halt).toEqual({
+                line: 0,
+                type: "user",
+                uuid: "u1",
+                reason: "a text block without its text",
+            });
+        });
+
         it("halts at an assistant line without a uuid, recording none of its blocks", () => {
             const bad = JSON.stringify({
                 type: "assistant",

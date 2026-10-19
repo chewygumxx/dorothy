@@ -437,7 +437,10 @@ function userWords(content: Json[] | string): string | null {
 
 function userBlock(block: Json): string | null {
     if (block.type === "text") {
-        return typeof block.text === "string" ? spoken(block.text) : null;
+        if (typeof block.text !== "string") {
+            throw new Unreadable("a text block without its text");
+        }
+        return spoken(block.text);
     }
     if (block.type === "image") {
         return "[image]";
