@@ -139,6 +139,15 @@ describe("validateClusters", () => {
         });
     });
 
+    it("takes an abstract of exactly 1000 characters, astral ones too", () => {
+        for (const abstract of ["x".repeat(1000), "😀".repeat(1000)]) {
+            expect(valid({ clusters: [{ through: 6, abstract }] })).toEqual({
+                ok: true,
+                clusters: [{ from: 3, through: 6, abstract, ...STAMP }],
+            });
+        }
+    });
+
     it("refuses what does not cover the range in order", () => {
         const reasons = [
             [{}, "no clusters in the result"],
@@ -174,6 +183,15 @@ describe("validateClusters", () => {
             ],
             [
                 { clusters: [{ through: 6, abstract: "x".repeat(1001) }] },
+                "cluster 1: abstract is 1001 characters, over 1000",
+            ],
+            [{ clusters: ["x"] }, "cluster 1 ends at undefined, outside 3-6"],
+            [
+                { clusters: [null, { through: 6, abstract: "a" }] },
+                "cluster 1 ends at undefined, outside 3-6",
+            ],
+            [
+                { clusters: [{ through: 6, abstract: "😀".repeat(1001) }] },
                 "cluster 1: abstract is 1001 characters, over 1000",
             ],
         ] as const;
