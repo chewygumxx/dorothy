@@ -53,7 +53,7 @@ const ENTRIES: Record<string, string[]> = {
         "./recall-server",
         "./service",
     ],
-    tui: ["."],
+    tui: [".", "./editor"],
 };
 
 const SDK = "@anthropic-ai/claude-agent-sdk";
@@ -128,6 +128,9 @@ describe("the workspace", () => {
         ).toThrow();
         expect(() => Bun.resolveSync(SDK, from("memory"))).toThrow();
         expect(() => Bun.resolveSync(SDK, from("tui"))).toThrow();
+        expect(() =>
+            Bun.resolveSync("@dorothy/tui/editor", from("cli")),
+        ).not.toThrow();
         expect(() =>
             Bun.resolveSync("@dorothy/memory/src/memory/open.ts", from("cli")),
         ).toThrow();

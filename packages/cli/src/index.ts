@@ -118,7 +118,7 @@ const RUNNERS: Runners = {
     },
     memory: async (mode) => {
         const { commandHistory, runMemoryEdit } = await commands();
-        const { editInEditor } = await import("@dorothy/tui");
+        const { editInEditor } = await import("@dorothy/tui/editor");
         return runMemoryEdit(mode.phrase, {
             edit: (text) => editInEditor(text),
             openHistory: commandHistory(),
@@ -130,7 +130,7 @@ const RUNNERS: Runners = {
     },
     "tags-edit": async () => {
         const { commandHistory, runTagsEdit } = await commands();
-        const { editInEditor } = await import("@dorothy/tui");
+        const { editInEditor } = await import("@dorothy/tui/editor");
         return runTagsEdit({
             edit: (text) => editInEditor(text),
             openHistory: commandHistory(),

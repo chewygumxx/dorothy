@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-10-09
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Workspace modularity design
 description: >-
@@ -150,7 +150,7 @@ A package's manifest:
 | `core`   | `.`                                       |
 | `memory` | `.`, `./recall-server`, `./commands`      |
 | `agent`  | `.`                                       |
-| `tui`    | `.`                                       |
+| `tui`    | `.`, `./editor`                           |
 | `cli`    | none: it is run, not imported             |
 
 A named entry point is public API like `"."`: a small module of its own
@@ -159,7 +159,9 @@ every chat session launches one, and loading all of memory for it measured
 about 290 ms against 90 ms for the server alone. `./commands` holds the
 memory and history commands (`--list`, `--memory`, `--tags`,
 `--edit-tags`, `--history`, `--restore`, `--rollback`, `--check`,
-`--mirror`, `--recover`), each run once per process. `cli` keeps its lazy
+`--mirror`, `--recover`), each run once per process. `./editor`
+is `tui`'s `editInEditor`, which `--memory` and `--edit-tags` load in
+place of the whole chat (measured at 130 to 190 ms). `cli` keeps its lazy
 `import()` per mode.
 
 ### Root

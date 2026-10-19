@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-12
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: packages/tui/AGENTS.md
 description: >-
@@ -25,10 +25,10 @@ types: the `sdk` event carries core's structural `RawMessage`.
 
 ## Entry points and imports
 
-One entry point, `"."` (`src/index.ts`): `runApp`, which renders the chat
-until it exits, and `editInEditor`, which the CLI also passes to
-`--memory` and `--edit-tags`. Of the `@dorothy` packages it depends on
-`core` alone.
+Two entry points. `"."` (`src/index.ts`): `runApp`, which renders the chat
+until it exits. `"./editor"` (`external-editor.ts`): `editInEditor`, which
+the CLI passes to `--memory` and `--edit-tags`, so they load no Ink. Of
+the `@dorothy` packages it depends on `core` alone.
 
 ## Files
 
