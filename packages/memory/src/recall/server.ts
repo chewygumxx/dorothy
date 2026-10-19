@@ -131,12 +131,24 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
         const session = await options.liveSession();
         return session === null ? null : sessionPhrase(index, session);
     };
+    // Calls are answered in the order they arrived, so a search sent after
+    // a remember finds what it wrote; each call is settled before the
+    // next begins, as the tools never throw.
+    let queue: Promise<unknown> = Promise.resolve();
+    const inOrder = <T>(call: () => Promise<T>): Promise<T> => {
+        const answered = queue.then(call);
+        queue = answered;
+        return answered;
+    };
     // Every call syncs first, so results are never stale. The sync holds the
-    // write lock across awaits, and MCP may deliver calls concurrently, so
-    // the query waits its turn in the index's queue rather than reading
-    // rows a sync for another call has half written. work must not call
-    // exclusive or syncIndex: that would wait on itself.
-    const answer = async (
+    // write lock across awaits, and the call waits its turn in the index's
+    // queue rather than reading rows a sync for another call has half
+    // written. work must not call exclusive or syncIndex: that would wait
+    // on itself.
+    const answer = (
+        work: (index: RecallIndex, exclude: string | null) => unknown,
+    ) => inOrder(() => answering(work));
+    const answering = async (
         work: (index: RecallIndex, exclude: string | null) => unknown,
     ) => {
         try {
@@ -172,7 +184,10 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
     let versions: HistoryHandle | null | undefined;
     // remember writes under the store's lock, which is the index's: it
     // never runs inside exclusive, and the next query syncs what it wrote.
-    const write = async (
+    const write = (
+        work: (store: FactStore, from: string | null) => Promise<unknown>,
+    ) => inOrder(() => writing(work));
+    const writing = async (
         work: (store: FactStore, from: string | null) => Promise<unknown>,
     ) => {
         try {

@@ -435,6 +435,42 @@ describe("the recall server's facts", () => {
         expect(read.kind === "ok" && read.fact.provenance.from).toBe(LIVE);
     });
 
+    it("answers a search after the remember sent before it", async () => {
+        const client = await connect({
+            facts: dir,
+            project: "github.com/u/here",
+            // A remember that takes its time, as a slow disk would.
+            openHistory: async () => {
+                await new Promise((resolve) => setTimeout(resolve, 100));
+                return null;
+            },
+        });
+        // Both are sent before either is answered.
+        const remembered = client.callTool({
+            name: "remember",
+            arguments: {
+                action: "write",
+                name: "gateway",
+                scope: "project",
+                type: "project",
+                title: "The gateway",
+                description: "How the gateway runs.",
+                body: "On loopback.",
+            },
+        });
+        const searched = client.callTool({
+            name: "search",
+            arguments: { query: "gateway", kind: "facts" },
+        });
+        expect(JSON.parse(textOf(await remembered))).toMatchObject({
+            action: "written",
+        });
+        const found = JSON.parse(textOf(await searched)) as SearchResult;
+        expect(found.facts.map((fact) => fact.id)).toEqual([
+            "github.com/u/here/gateway",
+        ]);
+    });
+
     it("relays a refusal as a tool error", async () => {
         const client = await connect({ facts: dir });
         const result = await client.callTool({
