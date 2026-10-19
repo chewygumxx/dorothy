@@ -36,6 +36,7 @@ import {
     personaPrompt,
     withHistory,
 } from "./persona.js";
+import { failureText, type ResultMessage } from "./result.js";
 
 export type QueryHandle = AsyncIterable<SDKMessage> & {
     interrupt(): Promise<unknown>;
@@ -45,8 +46,6 @@ export type QueryFn = (params: {
     prompt: AsyncIterable<SDKUserMessage>;
     options: Options;
 }) => QueryHandle;
-
-type ResultMessage = Extract<SDKMessage, { type: "result" }>;
 
 type PendingCall = { tool: Tool; input: unknown; offset: number };
 type PendingRemember = { input: unknown; offset: number };
@@ -428,11 +427,7 @@ export class Conversation implements ChatSession {
     // API failures (auth, rate limit, overload) do not throw: the turn ends
     // with an error result carrying the text instead of a reply.
     #failTurn(message: ResultMessage): void {
-        const text =
-            message.subtype === "success"
-                ? message.result
-                : message.errors.join("; ");
-        this.#fail(text || message.subtype);
+        this.#fail(failureText(message));
     }
 
     #endTurn(message: ResultMessage): void {

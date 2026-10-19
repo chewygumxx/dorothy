@@ -43,7 +43,9 @@ never prune it as unused.
   `conversationOptions()` builds what a session starts with from
   `SessionStart` and the persona, joining the memory block and the
   earlier section with `withSection` and the turns with `withHistory`.
-- `one-shot.ts`: `runOneShot`, a one-shot prompt streamed to stdout.
+- `one-shot.ts`: `runOneShot`, a one-shot prompt streamed to stdout; an
+  error result (`result.ts`'s `failureText`, as the conversation says
+  it) goes to stderr with exit status 1.
 - `structured.ts`: `structuredCall`, the `StructuredCall` reviews and
   compaction take.
 - `persona.ts`: the persona, composed from `personaComponents` (identity,
