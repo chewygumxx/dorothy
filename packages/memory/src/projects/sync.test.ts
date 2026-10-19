@@ -1132,6 +1132,49 @@ describe("syncProject and Claude Code's snake-case files", () => {
         expect(moved(await sync())).toEqual(NOTHING);
     });
 
+    it("keeps the snake-case index link and hook when concurrent export is skipped", async () => {
+        await putRepo(
+            "feedback_testing.md",
+            snake("feedback_testing", "Snake."),
+        );
+        await sync();
+        const hand =
+            "- [Testing](./feedback_testing.md)\n  Handwritten hook.\n";
+        await putRepo("MEMORY.md", hand);
+        const [fact] = await facts();
+        await putFact(data, SCOPE, { ...(fact as Fact), body: "Store edit." });
+        const original = filesystem.readFile;
+        let edited = false;
+        const spy = spyOn(filesystem, "readFile").mockImplementation(((
+            ...args: Parameters<typeof original>
+        ) =>
+            original(...args).then(async (snapshot) => {
+                if (args[0] === memory("feedback_testing.md") && !edited) {
+                    edited = true;
+                    await writeFile(
+                        memory("feedback_testing.md"),
+                        snake("feedback_testing", "Concurrent edit."),
+                    );
+                }
+                return snapshot;
+            })) as typeof original);
+        let report: SyncReport;
+        try {
+            report = await sync();
+        } finally {
+            spy.mockRestore();
+        }
+        expect(report.skipped).toContainEqual({
+            name: "feedback-testing",
+            reason: "it changed while syncing",
+        });
+        expect(report.index).toBe("left");
+        expect(await readFile(memory("MEMORY.md"), "utf8")).toBe(hand);
+        expect(await readFile(memory("feedback_testing.md"), "utf8")).toContain(
+            "Concurrent edit.",
+        );
+    });
+
     it("removes the file of a fact retired in the store", async () => {
         await putRepo(
             "feedback_testing.md",

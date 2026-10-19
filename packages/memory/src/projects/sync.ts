@@ -739,7 +739,11 @@ function indexLeftReason(
     if (repo.index !== null && !isGeneratedIndex(repo.index)) {
         return "it holds lines sync did not write";
     }
-    const linked = skipped.find(({ name }) => repo.titles.has(name));
+    const linked = skipped.find(
+        ({ name }) =>
+            repo.titles.has(name) ||
+            repo.titles.has(repo.files.get(name) ?? name),
+    );
     return linked === undefined
         ? null
         : `it links ${linked.name}, which was skipped`;
