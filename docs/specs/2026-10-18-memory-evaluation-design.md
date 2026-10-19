@@ -127,10 +127,14 @@ bun run eval -- snapshot --from ~/.local/share/dorothy --work ~/eval
 | `note` | The reviewer's note; optional |
 
 Only accepted questions are run. A malformed line is reported with its
-number: `run` skips it, while the commands that rewrite the file
-(`mine`, `generate`, `review`) refuse until it is mended, so that none
-drops a line the owner wrote. A file that cannot be read, other than for
-being absent, stops those commands the same way.
+number, one to a line: `run` skips it, while the commands that rewrite
+the file (`mine`, `generate`, `review`) refuse until it is mended, so
+that none drops a line the owner wrote. A line is malformed too if its
+`id` is not that of its text and evidence, its `asOf` is no real date,
+or an earlier line holds its `id`, as a repeat or as a different
+question with the same eight digits. A file that cannot be read, other
+than for being absent, stops those commands the same way, naming the
+path and the error's code.
 
 ### Mined lookups
 

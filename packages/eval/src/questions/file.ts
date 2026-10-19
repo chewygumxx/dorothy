@@ -12,7 +12,7 @@
 // the owner's decision on it.
 
 import { createHash } from "node:crypto";
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { UsageError } from "../errors.js";
@@ -28,6 +28,15 @@ export const QUESTION_TYPES = [
 ] as const;
 export type QuestionType = (typeof QUESTION_TYPES)[number];
 
+// A real day in YYYY-MM-DD: 2026-02-30 has the form and is no date.
+function isDate(text: string): boolean {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+        return false;
+    }
+    const date = new Date(`${text}T00:00:00.000Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(text);
+}
+
 export const questionSchema = z
     .object({
         id: z.string().regex(/^q-[0-9a-f]{8}$/),
@@ -36,7 +45,7 @@ export const questionSchema = z
         answer: z.string().trim().min(1).max(4000).nullable(),
         evidence: z.array(z.string().regex(/^[kc]:\S+$/)).max(10),
         exclude: z.string().min(1).nullable(),
-        asOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        asOf: z.string().refine(isDate, "not a real date, as YYYY-MM-DD"),
         project: z.string().min(1).nullable(),
         source: z.string().regex(/^(mined|generated:\S+)$/),
         status: z.enum(["draft", "accepted", "rejected"]),
@@ -78,10 +87,25 @@ export function questionId(
 
 export const questionsPath = (work: string) => join(work, "questions.jsonl");
 
+// A schema failure in a line: the first issue, with the field it is in.
+export function issueOf(error: z.ZodError): string {
+    const issue = error.issues[0];
+    if (issue === undefined) {
+        return "not a question";
+    }
+    return issue.path.length === 0
+        ? issue.message
+        : `${issue.path.join(".")}: ${issue.message}`;
+}
+
 const problemOf = (error: unknown) =>
-    error instanceof z.ZodError
-        ? (error.issues[0]?.message ?? "not a question")
-        : "not JSON";
+    error instanceof z.ZodError ? issueOf(error) : "not JSON";
+
+// Whether two questions are the same one: ids are 32 bits of a hash, so
+// the same id may come of different text.
+export const sameQuestion = (a: Question, b: Question) =>
+    a.question === b.question &&
+    [...a.evidence].sort().join("\n") === [...b.evidence].sort().join("\n");
 
 export async function readQuestions(
     work: string,
@@ -92,26 +116,51 @@ export async function readQuestions(
     } catch (error) {
         // Only a missing file is empty; any other failure must not look
         // like one, or a rewrite would overwrite what it could not read.
-        if (
-            error instanceof Error &&
-            "code" in error &&
-            error.code === "ENOENT"
-        ) {
+        const code = (error as { code?: unknown } | null)?.code;
+        if (code === "ENOENT") {
             return { questions: [], problems: [] };
+        }
+        if (typeof code === "string") {
+            throw new UsageError(
+                `cannot read ${questionsPath(work)}: ${code}; mend it, or remove it to start again`,
+            );
         }
         throw error;
     }
     const questions: Question[] = [];
     const problems: string[] = [];
+    const lines = new Map<string, number>();
+    const byId = new Map<string, Question>();
     for (const [at, line] of text.split("\n").entries()) {
         if (line.trim() === "") {
             continue;
         }
+        const problem = (why: string) =>
+            problems.push(`questions.jsonl:${at + 1}: ${why}`);
+        let question: Question;
         try {
-            questions.push(questionSchema.parse(JSON.parse(line)));
+            question = questionSchema.parse(JSON.parse(line));
         } catch (error) {
-            problems.push(`questions.jsonl:${at + 1}: ${problemOf(error)}`);
+            problem(problemOf(error));
+            continue;
         }
+        if (question.id !== questionId(question.question, question.evidence)) {
+            problem(`${question.id} is not the id of its text and evidence`);
+            continue;
+        }
+        const held = byId.get(question.id);
+        if (held !== undefined) {
+            const where = lines.get(question.id);
+            problem(
+                sameQuestion(held, question)
+                    ? `${question.id} repeats line ${where}`
+                    : `${question.id} is also the id of a different question on line ${where}`,
+            );
+            continue;
+        }
+        byId.set(question.id, question);
+        lines.set(question.id, at + 1);
+        questions.push(question);
     }
     return { questions, problems };
 }
@@ -124,7 +173,7 @@ export async function readQuestionsToRewrite(
     const { questions, problems } = await readQuestions(work);
     if (problems.length > 0) {
         throw new UsageError(
-            `${problems.join("; ")}: mend or remove these lines first`,
+            `${problems.join("\n")}\nmend or remove these lines first`,
         );
     }
     return questions;
@@ -136,25 +185,38 @@ export async function writeQuestions(
 ): Promise<void> {
     const path = questionsPath(work);
     const temporary = `${path}.${process.pid}.tmp`;
-    await writeFile(
-        temporary,
-        questions.map((question) => `${JSON.stringify(question)}\n`).join(""),
-        { mode: 0o600 },
-    );
-    await rename(temporary, path);
+    try {
+        await writeFile(
+            temporary,
+            questions
+                .map((question) => `${JSON.stringify(question)}\n`)
+                .join(""),
+            { mode: 0o600 },
+        );
+        await rename(temporary, path);
+    } catch (error) {
+        await rm(temporary, { force: true });
+        throw error;
+    }
 }
 
+// The incoming questions whose ids are new join the existing; one whose
+// id is held by a different question is counted as collided, not added.
 export function mergeQuestions(
     existing: Question[],
     incoming: Question[],
-): { questions: Question[]; added: number } {
-    const ids = new Set(existing.map((question) => question.id));
+): { questions: Question[]; added: number; collided: number } {
+    const held = new Map(existing.map((question) => [question.id, question]));
     const questions = [...existing];
+    let collided = 0;
     for (const question of incoming) {
-        if (!ids.has(question.id)) {
-            ids.add(question.id);
+        const same = held.get(question.id);
+        if (same === undefined) {
+            held.set(question.id, question);
             questions.push(question);
+        } else if (!sameQuestion(same, question)) {
+            collided++;
         }
     }
-    return { questions, added: questions.length - existing.length };
+    return { questions, added: questions.length - existing.length, collided };
 }

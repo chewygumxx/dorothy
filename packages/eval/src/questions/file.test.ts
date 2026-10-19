@@ -9,8 +9,16 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { tempRoot } from "../testing.js";
+import {
+    mkdirSync,
+    readdirSync,
+    readFileSync,
+    statSync,
+    writeFileSync,
+} from "node:fs";
+import { runCli } from "../cli.js";
+import { UsageError } from "../errors.js";
+import { fakeIo, snapshotFixture, tempRoot } from "../testing.js";
 import {
     mergeQuestions,
     type Question,
@@ -94,10 +102,32 @@ describe("the question file", () => {
         });
     });
 
-    it("fails on a file it cannot read, rather than reading it empty", async () => {
+    it("fails on a file it cannot read, naming the path and the code", async () => {
         mkdirSync(questionsPath(temp.root));
-        await expect(readQuestions(temp.root)).rejects.toThrow();
-        await expect(readQuestionsToRewrite(temp.root)).rejects.toThrow();
+        const said = `cannot read ${questionsPath(temp.root)}: EISDIR`;
+        const error = await readQuestions(temp.root).catch((each) => each);
+        expect(error).toBeInstanceOf(UsageError);
+        expect(error.message).toStartWith(said);
+        await expect(readQuestionsToRewrite(temp.root)).rejects.toThrow(said);
+    });
+
+    it("reaches the command line as a usage error, not a fault", async () => {
+        const work = await snapshotFixture(temp.root);
+        mkdirSync(questionsPath(work));
+        const { io, err } = fakeIo();
+        expect(await runCli(["mine", "--work", work], io)).toBe(1);
+        expect(err.join("")).toContain(
+            `cannot read ${questionsPath(work)}: EISDIR`,
+        );
+    });
+
+    it("removes its temporary file when a write fails", async () => {
+        // A directory where the file goes: the rename fails.
+        mkdirSync(questionsPath(temp.root));
+        await expect(
+            writeQuestions(temp.root, [lookup("Which tea?")]),
+        ).rejects.toThrow();
+        expect(readdirSync(temp.root)).toEqual(["questions.jsonl"]);
     });
 
     it("writes and reads back, private to the user", async () => {
@@ -131,6 +161,53 @@ describe("the question file", () => {
         );
     });
 
+    const writeLines = (...lines: unknown[]) =>
+        writeFileSync(
+            questionsPath(temp.root),
+            lines.map((each) => `${JSON.stringify(each)}\n`).join(""),
+        );
+
+    it("reports a repeated id once, at the later line", async () => {
+        const first = lookup("Which tea?");
+        writeLines(first, lookup("Which plot?"), first);
+        const { questions, problems } = await readQuestions(temp.root);
+        expect(questions).toHaveLength(2);
+        expect(problems).toEqual([
+            `questions.jsonl:3: ${first.id} repeats line 1`,
+        ]);
+    });
+
+    it("reports an id that does not match its text and evidence", async () => {
+        const wrong = { ...lookup("Which tea?"), id: "q-00000000" };
+        writeLines(wrong);
+        const { questions, problems } = await readQuestions(temp.root);
+        expect(questions).toEqual([]);
+        expect(problems).toEqual([
+            "questions.jsonl:1: q-00000000 is not the id of its text and evidence",
+        ]);
+    });
+
+    it("reports a date that is none, though it has the form", async () => {
+        writeLines(
+            { ...lookup("Which tea?"), asOf: "2026-02-30" },
+            { ...lookup("Which plot?"), asOf: "2026-13-01" },
+            { ...lookup("Which bike?"), asOf: "2024-02-29" },
+        );
+        const { questions, problems } = await readQuestions(temp.root);
+        expect(questions.map((each) => each.asOf)).toEqual(["2024-02-29"]);
+        expect(problems).toEqual([
+            "questions.jsonl:1: asOf: not a real date, as YYYY-MM-DD",
+            "questions.jsonl:2: asOf: not a real date, as YYYY-MM-DD",
+        ]);
+    });
+
+    it("lists the problems that stop a rewrite one to a line", async () => {
+        writeFileSync(questionsPath(temp.root), "not json\nnot json\n");
+        await expect(readQuestionsToRewrite(temp.root)).rejects.toThrow(
+            "questions.jsonl:1: not JSON\nquestions.jsonl:2: not JSON\nmend or remove these lines first",
+        );
+    });
+
     it("merges by id, keeping the owner's decisions", () => {
         const kept = { ...lookup("Which tea?"), status: "rejected" as const };
         const merged = mergeQuestions(
@@ -138,9 +215,19 @@ describe("the question file", () => {
             [lookup("Which tea?"), lookup("Which plot?")],
         );
         expect(merged.added).toBe(1);
+        expect(merged.collided).toBe(0);
         expect(merged.questions.map((each) => each.status)).toEqual([
             "rejected",
             "accepted",
         ]);
+    });
+
+    it("counts an incoming question whose id is another's, not a repeat", () => {
+        const held = lookup("Which tea?");
+        const other = { ...lookup("Which plot?"), id: held.id };
+        const merged = mergeQuestions([held], [held, other]);
+        expect(merged.added).toBe(0);
+        expect(merged.collided).toBe(1);
+        expect(merged.questions).toEqual([held]);
     });
 });
