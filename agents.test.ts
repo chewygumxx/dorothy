@@ -39,7 +39,10 @@ const at = (...parts: string[]) => join(ROOT, ...parts);
 const read = (path: string) => readFileSync(path, "utf8");
 
 type Lock = {
-    skills: Record<string, { source: string; sourceType: string }>;
+    skills: Record<
+        string,
+        { source: string; sourceType: string; ref?: string }
+    >;
 };
 
 // Superpowers' skills less the four the `skills` script excludes.
@@ -160,6 +163,20 @@ describe("the skills", () => {
             expect(
                 linked(dir).filter((name) => EXCLUDED.includes(name)),
             ).toEqual([]);
+        }
+    });
+
+    it("pins every remote skill source to a commit", () => {
+        const manifest = JSON.parse(read(at("package.json"))) as {
+            skills: { source: string; ref?: string }[];
+        };
+        expect(manifest.skills.length).toBeGreaterThan(0);
+        for (const entry of manifest.skills) {
+            expect(entry.ref ?? "").toMatch(/^[0-9a-f]{40}$/);
+            const locked = Object.values(lock().skills).find(
+                (skill) => skill.source === entry.source,
+            );
+            expect(locked?.ref).toBe(entry.ref);
         }
     });
 
