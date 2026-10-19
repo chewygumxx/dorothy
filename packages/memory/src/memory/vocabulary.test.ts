@@ -176,12 +176,29 @@ describe("parseVocabulary", () => {
         { deleted: AT, labels: [" "] },
         { deleted: 12, labels: ["label"] },
         { deleted: AT, labels: "label" },
-        { mergedInto: 12, at: AT },
-        { mergedInto: ID.memory, at: 12 },
     ])("rejects malformed term %j", (term) => {
         expect(
             parsed({ v: 1, rev: 1, concepts: { [ID.gone]: term } }).kind,
         ).toBe("unparseable");
+    });
+
+    it.each([
+        { mergedInto: 12, at: AT },
+        { mergedInto: ID.memory, at: 12 },
+    ])("rejects a malformed merge term before checking links: %j", (term) => {
+        expect(
+            parsed({
+                v: 1,
+                rev: 1,
+                concepts: {
+                    [ID.memory]: concept("memory"),
+                    [ID.gone]: term,
+                },
+            }),
+        ).toEqual({
+            kind: "unparseable",
+            reason: `${ID.gone}'s mergedInto or at is not as written`,
+        });
     });
 
     it("orders non-ASCII labels independently of the host locale", () => {
