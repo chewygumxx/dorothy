@@ -31,7 +31,7 @@ text (`MemoryPrompts`).
   `--claude` asks of memory; `"./claude-hook"` (`src/claude-hook.ts`):
   `runClaudeHook`, for its hooks. Read [their guide](./src/bodies/AGENTS.md).
 - `"./commands"` (`src/commands.ts`): `--list`, `--memory`, `--tags`,
-  `--edit-tags`, `--facts`, `--retire`, `--revive`, `--sync`,
+  `--edit-tags`, `--facts`, `--retire`, `--revive`, `--verify`, `--sync`,
   `--projects`, the history commands and `commandHistory()`.
 - `"./recall-server"` (`src/recall-server.ts`): `runRecallServer` alone;
   `"./service"`, `"./client"`, `"./bridge"`, `"./evaluation"`: [the contract's guide](./src/contract/AGENTS.md).
@@ -67,8 +67,8 @@ Of the `@dorothy` packages it depends on `core` alone.
   checks a review's tags leniently, a bad tag never failing the notes, and
   coins concepts inside the sidecar's lock.
 - `facts/`: facts as OKF Markdown under `knowledge/` (`file.ts`; `migrate.ts`
-  moves `legacy.ts`'s old form once), personal or a project's, written under the
-  lock, retired and revived (`store.ts`); `commands.ts` the commands.
+  moves `legacy.ts`'s old form once), personal or a project's, written under
+  the lock, retired, revived and verified (`store.ts`); `commands.ts` theirs.
 - `projects/`: a project's identity, registry, exported form and sync
   with its repository; read [its own guide](./src/projects/AGENTS.md).
 - `recall/`: search over past conversations and facts. `store.ts` is a

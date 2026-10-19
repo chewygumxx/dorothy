@@ -27,9 +27,10 @@ gives back, and the service that speaks it. The spec is
 
 - `schemas.ts`: zod schemas of core's contract types, held to them by
   `satisfies`; `parseWith` throws a `ContractError` (`errors.ts`) of 400.
-- `block.ts`: the opening block, knowledge of the user, then of the
-  project, then conversations, packed into a host's budget; `frozen.ts`
-  keeps each session's, so `resume` gives it byte for byte.
+- `block.ts`: the opening block, confirmed knowledge of the user, then
+  of the project, then unconfirmed knowledge, fenced as claims, then
+  conversations, packed into a host's budget; `frozen.ts` keeps each
+  session's, so `resume` gives it byte for byte.
 - `recall.ts`: passages for a prompt, for the user's turn, `within`
   personal and its project's scopes (`recall/query.ts`'s option).
 - `record.ts`: records into the archive, each host session one
@@ -72,6 +73,11 @@ gives back, and the service that speaks it. The spec is
 - A request whose `Host` is not one the service listens on gets 421, so
   a client reaching it by another name keeps its records; the service
   warns once per name. A web page's `Origin` is refused with 403.
+- Knowledge is confirmed when the user or a repository wrote it, or
+  the user verified it (`isConfirmed`, `../engine/engine.ts`); the rest
+  sits in the block's own fenced section, below every confirmed piece
+  for the budget, and `search` and `open` carry `UNCONFIRMED` on it.
+  Only `--verify`, the user's, adds a `verified` entry.
 - Migration leaves a fact in `facts/`, with a warning, when its
   `knowledge/` target exists or the file fails; it overwrites nothing.
 

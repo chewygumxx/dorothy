@@ -227,9 +227,20 @@ bun run dev -- --facts                        # what she knows, by scope
 bun run dev -- --retire personal/<name>       # retire a fact
 bun run dev -- --retire --from <phrase>       # retire what a chat gave
 bun run dev -- --revive personal/<name>       # bring it back
+bun run dev -- --verify k:personal/<name>     # confirm what a model gave
 bun run dev -- --sync [<path>]                # sync a project with its repo
 bun run dev -- --projects                     # the projects she knows
 ```
+
+Knowledge you wrote or a repository gave is confirmed; what a model or
+a review wrote, or an outside writer gave, is not, since text from a page
+or a tool can reach it. Each session's opening block puts unconfirmed
+knowledge in a section of its own, after all that is confirmed and the
+first to go when the budget is short, as claims to weigh, never
+instructions, and search and `open` mark it the same way. `--verify`
+takes the id the block and `open` show, adds your `verified` entry and
+commits it to her history as yours; the piece is confirmed from the next
+session's block.
 
 Sync never commits: the files it writes are committed with your work.
 When a fact changed both in her store and in the repository, the
