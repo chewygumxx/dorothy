@@ -18,13 +18,14 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { newPhrase } from "@dorothy/core";
+import { type HostProfile, newPhrase } from "@dorothy/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { baselineEngine } from "../engine/baseline.js";
 import type { MemoryEngine } from "../engine/engine.js";
 import { UNCONFIRMED } from "../facts/file.js";
 import { PERSONAL, putFact } from "../facts/store.js";
+import type { Profiles } from "../hosts/profiles.js";
 import { EMPTY_SIDECAR, updateSidecar } from "../memory/sidecar.js";
 import { RecallIndex } from "../recall/store.js";
 import { transcriptDir, transcriptPath } from "../transcript.js";
@@ -50,14 +51,34 @@ const engine = fakeEngine({
 const MINE = "github.com/me/app";
 const OTHER = "github.com/me/other";
 
-async function connect(project: string | null, host: MemoryEngine = engine) {
+const profile = (id: string, blockBudget: number): HostProfile => ({
+    id,
+    checked: [],
+    blockBudget,
+    recallBudget: 1000,
+    delivery: ["mcp"],
+    instructions: 512,
+});
+const PROFILES: Profiles = new Map([
+    ["codex", profile("codex", 16_000)],
+    ["hermes", profile("hermes", 4000)],
+]);
+
+async function connect(
+    project: string | null,
+    host: MemoryEngine = engine,
+    named: string | null = "codex",
+    warn?: (message: string) => void,
+) {
     const server = createContractServer({
         engine: host,
         index,
         store: { root, lock: index.lock, recorder: null },
         project,
-        host: "codex",
+        host: named,
+        profiles: PROFILES,
         resolveProject: async (value) => value,
+        warn,
     });
     const [near, far] = InMemoryTransport.createLinkedPair();
     await server.connect(near);
@@ -104,6 +125,29 @@ describe("the contract's MCP server", () => {
         const { isError, text } = await call("brief", {});
         expect(isError).toBe(false);
         expect(JSON.parse(text).text).toContain("likes-tea");
+    });
+
+    it("clamps a brief's budget to the named host's profile", async () => {
+        const big = fakeEngine({
+            knowledge: Array.from({ length: 80 }, (_, at) =>
+                knowledge(`fact-${at}`, { body: "x".repeat(300) }),
+            ),
+        });
+        const used = async (named: string | null, budget?: number) => {
+            await client.close();
+            await connect(null, big, named);
+            const { text } = await call(
+                "brief",
+                budget === undefined ? {} : { budget },
+            );
+            return JSON.parse(text).used as number;
+        };
+        expect(await used("hermes")).toBeLessThanOrEqual(4000);
+        expect(await used("hermes", 20_000)).toBeLessThanOrEqual(4000);
+        expect(await used("codex", 20_000)).toBeLessThanOrEqual(16_000);
+        expect(await used("codex", 20_000)).toBeGreaterThan(4000);
+        // A host with no profile, or none named, keeps the request's own.
+        expect(await used(null, 20_000)).toBeGreaterThan(16_000);
     });
 
     it("searches within personal and the connection's project", async () => {

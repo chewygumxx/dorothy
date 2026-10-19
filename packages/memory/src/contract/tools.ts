@@ -22,6 +22,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { conversationProject } from "../engine/baseline.js";
 import type { MemoryEngine, Within } from "../engine/engine.js";
 import type { FactStore } from "../facts/store.js";
+import type { Profiles } from "../hosts/profiles.js";
 import { openConversation, openFact, RecallError } from "../recall/query.js";
 import type { RecallIndex } from "../recall/store.js";
 import { buildBlock } from "./block.js";
@@ -59,6 +60,8 @@ export type ToolDeps = {
     // The connection's project and host; null when none is known.
     project: string | null;
     host: string | null;
+    // The host profiles, whose budget a named host's brief keeps to.
+    profiles: Profiles;
     // A tool's project argument, an id or a path, as a project's id.
     resolveProject: (value: string) => Promise<string | null>;
     // Where a failure's detail goes, which a caller never sees.
@@ -169,6 +172,11 @@ export function createContractServer(deps: ToolDeps): McpServer {
         }
         return project;
     };
+    // The named host's own budget, which a brief never passes.
+    const hostBudget =
+        deps.host === null
+            ? undefined
+            : deps.profiles.get(deps.host)?.blockBudget;
     const answer = async (work: () => Promise<unknown>) => {
         try {
             return {
@@ -194,7 +202,10 @@ export function createContractServer(deps: ToolDeps): McpServer {
                 buildBlock(
                     {
                         project: await projectOf(input.project),
-                        budget: input.budget ?? BRIEF_BUDGET,
+                        budget: Math.min(
+                            input.budget ?? BRIEF_BUDGET,
+                            hostBudget ?? Number.POSITIVE_INFINITY,
+                        ),
                     },
                     deps.engine,
                 ),

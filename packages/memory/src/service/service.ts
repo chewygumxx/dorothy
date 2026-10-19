@@ -376,6 +376,7 @@ export async function startService(
                     project:
                         project === null ? null : await resolveProject(project),
                     host: host !== null && HOST_ID.test(host) ? host : null,
+                    profiles,
                     resolveProject,
                     warn,
                 });
