@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-code-review/history.probe.txt
+#
+
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { binaryRepo, credentialHelpers, isolatedEnv } from '/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/memory/src/history/binary.ts';
+import { Mirror, waiting } from '/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/memory/src/history/mirror.ts';
+const base=mkdtempSync('/tmp/dorothy-review-history-probe-');
+const env={PATH:process.env.PATH??'/usr/bin:/bin',HOME:base,GIT_CONFIG_NOSYSTEM:'1'};
+try {
+  const marker=join(base,'helper-ran');
+  const config=join(base,'fixture.gitconfig');
+  writeFileSync(config,`[credential "https://mirror.fixture.invalid"]\n helper = "!f() { echo ran >> ${marker}; echo username=fixture-user; echo password=fixture-value; }; f"\n`);
+  const scopedEnv={...env,GIT_CONFIG_GLOBAL:config};
+  const fill=Bun.spawn(['git','credential','fill'],{env:scopedEnv,stdin:new TextEncoder().encode('protocol=https\nhost=mirror.fixture.invalid\n\n'),stdout:'pipe',stderr:'pipe'});
+  await new Response(fill.stdout).text(); await new Response(fill.stderr).text();
+  const normalGitCode=await fill.exited;
+  const helpers=await credentialHelpers(scopedEnv);
+  console.log(JSON.stringify({scopedHelper:{normalGitCode,normalGitInvokedHelper:existsSync(marker),dorothyHelpers:helpers}}));
+
+  const root=join(base,'memory'); const repo=binaryRepo(root,{env}); await repo.init();
+  writeFileSync(join(root,'fixture.txt'),'one'); await repo.commit(['fixture.txt'],'one');
+  await repo.setRemote('mirror',join(base,'unused-local-remote'));
+  const gate=Promise.withResolvers<void>(); const entered=Promise.withResolvers<void>();
+  let pushes=0; const pending=new Map<number,()=>void>(); let next=0;
+  const mirror=new Mirror({repo:{...repo,push:async()=>{pushes++; entered.resolve(); await gate.promise;}},lock:async work=>work(),key:()=>new Uint8Array(32).fill(7),token:()=>null,warn:()=>{},pushMs:10,timers:{set:fn=>{const id=++next;pending.set(id,fn);return id;},clear:id=>pending.delete(id as number)}});
+  const first=mirror.push(); await entered.promise;
+  writeFileSync(join(root,'fixture.txt'),'two'); await repo.commit(['fixture.txt'],'two');
+  mirror.schedule(); for(const[id,fn]of [...pending]){pending.delete(id);fn();}
+  gate.resolve(); await first;
+  console.log(JSON.stringify({scheduledWhilePushing:{pushes,pendingTimers:pending.size,unsealedCommitWaiting:await waiting(repo),sealedBundles:(await repo.sealedNames()).length}}));
+  await mirror.stop();
+} finally {rmSync(base,{recursive:true,force:true});}

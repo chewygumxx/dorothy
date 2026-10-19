@@ -1,0 +1,155 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-code-review/chat-memory-notes.txt
+#
+
+# R07: chat memory and compaction review
+
+Commit reviewed: 7602316f9dd3e1d8a46f0b1b885162a759d4ea58.
+Scope: packages/memory/src/memory/** and compaction/**, relevant tests and
+callers. Review only; no repository edits, fixes, commits, pushes or agents.
+
+## Actionable finding
+
+### P2: Validate compacted turn ranges against the shared transcript
+
+Primary location: packages/memory/src/memory/open.ts:329-333.
+Supporting locations: packages/memory/src/compaction/session.ts:134-136,
+which copies the TUI's private turns; compaction/plan.ts:24-28, which drops
+canonical resumed transcript turns according to the persisted range.
+
+Two TUIs can resume the same conversation. Each takes a local history at
+launch and appends its own subsequent turns to their shared transcript.
+Compaction numbers its local history, but clusterSaver writes those numbers
+to the shared sidecar without comparing the turn contents or transcript
+revision. Its lock checks numeric continuity only. The compaction/review
+claim serializes background calls, not the two chats' appended user/reply
+turns, so holding the claim does not prevent this mismatch.
+
+Concrete sequence:
+
+1. Both TUIs resume common transcript turns 1-4, already clustered.
+2. A appends its next user/reply pair, canonical transcript turns 5-6.
+3. B appends its own pair, canonical turns 7-8, but those are turns 5-6 in
+   B's private history. B then completes one more exchange.
+4. B compacts its local turns 5-6 and saves their summary as shared cluster
+   5-6. The sidecar accepts it because its preceding cluster ends at 4.
+5. On later resume, seedTurns removes canonical turns 1-6. A's actual turns
+   5-6 disappear from the seeded verbatim tail, and the replacement summary
+   describes B instead. B's pair remains verbatim too, duplicating its own
+   summary. Recollect for cluster 5-6 also disagrees with that summary.
+
+Consequence: a valid concurrent use of a conversation creates a durable
+summary for the wrong transcript span, omitting A's information from every
+future resumed context. The raw transcript still contains A's text; this
+is incorrect persistent compaction/context loss, not raw file deletion.
+
+Evidence: /tmp/dorothy-chat-memory-review-integration.ts reproduces the full
+production path with two openMemory instances, real temporary transcript,
+sidecar and recall index, fake ChatSessions and a deterministic fake model.
+It opens both memories before either writes, sends A's turns, and
+waits with a bounded poll until A's user/reply are present specifically at
+canonical turns 5-6, then sends B's turns, triggers B's hard-limit
+compaction and closes both. It asserts canonical turn 5 is A's text.
+Observed output:
+
+    connectionsB: 2
+    compactedB: true
+    compactedA: false
+    canonicalTurn5: "A essential fact: scarlet bicycle"
+    savedCluster: { from: 5, through: 6,
+                    abstract: "B only; B replied.", model: "fake", ... }
+    AInResumedContext: false
+
+The smaller /tmp/dorothy-chat-memory-review-probe.ts isolates compact(),
+clusterSaver(), readTranscript() and seedTurns() and demonstrates the same
+range mismatch. Both probes clean their temporary roots on completion.
+
+Challenge against callers/tests/design: App.tsx keeps its own turns in a
+ref initialized from the launched history, and adds only its own sends and
+session events; neither it nor CompactingSession reloads other TUI turns.
+Existing claim tests verify serialized claims and reconnection; save tests
+verify numeric overlap/gaps and adoption of another writer's ranges. They
+do not append distinct turns from independent live chats into one transcript.
+The compaction spec explicitly describes two TUIs sharing a conversation
+and claiming its compaction, so concurrent resumes are not prohibited by
+an existing session ownership rule. The normal openMemory entry point
+also permits both opens, as the integration probe verifies.
+
+Suggested correction: establish an authoritative transcript identity/range
+for the turns summarized and verify it at save/adoption, reconciling local
+turns if needed; alternatively hold an exclusive live-session lease for the
+conversation and explicitly refuse the second writer. A numeric contiguous
+range alone cannot establish that its summary describes those disk turns.
+
+## Validation
+
+Root AGENTS.md and packages/memory/AGENTS.md read, along with nested
+compaction/AGENTS.md. Systematic-debugging instructions were read during
+the preceding review batch and applied to candidate investigation.
+
+Targeted command (all roots isolated):
+
+    env HOME=/tmp/dorothy-chat-review-home \
+      XDG_DATA_HOME=/tmp/dorothy-chat-review-data \
+      XDG_CACHE_HOME=/tmp/dorothy-chat-review-cache \
+      XDG_CONFIG_HOME=/tmp/dorothy-chat-review-config \
+      XDG_STATE_HOME=/tmp/dorothy-chat-review-state \
+      /home/chewygumxx/.local/share/mise/installs/bun/1.4.2/bin/bun test \
+      packages/memory/src/memory packages/memory/src/compaction
+
+Result: 448 pass, 0 fail, 1227 expectations across 33 files, 2.57 seconds.
+Output: /tmp/dorothy-chat-memory-review-tests.log.
+
+Both standalone probes exited 0. The integration probe was tightened after
+independent verification exposed nondeterministic ordering between the two
+queued transcript writers. Waiting for A's canonical pair establishes the
+intended trigger. One initial tightened run plus five consecutive repeated
+runs all produced A at canonical turn 5, B's summary at range 5-6, and A
+absent from the resumed context. The earlier interleaving was ordinary
+independent append scheduling, not separately established raw data loss,
+and no additional write-race finding is claimed. The integration probe's first draft
+returned an intentionally invalid range for the chosen tail size and was
+correctly rejected; its final version enlarges the B assistant turn so the
+model's range 5-6 is exactly the genuine outgoing range, and demonstrates
+an accepted save plus handover. No model provider, paid call, credential,
+real user directory or external network was used.
+
+The parent supplied the broader baseline of 2154 pass, 5 skipped, 0 fail;
+this reviewer did not rerun that whole baseline.
+
+## Coverage and limitations
+
+Read production modules in memory/: open.ts, record.ts, track.ts,
+scheduler.ts, service.ts, reviewer.ts, review.ts, sidecar.ts, vocabulary.ts,
+tagging.ts, tags-view.ts, edit-view.ts, block.ts, rank.ts, catalogue.ts,
+preview.ts, list.ts, commands.ts, and fake-session.ts. Read all compaction
+production modules: clusters.ts, compact.ts, plan.ts, run.ts, shared.ts,
+session.ts. Read shared test harnesses in compaction/testing.ts,
+memory/service-testing.ts and open-testing.ts. These trees contain about
+18000 total lines including tests, more than the initial rough scope.
+
+Inspected relevant test bodies for claims, saving/adoption, review/backoff,
+user ownership, open/resume, title persistence, and all test names for the
+compaction session files. Executed all 33 tests in the scoped directories.
+Not every body of the roughly 10000 lines of test/support code was manually
+read; this report does not claim otherwise.
+
+Read relevant callers in cli/run-tui.ts, agent/conversation.ts and
+TUI/App.tsx to verify session seeds, prompt estimates and private histories.
+Read relevant transcript parsing/writer and recall locking implementation
+sections, plus sqlite-lock.ts, to check the shared persistence/claim model.
+These caller reads are not a complete audit of those separate subsystems.
+Read compaction spec sections on estimates, claims, multiwriter adoption
+and handover.
+
+Reviewed cancellation, interrupted replies, background reviews, sidecar
+queues, tag coining/edit merging and budget accounting without another
+confirmed actionable finding. Possible pending provisional-title writes at
+shutdown and malformed-transcript/cluster-range mismatch were considered
+but not promoted: their independent operational impact requires further
+investigation. No adversarial filesystem races, process-kill/fsync crash
+harness, real SDK subprocess, entire history subsystem or recall query
+implementation was audited here. Parent's service/contract/bodies scope
+remains separate.

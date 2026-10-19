@@ -1,0 +1,139 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-code-review/history-notes.txt
+#
+
+# R05: Memory history and SQLite locking review
+
+Reviewed HEAD 7602316f9dd3e1d8a46f0b1b885162a759d4ea58.
+Review only: no repository edits, fixes, commits, pushes or subagents.
+
+## Verified findings
+
+### P2: URL-scoped Git credential helpers disappear from mirror authentication
+
+Location: packages/memory/src/history/binary.ts:94-95.
+Supporting code: isolatedEnv at binary.ts:76-78 disables the user's global config;
+credentials at binary.ts:212-220 injects only the helper values returned here.
+
+Trigger: a user has a helper under a URL-specific section, for example
+[credential "https://mirror.example"], and no DOROTHY_MIRROR_TOKEN is supplied.
+Normal Git resolves this helper for the matching HTTPS mirror. Dorothy only asks
+for the exact global key credential.helper, so the scoped helper is omitted.
+Since the actual push/fetch shuts out global configuration, Git never gets the
+user's helper and cannot authenticate, despite normal Git working for that URL.
+This breaks setting/pushing the mirror and recovery from it for a supported Git
+credential configuration. Resolve the applicable helper configuration for the
+actual remote URL while preserving its scope and helper reset semantics.
+
+Isolated evidence: /tmp/dorothy-review-history-probe.ts writes a temporary global
+config containing only a URL-scoped helper. The helper returns synthetic fixture
+credentials and writes a temporary marker. A normal git credential fill for that
+URL exits 0 and invokes the helper; credentialHelpers with the same env returns
+an empty array. No network, actual remote or real credential was involved. The
+remaining path is directly established by isolatedEnv and credentials above.
+Actual output:
+
+    {"scopedHelper":{"normalGitCode":0,"normalGitInvokedHelper":true,"dorothyHelpers":[]}}
+
+A live authenticated push/fetch was deliberately not exercised.
+
+### P2: A scheduled mirror update is lost while another push is running
+
+Location: packages/memory/src/history/mirror.ts:130-134.
+Supporting code: schedule's timer callback clears #timer at mirror.ts:124-126;
+launchHistory installs history.afterCommit(() => mirror.schedule()) at
+packages/memory/src/memory/open.ts:263.
+
+Trigger: push A has already sealed its snapshot and its network phase lasts
+longer than pushMs. A later commit schedules another mirror update; that timer
+fires before A finishes. push() returns A's existing #running promise, discarding
+the scheduled work. When A finishes it clears #running and schedules nothing.
+The last commit remains unsealed and absent from the mirror indefinitely until
+another commit or launch, even though the scheduled update elapsed successfully.
+Keep a pending/dirty indication or reschedule after the active push completes.
+
+Isolated evidence: the same probe uses a real temporary Git repository and actual
+sealing, a deterministic timer map, an injected no-op lock, a synthetic 32-byte key,
+and a gated fake repo.push. After push A enters its network phase, it commits a
+second change, schedules/fires the timer, then resolves A. Actual output:
+
+    {"scheduledWhilePushing":{"pushes":1,"pendingTimers":0,"unsealedCommitWaiting":true,"sealedBundles":1}}
+
+No remote push was executed. The temporary repository/config/helper directories
+are removed by the probe's finally block.
+
+## Verification commands and results
+
+Probe:
+
+    /home/chewygumxx/.local/share/mise/installs/bun/1.4.2/bin/bun --no-env-file /tmp/dorothy-review-history-probe.ts
+
+Exit 0, output above.
+
+Focused existing tests:
+
+    env XDG_DATA_HOME=/tmp/dorothy-review-history-data XDG_CACHE_HOME=/tmp/dorothy-review-history-cache XDG_CONFIG_HOME=/tmp/dorothy-review-history-config XDG_STATE_HOME=/tmp/dorothy-review-history-state /home/chewygumxx/.local/share/mise/installs/bun/1.4.2/bin/bun test packages/memory/src/history/mirror.test.ts packages/memory/src/history/commands.test.ts packages/memory/src/history/seal.test.ts packages/memory/src/history/lock.test.ts
+
+55 pass, 0 fail; 219 expect calls, 4 files, exit 0.
+Parent separately confirmed full baseline: 2154 pass, 5 skip, 0 fail.
+
+No command accessed real user memory, secrets or mirror remotes. The credential
+helper test invokes git credential fill locally, with all HOME/config values
+explicitly pointing to the temporary fixture and only synthetic output consumed.
+
+## Exact coverage
+
+Read packages/memory/AGENTS.md and systematic-debugging / verification-before-
+completion skill instructions already loaded for the review.
+
+All production files in scope read in full (3,122 lines):
+
+- packages/memory/src/history/binary.ts (1-472)
+- packages/memory/src/history/commands.ts (1-755)
+- packages/memory/src/history/heal.ts (1-123)
+- packages/memory/src/history/history.ts (1-598)
+- packages/memory/src/history/iso.ts (1-435)
+- packages/memory/src/history/lint.ts (1-138)
+- packages/memory/src/history/lock.ts (1-40)
+- packages/memory/src/history/mirror.ts (1-258)
+- packages/memory/src/history/open.ts (1-27)
+- packages/memory/src/history/repo.ts (1-112)
+- packages/memory/src/history/seal.ts (1-123)
+- packages/memory/src/sqlite-lock.ts (1-41)
+
+Test support read: history/testing.ts (1-53).
+
+All history test files inspected in full: binary.test.ts, commands.test.ts,
+cross.test.ts, heal.test.ts, history.test.ts, lint.test.ts, lock.test.ts,
+mirror.test.ts, open.test.ts, repo.test.ts and seal.test.ts.
+
+Relevant callers read: packages/memory/src/memory/open.ts launchHistory (215-295),
+plus earlier openMemory/index/history integration from CLI review. Read history
+spec sections on lint/recovery, mirror pushes and rollback semantics, and searched
+the existing history probe report to check intended behavior.
+
+Examined both engines' staging/index, refs, log/show, bundle application, sealed
+branch construction, credentials and remote transports; adoption/sweep and fact
+canonicalization; lint/healing and retained bytes; history CLI restore/rollback/
+check/mirror/recover; SQLite lock transaction/queue behavior; mirror shutdown,
+scheduling, key continuity and recovery.
+
+## Discarded or unverified concerns
+
+- Rollback keeps files absent at the selected revision: explicitly specified at
+  docs/specs/2026-10-08-memory-history-design.md:404-409, so not a finding.
+- Separate SQLite connections within one process can time out while another
+  holds an async transaction. Existing lock.test.ts intentionally exercises this;
+  the per-handle queue works as specified. No production trigger established.
+- The mtime-only stale index.lock heuristic can mistake a long interactive Git
+  commit for a crash. Its code explicitly acknowledges the editor case. No actual
+  concurrent-commit reproduction was performed in this bounded pass; not promoted
+  to a finding.
+- Bundle handling of manually created merge histories and timestamp collisions in
+  broken-copy names were considered but not reproduced with a normal supported
+  workflow. No further actionable finding established.
+
+Review stopped after one careful pass; no deeper live/network transport audit was
+performed. Existing full-suite success does not cover the two probe scenarios.

@@ -25,6 +25,11 @@ tags:
 Review target: `7602316f9dd3e1d8a46f0b1b885162a759d4ea58`.
 Branch: `codex/code-review`. The starting checkout was clean.
 
+Result: 22 reproduced findings, comprising 18 P2 and four P3 issues.
+This was a first pass across all eight packages, with isolated probes for
+suspected defects and selective reading of relevant tests. It is not an
+exhaustive security or live-provider integration audit.
+
 This reviews the existing code, rather than a change between commits.
 Production code stays unchanged. Findings require a concrete trigger and
 an observable consequence; speculative concerns are kept separately.
@@ -43,12 +48,12 @@ ones. Review includes relevant tests and callers across boundaries.
 | R02 | CLI and gateway | Reviewed |
 | R03 | Evaluation | Reviewed |
 | R04 | Memory contract, service, engines and host profiles | Reviewed |
-| R05 | Memory history and locks | In progress |
-| R06 | Facts, projects, recall and transcripts | In progress |
-| R07 | Chat memory, reviews and compaction | In progress |
+| R05 | Memory history and locks | Reviewed |
+| R06 | Facts, projects, recall and transcripts | Reviewed |
+| R07 | Chat memory, reviews and compaction | Reviewed |
 | R08 | External body recording and hooks | Reviewed |
 | R09 | TUI, editor and Markdown rendering | Reviewed |
-| R10 | Root scripts, workspace wiring and final validation | In progress |
+| R10 | Root scripts, workspace wiring and final validation | Reviewed |
 
 ## Usage and resumption
 
@@ -58,10 +63,16 @@ If the environment supplies a retry time, honor it without busy retries.
 A hard limit may prevent the agent from issuing a wait or resuming by
 itself. This report is the durable handover in that case.
 
+[Official OpenAI documentation](https://learn.chatgpt.com/docs/pricing)
+directs users to the usage dashboard or CLI `/status` for their current
+limits. No usage-limit response was received during this review.
+
 Before resuming, inspect `git status` and compare HEAD to the target above.
 Keep previously verified findings tied to that target. Recheck affected
-areas if source changes. Continue the next pending work item, preserve
-probe evidence, and update this report after every completed batch.
+areas if source changes. Continue a pending work item if one exists,
+preserve probe evidence, and update this report after every batch. All
+planned first-pass items are reviewed; a later pass can start with the
+concerns below and the detailed notes' stated limitations.
 
 ## Findings
 
@@ -227,6 +238,110 @@ reversed bounds and duplicates the leading newline. The pure editor probe
 turned `"\nhello"` into `"\n\nhello"` with no killed text. Return offset
 zero directly when the cursor is already at the start.
 
+### F15 (P2): Case variants of Authorization schemes evade scrubbing
+
+Location: `packages/memory/src/scrub.ts:24`.
+
+The scheme matcher is case-sensitive, but the named-secret pass excludes
+schemes case-insensitively. Valid headers using `bearer`, `BEARER`, `basic`
+or `TOKEN` with otherwise opaque credentials therefore evade both passes.
+The real `toolEntry` probe preserved those fixture values while canonical
+`Bearer` and `Basic` became `[secret]`. The resulting tool events persist
+in transcripts and can reach reviews. Match schemes case-insensitively
+in the redactor as well as the exclusion.
+
+### F16 (P2): Sync retires a newly created fact named constructor
+
+Location: `packages/memory/src/projects/sync.ts:441-447`.
+
+`constructor` is a legal fact name. Looking up its nonexistent prior sync
+record on a normal object retrieves `Object.prototype.constructor`, so
+the first sync treats both sides as changed and the missing repository
+file as an intentional deletion. The real sync probe retired the new live
+fact with reason "deleted in the repository", reported a conflict, and
+exported nothing. Test ownership before looking up prior records, or use
+a null-prototype map.
+
+### F17 (P2): Sync overwrites concurrent edits to MEMORY.md
+
+Location: `packages/memory/src/projects/sync.ts:581-583`.
+
+The index's hand-written check uses the initial repository snapshot.
+After asynchronous fact reconciliation, sync replaces `MEMORY.md` without
+checking whether its contents changed meanwhile. A deterministic fixture
+inserted a hand-written heading immediately after that first read; sync
+reported `index: written` and erased the new text. Fact exports already
+recheck their snapshots. Apply equivalent protection to the index; its
+lost repository-only notes are not recoverable from Dorothy's history.
+
+### F18 (P2): Importing a repository edit drops foreign metadata and sources
+
+Location: `packages/memory/src/projects/sync.ts:528-532`.
+
+Project exports omit store-only OKF fields. Import constructs a fresh fact
+without preserving `held.foreign` and `held.otherSources`, so an ordinary
+description edit deletes both from the canonical store. A real export,
+edit and import cycle lost a synthetic license field and external source
+reference while retaining importance. Preserve the existing store-only
+fields alongside the other metadata retained on import.
+
+### F19 (P2): An out-of-scope hit suppresses scoped search fallback
+
+Location: `packages/memory/src/recall/query.ts:454-465`.
+
+Conversation search decides whether to fall back from all query terms to
+any term before applying the allowed scopes. A full match in another
+project can therefore suppress partial matches in the requested scope.
+The SQLite fixture searched personal memory for "alpha beta": it returned
+nothing while another project's full match existed, then returned the
+personal "alpha" hit after only that unrelated row was removed. Restrict
+scope before choosing the fallback, as the fact-search branch does.
+
+### F20 (P2): URL-scoped Git credential helpers disappear for the mirror
+
+Location: `packages/memory/src/history/binary.ts:94-95`.
+
+Mirror push and fetch disable global Git configuration, restoring only
+the values of the exact `credential.helper` key. A helper configured under
+a URL-specific credential section is omitted. In the isolated fixture,
+ordinary Git credential lookup invoked that helper and succeeded, while
+Dorothy returned an empty helper list. With no explicit mirror token,
+otherwise working HTTPS authentication fails. Resolve helpers for the
+actual remote URL while retaining their scope and reset semantics.
+
+### F21 (P2): A mirror timer firing during a push loses the later update
+
+Location: `packages/memory/src/history/mirror.ts:130-134`.
+
+If a new commit's scheduled timer fires while a prior snapshot is being
+pushed, `push` returns the existing running promise. The timer is already
+cleared, and completion schedules no follow-up. A real temporary Git repo
+with a gated fake network push finished with one push, no timer and one
+unsealed later commit still waiting. That commit stays out of the mirror
+until another commit or launch. Retain a dirty flag or reschedule work
+when the active push completes.
+
+### F22 (P2): Concurrent chats compact the wrong shared transcript turns
+
+Location: `packages/memory/src/memory/open.ts:329-333`.
+
+Two TUIs resuming one conversation each retain a private turn history.
+After A appends canonical turns 5-6, B appends its own next exchange as
+canonical turns 7-8 but regards it as local turns 5-6. Compaction saves B's
+local summary as shared cluster 5-6, validating numeric continuity without
+checking which transcript turns it describes. Resume drops A's actual
+turns and substitutes B's summary, leaving B's real turns duplicated in
+the verbatim tail. The transcript retains A's text, but resumed contexts
+omit it.
+
+The integration probe used two real `openMemory` instances, real temporary
+transcripts, sidecars and index, fake sessions and a fake model. It waited
+for A's writes before B proceeded. Canonical turn 5 held A's fixture fact,
+the saved cluster 5-6 summarized B, and A was absent from resumed context.
+Claims serialize compaction calls, but do not reconcile private histories.
+Validate authoritative transcript identities/ranges before saving, or
+enforce exclusive live ownership of a conversation.
+
 ## Concerns needing a further ruling
 
 - `brief` accepts another project argument on a project-bound connection
@@ -259,9 +374,77 @@ binding and synthetic filesystem behavior; the approved rerun outside the
 sandbox passed. Those environmental failures are not code findings.
 
 Additional focused runs: 154 tests for core, identity and agent; 259 for
-evaluation; 114 selected CLI and gateway tests. All passed. Passing tests
-are baseline evidence, not evidence that the findings above are harmless.
+evaluation; 114 selected CLI and gateway tests; 55 history tests; and 448
+memory and compaction tests. All passed. Passing tests are baseline
+evidence, not evidence that the findings above are harmless.
 
-All fourteen findings were reproduced with mocks or temporary fixtures. The
+Typecheck, format checking, Markdown lint, code lint and header validation
+also passed. Code lint emitted one existing informational style notice in
+`memory/reviewer.test.ts`; header validation warned of existing artifacts
+without headers. Neither check modified files. The local checkpoint
+commit ran the normal type, staged-file and commit-message hooks.
+
+All findings were reproduced with mocks or temporary fixtures. The
 service probe used in-memory MCP transports and fake fetch, without any
 network traffic. No live provider integration was exercised.
+
+The coordinating reviewer independently reran every saved finding probe,
+including the two-chat compaction integration. Its initial fixture allowed
+append ordering to vary, so the final version explicitly waits for A's
+pair to appear in the canonical transcript before B sends.
+
+## Coverage and evidence
+
+The source inventory contains 176 non-test TypeScript files and 37,020
+lines, including fixture helpers and declarations. Runtime code in all
+eight packages received a manual first pass. Test inspection was selective;
+the baseline suite executed every test file. The 10 bounded items above
+separate the memory package's independent areas for resumption.
+
+Root review covered manifests, workspace boundaries, toolchain scripts,
+agent-memory setup, Git hooks and local CI wiring. It did not audit the
+remote reusable CI implementation, dependencies' source, old report probe
+scripts, or every agent skill and prose document.
+
+Detailed per-area notes preserve the exact inspected files, test coverage,
+discarded candidates and remaining gaps:
+
+- [Contracts](./2026-10-19-code-review/contracts-notes.txt)
+- [CLI and gateway](./2026-10-19-code-review/cli-notes.txt)
+- [Evaluation](./2026-10-19-code-review/eval-notes.txt)
+- [History](./2026-10-19-code-review/history-notes.txt)
+- [Storage](./2026-10-19-code-review/storage-notes.txt)
+- [Chat memory](./2026-10-19-code-review/chat-memory-notes.txt)
+- [Source inventory](./2026-10-19-code-review/source-inventory.txt)
+
+Saved probes, named by findings:
+
+| Findings | Probe filename in the sibling evidence directory |
+| --- | --- |
+| F01 | `one-shot.probe.txt` |
+| F02, F09 | `cli.probe.txt` |
+| F03, F04, F10 | `eval.probe.txt` |
+| F05, F06, F07 | `service.probe.txt` |
+| F08 | `error-cost.probe.txt` |
+| F11, F14 | `tail-editor.probe.txt` |
+| F12, F13 | `bodies.probe.txt` |
+| F15, F16, F18, F19 | `storage.probe.txt` |
+| F17 | `index-race.probe.txt` |
+| F20, F21 | `history.probe.txt` |
+| F22 | `compaction.probe.txt` |
+
+These are inert text artifacts, not test files or runtime utilities. Their
+first six lines are the artifact header; the rest is the exact standalone
+TypeScript probe. They contain synthetic credentials and fixture data
+only. Their absolute imports name this checkout; adjust those paths if
+replaying elsewhere. Several leave synthetic directories under `/tmp` for
+inspection; others remove their own fixtures on exit.
+
+For example, from this checkout, with Bun available:
+
+```sh
+tail -n +7 \
+  docs/reports/2026-10-19-code-review/service.probe.txt \
+  > /tmp/dorothy-review-replay.ts
+bun --no-env-file /tmp/dorothy-review-replay.ts
+```
