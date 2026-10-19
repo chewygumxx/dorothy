@@ -66,7 +66,7 @@ export function entryHook(): HookCommand | null {
         : { exec: process.execPath, script: resolve(script) };
 }
 
-// For memory's commands: history under the index's lock (or its own),
+// For memory's commands: history under the combined write lock,
 // swept before the command reads anything. Null when the config turns it
 // off, or when it can't be used, which is said on err.
 export function commandHistory({
@@ -161,8 +161,8 @@ async function remindOfMirror(
     }
 }
 
-// History for one of its own commands: under the index's lock when the
-// index opens, swept first. Null, said on err, when it is off or broken.
+// History for its own commands, swept under the combined write lock.
+// Null, said on err, when it is off or broken.
 async function session(options: CommandOptions, remind = true) {
     try {
         return await openSession(options, remind);

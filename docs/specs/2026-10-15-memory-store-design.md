@@ -313,14 +313,16 @@ sweep keeps a changed fact as Dorothy's own write only when its bytes
 are ones the store noted writing (`facts/pending.ts`, in `.git/`, until
 history commits them), so one left uncommitted by a crash is still hers.
 The store notes the hash before replacing a fact and refuses replacement
-if noting fails. Earlier pending hashes stay until commit, in case a
-replacement fails. An unreadable or malformed journal warns for facts
+if noting fails. A note starts a fresh line after a torn final record.
+Earlier pending hashes stay until commit, in case a replacement fails.
+An unreadable or malformed journal warns for facts
 without matching readable records, and commits their bytes and attribution
 unchanged, without making them the user's or confirmed. Other history
 recording proceeds. After the entire sweep succeeds, cleanup repairs the
 journal from its readable records, keeping hashes for uncommitted paths.
 An interrupted sweep leaves the damaged journal for the next sweep, so
-missing attribution never becomes evidence of an outside edit.
+missing attribution never becomes evidence of an outside edit. Failed
+cleanup warns and leaves conservative records for another attempt.
 What a file says of its writer is a claim, and the sweep never trusts it:
 an outside writer's canonical bytes, whatever provenance or verification
 they claim, are an outside change and the user's. A broken file kept in

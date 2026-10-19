@@ -852,6 +852,7 @@ describe("runRecover", () => {
         expect(err.text).toBe(
             `dorothy: ${data()} is not empty; --recover only fills an empty data directory\n`,
         );
+        expect(existsSync(data(".git"))).toBe(false);
         const other = tempRoot();
         err = capture();
         expect(

@@ -64,9 +64,9 @@ export async function claudeBlock({
     }
 }
 
-// Syncs the project dir is in, under the index's lock, or history's
-// own without the index, history committing what changed and never
-// pushing. Null when synced or dir is in no repository; else why not.
+// Syncs the project dir is in, under history's combined lock, or the
+// index alone without history, committing what changed without pushing.
+// Null when synced or dir is in no repository; else why not.
 export async function syncDirectory(
     dir: string,
     {

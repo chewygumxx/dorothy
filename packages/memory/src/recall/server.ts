@@ -187,8 +187,8 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
     const project = options.project ?? null;
     const root = options.facts ?? null;
     let versions: HistoryHandle | null | undefined;
-    // remember writes under the store's lock, which is the index's: it
-    // never runs inside exclusive, and the next query syncs what it wrote.
+    // remember uses history's combined lock, or the index's without it:
+    // it never runs inside exclusive; the next query syncs what it wrote.
     const write = (
         work: (store: FactStore, from: string | null) => Promise<unknown>,
     ) => inOrder(() => writing(work));

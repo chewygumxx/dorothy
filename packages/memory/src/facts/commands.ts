@@ -46,7 +46,7 @@ export type FactCommandOptions = {
 const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
 
-// The store under the index's lock, history swept first; null, said on
+// The store under history's combined lock, swept first; null, said on
 // err, when the index cannot be opened.
 async function openStore({
     env = process.env,

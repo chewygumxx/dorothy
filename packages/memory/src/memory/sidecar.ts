@@ -76,7 +76,7 @@ export type Recording = {
 // What memory sees of history.
 export type HistoryHandle = {
     recorder: Recorder;
-    // The lock history commits under: the index's, or history's own.
+    // The common history lock, combined with the index when available.
     lock: Lock;
     // Commits or restores whatever changed while Dorothy was away.
     sweep(): Promise<void>;
@@ -99,7 +99,7 @@ export const recordingFor = (
     versions === null
         ? undefined
         : { recorder: versions.recorder, message, also };
-// For a command: history with the index's lock, or null when it is off.
+// For a command: history with its combined lock, or null when off.
 export type OpenHistory = (
     index: { lock: Lock } | null,
 ) => Promise<HistoryHandle | null>;

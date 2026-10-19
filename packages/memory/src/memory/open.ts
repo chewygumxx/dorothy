@@ -575,8 +575,8 @@ export async function openMemory({
     });
 
     const claims = index;
-    // Writes outside memory's service take the index's lock, or
-    // history's own without it.
+    // Canonical writers prefer history's combined lock, falling back
+    // to the index when history is unavailable.
     const writeLock = launched?.history.lock ?? claims?.lock;
     const channel = noticeChannel();
     // Chat syncs its project at its start and after each turn; with

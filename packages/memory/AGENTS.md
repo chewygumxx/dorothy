@@ -97,9 +97,9 @@ Of the `@dorothy` packages it depends on `core` alone.
   `mirror.ts` seals new commits as AES-256-GCM bundles (`seal.ts`) on the
   orphan branch `sealed` and pushes it to the remote
   `mirror` under `DOROTHY_MIRROR_KEY`; `--recover` rebuilds from it.
-  `commands.ts` has `commandHistory` and `--history`, `--restore`,
-  `--rollback`, `--check`, `--mirror` and `--recover`, saving the
-  mirror's key with dotenvx's `set`; `lock.ts` is the `FileLock`.
+  `commands.ts` has `commandHistory`, history/restore/rollback/check and
+  mirror/recover commands. User commands await a push on close; mirror
+  keys use dotenvx's `set`. `lock.ts` is the common `FileLock`.
 - `sqlite-lock.ts`: `exclusiveLock`, a SQLite `BEGIN IMMEDIATE` lock.
 
 ## Invariants
@@ -131,7 +131,7 @@ Of the `@dorothy` packages it depends on `core` alone.
 
 - Pass every root, key and environment in; tests keep to temporary
   directories (`history/testing.ts` has `tempRoot` and `TEST_ENV`).
-- The git binary's tests shut out the user's git configuration.
+- Git tests isolate config; local HTTPS uses git http-backend and OpenSSL.
 - One contract test runs against both history engines, and across them.
 - `memory/fake-session.ts` fakes a `ChatSession`; `*-testing.ts` share fixtures.
 

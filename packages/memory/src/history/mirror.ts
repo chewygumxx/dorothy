@@ -27,8 +27,8 @@ const describeError = (error: unknown) =>
 export const WRONG_KEY =
     "history: DOROTHY_MIRROR_KEY does not open the sealed bundles; set the key they were sealed with";
 
-// Whether the key opens the newest sealed bundle, as every bundle in the
-// chain must; true when nothing is sealed yet.
+// Why the newest sealed bundle cannot be opened; null when it opens or
+// nothing is sealed yet.
 export async function sealedProblem(
     repo: MemoryRepo,
     key: Uint8Array,
@@ -123,8 +123,8 @@ export type MirrorOptions = {
 };
 
 // Pushes the sealed branch to the mirror, at most once a period after
-// commits. Sealing happens under the lock; the push, which may take a
-// while, does not. One push runs at a time.
+// commits. Bundle construction and network work are outside the lock;
+// only the snapshot and append take it. One push runs at a time.
 export class Mirror {
     readonly #options: MirrorOptions;
     readonly #timers: Timers;
