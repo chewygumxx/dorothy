@@ -9,7 +9,8 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { runCli } from "../cli.js";
 import { Models } from "../models/client.js";
 import { configPath, readEvalConfig } from "../models/config.js";
@@ -188,6 +189,51 @@ describe("bun run eval -- run", () => {
         const records = await readRecords(work, id);
         expect(records).toHaveLength(5);
         expect(new Set(records.map((each) => each.question)).size).toBe(5);
+    });
+
+    it("refuses to resume on another snapshot or model", async () => {
+        const { requests } = serve({ content: "Plot twelve, by the river." });
+        const first = fakeIo();
+        const lexical = ["run", "--work", work, "--systems", "lexical"];
+        expect(await runCli(lexical, first.io)).toBe(0);
+        const id = idOf(first.out);
+        const kept = (await readRecords(work, id)).length;
+        const calls = requests.length;
+        const resume = ["run", "--work", work, "--resume", id];
+
+        const config = readFileSync(configPath(work), "utf8");
+        writeFileSync(
+            configPath(work),
+            config.replace("judge/model", "judge/other"),
+        );
+        const judged = fakeIo();
+        expect(await runCli(resume, judged.io)).toBe(1);
+        expect(judged.err.join("")).toContain(
+            `the judge model is now judge/other, but run ${id} used judge/model; start a new run`,
+        );
+        writeFileSync(
+            configPath(work),
+            config.replace("answer/model", "answer/other"),
+        );
+        const answered = fakeIo();
+        expect(await runCli(resume, answered.io)).toBe(1);
+        expect(answered.err.join("")).toContain("the answer model is now");
+        writeFileSync(configPath(work), config);
+
+        const path = join(work, "snapshot.json");
+        const snapshot = JSON.parse(readFileSync(path, "utf8"));
+        writeFileSync(
+            path,
+            JSON.stringify({ ...snapshot, at: "2020-01-01T00:00:00.000Z" }),
+        );
+        const taken = fakeIo();
+        expect(await runCli(resume, taken.io)).toBe(1);
+        expect(taken.err.join("")).toContain(
+            "the snapshot was taken at 2020-01-01T00:00:00.000Z, but run",
+        );
+        expect(taken.err.join("")).toContain("start a new run");
+        expect(await readRecords(work, id)).toHaveLength(kept);
+        expect(requests).toHaveLength(calls);
     });
 
     it("counts a dry run's calls and makes none", async () => {

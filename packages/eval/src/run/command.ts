@@ -17,7 +17,12 @@ import { readSnapshot, workEnv } from "../snapshot/snapshot.js";
 import { openCorpus } from "../systems/corpus.js";
 import { SYSTEM_NAMES } from "../systems/system.js";
 import { readRunInfo, reportPath } from "./record.js";
-import { modelCalls, newRunInfo, runEvaluation } from "./run.js";
+import {
+    checkResumable,
+    modelCalls,
+    newRunInfo,
+    runEvaluation,
+} from "./run.js";
 
 function systemsOf(text: string): string[] {
     const names = [
@@ -86,6 +91,9 @@ export const runCommand: Command = {
                       snapshot,
                       new Date(),
                   );
+        if (resume !== null) {
+            checkResumable(info, config, snapshot);
+        }
         if (values["dry-run"] === true) {
             const asked = new Set(info.questionIds);
             const theirs = accepted.filter((q) => asked.has(q.id));

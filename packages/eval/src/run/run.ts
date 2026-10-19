@@ -80,6 +80,31 @@ export function newRunInfo(
     };
 }
 
+// A resumed run goes on with the snapshot and models it began with: a
+// record of another corpus or model would make run.json untrue.
+export function checkResumable(
+    info: RunInfo,
+    config: EvalConfig,
+    snapshot: SnapshotInfo,
+): void {
+    if (snapshot.at !== info.snapshot.at) {
+        throw new UsageError(
+            `the snapshot was taken at ${snapshot.at}, but run ${info.id} used ${info.snapshot.at}; start a new run`,
+        );
+    }
+    if (info.retrievalOnly) {
+        return;
+    }
+    for (const role of ["answer", "judge"] as const) {
+        const now = config[role]?.model ?? null;
+        if (now !== info.models[role]) {
+            throw new UsageError(
+                `the ${role} model is now ${now ?? "none"}, but run ${info.id} used ${info.models[role] ?? "none"}; start a new run`,
+            );
+        }
+    }
+}
+
 // The model calls a run would make: none for a lookup, an answer and a
 // judgement for an abstention, an answer and two judgements for the rest,
 // and one more for an update with an older answer.
