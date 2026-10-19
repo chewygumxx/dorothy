@@ -412,6 +412,99 @@ describe("clusters", () => {
     });
 });
 
+describe("hidden conversations", () => {
+    const words = (word: string) =>
+        index.db
+            .query("SELECT rowid FROM turns_fts WHERE turns_fts MATCH ?")
+            .all(word);
+    const counts = (of: string) =>
+        index.db
+            .query(
+                "SELECT turns, sessions, (SELECT count(*) FROM visits WHERE phrase = ?1) AS visits FROM conversations WHERE phrase = ?1",
+            )
+            .get(of);
+    const body = () =>
+        [
+            session(0),
+            user(1, "the walnut cake"),
+            reply(2, "baked at four"),
+        ].join("");
+    // A new mtime, as a rename by updateSidecar would give it.
+    const touched = async (of: string) => {
+        const later = new Date(Date.now() + 5000 * ++tick);
+        await utimes(sidecarPath(dir, of), later, later);
+    };
+    let tick = 0;
+
+    it("keep their text out of the index, counting their turns", async () => {
+        await writeFile(transcript(A), body());
+        await sidecar(A, { hidden: true });
+        await syncIndex(index, dir);
+        expect(turns(A)).toEqual([]);
+        expect(words("walnut")).toEqual([]);
+        expect(row(A)).toMatchObject({ hidden: 1, turns: 2, sessions: 1 });
+        expect(counts(A)).toEqual({ turns: 2, sessions: 1, visits: 1 });
+        await appendFile(transcript(A), user(3, "more walnut"));
+        await syncIndex(index, dir);
+        expect(turns(A)).toEqual([]);
+        expect(row(A)).toMatchObject({ turns: 3 });
+    });
+
+    it("lose their text from the index once hidden", async () => {
+        await writeFile(transcript(A), body());
+        await syncIndex(index, dir);
+        expect(turns(A)).toHaveLength(2);
+        expect(words("walnut")).toHaveLength(1);
+        await sidecar(A, { hidden: true });
+        await syncIndex(index, dir);
+        expect(turns(A)).toEqual([]);
+        expect(words("walnut")).toEqual([]);
+        expect(counts(A)).toEqual({ turns: 2, sessions: 1, visits: 1 });
+    });
+
+    it("have the text of an index that held it before swept out", async () => {
+        await writeFile(transcript(A), body());
+        await sidecar(A, {});
+        await syncIndex(index, dir);
+        // As an index from before hidden text was left out would hold it.
+        index.db.run("UPDATE conversations SET hidden = 1 WHERE phrase = ?", [
+            A,
+        ]);
+        await syncIndex(index, dir);
+        expect(turns(A)).toEqual([]);
+        expect(words("walnut")).toEqual([]);
+    });
+
+    it("get their text back, with the rest, once shown again", async () => {
+        await writeFile(transcript(A), body());
+        await sidecar(A, { hidden: true });
+        await syncIndex(index, dir);
+        await appendFile(transcript(A), user(3, "and the kiln"));
+        await sidecar(A, { hidden: false, title: "Cakes" });
+        await touched(A);
+        await syncIndex(index, dir);
+        expect(turns(A)).toEqual([
+            { n: 1, role: "user", text: "the walnut cake" },
+            { n: 2, role: "assistant", text: "baked at four" },
+            { n: 3, role: "user", text: "and the kiln" },
+        ]);
+        expect(words("walnut")).toHaveLength(1);
+        expect(row(A)).toMatchObject({ hidden: 0, turns: 3, title: "Cakes" });
+        expect(counts(A)).toEqual({ turns: 3, sessions: 1, visits: 1 });
+    });
+
+    it("leave other conversations' text alone", async () => {
+        await writeFile(transcript(A), body());
+        await writeFile(transcript(B), user(1, "the other walnut"));
+        await sidecar(A, { hidden: true });
+        await syncIndex(index, dir);
+        expect(turns(B)).toEqual([
+            { n: 1, role: "user", text: "the other walnut" },
+        ]);
+        expect(words("walnut")).toHaveLength(1);
+    });
+});
+
 describe("the vocabulary", () => {
     const AT = "2026-10-07T12:00:00.000Z";
     const concept = (prefLabel: string, fields: Partial<Concept> = {}) => ({

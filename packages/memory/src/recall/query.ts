@@ -585,7 +585,7 @@ export function windowOf<T extends { text: string }>(
 }
 
 // A turn as the index holds it, its time in milliseconds.
-type TurnRow = {
+export type TurnRow = {
     turn: number;
     role: "user" | "assistant";
     at: number;
@@ -949,10 +949,42 @@ function findWords(
     );
 }
 
+// The first turn from start to last with every word, else any of them,
+// among turns read from the transcript rather than found by FTS: the words
+// match whole, lowercased, without stemming.
+function findWordsIn(
+    turns: readonly TurnRow[],
+    words: string,
+    start: number,
+    last: number,
+): { n: number } | null {
+    if (normalise(words) === "") {
+        throw new RecallError("Give some words to look for.");
+    }
+    const terms = normalise(words)
+        .toLowerCase()
+        .split(" ")
+        .filter((term) => term !== "")
+        .slice(0, MAX_TERMS);
+    const within = turns.filter((row) => row.turn >= start && row.turn <= last);
+    const find = (every: boolean) => {
+        const found = within.find((row) => {
+            const text = row.text.toLowerCase();
+            return every
+                ? terms.every((term) => text.includes(term))
+                : terms.some((term) => text.includes(term));
+        });
+        return found === undefined ? null : { n: found.turn };
+    };
+    return find(true) ?? (terms.length > 1 ? find(false) : null);
+}
+
+// kept: the conversation's turns read from its transcript, for one the
+// index keeps no text of because it is hidden.
 export function recollect(
     index: RecallIndex,
     input: RecollectInput,
-    options: { phrase: string | null },
+    options: { phrase: string | null; kept?: readonly TurnRow[] },
 ): RecollectResult {
     const phrase = options.phrase;
     // A cluster is a whole number or nothing: no rounding, so the cluster
@@ -971,17 +1003,23 @@ export function recollect(
         throw new RecallError(NO_CLUSTER);
     }
     const start = startTurn(input.turn, range, n);
+    const kept = options.kept;
     const found =
         input.words === undefined
             ? null
-            : findWords(index, input.words, phrase, start, range.last);
+            : kept === undefined
+              ? findWords(index, input.words, phrase, start, range.last)
+              : findWordsIn(kept, input.words, start, range.last);
     const centre = found?.n ?? start;
     const matched = input.words === undefined ? undefined : found !== null;
-    const turns = index.db
-        .query(
-            "SELECT n AS turn, role, at, text FROM turns WHERE phrase = ? AND n BETWEEN ? AND ? ORDER BY n",
-        )
-        .all(phrase, start, range.last) as TurnRow[];
+    const turns =
+        kept === undefined
+            ? (index.db
+                  .query(
+                      "SELECT n AS turn, role, at, text FROM turns WHERE phrase = ? AND n BETWEEN ? AND ? ORDER BY n",
+                  )
+                  .all(phrase, start, range.last) as TurnRow[])
+            : kept.filter((row) => row.turn >= start && row.turn <= range.last);
     const total =
         (
             index.db

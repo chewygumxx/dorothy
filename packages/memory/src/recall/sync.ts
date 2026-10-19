@@ -8,7 +8,7 @@
 //
 //
 
-import { open, readdir, rm, stat } from "node:fs/promises";
+import { open, readdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { isPhrase } from "@dorothy/core";
 import {
@@ -45,6 +45,9 @@ type Row = {
     first_at: number | null;
     last_at: number | null;
     s_mtime: number | null;
+    // 1 for a conversation whose sidecar hides it: its turns are counted
+    // but their text is not kept.
+    hidden: number;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -81,7 +84,7 @@ export async function syncIndex(
             (
                 index.db
                     .query(
-                        "SELECT phrase, t_size, t_ino, sessions, turns, first_at, last_at, s_mtime FROM conversations",
+                        "SELECT phrase, t_size, t_ino, sessions, turns, first_at, last_at, s_mtime, hidden FROM conversations",
                     )
                     .all() as Row[]
             ).map((row) => [row.phrase, row]),
@@ -94,11 +97,7 @@ export async function syncIndex(
         }
         for (const phrase of phrases) {
             const problem = await inSavepoint(index, async () => {
-                if (
-                    await syncTranscript(index, dir, phrase, rows.get(phrase))
-                ) {
-                    await syncSidecar(index, dir, phrase);
-                }
+                await syncConversation(index, dir, phrase, rows.get(phrase));
             });
             if (problem !== null) {
                 warnings.push(`${join(dir, `${phrase}.jsonl`)}: ${problem}`);
@@ -120,6 +119,31 @@ export async function syncIndex(
         warnings.push(...(await syncFacts(index, facts)));
     }
     return warnings;
+}
+
+// A conversation's transcript and sidecar. Its text is kept only while it
+// is not hidden: hiding it drops what was kept, and showing it again
+// reads the transcript afresh, as a new file is read.
+async function syncConversation(
+    index: RecallIndex,
+    dir: string,
+    phrase: string,
+    known: Row | undefined,
+): Promise<void> {
+    if (!(await syncTranscript(index, dir, phrase, known))) {
+        return;
+    }
+    if (await syncSidecar(index, dir, phrase)) {
+        forget(index, phrase);
+        if (!(await syncTranscript(index, dir, phrase, undefined))) {
+            return;
+        }
+        await syncSidecar(index, dir, phrase);
+    }
+    index.db.run(
+        "DELETE FROM turns WHERE phrase = ? AND phrase IN (SELECT phrase FROM conversations WHERE hidden = 1)",
+        [phrase],
+    );
 }
 
 // Work that fails is undone alone, and says why; null when it succeeds.
@@ -160,6 +184,36 @@ async function list(dir: string): Promise<string[]> {
         }
         return [];
     }
+}
+
+// A conversation's turns read from its transcript, numbered as the index
+// numbers them, for the one conversation whose text the index leaves out
+// because it is hidden but which is the chat itself. Whole lines only.
+export async function transcriptTurns(
+    dir: string,
+    phrase: string,
+): Promise<
+    { turn: number; role: "user" | "assistant"; at: number; text: string }[]
+> {
+    const text = await readFile(join(dir, `${phrase}.jsonl`), "utf8");
+    const turns: Awaited<ReturnType<typeof transcriptTurns>> = [];
+    let latest: number | null = null;
+    for (const line of text.slice(0, text.lastIndexOf("\n") + 1).split("\n")) {
+        const parsed = parseEvent(line);
+        const turn = parsed === null ? "ignore" : toTurn(parsed.event);
+        if (parsed === null || turn === "ignore" || turn === "malformed") {
+            continue;
+        }
+        const at = parsed.at ?? latest ?? 0;
+        latest = Math.max(latest ?? at, at);
+        turns.push({
+            turn: turns.length + 1,
+            role: turn.role,
+            at,
+            text: turn.text,
+        });
+    }
+    return turns;
 }
 
 function forget(index: RecallIndex, phrase: string): void {
@@ -220,6 +274,7 @@ async function syncTranscript(
             first_at: null,
             last_at: null,
             s_mtime: null,
+            hidden: 0,
         };
     }
     if (info.size === row.t_size) {
@@ -359,10 +414,12 @@ function applyTurn(
     }
     row.turns++;
     const turnAt = at ?? row.last_at ?? 0;
-    index.db.run(
-        "INSERT INTO turns (phrase, n, role, at, text) VALUES (?, ?, ?, ?, ?)",
-        [row.phrase, row.turns, turn.role, turnAt, turn.text],
-    );
+    if (row.hidden === 0) {
+        index.db.run(
+            "INSERT INTO turns (phrase, n, role, at, text) VALUES (?, ?, ?, ?, ?)",
+            [row.phrase, row.turns, turn.role, turnAt, turn.text],
+        );
+    }
     row.first_at = Math.min(row.first_at ?? turnAt, turnAt);
     row.last_at = Math.max(row.last_at ?? turnAt, turnAt);
     // As visitsOf counts them: a visit opens at each session event, and
@@ -378,17 +435,19 @@ function applyTurn(
     }
 }
 
+// True when the conversation was hidden and its sidecar no longer hides it,
+// so its text, left out meanwhile, is to be read again.
 async function syncSidecar(
     index: RecallIndex,
     dir: string,
     phrase: string,
-): Promise<void> {
+): Promise<boolean> {
     const mtime = await mtimeOf(sidecarPath(dir, phrase));
-    const { s_mtime: known } = index.db
-        .query("SELECT s_mtime FROM conversations WHERE phrase = ?")
-        .get(phrase) as { s_mtime: number | null };
+    const { s_mtime: known, hidden: wasHidden } = index.db
+        .query("SELECT s_mtime, hidden FROM conversations WHERE phrase = ?")
+        .get(phrase) as { s_mtime: number | null; hidden: number };
     if (known === mtime) {
-        return;
+        return false;
     }
     const read: SidecarRead =
         mtime === null ? { kind: "none" } : await readSidecar(dir, phrase);
@@ -426,6 +485,7 @@ async function syncSidecar(
             [phrase, n, id],
         );
     }
+    return wasHidden === 1 && !sidecar?.hidden;
 }
 
 // tags.json, when its mtime differs from the one recorded. Every table

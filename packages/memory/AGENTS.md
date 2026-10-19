@@ -73,14 +73,14 @@ Of the `@dorothy` packages it depends on `core` alone.
   with its repository; read [its own guide](./src/projects/AGENTS.md).
 - `recall/`: search over past conversations and facts. `store.ts` is a
   derived SQLite FTS5 index in the XDG cache; `sync.ts` syncs it from the
-  transcripts and sidecars before every query, a conversation's source
+  transcripts and sidecars before every query: a conversation's source
   and project from its first session, its body sessions (`sessionPhrase`)
-  too, and `facts.ts` the store's facts by content hash; `query.ts` has `search`
-  and `open`, of either; `tags.ts` mirrors the vocabulary; `remember.ts`
-  writes her own facts; `server.ts` serves them over MCP on stdio as
-  `dorothy --recall-server`, one call at a time in the order sent, history
-  opened without the mirror. Reviews appraise each read into the sidecar,
-  and `salience()` (`rank.ts`) weighs appraised reads with visits.
+  too, a hidden one's turns counted but their text left out, and
+  `facts.ts` the facts by content hash. `query.ts` has `search`, `open`,
+  `recollect` (a hidden chat's turns from its transcript); `tags.ts`
+  mirrors the vocabulary; `remember.ts` writes her facts; `server.ts`
+  serves them over MCP on stdio as `dorothy --recall-server`, one call at
+  a time, history opened without the mirror; `rank.ts` weighs appraised reads.
 - `compaction/`: past `[compaction] soft` tokens, at the next idle (past
   `hard`, before the next message), `compact()` splits the turns before
   the verbatim tail into topical clusters with an abstract each; read

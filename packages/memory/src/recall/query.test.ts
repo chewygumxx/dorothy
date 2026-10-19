@@ -506,6 +506,43 @@ describe("recollect", () => {
         }
     });
 
+    it("serves turns it is given in place of the index's, for a hidden chat", () => {
+        const kept = [
+            "the cat sat",
+            "on the mat",
+            "a render bug",
+            "the dog",
+        ].map((text, at) => ({
+            turn: at + 1,
+            role: at % 2 === 0 ? ("user" as const) : ("assistant" as const),
+            at: Date.parse(day(1, at)),
+            text,
+        }));
+        const ask = (input: Parameters<typeof recollect>[1]) =>
+            recollect(index, input, { phrase: OWN, kept });
+        // Cluster 1 is turns 1 to 3; the index's own text is not used.
+        const plain = ask({ cluster: 1 });
+        expect(plain.window.map((turn) => turn.text)).toEqual([
+            "the cat sat",
+            "on the mat",
+            "a render bug",
+        ]);
+        expect(plain.window[0]?.at).toBe(day(1, 0));
+        // Every word, else any; whole words, any case.
+        expect(ask({ cluster: 1, words: "RENDER bug" })).toMatchObject({
+            matched: true,
+            window: [{ turn: 1 }, { turn: 2 }, { turn: 3 }],
+        });
+        expect(ask({ cluster: 1, words: "mat dog" }).matched).toBe(true);
+        expect(ask({ cluster: 1, words: "kiln" }).matched).toBe(false);
+        // Only from the turn asked for, and within the cluster.
+        expect(ask({ cluster: 1, words: "cat", turn: 2 }).matched).toBe(false);
+        expect(ask({ cluster: 1, words: "dog" }).matched).toBe(false);
+        expect(() => ask({ cluster: 1, words: "  " })).toThrow(
+            "Give some words to look for.",
+        );
+    });
+
     it("never opens another conversation's clusters", async () => {
         await conversation(A, [user(day(2), "elsewhere")], {
             clusters: [cluster(1, 1)],

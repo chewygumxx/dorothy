@@ -30,7 +30,7 @@ import {
 } from "./query.js";
 import { remember } from "./remember.js";
 import { indexPath, RecallIndex } from "./store.js";
-import { sessionPhrase, syncIndex } from "./sync.js";
+import { sessionPhrase, syncIndex, transcriptTurns } from "./sync.js";
 
 // The guidance on when to look things up lives here: it always reaches the
 // model with the tools.
@@ -317,7 +317,24 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
                 },
             },
             (input) =>
-                answer((index) => recollect(index, input, { phrase: live })),
+                answer(async (index) => {
+                    // A hidden chat's text is not in the index; she may still
+                    // reopen her own turns from its transcript.
+                    const hidden =
+                        (
+                            index.db
+                                .query(
+                                    "SELECT hidden FROM conversations WHERE phrase = ?",
+                                )
+                                .get(live) as { hidden: number } | null
+                        )?.hidden === 1;
+                    return recollect(index, input, {
+                        phrase: live,
+                        ...(hidden
+                            ? { kept: await transcriptTurns(options.dir, live) }
+                            : {}),
+                    });
+                }),
         );
     }
     if (root !== null) {

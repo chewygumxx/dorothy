@@ -322,6 +322,60 @@ describe("recollect on the server", () => {
         expect(textOf(missing)).toBe("No cluster by that number.");
     });
 
+    it("reopens a hidden chat's own turns from its transcript, which the index leaves out", async () => {
+        await writeFile(
+            join(dir, `${LIVE}.jsonl`),
+            [
+                user("the walnut cake"),
+                user("a render bug"),
+                user("then the kiln"),
+            ].join(""),
+        );
+        await writeFile(
+            sidecarPath(dir, LIVE),
+            JSON.stringify({
+                ...EMPTY_SIDECAR,
+                hidden: true,
+                clusters: [
+                    {
+                        from: 1,
+                        through: 3,
+                        abstract: "Cakes.",
+                        at: "2026-10-04T12:00:00.000Z",
+                        model: "m",
+                    },
+                ],
+            }),
+        );
+        const client = await connect({ recollect: true });
+        const opened = await client.callTool({
+            name: "recollect",
+            arguments: { cluster: 1, words: "Kiln" },
+        });
+        expect(opened.isError).toBeFalsy();
+        const result = JSON.parse(textOf(opened)) as RecollectResult;
+        expect(result.total).toBe(3);
+        expect(result.matched).toBe(true);
+        expect(result.window.map((turn) => turn.text)).toEqual([
+            "the walnut cake",
+            "a render bug",
+            "then the kiln",
+        ]);
+        expect(result.window[2]?.at).toBe("2026-10-04T12:00:00.000Z");
+        // Nothing of it was kept in the index.
+        const index = indexes[0] as RecallIndex;
+        expect(
+            index.db
+                .query("SELECT count(*) AS n FROM turns WHERE phrase = ?")
+                .get(LIVE),
+        ).toEqual({ n: 0 });
+        const missing = await client.callTool({
+            name: "recollect",
+            arguments: { cluster: 2 },
+        });
+        expect(textOf(missing)).toBe("No cluster by that number.");
+    });
+
     it.each([1.5, 0, -1])(
         "refuses cluster %p, not a whole number from 1",
         async (value) => {
