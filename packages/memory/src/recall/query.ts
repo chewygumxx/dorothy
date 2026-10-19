@@ -244,11 +244,13 @@ function carryingAll(
         const keys = new Set(
             pairs.filter(([of]) => of === id).map(([, key]) => key),
         );
-        const before: Set<string> | null = allowed;
-        allowed =
-            before === null
-                ? keys
-                : new Set([...before].filter((key) => keys.has(key)));
+        if (allowed === null) {
+            allowed = keys;
+        } else {
+            for (const key of allowed) {
+                if (!keys.has(key)) allowed.delete(key);
+            }
+        }
     }
     return allowed ?? new Set();
 }
@@ -777,6 +779,7 @@ function tagScope(
         return listed;
     }
     const label = normalise(under);
+    if (label === "") return listed;
     const root = conceptByLabel(index, label);
     if (root === null || !listed.has(root)) {
         throw new RecallError(`${NO_TAG}: ${label}.`);
