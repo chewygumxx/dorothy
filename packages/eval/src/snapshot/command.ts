@@ -42,6 +42,12 @@ export const snapshotCommand: Command = {
         io.out(
             `copied ${info.conversations} conversations and ${info.knowledge} knowledge files from ${info.source}\n`,
         );
+        const links = info.skippedLinks ?? 0;
+        if (links > 0) {
+            io.out(
+                `  skipped ${links} symbolic ${links === 1 ? "link" : "links"} below the top, not followed\n`,
+            );
+        }
         return 0;
     },
 };

@@ -12,9 +12,11 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
     chmodSync,
     existsSync,
+    lstatSync,
     mkdirSync,
     readdirSync,
     readFileSync,
+    renameSync,
     rmSync,
     statSync,
     symlinkSync,
@@ -65,6 +67,7 @@ describe("a snapshot", () => {
             at: "2026-10-19T00:00:00.000Z",
             conversations: 4,
             knowledge: 3,
+            skippedLinks: 0,
         });
         const copy = snapshotDir(work);
         expect(existsSync(join(copy, "transcripts"))).toBe(true);
@@ -195,7 +198,7 @@ describe("a snapshot", () => {
         ).toBe(0o600);
     });
 
-    it("neither follows nor keeps a symbolic link", async () => {
+    it("counts, and neither follows nor keeps, a link below the top", async () => {
         const outside = join(temp.root, "outside");
         mkdirSync(outside);
         writeFileSync(join(outside, "secret.md"), "outside\n");
@@ -206,11 +209,68 @@ describe("a snapshot", () => {
         );
         const info = await takeSnapshot(data, work);
         expect(info.knowledge).toBe(3);
+        expect(info.skippedLinks).toBe(2);
+        expect((await readSnapshot(work)).skippedLinks).toBe(2);
         const found = readdirSync(snapshotDir(work), { recursive: true });
         expect(found.some((name) => String(name).includes("secret"))).toBe(
             false,
         );
         expect(found).not.toContain(join("knowledge", "away"));
+    });
+
+    it("follows a link at the top, and copies what it leads to", async () => {
+        const kept = join(temp.root, "stowed");
+        mkdirSync(kept);
+        for (const name of ["knowledge", "transcripts", "tags.json"]) {
+            if (name === "tags.json") {
+                writeFileSync(join(kept, name), "{}\n");
+            } else {
+                renameSync(join(data, name), join(kept, name));
+            }
+            symlinkSync(join(kept, name), join(data, name));
+        }
+        const info = await takeSnapshot(data, work);
+        expect(info).toMatchObject({
+            conversations: 4,
+            knowledge: 3,
+            skippedLinks: 0,
+        });
+        const copy = snapshotDir(work);
+        for (const name of ["knowledge", "transcripts", "tags.json"]) {
+            expect(lstatSync(join(copy, name)).isSymbolicLink()).toBe(false);
+        }
+        expect(readFileSync(join(copy, "tags.json"), "utf8")).toBe("{}\n");
+        expect(tree(join(copy, "knowledge"))).toEqual(
+            tree(join(kept, "knowledge")),
+        );
+    });
+
+    it("refuses a top link into the work directory, or around it", async () => {
+        const inside = join(work, "stuff");
+        mkdirSync(inside, { recursive: true });
+        rmSync(join(data, "knowledge"), { recursive: true });
+        symlinkSync(inside, join(data, "knowledge"));
+        await expect(takeSnapshot(data, work)).rejects.toThrow(
+            /knowledge leads to .*stuff.*must not contain each other/,
+        );
+        rmSync(join(data, "knowledge"));
+        symlinkSync(temp.root, join(data, "knowledge"));
+        await expect(takeSnapshot(data, work)).rejects.toThrow(
+            /knowledge leads to .*must not contain each other/,
+        );
+        expect(existsSync(join(work, "snapshot.json"))).toBe(false);
+    });
+
+    it("restores the old copy a crash left aside, before replacing", async () => {
+        await takeSnapshot(data, work);
+        // A crash between the two renames of a swap.
+        renameSync(snapshotDir(work), `${snapshotDir(work)}.old`);
+        mkdirSync(`${snapshotDir(work)}.partial`);
+        await expect(takeSnapshot(data, work)).rejects.toThrow(
+            "holds a snapshot already",
+        );
+        expect(existsSync(join(snapshotDir(work), "transcripts"))).toBe(true);
+        expect(existsSync(`${snapshotDir(work)}.old`)).toBe(false);
     });
 
     it("drops the old cache and files when replacing", async () => {

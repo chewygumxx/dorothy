@@ -33,6 +33,9 @@ const snapshotInfoSchema = z.object({
     at: z.string(),
     conversations: z.number().int().min(0),
     knowledge: z.number().int().min(0),
+    // The symbolic links below the top that the copy did not follow; a
+    // snapshot taken before they were counted has none.
+    skippedLinks: z.number().int().min(0).optional(),
 });
 export type SnapshotInfo = z.infer<typeof snapshotInfoSchema>;
 
@@ -98,10 +101,49 @@ async function count(
     }
 }
 
-// Neither .git, which holds history, nor a symbolic link, which would
-// either lead the copy out of the data directory or keep a way back into it.
-async function copiable(path: string): Promise<boolean> {
-    return basename(path) !== ".git" && !(await lstat(path)).isSymbolicLink();
+// What a copy leaves out: .git, which holds history, and a symbolic link,
+// which would lead it out of the data directory or keep a way back into
+// it; each link is counted. The entries a snapshot takes are followed if
+// they are links themselves (see `entryOf`), but nothing below them.
+function copying(): {
+    filter: (path: string) => Promise<boolean>;
+    skipped: () => number;
+} {
+    let skipped = 0;
+    return {
+        filter: async (path) => {
+            if (basename(path) === ".git") {
+                return false;
+            }
+            if ((await lstat(path)).isSymbolicLink()) {
+                skipped++;
+                return false;
+            }
+            return true;
+        },
+        skipped: () => skipped,
+    };
+}
+
+// Where an entry of the data directory really is, if it is there: a
+// directory stowed elsewhere is a link at the top, and is followed. It may
+// not lead into the work directory, nor around it.
+async function entryOf(
+    source: string,
+    name: string,
+    realTarget: string,
+): Promise<string | null> {
+    const path = join(source, name);
+    if (!(await exists(path))) {
+        return null;
+    }
+    const real = await realpath(path);
+    if (within(real, realTarget) || within(realTarget, real)) {
+        throw new UsageError(
+            `${path} leads to ${real}, and it and the work directory must not contain each other`,
+        );
+    }
+    return real;
 }
 
 export async function takeSnapshot(
@@ -133,6 +175,11 @@ export async function takeSnapshot(
         );
     }
     const copy = snapshotDir(target);
+    const old = `${copy}.old`;
+    // A swap a crash cut short left the old copy aside, the only one.
+    if (!(await exists(copy)) && (await exists(old))) {
+        await rename(old, copy);
+    }
     const held = (await exists(infoPath(target))) || (await exists(copy));
     if (held && options.replace !== true) {
         throw new UsageError(
@@ -142,15 +189,16 @@ export async function takeSnapshot(
     // Built apart, and swapped in only when whole, so a copy that fails
     // leaves the old snapshot as it was.
     const partial = `${copy}.partial`;
-    const old = `${copy}.old`;
     await rm(partial, { recursive: true, force: true });
     await mkdir(partial, { recursive: true, mode: 0o700 });
     try {
+        const links = copying();
         for (const name of COPIED) {
-            if (await exists(join(source, name))) {
-                await cp(join(source, name), join(partial, name), {
+            const real = await entryOf(source, name, realTarget);
+            if (real !== null) {
+                await cp(real, join(partial, name), {
                     recursive: true,
-                    filter: copiable,
+                    filter: links.filter,
                 });
             }
         }
@@ -164,9 +212,11 @@ export async function takeSnapshot(
             knowledge:
                 (await count(join(partial, "knowledge"), markdown)) +
                 (await count(join(partial, "facts"), markdown)),
+            skippedLinks: links.skipped(),
         };
-        await rm(old, { recursive: true, force: true });
         if (await exists(copy)) {
+            // Any `old` left is stale: the copy it was aside from is back.
+            await rm(old, { recursive: true, force: true });
             await rename(copy, old);
         }
         try {
@@ -177,12 +227,12 @@ export async function takeSnapshot(
             }
             throw error;
         }
+        // The index was built from the old copy.
+        await rm(join(target, "cache"), { recursive: true, force: true });
         await writeAtomic(
             infoPath(target),
             `${JSON.stringify(info, null, 4)}\n`,
         );
-        // The index was built from the old copy.
-        await rm(join(target, "cache"), { recursive: true, force: true });
         await rm(old, { recursive: true, force: true });
         return info;
     } finally {

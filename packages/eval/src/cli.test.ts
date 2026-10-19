@@ -9,6 +9,7 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { COMMANDS, runCli } from "./cli.js";
 import { fakeIo, tempRoot, writeFixtureData } from "./testing.js";
@@ -133,6 +134,21 @@ describe("bun run eval", () => {
         ).toBe(0);
         expect(out.join("")).toBe(
             `copied 4 conversations and 3 knowledge files from ${data}\n`,
+        );
+    });
+
+    it("says the links a snapshot did not follow", async () => {
+        const data = await writeFixtureData(temp.root);
+        symlinkSync(temp.root, join(data, "knowledge", "away"));
+        const { io, out } = fakeIo();
+        expect(
+            await runCli(
+                ["snapshot", "--from", data, "--work", join(temp.root, "w")],
+                io,
+            ),
+        ).toBe(0);
+        expect(out.join("")).toBe(
+            `copied 4 conversations and 3 knowledge files from ${data}\n  skipped 1 symbolic link below the top, not followed\n`,
         );
     });
 });

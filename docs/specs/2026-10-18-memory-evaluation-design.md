@@ -98,10 +98,13 @@ bun run eval -- snapshot --from ~/.local/share/dorothy --work ~/eval
   `knowledge/`, `facts/` where a data directory has not yet moved it,
   and `tags.json`, and records what it copied in `<work>/snapshot.json`:
   the source, the time, and counts of conversations and knowledge files.
-  It never writes to `--from`, and copies no `.git`, symbolic link,
-  mirror or token. A copy is made apart and swapped in whole, so a
-  `--replace` that fails leaves the old snapshot, and one that succeeds
-  drops the index built from it.
+  It never writes to `--from`, and copies no `.git`, mirror or token.
+  An entry it takes that is itself a link (a stowed `knowledge/`) is
+  followed, unless it leads into the work directory or around it; below
+  those, a symbolic link is neither followed nor kept, and the count of
+  those skipped is said and kept in `snapshot.json`. A copy is made
+  apart and swapped in whole, so a `--replace` that fails leaves the old
+  snapshot, and one that succeeds drops the index built from it.
 - Every later command takes `--work` and runs with `HOME`,
   `XDG_DATA_HOME`, `XDG_CACHE_HOME`, `XDG_STATE_HOME` and
   `XDG_CONFIG_HOME` under it, so recall's index is built fresh in the
