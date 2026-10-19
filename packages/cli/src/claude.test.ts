@@ -17,6 +17,7 @@ import {
     readFileSync,
     rmSync,
     statSync,
+    writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,6 +33,7 @@ import {
     mergeJson,
     privateWriter,
     runClaude,
+    spawnDetached,
 } from "./claude.js";
 
 const LAUNCH = "6c84fb90-12c4-11e1-840d-7b25c5ee775a";
@@ -851,5 +853,53 @@ describe("dorothyFlags", () => {
             b: { c: 1, d: 2 },
             e: 1,
         });
+    });
+});
+
+describe("spawnDetached", () => {
+    it("starts a process of its own session that outlives its caller's wait", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "dorothy-detached-"));
+        try {
+            const out = join(dir, "out.json");
+            const script = join(dir, "probe.ts");
+            writeFileSync(
+                script,
+                [
+                    'import { readFileSync, writeFileSync } from "node:fs";',
+                    'const stat = readFileSync("/proc/self/stat", "utf8");',
+                    "writeFileSync(",
+                    "    process.argv[2] as string,",
+                    "    JSON.stringify({ stat, arg: process.argv[3] }),",
+                    ");",
+                    "",
+                ].join("\n"),
+            );
+            spawnDetached([process.execPath, script, out, "--catch-up"]);
+            let seen: { stat: string; arg: string } | null = null;
+            for (let tries = 0; tries < 200 && seen === null; tries += 1) {
+                try {
+                    seen = JSON.parse(readFileSync(out, "utf8"));
+                } catch {
+                    await Bun.sleep(25);
+                }
+            }
+            expect(seen?.arg).toBe("--catch-up");
+            // The session is the 6th field of /proc/<pid>/stat, past the
+            // command's name.
+            const session = (stat: string) =>
+                stat.slice(stat.lastIndexOf(")") + 2).split(" ")[3];
+            expect(session(seen?.stat ?? "")).not.toBe(
+                session(readFileSync("/proc/self/stat", "utf8")),
+            );
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it("does not throw for a program that cannot start, or for none", async () => {
+        expect(() => spawnDetached(["/nonexistent/dorothy-x"])).not.toThrow();
+        expect(() => spawnDetached([])).not.toThrow();
+        // The failed start is an event, not an unhandled error.
+        await Bun.sleep(100);
     });
 });

@@ -286,8 +286,9 @@ const selfCommand = () => [
 ];
 
 // A process of its own session, which outlives dorothy and a terminal
-// that hangs up.
-function spawnDetached(cmd: string[]): void {
+// that hangs up. One that cannot start is not an error here: the next
+// start's catch-up makes good.
+export function spawnDetached(cmd: string[]): void {
     const [command, ...rest] = cmd;
     if (command === undefined) {
         return;
