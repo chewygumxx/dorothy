@@ -362,7 +362,7 @@ export function frontmatterOf(source: string): {
 // Who wrote a fact, in OKF's actor convention: the user, the
 // repository's sync, a review, or a model through remember as
 // <host>/<model>.
-const USER_ACTOR = "human:owner";
+export const USER_ACTOR = "human:owner";
 const REPO_ACTOR = "process:repo-sync";
 const EXTRACTION = "dorothy-extraction";
 const NO_MODEL = "unknown";
@@ -713,4 +713,24 @@ export function nextOrigin(
     return ORIGINS.indexOf(written) < ORIGINS.indexOf(previous)
         ? written
         : previous;
+}
+
+// A person's confirmation of a fact, OKF's verified key, kept among the
+// keys another producer wrote.
+export type Verification = { by: string; at: string };
+
+// The fact's confirmations by a person (human:<id>), each with its time;
+// an entry in any other form confirms nothing.
+export function verificationsOf(fact: Fact): Verification[] {
+    const entries = fact.foreign?.verified;
+    if (!Array.isArray(entries)) {
+        return [];
+    }
+    return entries.filter(
+        (entry): entry is Verification =>
+            isRecord(entry) &&
+            typeof entry.by === "string" &&
+            entry.by.startsWith("human:") &&
+            typeof entry.at === "string",
+    );
 }
