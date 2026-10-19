@@ -157,23 +157,28 @@ async function readJson(path: string): Promise<unknown> {
     }
 }
 
-const TEMPORARY = /^\.[0-9a-f-]{36}\.tmp$/;
+// What a launch is made in, as every version wrote it: the id any case.
+const TEMPORARY = /^\.[0-9a-f-]{36}\.tmp$/i;
 // A launch is made whole in a moment: older than this, a temporary
 // directory is what a crash left.
 const TEMPORARY_AGE_MS = 60_000;
 
+// Both directories', as an earlier version's leftovers are in the
+// runtime directory's, or the cache's, which nothing else clears.
 async function reapTemporaries(env: Env, now: number): Promise<void> {
-    for (const name of await names(launchesDir(env))) {
-        const path = join(launchesDir(env), name);
-        if (!TEMPORARY.test(name)) {
-            continue;
-        }
-        const age = await stat(path).then(
-            (info) => now - info.mtimeMs,
-            () => 0,
-        );
-        if (age > TEMPORARY_AGE_MS) {
-            await rm(path, { recursive: true, force: true });
+    for (const dir of [launchesDir(env), legacyLaunchesDir(env)]) {
+        for (const name of await names(dir)) {
+            if (!TEMPORARY.test(name)) {
+                continue;
+            }
+            const path = join(dir, name);
+            const age = await stat(path).then(
+                (info) => now - info.mtimeMs,
+                () => 0,
+            );
+            if (age > TEMPORARY_AGE_MS) {
+                await rm(path, { recursive: true, force: true });
+            }
         }
     }
 }

@@ -267,15 +267,22 @@ describe("launch notes", () => {
         expect(await staleLaunches(env, BOOT)).toEqual([]);
     });
 
-    it("reap the temporary directory a crash left, once it is old", async () => {
-        const old = join(launchesDir(env), `.${S1}.tmp`);
-        const fresh = join(launchesDir(env), `.${S2}.tmp`);
-        await mkdir(join(old, "sessions"), { recursive: true });
-        await mkdir(fresh, { recursive: true });
-        await utimes(old, 1, 1);
+    it("reap the temporary directory a crash left, once it is old, in either directory", async () => {
+        const made = async (dir: string, name: string, age: number) => {
+            const path = join(dir, name);
+            await mkdir(join(path, "sessions"), { recursive: true });
+            await utimes(path, age, age);
+        };
+        const upper = S2.toUpperCase();
+        await made(launchesDir(env), `.${S1}.tmp`, 1);
+        await made(launchesDir(env), `.${upper}.tmp`, 1);
+        await made(legacyLaunchesDir(env), `.${S1}.tmp`, 1);
+        await made(legacyLaunchesDir(env), `.${OTHER}.tmp`, Date.now() / 1000);
+        await made(legacyLaunchesDir(env), "not-a-launch.tmp", 1);
         await noteLaunch(env, note(LAUNCH), BOOT);
-        expect((await readdir(launchesDir(env))).sort()).toEqual(
-            [`.${S2}.tmp`, LAUNCH].sort(),
+        expect(await readdir(launchesDir(env))).toEqual([LAUNCH]);
+        expect((await readdir(legacyLaunchesDir(env))).sort()).toEqual(
+            [`.${OTHER}.tmp`, "not-a-launch.tmp"].sort(),
         );
     });
 
