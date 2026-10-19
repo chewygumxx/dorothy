@@ -88,17 +88,29 @@ yet run: the owner reviews its generated questions, then runs her
 memory beside the lexical baseline and full context, with models named
 in `eval.toml`.
 
-The harnesses to target first are not yet chosen, as the minutes left
-open, with how her persona reaches each (generated files, the proxy or
-both) and how each one's sessions reach her memory (hooks, session
-files or the proxy). Existing tools, such as rulesync, are researched
-before anything bespoke is built: research on
+The harnesses she is provided for and tested against are Claude Code,
+Codex, OpenClaw and Hermes Agent, as the user chose. Claude Code is
+recorded already; Codex offers hooks and its rollout files, and
+OpenClaw and Hermes a memory plugin each, in a slot that takes one
+provider, as the contract's host profiles record. The recording and
+delivery specs settle how her persona reaches each (generated files,
+the proxy or both) and how each one's sessions reach her memory.
+Existing tools, such as rulesync, are researched before anything
+bespoke is built: research on
 [cross-harness](./reports/2026-10-18-protocol-diversity/cross-harness.md)
 tooling names rulesync, Hindsight's adapters and Letta's transcript
 parser.
 
+Before delivery, two pieces make it safe for all four: knowledge told
+apart by its source before it reaches the opening block, since
+`remember` runs without a prompt and the block takes every piece of
+knowledge, so text injected through a page or a tool would reach every
+later session; and the service's loose ends from the contract's final
+review, as OpenClaw and Hermes take a block of 4000 characters that
+`brief` does not yet keep to.
+
 - **Status**: Store, Bodies, Contract and Evaluation Built; the First
-  Run and the Choice of Harnesses Next, then the Engine
+  Run and Recording Next, then the Engine, then Delivery
 - **Required**: Requisites Fulfilled
 - **Rationale**: Wherever she goes, her memory follows with her. The
   contract gives every harness one service and every engine one
@@ -106,9 +118,10 @@ parser.
   user judges weak. Its first run comes first, as the engine's spec
   chooses on its numbers; should those leave the choice open, the
   engine's spec may first ask for adapters to the field's systems.
-  With the contract built, memory no longer holds back the choice of
-  harnesses, which can be made beside the run. Recording and delivery
-  both follow that choice.
+  With the harnesses chosen, recording for Codex, OpenClaw and Hermes
+  waits on no number and goes beside the run, which needs the owner's
+  time. Delivery comes last, after the two pieces that make it safe,
+  and once the engine it delivers is chosen.
 
 ### Model Providers
 
@@ -235,22 +248,12 @@ Found but not scheduled, each with its source.
   [compaction test gaps](./deferred/2026-10-07_compaction-test-gaps.md),
   [memory bodies](./deferred/2026-10-16_memory-bodies-deferred.md) and
   the [memory contract](./reports/2026-10-18-memory-contract.md)'s.
-- The memory service's loose ends: `brief` clamped to a host's budget,
-  the hook API's `project` checked, idle sessions bounded with reviews
-  off, the port bound before the history launch, and an unexpected tool
-  failure logged (memory contract, final review).
 - The evaluation's later systems and checks: adapters for Hindsight,
   OpenViking, EverOS, Honcho and an improved Dorothy; an agentic mode
   driving the MCP tools; LongMemEval-S as a public anchor; a corrected
   memory surviving a re-ingest, and two clients writing while a second
   machine reads; and a second ingest model (memory evaluation spec,
   Later).
-- Knowledge told apart by its source before it reaches the opening
-  block: `remember` runs without a prompt and the block takes every
-  piece of knowledge, framed only as background, so text injected
-  through a page or a tool reaches every later session. Layers was to
-  settle it, and the contract took Layers' place without doing so
-  (memory bodies spec, Known risks).
 - The contract's later work: her commands writing through the service;
   OKF's `index.md` and `log.md` for `knowledge/`; encryption at rest;
   `superseded_by`, and a command by which the user confirms a piece of
@@ -331,8 +334,9 @@ Found but not scheduled, each with its source.
   branch; and the two probes left: a session started inside a package,
   and a fresh session reading `.agents/memory/MEMORY.md` (agentic asset
   refactor report).
-- An OpenAI-protocol adapter for the gateway, and `--codex` and
-  `--opencode` launchers beside `--claude` (identity spec, Later).
+- An OpenAI-protocol adapter for the gateway, and a `--codex` launcher
+  beside `--claude`, which delivery to Codex may call for; `--opencode`
+  waits, as OpenCode is not a target (identity spec, Later).
 - Checking that Claude Code's forks keep the identity marker, which the
   probes could not observe without a model reply, that interactive
   sessions behave as `-p` did, and that a user's `HTTP_PROXY` leaves the
@@ -460,3 +464,10 @@ In order of completion.
   the block, the contract's later work, and the limits of recording,
   the store, history, compaction, recall, the vocabulary, the TUI, the
   asset refactor and the identity.
+- 2026-10-19: The user chose the harnesses: Claude Code, Codex, OpenClaw
+  and Hermes Agent. Recording for them goes beside the first run, and
+  delivery follows the engine. Each candidate was asked whether it
+  makes the next pieces safer done first: knowledge told apart by its
+  source and the service's loose ends move out of Candidates to go
+  before delivery. Turn times in UTC stay, as the evaluation reads every
+  date in UTC alike, and `--opencode` waits.
