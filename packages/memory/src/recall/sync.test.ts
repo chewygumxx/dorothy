@@ -402,7 +402,10 @@ describe("clusters", () => {
         const later = new Date(Date.now() + 5000);
         await utimes(sidecarPath(dir, A), later, later);
         await syncIndex(index, dir);
-        expect(rows()).toHaveLength(2);
+        expect(rows()).toEqual([
+            { phrase: A, n: 1, first: 1, last: 4 },
+            { phrase: A, n: 2, first: 5, last: 6 },
+        ]);
         await rm(transcript(A));
         await syncIndex(index, dir);
         expect(rows()).toEqual([]);

@@ -640,24 +640,50 @@ describe("clusters", () => {
     });
 
     it("stop at the first that does not follow on", () => {
-        const bad = [
-            [cluster(2, 4)],
-            [cluster(1, 4), cluster(6, 9)],
-            [cluster(1, 4), cluster(5, 4)],
-            [cluster(1, 4), cluster(5, 9, "   ")],
-            [cluster(1, 4), cluster(5, 9, "x".repeat(1001))],
-            [cluster(1, 4), { ...cluster(5, 9), at: 3 }],
-            [cluster(1, 4), { ...cluster(5, 9), model: null }],
-            [cluster(1, 4), { ...cluster(5, 9), from: 5.5 }],
+        const bad: [string, unknown[], number[]][] = [
+            ["starts past turn 1", [cluster(2, 4)], []],
+            ["leaves a gap", [cluster(1, 4), cluster(6, 9)], [4]],
+            ["ends before it starts", [cluster(1, 4), cluster(5, 4)], [4]],
+            [
+                "has a blank abstract",
+                [cluster(1, 4), cluster(5, 9, "   ")],
+                [4],
+            ],
+            [
+                "has an abstract past 1000 characters",
+                [cluster(1, 4), cluster(5, 9, "x".repeat(1001))],
+                [4],
+            ],
+            [
+                "has a time that is not text",
+                [cluster(1, 4), { ...cluster(5, 9), at: 3 }],
+                [4],
+            ],
+            [
+                "has no model",
+                [cluster(1, 4), { ...cluster(5, 9), model: null }],
+                [4],
+            ],
+            [
+                "has a fractional turn",
+                [cluster(1, 4), { ...cluster(5, 9), from: 5.5 }],
+                [4],
+            ],
+            [
+                "drops what follows the invalid one",
+                [cluster(1, 4), cluster(6, 9), cluster(10, 12)],
+                [4],
+            ],
         ];
-        for (const clusters of bad) {
+        for (const [why, clusters, kept] of bad) {
             const read = parseSidecar(
                 JSON.stringify({ ...EMPTY_SIDECAR, clusters }),
             );
             expect(
                 read.kind === "ok" &&
-                    read.sidecar.clusters.map((kept) => kept.through),
-            ).toEqual(clusters[0]?.from === 1 ? [4] : []);
+                    read.sidecar.clusters.map((cluster) => cluster.through),
+                `a cluster list that ${why}`,
+            ).toEqual(kept);
         }
     });
 

@@ -100,10 +100,10 @@ describe("RecallIndex", () => {
         index.close();
     });
 
-    it("is at schema version 7, with clusters, vocabulary and facts tables", () => {
+    it("has the clusters, vocabulary and facts tables at the current version", () => {
         const index = RecallIndex.open(path);
         try {
-            expect(SCHEMA_VERSION).toBe(7);
+            expect(version(index)).toBe(SCHEMA_VERSION);
             const tables = (
                 index.db
                     .query(
