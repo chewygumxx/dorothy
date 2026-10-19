@@ -42,11 +42,13 @@ gives back, and the service that speaks it. The spec is
 - `../engine/`: `MemoryEngine`, and the baseline over today's index,
   salience and reviewer.
 - `../hosts/`: host profiles, one JSON file a harness.
-- `../service/`: the HTTP service (`service.ts`, refusing what a web
-  page could send), device tokens (`tokens.ts`), the client
-  (`client.ts`), the stdio bridge (`bridge.ts`, its own entry point,
-  `"./bridge"`) and the CLI's runners (`run.ts`). `loopback.ts` tells
-  loopback addresses and URLs; `confine.ts` admits a transcript path.
+- `../service/`: the HTTP service (`service.ts`, its routes; `guard.ts`
+  refuses what a web page could send; `jobs.ts` extracts, consolidates
+  and exports in the background; `http.ts`, `recent.ts` are theirs),
+  device tokens (`tokens.ts`), the client (`client.ts`), the stdio
+  bridge (`bridge.ts`, its own entry point, `"./bridge"`) and the CLI's
+  runners (`run.ts`). `loopback.ts` tells loopback addresses and URLs;
+  `confine.ts` admits a transcript path.
   `recall/server.ts`, `tools.ts` and `../service/` alone import
   `@modelcontextprotocol/sdk`.
 
