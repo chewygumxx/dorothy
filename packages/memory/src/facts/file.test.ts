@@ -470,3 +470,140 @@ describe("isConfirmed", () => {
         }
     });
 });
+
+describe("parseFact and the links in a body", () => {
+    const withBody = (body: string) =>
+        parseFact(CANONICAL.replace("Asked for tea twice.", body), "likes-tea");
+
+    it.each([
+        ["a title", '[x](../personal/a.md "title")'],
+        ["a title in single quotes", "[x](../personal/a.md 'title')"],
+        ["a title in parentheses", "[x](../personal/a.md (title))"],
+        ["angle brackets", "[x](<../personal/a.md>)"],
+        ["angle brackets and a title", '[x](<../personal/a.md> "title")'],
+        ["an upper-case extension", "[x](../personal/a.MD)"],
+        ["an anchor", "[x](../personal/a.md#why)"],
+        ["spaces inside the parentheses", "[x]( ../personal/a.md )"],
+        ["a reference definition", "[x][1]\n\n[1]: ../personal/a.md"],
+        ["a reference definition in angle brackets", "[1]: <../personal/a.md>"],
+        ["an indented reference definition", "   [1]: ../personal/a.md 'x'"],
+        ["a link that is no sibling", "[x](./sub/a.md)"],
+    ])("refuses a link to another scope through %s", (_, body) => {
+        expect(withBody(body).kind).toBe("unparseable");
+    });
+
+    it.each([
+        "[x](./other-fact.md)",
+        '[x](./other-fact.md "title")',
+        "[x](<./other-fact.md>)",
+        "[x](./other-fact.md#why)",
+        "[1]: ./other-fact.md",
+        "[x](https://example.com/page)",
+        "[x](#heading)",
+        "[x]: not a definition because it has no colon-space",
+    ])("takes the link %p to a fact beside it, or none to a file", (body) => {
+        expect(withBody(body).kind).toBe("ok");
+    });
+});
+
+describe("parseFact and repeated keys", () => {
+    const edit = (replace: string, by: string) =>
+        parseFact(CANONICAL.replace(replace, by), "likes-tea");
+
+    it.each([
+        ["top level", "tags:\n", "type: feedback\ntags:\n"],
+        ["in a mapping", "  importance: 7", "  importance: 7\n  importance: 8"],
+        [
+            "in a nested mapping",
+            '    node_type: "memory"',
+            '    node_type: "memory"\n    node_type: "other"',
+        ],
+    ])("refuses a key repeated at the %s", (_, replace, by) => {
+        const read = edit(replace, by);
+        expect(read.kind).toBe("unparseable");
+        expect(read.kind === "unparseable" && read.reason).toContain(
+            "repeats the key",
+        );
+    });
+
+    it("takes the same key in sibling mappings and list items", () => {
+        const text = CANONICAL.replace(
+            "---\n\nAsked",
+            [
+                "verified:",
+                "  - by: human:owner",
+                `    at: ${LATER}`,
+                "  - by: human:other",
+                `    at: ${LATER}`,
+                "---",
+                "",
+                "Asked",
+            ].join("\n"),
+        );
+        expect(parseFact(text, "likes-tea").kind).toBe("ok");
+    });
+
+    it("takes a block scalar that holds lines like keys", () => {
+        const text = CANONICAL.replace(
+            "  Prefers tea to coffee in the afternoon.",
+            "  note: one\n  note: two",
+        );
+        expect(parseFact(text, "likes-tea").kind).toBe("ok");
+    });
+
+    it("takes a quoted scalar over several lines that holds lines like keys", () => {
+        const text = CANONICAL.replace(
+            "---\n\nAsked",
+            'note: "a\n  type: 1\n  type: 2"\n---\n\nAsked',
+        );
+        expect(parseFact(text, "likes-tea").kind).toBe("ok");
+    });
+});
+
+describe("renderFact and wide text", () => {
+    it("wraps by the columns the text takes, not by its code points", () => {
+        const description = `${"日本語".repeat(12)} ${"日本語".repeat(12)}`;
+        const text = renderFact(fact({ description }));
+        const lines = text.split("\n");
+        const at = lines.indexOf("description: >-");
+        const wrapped = lines.slice(at + 1, at + 3);
+        expect(wrapped.map((line) => Bun.stringWidth(line))).toEqual([
+            2 + 36 * 2,
+            2 + 36 * 2,
+        ]);
+        expect(
+            parseFact(text, "likes-tea").kind === "ok" &&
+                (parseFact(text, "likes-tea") as { fact: Fact }).fact
+                    .description,
+        ).toBe(description);
+    });
+
+    it("keeps no line past 80 columns", () => {
+        const description = Array.from({ length: 12 }, () => "语言文字").join(
+            " ",
+        );
+        for (const line of renderFact(fact({ description })).split("\n")) {
+            expect(Bun.stringWidth(line)).toBeLessThanOrEqual(80);
+        }
+    });
+});
+
+describe("parseFact and times", () => {
+    it.each([
+        "2026-02-31T00:00:00.000Z",
+        "2026-04-31T00:00:00.000Z",
+        "2026-13-01T00:00:00.000Z",
+        "2025-02-29T00:00:00.000Z",
+    ])("refuses %s, a day the calendar lacks", (day) => {
+        const read = parseFact(CANONICAL.replace(AT, day), "likes-tea");
+        expect(read.kind).toBe("unparseable");
+    });
+
+    it("takes the last day of a leap February", () => {
+        const read = parseFact(
+            CANONICAL.replaceAll(AT, "2028-02-29T23:59:59.999Z"),
+            "likes-tea",
+        );
+        expect(read.kind).toBe("ok");
+    });
+});

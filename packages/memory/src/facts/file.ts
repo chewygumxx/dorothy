@@ -117,7 +117,10 @@ export function splitFrontmatter(
     };
 }
 
-// Words onto lines of at most width code points; a longer word keeps a
+// The columns text takes on a terminal: a wide character is two.
+export const columns = (text: string) => Bun.stringWidth(text);
+
+// Words onto lines of at most width columns; a longer word keeps a
 // line of its own. Text is normalised first, so no line begins with a
 // space and folding gives the text back.
 export function wrap(text: string, width: number): string[] {
@@ -126,7 +129,7 @@ export function wrap(text: string, width: number): string[] {
     for (const word of text.split(" ")) {
         if (line === "") {
             line = word;
-        } else if (characters(line) + 1 + characters(word) <= width) {
+        } else if (columns(line) + 1 + columns(word) <= width) {
             line += ` ${word}`;
         } else {
             lines.push(line);
@@ -189,10 +192,12 @@ export function oneOf<T extends string>(
 const TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 export function time(value: unknown, key: string): string {
+    // The engine rolls 2026-02-31 over to March, so the day must come back.
     if (
         typeof value !== "string" ||
         !TIME.test(value) ||
-        !Number.isFinite(Date.parse(value))
+        !Number.isFinite(Date.parse(value)) ||
+        new Date(value).toISOString() !== value
     ) {
         throw new Problem(`${key} is not a time`);
     }
@@ -210,8 +215,20 @@ export function only(
     }
 }
 
-const LINK = /\]\(([^)\s]*\.md(?:#[^)\s]*)?)\)/g;
+// Where a link goes: an inline link's destination, bare or in angle
+// brackets, with an optional title after it, and a reference definition's.
+const INLINE =
+    /\]\(\s*(?:<([^>\n]*)>|([^)\s]*))(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?\s*\)/g;
+const DEFINITION = /^ {0,3}\[[^\]\n]*\]:[ \t]*(?:<([^>\n]*)>|(\S+))/gm;
 const SIBLING = /^\.\/([^#]*)\.md(?:#[^)\s]*)?$/;
+
+// The destinations in a body that name a Markdown file, whatever case the
+// extension is in.
+function markdownLinks(body: string): string[] {
+    return [...body.matchAll(INLINE), ...body.matchAll(DEFINITION)]
+        .map((match) => match[1] ?? match[2] ?? "")
+        .filter((target) => /\.md(?:#.*)?$/i.test(target));
+}
 
 export function checkBody(body: string): string {
     if (characters(body) > FACT_LIMITS.body) {
@@ -219,8 +236,8 @@ export function checkBody(body: string): string {
             `its body is ${characters(body)} characters, over ${FACT_LIMITS.body}`,
         );
     }
-    for (const [, target] of body.matchAll(LINK)) {
-        const stem = SIBLING.exec(target as string)?.[1];
+    for (const target of markdownLinks(body)) {
+        const stem = SIBLING.exec(target)?.[1];
         if (stem === undefined || !FACT_NAME.test(stem)) {
             throw new Problem(`it links to ${target}, not a fact beside it`);
         }
@@ -333,6 +350,83 @@ export function readImportance(value: unknown): number | null {
     return importance as number | null;
 }
 
+// A key plain or quoted, opening a line, and what follows its colon.
+const KEY_LINE =
+    /^( *)(?:"((?:[^"\\]|\\.)*)"|'((?:[^']|'')*)'|([^\s#'"[\]{},&*!|>%@`?:-][^:#]*?))[ \t]*:(?:[ \t]+(.*))?$/;
+
+// The first key a block mapping holds twice, which YAML's reader would
+// settle by keeping the last. Only block mappings are read, by their
+// indentation; a block scalar's lines, a quoted scalar's, a flow mapping
+// and the maps of a list's items are not.
+export function repeatedKey(yaml: string): string | null {
+    const levels: { indent: number; keys: Set<string> }[] = [];
+    let scalar: number | null = null;
+    let quote: string | null = null;
+    for (const line of yaml.split("\n")) {
+        if (quote !== null) {
+            quote = closesQuote(line, quote) ? null : quote;
+            continue;
+        }
+        const indent = line.length - line.trimStart().length;
+        const text = line.trim();
+        if (text === "" || text.startsWith("#")) {
+            continue;
+        }
+        if (scalar !== null) {
+            if (indent > scalar) {
+                continue;
+            }
+            scalar = null;
+        }
+        while ((levels.at(-1)?.indent ?? -1) > indent) {
+            levels.pop();
+        }
+        if (text.startsWith("-")) {
+            continue;
+        }
+        const match = KEY_LINE.exec(line);
+        if (match === null) {
+            continue;
+        }
+        const key = match[2] ?? match[3] ?? match[4] ?? "";
+        const level = levels.at(-1);
+        if (level !== undefined && level.indent === indent) {
+            if (level.keys.has(key)) {
+                return key;
+            }
+            level.keys.add(key);
+        } else {
+            levels.push({ indent, keys: new Set([key]) });
+        }
+        const value = (match[5] ?? "").trim();
+        if (/^[|>]/.test(value)) {
+            scalar = indent;
+        } else if (
+            /^["']/.test(value) &&
+            !closesQuote(value.slice(1), value[0] as string)
+        ) {
+            quote = value[0] as string;
+        }
+    }
+    return null;
+}
+
+// Whether the rest of a quoted scalar's line holds its closing quote.
+function closesQuote(text: string, quote: string): boolean {
+    for (let at = 0; at < text.length; at += 1) {
+        if (quote === '"' && text[at] === "\\") {
+            at += 1;
+        } else if (text[at] === quote) {
+            if (quote === "'" && text[at + 1] === "'") {
+                at += 1;
+            } else {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 // The frontmatter as YAML, checked for hidden characters first.
 export function frontmatterOf(source: string): {
     data: Record<string, unknown>;
@@ -346,6 +440,10 @@ export function frontmatterOf(source: string): {
     const parts = splitFrontmatter(text);
     if (parts === null) {
         throw new Problem("it has no frontmatter");
+    }
+    const repeated = repeatedKey(parts.yaml);
+    if (repeated !== null) {
+        throw new Problem(`its frontmatter repeats the key ${repeated}`);
     }
     let data: unknown;
     try {

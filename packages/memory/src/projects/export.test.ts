@@ -291,6 +291,17 @@ describe("isGeneratedIndex", () => {
     });
 });
 
+describe("renderIndex and wide text", () => {
+    it("wraps a description by columns, as a terminal shows it", () => {
+        const word = "日本語".repeat(12);
+        const { text } = renderIndex([
+            entry("a", { description: `${word} ${word}` }),
+        ]);
+        const lines = text.split("\n").slice(1, 3);
+        expect(lines).toEqual([`  ${word}`, `  ${word}`]);
+    });
+});
+
 describe("snake-case files", () => {
     it.each([
         ["feedback_testing", "feedback-testing"],

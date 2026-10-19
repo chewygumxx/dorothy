@@ -285,7 +285,9 @@ outside it but in `metadata`, and every value of the type and pattern
 its key expects. A value that parsed as something else, such as a title
 written `null` or `1e3` by hand or in a repository, fails rather than
 being coerced back; in the store the file is restored or kept aside, and
-from a repository it is not imported.
+from a repository it is not imported. So does a key a block mapping holds
+twice, which YAML would settle silently by keeping the last, and a time
+the calendar lacks, such as 2026-02-31.
 
 A fact in the store that passes the check but is not in this canonical
 form, after a hand edit, is rewritten in it in the commit that sweeps

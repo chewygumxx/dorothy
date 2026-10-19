@@ -15,6 +15,7 @@
 
 import { createHash } from "node:crypto";
 import {
+    columns,
     FACT_LIMITS,
     FACT_NAME,
     type Fact,
@@ -23,7 +24,7 @@ import {
     Problem,
     readCommon,
 } from "../facts/file.js";
-import { characters, normalise } from "../memory/sidecar.js";
+import { normalise } from "../memory/sidecar.js";
 
 export type ExportedFact = Pick<
     Fact,
@@ -144,7 +145,7 @@ function described(text: string, width: number): string[] {
     for (const word of text.split(" ")) {
         if (line === "") {
             line = unlisted(word);
-        } else if (characters(line) + 1 + characters(word) <= width) {
+        } else if (columns(line) + 1 + columns(word) <= width) {
             line += ` ${word}`;
         } else {
             lines.push(line);
