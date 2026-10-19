@@ -343,7 +343,9 @@ in its query alone is not seen), the budget and the snapshot's counts.
   `--dry-run` counts the calls, none for a `lookup`, two for an
   abstention, three for the rest and four for an update with a `note`,
   for each system, and needs no key; on a resume it counts only what is
-  left, a paid answer by the judgements it lacks.
+  left, a paid answer by the judgements it lacks, and says how many
+  questions and systems are left to ask or judge, as in
+  `dry run: 5 questions, 1 systems, 2 left to ask; 5 model calls`.
 - A resume takes the systems, budget and questions from `run.json`, and
   refuses `--systems`, `--budget`, `--full-budget` or `--retrieval-only`
   given with it. It refuses a snapshot taken at another time, or answer
