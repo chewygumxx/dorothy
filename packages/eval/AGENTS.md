@@ -64,7 +64,8 @@ options declared and described for `--help`, its failures as
   checkout (found by the package's place, not by `.git`) or a sibling
   worktree, follows a
   link only at the top of what it copies, counts the rest and swaps a
-  whole copy in; `readSnapshot`, which tells a missing record from a
+  whole copy in, its record set aside before and written after;
+  `readSnapshot`, which tells a missing record from a
   bad one; `workEnv`; and the `snapshot` command.
 - `questions/file.ts`: the question file, its schema and ids; the
   commands that rewrite it do so through `updateQuestions`, which reads,

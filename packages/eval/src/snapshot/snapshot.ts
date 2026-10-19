@@ -250,9 +250,22 @@ export async function takeSnapshot(
     }
     const copy = snapshotDir(target);
     const old = `${copy}.old`;
+    // The old record, set aside while the copy is swapped, so that no
+    // record stands beside a copy it does not describe.
+    const recordFile = infoPath(target);
+    const keptInfo = `${recordFile}.old`;
     // A swap a crash cut short left the old copy aside, the only one.
     if (!(await exists(copy)) && (await exists(old))) {
         await rename(old, copy);
+    }
+    // And its record, if the copy is the old one still: no `old` copy
+    // aside means the swap had not begun, or the copy was put back.
+    if (
+        !(await exists(recordFile)) &&
+        (await exists(keptInfo)) &&
+        !(await exists(old))
+    ) {
+        await rename(keptInfo, recordFile);
     }
     const held = (await exists(infoPath(target))) || (await exists(copy));
     if (held && options.replace !== true) {
@@ -290,9 +303,16 @@ export async function takeSnapshot(
                 (await count(join(partial, "facts"), markdown)),
             skippedLinks,
         };
+        // The record goes first, and the new one is written last: at any
+        // point a crash leaves either no record or the record of the copy
+        // in place, never the old record beside the new data. Any `old`
+        // or kept record left is stale: what it was aside from is back.
+        await rm(old, { recursive: true, force: true });
+        await rm(keptInfo, { force: true });
+        if (await exists(recordFile)) {
+            await rename(recordFile, keptInfo);
+        }
         if (await exists(copy)) {
-            // Any `old` left is stale: the copy it was aside from is back.
-            await rm(old, { recursive: true, force: true });
             await rename(copy, old);
         }
         try {
@@ -301,15 +321,16 @@ export async function takeSnapshot(
             if (await exists(old)) {
                 await rename(old, copy);
             }
+            if (await exists(keptInfo)) {
+                await rename(keptInfo, recordFile);
+            }
             throw error;
         }
         // The index was built from the old copy.
         await rm(join(target, "cache"), { recursive: true, force: true });
-        await writeAtomic(
-            infoPath(target),
-            `${JSON.stringify(info, null, 4)}\n`,
-        );
+        await writeAtomic(recordFile, `${JSON.stringify(info, null, 4)}\n`);
         await rm(old, { recursive: true, force: true });
+        await rm(keptInfo, { force: true });
         return info;
     } finally {
         await rm(partial, { recursive: true, force: true });

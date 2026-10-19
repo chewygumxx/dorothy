@@ -106,7 +106,9 @@ bun run eval -- snapshot --from ~/.local/share/dorothy --work ~/eval
   and the count of those skipped is said and kept in `snapshot.json`.
   A copy is made apart and swapped in whole, so a `--replace` that fails
   leaves the old snapshot, and one that succeeds drops the index built
-  from it.
+  from it. The old record is set aside before the swap and the new one
+  written after it, so a cut leaves no record, or the record of the copy
+  there, never the old record beside new data.
 - Every later command takes `--work` and runs with `HOME`,
   `XDG_DATA_HOME`, `XDG_CACHE_HOME`, `XDG_STATE_HOME` and
   `XDG_CONFIG_HOME` under it, so recall's index is built fresh in the

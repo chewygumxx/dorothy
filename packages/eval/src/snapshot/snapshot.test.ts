@@ -374,6 +374,78 @@ describe("a snapshot", () => {
         expect(existsSync(`${snapshotDir(work)}.old`)).toBe(false);
     });
 
+    describe("replacing, cut short", () => {
+        const record = () => join(work, "snapshot.json");
+        const at = (stamp: string) => ({
+            now: () => new Date(stamp),
+        });
+
+        it("never leaves the old record beside the new copy", async () => {
+            await takeSnapshot(data, work, at("2026-10-19T00:00:00.000Z"));
+            writeFileSync(join(data, "knowledge", "added.md"), "new\n");
+            // The new record cannot be written: a directory holds its name.
+            mkdirSync(`${record()}.tmp`);
+            await expect(
+                takeSnapshot(data, work, {
+                    replace: true,
+                    ...at("2026-10-20T00:00:00.000Z"),
+                }),
+            ).rejects.toThrow();
+            expect(
+                existsSync(join(snapshotDir(work), "knowledge", "added.md")),
+            ).toBe(true);
+            await expect(readSnapshot(work)).rejects.toThrow(
+                "holds no snapshot",
+            );
+            rmSync(`${record()}.tmp`, { recursive: true });
+            const again = await takeSnapshot(data, work, {
+                replace: true,
+                ...at("2026-10-21T00:00:00.000Z"),
+            });
+            expect((await readSnapshot(work)).at).toBe(again.at);
+            expect(readdirSync(work).sort()).toEqual(["data", "snapshot.json"]);
+            expect(readdirSync(join(work, "data"))).toEqual(["dorothy"]);
+        });
+
+        it("puts the old record back when the swap had not begun", async () => {
+            const first = await takeSnapshot(data, work);
+            // A cut after the record was set aside, before the copy was.
+            renameSync(record(), `${record()}.old`);
+            await expect(takeSnapshot(data, work)).rejects.toThrow(
+                "holds a snapshot already",
+            );
+            expect(await readSnapshot(work)).toEqual(first);
+            expect(existsSync(`${record()}.old`)).toBe(false);
+        });
+
+        it("puts both back when the cut came between the renames", async () => {
+            const first = await takeSnapshot(data, work);
+            renameSync(record(), `${record()}.old`);
+            renameSync(snapshotDir(work), `${snapshotDir(work)}.old`);
+            await expect(takeSnapshot(data, work)).rejects.toThrow(
+                "holds a snapshot already",
+            );
+            expect(await readSnapshot(work)).toEqual(first);
+            expect(existsSync(join(snapshotDir(work), "transcripts"))).toBe(
+                true,
+            );
+        });
+
+        it("keeps no old record once the new copy is in place", async () => {
+            await takeSnapshot(data, work);
+            // A cut after the new copy went in, before its record.
+            renameSync(record(), `${record()}.old`);
+            renameSync(snapshotDir(work), `${snapshotDir(work)}.old`);
+            mkdirSync(snapshotDir(work), { recursive: true });
+            await expect(takeSnapshot(data, work)).rejects.toThrow(
+                "holds a snapshot already",
+            );
+            await expect(readSnapshot(work)).rejects.toThrow(
+                "holds no snapshot",
+            );
+        });
+    });
+
     it("drops the old cache and files when replacing", async () => {
         await takeSnapshot(data, work);
         mkdirSync(join(work, "cache", "dorothy"), { recursive: true });
