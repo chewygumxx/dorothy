@@ -319,7 +319,7 @@ export function writeFact(
 // The keys another producer wrote, kept through a write; the user's
 // verifications only through the user's own, as they confirmed the
 // words a write by anyone else replaces.
-function foreignAfter(
+export function foreignAfter(
     foreign: Fact["foreign"],
     by: Writer,
 ): Pick<Fact, "foreign"> {

@@ -32,7 +32,12 @@ import {
     type Fact,
     nextOrigin,
 } from "../facts/file.js";
-import { listFacts, putFact, type Scope } from "../facts/store.js";
+import {
+    foreignAfter,
+    listFacts,
+    putFact,
+    type Scope,
+} from "../facts/store.js";
 import {
     characters,
     type Lock,
@@ -438,7 +443,10 @@ async function syncFact(
         held !== null && held.retired === null ? exportedForm(held) : null;
     const ours = live === null ? null : formHash(live);
     const their = theirs === null ? null : formHash(theirs);
-    const last = sync.synced[name];
+    // A name such as constructor is no record of the prototype's.
+    const last = Object.hasOwn(sync.synced, name)
+        ? sync.synced[name]
+        : undefined;
     if (ours === their) {
         setRecord(sync.synced, name, ours);
         return;
@@ -517,7 +525,9 @@ async function retireFact(
 }
 
 // The repository's version into the store, keeping what only the store
-// holds: tags, importance and when it was made.
+// holds: tags, importance, when it was made, the keys and sources another
+// producer wrote. A verification stays only if the user made the write,
+// as it confirmed words this one replaces.
 async function importFact(
     name: string,
     theirs: ExportedFact,
@@ -540,10 +550,31 @@ async function importFact(
                 : { from: held.provenance.from }),
         },
         retired: null,
+        ...foreignAfter(held?.foreign, "repo"),
+        ...(held?.otherSources === undefined
+            ? {}
+            : { otherSources: held.otherSources }),
     };
     sync.written.push(await putFact(sync.root, sync.scope, fact));
     sync.report.imported.push(name);
     sync.synced[name] = formHash(theirs);
+}
+
+// Whether MEMORY.md is still the text it was read as, or still absent.
+async function indexHolds(
+    path: string,
+    snapshot: string | null,
+): Promise<boolean> {
+    try {
+        const info = await lstat(path);
+        return (
+            info.isFile() &&
+            snapshot !== null &&
+            (await readFile(path, "utf8")) === snapshot
+        );
+    } catch (error) {
+        return codeOf(error) === "ENOENT" && snapshot === null;
+    }
 }
 
 // MEMORY.md is regenerated only when it holds nothing a hand wrote and
@@ -579,6 +610,11 @@ async function syncIndex(
         return;
     }
     try {
+        // As a fact's file is, only once it is found as it first was read.
+        if (!(await indexHolds(join(dir, INDEX), repo.index))) {
+            report.indexReason = "it changed while syncing";
+            return;
+        }
         await writeRepoFile(join(dir, INDEX), text);
         report.index = "written";
     } catch (error) {

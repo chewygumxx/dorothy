@@ -8,7 +8,8 @@
 //
 //
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import * as filesystem from "node:fs/promises";
 import {
     chmod,
     mkdir,
@@ -957,5 +958,125 @@ describe("syncProject", () => {
         } finally {
             await chmod(store, 0o700);
         }
+    });
+});
+
+describe("syncProject's store-only and concurrent cases", () => {
+    it("exports a new fact named constructor, as any other", async () => {
+        await putFact(data, SCOPE, storeFact("known"));
+        await sync();
+        await putFact(data, SCOPE, storeFact("constructor"));
+        const report = await sync();
+        expect(moved(report)).toEqual({
+            ...NOTHING,
+            exported: ["constructor"],
+        });
+        expect(await files()).toContain("constructor.md");
+        expect(
+            (await facts()).find((fact) => fact.name === "constructor")
+                ?.retired,
+        ).toBeNull();
+    });
+
+    it("imports a new constructor.md without a conflict", async () => {
+        await putRepo("constructor.md", repoFact("constructor", "Ctor."));
+        const report = await sync();
+        expect(moved(report)).toEqual({
+            ...NOTHING,
+            imported: ["constructor"],
+        });
+    });
+
+    it("keeps the foreign keys and other sources through an import", async () => {
+        await putFact(
+            data,
+            SCOPE,
+            storeFact("a", {
+                importance: 7,
+                foreign: { license: "MIT" },
+                otherSources: [{ resource: "https://example.com/source" }],
+            }),
+        );
+        await sync();
+        await putRepo("a.md", repoFact("a", "Edited in the repository."));
+        expect(moved(await sync())).toEqual({ ...NOTHING, imported: ["a"] });
+        expect((await facts())[0]).toMatchObject({
+            description: "Edited in the repository.",
+            importance: 7,
+            foreign: { license: "MIT" },
+            otherSources: [{ resource: "https://example.com/source" }],
+        });
+    });
+
+    it("drops a verification of words the repository replaced", async () => {
+        const verified = [{ by: "human:owner", at: NOW.toISOString() }];
+        await putFact(
+            data,
+            SCOPE,
+            storeFact("a", {
+                provenance: {
+                    origin: "external",
+                    by: "dorothy",
+                    at: NOW.toISOString(),
+                    created: NOW.toISOString(),
+                },
+                foreign: { license: "MIT", verified },
+            }),
+        );
+        await sync();
+        await putRepo("a.md", repoFact("a", "Edited in the repository."));
+        await sync();
+        expect((await facts())[0]?.foreign).toEqual({ license: "MIT" });
+    });
+
+    it("leaves a MEMORY.md a hand rewrote while sync ran", async () => {
+        const hand = "# Important\n\nDo not remove these notes.\n";
+        await putRepo("a.md", repoFact("a", "Fresh description."));
+        await putRepo("MEMORY.md", "- [Old](./a.md)\n  An old description.\n");
+        const original = filesystem.readFile;
+        let edited = false;
+        const spy = spyOn(filesystem, "readFile").mockImplementation(((
+            ...args: Parameters<typeof original>
+        ) =>
+            original(...args).then(async (snapshot) => {
+                if (args[0] === memory("MEMORY.md") && !edited) {
+                    edited = true;
+                    await writeFile(memory("MEMORY.md"), hand);
+                }
+                return snapshot;
+            })) as typeof original);
+        let report: SyncReport;
+        try {
+            report = await sync();
+        } finally {
+            spy.mockRestore();
+        }
+        expect(edited).toBe(true);
+        expect(report.index).toBe("left");
+        expect(report.indexReason).toBe("it changed while syncing");
+        expect(await readFile(memory("MEMORY.md"), "utf8")).toBe(hand);
+    });
+
+    it("leaves a MEMORY.md made while sync ran", async () => {
+        const hand = "# Written meanwhile\n";
+        await putRepo("a.md", repoFact("a", "Fresh description."));
+        const original = filesystem.readdir;
+        const spy = spyOn(filesystem, "readdir").mockImplementation(((
+            ...args: Parameters<typeof original>
+        ) =>
+            original(...args).then(async (names) => {
+                if (args[0] === memory("")) {
+                    await writeFile(memory("MEMORY.md"), hand);
+                }
+                return names;
+            })) as typeof original);
+        let report: SyncReport;
+        try {
+            report = await sync();
+        } finally {
+            spy.mockRestore();
+        }
+        expect(report.index).toBe("left");
+        expect(await readFile(memory("MEMORY.md"), "utf8")).toBe(hand);
     });
 });
