@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-07
-mtime: 2026-10-18
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Tags design
 description: "Design spec for Dorothy's tag vocabulary and shallow tagging"
@@ -161,7 +161,8 @@ user's edits could not be regenerated at all.
 - **Labels** are normalised as notes are (control characters to spaces,
   runs of whitespace to one, trimmed) and may not contain `;`, which
   separates lists in the views. Two labels are the same when their
-  lower-cased normal forms are equal.
+  lower-cased normal forms are equal. Label order compares their NFC
+  normal forms lexically, case folded first, independent of host locale.
 - **Labels are unique.** No label, preferred or alternative, belongs to two
   live concepts, or to a live concept and a deleted one. A label therefore
   resolves to at most one live concept.
@@ -248,8 +249,9 @@ The concepts you tag with:
 
 - `<tags/>` stands for none; `fixed="true"` marks the user's set.
 - The vocabulary is every live concept in label order, except those carried
-  only by hidden conversations (see Hidden conversations). It is read from
-  the index, synced first. `alt` and `broader` are absent when empty;
+  only by hidden conversations (see Hidden conversations). The vocabulary
+  is read from its file, and carriers from the catalogue as last seen,
+  without querying the index. `alt` and `broader` are absent when empty;
   `broader` gives preferred labels. Everything is escaped as the rest of the
   message is.
 - An empty vocabulary is `<vocabulary/>`.
@@ -444,7 +446,7 @@ tags(under?: string, limit?: number)
   to 20 and is clamped to 1 to 50; `more` counts the rest.
 - **`under`** limits the list to the concepts strictly beneath one concept,
   named by preferred or alternative label. An unknown label is the same tool
-  error as `search`'s.
+  error as `search`'s. A blank filter is treated as absent.
 - **`conversations`** counts the visible carriers. **`dateCreated` and
   `dateModified`** are the local dates of their earliest `first_at` and
   latest `last_at`, absent when there are none.
@@ -555,6 +557,10 @@ Parsing, in `tags-view.ts`, follows `edit-view.ts`:
   writing. An unparseable `tags.json` exits 1 with the path and reason
   before opening the editor.
 
+Reordering `Under:` alone is unchanged and keeps the concept's ownership.
+Count or sync failures are warned of; the editor remains available with
+zero counts when counts cannot be obtained.
+
 ### `dorothy --memory <phrase>`
 
 The view gains a `Tags:` line after `Hidden:`:
@@ -575,6 +581,9 @@ Tags: memory; tui
 - Changing it makes the set the user's (`by: "user"`). Emptying it hands it
   back: `tags` becomes `[]`, `fields.tags` is removed and `reviewedThrough`
   resets to 0, as for an emptied note.
+- An untouched `Tags:` line stays unchanged even if a concept was renamed
+  or deleted while the editor was open. A fixed set already rendered empty
+  because all its concepts are gone is handed back only with another edit.
 - While `tags.json` is unparseable the line is rendered as a comment saying
   so, and a `Tags:` line is an error.
 

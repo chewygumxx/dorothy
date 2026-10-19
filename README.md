@@ -1,6 +1,6 @@
 ---
 ctime: 2026-09-29
-mtime: 2026-10-19
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: "dorothy"
 description: "Conversational LLM interface"
@@ -138,6 +138,9 @@ bun run dev -- --memory <phrase>   # correct, pin or hide a chat's notes
 bun run dev -- --tags              # her tags, as a tree
 bun run dev -- --edit-tags         # correct, merge or delete her tags
 ```
+
+`--tags` needs the recall index to count conversations; it reports an
+error if the index cannot be opened.
 
 A note you change with `--memory` is yours and she never overwrites it;
 empty it to hand it back. Reviews cost tokens, which the `memory-cost`
