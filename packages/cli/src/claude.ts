@@ -722,7 +722,8 @@ function launchSettings(
 }
 
 // The environment claude runs in: the user's shell's, pointed at the
-// gateway.
+// gateway. The user's own base URL, which claude's hooks lose, goes on
+// as DOROTHY_ANTHROPIC_BASE_URL for the reviews of the hook.
 function launchEnv(
     shellEnv: Env,
     env: Env,
@@ -730,9 +731,13 @@ function launchEnv(
     on: boolean,
     noted: string | null,
 ): Env {
+    const proxy = env.ANTHROPIC_BASE_URL;
     const launchEnv: Env = {
         ...shellEnv,
         ANTHROPIC_BASE_URL: url,
+        ...(proxy === undefined || proxy === ""
+            ? {}
+            : { DOROTHY_ANTHROPIC_BASE_URL: proxy }),
         // Claude Code turns tool search off for a base URL not
         // Anthropic's; a user's own choice stands.
         ENABLE_TOOL_SEARCH: env.ENABLE_TOOL_SEARCH ?? "1",
@@ -744,6 +749,10 @@ function launchEnv(
     if (noted === null) {
         // A launch this one runs inside is not this one's.
         delete launchEnv.DOROTHY_LAUNCH;
+    }
+    if (proxy === undefined || proxy === "") {
+        // Nor is its proxy.
+        delete launchEnv.DOROTHY_ANTHROPIC_BASE_URL;
     }
     return launchEnv;
 }

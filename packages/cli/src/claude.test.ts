@@ -164,6 +164,25 @@ describe("runClaude", () => {
         expect(calls.env.ANTHROPIC_BASE_URL).toBe("http://127.0.0.1:4321");
     });
 
+    it("passes the user's own base URL on to the hook's reviews, and no other", async () => {
+        const { calls, deps } = harness();
+        deps.env = { ...deps.env, ANTHROPIC_BASE_URL: "http://proxy/x" };
+        await runClaude([], deps);
+        expect(calls.env.DOROTHY_ANTHROPIC_BASE_URL).toBe("http://proxy/x");
+        // Without one, a variable of an outer launch is not passed on.
+        const bare = harness();
+        bare.deps.env = {
+            ...bare.deps.env,
+            DOROTHY_ANTHROPIC_BASE_URL: "http://outer/x",
+        };
+        await runClaude([], bare.deps);
+        expect("DOROTHY_ANTHROPIC_BASE_URL" in bare.calls.env).toBe(false);
+        const empty = harness();
+        empty.deps.env = { ...empty.deps.env, ANTHROPIC_BASE_URL: "" };
+        await runClaude([], empty.deps);
+        expect("DOROTHY_ANTHROPIC_BASE_URL" in empty.calls.env).toBe(false);
+    });
+
     it("exits as claude did, a signal's code included", async () => {
         expect(await runClaude([], harness(3).deps)).toBe(3);
         // A real child killed by TERM, in claude's place.
