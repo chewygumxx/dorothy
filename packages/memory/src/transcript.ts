@@ -20,6 +20,7 @@ import {
     type TurnStats,
     xdgDir,
 } from "@dorothy/core";
+import type { Lock } from "./memory/sidecar.js";
 import { scrub } from "./scrub.js";
 
 // The body a session ran in: chat, or a host as its profile names it.
@@ -539,21 +540,29 @@ export class TranscriptWriter {
     readonly #path: string;
     #handle: FileHandle;
     readonly #now: () => Date;
+    readonly #lock: Lock | undefined;
     #pending: Promise<void> = Promise.resolve();
 
-    private constructor(path: string, handle: FileHandle, now: () => Date) {
+    private constructor(
+        path: string,
+        handle: FileHandle,
+        now: () => Date,
+        lock: Lock | undefined,
+    ) {
         this.#path = path;
         this.#handle = handle;
         this.#now = now;
+        this.#lock = lock;
     }
 
     static async open(
         path: string,
         now: () => Date = () => new Date(),
+        lock?: Lock,
     ): Promise<TranscriptWriter> {
         // New directories are the user's alone too.
         await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-        return new TranscriptWriter(path, await openAppend(path), now);
+        return new TranscriptWriter(path, await openAppend(path), now, lock);
     }
 
     // Appends are chained so un-awaited calls still land in call order, and a
@@ -570,10 +579,13 @@ export class TranscriptWriter {
                 : { sourceUuid: stamp.sourceUuid }),
         };
         const line = `${JSON.stringify(event)}\n`;
-        const write = this.#pending.then(async () => {
+        const append = async () => {
             await this.#follow();
             await this.#handle.appendFile(line, "utf8");
-        });
+        };
+        const write = this.#pending.then(() =>
+            this.#lock === undefined ? append() : this.#lock(append),
+        );
         this.#pending = write.catch(() => {});
         return write;
     }

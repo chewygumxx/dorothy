@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-08
-mtime: 2026-10-18
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Memory history design
 description: "Design spec for keeping Dorothy's data directory as a git repository, with recovery and a sealed mirror"
@@ -209,9 +209,9 @@ records, right after them:
   process's catch-up paths, is linted and either committed alone as
   `outside: <path>` or restored (see Recovery). So every commit has one
   author.
-- **Transcripts are never outside.** A live TUI appends to its transcript
-  outside the lock, between turn commits, so another process often finds
-  one changed. A transcript change that passes the append-only lint is
+- **Transcripts are never outside.** A live TUI appends under history's
+  shared write lock, between turn commits. Restores take the same lock,
+  closing the inode-check/append window. An append-only transcript change is
   the conversation's own, and whoever finds it commits it as
   `turn: <phrase> #<n>`; only one that fails is recovered.
 - **A failed commit** leaves its writes standing and is reported once per

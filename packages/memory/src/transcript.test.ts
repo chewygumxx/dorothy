@@ -20,6 +20,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { describeLookup } from "@dorothy/core";
+import { type Lock, writeAtomic } from "./memory/sidecar.js";
 import {
     cutTornTail,
     parseTranscript,
@@ -32,6 +33,47 @@ import {
     transcriptDir,
     transcriptPath,
 } from "./transcript.js";
+
+it("serialises appends with a restore under the shared write lock", async () => {
+    const folder = await mkdtemp(join(tmpdir(), "dorothy-append-restore-"));
+    const path = join(folder, "conversation.jsonl");
+    let queue = Promise.resolve<unknown>(undefined);
+    const lock: Lock = (work) => {
+        const next = queue.then(work);
+        queue = next.catch(() => {});
+        return next;
+    };
+    const writer = await TranscriptWriter.open(
+        path,
+        () => new Date("2026-10-08T00:00:00Z"),
+        lock,
+    );
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const restoring = lock(async () => {
+        entered.resolve();
+        await release.promise;
+        await writeAtomic(path, '{"v":1,"kind":"user","text":"restored"}\n');
+    });
+    await entered.promise;
+    let appended = false;
+    let turns: string[] = [];
+    const writing = writer.append({ kind: "user", text: "after" }).then(() => {
+        appended = true;
+    });
+    try {
+        await Bun.sleep(20);
+        expect(appended).toBe(false);
+    } finally {
+        release.resolve();
+        await restoring;
+        await writing;
+        await writer.close();
+        turns = (await readTranscript(path)).turns.map((turn) => turn.text);
+        await rm(folder, { recursive: true, force: true });
+    }
+    expect(turns).toEqual(["restored", "after"]);
+});
 
 const AT = new Date("2026-10-03T00:00:00.000Z");
 const clock = () => AT;

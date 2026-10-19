@@ -40,10 +40,10 @@ Of the `@dorothy` packages it depends on `core` alone.
 
 ## Files
 
-- `transcript.ts`: transcripts, private JSONL under
-  `$XDG_DATA_HOME/dorothy/`, of any body's sessions; a session event may
-  name its `source`, an event its `sourceUuid`. A tool call is scrubbed
-  of secrets (`scrub.ts`) and trimmed to 2,000 characters a side.
+- `transcript.ts`: private JSONL under `$XDG_DATA_HOME/dorothy/`.
+  Sessions name their `source`, events their `sourceUuid`. Tool text is
+  scrubbed (`scrub.ts`) and trimmed to 2,000 characters a side. Chat's
+  appends share history's lock with restores, through `TranscriptWriter`.
 - `memory/open.ts`: `openMemory` opens a chat's memory and returns its
   `createSession(turns)`, whose sessions are compacting, tracked by memory
   and recorded by `sessionRecorder` (`record.ts`). Each starts from the

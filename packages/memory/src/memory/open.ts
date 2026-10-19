@@ -541,7 +541,7 @@ export async function openMemory({
     }
     const { history, costUsd, clusters } = resumed;
     const compactable = compactionAllowed(config, resumed, warnings);
-    const transcript = await openWriter(path, warnings);
+    const transcript = await openWriter(path, warnings, launched?.history.lock);
     const service =
         config.memory.enabled && index !== null
             ? await startService({
@@ -644,9 +644,9 @@ export async function openMemory({
                     () => service?.stop(),
                     () => committer?.settled(),
                     () => syncer?.settled(),
+                    () => transcript?.close(),
                     () => launched?.close(),
                     () => index?.close(),
-                    () => transcript?.close(),
                 ]),
         },
     };
@@ -726,9 +726,10 @@ async function readResumed(
 async function openWriter(
     path: string,
     warnings: string[],
+    lock?: Lock,
 ): Promise<TranscriptWriter | null> {
     try {
-        return await TranscriptWriter.open(path);
+        return await TranscriptWriter.open(path, undefined, lock);
     } catch (error) {
         warnings.push(`transcript not saved: ${describeError(error)}`);
         return null;
