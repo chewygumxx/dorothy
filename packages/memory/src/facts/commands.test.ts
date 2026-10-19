@@ -224,6 +224,64 @@ describe("retiring what one conversation gave, and finding none", () => {
         );
     });
 
+    it.each([false, true])(
+        "names completed retirements after recorder failure (partial: %s)",
+        async (partial) => {
+            for (const [name, scope] of [
+                ["a", PERSONAL],
+                ["b", PROJECT],
+            ] as const) {
+                await putFact(
+                    dataRoot(env),
+                    scope,
+                    fact(name, {
+                        provenance: {
+                            origin: "external",
+                            by: "review",
+                            at: NOW.toISOString(),
+                            created: NOW.toISOString(),
+                            from: `${PHRASE}#2`,
+                        },
+                    }),
+                );
+            }
+            const directory = dirname(factPath(dataRoot(env), PROJECT, "b"));
+            if (partial) {
+                await chmod(directory, 0o500);
+            }
+            try {
+                expect(
+                    await runRetireFrom(PHRASE, {
+                        ...options(),
+                        openHistory: async (index) => ({
+                            ...((await history(index)) as HistoryHandle),
+                            recorder: async () => {
+                                throw new Error("recorder unavailable");
+                            },
+                        }),
+                    }),
+                ).toBe(1);
+            } finally {
+                await chmod(directory, 0o700);
+            }
+            expect(err.text).toContain("recorder unavailable");
+            expect(err.text).toContain(
+                partial
+                    ? "retired before it failed: personal/a\n"
+                    : "retired before it failed: personal/a, github.com/chewygumxx/dorothy/b\n",
+            );
+            expect(out.text).toBe("");
+            expect(
+                (
+                    await readFactFile(
+                        factPath(dataRoot(env), PERSONAL, "a"),
+                        "a",
+                    )
+                ).kind,
+            ).toBe("ok");
+        },
+    );
+
     it("names the facts retired before a write failed", async () => {
         const given = (name: string, scope: Scope) =>
             putFact(

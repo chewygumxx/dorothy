@@ -548,6 +548,7 @@ export function retireFacts(
                       paths,
                       `retire: ${paths.length} ${paths.length === 1 ? "fact" : "facts"} from ${phrase}`,
                   );
+        let failure: string | undefined;
         try {
             for (const { scope, fact } of facts) {
                 if (
@@ -564,14 +565,19 @@ export function retireFacts(
                 retired.push(label({ scope, name: fact.name }));
             }
         } catch (error) {
-            await record();
-            return {
-                kind: "failed" as const,
-                reason: describeError(error),
-                retired,
-            };
+            failure = describeError(error);
         }
-        await record();
-        return { kind: "done" as const, retired };
+        try {
+            await record();
+        } catch (error) {
+            const reason = describeError(error);
+            failure =
+                failure === undefined
+                    ? reason
+                    : `${failure}; history: ${reason}`;
+        }
+        return failure === undefined
+            ? { kind: "done" as const, retired }
+            : { kind: "failed" as const, reason: failure, retired };
     });
 }

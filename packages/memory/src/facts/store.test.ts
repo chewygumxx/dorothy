@@ -438,6 +438,52 @@ describe("a failure part way", () => {
         expect(commits).toEqual([]);
     });
 
+    it.each([false, true])(
+        "names completed retirements when recording fails (partial: %s)",
+        async (partial) => {
+            await writeFact(store(), input({ name: "a", from: PHRASE }));
+            await writeFact(
+                store(),
+                input({ name: "b", from: PHRASE, scope: PROJECT }),
+            );
+            const directory = scopeDir(root, PROJECT);
+            if (partial) {
+                await chmod(directory, 0o500);
+            }
+            let result: Awaited<ReturnType<typeof retireFacts>>;
+            try {
+                result = await retireFacts(
+                    {
+                        ...store(),
+                        recorder: async () => {
+                            throw new Error("recorder unavailable");
+                        },
+                    },
+                    PHRASE,
+                    { by: "user", why: "Wrong." },
+                );
+            } finally {
+                await chmod(directory, 0o700);
+            }
+            expect(result).toMatchObject({
+                kind: "failed",
+                retired: partial
+                    ? ["personal/a"]
+                    : ["personal/a", "github.com/chewygumxx/dorothy/b"],
+            });
+            expect(result.kind === "failed" && result.reason).toContain(
+                "recorder unavailable",
+            );
+            if (partial) {
+                expect(result.kind === "failed" && result.reason).toContain(
+                    "EACCES",
+                );
+            }
+            expect((await read(PERSONAL, "a")).retired).not.toBeNull();
+            expect((await read(PROJECT, "b")).retired === null).toBe(partial);
+        },
+    );
+
     it("records and names the facts retired before a write failed", async () => {
         await writeFact(store(), input({ name: "a", from: PHRASE }));
         await writeFact(
