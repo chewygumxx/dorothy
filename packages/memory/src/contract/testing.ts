@@ -9,10 +9,11 @@
 //
 
 // A fake engine for the contract's tests: fixed items, and the calls it
-// was given, in order.
+// was given, in order, and the searches asked of it.
 
 import { conversationId, knowledgeId, type MemoryHit } from "@dorothy/core";
 import type {
+    EngineSearch,
     EpisodeItem,
     KnowledgeItem,
     MemoryEngine,
@@ -76,17 +77,21 @@ export type FakeParts = {
     hits: MemoryHit[];
 };
 
-export function fakeEngine(
-    parts: Partial<FakeParts> = {},
-): MemoryEngine & { calls: string[]; parts: FakeParts } {
+export function fakeEngine(parts: Partial<FakeParts> = {}): MemoryEngine & {
+    calls: string[];
+    searches: EngineSearch[];
+    parts: FakeParts;
+} {
     const all: FakeParts = {
         knowledge: parts.knowledge ?? [],
         episodes: parts.episodes ?? [],
         hits: parts.hits ?? [],
     };
     const calls: string[] = [];
+    const searches: EngineSearch[] = [];
     return {
         calls,
+        searches,
         parts: all,
         async index() {
             calls.push("index");
@@ -94,6 +99,7 @@ export function fakeEngine(
         },
         async search(request) {
             calls.push(`search ${request.query}`);
+            searches.push(request);
             return all.hits.slice(0, request.limit);
         },
         async rankKnowledge(request) {
