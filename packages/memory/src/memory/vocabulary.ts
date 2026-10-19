@@ -89,8 +89,9 @@ export const isMerged = (term: Term | undefined): term is Merged =>
 export const labelKey = (label: string) =>
     normalise(label).normalize("NFC").toLowerCase();
 
+const lexical = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 export const byLabel = (a: string, b: string) =>
-    labelKey(a).localeCompare(labelKey(b)) || a.localeCompare(b);
+    lexical(labelKey(a), labelKey(b)) || lexical(a, b);
 
 export function labelProblem(label: string): string | null {
     if (label === "") {
@@ -371,14 +372,14 @@ function readDeleted(
     id: string,
     value: Record<string, unknown>,
 ): Term | string {
-    return typeof value.deleted === "string" && isList(value.labels)
-        ? {
-              deleted: value.deleted,
-              labels: value.labels
-                  .map(normalise)
-                  .filter((label) => label !== ""),
-          }
-        : `${id}'s deleted or labels is not as written`;
+    if (typeof value.deleted !== "string" || !isList(value.labels)) {
+        return `${id}'s deleted or labels is not as written`;
+    }
+    const labels = value.labels.map(normalise);
+    const problem = labels.map(labelProblem).find((p) => p !== null);
+    return problem === undefined
+        ? { deleted: value.deleted, labels }
+        : `${id}: ${problem}`;
 }
 
 function readMerged(id: string, value: Record<string, unknown>): Term | string {

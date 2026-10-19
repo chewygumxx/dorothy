@@ -167,6 +167,36 @@ describe("parseVocabulary", () => {
         expect(reason({ v: 1, rev: 0, concepts })).toBe(expected);
     });
 
+    it.each([
+        { prefLabel: "", scopeNote: "note", by: "user", at: AT },
+        { prefLabel: "label", scopeNote: "", by: "user", at: AT },
+        { prefLabel: "label", scopeNote: "note", by: "other", at: AT },
+        { deleted: AT, labels: ["a;b"] },
+        { deleted: AT, labels: ["x".repeat(51)] },
+        { deleted: AT, labels: [" "] },
+        { deleted: 12, labels: ["label"] },
+        { deleted: AT, labels: "label" },
+        { mergedInto: 12, at: AT },
+        { mergedInto: ID.memory, at: 12 },
+    ])("rejects malformed term %j", (term) => {
+        expect(
+            parsed({ v: 1, rev: 1, concepts: { [ID.gone]: term } }).kind,
+        ).toBe("unparseable");
+    });
+
+    it("orders non-ASCII labels independently of the host locale", () => {
+        const v = vocabulary({
+            [ID.tui]: concept("ä"),
+            [ID.memory]: concept("z"),
+            [ID.dorothy]: concept("a"),
+        });
+        expect(liveConcepts(v).map(([, term]) => term.prefLabel)).toEqual([
+            "a",
+            "z",
+            "ä",
+        ]);
+    });
+
     it("compares labels in normal form, case aside", () => {
         // The NFD spelling of é (e, then a combining accent) is the NFC one.
         expect(labelKey("Cafe\u0301")).toBe(labelKey("CAFÉ"));
@@ -284,6 +314,60 @@ describe("the file", () => {
             kind: "unchanged",
             vocabulary: read.kind === "ok" ? read.vocabulary : EMPTY_VOCABULARY,
         });
+    });
+
+    it("serialises queued updates inside the supplied lock", async () => {
+        const path = join(dir, "tags.json");
+        const gate = Promise.withResolvers<void>();
+        const entered = Promise.withResolvers<void>();
+        let held = false;
+        let calls = 0;
+        const lock = async <T>(work: () => Promise<T>) => {
+            calls++;
+            held = true;
+            if (calls === 1) {
+                entered.resolve();
+                await gate.promise;
+            }
+            try {
+                return await work();
+            } finally {
+                held = false;
+            }
+        };
+        const change = (id: string, label: string) => (v: Vocabulary) => {
+            expect(held).toBe(true);
+            return { ...v, concepts: { ...v.concepts, [id]: concept(label) } };
+        };
+        const first = updateVocabulary(path, change(ID.memory, "memory"), lock);
+        await entered.promise;
+        const second = updateVocabulary(path, change(ID.tui, "tui"), lock);
+        expect(calls).toBe(1);
+        gate.resolve();
+        expect((await first).kind).toBe("written");
+        expect((await second).kind).toBe("written");
+        expect(await readVocabulary(path)).toMatchObject({
+            kind: "ok",
+            vocabulary: {
+                rev: 2,
+                concepts: {
+                    [ID.memory]: { prefLabel: "memory" },
+                    [ID.tui]: { prefLabel: "tui" },
+                },
+            },
+        });
+    });
+
+    it("reports a failed change without altering the file", async () => {
+        const path = join(dir, "tags.json");
+        await writeFile(path, JSON.stringify(SAMPLE));
+        const before = await readFile(path, "utf8");
+        expect(
+            await updateVocabulary(path, () => {
+                throw new Error("change refused");
+            }),
+        ).toEqual({ kind: "failed", reason: "change refused" });
+        expect(await readFile(path, "utf8")).toBe(before);
     });
 
     it("never writes over a broken file", async () => {
