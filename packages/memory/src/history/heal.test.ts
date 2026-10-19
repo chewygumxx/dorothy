@@ -20,6 +20,7 @@ import {
     recoverFile,
     stamp,
 } from "./heal.js";
+import { isoRepo } from "./iso.js";
 import type { MemoryRepo } from "./repo.js";
 import { put, removeRoots, TEST_ENV, tempRoot } from "./testing.js";
 
@@ -54,6 +55,22 @@ describe("stamp", () => {
 });
 
 describe("goodVersion", () => {
+    it("stops after the newest 200 path commits", async () => {
+        const history = isoRepo(join(tempRoot(), "depth"));
+        await history.init();
+        put(history.root, "tags.json", vocabulary(1));
+        const good = await history.commit(["tags.json"], "good");
+        for (let count = 0; count < 199; count += 1) {
+            put(history.root, "tags.json", `{${count}`);
+            await history.commit(["tags.json"], `broken ${count}`);
+        }
+        expect((await goodVersion(history, "tags.json"))?.sha).toBe(
+            good as string,
+        );
+        put(history.root, "tags.json", "{last");
+        await history.commit(["tags.json"], "last");
+        expect(await goodVersion(history, "tags.json")).toBeNull();
+    });
     it("finds the newest committed version that passes the lint", async () => {
         await commitFile("tags.json", vocabulary(1), "one");
         const two = await commitFile("tags.json", vocabulary(2), "two");
@@ -69,6 +86,13 @@ describe("goodVersion", () => {
 });
 
 describe("recoverFile", () => {
+    it("uses null for a restored file that had no broken copy", async () => {
+        await commitFile("tags.json", vocabulary(1), "one");
+        rmSync(join(root, "tags.json"));
+        expect(
+            (await recoverFile(repo, root, "tags.json", NOW)).broken,
+        ).toBeNull();
+    });
     it("restores the newest good version and keeps the broken bytes", async () => {
         await commitFile("tags.json", vocabulary(1), "one");
         const two = await commitFile("tags.json", vocabulary(2), "two");
@@ -159,6 +183,17 @@ describe("putBack", () => {
 });
 
 describe("keepCopy", () => {
+    it("ignores hand-placed backups when reusing a broken copy", async () => {
+        put(root, "broken/tags.json.bak", "broken");
+        expect(
+            await keepCopy(
+                root,
+                "tags.json",
+                new TextEncoder().encode("broken"),
+                NOW,
+            ),
+        ).toBe("broken/tags.json.2026-10-08T00-00-00-000Z");
+    });
     it("files a copy under broken/, beside the path it came from", async () => {
         expect(await keepCopy(root, TRANSCRIPT, new Uint8Array([1]), NOW)).toBe(
             "broken/transcripts/a-b-c-d.jsonl.2026-10-08T00-00-00-000Z",
