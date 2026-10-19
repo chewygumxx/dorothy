@@ -256,7 +256,7 @@ interface System {
 type Asked = { text: string; asOf: string; project: string | null;
     exclude: string | null };
 // Contract ids best first, for evidence recall, and the context the
-// answering model reads.
+// answering model reads; every ranked id is in the context.
 type Retrieved = { ranked: string[]; context: string };
 ```
 
@@ -268,10 +268,11 @@ opened once for the run:
    the question, then `open` on the top hits, until the budget is spent.
    It is what a harness gets today, without a model choosing the calls.
    The block takes 40% of the budget and the hits the rest; its ranked
-   ids are the hits, then what the block gave besides.
+   ids are the hits that fitted, then what the block gave besides.
 2. **`lexical`**: a bound from below. Every conversation turn and
    knowledge file scored by how many of the question's terms it holds,
-   best first, no index: what plain `grep` would find.
+   best first, no index: what plain `grep` would find; its ranked
+   ids are the ones its context holds.
 3. **`full`**: a bound from above, where it fits. Every conversation and
    knowledge file, newest first, until a budget of its own
    (`--full-budget`, 400,000 characters by default, some 100,000

@@ -11,10 +11,10 @@
 // Her memory as a harness gets it today, without a model choosing the
 // calls: the opening block for the question's project, then search over
 // every scope, then the top hits opened until the budget is spent. Its
-// ranked ids are the hits, then the block's.
+// ranked ids are the hits that fitted, then the block's.
 
 import { type Corpus, clip, knowledgeText, passage } from "./corpus.js";
-import { packItems, type System } from "./system.js";
+import { packed, type System } from "./system.js";
 import { termsOf } from "./terms.js";
 
 // The block's share of the budget; the hits take the rest.
@@ -56,17 +56,16 @@ export function dorothySystem(corpus: Corpus): System {
                 };
             });
             const left = budget - block.text.length - 1;
-            const found = hits.map((hit) => hit.id);
+            const fitted = packed(opened, Math.max(0, left));
+            const found = new Set(fitted.ids);
             return {
-                // Her search's hits, then what the block gave besides.
+                // Her search's hits that fitted, then what the block gave
+                // besides.
                 ranked: [
-                    ...found,
-                    ...block.ids.filter((id) => !found.includes(id)),
+                    ...fitted.ids,
+                    ...block.ids.filter((id) => !found.has(id)),
                 ],
-                context: clip(
-                    `${block.text}\n${packItems(opened, Math.max(0, left))}`,
-                    budget,
-                ),
+                context: clip(`${block.text}\n${fitted.text}`, budget),
             };
         },
     };

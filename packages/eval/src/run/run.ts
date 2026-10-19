@@ -323,7 +323,7 @@ async function ask(
                           retrieved.ranked.slice(0, 10),
                           question.evidence,
                       ),
-                      // For full, whether it fitted the context.
+                      // Whether it is anywhere in the context, which every ranked id is.
                       inContext: hasEvidence(
                           retrieved.ranked,
                           question.evidence,

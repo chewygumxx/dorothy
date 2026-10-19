@@ -12,37 +12,49 @@
 // the budget. Its ranked ids are what fitted.
 
 import { type Corpus, conversationText, knowledgeText } from "./corpus.js";
-import { packItems, type System } from "./system.js";
+import { packed, type System } from "./system.js";
 
 export function fullSystem(corpus: Corpus): System {
+    // Everything, newest first, with its text, made once for the corpus; a
+    // question only leaves its own conversation out.
+    let items: {
+        id: string;
+        at: string;
+        phrase: string | null;
+        text: string;
+    }[];
+    const everything = () => {
+        items ??= [
+            ...[...corpus.conversations.values()].map((each) => ({
+                id: each.id,
+                at: each.lastAt,
+                phrase: each.phrase,
+                text: conversationText(each),
+            })),
+            ...[...corpus.knowledge.values()].map((each) => ({
+                id: each.id,
+                at: each.at,
+                phrase: null,
+                text: knowledgeText(each),
+            })),
+        ].sort(
+            (a, b) =>
+                (a.at < b.at ? 1 : a.at > b.at ? -1 : 0) ||
+                (a.id < b.id ? -1 : 1),
+        );
+        return items;
+    };
     return {
         name: "full",
         async retrieve(asked, budget) {
-            const items = [
-                ...[...corpus.conversations.values()]
-                    .filter((each) => each.phrase !== asked.exclude)
-                    .map((each) => ({
-                        id: each.id,
-                        at: each.lastAt,
-                        text: conversationText(each),
-                    })),
-                ...[...corpus.knowledge.values()].map((each) => ({
-                    id: each.id,
-                    at: each.at,
-                    text: knowledgeText(each),
-                })),
-            ].sort(
-                (a, b) =>
-                    (a.at < b.at ? 1 : a.at > b.at ? -1 : 0) ||
-                    (a.id < b.id ? -1 : 1),
+            const fitted = packed(
+                everything().filter(
+                    (each) =>
+                        asked.exclude === null || each.phrase !== asked.exclude,
+                ),
+                budget,
             );
-            const context = packItems(items, budget);
-            return {
-                ranked: items
-                    .map((each) => each.id)
-                    .filter((id) => context.includes(`<item id="${id}">`)),
-                context,
-            };
+            return { ranked: fitted.ids, context: fitted.text };
         },
     };
 }

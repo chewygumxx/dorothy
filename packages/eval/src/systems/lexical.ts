@@ -12,7 +12,7 @@
 // of the question's terms it holds, with no index, as grep would find.
 
 import { type Corpus, knowledgeText, passage } from "./corpus.js";
-import { packItems, type System } from "./system.js";
+import { packed, type System } from "./system.js";
 import { scoreOf, termsOf } from "./terms.js";
 
 type Scored = { id: string; score: number; at: string; text: () => string };
@@ -32,12 +32,10 @@ export function lexicalSystem(corpus: Corpus): System {
                 if (conversation.phrase === asked.exclude) {
                     continue;
                 }
-                const score = Math.max(
-                    0,
-                    ...conversation.turns.map((turn) =>
-                        scoreOf(turn.text, terms),
-                    ),
-                );
+                let score = 0;
+                for (const turn of conversation.turns) {
+                    score = Math.max(score, scoreOf(turn.text, terms));
+                }
                 if (score > 0) {
                     scored.push({
                         id: conversation.id,
@@ -65,13 +63,11 @@ export function lexicalSystem(corpus: Corpus): System {
             }
             scored.sort(newestFirst);
             const best = scored.slice(0, 20);
-            return {
-                ranked: best.slice(0, 10).map((each) => each.id),
-                context: packItems(
-                    best.map((each) => ({ id: each.id, text: each.text() })),
-                    budget,
-                ),
-            };
+            const fitted = packed(
+                best.map((each) => ({ id: each.id, text: each.text() })),
+                budget,
+            );
+            return { ranked: fitted.ids, context: fitted.text };
         },
     };
 }

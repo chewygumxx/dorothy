@@ -24,7 +24,8 @@ export type Asked = {
     // The phrase of a conversation left out of retrieval.
     exclude: string | null;
 };
-// Contract ids best first, for evidence recall, and the context.
+// Contract ids best first, for evidence recall, and the context. Every
+// ranked id is in the context: an item the budget cut off is not ranked.
 export type Retrieved = { ranked: string[]; context: string };
 
 export interface System {
@@ -52,12 +53,14 @@ export function makeSystem(name: string, corpus: Corpus): System {
     return make(corpus);
 }
 
-// Items as <item> elements within budget, the last one cut to fit.
-export function packItems(
+// Items as <item> elements within budget, the last one cut to fit, and
+// the ids of the items that went in.
+export function packed(
     items: { id: string; text: string }[],
     budget: number,
-): string {
+): { text: string; ids: string[] } {
     const parts: string[] = [];
+    const ids: string[] = [];
     let left = budget;
     for (const item of items) {
         const open = `<item id="${item.id}">\n`;
@@ -68,10 +71,16 @@ export function packItems(
         }
         const text = item.text.slice(0, room);
         parts.push(open + text + close);
+        ids.push(item.id);
         left -= open.length + text.length + close.length;
         if (text.length < item.text.length) {
             break;
         }
     }
-    return parts.join("");
+    return { text: parts.join(""), ids };
 }
+
+export const packItems = (
+    items: { id: string; text: string }[],
+    budget: number,
+): string => packed(items, budget).text;
