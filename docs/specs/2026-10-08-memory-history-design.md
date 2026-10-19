@@ -368,9 +368,11 @@ Every mirror is sealed, local paths included.
   warned of and never forced.
 - Quitting never waits on a push; what is left is pushed at the next
   launch.
-- A failure is warned of once per run, with its reason, and schedules a
-  retry. A timer that fires during a running push leaves follow-up work
-  scheduled, so later commits do not need another commit or launch.
+- A failure is warned of once per run, with its reason. Periodic pushes
+  schedule a retry only while running and with a positive push interval.
+  One-shot commands stop after their attempt. A timer that fires during a
+  running push leaves follow-up work scheduled, so later commits do not
+  need another commit or launch.
 - Commands that advance main await one push on close, after their write
   transaction. Short-lived hook/launch handles keep their background
   policy. Chat shutdown still never waits for network completion.
