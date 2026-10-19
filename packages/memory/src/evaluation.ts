@@ -15,6 +15,7 @@
 
 export {
     type AppraisedRead,
+    type AppraisedReads,
     type Archive,
     type ArchiveConversation,
     type ArchiveKnowledge,

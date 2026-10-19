@@ -66,6 +66,14 @@ export type AppraisedRead = {
     served: "useful" | "essential";
     at: string;
 };
+// The appraised reads, and what was passed over rather than lost: the
+// reads of hidden conversations, counted and their purposes never given,
+// and the readers whose transcript could not be read, by the error's code.
+export type AppraisedReads = {
+    reads: AppraisedRead[];
+    hidden: number;
+    unreadable: { reader: string; code: string }[];
+};
 export type Archive = {
     engine: MemoryEngine;
     block(request: {
@@ -75,7 +83,7 @@ export type Archive = {
     }): Promise<{ text: string; ids: string[] }>;
     conversations(): ArchiveConversation[];
     knowledge(): Promise<ArchiveKnowledge[]>;
-    appraisedReads(): Promise<AppraisedRead[]>;
+    appraisedReads(): Promise<AppraisedReads>;
     close(): void;
 };
 
@@ -98,12 +106,16 @@ type ReadRow = {
     target: string;
     at: number;
     served: "useful" | "essential";
+    hidden: number | null;
 };
 
 const iso = (ms: number) => new Date(ms).toISOString();
 
-// The purpose of each open in a transcript, by its tool call's id.
-async function purposesOf(path: string): Promise<Map<string, string>> {
+// The purpose of each open in a transcript, by its tool call's id, or
+// the error's code if the transcript cannot be read.
+async function purposesOf(
+    path: string,
+): Promise<Map<string, string> | { code: string }> {
     const byId = new Map<string, string>();
     try {
         const { turns } = await readTranscript(path);
@@ -114,8 +126,9 @@ async function purposesOf(path: string): Promise<Map<string, string>> {
                 }
             }
         }
-    } catch {
-        // A transcript gone since the index was built has no purposes.
+    } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        return { code: typeof code === "string" ? code : "unreadable" };
     }
     return byId;
 }
@@ -212,27 +225,48 @@ export async function openArchive(
         async appraisedReads() {
             const rows = index.db
                 .query(
-                    `SELECT r.id, r.reader, r.target, r.at, a.served
+                    `SELECT r.id, r.reader, r.target, r.at, a.served,
+                            c.hidden
                      FROM reads r
                      JOIN appraisals a ON a.reader = r.reader AND a.id = r.id
+                     LEFT JOIN conversations c ON c.phrase = r.reader
                      WHERE a.served IN ('useful', 'essential')
                      ORDER BY r.at, r.id`,
                 )
                 .all() as ReadRow[];
-            const purposes = new Map<string, Map<string, string>>();
-            const found: AppraisedRead[] = [];
+            const purposes = new Map<
+                string,
+                Map<string, string> | { code: string }
+            >();
+            const found: AppraisedReads = {
+                reads: [],
+                hidden: 0,
+                unreadable: [],
+            };
             for (const row of rows) {
+                // A hidden reader's transcript is never opened.
+                if (row.hidden === 1) {
+                    found.hidden += 1;
+                    continue;
+                }
                 let byId = purposes.get(row.reader);
                 if (byId === undefined) {
                     byId = await purposesOf(transcriptPath(row.reader, env));
                     purposes.set(row.reader, byId);
+                    if (!(byId instanceof Map)) {
+                        found.unreadable.push({
+                            reader: row.reader,
+                            code: byId.code,
+                        });
+                    }
                 }
-                const purpose = byId.get(row.id);
+                const purpose =
+                    byId instanceof Map ? byId.get(row.id) : undefined;
                 const target = targetOf(row.target);
                 if (purpose === undefined || target === null) {
                     continue;
                 }
-                found.push({
+                found.reads.push({
                     reader: row.reader,
                     target,
                     purpose,

@@ -81,4 +81,6 @@ gives back, and the service that speaks it. The spec is
 `openArchive` opens the baseline engine over an environment's roots and
 lists its conversations, knowledge and appraised reads as plain
 records; `writeArchive` writes a small archive for its tests. It writes
-only the recall index, where the environment points.
+only the recall index, where the environment points. Appraised reads
+leave out a hidden reader's, counted, and name a transcript it could
+not read.

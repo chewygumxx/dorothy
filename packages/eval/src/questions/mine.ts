@@ -117,11 +117,18 @@ export const mineCommand: Command = {
                     .filter((each) => each.retired === null)
                     .map((each) => each.id),
             ]);
+            const appraised = await archive.appraisedReads();
             const { questions: mined, dropped } = lookupQuestions(
-                await archive.appraisedReads(),
+                appraised.reads,
                 projects,
                 present,
             );
+            // Memory never gives a hidden reader's read; it is counted
+            // with the reads lookupQuestions drops for the same reason.
+            if (appraised.hidden > 0) {
+                dropped[HIDDEN_READER] =
+                    (dropped[HIDDEN_READER] ?? 0) + appraised.hidden;
+            }
             const merged = await updateQuestions(work, (current) => {
                 const result = mergeQuestions(current, mined);
                 return { questions: result.questions, result };
@@ -131,6 +138,11 @@ export const mineCommand: Command = {
             );
             for (const [reason, n] of Object.entries(dropped)) {
                 io.out(`  dropped ${n}: ${reason}\n`);
+            }
+            for (const { reader, code } of appraised.unreadable) {
+                io.err(
+                    `  could not read the transcript of ${reader} (${code}); its reads are passed over\n`,
+                );
             }
             if (merged.collided > 0) {
                 io.out(
