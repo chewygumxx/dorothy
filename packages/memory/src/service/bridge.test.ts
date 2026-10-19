@@ -219,6 +219,17 @@ describe("runBridge, against a service that answers as told", () => {
         await bridged;
     });
 
+    it("times a request the service accepted and never answered", async () => {
+        // A 202 settles the send, but is no answer.
+        status = 202;
+        const { near, bridged, client } = start({ timeoutMs: 100 });
+        const started = Date.now();
+        await expect(client.connect(near)).rejects.toThrow(/in time/);
+        expect(Date.now() - started).toBeLessThan(5000);
+        await near.close();
+        await bridged;
+    });
+
     it("answers rather than rejects when its setup fails", async () => {
         const { near, bridged, client } = start({ url: "not a url" });
         await expect(client.connect(near)).rejects.toThrow(

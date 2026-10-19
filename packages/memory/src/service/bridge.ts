@@ -94,6 +94,8 @@ export async function runBridge(options: BridgeOptions): Promise<number> {
     // Requests sent on and not yet answered: the input ending waits for
     // them, within their time, so the last answer is not cut off.
     const waiting = new Set<string | number>();
+    // Each waiting request's time, ended with its answer or its refusal.
+    const timers = new Map<string | number, ReturnType<typeof setTimeout>>();
     let ending = false;
     const close = () => {
         local.close().catch(() => {});
@@ -105,6 +107,8 @@ export async function runBridge(options: BridgeOptions): Promise<number> {
         }
     };
     const answered = (id: string | number) => {
+        clearTimeout(timers.get(id));
+        timers.delete(id);
         waiting.delete(id);
         if (ending && waiting.size === 0) {
             close();
@@ -138,19 +142,24 @@ export async function runBridge(options: BridgeOptions): Promise<number> {
             }
             return;
         }
-        const timer = setTimeout(() => {
+        if (asked) {
+            timers.set(
+                id,
+                setTimeout(
+                    () =>
+                        refuse(
+                            id,
+                            "Dorothy's memory service did not answer in time",
+                        ),
+                    options.timeoutMs ?? REQUEST_TIMEOUT,
+                ),
+            );
+        }
+        remote.send(message).catch((error: unknown) => {
             if (asked) {
-                refuse(id, "Dorothy's memory service did not answer in time");
+                refuse(id, whyNot(error));
             }
-        }, options.timeoutMs ?? REQUEST_TIMEOUT);
-        remote
-            .send(message)
-            .catch((error: unknown) => {
-                if (asked) {
-                    refuse(id, whyNot(error));
-                }
-            })
-            .finally(() => clearTimeout(timer));
+        });
     };
     if (remote !== null) {
         remote.onmessage = (message: JSONRPCMessage) => {
