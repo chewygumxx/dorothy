@@ -164,17 +164,19 @@ describe("RecallIndex", () => {
         index.close();
     });
 
-    const holdLock = (seconds: number) =>
+    // Holds the write lock until the file named release exists.
+    const holdLock = (release: string) =>
         Bun.spawn(
             [
                 process.execPath,
                 "-e",
                 `const { Database } = require("bun:sqlite");
+                 const { existsSync } = require("node:fs");
                  const db = new Database(${JSON.stringify(path)});
                  db.run("PRAGMA busy_timeout = 5000");
                  db.run("BEGIN IMMEDIATE");
                  console.log("locked");
-                 Bun.sleepSync(${seconds * 1000});
+                 while (!existsSync(${JSON.stringify(release)})) Bun.sleepSync(10);
                  db.run("COMMIT");`,
             ],
             { stdout: "pipe" },
@@ -184,13 +186,16 @@ describe("RecallIndex", () => {
         const first = RecallIndex.open(path);
         insert(first, "a");
         first.close();
-        const child = holdLock(0.6);
+        const release = join(dir, "release");
+        const child = holdLock(release);
         await child.stdout.getReader().read();
-        const start = performance.now();
-        const index = RecallIndex.open(path, 100);
-        expect(performance.now() - start).toBeLessThan(100);
+        // Were the open to wait for the lock, it would sit out the whole
+        // busy timeout and throw, with the child still holding it.
+        const index = RecallIndex.open(path, 5000);
+        expect(child.exitCode).toBeNull();
         expect(count(index)).toBe(1);
         index.close();
+        await writeFile(release, "");
         await child.exited;
     });
 
@@ -200,9 +205,11 @@ describe("RecallIndex", () => {
         first.db.run("PRAGMA user_version = 6");
         first.close();
         const before = (await stat(path)).ino;
-        const child = holdLock(0.6);
+        const release = join(dir, "release");
+        const child = holdLock(release);
         await child.stdout.getReader().read();
         expect(() => RecallIndex.open(path, 100)).toThrow();
+        await writeFile(release, "");
         await child.exited;
         expect((await stat(path)).ino).toBe(before);
         // Looked at without migrating it: the rows are still there.
