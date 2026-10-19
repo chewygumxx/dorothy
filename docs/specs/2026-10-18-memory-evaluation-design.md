@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-18
-mtime: 2026-10-18
+mtime: 2026-10-19
 spdx: GPL-3.0-only
 title: Dorothy's memory evaluation design
 description: >-
@@ -129,7 +129,8 @@ bun run eval -- snapshot --from ~/.local/share/dorothy --work ~/eval
 Only accepted questions are run. A malformed line is reported with its
 number: `run` skips it, while the commands that rewrite the file
 (`mine`, `generate`, `review`) refuse until it is mended, so that none
-drops a line the owner wrote.
+drops a line the owner wrote. A file that cannot be read, other than for
+being absent, stops those commands the same way.
 
 ### Mined lookups
 
@@ -138,7 +139,9 @@ read as `none`, `slight`, `useful` or `essential`. Each read appraised
 useful or essential is a real question with a known answer: the purpose
 is the question, the opened conversation or knowledge file the evidence,
 the reading conversation the `exclude`, and the read's date the `asOf`.
-They have no reference answer, so they score retrieval alone. They are
+They have no reference answer, so they score retrieval alone. A read of
+a hidden conversation or a retired file is passed over, as no system
+reaches it. They are
 mined accepted, as the appraisal is her own review; the owner may reject
 one.
 
@@ -165,7 +168,8 @@ A generating model drafts the other types from samples of the snapshot:
   order or a span.
 - **abstention**: a plausible question on nothing in the snapshot, which
   the answer must decline; a lexical search of the snapshot for its key
-  terms must find nothing, or the draft is dropped.
+  terms must find nothing, or the draft is dropped. "Nothing" is a
+  turn or file holding at least half the terms (two at the least).
 
 ```sh
 bun run eval -- generate --work ~/eval --count 300
@@ -181,7 +185,12 @@ bun run eval -- generate --work ~/eval --count 300
   counted.
 - Samples are drawn by a seed, which `<work>/generated.json` records
   with the model, the counts asked and made, and the drafts dropped and
-  why, so a generation can be repeated.
+  why, so a generation can be repeated. Each generation adds an entry
+  to that list, and the question file is read again just before the
+  drafts join it, so a review meanwhile loses nothing.
+- A failed call is dropped with its reason, a line with no key in it.
+  Generation stops, keeping what it has made, at a 401 or a 403, at
+  three failed calls in a row, or at `--max-calls`, and says why.
 
 ### Review
 
@@ -220,6 +229,8 @@ opened once for the run:
    block for the question's project, then `search` over all scopes for
    the question, then `open` on the top hits, until the budget is spent.
    It is what a harness gets today, without a model choosing the calls.
+   The block takes 40% of the budget and the hits the rest; its ranked
+   ids are the hits, then what the block gave besides.
 2. **`lexical`**: a bound from below. Every conversation turn and
    knowledge file scored by how many of the question's terms it holds,
    best first, no index: what plain `grep` would find.
@@ -232,6 +243,7 @@ opened once for the run:
 `exclude` is honoured by all three. Retrieval sees the whole snapshot;
 `asOf` dates the question for the answering model alone. A system that
 fails a question records the error and yields nothing; the run goes on.
+A failed retrieval spends no answer or judgement, and counts as a miss.
 
 Later systems, each in its own spec: Dorothy improved (the engine
 spec), Hindsight, OpenViking, EverOS and Honcho, each fed by replaying
@@ -264,7 +276,15 @@ key = "OPENROUTER_API_KEY"
 - The client is `@langchain/openai`'s `ChatOpenAI`, which openevals
   takes as its judge; one client for all three roles.
 - Every call has a timeout and two retries on a 429 or 5xx; a call that
-  still fails is recorded as failed, never fatal.
+  still fails is recorded as failed, never fatal. The retries also
+  cover a 408, a timeout and a lost connection, wait 2 seconds and then
+  4, and each attempt spends one of `--max-calls`; a refusal, or a reply
+  that breaks its schema, is not retried. A recorded failure is one
+  line, with any key put out.
+- `eval.toml` that does not parse is said to be unparsable and no more:
+  the parser quotes the line it dislikes, which may hold a key. A file
+  that cannot be read, other than for being absent, is not taken for no
+  file.
 - The judge's vendor (the model id's prefix) must differ from the
   answering model's; the run warns if not.
 - openevals asks its judge for a `json_schema` response format, as a
@@ -303,6 +323,24 @@ time and a short hash of the questions and settings, which
 `run.json` records with the models, the budget and the snapshot's
 counts.
 
+- A question other than an abstention is judged declined wrongly by a
+  pattern (`declines`) on the answer, with no model asked. A
+  `knowledge-update` with an older answer in its `note` costs one more
+  judgement, whether the answer gives that older one.
+- A failed retrieval, answer or judgement leaves the record with its
+  failure, and nothing more is spent on that question and system.
+  `--dry-run` counts the calls, none for a `lookup`, two for an
+  abstention, three for the rest and four for an update with a `note`,
+  for each system, and needs no key.
+- A resume takes the systems, budget and questions from `run.json`. It
+  refuses a snapshot taken at another time, or answer and judge models
+  other than the run's, and says to start a new run. It asks again a
+  record with a failure, and where a question and system have two
+  records the last stands. A run stopped by `--max-calls` keeps its
+  records and writes the report of what is done.
+- A judge of the answering model's vendor warns on the error stream and
+  the run goes on.
+
 ## The report
 
 `<work>/runs/<run>/report.md`, and `summary.json` for comparison:
@@ -313,7 +351,14 @@ counts.
   often another was declined wrongly;
 - for `knowledge-update`, how often the older answer was given;
 - retrieval time and characters, answer tokens and time, failed calls;
-- the questions each system alone got right or wrong, by id.
+- the questions each system alone got right or wrong, by id, on strict
+  accuracy, among those judged by two systems or more.
+
+A question that should have been judged but was not, as its retrieval,
+answer or judgement failed, counts as a miss in strict, lenient and, for
+an abstention, declined; so a flaky system does not score higher for
+its failures. Its rates are over every question owed, and its failed
+calls are counted beside them.
 
 ```sh
 bun run eval -- compare --work ~/eval <run> <run>
@@ -323,8 +368,10 @@ prints the two summaries side by side with their differences, and the
 note's rule for adopting a provider: ten points of strict accuracy over
 Dorothy improved, held with the smaller ingest model. The report gives
 counts with every rate, as 300 questions split seven ways leave some
-types small; a difference under the type's count's resolution is
-marked as such.
+types small; a difference under the type's count's resolution, two
+questions' worth of the smaller count, is marked as such. The
+comparison covers the systems both runs hold, and strict accuracy
+alone; the adoption rule is printed, not decided.
 
 ## Failures
 
@@ -334,7 +381,8 @@ marked as such.
   command that would set it; nothing else is printed of the
   environment.
 - A malformed question, a failed system call or a failed model call is
-  recorded and counted in the report, never fatal.
+  recorded and counted in the report, never fatal; a failed call counts
+  as a miss in the rates.
 - An interrupted run leaves every completed record; `--resume` finishes
   it.
 

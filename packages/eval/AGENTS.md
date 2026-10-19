@@ -43,6 +43,14 @@ reads no file of memory's itself.
 - A failure the user can mend is an `UsageError`, said in one line by
   `runCli`; anything else is a fault and keeps its stack.
 
+## Commands
+
+`snapshot`, `mine`, `generate`, `review`, `run` and `compare`, in the
+order a user meets them; the README's "Measuring her memory" shows
+each. A new command is a `Command` in `cli.ts`'s table, with its
+options declared, its failures as `UsageError`s, and a test through
+`runCli` with `fakeIo`.
+
 ## Files
 
 - `main.ts`: the process around `runCli`, with the real terminal.
