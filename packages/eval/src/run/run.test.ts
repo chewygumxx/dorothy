@@ -255,6 +255,31 @@ describe("bun run eval -- run", () => {
         expect(requests).toHaveLength(calls);
     });
 
+    it("refuses a run's settings given with --resume", async () => {
+        const { io, out } = fakeIo();
+        expect(
+            await runCli(["run", "--work", work, "--retrieval-only"], io),
+        ).toBe(0);
+        const id = idOf(out);
+        for (const given of [
+            ["--systems", "lexical"],
+            ["--budget", "4000"],
+            ["--full-budget", "4000"],
+            ["--retrieval-only"],
+        ]) {
+            const { io: again, err } = fakeIo();
+            expect(
+                await runCli(
+                    ["run", "--work", work, "--resume", id, ...given],
+                    again,
+                ),
+            ).toBe(1);
+            expect(err.join("")).toContain(
+                `${given[0]} is the run's own on --resume: leave it out`,
+            );
+        }
+    });
+
     it("counts a dry run's calls and makes none", async () => {
         const { requests } = serve({ content: "x" });
         const { io, out } = fakeIo();

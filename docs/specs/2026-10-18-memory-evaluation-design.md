@@ -334,14 +334,15 @@ counts.
   `--dry-run` counts the calls, none for a `lookup`, two for an
   abstention, three for the rest and four for an update with a `note`,
   for each system, and needs no key.
-- A resume takes the systems, budget and questions from `run.json`. It
-  refuses a snapshot taken at another time, or answer and judge models
-  other than the run's, and says to start a new run. It asks again a
-  record with a failure, and where a question and system have two
-  records the last stands. A run stopped by `--max-calls` keeps its
-  records and writes the report of what is done; a cap reached at a
-  judgement keeps that record, its answer and the judgement's failure,
-  which a resume asks again whole.
+- A resume takes the systems, budget and questions from `run.json`, and
+  refuses `--systems`, `--budget`, `--full-budget` or `--retrieval-only`
+  given with it. It refuses a snapshot taken at another time, or answer
+  and judge models other than the run's, and says to start a new run.
+  It asks again a record with a failure, and where a question and
+  system have two records the last stands. A run stopped by
+  `--max-calls` keeps its records and writes the report of what is
+  done; a cap reached at a judgement keeps that record, its answer and
+  the judgement's failure, which a resume asks again whole.
 - A judge of the answering model's vendor warns on the error stream and
   the run goes on.
 

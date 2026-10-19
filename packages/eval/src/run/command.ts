@@ -44,6 +44,9 @@ function systemsOf(text: string): string[] {
     return names;
 }
 
+// What run.json holds, so a resume takes no other.
+const SETTINGS = ["systems", "budget", "full-budget", "retrieval-only"];
+
 export const runCommand: Command = {
     summary: "ask the accepted questions of each system, and report",
     options: {
@@ -59,6 +62,13 @@ export const runCommand: Command = {
     },
     async run(values, _positionals, io) {
         const work = workOf(values);
+        const resume = stringOf(values, "resume");
+        const given = SETTINGS.find((name) => values[name] !== undefined);
+        if (resume !== null && given !== undefined) {
+            throw new UsageError(
+                `--${given} is the run's own on --resume: leave it out`,
+            );
+        }
         const snapshot = await readSnapshot(work);
         const { questions, problems } = await readQuestions(work);
         for (const problem of problems) {
@@ -66,7 +76,6 @@ export const runCommand: Command = {
         }
         const accepted = questions.filter((q) => q.status === "accepted");
         const config = await readEvalConfig(work);
-        const resume = stringOf(values, "resume");
         const info =
             resume !== null
                 ? await readRunInfo(work, resume)
