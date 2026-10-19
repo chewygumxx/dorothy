@@ -49,15 +49,28 @@ export const GENERATED_TYPES = Object.keys(SHARES) as GeneratedType[];
 // Questions asked of one sample in one call.
 export const BATCH = 5;
 
+// count questions among the types by LongMemEval-S's shares: each type's
+// share rounded down, the questions left over going to the largest
+// fractions (the earlier type on a tie), so the total is count. A type
+// in given has its own count instead.
 export function countsFor(
     count: number,
     given: Partial<Record<GeneratedType, number>> = {},
 ): Record<GeneratedType, number> {
     const total = Object.values(SHARES).reduce((sum, each) => sum + each, 0);
+    const exact = GENERATED_TYPES.map((type) => (count * SHARES[type]) / total);
+    const counts = exact.map(Math.floor);
+    const left = count - counts.reduce((sum, each) => sum + each, 0);
+    const byFraction = exact
+        .map((each, at) => ({ at, fraction: each - Math.floor(each) }))
+        .sort((a, b) => b.fraction - a.fraction || a.at - b.at);
+    for (const { at } of byFraction.slice(0, left)) {
+        counts[at] = (counts[at] as number) + 1;
+    }
     return Object.fromEntries(
-        GENERATED_TYPES.map((type) => [
+        GENERATED_TYPES.map((type, at) => [
             type,
-            given[type] ?? Math.round((count * SHARES[type]) / total),
+            given[type] ?? (counts[at] as number),
         ]),
     ) as Record<GeneratedType, number>;
 }
