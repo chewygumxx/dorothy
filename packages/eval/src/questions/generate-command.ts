@@ -140,6 +140,17 @@ export const generateCommand: Command = {
             0,
             2 ** 31 - 1,
         );
+        // Said before the first call, so that the seed survives a Ctrl-C.
+        io.out(`seed ${seed}\n`);
+        // Each call's drafts join the file as it is then, so a review
+        // meanwhile loses nothing and stopping loses no paid draft.
+        const keep = async (drafts: Question[]) => {
+            const current = await readQuestionsToRewrite(work);
+            await writeQuestions(
+                work,
+                mergeQuestions(current, drafts).questions,
+            );
+        };
         const corpus = await openCorpus(workEnv(work));
         try {
             const result = await generateQuestions({
@@ -158,29 +169,51 @@ export const generateCommand: Command = {
                             draftPrompt(sample, n),
                         )
                     ).value.questions,
+                keep,
             });
-            // Both read again, before either is written: a review in
-            // another terminal may have written meanwhile.
-            await readGenerations(work);
-            const current = await readQuestionsToRewrite(work);
-            await writeQuestions(
-                work,
-                mergeQuestions(current, result.made).questions,
-            );
-            await recordGeneration(work, {
-                at: new Date().toISOString(),
-                seed,
-                model: role.model,
-                asked: counts,
-                made: byType(result.made),
-                dropped: result.dropped,
-                stopped: result.stopped,
-            });
+            if (result.unkept.length > 0) {
+                // Tried once more; failing again, the drafts are said, so
+                // that what was paid for can be kept by hand.
+                try {
+                    await keep(result.unkept);
+                } catch (error) {
+                    io.err(
+                        `${result.unkept.map((each) => JSON.stringify(each)).join("\n")}\n`,
+                    );
+                    throw error;
+                }
+            }
+            try {
+                await recordGeneration(work, {
+                    at: new Date().toISOString(),
+                    seed,
+                    model: role.model,
+                    asked: counts,
+                    made: byType(result.made),
+                    dropped: result.dropped,
+                    stopped: result.stopped,
+                });
+            } catch (error) {
+                if (error instanceof UsageError) {
+                    throw new UsageError(
+                        `${error.message}; the ${result.made.length} drafts are in questions.jsonl`,
+                    );
+                }
+                throw error;
+            }
             io.out(
                 `drafted ${result.made.length} questions (seed ${seed}); review them with \`bun run eval -- review --work ${work}\`\n`,
             );
             for (const [reason, n] of Object.entries(result.dropped)) {
                 io.out(`  dropped ${n}: ${reason}\n`);
+            }
+            const made = byType(result.made);
+            for (const type of GENERATED_TYPES) {
+                if ((made[type] ?? 0) < counts[type]) {
+                    io.out(
+                        `  short: ${type} made ${made[type] ?? 0} of ${counts[type]}\n`,
+                    );
+                }
             }
             if (result.stopped !== null) {
                 io.out(`stopped: ${result.stopped}\n`);

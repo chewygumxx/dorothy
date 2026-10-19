@@ -28,10 +28,12 @@ import {
 import { type Question, questionId, readQuestions } from "./file.js";
 import {
     acceptDraft,
+    answerable,
     countsFor,
     type Draft,
     draftPrompt,
     generateQuestions,
+    latestDay,
     parseTypeCounts,
     type Sample,
     sampleFor,
@@ -66,7 +68,11 @@ const draft = (fields: Partial<Draft> = {}): Draft => ({
     older: "",
     ...fields,
 });
-const context = () => ({ model: "m/1", ids: new Set<string>(), corpus });
+const context = (ids = new Map<string, Question>()) => ({
+    model: "m/1",
+    ids,
+    corpus,
+});
 
 describe("counts", () => {
     it("follow LongMemEval-S's shares, scaled", () => {
@@ -433,6 +439,49 @@ describe("a draft", () => {
         ).toMatchObject({ type: "abstention", evidence: [] });
     });
 
+    it("is dropped as a repeat, or as another question with its id", () => {
+        const made = acceptDraft(draft(), garden, context()) as Question;
+        const held = new Map([[made.id, made]]);
+        expect(acceptDraft(draft(), garden, context(held))).toBe("duplicate");
+        const other = { ...made, question: "A different question?" };
+        expect(
+            acceptDraft(draft(), garden, context(new Map([[made.id, other]]))),
+        ).toBe("id collision");
+    });
+
+    it("is dropped as many sessions' that cites only one conversation", () => {
+        const many: Sample = {
+            ...garden,
+            type: "multi-session",
+            ids: [`c:${GARDEN}`, "c:other"],
+        };
+        expect(acceptDraft(draft(), many, context())).toBe("one conversation");
+        expect(
+            acceptDraft(
+                draft({ evidence: [`c:${GARDEN}`, "c:other"] }),
+                many,
+                context(),
+            ),
+        ).toMatchObject({ evidence: [`c:${GARDEN}`, "c:other"] });
+    });
+
+    it("is dropped as malformed for a path no evidence has, or a long question", () => {
+        const odd: Sample = { ...garden, ids: ["nowhere", "c:"] };
+        expect(
+            acceptDraft(draft({ evidence: ["nowhere"] }), odd, context()),
+        ).toBe("malformed");
+        expect(acceptDraft(draft({ evidence: ["c:"] }), odd, context())).toBe(
+            "malformed",
+        );
+        expect(
+            acceptDraft(
+                draft({ question: "Why?".repeat(700) }),
+                garden,
+                context(),
+            ),
+        ).toBe("malformed");
+    });
+
     it("keeps an update's older answer as its note", () => {
         const update: Sample = {
             ...garden,
@@ -451,6 +500,63 @@ describe("a draft", () => {
                 context(),
             ),
         ).toMatchObject({ note: "Vim." });
+    });
+});
+
+describe("the prompt", () => {
+    const system = (sample: Sample, n = 3) =>
+        draftPrompt(sample, n)[0]?.content ?? "";
+
+    it("gives its type's guidance, the day and how many to write", () => {
+        const content = system(garden, 3);
+        expect(content).toContain("Ask about one specific detail");
+        expect(content).toContain("Today is 2026-10-01.");
+        expect(content).toEndWith("Write at most 3 questions.");
+        expect(system({ ...garden, type: "temporal" })).toContain(
+            "the order of events",
+        );
+    });
+
+    it("gives a sample's own guidance in place of its type's", () => {
+        const content = system({ ...garden, guidance: "Ask only about tea." });
+        expect(content).toContain("Ask only about tea.");
+        expect(content).not.toContain("Ask about one specific detail");
+    });
+
+    it("gives the items as the user, each by its id", () => {
+        const [, user] = draftPrompt(garden, 1);
+        expect(user?.role).toBe("user");
+        expect(user?.content).toContain(`c:${GARDEN}`);
+        expect(user?.content).toContain("The allotment");
+    });
+});
+
+describe("the last day", () => {
+    it("is the day of the snapshot's last turn", () => {
+        expect(latestDay(corpus)).toBe("2026-10-01");
+    });
+
+    it("is none for a snapshot of no conversations", () => {
+        const none = { ...corpus, conversations: new Map() } as Corpus;
+        expect(latestDay(none)).toBeNull();
+    });
+});
+
+describe("an answerable question", () => {
+    it("is one the snapshot holds enough of the terms of", () => {
+        expect(answerable("What colour is my canoe on the lake?", corpus)).toBe(
+            false,
+        );
+        expect(answerable("Plot twelve by the river?", corpus)).toBe(true);
+    });
+
+    it("of one term is answerable when a turn holds it", () => {
+        expect(answerable("Derailleur?", corpus)).toBe(true);
+        expect(answerable("Canoe?", corpus)).toBe(false);
+    });
+
+    it("of no term is not", () => {
+        expect(answerable("Is it?", corpus)).toBe(false);
     });
 });
 
@@ -487,6 +593,83 @@ describe("generation", () => {
         expect(result.stopped).toBeNull();
     });
 
+    it("hands the drafts of each call over before it asks the next", async () => {
+        const events: string[] = [];
+        let n = 0;
+        await generateQuestions({
+            corpus,
+            counts: { ...counts, "single-session": 10, "multi-session": 0 },
+            random: seeded(3),
+            model: "m/1",
+            existing: [],
+            today: "2026-10-19",
+            draft: async (sample) => {
+                events.push("asked");
+                return [
+                    {
+                        question: `Handed over ${++n}?`,
+                        answer: "An answer.",
+                        evidence: sample.ids,
+                        older: "",
+                    },
+                ];
+            },
+            keep: async (drafts) => {
+                events.push(`kept ${drafts.map((each) => each.question)}`);
+            },
+        });
+        expect(events.slice(0, 4)).toEqual([
+            "asked",
+            "kept Handed over 1?",
+            "asked",
+            "kept Handed over 2?",
+        ]);
+    });
+
+    it("stops when it cannot keep a draft, handing it back unkept", async () => {
+        let asked = 0;
+        const result = await generateQuestions({
+            corpus,
+            counts,
+            random: seeded(3),
+            model: "m/1",
+            existing: [],
+            today: "2026-10-19",
+            draft: async (sample) => {
+                asked++;
+                return [
+                    {
+                        question: "Unkept?",
+                        answer: "An answer.",
+                        evidence: sample.ids,
+                        older: "",
+                    },
+                ];
+            },
+            keep: async () => {
+                throw new Error("disk full");
+            },
+        });
+        expect(asked).toBe(1);
+        expect(result.stopped).toBe("could not keep the drafts: disk full");
+        expect(result.unkept.map((each) => each.question)).toEqual(["Unkept?"]);
+        expect(result.made).toHaveLength(1);
+    });
+
+    it("counts a reply of no questions", async () => {
+        const result = await generateQuestions({
+            corpus,
+            counts: { ...counts, "single-session": 6, "multi-session": 0 },
+            random: seeded(3),
+            model: "m/1",
+            existing: [],
+            today: "2026-10-19",
+            draft: async () => [],
+        });
+        expect(result.made).toEqual([]);
+        expect(result.dropped).toEqual({ "reply with no questions": 6 });
+    });
+
     it("stops at the cap, keeping what it made", async () => {
         const result = await generateQuestions({
             corpus,
@@ -500,6 +683,7 @@ describe("generation", () => {
             },
         });
         expect(result.made).toEqual([]);
+        expect(result.unkept).toEqual([]);
         expect(result.stopped).toBe("reached --max-calls (0)");
     });
 });
@@ -679,6 +863,115 @@ describe("bun run eval -- generate", () => {
         const { questions } = await readQuestions(work);
         expect(questions.map((each) => each.id)).toContain(extra.id);
         expect(questions.at(-1)?.source).toBe("generated:generate/model");
+    });
+
+    // One question a call, each its own, citing the first item shown.
+    const oneEach = (
+        tag: string,
+        between: (count: number) => void = () => {},
+    ) =>
+        stubModels((request, count) => {
+            between(count);
+            const content = JSON.stringify(request.body.messages);
+            const id = /<item id=\\"([^\\]+)\\">/.exec(content)?.[1] ?? "";
+            return {
+                json: {
+                    questions: [
+                        {
+                            question: `${tag} number ${count}?`,
+                            answer: "Something.",
+                            evidence: [id],
+                            older: "",
+                        },
+                    ],
+                },
+            };
+        });
+    const generate = (...args: string[]) => {
+        const { io, out, err } = fakeIo();
+        return {
+            out,
+            err,
+            code: runCli(
+                ["generate", "--work", work, "--count", "1", ...args],
+                io,
+            ),
+        };
+    };
+
+    it("writes each call's drafts as they arrive, and says the seed first", async () => {
+        const seen: boolean[] = [];
+        stub = oneEach("Arrival", (count) => {
+            if (count === 2) {
+                seen.push(
+                    readFileSync(
+                        join(work, "questions.jsonl"),
+                        "utf8",
+                    ).includes("Arrival number 1?"),
+                );
+            }
+        });
+        writeFileSync(configPath(work), stubConfig(stub.url));
+        const run = generate("--type", "single-session=10", "--seed", "11");
+        expect(await run.code).toBe(0);
+        expect(seen).toEqual([true]);
+        expect(run.out[0]).toBe("seed 11\n");
+    });
+
+    it("says what fell short of what was asked", async () => {
+        stub = oneEach("Short");
+        writeFileSync(configPath(work), stubConfig(stub.url));
+        const run = generate("--type", "single-session=10", "--seed", "12");
+        expect(await run.code).toBe(0);
+        const shown = run.out.join("");
+        expect(shown).toContain("drafted 6 questions (seed 12)");
+        expect(shown).toContain("  short: single-session made 6 of 10\n");
+    });
+
+    it("keeps the drafts when generated.json is spoilt meanwhile", async () => {
+        const path = join(work, "generated.json");
+        const before = readFileSync(path, "utf8");
+        stub = oneEach("Spoilt", (count) => {
+            if (count === 2) {
+                writeFileSync(path, "{not json");
+            }
+        });
+        writeFileSync(configPath(work), stubConfig(stub.url));
+        try {
+            const run = generate("--type", "single-session=10", "--seed", "13");
+            expect(await run.code).toBe(1);
+            expect(run.err.join("")).toContain(
+                "generated.json is not a list: mend or remove it",
+            );
+            expect(run.err.join("")).toContain(
+                "6 drafts are in questions.jsonl",
+            );
+            const { questions } = await readQuestions(work);
+            expect(
+                questions.filter((each) => each.question.startsWith("Spoilt"))
+                    .length,
+            ).toBe(6);
+            expect(readFileSync(path, "utf8")).toBe("{not json");
+        } finally {
+            writeFileSync(path, before);
+        }
+    });
+
+    it("prints the drafts it could not write to the question file", async () => {
+        const path = join(work, "questions.jsonl");
+        const before = readFileSync(path, "utf8");
+        stub = oneEach("Unwritten", () => writeFileSync(path, "not json\n"));
+        writeFileSync(configPath(work), stubConfig(stub.url));
+        try {
+            const run = generate("--type", "single-session=10", "--seed", "14");
+            expect(await run.code).toBe(1);
+            const said = run.err.join("");
+            expect(said).toContain("questions.jsonl:1: not JSON");
+            expect(said).toContain('"question":"Unwritten number 1?"');
+            expect(stub.requests).toHaveLength(1);
+        } finally {
+            writeFileSync(path, before);
+        }
     });
 
     it("refuses a generated.json that is not a list, writing nothing", async () => {

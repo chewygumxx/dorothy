@@ -186,7 +186,8 @@ A generating model drafts the other types from samples of the snapshot:
 - **abstention**: a plausible question on nothing in the snapshot, which
   the answer must decline; a lexical search of the snapshot for its key
   terms must find nothing, or the draft is dropped. "Nothing" is a
-  turn or file holding at least half the terms (two at the least).
+  turn or file holding at least half the terms (two at the least, or
+  all of a question of one term).
 
 ```sh
 bun run eval -- generate --work ~/eval --count 300
@@ -199,12 +200,15 @@ bun run eval -- generate --work ~/eval --count 300
   (`--type temporal=40`).
 - The model returns JSON, checked by a schema; a draft whose evidence
   ids are not in the snapshot, or whose answer is empty, is dropped and
-  counted.
+  counted, as is a reply with no questions; the command says each type
+  that made fewer than it was asked for.
 - Samples are drawn by a seed, which `<work>/generated.json` records
   with the model, the counts asked and made, and the drafts dropped and
   why, so a generation can be repeated. Each generation adds an entry
-  to that list, and the question file is read again just before the
-  drafts join it, so a review meanwhile loses nothing.
+  to that list. Each call's drafts join the question file as they
+  arrive, the file read again just before, so that a review meanwhile
+  loses nothing and Ctrl-C loses no draft a call has returned; the seed
+  is printed first, as the entry is written at the end.
 - A failed call is dropped with its reason, a line with no key in it.
   Generation stops, keeping what it has made, at a 401 or a 403, at
   three failed calls in a row, or at `--max-calls`, and says why.

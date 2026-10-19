@@ -103,7 +103,10 @@ const problemOf = (error: unknown) =>
 
 // Whether two questions are the same one: ids are 32 bits of a hash, so
 // the same id may come of different text.
-export const sameQuestion = (a: Question, b: Question) =>
+export const sameQuestion = (
+    a: Pick<Question, "question" | "evidence">,
+    b: Pick<Question, "question" | "evidence">,
+) =>
     a.question === b.question &&
     [...a.evidence].sort().join("\n") === [...b.evidence].sort().join("\n");
 

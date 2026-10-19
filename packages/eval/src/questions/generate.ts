@@ -31,6 +31,7 @@ import {
     type QuestionType,
     questionId,
     questionSchema,
+    sameQuestion,
 } from "./file.js";
 
 export type GeneratedType = Exclude<QuestionType, "lookup">;
@@ -397,7 +398,11 @@ export function answerable(question: string, corpus: Corpus): boolean {
     if (terms.length === 0) {
         return false;
     }
-    const enough = Math.max(2, Math.ceil(terms.length / 2));
+    // Half the terms, two at the least; a question of one term needs it.
+    const enough = Math.min(
+        terms.length,
+        Math.max(2, Math.ceil(terms.length / 2)),
+    );
     for (const conversation of corpus.conversations.values()) {
         if (
             conversation.turns.some(
@@ -418,7 +423,7 @@ export function answerable(question: string, corpus: Corpus): boolean {
 export function acceptDraft(
     draft: Draft,
     sample: Sample,
-    context: { model: string; ids: Set<string>; corpus: Corpus },
+    context: { model: string; ids: Map<string, Question>; corpus: Corpus },
 ): Question | string {
     const question = draft.question.trim();
     const answer = draft.answer.trim();
@@ -440,8 +445,12 @@ export function acceptDraft(
         return "answerable";
     }
     const id = questionId(question, evidence);
-    if (context.ids.has(id)) {
-        return "duplicate";
+    const held = context.ids.get(id);
+    if (held !== undefined) {
+        // The id is 32 bits of a hash: the same id may be another question.
+        return sameQuestion(held, { question, evidence })
+            ? "duplicate"
+            : "id collision";
     }
     const older = draft.older.trim();
     const parsed = questionSchema.safeParse({
@@ -468,17 +477,29 @@ export async function generateQuestions(options: {
     existing: Question[];
     today: string;
     draft: (sample: Sample, n: number) => Promise<Draft[]>;
+    // Takes each call's drafts as they arrive, so that stopping loses
+    // none; if it fails, generation stops and hands them back unkept.
+    keep?: (drafts: Question[]) => Promise<void>;
 }): Promise<{
     made: Question[];
+    unkept: Question[];
     dropped: Record<string, number>;
     stopped: string | null;
 }> {
-    const ids = new Set(options.existing.map((question) => question.id));
+    const ids = new Map(
+        options.existing.map((question) => [question.id, question]),
+    );
     const made: Question[] = [];
     const dropped: Record<string, number> = {};
     const drop = (reason: string) => {
         dropped[reason] = (dropped[reason] ?? 0) + 1;
     };
+    const stop = (stopped: string, unkept: Question[] = []) => ({
+        made,
+        unkept,
+        dropped,
+        stopped,
+    });
     // Calls failed in a row; any call that returns resets it.
     let failures = 0;
     for (const type of GENERATED_TYPES) {
@@ -504,38 +525,49 @@ export async function generateQuestions(options: {
                 failures = 0;
             } catch (error) {
                 if (error instanceof CallCap) {
-                    return { made, dropped, stopped: error.message };
+                    return stop(error.message);
                 }
                 const why = failureOf(error);
                 drop(`failed call: ${why}`);
                 failures++;
                 const status = (error as { status?: unknown } | null)?.status;
                 if (status === 401 || status === 403 || failures >= 3) {
-                    return {
-                        made,
-                        dropped,
-                        stopped: `the generating model failed: ${why}`,
-                    };
+                    return stop(`the generating model failed: ${why}`);
                 }
                 continue;
             }
+            if (drafts.length === 0) {
+                drop("reply with no questions");
+            }
+            const accepted: Question[] = [];
             for (const each of drafts.slice(0, n)) {
-                const accepted = acceptDraft(each, sample, {
+                const kept = acceptDraft(each, sample, {
                     model: options.model,
                     ids,
                     corpus: options.corpus,
                 });
-                if (typeof accepted === "string") {
-                    drop(accepted);
+                if (typeof kept === "string") {
+                    drop(kept);
                     continue;
                 }
-                ids.add(accepted.id);
-                made.push(accepted);
-                have++;
+                ids.set(kept.id, kept);
+                accepted.push(kept);
+            }
+            made.push(...accepted);
+            have += accepted.length;
+            if (accepted.length > 0) {
+                try {
+                    await options.keep?.(accepted);
+                } catch (error) {
+                    return stop(
+                        `could not keep the drafts: ${failureOf(error)}`,
+                        accepted,
+                    );
+                }
             }
         }
     }
-    return { made, dropped, stopped: null };
+    return { made, unkept: [], dropped, stopped: null };
 }
 
 // The day of the snapshot's last turn: questions are asked as of then.
