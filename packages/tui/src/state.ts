@@ -101,7 +101,9 @@ export function lookupLine(ok: boolean, lookup: Lookup): DimLine {
 
 function searchLine(ok: boolean, lookup: SearchLookup): DimLine {
     const query = oneRow(lookup.query);
-    const tags = (lookup.tags ?? []).map(oneRow);
+    const tags = (lookup.tags ?? [])
+        .map(oneRow)
+        .filter((label) => label !== "");
     const subject = [
         ...(query === "" ? [] : [`"${query}"`]),
         ...(tags.length === 0 ? [] : [`tagged ${tags.join(", ")}`]),
@@ -122,10 +124,8 @@ function tagsLine(ok: boolean, lookup: TagsLookup): DimLine {
     if (!ok) {
         return { text: "⌕ couldn't list tags" };
     }
-    const what =
-        lookup.under === undefined
-            ? "tags"
-            : `tags under ${oneRow(lookup.under)}`;
+    const under = oneRow(lookup.under ?? "");
+    const what = under === "" ? "tags" : `tags under ${under}`;
     const count = lookup.hits === 0 ? "no tags" : plural(lookup.hits, "tag");
     return { text: `⌕ listed ${what} · ${count}` };
 }

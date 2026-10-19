@@ -302,6 +302,20 @@ describe("lookupLine", () => {
         });
     });
 
+    it("omits blank tag labels and an empty under filter", () => {
+        expect(
+            lookupLine(true, {
+                tool: "search",
+                query: "word",
+                tags: [" ", "memory", ""],
+                hits: 0,
+            }),
+        ).toEqual({ text: '⌕ searched "word" tagged memory · nothing found' });
+        expect(
+            lookupLine(true, { tool: "tags", under: "  ", hits: 0 }),
+        ).toEqual({ text: "⌕ listed tags · no tags" });
+    });
+
     it("says what tags were listed", () => {
         const listed = { tool: "tags" as const, hits: 12 };
         expect(lookupLine(true, listed)).toEqual({
