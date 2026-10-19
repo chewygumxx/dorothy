@@ -36,8 +36,6 @@ text (`MemoryPrompts`).
 - `"./recall-server"` (`src/recall-server.ts`): `runRecallServer` alone;
   `"./service"`, `"./client"`, `"./bridge"`, `"./evaluation"`: [the contract's guide](./src/contract/AGENTS.md).
 
-Of the `@dorothy` packages it depends on `core` alone.
-
 ## Files
 
 - `transcript.ts`: private JSONL under `$XDG_DATA_HOME/dorothy/`.
@@ -105,10 +103,11 @@ Of the `@dorothy` packages it depends on `core` alone.
 ## Invariants
 
 - The recall index doubles as the sidecar write lock and holds review
-  claims, so two TUIs never review one conversation at once. History's
-  `FileLock` (`.git/dorothy.lock`) excludes all history writers, with the
-  index's lock taken first when available. History commits inside the lock
-  under; healing takes the lock, so it happens only outside it.
+  claims, so two TUIs never review one conversation at once; a corrupt
+  one is rebuilt in place only if `soleHolder` shows no other process has
+  it open. History's `FileLock` (`.git/dorothy.lock`) excludes all history
+  writers, with the index's lock taken first when available; history
+  commits inside it, and healing takes it, so only outside it.
 - `updateSidecar`'s change may be async, so coining a concept inside its
   lock means two runs never coin one label twice.
 - The notes never import history; only `openMemory` wires the two.

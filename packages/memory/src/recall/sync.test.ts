@@ -401,6 +401,27 @@ describe("a failure while syncing", () => {
         expect(String(error)).toContain("disk full");
         expect(String(error)).not.toContain("no such savepoint");
     });
+
+    it("is not a warning when the index is corrupt, which rebuilds it", async () => {
+        await writeFile(transcript(A), user(1, "hello"));
+        await syncIndex(index, dir);
+        const failure = failing({
+            "INSERT INTO turns": Object.assign(
+                new Error("database disk image is malformed"),
+                { code: "SQLITE_CORRUPT" },
+            ),
+        });
+        await appendFile(transcript(A), user(2, "again"));
+        const error = await syncIndex(index, dir).catch(
+            (caught: unknown) => caught,
+        );
+        failure.mockRestore();
+        expect(String(error)).toContain("database disk image is malformed");
+        expect(String(error)).toContain("rebuilt");
+        // The next sync fills the new index from the transcripts.
+        expect(await syncIndex(index, dir)).toEqual([]);
+        expect(turns(A)).toHaveLength(2);
+    });
 });
 
 describe("clusters", () => {

@@ -10,6 +10,7 @@
 
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { closeSync, openSync, writeSync } from "node:fs";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -218,6 +219,139 @@ describe("RecallIndex", () => {
             raw.query("SELECT count(*) AS n FROM conversations").get(),
         ).toEqual({ n: 1 });
         raw.close();
+    });
+
+    describe("a file that turns corrupt in use", () => {
+        const corruptError = (code = "SQLITE_CORRUPT") =>
+            Object.assign(new Error("database disk image is malformed"), {
+                code,
+            });
+        // Overwrites the schema page, as a bad disk or a stray write would.
+        const damage = (index: RecallIndex, bytes: Buffer) => {
+            index.db.run("PRAGMA wal_checkpoint(TRUNCATE)");
+            const fd = openSync(path, "r+");
+            writeSync(fd, bytes, 0, bytes.length, 100);
+            closeSync(fd);
+        };
+        // Another process with the index open and idle, until release.
+        const holder = (release: string) =>
+            Bun.spawn(
+                [
+                    process.execPath,
+                    "-e",
+                    `const { Database } = require("bun:sqlite");
+                     const { existsSync } = require("node:fs");
+                     const db = new Database(${JSON.stringify(path)});
+                     db.run("PRAGMA journal_mode = WAL");
+                     db.query("SELECT count(*) FROM conversations").get();
+                     console.log("holding");
+                     while (!existsSync(${JSON.stringify(release)})) Bun.sleepSync(10);`,
+                ],
+                { stdout: "pipe" },
+            );
+
+        it("is rebuilt in place when no other process holds it", async () => {
+            const index = RecallIndex.open(path);
+            insert(index, "a");
+            damage(index, Buffer.alloc(300, 0xff));
+            const before = (await stat(path)).ino;
+            const failure = await index
+                .exclusive(() => {
+                    throw corruptError();
+                })
+                .catch((error: unknown) => error);
+            expect(String(failure)).toContain(
+                "database disk image is malformed",
+            );
+            expect(String(failure)).toContain("rebuilt");
+            expect((await stat(path)).ino).not.toBe(before);
+            expect(version(index)).toBe(SCHEMA_VERSION);
+            expect(count(index)).toBe(0);
+            // The next calls work on the new file.
+            await index.exclusive(() => insert(index, "b"));
+            expect(await index.claim("b", "me", 1000, 500)).toBe(true);
+            index.close();
+            const again = RecallIndex.open(path);
+            expect(count(again)).toBe(1);
+            again.close();
+        });
+
+        it("is left alone while another process holds it", async () => {
+            const index = RecallIndex.open(path);
+            insert(index, "a");
+            index.db.run("PRAGMA wal_checkpoint(TRUNCATE)");
+            const release = join(dir, "release");
+            const child = holder(release);
+            const before = (await stat(path)).ino;
+            let failure: unknown;
+            try {
+                await child.stdout.getReader().read();
+                damage(index, Buffer.alloc(300, 0xff));
+                failure = await index
+                    .exclusive(() => {
+                        throw corruptError();
+                    })
+                    .catch((error: unknown) => error);
+            } finally {
+                await writeFile(release, "");
+                await child.exited;
+            }
+            expect(String(failure)).toContain(
+                "database disk image is malformed",
+            );
+            expect(String(failure)).toContain("not rebuilt");
+            expect((await stat(path)).ino).toBe(before);
+            // With the other process gone, the next failure rebuilds it.
+            const later = await index
+                .exclusive(() => {
+                    throw corruptError("SQLITE_CORRUPT_VTAB");
+                })
+                .catch((error: unknown) => error);
+            expect(String(later)).toContain("rebuilt");
+            expect((await stat(path)).ino).not.toBe(before);
+            expect(count(index)).toBe(0);
+            index.close();
+        });
+
+        it("is left alone when it cannot be shown to be unshared", async () => {
+            const index = RecallIndex.open(path);
+            insert(index, "a");
+            index.db.run("PRAGMA wal_checkpoint(TRUNCATE)");
+            // A header SQLite cannot read says nothing of who has it open.
+            damage(index, Buffer.from("not a database at all, not even close"));
+            writeSync(
+                openSync(path, "r+"),
+                Buffer.from("x".repeat(100)),
+                0,
+                100,
+                0,
+            );
+            const before = (await stat(path)).ino;
+            const failure = await index
+                .exclusive(() => {
+                    throw corruptError("SQLITE_NOTADB");
+                })
+                .catch((error: unknown) => error);
+            expect(String(failure)).toContain("not rebuilt");
+            expect((await stat(path)).ino).toBe(before);
+            index.close();
+        });
+
+        it("does not rebuild for other failures", async () => {
+            const index = RecallIndex.open(path);
+            insert(index, "a");
+            const before = (await stat(path)).ino;
+            await expect(
+                index.exclusive(() => {
+                    throw Object.assign(new Error("full"), {
+                        code: "SQLITE_FULL",
+                    });
+                }),
+            ).rejects.toThrow("full");
+            expect((await stat(path)).ino).toBe(before);
+            expect(count(index)).toBe(1);
+            index.close();
+        });
     });
 
     it("keeps the index and its journal files private", async () => {

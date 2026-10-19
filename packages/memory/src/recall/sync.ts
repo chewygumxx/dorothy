@@ -28,7 +28,7 @@ import {
 } from "../memory/vocabulary.js";
 import { sourceOf, toRecall, toTurn } from "../transcript.js";
 import { syncFacts } from "./facts.js";
-import type { RecallIndex } from "./store.js";
+import { type RecallIndex, unusable } from "./store.js";
 
 export type VisitRow = { userTurns: number; lastAt: number };
 export type ReadRow = { at: number; served: Served };
@@ -147,9 +147,9 @@ async function syncConversation(
 }
 
 // Work that fails is undone alone, and says why; null when it succeeds. A
-// failure that leaves no savepoint to undo it to, because SQLite ended the
-// transaction, is the whole sync's: it is thrown as it was, for the lock
-// to roll back.
+// failure that says the index itself is unusable, or that leaves no
+// savepoint to undo it to because SQLite ended the transaction, is the
+// whole sync's: it is thrown as it was, for the lock to roll back.
 async function inSavepoint(
     index: RecallIndex,
     work: () => Promise<void>,
@@ -158,6 +158,9 @@ async function inSavepoint(
     try {
         await work();
     } catch (error) {
+        if (unusable(error)) {
+            throw error;
+        }
         try {
             index.db.run("ROLLBACK TO sync");
         } catch {

@@ -9,7 +9,14 @@
 //
 
 import { Database } from "bun:sqlite";
-import { chmodSync, closeSync, mkdirSync, openSync, rmSync } from "node:fs";
+import {
+    chmodSync,
+    closeSync,
+    existsSync,
+    mkdirSync,
+    openSync,
+    rmSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { type Env, xdgDir } from "@dorothy/core";
 import type { Lock } from "../memory/sidecar.js";
@@ -261,13 +268,63 @@ function prepare(path: string, busyMs: number): Database {
     }
 }
 
+const FILES = ["", "-wal", "-shm"];
+
+const describeError = (error: unknown) =>
+    error instanceof Error ? error.message : String(error);
+
+// What an error says, with a note on what was done about it. It keeps its
+// SQLite code and the error it noted.
+function noted(error: unknown, note: string): Error {
+    return Object.assign(
+        new Error(`${describeError(error)} (${note})`, { cause: error }),
+        { code: (error as { code?: unknown } | null)?.code },
+    );
+}
+
+// Shows that no process but this one has the index open, if it can: an
+// exclusive transaction on a connection that takes SQLite's exclusive
+// locking mode, which in a WAL database fails while any other connection,
+// even an idle one, has it open. The proof lasts until the returned lock
+// is closed; null where it fails, as it does for a header SQLite cannot
+// read, which says nothing of who holds the file.
+function soleHolder(path: string): { close(): void } | null {
+    if (!existsSync(path)) {
+        return { close() {} };
+    }
+    let probe: Database | null = null;
+    try {
+        probe = new Database(path, { readwrite: true, strict: true });
+        probe.run("PRAGMA busy_timeout = 0");
+        probe.run("PRAGMA locking_mode = EXCLUSIVE");
+        probe.run("BEGIN EXCLUSIVE");
+        return probe;
+    } catch {
+        probe?.close();
+        return null;
+    }
+}
+
 // The derived index: deleting it costs a rebuild, never data.
 export class RecallIndex {
-    readonly db: Database;
+    #db: Database;
+    #lock: ReturnType<typeof exclusiveLock>;
+    // Work holding the lock, one at a time, so that a rebuild never meets
+    // another run on the file it replaces.
+    #turn: Promise<unknown> = Promise.resolve();
+    readonly #path: string;
+    readonly #busyMs: number;
 
-    private constructor(db: Database) {
-        this.db = db;
-        this.exclusive = exclusiveLock(db);
+    private constructor(db: Database, path: string, busyMs: number) {
+        this.#db = db;
+        this.#lock = exclusiveLock(db);
+        this.#path = path;
+        this.#busyMs = busyMs;
+    }
+
+    // The database now in use: another after the index is rebuilt.
+    get db(): Database {
+        return this.#db;
     }
 
     // A file SQLite says is not a database is deleted and made again; it
@@ -279,22 +336,78 @@ export class RecallIndex {
         mkdirSync(dir, { recursive: true, mode: 0o700 });
         chmodSync(dir, 0o700);
         try {
-            return new RecallIndex(prepare(path, busyMs));
+            return new RecallIndex(prepare(path, busyMs), path, busyMs);
         } catch (error) {
             if (!unusable(error)) {
                 throw error;
             }
-            for (const suffix of ["", "-wal", "-shm"]) {
+            for (const suffix of FILES) {
                 rmSync(`${path}${suffix}`, { force: true });
             }
-            return new RecallIndex(prepare(path, busyMs));
+            return new RecallIndex(prepare(path, busyMs), path, busyMs);
         }
     }
 
     // Runs work holding the index's write lock, which other processes wait
     // for (and SQLite releases if this one dies); work in this process takes
-    // turns.
-    readonly exclusive: <T>(work: () => T | Promise<T>) => Promise<T>;
+    // turns. A file that proves corrupt in use is rebuilt where no other
+    // process has it open, and the failure, noted, still reaches the caller,
+    // whose next call finds a new index. Where another process may hold it,
+    // it is left as it is, for deleting a shared index leaves that process
+    // writing to a file nothing else reads.
+    readonly exclusive: <T>(work: () => T | Promise<T>) => Promise<T> = <T>(
+        work: () => T | Promise<T>,
+    ) => {
+        const run = async (): Promise<T> => {
+            try {
+                return await this.#lock(work);
+            } catch (error) {
+                throw unusable(error) ? this.#recover(error) : error;
+            }
+        };
+        const result = this.#turn.then(run, run);
+        this.#turn = result.catch(() => {});
+        return result;
+    };
+
+    #recover(error: unknown): Error {
+        try {
+            this.#db.close();
+        } catch {
+            // Closed already, or too damaged to say so.
+        }
+        const proof = soleHolder(this.#path);
+        if (proof === null) {
+            try {
+                this.#db = new Database(this.#path, { strict: true });
+                this.#db.run(`PRAGMA busy_timeout = ${this.#busyMs}`);
+                this.#lock = exclusiveLock(this.#db);
+            } catch {
+                // Left closed: every call says why.
+            }
+            return noted(
+                error,
+                "it is corrupt and another process may have it open, so it is not rebuilt; delete it once none has",
+            );
+        }
+        try {
+            for (const suffix of FILES) {
+                rmSync(`${this.#path}${suffix}`, { force: true });
+            }
+        } finally {
+            proof.close();
+        }
+        try {
+            this.#db = prepare(this.#path, this.#busyMs);
+            this.#lock = exclusiveLock(this.#db);
+        } catch (rebuild) {
+            return noted(
+                error,
+                `it is corrupt; rebuilding it failed: ${describeError(rebuild)}`,
+            );
+        }
+        return noted(error, "it was corrupt and has been rebuilt; ask again");
+    }
 
     // For updateSidecar: a sidecar's read, change and rename happen under
     // the lock.
