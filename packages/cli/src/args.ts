@@ -346,13 +346,20 @@ const SERVE_USAGE =
 
 function parseServe(rest: readonly string[]): Mode {
     const parsed = options(rest, {
-        "token-add": { type: "string" },
-        "token-revoke": { type: "string" },
+        "token-add": { type: "string", multiple: true },
+        "token-revoke": { type: "string", multiple: true },
     });
+    // An option given twice would keep its last value: refused instead.
     if (parsed === null || parsed.positionals.length > 0) {
         return usage(SERVE_USAGE);
     }
-    const { "token-add": add, "token-revoke": revoke } = parsed.values;
+    const once = (values: string[] | undefined) =>
+        values === undefined || values.length === 1 ? values?.[0] : null;
+    const add = once(parsed.values["token-add"]);
+    const revoke = once(parsed.values["token-revoke"]);
+    if (add === null || revoke === null) {
+        return usage(SERVE_USAGE);
+    }
     if (add !== undefined && revoke !== undefined) {
         return usage(SERVE_USAGE);
     }
@@ -372,11 +379,15 @@ function parseServe(rest: readonly string[]): Mode {
 const MCP_USAGE = "--mcp takes [--host <host>], a host as its profile names it";
 
 function parseMcp(rest: readonly string[]): Mode {
-    const parsed = options(rest, { host: { type: "string" } });
-    if (parsed === null || parsed.positionals.length > 0) {
+    const parsed = options(rest, { host: { type: "string", multiple: true } });
+    if (
+        parsed === null ||
+        parsed.positionals.length > 0 ||
+        (parsed.values.host?.length ?? 0) > 1
+    ) {
         return usage(MCP_USAGE);
     }
-    const { host } = parsed.values;
+    const host = parsed.values.host?.[0];
     if (host !== undefined && !HOST_ID.test(host)) {
         return usage(MCP_USAGE);
     }

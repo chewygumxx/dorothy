@@ -634,6 +634,46 @@ describe("--serve and --mcp", () => {
         }
     });
 
+    it("refuses a token command with no device, or an empty one", () => {
+        for (const argv of [
+            ["--serve", "--token-revoke"],
+            ["--serve", "--token-revoke", ""],
+            ["--serve", "--token-add="],
+        ]) {
+            expect({ argv, kind: parseArgs(argv, false).kind }).toEqual({
+                argv,
+                kind: "usage",
+            });
+        }
+    });
+
+    it("refuses an option given twice, which would keep the last", () => {
+        for (const argv of [
+            ["--serve", "--token-add", "a", "--token-add", "b"],
+            ["--serve", "--token-revoke", "a", "--token-revoke", "a"],
+            ["--mcp", "--host", "codex", "--host", "goose"],
+        ]) {
+            expect({ argv, kind: parseArgs(argv, false).kind }).toEqual({
+                argv,
+                kind: "usage",
+            });
+        }
+    });
+
+    it("keeps --mcp and --serve apart, and --host to --mcp", () => {
+        for (const argv of [
+            ["--mcp", "--serve"],
+            ["--serve", "--mcp"],
+            ["--mcp", "--host"],
+            ["--serve", "--host", "codex"],
+        ]) {
+            expect({ argv, kind: parseArgs(argv, false).kind }).toEqual({
+                argv,
+                kind: "usage",
+            });
+        }
+    });
+
     it("bridges MCP, naming the host that launched it if given", () => {
         expect(parseArgs(["--mcp"], false)).toEqual({
             kind: "mcp",
