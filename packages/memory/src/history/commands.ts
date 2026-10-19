@@ -717,6 +717,7 @@ export async function runMirror(
                     env.DOROTHY_MIRROR_KEY,
                     repo,
                     cwd,
+                    false,
                 );
                 if (problem !== null) {
                     err.write(`dorothy: ${problem}\n`);
@@ -786,6 +787,7 @@ async function keyProblem(
     existing: string | undefined,
     repo: MemoryRepo,
     cwd: string,
+    makingKey = true,
 ): Promise<string | null> {
     if (existing?.startsWith("encrypted:"))
         return "DOROTHY_MIRROR_KEY is still encrypted; load the decrypted environment before setting the mirror. Nothing was changed";
@@ -803,7 +805,7 @@ async function keyProblem(
     if ((await repo.sealedNames()).length > 0) {
         return "DOROTHY_MIRROR_KEY is not set, and the bundles already sealed need the key they were sealed with; set that one with dotenvx set. Nothing was changed";
     }
-    return existsSync(join(cwd, ".env"))
+    return !makingKey || existsSync(join(cwd, ".env"))
         ? null
         : `there is no .env in ${cwd} to keep DOROTHY_MIRROR_KEY in; run --mirror from the checkout whose .env holds Dorothy's credentials. Nothing was changed`;
 }

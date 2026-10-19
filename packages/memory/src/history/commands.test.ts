@@ -623,6 +623,19 @@ describe("runCheck", () => {
 });
 
 describe("runMirror", () => {
+    it("shows an unsealed mirror without needing a key or dotenv file", async () => {
+        await sweep();
+        const bare = await bareRepo();
+        await repo().setRemote("mirror", bare);
+        err = capture();
+        expect(await runMirror(null, { ...options(), cwd: tempRoot() })).toBe(
+            0,
+        );
+        expect(out.text).toContain(`Mirror: ${bare}`);
+        expect(out.text).toContain("Sealed through: nothing yet");
+        expect(err.text).toBe("");
+    });
+
     it("checks the key when showing mirror status", async () => {
         const bare = await bareRepo();
         const key = newKey();
