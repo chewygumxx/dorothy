@@ -78,9 +78,9 @@ Of the `@dorothy` packages it depends on `core` alone.
   too, and `facts.ts` the store's facts by mtime; `query.ts` has `search`
   and `open`, of either; `tags.ts` mirrors the vocabulary; `remember.ts`
   writes her own facts; `server.ts` serves them over MCP on stdio as
-  `dorothy --recall-server`, history opened without the mirror. Reviews
-  appraise each read into the sidecar, and `salience()` (`rank.ts`)
-  weighs appraised reads with visits.
+  `dorothy --recall-server`, one call at a time in the order sent, history
+  opened without the mirror. Reviews appraise each read into the sidecar,
+  and `salience()` (`rank.ts`) weighs appraised reads with visits.
 - `compaction/`: past `[compaction] soft` tokens, at the next idle (past
   `hard`, before the next message), `compact()` splits the turns before
   the verbatim tail into topical clusters with an abstract each; read

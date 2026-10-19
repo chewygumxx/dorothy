@@ -34,7 +34,8 @@ gives back, and the service that speaks it. The spec is
 - `recall.ts`: passages for a prompt, for the user's turn, `within`
   personal and its project's scopes (`recall/query.ts`'s option).
 - `record.ts`: records into the archive, each host session one
-  conversation, each event once by its `sourceId`, under the lock.
+  conversation, each event once by its `sourceId`, under the lock, a
+  torn tail cut off before an append (`cutTornTail`, `../transcript.ts`).
 - `remember.ts`: `remember` over knowledge ids, as `recall/remember.ts`
   guards it.
 - `tools.ts`: the four MCP tools, an unexpected error reading
