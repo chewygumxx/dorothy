@@ -8,7 +8,7 @@
 //
 //
 
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it, spyOn } from "bun:test";
 import { chmodSync, existsSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import {
@@ -65,6 +65,32 @@ describe("isolatedEnv", () => {
 });
 
 describe("the git binary engine", () => {
+    it("keeps a bundle error when snapshot cleanup also fails", async () => {
+        const root = tempRoot();
+        const repo = binaryRepo(root, { env: TEST_ENV });
+        await repo.init();
+        put(root, "note.txt", "one");
+        await repo.commit(["note.txt"], "one");
+        const original = Bun.spawn;
+        const spy = spyOn(Bun, "spawn").mockImplementation(((
+            ...args: Parameters<typeof Bun.spawn>
+        ) => {
+            const command = args[0];
+            if (Array.isArray(command)) {
+                if (command.includes("bundle") && command.includes("create"))
+                    throw new Error("packing failed");
+                if (command.includes("update-ref") && command.includes("-d"))
+                    throw new Error("cleanup failed");
+            }
+            return original(...args);
+        }) as typeof Bun.spawn);
+        try {
+            await expect(repo.bundle(null)).rejects.toThrow("packing failed");
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
     it("isolates post-commit hooks that no-verify does not skip", async () => {
         const home = tempRoot();
         const marker = join(home, "hook-ran");

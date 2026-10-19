@@ -354,6 +354,8 @@ export function binaryRepo(
             }
             const snapshot = `refs/dorothy/bundling-${crypto.randomUUID()}`;
             await must(["update-ref", snapshot, tip]);
+            let bundle: Uint8Array;
+            const cleanup = () => must(["update-ref", "-d", snapshot]);
             try {
                 const ran = await must([
                     "bundle",
@@ -369,16 +371,19 @@ export function binaryRepo(
                 const position = bytes.indexOf(marker);
                 if (position < 0)
                     throw new Error("the bundle has no snapshot reference");
-                return new Uint8Array(
+                bundle = new Uint8Array(
                     Buffer.concat([
                         bytes.subarray(0, position),
                         Buffer.from(`${tip} ${MAIN}\n`),
                         bytes.subarray(position + marker.length),
                     ]),
                 );
-            } finally {
-                await must(["update-ref", "-d", snapshot]);
+            } catch (error) {
+                await cleanup().catch(() => {});
+                throw error;
             }
+            await cleanup();
+            return bundle;
         },
         async unbundle(bundle) {
             const file = join(root, ".git", "dorothy-incoming.bundle");
