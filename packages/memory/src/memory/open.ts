@@ -128,21 +128,17 @@ export function turnCommitter(
     history: Pick<MemoryHistory, "turn" | "warn">,
     path: string,
     flushed: () => Promise<void>,
-    done: number,
 ): { ended: () => void; settled: () => Promise<void> } {
-    let count = done;
     let chain: Promise<void> = Promise.resolve();
     return {
         ended: () => {
-            count += 1;
-            const turn = count;
             chain = chain.then(async () => {
                 try {
                     await flushed();
-                    await history.turn(path, turn);
+                    await history.turn(path);
                 } catch (error) {
                     history.warn(
-                        `history: couldn't commit turn ${turn} (${describeError(error)})`,
+                        `history: couldn't commit turn (${describeError(error)})`,
                     );
                 }
             });
@@ -586,7 +582,7 @@ export async function openMemory({
             ? null
             : chatSyncer(cwd, writeLock, launched, channel, env);
     syncer?.run();
-    const committer = chatCommitter(launched, transcript, path, history);
+    const committer = chatCommitter(launched, transcript, path);
     const compaction = compactable
         ? chatCompaction({
               config,
@@ -893,17 +889,11 @@ function chatCommitter(
     launched: LaunchedHistory | null,
     transcript: TranscriptWriter | null,
     path: string,
-    history: readonly ResumedTurn[],
 ): ReturnType<typeof turnCommitter> | null {
     if (launched === null || transcript === null) {
         return null;
     }
-    return turnCommitter(
-        launched.history,
-        path,
-        () => transcript.flushed(),
-        history.filter((turn) => turn.role === "user").length,
-    );
+    return turnCommitter(launched.history, path, () => transcript.flushed());
 }
 
 // At each turn's end: the turn committed, the project synced.

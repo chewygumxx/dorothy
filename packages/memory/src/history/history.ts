@@ -250,7 +250,7 @@ export class MemoryHistory {
     }
 
     // A turn of the live conversation, once its transcript is flushed.
-    turn(path: string, _count: number): Promise<void> {
+    turn(path: string): Promise<void> {
         return this.lock(async () => {
             // Failed exchanges still added user events. Count the canonical
             // transcript under the lock rather than only completed replies.

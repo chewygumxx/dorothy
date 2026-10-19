@@ -102,8 +102,8 @@ describe("turnCommitter", () => {
         const log: string[] = [];
         const turns = turnCommitter(
             {
-                turn: async (path, count) => {
-                    log.push(`turn ${path} #${count}`);
+                turn: async (...args) => {
+                    log.push(`turn ${args.join(" ")}`);
                 },
                 warn: (message) => log.push(message),
             },
@@ -112,16 +112,15 @@ describe("turnCommitter", () => {
                 await new Promise((resolve) => setTimeout(resolve, 5));
                 log.push("flushed");
             },
-            3,
         );
         turns.ended();
         turns.ended();
         await turns.settled();
         expect(log).toEqual([
             "flushed",
-            "turn /data/x.jsonl #4",
+            "turn /data/x.jsonl",
             "flushed",
-            "turn /data/x.jsonl #5",
+            "turn /data/x.jsonl",
         ]);
     });
 
@@ -136,11 +135,10 @@ describe("turnCommitter", () => {
             },
             "/data/x.jsonl",
             async () => {},
-            0,
         );
         turns.ended();
         await turns.settled();
-        expect(warnings).toEqual(["history: couldn't commit turn 1 (locked)"]);
+        expect(warnings).toEqual(["history: couldn't commit turn (locked)"]);
     });
 });
 

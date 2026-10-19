@@ -894,7 +894,7 @@ describe("taking the lock itself", () => {
     it("commits a turn with its canonical count", async () => {
         const history = await open();
         put(root, TRANSCRIPT, event("one") + event("two") + event("three"));
-        await history.turn(join(root, TRANSCRIPT), 1);
+        await history.turn(join(root, TRANSCRIPT));
         expect((await messages(history))[0]).toBe(`turn: ${PHRASE} #3`);
     });
 
@@ -958,7 +958,7 @@ describe("a lock that fails", () => {
         put(root, "tags.json", "{");
         busy = true;
         await history.sweep();
-        await history.turn(join(root, TRANSCRIPT), 1);
+        await history.turn(join(root, TRANSCRIPT));
         expect(await history.heal(join(root, "tags.json"))).toBe(false);
         expect(warnings).toEqual([
             "history: couldn't look for changes (busy)",
