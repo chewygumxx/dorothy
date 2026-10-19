@@ -9,7 +9,7 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { runCli } from "../cli.js";
 import {
     extraQuestion,
@@ -118,12 +118,15 @@ describe("bun run eval -- review", () => {
         why: string,
     ) => {
         const before = readFileSync(questionsPath(work), "utf8");
+        const inode = statSync(questionsPath(work)).ino;
         const { io, out } = editing(change);
         expect(await runCli(["review", "--work", work], io)).toBe(0);
         expect(out.join("")).toContain(
             `that edit is not a question: ${why}; the question is unchanged`,
         );
         expect(readFileSync(questionsPath(work), "utf8")).toBe(before);
+        // Not written again: the same file, not a copy renamed over it.
+        expect(statSync(questionsPath(work)).ino).toBe(inode);
     };
 
     it("refuses an edit to evidence the snapshot lacks, leaving it as it was", async () => {

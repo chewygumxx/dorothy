@@ -153,7 +153,7 @@ async function decide(
                 : questions.find((question) => question.id === decided.id);
         if (taken !== undefined) {
             return {
-                questions,
+                questions: null,
                 result: sameQuestion(taken, decided)
                     ? "another question has that text and evidence"
                     : "its id is another question's: reword it",
