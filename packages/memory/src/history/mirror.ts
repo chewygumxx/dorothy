@@ -194,6 +194,7 @@ export class Mirror {
                 return { kind: "stopped" };
             }
             const problem = await sealedProblem(repo, key);
+            if (this.#stopped) return { kind: "stopped" };
             const sealing =
                 problem === null
                     ? sealPending(repo, key, lock)

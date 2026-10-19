@@ -8,7 +8,7 @@
 //
 //
 
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it, spyOn } from "bun:test";
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Timers } from "@dorothy/core";
@@ -85,6 +85,37 @@ function mirrorOf(
 }
 
 describe("sealPending", () => {
+    it("recovers after a crash between append and the through ref", async () => {
+        const repo = await repoWith({ "tags.json": "{}\n" });
+        const bare = await bareRepo();
+        await repo.setRemote("mirror", bare);
+        const spy = spyOn(repo, "setRef").mockRejectedValue(
+            new Error("crash after append"),
+        );
+        try {
+            await expect(sealPending(repo, KEY)).rejects.toThrow(
+                "crash after append",
+            );
+        } finally {
+            spy.mockRestore();
+        }
+        expect(await repo.sealedNames()).toEqual([sealedName(1)]);
+        expect(await repo.resolve(SEALED_THROUGH)).toBeNull();
+        const { mirror } = mirrorOf(repo);
+        expect((await mirror.push()).kind).toBe("pushed");
+        const fresh = binaryRepo(join(tempRoot(), "recovered"), {
+            env: TEST_ENV,
+        });
+        const recovered = await recover({
+            repo: fresh,
+            url: bare,
+            key: KEY,
+            token: null,
+        });
+        expect(recovered.stopped).toBeNull();
+        expect(recovered.tip).toBe(await repo.resolve(MAIN));
+        expect(await waiting(repo)).toBe(false);
+    });
     it("seals new commits as the next bundle, and nothing twice", async () => {
         const repo = await repoWith({ "tags.json": "{}\n" });
         expect(await waiting(repo)).toBe(true);
@@ -336,6 +367,28 @@ describe("Mirror", () => {
 });
 
 describe("Mirror.stop", () => {
+    it("does not start a seal after stopping during key validation", async () => {
+        const repo = await repoWith({ "tags.json": "{}\n" });
+        await sealPending(repo, KEY);
+        await commit(repo, { "tags.json": "{ }\n" }, "two");
+        await repo.setRemote("mirror", await bareRepo());
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const { mirror } = mirrorOf({
+            ...repo,
+            sealedFile: async (name) => {
+                entered.resolve();
+                await release.promise;
+                return repo.sealedFile(name);
+            },
+        });
+        const pushing = mirror.push();
+        await entered.promise;
+        await mirror.stop();
+        release.resolve();
+        expect((await pushing).kind).toBe("stopped");
+        expect(await repo.sealedNames()).toEqual([sealedName(1)]);
+    });
     it("waits for a seal in progress", async () => {
         const repo = await repoWith({ "tags.json": "{}\n" });
         await repo.setRemote("mirror", await bareRepo());
