@@ -12,7 +12,10 @@ import { existsSync, statSync } from "node:fs";
 import {
     chmod,
     mkdir,
+    readdir,
     readFile,
+    readlink,
+    realpath,
     rename,
     rm,
     stat,
@@ -62,6 +65,28 @@ export const historyRoot = (env: Env = process.env) =>
 
 // How old an index.lock must be before history takes it for a crash's.
 const STALE_LOCK_MS = 60_000;
+
+// Linux exposes a process's executable name and actual working directory.
+// If the process table cannot be inspected, keep the lock conservatively.
+async function runningGit(root: string): Promise<boolean> {
+    let processes: string[];
+    try {
+        processes = await readdir("/proc");
+    } catch {
+        return true;
+    }
+    const directory = await realpath(root);
+    for (const pid of processes.filter((name) => /^\d+$/.test(name))) {
+        try {
+            if ((await readFile(`/proc/${pid}/comm`, "utf8")).trim() !== "git")
+                continue;
+            if ((await readlink(`/proc/${pid}/cwd`)) === directory) return true;
+        } catch (error) {
+            if ((error as { code?: string }).code !== "ENOENT") return true;
+        }
+    }
+    return false;
+}
 
 // A hook carrying this line is Dorothy's to rewrite; one without it is the
 // user's, and never replaced.
@@ -302,6 +327,9 @@ export class MemoryHistory {
             return;
         }
         if (Date.now() - changed <= STALE_LOCK_MS) {
+            return;
+        }
+        if (await runningGit(this.root)) {
             return;
         }
         await rm(path, { force: true });

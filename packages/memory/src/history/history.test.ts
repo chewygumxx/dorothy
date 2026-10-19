@@ -492,6 +492,59 @@ describe("facts in the sweep and in a record", () => {
 });
 
 describe("recording", () => {
+    it("leaves a stale index lock while git is running in the repository", async () => {
+        const history = await open();
+        const editor = join(tempRoot(), "editor.sh");
+        writeFileSync(
+            editor,
+            '#!/bin/sh\necho ready\nread answer\necho "user commit" > "$1"\n',
+        );
+        put(root, "tags.json", vocabulary(1));
+        await record(history, ["tags.json"], "tags: initial");
+        put(root, "tags.json", vocabulary(2));
+        const child = Bun.spawn(
+            [
+                "git",
+                "-c",
+                "core.hooksPath=/dev/null",
+                "commit",
+                "--only",
+                "--",
+                "tags.json",
+            ],
+            {
+                cwd: root,
+                env: { ...TEST_ENV, GIT_EDITOR: `sh ${editor}` },
+                stdin: "pipe",
+                stdout: "pipe",
+                stderr: "pipe",
+            },
+        );
+        const reader = child.stdout.getReader();
+        try {
+            expect(
+                new TextDecoder().decode((await reader.read()).value),
+            ).toContain("ready");
+            const lock = join(root, ".git", "index.lock");
+            // The active git owns this lock even though its timestamp is old.
+            expect(existsSync(lock)).toBe(true);
+            const old = Date.now() / 1000 - 120;
+            utimesSync(lock, old, old);
+            put(root, SIDECAR, sidecar("One"));
+            await record(history, [SIDECAR], "review: concurrent");
+            expect(existsSync(lock)).toBe(true);
+        } finally {
+            child.stdin.write("continue\n");
+            child.stdin.end();
+            while (!(await reader.read()).done) {
+                /* Drain git's summary. */
+            }
+            reader.releaseLock();
+            await new Response(child.stderr).text();
+            await child.exited;
+        }
+        expect((await messages(history))[0]).toBe("user commit");
+    });
     it("clears a lock a crashed git left, and only a stale one", async () => {
         const history = await open();
         const lock = join(root, ".git", "index.lock");
