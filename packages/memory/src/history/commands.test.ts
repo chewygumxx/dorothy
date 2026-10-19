@@ -329,6 +329,19 @@ describe("runCheck", () => {
         );
     });
 
+    it("says when the lines kept aside cannot be listed, leaving the exit code alone", async () => {
+        write("tags.json", vocabulary(1));
+        const broken = {
+            ...env,
+            get XDG_STATE_HOME(): string {
+                throw new Error("no state");
+            },
+        };
+        expect(await runCheck({ ...options(), env: broken })).toBe(0);
+        expect(out.text).toContain("unread: couldn't be listed (no state)");
+        expect(err.text).toBe("");
+    });
+
     it("lints a directory with no history yet", async () => {
         write("tags.json", "{");
         write(SIDECAR, sidecar("One"));

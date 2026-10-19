@@ -537,9 +537,14 @@ export async function runCheck(
             out,
         );
         // What recording kept aside, and errors in its hook's log: not
-        // memory's files, so the exit code is the lint's alone.
-        for (const line of await unreadReport(env)) {
-            out.write(`${line}\n`);
+        // memory's files, so the exit code is the lint's alone, and a
+        // report that fails is said, not counted.
+        try {
+            for (const line of await unreadReport(env)) {
+                out.write(`${line}\n`);
+            }
+        } catch (error) {
+            out.write(`unread: couldn't be listed (${describeError(error)})\n`);
         }
         return code;
     } catch (error) {
