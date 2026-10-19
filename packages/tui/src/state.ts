@@ -108,8 +108,9 @@ function searchLine(ok: boolean, lookup: SearchLookup): DimLine {
         ...(query === "" ? [] : [`"${query}"`]),
         ...(tags.length === 0 ? [] : [`tagged ${tags.join(", ")}`]),
     ].join(" ");
+    const description = subject === "" ? "" : ` ${subject}`;
     if (!ok) {
-        return { text: `⌕ couldn't search ${subject}` };
+        return { text: `⌕ couldn't search${description}` };
     }
     const facts = lookup.facts ?? 0;
     const counts = [
@@ -117,7 +118,7 @@ function searchLine(ok: boolean, lookup: SearchLookup): DimLine {
         ...(lookup.hits > 0 ? [plural(lookup.hits, "conversation")] : []),
     ];
     const found = counts.length === 0 ? "nothing found" : counts.join(", ");
-    return { text: `⌕ searched ${subject} · ${found}` };
+    return { text: `⌕ searched${description} · ${found}` };
 }
 
 function tagsLine(ok: boolean, lookup: TagsLookup): DimLine {

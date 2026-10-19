@@ -316,6 +316,19 @@ describe("lookupLine", () => {
         ).toEqual({ text: "⌕ listed tags · no tags" });
     });
 
+    it("keeps empty search descriptions readable", () => {
+        const blank = {
+            tool: "search" as const,
+            query: "",
+            tags: [" ", ""],
+            hits: 0,
+        };
+        expect(lookupLine(true, blank)).toEqual({
+            text: "⌕ searched · nothing found",
+        });
+        expect(lookupLine(false, blank)).toEqual({ text: "⌕ couldn't search" });
+    });
+
     it("says what tags were listed", () => {
         const listed = { tool: "tags" as const, hits: 12 };
         expect(lookupLine(true, listed)).toEqual({
