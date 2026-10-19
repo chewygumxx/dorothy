@@ -19,16 +19,16 @@ import { EMPTY_SIDECAR, type Sidecar } from "./sidecar.js";
 import type { Vocabulary } from "./vocabulary.js";
 
 const PHRASE = "bingo-overabundance-mazer-kasha";
-const AT = "2026-10-05T05:40:12.000Z";
+// Local midday on the day, so dates read the same in every time zone.
+const midday = (date: number) => new Date(2026, 9, date, 12).toISOString();
+const AT = midday(5);
 const sidecar: Sidecar = {
     ...EMPTY_SIDECAR,
     title: "Memory and metadata",
     description: "Designing how Dorothy remembers past conversations.",
     abstract:
         "The user, still building Dorothy's TUI, proposed tiered conversation metadata with titles, descriptions and abstracts that fade.",
-    titles: [
-        { title: "Hey there o/", at: "2026-10-04T05:01:00.000Z", by: "prompt" },
-    ],
+    titles: [{ title: "Hey there o/", at: midday(4), by: "prompt" }],
     fields: {
         title: {
             by: "dorothy",
@@ -42,11 +42,52 @@ const sidecar: Sidecar = {
             at: AT,
             throughTurn: 12,
         },
-        abstract: { by: "user", at: "2026-10-05T06:02:00.000Z" },
+        abstract: { by: "user", at: midday(5) },
     },
     reviewedThrough: 12,
 };
 const view = renderEditView(PHRASE, sidecar);
+
+// Times near midnight UTC fall on another day in a zone far ahead of it or
+// behind it.
+const ZONES = [
+    ["Pacific/Kiritimati", "2026-10-04T23:30:00.000Z", "2026-10-05"],
+    ["Etc/GMT+12", "2026-10-05T05:00:00.000Z", "2026-10-04"],
+] as const;
+
+function inZones(check: (at: string, day: string) => void): void {
+    const zone = process.env.TZ;
+    try {
+        for (const [tz, at, day] of ZONES) {
+            process.env.TZ = tz;
+            check(at, day);
+        }
+    } finally {
+        if (zone === undefined) {
+            delete process.env.TZ;
+        } else {
+            process.env.TZ = zone;
+        }
+    }
+}
+
+describe("renderEditView's dates", () => {
+    it("names the local day a time fell on", () => {
+        inZones((at, day) => {
+            const notes: Sidecar = {
+                ...sidecar,
+                titles: [{ title: "Old", at, by: "prompt" }],
+                fields: {
+                    ...sidecar.fields,
+                    abstract: { by: "user", at },
+                },
+            };
+            const text = renderEditView(PHRASE, notes);
+            expect(text).toContain(`# Abstract (yours, ${day})`);
+            expect(text).toContain(`#   Old (provisional, ${day})`);
+        });
+    });
+});
 
 describe("renderEditView", () => {
     it("renders the notes as a template", () => {

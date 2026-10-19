@@ -77,6 +77,13 @@ export function localDate(ms: number): string {
     return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
 
+// The local day an ISO time fell on; a time that cannot be read keeps its
+// first ten characters.
+export function localDay(at: string): string {
+    const ms = Date.parse(at);
+    return Number.isNaN(ms) ? at.slice(0, 10) : localDate(ms);
+}
+
 export function formatList(
     rows: readonly ListRow[],
     date: (ms: number) => string = localDate,

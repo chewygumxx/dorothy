@@ -8,6 +8,7 @@
 //
 //
 
+import { localDay as day } from "./list.js";
 import {
     type Author,
     type EditChanges,
@@ -90,8 +91,6 @@ export function wrap(
     }
     return lines;
 }
-
-const day = (at: string) => at.slice(0, 10);
 
 function owner(value: string | null, source: Provenance | undefined): string {
     if (value === null) {
