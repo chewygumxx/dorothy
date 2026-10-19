@@ -77,8 +77,9 @@ export const mineCommand: Command = {
                     (each) => [each.phrase, each.project] as const,
                 ),
             );
-            // A hidden conversation or a retired file is in no system's
-            // reach, so a question on it would measure nothing.
+            // A hidden conversation is in no system's reach, and a retired
+            // file beyond her engine's, though lexical and full reach it:
+            // a read of either is passed over.
             const present = new Set([
                 ...conversations.map((each) => each.id),
                 ...(await archive.knowledge())

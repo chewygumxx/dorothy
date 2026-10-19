@@ -140,10 +140,10 @@ useful or essential is a real question with a known answer: the purpose
 is the question, the opened conversation or knowledge file the evidence,
 the reading conversation the `exclude`, and the read's date the `asOf`.
 They have no reference answer, so they score retrieval alone. A read of
-a hidden conversation or a retired file is passed over, as no system
-reaches it. They are
-mined accepted, as the appraisal is her own review; the owner may reject
-one.
+a hidden conversation is passed over, as no system reaches it, and of a
+retired file, as her engine cannot reach it, though `lexical` and `full`
+can. They are mined accepted, as the appraisal is her own review; the
+owner may reject one.
 
 ```sh
 bun run eval -- mine --work ~/eval
