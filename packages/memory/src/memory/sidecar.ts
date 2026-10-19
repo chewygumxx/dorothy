@@ -592,7 +592,7 @@ export function mergeReview(
     // Tags given are the conversation's from now on: hers are stamped,
     // and the user's set, pruned against the vocabulary, stays theirs.
     if (review.tags !== undefined) {
-        next.tags = [...review.tags];
+        next.tags = readTags(review.tags);
         if (base.fields.tags?.by !== "user") {
             next.fields.tags = {
                 by: "dorothy",
@@ -635,7 +635,7 @@ export function mergeEdit(
         delete next.fields.tags;
         next.reviewedThrough = 0;
     } else if (changes.tags !== undefined) {
-        next.tags = [...changes.tags];
+        next.tags = readTags(changes.tags);
         next.fields.tags = { by: "user", at };
     }
     if (changes.pinned !== undefined) {

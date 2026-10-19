@@ -215,6 +215,37 @@ describe("updateSidecar", () => {
         expect(await readdir(dir)).toEqual([]);
     });
 
+    it("round-trips tags through two mutually exclusive async changes", async () => {
+        const gate = Promise.withResolvers<void>();
+        const entered = Promise.withResolvers<void>();
+        const first = updateSidecar(dir, PHRASE, async (current) => {
+            entered.resolve();
+            await gate.promise;
+            return mergeEdit(current, { tags: ["k00000001"] }, AT);
+        });
+        await entered.promise;
+        let secondEntered = false;
+        const second = updateSidecar(dir, PHRASE, async (current) => {
+            secondEntered = true;
+            expect(current?.tags).toEqual(["k00000001"]);
+            return mergeEdit(current, { pinned: true }, AT);
+        });
+        await Promise.resolve();
+        expect(secondEntered).toBe(false);
+        gate.resolve();
+        expect((await first).kind).toBe("written");
+        expect((await second).kind).toBe("written");
+        expect(await readSidecar(dir, PHRASE)).toMatchObject({
+            kind: "ok",
+            sidecar: {
+                rev: 2,
+                tags: ["k00000001"],
+                pinned: true,
+                fields: { tags: { by: "user", at: AT } },
+            },
+        });
+    });
+
     it("never writes over an unparseable sidecar", async () => {
         await writeFile(sidecarPath(dir, PHRASE), "{ broken");
         const result = await updateSidecar(dir, PHRASE, () => reviewed);
@@ -664,6 +695,37 @@ describe("tags", () => {
         expect(read({ tags: [], fields: { tags: by } })?.fields.tags).toEqual(
             by,
         );
+    });
+
+    it("normalises tags at both merge boundaries", () => {
+        const tags = [
+            "bad",
+            "k00000001",
+            "k00000001",
+            7,
+            "k00000002",
+            "k00000003",
+            "k00000004",
+            "k00000005",
+            "k00000006",
+        ] as unknown as string[];
+        const expected = [
+            "k00000001",
+            "k00000002",
+            "k00000003",
+            "k00000004",
+            "k00000005",
+        ];
+        expect(mergeReview(null, NOTES, { ...REVIEW, tags }).tags).toEqual(
+            expected,
+        );
+        expect(mergeEdit(null, { tags }, AT).tags).toEqual(expected);
+    });
+
+    it("ignores unknown tag provenance authors", () => {
+        expect(
+            read({ fields: { tags: { by: "stranger", at: AT } } })?.fields.tags,
+        ).toBeUndefined();
     });
 
     it("stamps her tags, and leaves the user's set theirs", () => {
