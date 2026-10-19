@@ -158,10 +158,14 @@ export async function factFiles(
     );
 }
 
+// A fact file read: none where there is none, unreadable where the system
+// refuses it (a permission, say), which says nothing of its contents.
 export async function readFactFile(
     path: string,
     name: string,
-): Promise<FactRead | { kind: "none" }> {
+): Promise<
+    FactRead | { kind: "none" } | { kind: "unreadable"; reason: string }
+> {
     let text: string;
     try {
         text = await readFile(path, "utf8");
@@ -169,7 +173,7 @@ export async function readFactFile(
         if (codeOf(error) === "ENOENT") {
             return { kind: "none" };
         }
-        return { kind: "unparseable", reason: describeError(error) };
+        return { kind: "unreadable", reason: describeError(error) };
     }
     return parseFact(text, name);
 }
@@ -181,19 +185,25 @@ export async function listFacts(
     scope?: Scope,
 ): Promise<{
     facts: StoredFact[];
+    // Files that read but are no fact.
     broken: { path: string; reason: string }[];
+    // Files the system would not let be read.
+    unreadable: { path: string; reason: string }[];
 }> {
     const facts: StoredFact[] = [];
     const broken: { path: string; reason: string }[] = [];
+    const unreadable: { path: string; reason: string }[] = [];
     for (const file of await factFiles(root, scope)) {
         const read = await readFactFile(file.path, file.name);
         if (read.kind === "ok") {
             facts.push({ scope: file.scope, path: file.path, fact: read.fact });
         } else if (read.kind === "unparseable") {
             broken.push({ path: file.path, reason: read.reason });
+        } else if (read.kind === "unreadable") {
+            unreadable.push({ path: file.path, reason: read.reason });
         }
     }
-    return { facts, broken };
+    return { facts, broken, unreadable };
 }
 
 // Writes a fact where it belongs once it reads back as written, replacing
@@ -294,6 +304,9 @@ async function existing(
     const read = await readFactFile(path, target.name);
     if (read.kind === "unparseable") {
         return { kind: "failed", reason: `it is broken: ${read.reason}` };
+    }
+    if (read.kind === "unreadable") {
+        return { kind: "failed", reason: `it cannot be read: ${read.reason}` };
     }
     return { path, fact: read.kind === "ok" ? read.fact : null };
 }
@@ -396,7 +409,19 @@ export function moveFact(
         }
         const fact = stamped(found.fact, at(store));
         const path = await putFact(store.root, to, fact);
-        await rm(found.path);
+        try {
+            await rm(found.path);
+        } catch (error) {
+            // Never a fact in two scopes: the copy is taken back.
+            const undone = await rm(path).then(
+                () => true,
+                () => false,
+            );
+            return {
+                kind: "failed",
+                reason: `${label(from)} could not be removed (${describeError(error)}); ${undone ? "nothing moved" : `a copy of it was left at ${path}`}`,
+            };
+        }
         await store.recorder?.(
             [found.path, path],
             `move: ${label(from)} to ${scopeLabel(to)}`,
@@ -501,39 +526,52 @@ export function verifyFact(
 }
 
 // Every live fact whose provenance names the conversation, retired in one
-// commit, for when a conversation turns out to have been wrong.
+// commit, for when a conversation turns out to have been wrong. A write
+// that fails part way records the facts already retired and names them.
 export function retireFacts(
     store: FactStore,
     phrase: string,
     { by, why }: { by: Writer; why: string },
 ): Promise<
-    { kind: "done"; retired: string[] } | { kind: "failed"; reason: string }
+    | { kind: "done"; retired: string[] }
+    | { kind: "failed"; reason: string; retired?: string[] }
 > {
     return held(store, async () => {
         const { facts } = await listFacts(store.root);
         const paths: string[] = [];
         const retired: string[] = [];
         const now = at(store);
-        for (const { scope, fact } of facts) {
-            if (
-                fact.retired !== null ||
-                fact.provenance.from?.split("#")[0] !== phrase
-            ) {
-                continue;
+        const record = () =>
+            paths.length === 0
+                ? undefined
+                : store.recorder?.(
+                      paths,
+                      `retire: ${paths.length} ${paths.length === 1 ? "fact" : "facts"} from ${phrase}`,
+                  );
+        try {
+            for (const { scope, fact } of facts) {
+                if (
+                    fact.retired !== null ||
+                    fact.provenance.from?.split("#")[0] !== phrase
+                ) {
+                    continue;
+                }
+                const next = {
+                    ...stamped(fact, now, by),
+                    retired: { at: now, by, why: normalise(why) },
+                };
+                paths.push(await putFact(store.root, scope, next));
+                retired.push(label({ scope, name: fact.name }));
             }
-            const next = {
-                ...stamped(fact, now, by),
-                retired: { at: now, by, why: normalise(why) },
+        } catch (error) {
+            await record();
+            return {
+                kind: "failed" as const,
+                reason: describeError(error),
+                retired,
             };
-            paths.push(await putFact(store.root, scope, next));
-            retired.push(label({ scope, name: fact.name }));
         }
-        if (paths.length > 0) {
-            await store.recorder?.(
-                paths,
-                `retire: ${paths.length} ${paths.length === 1 ? "fact" : "facts"} from ${phrase}`,
-            );
-        }
+        await record();
         return { kind: "done" as const, retired };
     });
 }

@@ -668,7 +668,7 @@ export async function openFact(
     if (read.kind === "none") {
         throw new RecallError(NO_FACT);
     }
-    if (read.kind === "unparseable") {
+    if (read.kind === "unparseable" || read.kind === "unreadable") {
         throw new RecallError(`That fact cannot be read: ${read.reason}`);
     }
     const { fact } = read;

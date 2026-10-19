@@ -9,9 +9,16 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import {
+    chmod,
+    mkdir,
+    mkdtemp,
+    realpath,
+    rm,
+    writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { buildBlock } from "../contract/block.js";
 import { baselineEngine } from "../engine/baseline.js";
 import { authorOf } from "../history/commands.js";
@@ -207,6 +214,45 @@ describe("retiring and reviving", () => {
     });
 });
 
+describe("retiring what one conversation gave, and finding none", () => {
+    it("says there is none, and fails", async () => {
+        await putFact(dataRoot(env), PERSONAL, fact("a"));
+        expect(await runRetireFrom(PHRASE, options())).toBe(1);
+        expect(out.text).toBe("");
+        expect(err.text).toBe(
+            `dorothy: no live fact came from ${PHRASE}; nothing was retired\n`,
+        );
+    });
+
+    it("names the facts retired before a write failed", async () => {
+        const given = (name: string, scope: Scope) =>
+            putFact(
+                dataRoot(env),
+                scope,
+                fact(name, {
+                    provenance: {
+                        origin: "dorothy",
+                        by: "review",
+                        at: NOW.toISOString(),
+                        created: NOW.toISOString(),
+                        from: `${PHRASE}#2`,
+                    },
+                }),
+            );
+        await given("a", PERSONAL);
+        await given("b", PROJECT);
+        const project = dirname(factPath(dataRoot(env), PROJECT, "b"));
+        await chmod(project, 0o500);
+        try {
+            expect(await runRetireFrom(PHRASE, options())).toBe(1);
+        } finally {
+            await chmod(project, 0o700);
+        }
+        expect(err.text).toContain("retired before it failed: personal/a\n");
+        expect(commits).toEqual([`retire: 1 fact from ${PHRASE}`]);
+    });
+});
+
 describe("runVerify", () => {
     const MODEL = {
         origin: "dorothy" as const,
@@ -393,6 +439,13 @@ describe("runSync and runProjects", () => {
         expect(listed.text).toBe(
             `github.com/chewygumxx/dorothy  .agents/memory  ${repo}\n`,
         );
+    });
+
+    it("says when the path is a file, not a directory", async () => {
+        const file = join(dir, "notes.md");
+        await writeFile(file, "x\n");
+        expect(await runSync(file, { ...options(), cwd: dir })).toBe(1);
+        expect(err.text).toBe(`dorothy: ${file} is not a directory\n`);
     });
 
     it("says when the path is in no repository", async () => {

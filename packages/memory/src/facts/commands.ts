@@ -11,7 +11,7 @@
 // The commands over facts and projects: each opens the index for its
 // lock, has history swept first, and writes through the store.
 
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { type Env, parseMemoryId } from "@dorothy/core";
 import type { OpenHistory } from "../memory/sidecar.js";
@@ -107,9 +107,14 @@ export async function runFacts(
         return 1;
     }
     try {
-        const { facts, broken } = await listFacts(opened.store.root);
+        const { facts, broken, unreadable } = await listFacts(
+            opened.store.root,
+        );
         for (const { path, reason } of broken) {
             err.write(`dorothy: ${path}: ${reason}\n`);
+        }
+        for (const { path, reason } of unreadable) {
+            err.write(`dorothy: ${path}: it cannot be read: ${reason}\n`);
         }
         out.write(formatFacts(facts));
         return 0;
@@ -200,9 +205,20 @@ export async function runRetireFrom(
         });
         if (result.kind === "failed") {
             err.write(`dorothy: ${result.reason}\n`);
+            if (result.retired !== undefined && result.retired.length > 0) {
+                err.write(
+                    `dorothy: retired before it failed: ${result.retired.join(", ")}\n`,
+                );
+            }
             return 1;
         }
         const count = result.retired.length;
+        if (count === 0) {
+            err.write(
+                `dorothy: no live fact came from ${phrase}; nothing was retired\n`,
+            );
+            return 1;
+        }
         out.write(
             `Retired ${count} ${count === 1 ? "fact" : "facts"} from ${phrase}.\n`,
         );
@@ -329,6 +345,10 @@ export async function runSync(
     const target = resolve(cwd, path ?? ".");
     if (!existsSync(target)) {
         err.write(`dorothy: ${target} does not exist\n`);
+        return 1;
+    }
+    if (!statSync(target).isDirectory()) {
+        err.write(`dorothy: ${target} is not a directory\n`);
         return 1;
     }
     const opened = await openStore(options);

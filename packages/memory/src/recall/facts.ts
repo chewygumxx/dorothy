@@ -9,8 +9,9 @@
 //
 
 // The store's facts in the recall index, synced by each file's mtime: a
-// changed fact is read again, a gone one dropped, and one that cannot be
-// read left out with a warning.
+// changed fact is read again, a gone one dropped, a broken one left out
+// with a warning, and one that cannot be read kept as it was indexed, with
+// a warning.
 
 import { readFile, stat } from "node:fs/promises";
 import { relative, sep } from "node:path";
@@ -85,11 +86,13 @@ async function syncFile(
     if (read.kind === "same") {
         return true;
     }
-    drop(index, key);
     if (read.kind === "unreadable") {
+        // The row stays as indexed, and is read again next time, rather
+        // than the fact going missing because a read failed once.
         warnings.push(`${file.path}: ${read.reason}`);
         return true;
     }
+    drop(index, key);
     const parsed = parseFact(read.text, file.name);
     if (parsed.kind === "ok") {
         insertFact(index, key, file, parsed.fact, read.mtime);

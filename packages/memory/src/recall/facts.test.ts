@@ -133,7 +133,7 @@ describe("syncFacts", () => {
         expect(rows()).toEqual([]);
     });
 
-    it("skips a fact it cannot open rather than failing", async () => {
+    it("keeps a fact it cannot open as it was indexed, and says why", async () => {
         await putFact(root, PERSONAL, fact("tea"));
         await putFact(root, PERSONAL, fact("coffee"));
         await syncFacts(index, root);
@@ -141,12 +141,22 @@ describe("syncFacts", () => {
         const later = new Date(Date.parse(AT) + 60_000);
         await utimes(factPath(root, PERSONAL, "tea"), later, later);
         await chmod(factPath(root, PERSONAL, "tea"), 0o000);
-        const warnings = await syncFacts(index, root);
-        expect(warnings).toHaveLength(1);
-        expect(warnings[0]).toStartWith(`${factPath(root, PERSONAL, "tea")}: `);
-        expect(rows().map((row) => (row as { name: string }).name)).toEqual([
-            "coffee",
-        ]);
+        try {
+            const warnings = await syncFacts(index, root);
+            expect(warnings).toHaveLength(1);
+            expect(warnings[0]).toStartWith(
+                `${factPath(root, PERSONAL, "tea")}: `,
+            );
+            expect(rows().map((row) => (row as { name: string }).name)).toEqual(
+                ["coffee", "tea"],
+            );
+            expect(search("assam")).toEqual([]);
+        } finally {
+            await chmod(factPath(root, PERSONAL, "tea"), 0o600);
+        }
+        // Readable again, it is read again at once.
+        expect(await syncFacts(index, root)).toEqual([]);
+        expect(search("assam")).toEqual(["tea"]);
     });
 
     it("keeps a fact's tags", async () => {

@@ -369,6 +369,10 @@ async function reconcile(
                     name: basename(path, ".md"),
                     reason: "it is broken in the store",
                 })),
+                ...listed.unreadable.map(({ path }) => ({
+                    name: basename(path, ".md"),
+                    reason: "it cannot be read in the store",
+                })),
             ],
             index: "left",
             omitted: 0,
@@ -387,7 +391,9 @@ async function reconcile(
     const { report, synced, written } = sync;
     const passed = new Set([
         ...repo.unread,
-        ...listed.broken.map(({ path }) => basename(path, ".md")),
+        ...[...listed.broken, ...listed.unreadable].map(({ path }) =>
+            basename(path, ".md"),
+        ),
     ]);
     const names = new Set([
         ...store.keys(),

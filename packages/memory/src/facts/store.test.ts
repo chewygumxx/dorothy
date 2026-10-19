@@ -10,6 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
+    chmod,
     mkdir,
     mkdtemp,
     readdir,
@@ -31,6 +32,7 @@ import {
     PERSONAL,
     parseTarget,
     putFact,
+    readFactFile,
     retireFact,
     retireFacts,
     reviveFact,
@@ -406,6 +408,95 @@ describe("retiring", () => {
         expect(commits).toHaveLength(1);
         expect(commits[0]?.message).toBe(`retire: 2 facts from ${PHRASE}`);
         expect((await read(PERSONAL, "c")).retired).toBeNull();
+    });
+});
+
+describe("a failure part way", () => {
+    it("moves nothing when the source cannot be removed, and says so", async () => {
+        await writeFact(store(), input());
+        commits = [];
+        const personal = scopeDir(root, PERSONAL);
+        await chmod(personal, 0o500);
+        try {
+            const result = await moveFact(
+                store(),
+                { scope: PERSONAL, name: "likes-tea" },
+                PROJECT,
+            );
+            expect(result).toMatchObject({ kind: "failed" });
+            expect(result.kind === "failed" && result.reason).toContain(
+                "personal/likes-tea could not be removed",
+            );
+            expect(result.kind === "failed" && result.reason).toContain(
+                "nothing moved",
+            );
+        } finally {
+            await chmod(personal, 0o700);
+        }
+        expect(await factFiles(root, PROJECT)).toEqual([]);
+        expect((await read(PERSONAL, "likes-tea")).retired).toBeNull();
+        expect(commits).toEqual([]);
+    });
+
+    it("records and names the facts retired before a write failed", async () => {
+        await writeFact(store(), input({ name: "a", from: PHRASE }));
+        await writeFact(
+            store(),
+            input({ name: "b", from: PHRASE, scope: PROJECT }),
+        );
+        commits = [];
+        // The personal fact is retired first; the project's cannot be.
+        const directory = scopeDir(root, PROJECT);
+        await chmod(directory, 0o500);
+        let result: Awaited<ReturnType<typeof retireFacts>>;
+        try {
+            result = await retireFacts(store(), PHRASE, {
+                by: "user",
+                why: "Wrong.",
+            });
+        } finally {
+            await chmod(directory, 0o700);
+        }
+        expect(result.kind).toBe("failed");
+        expect(result).toMatchObject({ retired: ["personal/a"] });
+        expect((await read(PERSONAL, "a")).retired).not.toBeNull();
+        expect((await read(PROJECT, "b")).retired).toBeNull();
+        expect(commits).toEqual([
+            {
+                paths: [factPath(root, PERSONAL, "a")],
+                message: `retire: 1 fact from ${PHRASE}`,
+            },
+        ]);
+    });
+});
+
+describe("a fact file it cannot read", () => {
+    it("is unreadable, not unparseable, and listed apart from the broken", async () => {
+        await writeFact(store(), input());
+        await writeFact(store(), input({ name: "other" }));
+        const locked = factPath(root, PERSONAL, "likes-tea");
+        await chmod(locked, 0o000);
+        try {
+            const read = await readFactFile(locked, "likes-tea");
+            expect(read.kind).toBe("unreadable");
+            const listed = await listFacts(root);
+            expect(listed.facts.map(({ fact }) => fact.name)).toEqual([
+                "other",
+            ]);
+            expect(listed.broken).toEqual([]);
+            expect(listed.unreadable).toHaveLength(1);
+            expect(listed.unreadable[0]?.path).toBe(locked);
+            const result = await retireFact(
+                store(),
+                { scope: PERSONAL, name: "likes-tea" },
+                { by: "user", why: "x" },
+            );
+            expect(result.kind === "failed" && result.reason).toStartWith(
+                "it cannot be read: ",
+            );
+        } finally {
+            await chmod(locked, 0o600);
+        }
     });
 });
 
