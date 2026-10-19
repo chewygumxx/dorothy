@@ -361,6 +361,46 @@ describe("readLines", () => {
     });
 });
 
+describe("command markup and gaps in a line", () => {
+    const COMPACT =
+        "<command-name>/compact</command-name>\n<command-args>tea</command-args>";
+
+    it("takes a command from a whole user line, whether text or blocks", () => {
+        expect(
+            entries([
+                userLine("u1", 0, COMPACT),
+                userLine("u2", 1, [text(COMPACT)]),
+                userLine(
+                    "u3",
+                    2,
+                    "<local-command-stdout>ok</local-command-stdout>",
+                ),
+            ]),
+        ).toEqual([
+            { kind: "user", text: "/compact tea" },
+            { kind: "user", text: "/compact tea" },
+        ]);
+    });
+
+    it("takes a queued prompt that names no command mode as a prompt", () => {
+        expect(entries([queued("q1", 0, "also this", null)])).toEqual([
+            { kind: "user", text: "also this" },
+        ]);
+        expect(entries([queued("q2", 0, "ls", "bash")])).toEqual([]);
+    });
+
+    it("halts at a tool result without its call's id", () => {
+        const read = readLines([
+            userLine("u1", 0, [
+                { type: "tool_result", content: "ok" },
+                text("after"),
+            ]),
+        ]);
+        expect(read.events).toEqual([]);
+        expect(read.halt?.reason).toBe("a tool result without its call's id");
+    });
+});
+
 describe("spoken", () => {
     it("takes a command as typed, and none of Claude Code's own output", () => {
         expect(
@@ -403,6 +443,12 @@ describe("spoken", () => {
         expect(
             spoken(
                 "<command-message>m</command-message>\n<command-name> </command-name>",
+            ),
+        ).toBeNull();
+        expect(spoken("<command-message>herdr</command-message>")).toBeNull();
+        expect(
+            spoken(
+                "<command-message>m</command-message>\n<command-args>x</command-args>",
             ),
         ).toBeNull();
     });

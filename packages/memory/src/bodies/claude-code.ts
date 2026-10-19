@@ -118,9 +118,8 @@ export function spoken(text: string): string | null {
     ) {
         return null;
     }
-    const command = COMMAND_START.test(trimmed) ? COMMAND.exec(trimmed) : null;
-    if (command !== null) {
-        const name = (command[1] ?? "").trim();
+    if (COMMAND_START.test(trimmed)) {
+        const name = (COMMAND.exec(trimmed)?.[1] ?? "").trim();
         if (name === "") {
             return null;
         }
