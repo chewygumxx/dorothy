@@ -188,6 +188,27 @@ describe("runClaude", () => {
         expect("DOROTHY_ANTHROPIC_BASE_URL" in empty.calls.env).toBe(false);
     });
 
+    it("passes the directory of Dotenvx Armor's session on to the hook, and no other", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "dorothy-armor-"));
+        try {
+            writeFileSync(join(dir, ".env"), "SESSION=held\n");
+            const { calls, deps } = harness();
+            deps.env = { ...deps.env, DOTENVX_CONFIG: dir };
+            await runClaude([], deps);
+            expect(calls.env.DOROTHY_DOTENVX_CONFIG).toBe(dir);
+            // Where none is found, an outer launch's is not passed on.
+            const bare = harness();
+            bare.deps.env = {
+                ...bare.deps.env,
+                DOROTHY_DOTENVX_CONFIG: "/outer/dotenvx",
+            };
+            await runClaude([], bare.deps);
+            expect("DOROTHY_DOTENVX_CONFIG" in bare.calls.env).toBe(false);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
     it("exits as claude did, a signal's code included", async () => {
         expect(await runClaude([], harness(3).deps)).toBe(3);
         // A real child killed by TERM, in claude's place.
@@ -523,6 +544,22 @@ describe("dorothy --claude records her sessions", () => {
         expect(
             "DOROTHY_ANTHROPIC_BASE_URL" in (bare.calls.spawnedEnv[0] ?? {}),
         ).toBe(false);
+    });
+
+    it("starts its catch-ups where the hook finds Armor's session too", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "dorothy-armor-"));
+        try {
+            writeFileSync(join(dir, ".env"), "SESSION=held\n");
+            const { calls, deps } = harness(0, true);
+            deps.env = { ...deps.env, DOTENVX_CONFIG: dir };
+            await runClaude([], deps);
+            expect(calls.spawnedEnv.length).toBeGreaterThan(0);
+            for (const env of calls.spawnedEnv) {
+                expect(env.DOROTHY_DOTENVX_CONFIG).toBe(dir);
+            }
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
     });
 
     it("catches up its launch though claude never started", async () => {

@@ -73,15 +73,17 @@ lazy.
   (`claudeSession`: a resume decides wherever a `--session-id`
   stands, `-r<id>` counts, and a free-text flag's value is no flag);
   the block leaves out a session resumed by id. It sets
-  `DOROTHY_ANTHROPIC_BASE_URL` from the user's `ANTHROPIC_BASE_URL`.
-  `runClaude` runs it for `--claude`, forwards `SIGTERM` and `SIGHUP`,
-  ignores `SIGINT` (the terminal sends it to `claude` too), and exits
-  with `claude`'s code. This program runs again as `bun --no-env-file`,
-  so a project's `.env` never reaches a hook, a catch-up or the recall
-  server. Before `claude` starts it starts a detached catch-up of each
-  launch a killed `dorothy` left behind, memory off or on, and says what
-  hooks left to tell; once `claude` exits, or fails to start, a
-  catch-up of its own launch, whatever else its teardown throws.
+  `DOROTHY_ANTHROPIC_BASE_URL` from the user's `ANTHROPIC_BASE_URL`, and
+  `DOROTHY_DOTENVX_CONFIG` from the directory of Dotenvx Armor's session
+  it finds (`dotenvx-session.ts`). `runClaude` runs it for `--claude`,
+  forwards `SIGTERM` and `SIGHUP`, ignores `SIGINT` (the terminal sends
+  it to `claude` too), and exits with `claude`'s code. This program runs
+  again as `bun --no-env-file`, so a project's `.env` never reaches a
+  hook, a catch-up or the recall server. Before `claude` starts it
+  starts a detached catch-up of each launch a killed `dorothy` left
+  behind, memory off or on, and says what hooks left to tell; once
+  `claude` exits, or fails to start, a catch-up of its own launch,
+  whatever else its teardown throws.
   From a package script (`bun run dev`), `userShell` gives `claude` the
   directory it was run from and the `PATH` before Bun prepended its
   `node_modules/.bin` entries.
@@ -98,8 +100,10 @@ lazy.
   `CLAUDE_CODE_` variable (`reviewEnv`), but for the user's own base
   URL, which the launch passes on as `DOROTHY_ANTHROPIC_BASE_URL` and
   reviews take as `ANTHROPIC_BASE_URL`; then Dorothy's `.env` is loaded
-  by path from this checkout (`loadDotenv`), the console silenced around
-  the load and a failure logged by its code alone, and the agent
+  by path from this checkout (`loadDotenv`), with `DOTENVX_CONFIG` set
+  from `DOROTHY_DOTENVX_CONFIG` so that a `claude` with another
+  `XDG_CONFIG_HOME` still finds Armor's session, the console silenced
+  around the load and a failure logged by its code alone, and the agent
   loaded when a review asks. A hook and a catch-up log whatever fails,
   through memory's `hookLog`, and always exit 0.
 - `index.ts` also runs `--serve` (memory's service through

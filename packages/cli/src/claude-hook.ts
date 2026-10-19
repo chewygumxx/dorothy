@@ -15,7 +15,8 @@
 // process.env, which the Agent SDK reads at each call: it loses those
 // variables, but for the user's own base URL, which the launch passed on
 // as DOROTHY_ANTHROPIC_BASE_URL, before Dorothy's own .env is loaded by
-// path from this checkout, never the working directory's. A review is
+// path from this checkout, never the working directory's, looking for
+// Dotenvx Armor's session where the launch found it. A review is
 // then billed to her credentials, as chat's are, and never reaches the
 // stopped gateway or the live session.
 
@@ -24,6 +25,7 @@ import { dirname, join, resolve } from "node:path";
 import { type Env, type StructuredCall, xdgDir } from "@dorothy/core";
 import type { HookDeps, HookLog, HookMode } from "@dorothy/memory/claude-hook";
 import { config } from "@dotenvx/dotenvx";
+import { useSession } from "./dotenvx-session.js";
 
 // The base URL the user's own launch had, which a review takes as its
 // ANTHROPIC_BASE_URL: claude's hooks lose theirs, and the one they are
@@ -210,6 +212,7 @@ async function runOnce(
 ): Promise<number> {
     const given: Env = { ...env };
     stripClaude(env);
+    useSession(env, given);
     await loadDorothyEnv(env, deps);
     const run = deps.run ?? (await (deps.memory ?? loadMemory)()).runClaudeHook;
     return run(mode, {

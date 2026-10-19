@@ -35,6 +35,7 @@ import {
 } from "@dorothy/gateway";
 // A type, erased: the CLI still loads memory lazily.
 import type { LaunchNote } from "@dorothy/memory";
+import { passSession } from "./dotenvx-session.js";
 
 export type Spawned = {
     exited: Promise<number>;
@@ -757,7 +758,8 @@ function launchSettings(
 
 // The environment claude runs in: the user's shell's, pointed at the
 // gateway. The user's own base URL, which claude's hooks lose, goes on
-// as DOROTHY_ANTHROPIC_BASE_URL for the reviews of the hook.
+// as DOROTHY_ANTHROPIC_BASE_URL for the reviews of the hook, and the
+// directory of Dotenvx Armor's session as DOROTHY_DOTENVX_CONFIG.
 function launchEnv(
     shellEnv: Env,
     env: Env,
@@ -781,6 +783,7 @@ function launchEnv(
         delete launchEnv.DOROTHY_LAUNCH;
     }
     withReviewBaseUrl(launchEnv, env);
+    passSession(launchEnv, env);
     return launchEnv;
 }
 
@@ -836,8 +839,9 @@ export async function runClaude(
         spawnDetached: detach = spawnDetached,
     } = deps;
     // Its reviews go through the user's own proxy, which the hook finds
-    // in DOROTHY_ANTHROPIC_BASE_URL, as it does in a launch's.
-    const catchUpEnv = withReviewBaseUrl({ ...env }, env);
+    // in DOROTHY_ANTHROPIC_BASE_URL, as it does in a launch's, and find
+    // Armor's session in DOROTHY_DOTENVX_CONFIG.
+    const catchUpEnv = passSession(withReviewBaseUrl({ ...env }, env), env);
     const catchUp = (launch: string) =>
         detach([...self, "--claude-hook", "--catch-up", launch], catchUpEnv);
     // Launches whose dorothy was killed before its catch-up, with memory

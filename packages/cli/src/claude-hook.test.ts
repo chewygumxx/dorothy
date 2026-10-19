@@ -139,6 +139,28 @@ describe("runHook", () => {
         expect(seen.deps?.env?.CLAUDE_CODE_OAUTH_TOKEN).toBe("claude's");
     });
 
+    it("looks for Dotenvx Armor's session where the launch found it, before loading", async () => {
+        const { env, seen, deps } = harness();
+        env.XDG_CONFIG_HOME = "/claude/config";
+        env.DOROTHY_DOTENVX_CONFIG = "/launch/dotenvx";
+        const where: (string | undefined)[] = [];
+        deps.load = (_path, _keys, into) => {
+            where.push(into.DOTENVX_CONFIG);
+        };
+        await runHook({ kind: "hook" }, deps);
+        expect(where).toEqual(["/launch/dotenvx"]);
+        // A catch-up it starts is given the same.
+        expect(seen.deps?.env?.DOROTHY_DOTENVX_CONFIG).toBe("/launch/dotenvx");
+        // With none passed on, dotenvx looks where it would.
+        const bare = harness();
+        const bareWhere: (string | undefined)[] = [];
+        bare.deps.load = (_path, _keys, into) => {
+            bareWhere.push(into.DOTENVX_CONFIG);
+        };
+        await runHook({ kind: "hook" }, bare.deps);
+        expect(bareWhere).toEqual([undefined]);
+    });
+
     it("leaves memory the launch and the directories claude gave", async () => {
         const { seen, deps } = harness();
         await runHook(
