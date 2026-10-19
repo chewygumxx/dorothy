@@ -142,13 +142,21 @@ describe("bun run eval -- run", () => {
         const records = await readRecords(work, idOf(out));
         const byType = new Map(records.map((each) => [each.type, each]));
         expect(byType.get("lookup")?.answer).toBeNull();
+        // Each judgement's reasoning beside its verdict; declines has none.
         expect(byType.get("single-session")?.judged).toEqual({
             strict: true,
             lenient: true,
             declined: false,
             stale: null,
+            reasons: { strict: "Checked.", lenient: "Checked." },
         });
         expect(byType.get("abstention")?.judged.declined).toBe(true);
+        expect(byType.get("abstention")?.judged.reasons).toEqual({
+            declined: "Checked.",
+        });
+        expect(byType.get("knowledge-update")?.judged.reasons?.stale).toBe(
+            "Checked.",
+        );
         expect(byType.get("abstention")?.judged.strict).toBeNull();
         expect(byType.get("knowledge-update")?.judged.stale).toBe(true);
         // Three answers, then judges: two, one and three.

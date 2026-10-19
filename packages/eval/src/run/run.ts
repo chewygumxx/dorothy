@@ -38,6 +38,7 @@ import {
     runDir,
     runInfoPath,
     succeeded,
+    type Verdict,
 } from "./record.js";
 
 export type RunSettings = {
@@ -179,7 +180,13 @@ async function ask(
                       ),
                   },
         answer: null,
-        judged: { strict: null, lenient: null, declined: null, stale: null },
+        judged: {
+            strict: null,
+            lenient: null,
+            declined: null,
+            stale: null,
+            reasons: {},
+        },
         failures: [],
     };
     // A failed retrieval is a miss already: nothing more is spent on it.
@@ -204,19 +211,22 @@ async function ask(
         return record;
     }
     const outputs = record.answer.text;
-    const verdict = async (
-        name: keyof RunRecord["judged"],
-        judge: Judge,
-        reference?: string,
-    ) => {
+    const verdict = async (name: Verdict, judge: Judge, reference?: string) => {
         try {
-            record.judged[name] = await judge({
+            const { score, reasoning } = await judge({
                 inputs: question.question,
                 outputs,
                 ...(reference === undefined
                     ? {}
                     : { referenceOutputs: reference }),
             });
+            record.judged[name] = score;
+            if (reasoning !== null) {
+                record.judged.reasons = {
+                    ...record.judged.reasons,
+                    [name]: reasoning,
+                };
+            }
         } catch (caught) {
             if (caught instanceof CallCap) {
                 throw caught;

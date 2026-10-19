@@ -18,11 +18,11 @@ import { UsageError } from "../errors.js";
 import type { QuestionType } from "../questions/file.js";
 import type { SnapshotInfo } from "../snapshot/snapshot.js";
 
-export type Judged = {
-    strict: boolean | null;
-    lenient: boolean | null;
-    declined: boolean | null;
-    stale: boolean | null;
+export type Verdict = "strict" | "lenient" | "declined" | "stale";
+export type Judged = Record<Verdict, boolean | null> & {
+    // Each judge's reasoning, by its verdict; a record written before
+    // reasons were kept has none.
+    reasons?: Partial<Record<Verdict, string>>;
 };
 export type RunRecord = {
     question: string;

@@ -64,7 +64,7 @@ export type Judge = (params: {
     inputs: string;
     outputs: string;
     referenceOutputs?: string;
-}) => Promise<boolean>;
+}) => Promise<{ score: boolean; reasoning: string | null }>;
 export type Judges = {
     strict: Judge;
     lenient: Judge;
@@ -80,9 +80,17 @@ export function makeJudges(models: Models): Judges {
             judge: chat,
             feedbackKey: key,
         });
+        // openevals gives the judge's reasoning as its comment.
         return async (params) => {
-            const result = await models.call(() => evaluator(params));
-            return (result as { score?: unknown }).score === true;
+            const result = (await models.call(() => evaluator(params))) as {
+                score?: unknown;
+                comment?: unknown;
+            };
+            return {
+                score: result.score === true,
+                reasoning:
+                    typeof result.comment === "string" ? result.comment : null,
+            };
         };
     };
     return {
