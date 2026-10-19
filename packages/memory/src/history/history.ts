@@ -114,6 +114,10 @@ export function hookScript(exec: string, script: string): string {
         "    echo 'dorothy: its entry script is gone; not linted' >&2",
         "    exit 0",
         "fi",
+        `if ! command -v ${quote(exec)} >/dev/null 2>&1; then`,
+        "    echo 'dorothy: its Bun executable is gone; not linted' >&2",
+        "    exit 0",
+        "fi",
         `exec ${quote(exec)} ${quote(script)} --check --staged`,
         "",
     ].join("\n");

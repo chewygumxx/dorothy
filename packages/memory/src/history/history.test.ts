@@ -230,6 +230,22 @@ describe("adopting", () => {
         expect(script).toContain("if [ ! -f '/it'\\''s/index.ts' ]; then");
     });
 
+    it("lets the hook step aside when its Bun executable is gone", async () => {
+        const fixture = tempRoot();
+        const entry = join(fixture, "entry.ts");
+        writeFileSync(entry, "// fixture\n");
+        const hook = join(fixture, "hook.sh");
+        writeFileSync(hook, hookScript(join(fixture, "missing-bun"), entry));
+        const child = Bun.spawn(["sh", hook], {
+            env: TEST_ENV,
+            stdout: "ignore",
+            stderr: "pipe",
+        });
+        const diagnostic = await new Response(child.stderr).text();
+        expect(await child.exited).toBe(0);
+        expect(diagnostic).toContain("not linted");
+    });
+
     it("rewrites a fact edited by hand as Dorothy writes one, and makes it the user's", async () => {
         const path = "knowledge/personal/likes-tea.md";
         const fact = {
