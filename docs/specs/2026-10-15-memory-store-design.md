@@ -440,8 +440,29 @@ spaces and no list item, with no blank line between; a heading, prose,
 a nested list or a paragraph after a blank line means a hand kept it,
 and it is left, the report saying why. A description that would wrap
 onto a list marker has the marker escaped, `\-` or `1\.`, so that it
-reads as text. It is left too when no fact is live, or when a skipped
-file is one it links.
+reads as text. It is left too when a skipped file is one it links, or when
+no fact is live and the index lists anything the store holds no fact for;
+else the last fact's retirement empties it. An entry whose fact's
+description is the same on both sides and in the store as before the sync
+keeps its hook lines, where a hand may have written them; one whose
+description changed is written afresh. It is written only once it is
+found as it was first read, as a fact's file is.
+
+A file's stem names its fact: `feedback_testing.md` is `feedback-testing`
+(underscores are hyphens), for Claude Code's auto-memory writes snake
+case. Its frontmatter `name` may be either. The file keeps its name: an
+export or removal goes to it, `MEMORY.md` links it, and the report names
+the fact it became. A file named as the fact beats a snake-case twin of
+it, which is skipped and named. Any other stem a fact's name refuses is
+skipped and named, as before.
+
+A fact retired in the store has the form removed from the repository
+recorded in its `synced` row, `removed:<hash>`: the file reappearing as
+it was is removed again, rather than reviving the fact, but one the
+repository changed is its version. An import keeps what only the store
+holds, tags, importance, creation, foreign keys and other sources; a
+verification goes with the words it confirmed, as with any write but the
+user's.
 
 Export writes atomically, only inside `<root>/<memoryDir>`, and refuses
 a memory directory that resolves outside the root or through a symlink.
@@ -608,13 +629,6 @@ rules require; nothing touches the user's data.
   nothing else; ranking keeps them below live facts.
 - **The scrub is by shape.** It misses a password with no telling key
   beside it.
-- **Snake-case names.** Claude Code's auto-memory often names its files
-  in snake case, `feedback_testing.md`, which a fact's name refuses:
-  such a file is skipped and named in the report, never lost, and a
-  `MEMORY.md` that links it is left as it is.
-- **Hooks give way to descriptions.** A `MEMORY.md` in sync's own form
-  is regenerated from the facts, so each entry's hook line, where a
-  hand wrote one, is replaced by its fact's description.
 - **One remote, one project.** Forks with different remotes are
   different projects; a repository whose `origin` changes becomes a new
   one until the user edits `projects.json`.

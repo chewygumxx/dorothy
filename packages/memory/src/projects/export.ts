@@ -15,6 +15,8 @@
 
 import { createHash } from "node:crypto";
 import {
+    FACT_LIMITS,
+    FACT_NAME,
     type Fact,
     folded,
     frontmatterOf,
@@ -30,6 +32,16 @@ export type ExportedFact = Pick<
 export type ExportedRead =
     | { kind: "ok"; form: ExportedFact }
     | { kind: "unparseable"; reason: string };
+
+// The fact a repository file of this stem holds, or null if no fact has
+// that name. Claude Code names its files in snake case, feedback_testing;
+// the fact is feedback-testing, and its file keeps the name it has.
+export function nameOfStem(stem: string): string | null {
+    const name = stem.replaceAll("_", "-");
+    return FACT_NAME.test(name) && name.length <= FACT_LIMITS.name
+        ? name
+        : null;
+}
 
 export const exportedForm = (fact: Fact): ExportedFact => ({
     name: fact.name,
@@ -58,6 +70,8 @@ export function renderExported(form: ExportedFact): string {
 
 const EXPORTED_KEYS = ["name", "description", "metadata"];
 
+// A file's stem is its fact's name or, in snake case, that name's; the
+// frontmatter may give either.
 export function parseExported(source: string, stem: string): ExportedRead {
     try {
         const { data, body } = frontmatterOf(source);
@@ -67,7 +81,9 @@ export function parseExported(source: string, stem: string): ExportedRead {
         if (unknown !== undefined) {
             throw new Problem(`its frontmatter has an unknown key, ${unknown}`);
         }
-        return { kind: "ok", form: readCommon(data, body, stem) };
+        const name = nameOfStem(stem) ?? stem;
+        const named = data.name === stem ? { ...data, name } : data;
+        return { kind: "ok", form: readCommon(named, body, name) };
     } catch (error) {
         if (error instanceof Problem) {
             return { kind: "unparseable", reason: error.message };
@@ -99,8 +115,13 @@ export const INDEX_LIMITS = { lines: 200, bytes: 25_000 } as const;
 
 export type IndexEntry = {
     name: string;
+    // The stem of the fact's file, its name unless the file is in snake
+    // case.
+    file?: string;
     title: string;
     description: string;
+    // The lines a hand gave the entry, kept in place of the description.
+    hook?: readonly string[];
     importance: number | null;
     created: string;
 };
@@ -134,8 +155,10 @@ function described(text: string, width: number): string[] {
     return lines;
 }
 const entryLines = (entry: IndexEntry) => [
-    `- [${escapeLink(entry.title)}](./${entry.name}.md)`,
-    ...described(entry.description, 78).map((line) => `  ${line}`),
+    `- [${escapeLink(entry.title)}](./${entry.file ?? entry.name}.md)`,
+    ...(entry.hook ?? described(entry.description, 78)).map(
+        (line) => `  ${line}`,
+    ),
 ];
 const render = (entries: readonly IndexEntry[]) =>
     entries.length === 0 ? "" : `${entries.flatMap(entryLines).join("\n")}\n`;
@@ -175,19 +198,23 @@ export function renderIndex(entries: readonly IndexEntry[]): {
     return { text: render(kept), omitted: entries.length - kept.length };
 }
 
+// A file's stem: a fact's name, or snake case.
+const STEM = "[a-z0-9]+(?:[-_][a-z0-9]+)*";
 // An entry as renderIndex writes it.
-const ENTRY =
-    /^- \[((?:\\.|[^\]\\])*)\]\(\.\/([a-z0-9]+(?:-[a-z0-9]+)*)\.md\)\s*$/;
+const ENTRY = new RegExp(
+    `^- \\[((?:\\\\.|[^\\]\\\\])*)\\]\\(\\./(${STEM})\\.md\\)\\s*$`,
+);
 // An entry as a hand or Claude Code writes one: either bullet, the link
 // with or without `./`, and anything after it on the line, such as a dash
 // and the fact's hook.
-const ANY_ENTRY =
-    /^[-*] \[((?:\\.|[^\]\\])*)\]\((?:\.\/)?([a-z0-9]+(?:-[a-z0-9]+)*)\.md\).*$/;
+const ANY_ENTRY = new RegExp(
+    `^[-*] \\[((?:\\\\.|[^\\]\\\\])*)\\]\\((?:\\./)?(${STEM})\\.md\\).*$`,
+);
 // A line of an entry's description: indented as renderIndex indents it,
 // and no list item of its own.
 const DESCRIPTION = /^ {2}(?![-*+](?:\s|$)|\d{1,9}[.)](?:\s|$))\S/;
 
-// Each entry's title, by its fact's name, in the index's order.
+// Each entry's title, by the stem of its file, in the index's order.
 export function indexTitles(text: string): Map<string, string> {
     const titles = new Map<string, string>();
     for (const line of text.split("\n")) {
@@ -197,6 +224,27 @@ export function indexTitles(text: string): Map<string, string> {
         }
     }
     return titles;
+}
+
+// The lines of each entry's hook (its description), by the stem of its
+// file, in an index renderIndex wrote or a hand edited to the same form.
+export function indexHooks(text: string): Map<string, string[]> {
+    const hooks = new Map<string, string[]>();
+    let lines: string[] | null = null;
+    for (const line of text.split("\n")) {
+        const stem = ENTRY.exec(line)?.[2];
+        if (stem !== undefined) {
+            lines = [];
+            if (!hooks.has(stem)) {
+                hooks.set(stem, lines);
+            }
+        } else if (DESCRIPTION.test(line)) {
+            lines?.push(line.slice(2));
+        } else {
+            lines = null;
+        }
+    }
+    return hooks;
 }
 
 // Whether every line of an index is one renderIndex writes: a blank line,

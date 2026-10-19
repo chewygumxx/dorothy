@@ -289,6 +289,9 @@ export function formatReport(report: SyncReport): string {
         ...MOVES.filter((way) => report[way].length > 0).map(
             (way) => `${way}: ${report[way].join(", ")}`,
         ),
+        ...report.renamed.map(
+            ({ file, name }) => `named: ${file} as the fact ${name}`,
+        ),
         ...report.conflicts.map(
             (name) => `conflict: ${name}; the repository's version was kept`,
         ),
@@ -296,6 +299,11 @@ export function formatReport(report: SyncReport): string {
             ({ name, reason }) => `skipped: ${name} (${reason})`,
         ),
     ];
+    if (report.unrecorded !== undefined) {
+        lines.push(
+            `history was not told of this, and will find it next time: ${report.unrecorded}`,
+        );
+    }
     if (report.index === "left") {
         lines.push(
             `MEMORY.md left as it is${report.indexReason === undefined ? "" : `: ${report.indexReason}`}`,

@@ -418,6 +418,7 @@ describe("formatReport", () => {
         project: { root: "/r", id: "github.com/o/r", name: "r" },
         memoryDir: ".agents/memory",
         imported: ["a", "b"],
+        renamed: [],
         exported: ["c"],
         removed: [],
         retired: ["d"],
@@ -439,6 +440,33 @@ describe("formatReport", () => {
                 "skipped: x (it has no frontmatter)",
                 "MEMORY.md left as it is: it holds lines sync did not write",
                 "MEMORY.md leaves out 2 facts, past what Claude Code loads",
+                "",
+            ].join("\n"),
+        );
+    });
+
+    it("names the facts that files in snake case became, and an unrecorded sync", () => {
+        const text = formatReport({
+            ...report,
+            imported: ["feedback-testing"],
+            renamed: [
+                { file: "feedback_testing.md", name: "feedback-testing" },
+            ],
+            exported: [],
+            retired: [],
+            conflicts: [],
+            skipped: [],
+            omitted: 0,
+            index: "written",
+            indexReason: undefined,
+            unrecorded: "history is busy",
+        });
+        expect(text).toBe(
+            [
+                "github.com/o/r: 1 in, 0 out (.agents/memory)",
+                "imported: feedback-testing",
+                "named: feedback_testing.md as the fact feedback-testing",
+                "history was not told of this, and will find it next time: history is busy",
                 "",
             ].join("\n"),
         );

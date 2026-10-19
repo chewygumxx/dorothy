@@ -13,8 +13,10 @@ import {
     type ExportedFact,
     formHash,
     type IndexEntry,
+    indexHooks,
     indexTitles,
     isGeneratedIndex,
+    nameOfStem,
     parseExported,
     renderExported,
     renderIndex,
@@ -286,5 +288,80 @@ describe("isGeneratedIndex", () => {
             expect(lines.every((line) => line.length <= 80)).toBe(true);
             expect(isGeneratedIndex(text)).toBe(true);
         }
+    });
+});
+
+describe("snake-case files", () => {
+    it.each([
+        ["feedback_testing", "feedback-testing"],
+        ["a_b_c", "a-b-c"],
+        ["plain", "plain"],
+        ["kebab-case", "kebab-case"],
+        ["mixed_kebab-case", "mixed-kebab-case"],
+        ["Feedback_Testing", null],
+        ["double__score", null],
+        ["_leading", null],
+        ["1_up", null],
+        ["null", null],
+    ])("names the fact of the file %p as %p", (stem, name) => {
+        expect(nameOfStem(stem)).toBe(name);
+    });
+
+    it("reads a file in snake case, its frontmatter naming either", () => {
+        for (const name of ["feedback_testing", "feedback-testing"]) {
+            const read = parseExported(
+                NATIVE.replace("bg-session-force-color", name),
+                "feedback_testing",
+            );
+            expect(read).toMatchObject({
+                kind: "ok",
+                form: { name: "feedback-testing" },
+            });
+        }
+    });
+
+    it("refuses a file whose frontmatter names another fact", () => {
+        expect(
+            parseExported(
+                NATIVE.replace("bg-session-force-color", "other-fact"),
+                "feedback_testing",
+            ),
+        ).toEqual({
+            kind: "unparseable",
+            reason: "its name is other-fact, not its file's, feedback-testing",
+        });
+    });
+
+    it("reads titles and hooks by the file's stem, and takes the index as generated", () => {
+        const text = [
+            "- [Testing](./feedback_testing.md)",
+            "  A hook",
+            "  on two lines.",
+            "- [Bee](./b.md)",
+            "  Another.",
+            "",
+        ].join("\n");
+        expect(isGeneratedIndex(text)).toBe(true);
+        expect([...indexTitles(text)]).toEqual([
+            ["feedback_testing", "Testing"],
+            ["b", "Bee"],
+        ]);
+        expect([...indexHooks(text)]).toEqual([
+            ["feedback_testing", ["A hook", "on two lines."]],
+            ["b", ["Another."]],
+        ]);
+    });
+
+    it("links an entry to its file, and keeps a hook in place of the description", () => {
+        const { text } = renderIndex([
+            {
+                ...entry("feedback-testing", { title: "Testing" }),
+                file: "feedback_testing",
+                hook: ["A hand's hook", "on two lines."],
+            },
+        ]);
+        expect(text).toBe(
+            "- [Testing](./feedback_testing.md)\n  A hand's hook\n  on two lines.\n",
+        );
     });
 });

@@ -165,10 +165,11 @@ describe("syncProject", () => {
         expect(
             (b?.provenance.created ?? "") < (a?.provenance.created ?? ""),
         ).toBe(true);
+        // The hooks a hand wrote stay, the descriptions being unchanged.
         expect(await readFile(memory("MEMORY.md"), "utf8")).toBe(
-            "- [Bee](./b.md)\n  Second fact.\n- [Ay](./a.md)\n  First fact.\n",
+            "- [Bee](./b.md)\n  second\n- [Ay](./a.md)\n  first\n",
         );
-        expect(report.index).toBe("written");
+        expect(report.index).toBe("unchanged");
         expect(commits).toEqual([
             {
                 paths: [
@@ -631,7 +632,7 @@ describe("syncProject", () => {
         await putRepo("a.md", repoFact("a", "First fact."));
         await putRepo("README.md", "Read me.\n");
         await putRepo("feedback_testing.md", "---\nname: x\n---\nNotes\n");
-        await putRepo("MEMORY.md", "- [Ay](./a.md)\n  old\n");
+        await putRepo("MEMORY.md", "- [Gone](./gone.md)\n  old\n");
         const report = await sync();
         expect(report.skipped.map(({ name }) => name)).toEqual([
             "README",
@@ -639,7 +640,7 @@ describe("syncProject", () => {
         ]);
         expect(report.index).toBe("written");
         expect(await readFile(memory("MEMORY.md"), "utf8")).toBe(
-            "- [Ay](./a.md)\n  First fact.\n",
+            "- [a](./a.md)\n  First fact.\n",
         );
     });
 
@@ -652,22 +653,6 @@ describe("syncProject", () => {
         expect(report.index).toBe("left");
         expect(report.indexReason).toBe("it links trap, which was skipped");
         expect(await readFile(memory("MEMORY.md"), "utf8")).toBe(kept);
-    });
-
-    it("skips a snake-case file and leaves a MEMORY.md that links it", async () => {
-        await putRepo("a.md", repoFact("a", "First fact."));
-        await putRepo("feedback_testing.md", repoFact("a", "Snake."));
-        const index =
-            "- [Ay](./a.md)\n  First fact.\n- [Testing](./feedback_testing.md)\n  Snake.\n";
-        await putRepo("MEMORY.md", index);
-        const report = await sync();
-        expect(moved(report)).toEqual({ ...NOTHING, imported: ["a"] });
-        expect(report.skipped).toEqual([
-            { name: "feedback_testing", reason: "its name is not a fact's" },
-        ]);
-        expect(report.index).toBe("left");
-        expect(await readFile(memory("MEMORY.md"), "utf8")).toBe(index);
-        expect(await files()).toContain("feedback_testing.md");
     });
 
     it("takes an adopted fact's title from Claude Code's one-line entry", async () => {
@@ -1032,7 +1017,7 @@ describe("syncProject's store-only and concurrent cases", () => {
     it("leaves a MEMORY.md a hand rewrote while sync ran", async () => {
         const hand = "# Important\n\nDo not remove these notes.\n";
         await putRepo("a.md", repoFact("a", "Fresh description."));
-        await putRepo("MEMORY.md", "- [Old](./a.md)\n  An old description.\n");
+        await putRepo("MEMORY.md", "- [Gone](./gone.md)\n  Long gone.\n");
         const original = filesystem.readFile;
         let edited = false;
         const spy = spyOn(filesystem, "readFile").mockImplementation(((
@@ -1078,5 +1063,314 @@ describe("syncProject's store-only and concurrent cases", () => {
         }
         expect(report.index).toBe("left");
         expect(await readFile(memory("MEMORY.md"), "utf8")).toBe(hand);
+    });
+});
+
+describe("syncProject and Claude Code's snake-case files", () => {
+    const snake = (name: string, description: string) =>
+        repoFact(name, description, "Notes.");
+
+    it("imports feedback_testing.md as feedback-testing, and says so", async () => {
+        await putRepo(
+            "feedback_testing.md",
+            snake("feedback_testing", "Snake."),
+        );
+        await putRepo(
+            "MEMORY.md",
+            "- [Testing](./feedback_testing.md)\n  Snake.\n",
+        );
+        const report = await sync();
+        expect(moved(report)).toEqual({
+            ...NOTHING,
+            imported: ["feedback-testing"],
+        });
+        expect(report.renamed).toEqual([
+            { file: "feedback_testing.md", name: "feedback-testing" },
+        ]);
+        expect(report.skipped).toEqual([]);
+        expect((await facts())[0]).toMatchObject({
+            name: "feedback-testing",
+            title: "Testing",
+            description: "Snake.",
+        });
+        // The file and the index entry that links it stay as they were.
+        expect(await files()).toEqual(["MEMORY.md", "feedback_testing.md"]);
+        expect(report.index).toBe("unchanged");
+        expect(moved(await sync())).toEqual(NOTHING);
+    });
+
+    it("takes a file whose frontmatter already names the fact", async () => {
+        await putRepo(
+            "feedback_testing.md",
+            snake("feedback-testing", "Snake."),
+        );
+        expect((await sync()).imported).toEqual(["feedback-testing"]);
+    });
+
+    it("exports an edit to the file it came from, and links it so", async () => {
+        await putRepo(
+            "feedback_testing.md",
+            snake("feedback_testing", "Snake."),
+        );
+        await sync();
+        const [fact] = await facts();
+        await putFact(data, SCOPE, {
+            ...(fact as Fact),
+            description: "Revised.",
+        });
+        expect(moved(await sync())).toEqual({
+            ...NOTHING,
+            exported: ["feedback-testing"],
+        });
+        expect(await files()).toEqual(["MEMORY.md", "feedback_testing.md"]);
+        expect(await readFile(memory("feedback_testing.md"), "utf8")).toContain(
+            "name: feedback-testing",
+        );
+        expect(await readFile(memory("MEMORY.md"), "utf8")).toBe(
+            "- [feedback-testing](./feedback_testing.md)\n  Revised.\n",
+        );
+        expect(moved(await sync())).toEqual(NOTHING);
+    });
+
+    it("removes the file of a fact retired in the store", async () => {
+        await putRepo(
+            "feedback_testing.md",
+            snake("feedback_testing", "Snake."),
+        );
+        await sync();
+        const [fact] = await facts();
+        await putFact(data, SCOPE, {
+            ...(fact as Fact),
+            retired: { at: NOW.toISOString(), by: "user", why: "Wrong." },
+        });
+        expect(moved(await sync())).toEqual({
+            ...NOTHING,
+            removed: ["feedback-testing"],
+        });
+        expect(await files()).toEqual(["MEMORY.md"]);
+    });
+
+    it("prefers a file named as the fact to its snake-case twin", async () => {
+        await putRepo(
+            "feedback-testing.md",
+            repoFact("feedback-testing", "Kebab."),
+        );
+        await putRepo(
+            "feedback_testing.md",
+            snake("feedback_testing", "Snake."),
+        );
+        const report = await sync();
+        expect(report.imported).toEqual(["feedback-testing"]);
+        expect(report.skipped).toEqual([
+            {
+                name: "feedback_testing",
+                reason: "it repeats feedback-testing.md, the same fact",
+            },
+        ]);
+        expect((await facts())[0]?.description).toBe("Kebab.");
+        expect(await files()).toContain("feedback_testing.md");
+    });
+
+    it("still skips a name no fact has", async () => {
+        await putRepo("Feedback_Testing.md", snake("feedback-testing", "x"));
+        await putRepo("feedback__testing.md", snake("feedback-testing", "x"));
+        await putRepo("1_up.md", snake("1-up", "x"));
+        const report = await sync();
+        expect(report.imported).toEqual([]);
+        expect(report.skipped.map(({ name }) => name).sort()).toEqual([
+            "1_up",
+            "Feedback_Testing",
+            "feedback__testing",
+        ]);
+    });
+
+    it("leaves the store's fact when its snake-case file stops reading", async () => {
+        await putRepo(
+            "feedback_testing.md",
+            snake("feedback_testing", "Snake."),
+        );
+        await sync();
+        await putRepo(
+            "feedback_testing.md",
+            "---\nname: feedback_testing\n---\n",
+        );
+        const report = await sync();
+        expect(report.retired).toEqual([]);
+        expect(report.skipped.map(({ name }) => name)).toEqual([
+            "feedback_testing",
+        ]);
+        expect((await facts())[0]?.retired).toBeNull();
+    });
+
+    it("retires the fact of a deleted snake-case file", async () => {
+        await putRepo(
+            "feedback_testing.md",
+            snake("feedback_testing", "Snake."),
+        );
+        await sync();
+        await rm(memory("feedback_testing.md"));
+        expect((await sync()).retired).toEqual(["feedback-testing"]);
+    });
+});
+
+describe("syncProject and MEMORY.md's hook lines", () => {
+    const hooked = "- [Ay](./a.md)\n  A hook a hand wrote.\n";
+
+    it("keeps an entry's hook while the description stands", async () => {
+        await putRepo("a.md", repoFact("a", "First fact."));
+        await putRepo("b.md", repoFact("b", "Second fact."));
+        await putRepo("MEMORY.md", hooked);
+        const report = await sync();
+        expect(report.index).toBe("written");
+        expect(await readFile(memory("MEMORY.md"), "utf8")).toBe(
+            "- [Ay](./a.md)\n  A hook a hand wrote.\n- [b](./b.md)\n  Second fact.\n",
+        );
+        expect(report.omitted).toBe(0);
+        // And on every sync after.
+        expect((await sync()).index).toBe("unchanged");
+    });
+
+    it("keeps a hook of several lines", async () => {
+        const long = "- [Ay](./a.md)\n  A hook a hand\n  wrapped onto lines.\n";
+        await putRepo("a.md", repoFact("a", "First fact."));
+        await putRepo("MEMORY.md", long);
+        expect((await sync()).index).toBe("unchanged");
+        expect(await readFile(memory("MEMORY.md"), "utf8")).toBe(long);
+    });
+
+    it("writes the description when the store changed it", async () => {
+        await putRepo("a.md", repoFact("a", "First fact."));
+        await putRepo("MEMORY.md", hooked);
+        await sync();
+        const [a] = await facts();
+        await putFact(data, SCOPE, {
+            ...(a as Fact),
+            description: "First, revised.",
+        });
+        await sync();
+        expect(await readFile(memory("MEMORY.md"), "utf8")).toBe(
+            "- [Ay](./a.md)\n  First, revised.\n",
+        );
+    });
+
+    it("writes the description when the repository changed it", async () => {
+        await putRepo("a.md", repoFact("a", "First fact."));
+        await putRepo("MEMORY.md", hooked);
+        await sync();
+        await putRepo("a.md", repoFact("a", "Edited in the repository."));
+        await sync();
+        expect(await readFile(memory("MEMORY.md"), "utf8")).toBe(
+            "- [Ay](./a.md)\n  Edited in the repository.\n",
+        );
+    });
+});
+
+describe("syncProject after the last live fact goes", () => {
+    it("empties the MEMORY.md it wrote when the repository deletes the fact", async () => {
+        await putRepo("a.md", repoFact("a", "First fact."));
+        await sync();
+        expect(await readFile(memory("MEMORY.md"), "utf8")).not.toBe("");
+        await rm(memory("a.md"));
+        const report = await sync();
+        expect(report.retired).toEqual(["a"]);
+        expect(report.index).toBe("written");
+        expect(await readFile(memory("MEMORY.md"), "utf8")).toBe("");
+        expect((await sync()).index).toBe("unchanged");
+    });
+
+    it("leaves an index that lists what is no fact", async () => {
+        await putRepo("a.md", repoFact("a", "First fact."));
+        await sync();
+        const kept =
+            "- [Ay](./a.md)\n  First fact.\n- [Gone](./gone.md)\n  x\n";
+        await putRepo("MEMORY.md", kept);
+        await rm(memory("a.md"));
+        const report = await sync();
+        expect(report.index).toBe("left");
+        expect(await readFile(memory("MEMORY.md"), "utf8")).toBe(kept);
+    });
+});
+
+describe("syncProject and a fact retired in the store", () => {
+    const retire = async () => {
+        const [a] = await facts();
+        await putFact(data, SCOPE, {
+            ...(a as Fact),
+            retired: { at: NOW.toISOString(), by: "user", why: "Wrong." },
+        });
+    };
+
+    it("removes the file again when it reappears as it was", async () => {
+        const text = repoFact("a", "First fact.");
+        await putRepo("a.md", text);
+        await sync();
+        await retire();
+        expect(moved(await sync())).toEqual({ ...NOTHING, removed: ["a"] });
+        // A branch switch brings the file back.
+        await putRepo("a.md", text);
+        expect(moved(await sync())).toEqual({ ...NOTHING, removed: ["a"] });
+        expect((await facts())[0]?.retired).not.toBeNull();
+        expect(await files()).not.toContain("a.md");
+        expect(moved(await sync())).toEqual(NOTHING);
+    });
+
+    it("takes the repository's version when it reappears changed", async () => {
+        await putRepo("a.md", repoFact("a", "First fact."));
+        await sync();
+        await retire();
+        await sync();
+        await putRepo("a.md", repoFact("a", "Written again."));
+        expect(moved(await sync())).toEqual({ ...NOTHING, imported: ["a"] });
+        expect((await facts())[0]).toMatchObject({
+            description: "Written again.",
+            retired: null,
+        });
+    });
+
+    it("exports a fact revived in the store", async () => {
+        await putRepo("a.md", repoFact("a", "First fact."));
+        await sync();
+        await retire();
+        await sync();
+        await sync();
+        const [a] = await facts();
+        await putFact(data, SCOPE, { ...(a as Fact), retired: null });
+        expect(moved(await sync())).toEqual({ ...NOTHING, exported: ["a"] });
+        expect(moved(await sync())).toEqual(NOTHING);
+        expect((await facts())[0]?.retired).toBeNull();
+    });
+
+    it("forgets the form once the fact is gone from the store", async () => {
+        await putRepo("a.md", repoFact("a", "First fact."));
+        await sync();
+        await retire();
+        await sync();
+        await rm(factPath(data, SCOPE, "a"));
+        await sync();
+        const registry = JSON.parse(await readFile(projectsPath(data), "utf8"));
+        const dirs = Object.values(registry.projects[ID].synced)[0] as {
+            dirs: Record<string, Record<string, string>>;
+        };
+        expect(Object.values(dirs.dirs)[0]).toEqual({});
+    });
+});
+
+describe("syncProject when history cannot record", () => {
+    it("reports what it wrote, and says history was not told", async () => {
+        await putRepo("a.md", repoFact("a", "First fact."));
+        const result = await syncProject(
+            repo,
+            options({
+                recorder: async () => {
+                    throw new Error("history is busy");
+                },
+            }),
+        );
+        if (result.kind !== "ok") {
+            throw new Error(JSON.stringify(result));
+        }
+        expect(result.report.imported).toEqual(["a"]);
+        expect(result.report.unrecorded).toBe("history is busy");
+        expect((await facts())[0]?.name).toBe("a");
     });
 });
