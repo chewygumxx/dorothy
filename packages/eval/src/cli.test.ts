@@ -95,6 +95,20 @@ describe("bun run eval", () => {
         expect(err.join("")).toContain("eval: no command dance");
     });
 
+    it("takes an inherited key for no command", async () => {
+        for (const name of ["constructor", "toString", "__proto__"]) {
+            const { io, err } = fakeIo();
+            expect(await runCli([name], io)).toBe(1);
+            expect(err.join("")).toContain(`eval: no command ${name}`);
+            const helped = fakeIo();
+            expect(await runCli(["help", name], helped.io)).toBe(1);
+            expect(helped.err.join("")).toContain(`no command ${name}`);
+        }
+        const { io, err } = fakeIo();
+        expect(await runCli(["run", "--constructor"], io)).toBe(1);
+        expect(err.join("")).toContain("--constructor");
+    });
+
     it("names an option a command lacks", async () => {
         const { io, err } = fakeIo();
         expect(await runCli(["snapshot", "--frm", "x"], io)).toBe(1);

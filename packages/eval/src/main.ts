@@ -10,9 +10,9 @@
 
 // bun run eval: the process around runCli, with the real terminal.
 
-import { spawnSync } from "node:child_process";
 import { createInterface, type Interface } from "node:readline/promises";
 import { runCli } from "./cli.js";
+import { openEditor } from "./editor.js";
 
 // Declared so, tsc does not narrow it to null at the top level.
 let reader = null as Interface | null;
@@ -34,13 +34,7 @@ const ask = (prompt: string) =>
         );
     });
 
-// $VISUAL or $EDITOR may carry arguments, so a shell runs it.
-const edit = async (path: string) => {
-    const editor = process.env.VISUAL || process.env.EDITOR || "vi";
-    spawnSync("sh", ["-c", `${editor} "$1"`, "sh", path], {
-        stdio: "inherit",
-    });
-};
+const edit = async (path: string) => openEditor(path, process.env);
 
 process.exitCode = await runCli(process.argv.slice(2), {
     env: process.env,

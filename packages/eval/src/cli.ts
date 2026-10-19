@@ -76,7 +76,11 @@ function asksHelp(args: string[], command: Command): boolean {
         if (arg === "--") {
             return false;
         }
-        if (command.options[arg.slice(2)]?.type === "string") {
+        const option = arg.slice(2);
+        if (
+            Object.hasOwn(command.options, option) &&
+            command.options[option]?.type === "string"
+        ) {
             at++;
         }
     }
@@ -99,7 +103,11 @@ export async function runCli(argv: string[], io: Io): Promise<number> {
         return 0;
     }
     const asked = name === "help" ? rest[0] : name;
-    const command = asked === undefined ? undefined : COMMANDS[asked];
+    // Own keys only: `constructor` is no command.
+    const command =
+        asked !== undefined && Object.hasOwn(COMMANDS, asked)
+            ? COMMANDS[asked]
+            : undefined;
     if (command === undefined) {
         io.err(
             asked === undefined
