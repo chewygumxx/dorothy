@@ -12,6 +12,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Command, intOf, workOf } from "../command.js";
 import { UsageError } from "../errors.js";
+import { writeAtomic } from "../files.js";
 import { Models } from "../models/client.js";
 import { readEvalConfig, requireRole } from "../models/config.js";
 import { readSnapshot, workEnv } from "../snapshot/snapshot.js";
@@ -21,7 +22,6 @@ import {
     type Question,
     readQuestionsToRewrite,
     updateQuestions,
-    writeFileAtomic,
 } from "./file.js";
 import {
     BATCH,
@@ -66,7 +66,7 @@ async function readGenerations(work: string): Promise<unknown[]> {
 
 async function recordGeneration(work: string, entry: object): Promise<void> {
     const entries = await readGenerations(work);
-    await writeFileAtomic(
+    await writeAtomic(
         join(work, "generated.json"),
         `${JSON.stringify([...entries, entry], null, 4)}\n`,
     );

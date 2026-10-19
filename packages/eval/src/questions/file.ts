@@ -20,11 +20,11 @@ import {
     rename,
     rm,
     stat,
-    writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
-import { UsageError } from "../errors.js";
+import { codeOf, UsageError } from "../errors.js";
+import { writeAtomic } from "../files.js";
 
 export const QUESTION_TYPES = [
     "single-session",
@@ -193,28 +193,11 @@ export async function readQuestionsToRewrite(
     return questions;
 }
 
-// A file written whole or not at all: the new text beside it, then
-// renamed over. The temporary name is fixed, so one a Ctrl-C leaves is
-// written over by the next write, and the writers are serialised.
-export async function writeFileAtomic(
-    path: string,
-    text: string,
-): Promise<void> {
-    const temporary = `${path}.tmp`;
-    try {
-        await writeFile(temporary, text, { mode: 0o600 });
-        await rename(temporary, path);
-    } catch (error) {
-        await rm(temporary, { force: true });
-        throw error;
-    }
-}
-
 export async function writeQuestions(
     work: string,
     questions: Question[],
 ): Promise<void> {
-    await writeFileAtomic(
+    await writeAtomic(
         questionsPath(work),
         questions.map((question) => `${JSON.stringify(question)}\n`).join(""),
     );
@@ -250,10 +233,6 @@ export const locking: Locking = {
     now: () => Date.now(),
     write: (handle, text) => handle.writeFile(text),
 };
-
-function codeOf(error: unknown) {
-    return (error as { code?: unknown } | null)?.code;
-}
 
 // What a lock file holds: undefined if there is none, null if it cannot
 // be read.

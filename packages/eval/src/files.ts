@@ -55,12 +55,14 @@ export async function readRecord<T>(
 }
 
 // Written whole or not at all: a torn file would refuse every command.
+// The temporary name is fixed, so one that a Ctrl-C leaves is written
+// over by the next write; the callers keep their writes apart.
 export async function writeAtomic(
     path: string,
     text: string,
     mode = 0o600,
 ): Promise<void> {
-    const making = `${path}.${process.pid}.tmp`;
+    const making = `${path}.tmp`;
     try {
         await writeFile(making, text, { mode });
         await rename(making, path);
