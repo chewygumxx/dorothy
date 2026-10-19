@@ -191,6 +191,47 @@ describe("parseEditView", () => {
         });
     });
 
+    describe("with the Abstract: line deleted", () => {
+        // Short enough that description and abstract together fit the limit.
+        const brief: Sidecar = {
+            ...sidecar,
+            description: "A description.",
+            abstract: "An abstract.",
+        };
+        const shown = renderEditView(PHRASE, brief);
+        const without = (text: string) => text.replace("Abstract:\n", "");
+
+        it("is refused when it joined the abstract to the description", () => {
+            const parsed = parseEditView(without(shown), brief);
+            expect(parsed.kind).toBe("error");
+            expect(parsed.kind === "error" && parsed.reason).toContain(
+                "keep the Abstract: line, or delete the abstract's text",
+            );
+            // With no description of its own, the abstract alone joins.
+            const bare = { ...brief, description: null };
+            const parsedBare = parseEditView(
+                without(renderEditView(PHRASE, bare)),
+                bare,
+            );
+            expect(parsedBare.kind).toBe("error");
+        });
+
+        it("is taken when the abstract's text went with it", () => {
+            const lines = shown.split("\n");
+            const at = lines.indexOf("Abstract:");
+            const gone = [...lines.slice(0, at - 1), ""].join("\n");
+            expect(parseEditView(gone, brief)).toEqual({ kind: "unchanged" });
+        });
+
+        it("is taken when the description really changed too", () => {
+            const edited = without(shown).replace("A description.", "Another.");
+            expect(parseEditView(edited, brief)).toEqual({
+                kind: "edit",
+                changes: { description: "Another. An abstract." },
+            });
+        });
+    });
+
     it("hands back an emptied field as null", () => {
         const edited = view.replace(
             "Designing how Dorothy remembers past conversations.\n",

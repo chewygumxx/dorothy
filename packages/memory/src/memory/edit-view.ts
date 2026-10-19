@@ -197,6 +197,10 @@ export function parseEditView(
         return { kind: "error", reason: found };
     }
     const base = shown ?? EMPTY_SIDECAR;
+    const joined = abstractJoined(found, base);
+    if (joined !== null) {
+        return { kind: "error", reason: joined };
+    }
     const changes: EditChanges = {};
     const problem =
         textChanges(found, base, changes) ??
@@ -233,6 +237,26 @@ function readFields(lines: readonly string[]): Map<string, string> | string {
     return new Map(
         [...found].map(([name, given]) => [name, normalise(given.join(" "))]),
     );
+}
+
+// Without its Abstract: line the abstract's text, which follows the
+// description, reads as part of it. When the description is now the old one
+// and the old abstract together, that is what happened, and saving it would
+// quietly make the description the user's.
+function abstractJoined(
+    found: ReadonlyMap<string, string>,
+    base: Sidecar,
+): string | null {
+    const description = found.get(LABELS.description);
+    if (
+        found.has(LABELS.abstract) ||
+        description === undefined ||
+        base.abstract === null ||
+        description !== normalise(`${base.description ?? ""} ${base.abstract}`)
+    ) {
+        return null;
+    }
+    return "the Abstract: line is gone, so the abstract's text joined the description; keep the Abstract: line, or delete the abstract's text along with it";
 }
 
 function strayLine(line: string): string {

@@ -17,6 +17,7 @@ import { renderFact } from "../facts/file.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { runList, runMemoryEdit, runTags, runTagsEdit } from "./commands.js";
 import {
+    EMPTY_SIDECAR,
     type HistoryHandle,
     type OpenHistory,
     readSidecar,
@@ -247,6 +248,57 @@ describe("runMemoryEdit", () => {
             `# error: Pinned takes yes or no, not "maybe"\n# Dorothy's notes on ${a}.`,
         );
         expect((await sidecar())?.pinned).toBe(true);
+    });
+
+    it("drops every old error line from a reopened template, wherever it sits", async () => {
+        await writeFile(join(transcripts, `${a}.jsonl`), chat);
+        const { edit, seen } = editor(
+            (text) => ({
+                ok: true,
+                text: text.replace("Pinned: no", "Pinned: maybe"),
+            }),
+            // The error line moved to the end, and a new mistake made.
+            (text) => ({
+                ok: true,
+                text: `${text.replace(/^# error: .*\n/, "").replace("Pinned: maybe", "Pinned: perhaps")}# error: moved down\n`,
+            }),
+            (text) => ({
+                ok: true,
+                text: text.replace("Pinned: perhaps", "Pinned: yes"),
+            }),
+        );
+        expect(await run(edit)).toBe(0);
+        const lines = (seen[2] ?? "").split("\n");
+        expect(lines.filter((line) => line.startsWith("# error:"))).toEqual([
+            '# error: Pinned takes yes or no, not "perhaps"',
+        ]);
+        expect(lines[0]).toStartWith("# error: Pinned takes yes or no");
+    });
+
+    it("reopens the editor when only the Abstract: line was deleted", async () => {
+        await writeFile(join(transcripts, `${a}.jsonl`), chat);
+        await writeFile(
+            sidecarPath(transcripts, a),
+            JSON.stringify({
+                ...EMPTY_SIDECAR,
+                title: "T",
+                description: "A description.",
+                abstract: "An abstract.",
+            }),
+        );
+        const { edit, seen } = editor(
+            (text) => ({ ok: true, text: text.replace("Abstract:\n", "") }),
+            (text) => ({
+                ok: true,
+                text: text
+                    .replace(/^# error: .*\n/, "")
+                    .replace("\nAn abstract.", "\nAbstract:\nAn abstract."),
+            }),
+        );
+        expect(await run(edit)).toBe(0);
+        expect(seen[1]).toStartWith("# error: the Abstract: line is gone");
+        expect((await sidecar())?.description).toBe("A description.");
+        expect((await sidecar())?.fields.description).toBeUndefined();
     });
 
     it("writes nothing when the template is saved unchanged", async () => {

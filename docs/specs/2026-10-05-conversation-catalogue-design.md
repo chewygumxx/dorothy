@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-05
-mtime: 2026-10-05
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Conversation catalogue design
 description: "Design spec for Dorothy's first memory: per-conversation notes"
@@ -567,11 +567,6 @@ sub-project rather than a defect against this spec.
   catalogue ignores them.
 - **Layering.** `src/memory/commands.ts` imports the `$EDITOR` runner from
   `src/tui/external-editor.ts`, which has no React or SDK imports.
-- **The edit view's paragraphs.** Deleting only the `Abstract:` line joins the
-  abstract's text to the description; when the two fit in 160 characters
-  together this silently makes the description the user's. Moving a
-  `# error:` line out of the top of the file lets error lines accumulate on
-  later reopens; they are comments, so the result is untidy, not wrong.
 
 ## Out of scope
 

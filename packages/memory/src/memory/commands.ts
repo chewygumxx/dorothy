@@ -171,8 +171,9 @@ export async function runTags({
     }
 }
 
-// The error line a reopened template starts with, never more than one.
-const ERROR_LINES = /^(# error: .*\n)+/;
+// The error lines a reopened template carried, wherever the user left them:
+// it starts with the new one alone.
+const ERROR_LINES = /^# error: .*(\n|$)/gm;
 
 const tagsContext = (read: VocabularyRead): TagsContext =>
     read.kind === "unparseable"
