@@ -315,6 +315,23 @@ export function writeFact(
     });
 }
 
+// The keys another producer wrote, kept through a write; the user's
+// verifications only through the user's own, as they confirmed the
+// words a write by anyone else replaces.
+function foreignAfter(
+    foreign: Fact["foreign"],
+    by: Writer,
+): Pick<Fact, "foreign"> {
+    if (foreign === undefined) {
+        return {};
+    }
+    if (by === "user" || !("verified" in foreign)) {
+        return { foreign };
+    }
+    const { verified: _, ...rest } = foreign;
+    return Object.keys(rest).length === 0 ? {} : { foreign: rest };
+}
+
 // The fact as written: what the input gives, else what it held before.
 function factOf(input: FactInput, before: Fact | null, now: string): Fact {
     return {
@@ -343,7 +360,7 @@ function factOf(input: FactInput, before: Fact | null, now: string): Fact {
         },
         retired: null,
         body: input.body.trim(),
-        ...(before?.foreign === undefined ? {} : { foreign: before.foreign }),
+        ...foreignAfter(before?.foreign, input.by),
         ...(before?.otherSources === undefined
             ? {}
             : { otherSources: before.otherSources }),
@@ -437,15 +454,15 @@ export function reviveFact(
     });
 }
 
-// The user's confirmation of a fact, OKF's verified entry beside any
-// another hand made, committed as theirs. The fact's own writing is
-// left as it was. Knowledge already confirmed is left alone.
 export type VerifyResult =
     | { kind: "written"; fact: Fact }
     | { kind: "confirmed"; fact: Fact }
     | { kind: "missing" }
     | { kind: "failed"; reason: string };
 
+// The user's confirmation of a fact, OKF's verified entry beside any
+// another hand made, committed as theirs. The fact's own writing is
+// left as it was. Knowledge already confirmed is left alone.
 export function verifyFact(
     store: FactStore,
     target: Target,
