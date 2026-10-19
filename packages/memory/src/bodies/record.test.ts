@@ -9,7 +9,14 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+    appendFile,
+    chmod,
+    mkdtemp,
+    readFile,
+    rm,
+    writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HistoryHandle, Lock } from "../memory/sidecar.js";
@@ -253,6 +260,28 @@ describe("recordSession", () => {
                 (event) => event.sourceUuid ?? event.kind,
             ),
         ).toEqual(["session", "u1", "u2"]);
+    });
+
+    it("reads a transcript it cannot cut, its whole lines only", async () => {
+        await write([userLine("u1", 0, "a")]);
+        const first = await recordSession(report(), deps());
+        if (first.kind !== "recorded") {
+            throw new Error(first.kind);
+        }
+        const path = join(transcriptDir(env), `${first.phrase}.jsonl`);
+        await appendFile(path, '{"v":1,"kind":"us');
+        // Readable, but not open for writing.
+        await chmod(path, 0o444);
+        const again = await recordSession(report(), deps());
+        expect(again).toMatchObject({
+            kind: "recorded",
+            phrase: first.phrase,
+            appended: 0,
+        });
+        // Left as it was, and nothing recorded twice.
+        const kept = await readFile(path, "utf8");
+        expect(kept.endsWith('{"v":1,"kind":"us')).toBe(true);
+        expect(kept.split('"sourceUuid":"u1"')).toHaveLength(2);
     });
 
     it("leaves a line Claude Code is still writing for the next reading", async () => {

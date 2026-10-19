@@ -127,15 +127,25 @@ async function scanFor(dir: string, session: string): Promise<string | null> {
     return null;
 }
 
-// A transcript's text, its torn tail cut off before anything is
-// appended.
+// A transcript's whole lines, its torn tail cut off before anything is
+// appended. One that cannot be opened for writing is read as it is, its
+// tail left: recording it fails where it writes.
 async function readCut(path: string): Promise<string> {
-    await cutTornTail(path);
+    let text: string;
     try {
-        return await readFile(path, "utf8");
+        text = await readFile(path, "utf8");
     } catch {
         return "";
     }
+    if (text === "" || text.endsWith("\n")) {
+        return text;
+    }
+    try {
+        await cutTornTail(path);
+    } catch {
+        // Unwritable: only the whole lines count as recorded.
+    }
+    return text.slice(0, text.lastIndexOf("\n") + 1);
 }
 
 export async function recordSession(
