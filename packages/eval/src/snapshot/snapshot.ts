@@ -17,6 +17,7 @@ import {
     lstat,
     mkdir,
     readdir,
+    readFile,
     realpath,
     rename,
     rm,
@@ -82,6 +83,41 @@ async function realOf(path: string): Promise<string> {
 // that repository the root.
 export const checkoutRoot = (here = import.meta.dir) =>
     realOf(resolve(here, "../../../.."));
+
+// The checkout and the other worktrees of its repository, read from the
+// layout git leaves (a main checkout lists its worktrees; a worktree's
+// .git file names the main one), with no git run. A checkout without that
+// layout is itself alone.
+export async function checkoutRoots(here = import.meta.dir): Promise<string[]> {
+    const root = await checkoutRoot(here);
+    const roots = [root];
+    try {
+        let common = join(root, ".git");
+        if ((await stat(common)).isFile()) {
+            const named = /^gitdir:\s*(.+)$/m.exec(
+                await readFile(common, "utf8"),
+            );
+            if (named?.[1] === undefined) {
+                return roots;
+            }
+            // <main>/.git/worktrees/<name> to <main>/.git.
+            common = resolve(root, named[1], "..", "..");
+            if (basename(common) === ".git") {
+                roots.push(await realOf(dirname(common)));
+            }
+        }
+        for (const name of await readdir(join(common, "worktrees"))) {
+            const listed = await readFile(
+                join(common, "worktrees", name, "gitdir"),
+                "utf8",
+            );
+            roots.push(await realOf(dirname(listed.trim())));
+        }
+    } catch {
+        // No git layout to read, or a worktree entry gone stale.
+    }
+    return [...new Set(roots)];
+}
 
 // Only a missing directory holds nothing; any other failure must not look
 // like an empty one.
@@ -149,7 +185,12 @@ async function entryOf(
 export async function takeSnapshot(
     from: string,
     work: string,
-    options: { replace?: boolean; now?: () => Date } = {},
+    options: {
+        replace?: boolean;
+        now?: () => Date;
+        // Where the checkout is looked for from; the package's own place.
+        checkout?: string;
+    } = {},
 ): Promise<SnapshotInfo> {
     const source = resolve(from);
     const target = resolve(work);
@@ -169,10 +210,12 @@ export async function takeSnapshot(
         );
     }
     // Her data in clear must not land where git or the checks sweep it.
-    if (within(realTarget, await checkoutRoot())) {
-        throw new UsageError(
-            `${target} is in the repository: choose a work directory outside it`,
-        );
+    for (const root of await checkoutRoots(options.checkout)) {
+        if (within(realTarget, root)) {
+            throw new UsageError(
+                `${target} is in the repository: choose a work directory outside it`,
+            );
+        }
     }
     const copy = snapshotDir(target);
     const old = `${copy}.old`;

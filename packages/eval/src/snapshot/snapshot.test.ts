@@ -16,6 +16,7 @@ import {
     mkdirSync,
     readdirSync,
     readFileSync,
+    realpathSync,
     renameSync,
     rmSync,
     statSync,
@@ -28,6 +29,7 @@ import { UsageError } from "../errors.js";
 import { tempRoot, writeFixtureData } from "../testing.js";
 import {
     checkoutRoot,
+    checkoutRoots,
     readSnapshot,
     snapshotDir,
     takeSnapshot,
@@ -157,8 +159,55 @@ describe("a snapshot", () => {
         expect(await checkoutRoot(here)).toBe(join(outer, "checkout"));
         // And for the real checkout, the same by position.
         expect(await checkoutRoot()).toBe(
-            resolve(import.meta.dir, "../../../.."),
+            realpathSync(resolve(import.meta.dir, "../../../..")),
         );
+    });
+
+    it("knows the other worktrees of the checkout's repository", async () => {
+        const nested = (root: string) =>
+            join(root, "packages", "eval", "src", "snapshot");
+        const main = join(temp.root, "main");
+        const other = join(temp.root, "other");
+        const linked = join(temp.root, "linked");
+        const alone = join(temp.root, "alone");
+        for (const root of [main, other, linked, alone]) {
+            mkdirSync(nested(root), { recursive: true });
+        }
+        // A main checkout lists its worktrees under .git/worktrees.
+        for (const [name, where] of [
+            ["other", other],
+            ["linked", linked],
+        ] as const) {
+            mkdirSync(join(main, ".git", "worktrees", name), {
+                recursive: true,
+            });
+            writeFileSync(
+                join(main, ".git", "worktrees", name, "gitdir"),
+                `${join(where, ".git")}\n`,
+            );
+        }
+        writeFileSync(
+            join(linked, ".git"),
+            `gitdir: ${join(main, ".git", "worktrees", "linked")}\n`,
+        );
+        const all = [linked, main, other].sort();
+        expect((await checkoutRoots(nested(main))).sort()).toEqual(all);
+        // A worktree knows the main checkout and its siblings.
+        expect((await checkoutRoots(nested(linked))).sort()).toEqual(all);
+        // So a work directory in any of them is refused.
+        for (const root of [main, other, linked]) {
+            await expect(
+                takeSnapshot(data, join(root, "eval"), {
+                    checkout: nested(main),
+                }),
+            ).rejects.toThrow("is in the repository");
+        }
+        const taken = await takeSnapshot(data, join(temp.root, "elsewhere"), {
+            checkout: nested(main),
+        });
+        expect(taken.conversations).toBe(4);
+        // A checkout with no git layout is itself alone.
+        expect(await checkoutRoots(nested(alone))).toEqual([alone]);
     });
 
     it("refuses a work directory reached through a link into the data", async () => {

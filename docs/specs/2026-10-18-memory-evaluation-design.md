@@ -93,7 +93,8 @@ bun run eval -- snapshot --from ~/.local/share/dorothy --work ~/eval
   of the user's choosing, made if missing, refused if it holds a
   snapshot already unless `--replace` is given. Neither may hold the
   other, and `--work` may not lie in the checkout the evaluation runs
-  from; each is judged by real path.
+  from or in another worktree of its repository; each is judged by real
+  path.
 - It copies `transcripts/` (conversations and their sidecars),
   `knowledge/`, `facts/` where a data directory has not yet moved it,
   and `tags.json`, and records what it copied in `<work>/snapshot.json`:

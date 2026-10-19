@@ -61,7 +61,8 @@ options declared and described for `--help`, its failures as
 - `cli.ts`: the command table and `runCli`.
 - `command.ts`: `Io`, `Command` and the options' readers.
 - `snapshot/`: `takeSnapshot`, which refuses a work directory in the
-  checkout (found by the package's place, not by `.git`), follows a
+  checkout (found by the package's place, not by `.git`) or a sibling
+  worktree, follows a
   link only at the top of what it copies, counts the rest and swaps a
   whole copy in; `readSnapshot`, which tells a missing record from a
   bad one; `workEnv`; and the `snapshot` command.
