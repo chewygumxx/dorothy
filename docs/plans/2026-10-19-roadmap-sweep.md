@@ -85,7 +85,7 @@ there is the requirement.
 3. A filter's `after` and `before` name local dates. Test: Task 4.
 4. History never takes a user's own running `git commit`. Test: Task 6.
 5. No probe output holds a key, a token or the account's address.
-   Check: Task 10.
+   Check: Task 11.
 
 ## Files
 
@@ -162,6 +162,9 @@ Sources: the bodies report's Known limitations, and the sweep spec's
   it found.
 - [ ] A resumed chat redrawing its `remember` lines.
 - [ ] The recall server answering a client's requests in order.
+- [ ] The code review's F11 (a record after a torn tail acknowledged
+  but unreadable) and F13 (malformed user text skipped without a
+  halt).
 
 ### Task 5: the store's open gaps
 
@@ -178,6 +181,9 @@ memory bodies spec's Later (`docs/specs/2026-10-15-memory-bodies-design.md`).
   last `MEMORY.md`.
 - [ ] Each Known gap (scrub, fact file, store, recall, export, sync,
   commands), verified and closed.
+- [ ] The code review's F15 (Authorization schemes by case), F16 (a
+  fact named `constructor`), F17 (`MEMORY.md` edited during sync) and
+  F18 (an import dropping foreign metadata and sources).
 
 ### Task 6: history's deferred findings
 
@@ -192,6 +198,9 @@ Source: `docs/deferred/2026-10-08_memory-history-deferred.md`.
   committer date on the sealed branch; commands' commits pushed without
   waiting for a chat.
 - [ ] Small code points and test gaps, each verified and closed.
+- [ ] The code review's F20 (URL-scoped credential helpers) and F21 (a
+  timer push during a push), and the memory bodies' Recording item 3:
+  the index's lock and history's `dorothy.lock` excluding each other.
 
 ### Task 7: the tags' deferred findings
 
@@ -216,6 +225,9 @@ limitations and the catalogue spec's Known limitations.
 - [ ] Hidden conversations' text left out of the cache index.
 - [ ] A corrupted index rebuilt where no other process holds it, and
   the recall report's edge cases, each verified and closed.
+- [ ] The code review's F19 (an out-of-scope hit suppressing the
+  scoped fallback) and F22 (concurrent chats compacting the wrong
+  shared turns).
 
 ### Task 9: tooling
 
@@ -236,8 +248,28 @@ Known limitations, and the asset refactor report's.
   the workspace spec say so.
 - [ ] Ink's kitty keyboard query (`[?0u`) kept out of the input draft
   where the terminal does not answer it, as under herdr.
+- [ ] The code review's F14 (Ctrl+U at the start of an empty first
+  line).
 
-### Task 10: probes
+### Task 10: the code review's other findings
+
+Source: the 2026-10-19 code review (`docs/reports/2026-10-19-code-review.md`,
+from the branch `codex-code-review`), its findings F01 to F10 and its
+Concerns, with the sweep spec's "`brief` and another project". Its
+locations name `7602316`; Tasks 2 and 3 have changed some since.
+
+- [ ] F01: one-shot commands fail on an `is_error` result; F08: a
+  failed chat reply's cost counted.
+- [ ] F02: repeated Claude settings keep the last value; F09: a
+  synchronous spawn failure cleaned up, in `claude-dump.ts` too.
+- [ ] F03: a long matching turn excerpted, not dropped; F04 and the
+  Concern on question ids: a resume refuses questions removed or
+  changed since the run began; F10: question counts conserved.
+- [ ] F05: `open`'s range from `from`; F06: token changes serialised
+  across processes; F07: one deadline for a record and its backlog.
+- [ ] `brief` refuses another project on a project-bound connection.
+
+### Task 11: probes
 
 Sources: the sweep spec's "Probes"; the compaction test gaps' live
 split; the identity report's forks, interactive sessions and
@@ -255,8 +287,10 @@ split; the identity report's forks, interactive sessions and
   `docs/reports/2026-10-19-roadmap-sweep/`; a finding a probe turns up
   is fixed if small, or reported.
 
-### Task 11: the record
+### Task 12: the record
 
+- [ ] The code review's report and probes, from its branch, beside the
+  sweep's.
 - [ ] `docs/reports/2026-10-19-roadmap-sweep.md`: each item with its
   commits or why it was already done, the rulings, the probes and the
   verification.

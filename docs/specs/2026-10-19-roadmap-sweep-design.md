@@ -69,6 +69,9 @@ spec points at them rather than repeating them.
     the identity marker, interactive sessions and `HTTP_PROXY` behind
     the gateway, a session started inside a package, and a fresh
     session reading `.agents/memory/MEMORY.md`.
+11. **The code review of 2026-10-19**: its 22 reproduced findings and
+    two concerns, from a review of `7602316` on the branch
+    `codex-code-review`, each given to the task whose code it names.
 
 ## Left, and why
 
@@ -130,6 +133,17 @@ knowledge. The user chose to fence it rather than drop it or leave it.
 
 If wrong, a piece the user trusts sits in the fenced section until they
 confirm it.
+
+## `brief` and another project
+
+On a connection bound to a project, `open` and `remember` refuse
+another project, and `search` reaches others only with `scope: all`.
+`brief` takes a `project` argument too, and returned another project's
+whole knowledge on such a connection. It refuses another project as
+`open` does: the block is the most a tool returns at once, and the
+service's scope says a request sees personal knowledge and its own
+project's. If wrong, a host that briefs on another project by name is
+refused.
 
 ## Turn times and local dates
 
