@@ -310,15 +310,18 @@ key = "OPENROUTER_API_KEY"
 
 - A role's key is read from the named variable, which `dotenvx run`
   supplies from `.env`; a key is never written to a file, a log or a
-  report. A local server (llama.cpp, Ollama) needs no key.
+  report. A local server (llama.cpp, Ollama) needs no key, and is sent no
+  Authorization header. The variable's name is a role's `key` in
+  capitals, digits and underscores, and is said as written.
 - The client is `@langchain/openai`'s `ChatOpenAI`, which openevals
   takes as its judge; one client for all three roles.
 - Every call has a timeout and two retries on a 429 or 5xx; a call that
   still fails is recorded as failed, never fatal. The retries also
   cover a 408, a timeout and a lost connection, wait 2 seconds and then
   4, and each attempt spends one of `--max-calls`; a refusal, or a reply
-  that breaks its schema, is not retried. A recorded failure is one
-  line, with any key put out.
+  that breaks its schema, is not retried; a failure with a status is
+  judged by it alone, and a cap reached between tries says the failure
+  it interrupted. A recorded failure is one line, with any key put out.
 - `eval.toml` that does not parse is said to be unparsable and no more:
   the parser quotes the line it dislikes, which may hold a key. A file
   that cannot be read, other than for being absent, is not taken for no

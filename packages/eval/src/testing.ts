@@ -313,6 +313,8 @@ export type StubReply = {
     json?: unknown;
     // The body of a refusal.
     body?: string;
+    // Wait this long before answering, to meet a client's timeout.
+    delayMs?: number;
 };
 
 // An OpenAI-compatible Chat Completions server on loopback, answering as
@@ -334,6 +336,9 @@ export function stubModels(
             };
             requests.push(seen);
             const answer = reply(seen, requests.length);
+            if (answer.delayMs !== undefined) {
+                await Bun.sleep(answer.delayMs);
+            }
             if (answer.status !== undefined && answer.status !== 200) {
                 return new Response(answer.body ?? "refused", {
                     status: answer.status,

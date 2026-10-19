@@ -63,7 +63,9 @@ describe("eval.toml", () => {
         const error = await readEvalConfig(temp.root).catch(
             (caught: Error) => caught,
         );
-        expect(String(error)).toContain("key names a variable");
+        expect(String(error)).toContain(
+            "key names a variable, in capitals, digits and underscores",
+        );
         expect(String(error)).not.toContain("0123456789abcdef");
     });
 
@@ -98,7 +100,9 @@ describe("eval.toml", () => {
 
     it("says when eval.toml cannot be read", async () => {
         mkdirSync(configPath(temp.root));
-        await expect(readEvalConfig(temp.root)).rejects.toThrow("cannot read");
+        await expect(readEvalConfig(temp.root)).rejects.toThrow(
+            `cannot read ${configPath(temp.root)}: EISDIR; mend it, or remove it to start again`,
+        );
     });
 
     it("says where to add a role a command needs", () => {

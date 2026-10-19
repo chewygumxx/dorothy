@@ -35,6 +35,13 @@ for (const name of [
     process.env[name] = "false";
 }
 
+// fetch without the Authorization header the client adds for its key.
+const withoutKey = (input: RequestInfo | URL, init?: RequestInit) => {
+    const headers = new Headers(init?.headers);
+    headers.delete("authorization");
+    return fetch(input, { ...init, headers });
+};
+
 export type Message = { role: "system" | "user"; content: string };
 export type Completion = {
     text: string;
@@ -59,11 +66,23 @@ const statusOf = (error: unknown) => {
     return typeof status === "number" ? status : null;
 };
 
+// What a failure with no status says when it is the network's.
 const TRANSIENT =
     /timeout|timed out|connection|econn|socket|fetch failed|network/i;
 
+// A value as text, even one with no string form.
+const UNPRINTABLE = "a value that cannot be printed";
+function printed(value: unknown): string {
+    try {
+        return String(value);
+    } catch {
+        return UNPRINTABLE;
+    }
+}
+
 // A rate limit, a timeout, a server's fault or a lost connection may come
-// right; a refusal, or a fault of ours, will not.
+// right; a refusal, or a fault of ours, will not. A failure with a status
+// is judged by it alone, whatever its message says.
 function retryable(error: unknown): boolean {
     if (error instanceof UsageError) {
         return false;
@@ -73,7 +92,7 @@ function retryable(error: unknown): boolean {
         const { name, message } =
             error instanceof Error
                 ? error
-                : { name: "", message: String(error) };
+                : { name: "", message: printed(error) };
         return TRANSIENT.test(`${name} ${message}`);
     }
     return status === 408 || status === 429 || status >= 500;
@@ -83,7 +102,7 @@ function retryable(error: unknown): boolean {
 // carry no key.
 export function failureOf(error: unknown): string {
     const status = statusOf(error);
-    const message = (error instanceof Error ? error.message : String(error))
+    const message = (error instanceof Error ? error.message : printed(error))
         .split("\n")[0]
         ?.slice(0, 200);
     return status === null || message?.startsWith(String(status))
@@ -145,7 +164,12 @@ export class Models {
                 apiKey: this.#keyOf(found),
                 maxRetries: 0,
                 timeout: this.options.timeoutMs ?? 120_000,
-                configuration: { baseURL: found.baseUrl },
+                configuration: {
+                    baseURL: found.baseUrl,
+                    // The client wants a key; a server without one is sent
+                    // no Authorization header, not a placeholder Bearer.
+                    ...(found.key === null ? { fetch: withoutKey } : {}),
+                },
             });
             this.#chats.set(role, chat);
         }
@@ -153,12 +177,19 @@ export class Models {
     }
 
     // Each attempt spends one of --max-calls; a retryable failure is tried
-    // twice more, waiting retryMs, then twice that.
+    // twice more, waiting retryMs, then twice that. A cap reached between
+    // the tries keeps the failure that was being retried.
     async call<T>(work: () => Promise<T>): Promise<T> {
+        let failure: unknown = null;
         for (let attempt = 0; ; attempt++) {
             const cap = this.options.maxCalls ?? null;
             if (cap !== null && this.#calls >= cap) {
-                throw new CallCap(`reached --max-calls (${cap})`);
+                throw failure === null
+                    ? new CallCap(`reached --max-calls (${cap})`)
+                    : new CallCap(
+                          `reached --max-calls (${cap}) while retrying: ${failureOf(failure)}`,
+                          { cause: failure },
+                      );
             }
             this.#calls++;
             try {
@@ -167,6 +198,7 @@ export class Models {
                 if (attempt >= 2 || !retryable(error)) {
                     throw this.#redacted(error);
                 }
+                failure = this.#redacted(error);
                 await Bun.sleep((this.options.retryMs ?? 2000) * (attempt + 1));
             }
         }
@@ -179,7 +211,11 @@ export class Models {
         if (error instanceof UsageError) {
             return error;
         }
-        const original = error instanceof Error ? error.message : String(error);
+        const original =
+            error instanceof Error ? error.message : printed(error);
+        if (original === UNPRINTABLE) {
+            return error;
+        }
         let message = original;
         for (const key of this.#keys) {
             message = message.replaceAll(key, "[key]");

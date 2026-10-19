@@ -13,7 +13,7 @@
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { UsageError } from "../errors.js";
+import { codeOf, UsageError } from "../errors.js";
 
 export const ROLES = ["generate", "answer", "judge"] as const;
 export type Role = (typeof ROLES)[number];
@@ -53,7 +53,7 @@ function roleOf(role: Role, table: unknown): RoleConfig {
     // The message never repeats what was written, which may be a key.
     if (key !== undefined && (typeof key !== "string" || !KEY_NAME.test(key))) {
         throw new UsageError(
-            `${where}: key names a variable, such as "OPENROUTER_API_KEY", never the key itself`,
+            `${where}: key names a variable, in capitals, digits and underscores, such as "OPENROUTER_API_KEY", never the key itself`,
         );
     }
     return { baseUrl, model, key: key ?? null };
@@ -65,10 +65,13 @@ export async function readEvalConfig(work: string): Promise<EvalConfig> {
     try {
         text = await readFile(configPath(work), "utf8");
     } catch (error) {
-        if ((error as { code?: unknown }).code === "ENOENT") {
+        const code = codeOf(error);
+        if (code === "ENOENT") {
             return config;
         }
-        throw new UsageError(`cannot read ${configPath(work)}`);
+        throw new UsageError(
+            `cannot read ${configPath(work)}: ${code ?? "failed"}; mend it, or remove it to start again`,
+        );
     }
     let parsed: unknown;
     try {

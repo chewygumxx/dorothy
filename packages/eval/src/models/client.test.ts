@@ -103,6 +103,106 @@ describe("Models", () => {
         expect(failureOf(error)).toBe("bad key [key]");
     });
 
+    it("retries by the status, not by what the message says", async () => {
+        const { url, requests } = serve(() => ({
+            status: 400,
+            body: "connection timed out, network socket fetch failed",
+        }));
+        const models = new Models(configOf(url), { env: {}, retryMs: 1 });
+        await expect(models.complete("answer", ask)).rejects.toThrow();
+        expect(requests).toHaveLength(1);
+    });
+
+    it("retries a request whose connection is lost", async () => {
+        const dead = stubModels(() => ({}));
+        dead.stop();
+        const models = new Models(configOf(dead.url), {
+            env: {},
+            retryMs: 1,
+        });
+        await expect(models.complete("answer", ask)).rejects.toThrow();
+        expect(models.calls).toBe(3);
+    });
+
+    it("retries a timeout twice, then gives up", async () => {
+        const { url, requests } = serve(() => ({ delayMs: 500 }));
+        const models = new Models(configOf(url), {
+            env: {},
+            retryMs: 1,
+            timeoutMs: 40,
+        });
+        const error = await models.complete("answer", ask).catch((e) => e);
+        expect(error).toBeInstanceOf(Error);
+        expect(failureOf(error)).toMatch(/timed out/i);
+        expect(requests).toHaveLength(3);
+        expect(models.calls).toBe(3);
+    });
+
+    it("keeps the failure when --max-calls is reached mid-retry", async () => {
+        const { url, requests } = serve(() => ({
+            status: 500,
+            body: "upstream down for secret-123",
+        }));
+        const models = new Models(configOf(url, "EVAL_KEY"), {
+            env: { EVAL_KEY: "secret-123" },
+            maxCalls: 2,
+            retryMs: 1,
+        });
+        const error = await models.complete("answer", ask).catch((e) => e);
+        expect(error).toBeInstanceOf(CallCap);
+        expect(requests).toHaveLength(2);
+        expect(failureOf(error)).toStartWith("reached --max-calls (2)");
+        expect(failureOf(error)).toContain("500");
+        expect(failureOf(error)).not.toContain("secret-123");
+        expect(
+            JSON.stringify([error.message, String(error.cause)]),
+        ).not.toContain("secret-123");
+    });
+
+    it("says only the cap when it is reached before any failure", async () => {
+        const { url } = serve(() => ({ content: "Hi." }));
+        const models = new Models(configOf(url), { env: {}, maxCalls: 1 });
+        await models.complete("answer", ask);
+        const error = await models.complete("answer", ask).catch((e) => e);
+        expect(error.message).toBe("reached --max-calls (1)");
+    });
+
+    it("asks an endpoint with no key for no Bearer", async () => {
+        const { url, requests } = serve(() => ({ content: "Hi." }));
+        const models = new Models(configOf(url, null), { env: {} });
+        expect((await models.complete("answer", ask)).text).toBe("Hi.");
+        expect(requests[0]?.authorization).toBeNull();
+    });
+
+    it("keeps the case of the variable it names", async () => {
+        const { url } = serve(() => ({ content: "Hi." }));
+        const models = new Models(configOf(url, "Eval_Key"), { env: {} });
+        await expect(models.complete("answer", ask)).rejects.toThrow(
+            "Eval_Key is not set: set it with `bunx dotenvx set Eval_Key`",
+        );
+    });
+
+    it("survives a thrown value that cannot be made a string", async () => {
+        const models = new Models(configOf("http://127.0.0.1:9", "EVAL_KEY"), {
+            env: { EVAL_KEY: "secret-123" },
+        });
+        models.chat("answer");
+        const bare = Object.create(null);
+        const error = await models
+            .call(() => Promise.reject(bare))
+            .catch((e) => e);
+        expect(error).toBe(bare);
+        expect(failureOf(error)).toBe("a value that cannot be printed");
+        const throwing = {
+            toString() {
+                throw new Error("no");
+            },
+        };
+        await expect(models.call(() => Promise.reject(throwing))).rejects.toBe(
+            throwing,
+        );
+    });
+
     it("turns LangSmith's tracing off", () => {
         for (const name of [
             "LANGSMITH_TRACING",
