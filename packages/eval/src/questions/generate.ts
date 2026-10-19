@@ -136,72 +136,99 @@ function groupsOf(conversations: ArchiveConversation[]) {
 const projectOf = (key: string) =>
     key.startsWith("project:") ? key.slice("project:".length) : null;
 
-// The live files of a retired one's scope and type: what may replace it.
-const peersOf = (knowledge: ArchiveKnowledge[], retired: ArchiveKnowledge) =>
-    knowledge.filter(
-        (each) =>
-            each.retired === null &&
-            each.scope === retired.scope &&
-            each.type === retired.type,
-    );
+// Where an update may be drawn from: a retired file beside the live files
+// of its scope and type, one of which may have replaced it; or the
+// latest conversation of a project or tag beside those of it that ended
+// before it began, which it may revise. The latest, so that its answer
+// is what is still true.
+type UpdateSource =
+    | { kind: "retired"; retired: ArchiveKnowledge; live: ArchiveKnowledge[] }
+    | {
+          kind: "revised";
+          key: string;
+          later: ArchiveConversation;
+          earlier: ArchiveConversation[];
+      };
 
-// A retired file beside the live ones that may have replaced it.
-function retiredSample(
-    retired: ArchiveKnowledge,
-    knowledge: ArchiveKnowledge[],
+// What sampling needs of a corpus, worked out once for it rather than
+// on every try.
+type Material = {
+    groups: Map<string, ArchiveConversation[]>;
+    updates: UpdateSource[];
+};
+const materials = new WeakMap<Corpus, Material>();
+
+function materialOf(corpus: Corpus): Material {
+    const known = materials.get(corpus);
+    if (known !== undefined) {
+        return known;
+    }
+    const knowledge = [...corpus.knowledge.values()];
+    const groups = groupsOf([...corpus.conversations.values()]);
+    const kindOf = (each: ArchiveKnowledge) => `${each.scope}\t${each.type}`;
+    const live = new Map<string, ArchiveKnowledge[]>();
+    for (const each of knowledge) {
+        if (each.retired === null) {
+            live.set(kindOf(each), [...(live.get(kindOf(each)) ?? []), each]);
+        }
+    }
+    const updates: UpdateSource[] = [
+        ...knowledge.flatMap((retired): UpdateSource[] => {
+            const peers = live.get(kindOf(retired)) ?? [];
+            return retired.retired === null || peers.length === 0
+                ? []
+                : [{ kind: "retired", retired, live: peers }];
+        }),
+        ...[...groups].flatMap(([key, members]): UpdateSource[] => {
+            const later = members.reduce((a, b) =>
+                b.firstAt > a.firstAt ? b : a,
+            );
+            const earlier = members.filter(
+                (each) => each.lastAt < later.firstAt,
+            );
+            return earlier.length === 0
+                ? []
+                : [{ kind: "revised", key, later, earlier }];
+        }),
+    ];
+    const made = { groups, updates };
+    materials.set(corpus, made);
+    return made;
+}
+
+function updateSample(
+    source: UpdateSource,
     random: () => number,
     today: string,
 ): Sample {
-    const live = shuffled(peersOf(knowledge, retired), random).slice(0, 6);
-    return {
-        type: "knowledge-update",
-        items: [retired, ...live].map((each) => ({
-            id: each.id,
-            text: knowledgeText(each),
-        })),
-        // The retired file is never the answer's evidence.
-        ids: live.map((each) => each.id),
-        asOf: today,
-        project: retired.scope === "personal" ? null : retired.scope,
-    };
-}
-
-// The members begun after another member ended: those that may revise
-// an earlier one.
-function laterOnes(members: ArchiveConversation[]): ArchiveConversation[] {
-    const ends = members.map((each) => each.lastAt);
-    const firstEnd = ends.reduce((a, b) => (b < a ? b : a), ends[0] ?? "");
-    return members.filter((each) => each.firstAt > firstEnd);
-}
-
-// A conversation beside an earlier one of its project or tag, ended
-// before it began, which it may revise.
-function revisedSample(
-    [key, members]: [string, ArchiveConversation[]],
-    random: () => number,
-    today: string,
-): Sample | null {
-    const later = pick(laterOnes(members), random);
-    const earlier =
-        later === undefined
-            ? undefined
-            : pick(
-                  members.filter((each) => each.lastAt < later.firstAt),
-                  random,
-              );
-    if (later === undefined || earlier === undefined) {
-        return null;
+    if (source.kind === "retired") {
+        const live = shuffled(source.live, random).slice(0, 6);
+        return {
+            type: "knowledge-update",
+            items: [source.retired, ...live].map((each) => ({
+                id: each.id,
+                text: knowledgeText(each),
+            })),
+            // The retired file is never the answer's evidence.
+            ids: live.map((each) => each.id),
+            asOf: today,
+            project:
+                source.retired.scope === "personal"
+                    ? null
+                    : source.retired.scope,
+        };
     }
+    const earlier = pick(source.earlier, random) as ArchiveConversation;
     return {
         type: "knowledge-update",
-        items: [earlier, later].map((each) => ({
+        items: [earlier, source.later].map((each) => ({
             id: each.id,
             text: clip(conversationText(each), 7000),
         })),
         // The earlier is never the answer's evidence.
-        ids: [later.id],
+        ids: [source.later.id],
         asOf: today,
-        project: projectOf(key),
+        project: projectOf(source.key),
         guidance: REVISED_GUIDANCE,
     };
 }
@@ -260,7 +287,7 @@ export function sampleFor(
                   };
         }
         case "multi-session": {
-            const groups = groupsOf(conversations);
+            const { groups } = materialOf(corpus);
             const key = pick([...groups.keys()], random);
             if (key === undefined) {
                 return null;
@@ -278,30 +305,12 @@ export function sampleFor(
             };
         }
         case "knowledge-update": {
-            // Either source, evenly, where the snapshot holds both, so
-            // that one with few retired files still meets the share.
-            const retired = knowledge.filter(
-                (each) =>
-                    each.retired !== null &&
-                    peersOf(knowledge, each).length > 0,
-            );
-            const revisable = [...groupsOf(conversations)].filter(
-                ([, members]) => laterOnes(members).length > 0,
-            );
-            const sources = [
-                ...(retired.length > 0 ? ["retired"] : []),
-                ...(revisable.length > 0 ? ["revised"] : []),
-            ];
-            const source =
-                sources.length > 1 ? pick(sources, random) : sources[0];
-            if (source === "retired") {
-                const chosen = pick(retired, random) as ArchiveKnowledge;
-                return retiredSample(chosen, knowledge, random, today);
-            }
-            const group = pick(revisable, random);
-            return group === undefined
+            // Every retired file and revising conversation alike, so each
+            // source is drawn by how much of it the snapshot holds.
+            const source = pick(materialOf(corpus).updates, random);
+            return source === undefined
                 ? null
-                : revisedSample(group, random, today);
+                : updateSample(source, random, today);
         }
         case "abstention": {
             const titles = [
@@ -369,7 +378,7 @@ const GUIDANCE: Record<GeneratedType, string> = {
 
 // For an update drawn from two conversations rather than a retired file.
 const REVISED_GUIDANCE =
-    "The first conversation is the earlier. The later conversation may change something the earlier one said: a fact, a decision, a plan or a preference. If it does, ask what is true now: the answer is the later's, evidence the later conversation's id, and older the earlier claim. If it changes nothing, return no questions.";
+    "The first conversation is the earlier; the later is the latest of its project or tag. The later conversation may change something the earlier one said: a fact, a decision, a plan or a preference. If it does, ask what is true now: the answer is the later's, evidence the later conversation's id, and older the earlier claim. If it changes nothing, return no questions.";
 
 export function draftPrompt(sample: Sample, n: number): Message[] {
     return [

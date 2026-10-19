@@ -162,14 +162,16 @@ A generating model drafts the other types from samples of the snapshot:
 - **multi-session**: two or three conversations sharing a tag or a
   project; the answer needs more than one.
 - **knowledge-update**: a retired knowledge file beside the live files
-  of its scope and type, one of which may have replaced it; or a
-  conversation beside an earlier one sharing its project or tag, which
-  ended before it began and which it may revise. Each sample draws one
-  source or the other evenly where the snapshot holds both, so that one
-  with few retirements still meets the type's share. The model asks
-  only where the newer does replace the older: the answer is the newer,
-  its evidence the newer alone, and the older is named in the question's
-  `note`.
+  of its scope and type, one of which may have replaced it; or the
+  latest conversation of a project or tag beside an earlier one of it,
+  which ended before the latest began and which the latest may revise.
+  The latest alone, so that its answer is what is still true as of the
+  snapshot's last day. Each sample draws among every retired file and
+  every such latest conversation alike, so each source is drawn by how
+  much of it the snapshot holds, and one with few retirements can still
+  meet the type's share. The model asks only where the newer does
+  replace the older: the answer is the newer, its evidence the newer
+  alone, and the older is named in the question's `note`.
 - **temporal**: a conversation's dated turns; the answer is a date, an
   order or a span.
 - **abstention**: a plausible question on nothing in the snapshot, which

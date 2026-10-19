@@ -279,6 +279,72 @@ describe("an update from a revising conversation", () => {
         expect([...firsts].sort()).toEqual(["c:plan-a", "k:personal/uses-vim"]);
     });
 
+    it("takes the latest of its project as what is true now", () => {
+        // Fridays, then Tuesdays, then Wednesdays: Wednesdays stands.
+        const thrice = revising(new Map(), [
+            talk(
+                "plan-c",
+                "p",
+                "2026-09-15T10:00:00.000Z",
+                "2026-09-15T11:00:00.000Z",
+                "We have moved deploys to Wednesdays.",
+            ),
+        ]);
+        const earlier = new Set<string>();
+        for (let seed = 0; seed < 20; seed++) {
+            const sample = sampleFor(
+                "knowledge-update",
+                thrice,
+                seeded(seed),
+                "2026-10-19",
+            );
+            expect(sample?.ids).toEqual(["c:plan-c"]);
+            expect(sample?.items[1]?.id).toBe("c:plan-c");
+            earlier.add(sample?.items[0]?.id ?? "none");
+            expect(draftPrompt(sample as Sample, 1)[0]?.content).toContain(
+                "the latest of its project or tag",
+            );
+        }
+        expect([...earlier].sort()).toEqual(["c:plan-a", "c:plan-b"]);
+    });
+
+    it("draw each source by how much of it there is", () => {
+        // One retired file against three projects with a revision each.
+        const projects = ["x", "y", "z"].flatMap((project) => [
+            talk(
+                `${project}-1`,
+                project,
+                "2026-09-01T10:00:00.000Z",
+                "2026-09-01T11:00:00.000Z",
+                "First.",
+            ),
+            talk(
+                `${project}-2`,
+                project,
+                "2026-09-09T10:00:00.000Z",
+                "2026-09-09T11:00:00.000Z",
+                "Second.",
+            ),
+        ]);
+        const many = {
+            ...corpus,
+            conversations: new Map(projects.map((each) => [each.id, each])),
+        } as Corpus;
+        let retired = 0;
+        for (let seed = 0; seed < 200; seed++) {
+            const sample = sampleFor(
+                "knowledge-update",
+                many,
+                seeded(seed),
+                "2026-10-19",
+            );
+            retired += sample?.items[0]?.id.startsWith("k:") ? 1 : 0;
+        }
+        // A quarter, some 50, not the half an even split would give.
+        expect(retired).toBeGreaterThan(25);
+        expect(retired).toBeLessThan(75);
+    });
+
     it("meet the type's count with no retired file at all", async () => {
         const result = await generateQuestions({
             corpus: revising(),
