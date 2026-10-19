@@ -92,8 +92,8 @@ Of the `@dorothy` packages it depends on `core` alone.
   each logical change, sweeps up outside changes first, and restores a
   file that fails `lint.ts` (`heal.ts`), keeping its bytes under
   `broken/`. The lint knows facts and `projects.json`. The sweep keeps a
-  changed fact as hers if `facts/pending.ts` noted its hash before writing;
-  a failed journal warns and leaves it; outside edits become the user's.
+  fact as hers if `facts/pending.ts` noted its hash. A damaged journal warns,
+  commits without changing attribution, then repairs; outside edits are user's.
   `mirror.ts` seals new commits as AES-256-GCM bundles (`seal.ts`) on the
   orphan branch `sealed` and pushes it to the remote
   `mirror` under `DOROTHY_MIRROR_KEY`; `--recover` rebuilds from it.

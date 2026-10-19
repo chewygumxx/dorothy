@@ -16,7 +16,7 @@
 // an outside writer's.
 
 import { createHash } from "node:crypto";
-import { appendFile, readFile, rm, stat } from "node:fs/promises";
+import { appendFile, readFile, rm, rmdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { writeAtomic } from "../memory/sidecar.js";
 
@@ -28,20 +28,32 @@ export const hashOf = (bytes: string | Uint8Array) =>
 
 // Paths to hashes noted before replacement. Keep earlier hashes until
 // commit too: a failed replacement must not lose its predecessor.
-export async function pendingWrites(
-    root: string,
-): Promise<ReadonlyMap<string, ReadonlySet<string>>> {
+// A damaged journal can still hold good records. Missing records cannot
+// establish an outside edit while any part of the journal is unreadable.
+export type PendingWrites = {
+    writes: ReadonlyMap<string, ReadonlySet<string>>;
+    problem: Error | null;
+};
+
+export async function pendingWrites(root: string): Promise<PendingWrites> {
     const pending = new Map<string, Set<string>>();
+    let problem: Error | null = null;
     let text: string;
     try {
         text = await readFile(pendingPath(root), "utf8");
     } catch (error) {
         if ((error as { code?: string }).code === "ENOENT") {
-            return pending;
+            return { writes: pending, problem };
         }
-        throw new Error(`${pendingPath(root)}: attribution unavailable`, {
-            cause: error,
-        });
+        return {
+            writes: pending,
+            problem: new Error(
+                `${pendingPath(root)}: attribution unavailable`,
+                {
+                    cause: error,
+                },
+            ),
+        };
     }
     for (const line of text.split("\n")) {
         if (line === "") {
@@ -49,7 +61,10 @@ export async function pendingWrites(
         }
         const match = /^([a-f0-9]{64}) (.+)$/.exec(line);
         if (match === null) {
-            throw new Error(`${pendingPath(root)}: invalid attribution record`);
+            problem = new Error(
+                `${pendingPath(root)}: invalid attribution record`,
+            );
+            continue;
         }
         const hash = match[1] as string;
         const path = match[2] as string;
@@ -57,7 +72,7 @@ export async function pendingWrites(
         hashes.add(hash);
         pending.set(path, hashes);
     }
-    return pending;
+    return { writes: pending, problem };
 }
 
 // Written under the store lock, before replacing the fact. With no
@@ -83,19 +98,26 @@ export async function notePending(
     });
 }
 
-// Once the paths are committed, they are nobody's pending writes.
+// Once the paths are committed, they are nobody's pending writes. Call
+// after the whole sweep: repairing a damaged journal earlier would let
+// the next sweep promote facts an interruption left uncommitted.
 export async function clearPending(
     root: string,
     paths: readonly string[],
 ): Promise<void> {
     try {
-        const pending = new Map(await pendingWrites(root));
+        const { writes, problem } = await pendingWrites(root);
+        const pending = new Map(writes);
         const before = pending.size;
         for (const path of paths) {
             pending.delete(path);
         }
-        if (pending.size === before) {
+        if (pending.size === before && problem === null) {
             return;
+        }
+        // An empty directory is recoverable too; never remove its contents.
+        if ((await stat(pendingPath(root))).isDirectory()) {
+            await rmdir(pendingPath(root));
         }
         if (pending.size === 0) {
             await rm(pendingPath(root), { force: true });

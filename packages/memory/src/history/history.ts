@@ -23,7 +23,12 @@ import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import type { Env } from "@dorothy/core";
 import { handEdited } from "../facts/file.js";
 import { migrateFacts } from "../facts/migrate.js";
-import { clearPending, hashOf, pendingWrites } from "../facts/pending.js";
+import {
+    clearPending,
+    hashOf,
+    type PendingWrites,
+    pendingWrites,
+} from "../facts/pending.js";
 import {
     type HistoryHandle,
     type Lock,
@@ -172,6 +177,7 @@ export class MemoryHistory {
         try {
             await this.#settle(new Set(named));
             await this.#commitChecked(named, message);
+            await clearPending(this.root, named);
         } catch (error) {
             for (const path of named) {
                 this.#catchUp.add(path);
@@ -320,7 +326,6 @@ export class MemoryHistory {
         if ((await this.repo.commit(paths, message)) !== null) {
             this.#afterCommit();
         }
-        await clearPending(this.root, paths);
     }
 
     // Commits the paths that pass the lint; the rest are restored.
@@ -345,9 +350,12 @@ export class MemoryHistory {
     // transcript that grew is a conversation's own turns, whoever wrote
     // them, never an outside change.
     async #settle(except: ReadonlySet<string>): Promise<void> {
+        const pending = await pendingWrites(this.root);
+        const committed: string[] = [];
         if (this.#catchUp.size > 0) {
             const paths = [...this.#catchUp];
             await this.#commitChecked(paths, `catch-up: ${paths.join(", ")}`);
+            committed.push(...paths);
             this.#catchUp.clear();
         }
         for (const path of await this.repo.changed()) {
@@ -355,7 +363,7 @@ export class MemoryHistory {
                 continue;
             }
             if (fileKind(path) === "fact") {
-                await this.#canonicalise(path);
+                await this.#canonicalise(path, pending);
             }
             const problem = await this.#problem(path);
             if (problem !== null) {
@@ -368,7 +376,9 @@ export class MemoryHistory {
                     ? `turn: ${basename(path, ".jsonl")}`
                     : `outside: ${path}`,
             );
+            committed.push(path);
         }
+        await clearPending(this.root, committed);
     }
 
     // A fact added or edited by hand is rewritten as Dorothy writes one,
@@ -376,7 +386,7 @@ export class MemoryHistory {
     // not UTF-8, or whose rewrite would fail the lint is left as it is
     // for the lint to restore and keep. A file that can't be read throws,
     // to be warned of, never taken for broken content.
-    async #canonicalise(path: string): Promise<void> {
+    async #canonicalise(path: string, pending: PendingWrites): Promise<void> {
         const full = join(this.root, path);
         if (!existsSync(full)) {
             return;
@@ -392,7 +402,15 @@ export class MemoryHistory {
             }
             throw error;
         }
-        if (await this.#dorothys(path, text)) {
+        // Only the journal can establish her own write. When it is damaged,
+        // leave uncertain bytes and attribution alone, but still commit them.
+        if (pending.writes.get(path)?.has(hashOf(text))) {
+            return;
+        }
+        if (pending.problem !== null) {
+            this.warn(
+                `history: ${path}: ${pending.problem.message}; attribution unchanged`,
+            );
             return;
         }
         const stem = basename(path, ".md");
@@ -404,17 +422,6 @@ export class MemoryHistory {
         ) {
             await writeAtomic(full, canonical);
         }
-    }
-
-    // Whether a changed fact is Dorothy's own uncommitted write, which a
-    // crash, a lost catch-up or a session with no history leaves behind:
-    // the very bytes she wrote and noted (facts/pending.ts). What the file
-    // says of its writer is a claim anyone able to write it can make, so
-    // it is never what decides; any other change is an outside one, the
-    // user's by hand.
-    async #dorothys(path: string, text: string): Promise<boolean> {
-        const noted = (await pendingWrites(this.root)).get(path);
-        return noted?.has(hashOf(text)) ?? false;
     }
 
     async #recover(path: string, reason: string): Promise<boolean> {
@@ -476,6 +483,7 @@ export class MemoryHistory {
             );
         }
         await this.#commit(kept, `adopt: ${kept.length} files`);
+        await clearPending(this.root, kept);
     }
 
     async #installHook({ exec, script }: HookCommand): Promise<void> {

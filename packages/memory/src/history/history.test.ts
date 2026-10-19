@@ -773,17 +773,21 @@ describe("a store write left uncommitted", () => {
     };
 
     it.each(["unreadable", "malformed"])(
-        "warns and preserves unconfirmed attribution with an %s journal",
+        "records changes without promoting facts with an %s journal",
         async (failure) => {
             const history = await open();
             await putFact(root, PERSONAL, EXTERNAL);
+            const coffeePath = "knowledge/personal/likes-coffee.md";
+            const coffee = { ...EXTERNAL, name: "likes-coffee" };
+            await putFact(root, PERSONAL, coffee);
             rmSync(pendingPath(root));
             if (failure === "unreadable") {
                 mkdirSync(pendingPath(root));
             } else {
                 writeFileSync(pendingPath(root), "interrupted record");
             }
-            await history.sweep();
+            put(root, TRANSCRIPT, event("one"));
+            await history.record([TRANSCRIPT], "turn: journal recovery");
             const read = parseFact(
                 readFileSync(join(root, TEA_PATH), "utf8"),
                 "likes-tea",
@@ -791,9 +795,73 @@ describe("a store write left uncommitted", () => {
             expect(read.kind === "ok" && isConfirmed(read.fact)).toBe(false);
             expect(provenanceOf(TEA_PATH)).toEqual(EXTERNAL.provenance);
             expect(warnings.join("\n")).toContain("dorothy-pending");
-            expect(await history.repo.changed()).toContain(TEA_PATH);
+            expect(await history.repo.changed()).toEqual([]);
+            expect(
+                new TextDecoder().decode(
+                    (await history.repo.show(TEA_PATH, "HEAD")) ?? undefined,
+                ),
+            ).toBe(renderFact(EXTERNAL));
+            expect(
+                new TextDecoder().decode(
+                    (await history.repo.show(coffeePath, "HEAD")) ?? undefined,
+                ),
+            ).toBe(renderFact(coffee));
+            expect((await messages(history))[0]).toBe("turn: journal recovery");
+            expect(existsSync(pendingPath(root))).toBe(false);
+
+            await putFact(root, PERSONAL, {
+                ...EXTERNAL,
+                body: "Replacement.",
+            });
+            await history.record([TEA_PATH], "fact: after journal recovery");
+            expect((await messages(history))[0]).toBe(
+                "fact: after journal recovery",
+            );
+            expect(await history.repo.changed()).toEqual([]);
+            expect(
+                warnings.some((warning) => warning.includes("couldn't commit")),
+            ).toBe(false);
         },
     );
+
+    it("keeps uncertain attribution across an interrupted sweep", async () => {
+        const history = await open();
+        await putFact(root, PERSONAL, EXTERNAL);
+        const coffeePath = "knowledge/personal/likes-coffee.md";
+        const coffee = { ...EXTERNAL, name: "likes-coffee" };
+        await putFact(root, PERSONAL, coffee);
+        writeFileSync(pendingPath(root), "interrupted record\n");
+        const original = history.repo.commit;
+        let commits = 0;
+        const spy = spyOn(history.repo, "commit").mockImplementation(
+            async (paths, message) => {
+                commits += 1;
+                if (commits === 2) {
+                    throw new Error("interrupted sweep");
+                }
+                return original(paths, message);
+            },
+        );
+        try {
+            await history.sweep();
+        } finally {
+            spy.mockRestore();
+        }
+        expect(warnings.join("\n")).toContain("interrupted sweep");
+        expect((await history.repo.changed()).length).toBe(1);
+        await history.sweep();
+        expect(await history.repo.changed()).toEqual([]);
+        expect(
+            new TextDecoder().decode(
+                (await history.repo.show(TEA_PATH, "HEAD")) ?? undefined,
+            ),
+        ).toBe(renderFact(EXTERNAL));
+        expect(
+            new TextDecoder().decode(
+                (await history.repo.show(coffeePath, "HEAD")) ?? undefined,
+            ),
+        ).toBe(renderFact(coffee));
+    });
 
     it("refuses a fact replacement when the journal cannot be written", async () => {
         const history = await open();
