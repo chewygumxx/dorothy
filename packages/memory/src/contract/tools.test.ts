@@ -406,12 +406,26 @@ describe("a failure nobody meant to show", () => {
         broken.index = async () => {
             throw new Error("SQLITE_CORRUPT at /home/user/.cache/dorothy/x");
         };
+        const warned: string[] = [];
         await client.close();
-        await connect(null, broken);
+        await connect(null, broken, "codex", (message) => warned.push(message));
         const { isError, text } = await call("open", {
             id: "k:personal/likes-tea",
         });
         expect(isError).toBe(true);
         expect(text).toBe("Memory failed.");
+        // The service's log keeps what the caller is spared.
+        expect(warned).toEqual([
+            "the open tool failed: SQLITE_CORRUPT at /home/user/.cache/dorothy/x",
+        ]);
+    });
+
+    it("logs nothing for a refusal the contract meant", async () => {
+        const warned: string[] = [];
+        await client.close();
+        await connect(null, engine, "codex", (message) => warned.push(message));
+        const { isError } = await call("open", { id: "nonsense" });
+        expect(isError).toBe(true);
+        expect(warned).toEqual([]);
     });
 });
