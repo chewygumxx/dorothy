@@ -144,10 +144,7 @@ const COMMANDS: Record<string, Command> = {
     "--retire": parseRetire,
     "--revive": parseRevive,
     "--verify": parseVerify,
-    "--sync": ([path, ...extra]) =>
-        extra.length === 0
-            ? { kind: "sync", path: path ?? null }
-            : usage("--sync takes [<path>]"),
+    "--sync": parseSync,
     "--projects": noArguments("--projects", { kind: "projects" }),
     "--recall-server": parseRecallServer,
     "--serve": parseServe,
@@ -293,6 +290,14 @@ function parseRetire(rest: readonly string[]): Mode {
     return target !== undefined && extra.length === 0
         ? { kind: "retire", target }
         : usage(RETIRE_USAGE);
+}
+
+// A path that starts with - follows --, as for any command.
+function parseSync(rest: readonly string[]): Mode {
+    const parsed = options(rest, {});
+    return parsed === null || parsed.positionals.length > 1
+        ? usage("--sync takes [<path>]")
+        : { kind: "sync", path: parsed.positionals[0] ?? null };
 }
 
 function parseRevive(rest: readonly string[]): Mode {

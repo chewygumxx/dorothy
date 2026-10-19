@@ -587,9 +587,15 @@ describe("parseArgs", () => {
             kind: "sync",
             path: "../repo",
         });
-        expect(parseArgs(["--sync", "a", "b"], false)).toEqual({
-            kind: "usage",
-            message: "--sync takes [<path>]",
+        for (const rest of [["a", "b"], ["-x"], ["--force", "a"]]) {
+            expect(parseArgs(["--sync", ...rest], false)).toEqual({
+                kind: "usage",
+                message: "--sync takes [<path>]",
+            });
+        }
+        expect(parseArgs(["--sync", "--", "-odd"], false)).toEqual({
+            kind: "sync",
+            path: "-odd",
         });
         expect(parseArgs(["--projects"], false)).toEqual({ kind: "projects" });
         expect(parseArgs(["--projects", "x"], false)).toEqual({
