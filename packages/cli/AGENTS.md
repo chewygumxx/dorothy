@@ -39,6 +39,8 @@ lazy.
 - `index.ts`: the entry guard, which runs the mode `parseArgs` gives
   from `RUNNERS`, each runner returning its exit code, or nothing where
   it set its own (`runOneShot`).
+- `ambient.ts`: `ambient`, the process's environment, streams and entry
+  script, passed to memory's history commands.
 - `args.ts`: the flags (`parseArgs`, `USAGE`) and the modes they give:
   `COMMANDS` maps each flag to a reader of the words after it, those
   taking options through `node:util`'s `parseArgs`.
@@ -130,7 +132,8 @@ lazy.
   save the mirror's key with its `set`, and in the root's development
   dependencies, which the root's `lint:env` script and the pre-commit
   hook need.
-- The CLI passes `commandHistory()` to memory's commands, the fact and
+- The CLI passes `ambient()` to memory's history commands, and
+  `commandHistory(...)` of it to memory's commands, the fact and
   project commands among them, and `editInEditor` (from
   `@dorothy/tui/editor`) to `--memory` and `--edit-tags`.
 
