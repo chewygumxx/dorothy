@@ -198,8 +198,11 @@ export type ReviewOutcome =
 
 // One line per concept she may see; a broader concept she may not see
 // is left unnamed.
-function conceptLine(tags: ReviewTags, concept: Concept): string {
-    const shown = new Set(tags.concepts.map(([id]) => id));
+function conceptLine(
+    tags: ReviewTags,
+    concept: Concept,
+    shown: ReadonlySet<string>,
+): string {
     const broader = concept.broader
         .filter((parent) => shown.has(parent))
         .map(
@@ -336,6 +339,7 @@ function titlesSection(current: Sidecar | null): string[] {
 }
 
 function vocabularySection(tags: ReviewTags): string[] {
+    const shown = new Set(tags.concepts.map(([id]) => id));
     return [
         "",
         "The concepts you tag with:",
@@ -344,7 +348,7 @@ function vocabularySection(tags: ReviewTags): string[] {
             : [
                   "<vocabulary>",
                   ...tags.concepts.map(([, concept]) =>
-                      conceptLine(tags, concept),
+                      conceptLine(tags, concept, shown),
                   ),
                   "</vocabulary>",
               ]),

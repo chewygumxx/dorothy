@@ -537,6 +537,29 @@ describe("tags in the review", () => {
     };
     const turns: Turn[] = [{ role: "user", text: "Hi" }];
 
+    it("renders a large vocabulary without repeated full scans", () => {
+        const concepts: [string, Concept][] = Array.from(
+            { length: 12000 },
+            (_, n) => [
+                `k${n.toString(16).padStart(8, "0")}`,
+                concept(`tag${n}`),
+            ],
+        );
+        const many: Vocabulary = {
+            v: 1,
+            rev: 1,
+            concepts: Object.fromEntries(concepts),
+        };
+        const began = performance.now();
+        const prompt = reviewPrompt([], null, [], {
+            vocabulary: many,
+            concepts,
+        });
+        const elapsed = performance.now() - began;
+        expect(prompt.match(/<concept /g)).toHaveLength(12000);
+        expect(elapsed).toBeLessThan(1000);
+    });
+
     it("lists the vocabulary she may see, escaped", () => {
         const prompt = reviewPrompt(turns, null, [], tags);
         expect(prompt).toContain(
