@@ -298,6 +298,43 @@ describe("bun run eval -- run", () => {
         expect(await readRecords(work, id)).toHaveLength(5);
     });
 
+    it("ends a line cut short before appending after it", async () => {
+        const { io, out } = fakeIo();
+        expect(
+            await runCli(
+                [
+                    "run",
+                    "--work",
+                    work,
+                    "--systems",
+                    "lexical",
+                    "--retrieval-only",
+                ],
+                io,
+            ),
+        ).toBe(0);
+        const id = idOf(out);
+        const path = recordsPath(work, id);
+        const whole = readFileSync(path, "utf8").split("\n");
+        const last = whole.at(-2) ?? "";
+        // As if the last append was interrupted halfway.
+        writeFileSync(
+            path,
+            [...whole.slice(0, -2), last.slice(0, last.length / 2)].join("\n"),
+        );
+        expect(await readRecords(work, id)).toHaveLength(4);
+        expect(
+            await runCli(["run", "--work", work, "--resume", id], fakeIo().io),
+        ).toBe(0);
+        expect(await readRecords(work, id)).toHaveLength(5);
+        const lines = readFileSync(path, "utf8").split("\n");
+        expect(lines.at(-1)).toBe("");
+        expect(JSON.parse(lines.at(-2) ?? "").question).toBe(
+            JSON.parse(last).question,
+        );
+        expect(lines.at(-3)).toBe(last.slice(0, last.length / 2));
+    });
+
     it("refuses a run's settings given with --resume", async () => {
         const { io, out } = fakeIo();
         expect(

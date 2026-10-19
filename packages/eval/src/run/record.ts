@@ -12,7 +12,7 @@
 // question and system, appended as each completes; summary.json and
 // report.md, written at the end.
 
-import { readFile } from "node:fs/promises";
+import { appendFile, open, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { UsageError } from "../errors.js";
 import type { QuestionType } from "../questions/file.js";
@@ -105,6 +105,34 @@ export async function readRecords(
         }
     }
     return [...records.values()];
+}
+
+// Ends a last line cut short by an interrupted write, so that the next
+// record appended starts a line of its own rather than fusing with it.
+export async function endRecords(work: string, id: string): Promise<void> {
+    const path = recordsPath(work, id);
+    let cut = false;
+    try {
+        const file = await open(path, "r");
+        try {
+            const { size } = await file.stat();
+            const last = Buffer.alloc(1);
+            if (size > 0) {
+                await file.read(last, 0, 1, size - 1);
+                cut = last[0] !== 0x0a;
+            }
+        } finally {
+            await file.close();
+        }
+    } catch (error) {
+        if ((error as { code?: unknown }).code === "ENOENT") {
+            return;
+        }
+        throw error;
+    }
+    if (cut) {
+        await appendFile(path, "\n");
+    }
 }
 
 // Whether a record stands as asked: no failure, no retrieval error.

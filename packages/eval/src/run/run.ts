@@ -25,6 +25,7 @@ import type { Corpus } from "../systems/corpus.js";
 import { makeSystem, type Retrieved, type System } from "../systems/system.js";
 import { answerPrompt, declines, type Judges, makeJudges } from "./judges.js";
 import {
+    endRecords,
     type RunInfo,
     type RunRecord,
     readRecords,
@@ -405,6 +406,7 @@ export async function runEvaluation(
         accepted,
         await readRecords(deps.work, info.id),
     );
+    await endRecords(deps.work, info.id);
     const bySystem = new Map(systems.map((system) => [system.name, system]));
     // A paid answer is judged again where it lacks a verdict, never asked
     // again; anything else is asked whole.
