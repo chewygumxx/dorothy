@@ -177,7 +177,7 @@ export class MemoryHistory {
         try {
             await this.#settle(new Set(named));
             await this.#commitChecked(named, message);
-            await clearPending(this.root, named);
+            await this.#clearPending(named);
         } catch (error) {
             for (const path of named) {
                 this.#catchUp.add(path);
@@ -328,6 +328,15 @@ export class MemoryHistory {
         }
     }
 
+    async #clearPending(paths: readonly string[]): Promise<void> {
+        const problem = await clearPending(this.root, paths);
+        if (problem !== null) {
+            this.warn(
+                `history: couldn't clear pending attribution (${problem})`,
+            );
+        }
+    }
+
     // Commits the paths that pass the lint; the rest are restored.
     async #commitChecked(
         paths: readonly string[],
@@ -378,7 +387,7 @@ export class MemoryHistory {
             );
             committed.push(path);
         }
-        await clearPending(this.root, committed);
+        await this.#clearPending(committed);
     }
 
     // A fact added or edited by hand is rewritten as Dorothy writes one,
@@ -483,7 +492,7 @@ export class MemoryHistory {
             );
         }
         await this.#commit(kept, `adopt: ${kept.length} files`);
-        await clearPending(this.root, kept);
+        await this.#clearPending(kept);
     }
 
     async #installHook({ exec, script }: HookCommand): Promise<void> {

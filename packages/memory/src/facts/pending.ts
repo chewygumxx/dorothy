@@ -16,7 +16,7 @@
 // an outside writer's.
 
 import { createHash } from "node:crypto";
-import { appendFile, readFile, rm, rmdir, stat } from "node:fs/promises";
+import { open, readFile, rm, rmdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { writeAtomic } from "../memory/sidecar.js";
 
@@ -93,9 +93,18 @@ export async function notePending(
         }
         throw error;
     }
-    await appendFile(pendingPath(root), `${hashOf(bytes)} ${path}\n`, {
-        mode: 0o600,
-    });
+    const file = await open(pendingPath(root), "a+", 0o600);
+    try {
+        const { size } = await file.stat();
+        const tail = new Uint8Array(1);
+        if (size > 0) {
+            await file.read(tail, 0, 1, size - 1);
+        }
+        const separator = size > 0 && tail[0] !== 0x0a ? "\n" : "";
+        await file.writeFile(`${separator}${hashOf(bytes)} ${path}\n`);
+    } finally {
+        await file.close();
+    }
 }
 
 // Once the paths are committed, they are nobody's pending writes. Call
@@ -104,7 +113,7 @@ export async function notePending(
 export async function clearPending(
     root: string,
     paths: readonly string[],
-): Promise<void> {
+): Promise<string | null> {
     try {
         const { writes, problem } = await pendingWrites(root);
         const pending = new Map(writes);
@@ -113,7 +122,7 @@ export async function clearPending(
             pending.delete(path);
         }
         if (pending.size === before && problem === null) {
-            return;
+            return null;
         }
         // An empty directory is recoverable too; never remove its contents.
         if ((await stat(pendingPath(root))).isDirectory()) {
@@ -121,7 +130,7 @@ export async function clearPending(
         }
         if (pending.size === 0) {
             await rm(pendingPath(root), { force: true });
-            return;
+            return null;
         }
         await writeAtomic(
             pendingPath(root),
@@ -131,7 +140,9 @@ export async function clearPending(
                 )
                 .join(""),
         );
-    } catch {
-        // A stale entry matches only the bytes Dorothy wrote.
+        return null;
+    } catch (error) {
+        // Stale entries are conservative, but failed repair must be visible.
+        return `${pendingPath(root)}: ${error instanceof Error ? error.message : String(error)}`;
     }
 }

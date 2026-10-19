@@ -863,6 +863,43 @@ describe("a store write left uncommitted", () => {
         ).toBe(renderFact(coffee));
     });
 
+    it("keeps a write after a torn journal, failed commit and restart", async () => {
+        const history = await open();
+        writeFileSync(pendingPath(root), "interrupted record");
+        await putFact(root, PERSONAL, EXTERNAL);
+        const spy = spyOn(history.repo, "commit").mockRejectedValue(
+            new Error("commit interrupted"),
+        );
+        try {
+            await record(history, [TEA_PATH], "fact: interrupted");
+        } finally {
+            spy.mockRestore();
+        }
+        // Reopening drops the process-local catch-up set, as a crash does.
+        const restarted = await open();
+        await restarted.sweep();
+        expect(provenanceOf(TEA_PATH)).toEqual(EXTERNAL.provenance);
+        expect(await restarted.repo.changed()).toEqual([]);
+    });
+
+    it("warns when journal repair fails and still records changes", async () => {
+        const history = await open();
+        mkdirSync(pendingPath(root));
+        writeFileSync(join(pendingPath(root), "keep"), "occupied");
+        put(root, TRANSCRIPT, event("one"));
+        await record(history, [TRANSCRIPT], "turn: journal repair failed");
+        expect((await messages(history))[0]).toBe(
+            "turn: journal repair failed",
+        );
+        expect(warnings.join("\n")).toContain(
+            "couldn't clear pending attribution",
+        );
+        expect(warnings.join("\n")).toContain("dorothy-pending");
+        expect(readFileSync(join(pendingPath(root), "keep"), "utf8")).toBe(
+            "occupied",
+        );
+    });
+
     it("refuses a fact replacement when the journal cannot be written", async () => {
         const history = await open();
         await putFact(root, PERSONAL, EXTERNAL);

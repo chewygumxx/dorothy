@@ -10,7 +10,7 @@
 
 import { afterEach, beforeEach, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
-import { appendFile, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -73,4 +73,15 @@ it("repairs an empty directory in place of the journal", async () => {
     expect(
         (await pendingWrites(root)).writes.get("knowledge/personal/a.md"),
     ).toEqual(new Set([hashOf("one")]));
+});
+
+it("keeps the next note separate from a torn final record", async () => {
+    await mkdir(join(root, ".git"));
+    await writeFile(pendingPath(root), "interrupted record");
+    await notePending(root, "knowledge/personal/a.md", "one");
+    const pending = await pendingWrites(root);
+    expect(pending.writes.get("knowledge/personal/a.md")).toEqual(
+        new Set([hashOf("one")]),
+    );
+    expect(pending.problem).not.toBeNull();
 });
