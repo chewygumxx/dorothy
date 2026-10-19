@@ -14,6 +14,7 @@ import { ContractError } from "./errors.js";
 import {
     blockRequestSchema,
     parseWith,
+    recallRequestSchema,
     recordRequestSchema,
 } from "./schemas.js";
 
@@ -103,5 +104,43 @@ describe("recordRequestSchema", () => {
                 events: [{ sourceId: "a", kind: "user", text: "Hi" }],
             }),
         ).toThrow(ContractError);
+    });
+});
+
+describe("a hook request's project", () => {
+    const block = { host: "codex", session: "s1", reason: "startup" };
+    const recall = { host: "codex", session: "s1", prompt: "tea" };
+    const record = { host: "codex", session: "s1", private: true };
+
+    it("is a project's id, as the client makes it", () => {
+        for (const project of [
+            "github.com/me/app",
+            "local-0123456789ab",
+            "gitlab.example.com/group/sub/app",
+        ]) {
+            expect(
+                parseWith(blockRequestSchema, { ...block, project }).project,
+            ).toBe(project);
+        }
+    });
+
+    it("is refused when it is a path or any other string", () => {
+        for (const project of [
+            "/home/me/app",
+            "../app",
+            "github.com/../app",
+            "my project",
+            "app",
+        ]) {
+            const refused = (parse: () => unknown) =>
+                expect(parse).toThrow("project: project is not a project's id");
+            refused(() => parseWith(blockRequestSchema, { ...block, project }));
+            refused(() =>
+                parseWith(recallRequestSchema, { ...recall, project }),
+            );
+            refused(() =>
+                parseWith(recordRequestSchema, { ...record, project }),
+            );
+        }
     });
 });

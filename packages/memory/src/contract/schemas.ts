@@ -35,11 +35,15 @@ import {
     SEARCH_LIMIT,
 } from "@dorothy/core";
 import { z } from "zod";
+import { isProjectId } from "../facts/store.js";
 import { ContractError } from "./errors.js";
 
 const host = z.string().regex(HOST_ID, "host is not a profile's name");
 const session = z.string().min(1).max(256);
+// A tool's project is an id or a path, which the service resolves; a hook
+// request's is the id the client made, which is all a record may land under.
 const project = z.string().min(1).max(512);
+const projectId = project.refine(isProjectId, "project is not a project's id");
 const budget = z.number().int().min(1).max(1_000_000);
 const at = z.iso.datetime({ offset: true });
 const sourceId = z.string().min(1).max(256);
@@ -60,7 +64,7 @@ export const blockRequestSchema = z
         host,
         hostVersion: z.string().min(1).max(64).optional(),
         session,
-        project: project.optional(),
+        project: projectId.optional(),
         reason: z.enum(BLOCK_REASONS),
         budget: budget.optional(),
     })
@@ -81,7 +85,7 @@ export const recallRequestSchema = z
     .object({
         host,
         session,
-        project: project.optional(),
+        project: projectId.optional(),
         prompt: z.string().min(1).max(100_000),
         budget: budget.optional(),
     })
@@ -126,7 +130,7 @@ export const recordRequestSchema = z
         host,
         hostVersion: z.string().min(1).max(64).optional(),
         session,
-        project: project.optional(),
+        project: projectId.optional(),
         parent: session.optional(),
         private: z.boolean().optional(),
         events: z.array(recordEventSchema).max(10_000).optional(),
