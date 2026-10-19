@@ -13,7 +13,11 @@
 // she opened. They score retrieval alone, as they have no reference
 // answer, and the conversation she read from is left out of retrieval.
 
-import { type AppraisedRead, openArchive } from "@dorothy/memory/evaluation";
+import {
+    type AppraisedRead,
+    type AppraisedReads,
+    openArchive,
+} from "@dorothy/memory/evaluation";
 import { type Command, workOf } from "../command.js";
 import { readSnapshot, workEnv } from "../snapshot/snapshot.js";
 import {
@@ -89,6 +93,28 @@ export function lookupQuestions(
     return { questions: [...made.values()], dropped };
 }
 
+// The reads memory gave, with those it passed over (a hidden reader's)
+// counted among the dropped.
+export function lookupsOf(
+    appraised: AppraisedReads,
+    projects: Map<string, string | null>,
+    present: Set<string>,
+): { questions: Question[]; dropped: Record<string, number> } {
+    const made = lookupQuestions(appraised.reads, projects, present);
+    if (appraised.hidden > 0) {
+        made.dropped[HIDDEN_READER] =
+            (made.dropped[HIDDEN_READER] ?? 0) + appraised.hidden;
+    }
+    return made;
+}
+
+// A line for each transcript memory could not read.
+export const unreadableLines = (unreadable: AppraisedReads["unreadable"]) =>
+    unreadable.map(
+        ({ reader, code }) =>
+            `  could not read the transcript of ${reader} (${code}); its reads are passed over\n`,
+    );
+
 export const mineCommand: Command = {
     summary: "make lookup questions from her appraised reads",
     options: {
@@ -118,17 +144,11 @@ export const mineCommand: Command = {
                     .map((each) => each.id),
             ]);
             const appraised = await archive.appraisedReads();
-            const { questions: mined, dropped } = lookupQuestions(
-                appraised.reads,
+            const { questions: mined, dropped } = lookupsOf(
+                appraised,
                 projects,
                 present,
             );
-            // Memory never gives a hidden reader's read; it is counted
-            // with the reads lookupQuestions drops for the same reason.
-            if (appraised.hidden > 0) {
-                dropped[HIDDEN_READER] =
-                    (dropped[HIDDEN_READER] ?? 0) + appraised.hidden;
-            }
             const merged = await updateQuestions(work, (current) => {
                 const result = mergeQuestions(current, mined);
                 return { questions: result.questions, result };
@@ -139,10 +159,8 @@ export const mineCommand: Command = {
             for (const [reason, n] of Object.entries(dropped)) {
                 io.out(`  dropped ${n}: ${reason}\n`);
             }
-            for (const { reader, code } of appraised.unreadable) {
-                io.err(
-                    `  could not read the transcript of ${reader} (${code}); its reads are passed over\n`,
-                );
+            for (const line of unreadableLines(appraised.unreadable)) {
+                io.err(line);
             }
             if (merged.collided > 0) {
                 io.out(

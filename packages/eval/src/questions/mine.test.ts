@@ -27,7 +27,7 @@ import {
     whileLocked,
 } from "../testing.js";
 import { questionsPath, readQuestions } from "./file.js";
-import { lookupQuestions } from "./mine.js";
+import { lookupQuestions, lookupsOf, unreadableLines } from "./mine.js";
 
 let temp: ReturnType<typeof tempRoot>;
 beforeEach(() => {
@@ -161,6 +161,39 @@ describe("bun run eval -- mine", () => {
         expect(again.out.join("")).toBe(
             "mined 2 lookups, 0 new; 2 questions in all\n",
         );
+    });
+
+    it("counts the reads memory passed over, and says a transcript it lost", () => {
+        const made = lookupsOf(
+            {
+                reads: [read("which tea", `c:${TEA}`)],
+                hidden: 2,
+                unreadable: [{ reader: "gone", code: "ENOENT" }],
+            },
+            new Map([["r", null]]),
+            new Set([`c:${TEA}`]),
+        );
+        expect(made.questions).toHaveLength(1);
+        expect(made.dropped).toEqual({
+            "a read by a hidden or absent conversation": 2,
+        });
+        // Added to the reads dropped here for the same reason.
+        const both = lookupsOf(
+            {
+                reads: [read("which tea", `c:${TEA}`, "away")],
+                hidden: 2,
+                unreadable: [],
+            },
+            new Map(),
+            new Set([`c:${TEA}`]),
+        );
+        expect(both.dropped["a read by a hidden or absent conversation"]).toBe(
+            3,
+        );
+        expect(unreadableLines([{ reader: "gone", code: "ENOENT" }])).toEqual([
+            "  could not read the transcript of gone (ENOENT); its reads are passed over\n",
+        ]);
+        expect(unreadableLines([])).toEqual([]);
     });
 
     it("passes over reads of, and by, hidden conversations", async () => {
