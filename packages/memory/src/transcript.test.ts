@@ -641,6 +641,27 @@ describe("recall events", () => {
         expect(read.turns[1]?.lookups).toBeUndefined();
     });
 
+    it("keeps a search event from before tags unchanged", () => {
+        const old = {
+            v: 1,
+            at: "2026-10-03T00:00:00.000Z",
+            kind: "recall",
+            id: "toolu_legacy",
+            ok: true,
+            offset: 0,
+            tool: "search",
+            query: "render",
+            hits: 2,
+        } as const;
+        expect(toRecall(old)).toEqual(old);
+        const read = parseTranscript(
+            [user, JSON.stringify(old), reply].join("\n"),
+        );
+        expect(read.skipped).toBe(0);
+        expect(read.turns[1]?.lookups).toEqual([old]);
+        expect(read.turns[1]?.lookups?.[0]).not.toHaveProperty("tags");
+    });
+
     it("reads both kinds of lookup", () => {
         expect(toRecall(JSON.parse(search))).toEqual(JSON.parse(search));
         expect(toRecall(JSON.parse(open))).toEqual(JSON.parse(open));

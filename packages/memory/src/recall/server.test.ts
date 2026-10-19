@@ -152,6 +152,16 @@ describe("the recall server", () => {
         ).toEqual([[A, ["rendering"]]]);
     });
 
+    it("relays tag-limit errors to the recall client", async () => {
+        const client = await connect({ vocabulary: join(dir, "tags.json") });
+        const result = await client.callTool({
+            name: "search",
+            arguments: { tags: ["a", "b", "c", "d", "e", "f"] },
+        });
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toBe("Give at most 5 tags.");
+    });
+
     it("relays a tag it does not know as a tool error", async () => {
         const client = await connect({ vocabulary: join(dir, "tags.json") });
         const result = await client.callTool({
