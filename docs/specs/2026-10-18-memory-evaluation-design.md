@@ -347,11 +347,13 @@ and the snapshot's counts.
   and judge models or base URLs other than the run's, and says to start
   a new run; a `run.json` written before base URLs were kept is held to
   its models alone.
-  It asks again a record with a failure, and where a question and
-  system have two records the last stands. A run stopped by
-  `--max-calls` keeps its records and writes the report of what is
+  It asks again a record with a failure: whole where its retrieval or
+  answer failed, and where its answer was paid for, only the judgements
+  it lacks, reusing that answer, so no answer is paid for twice. Where
+  a question and system have two records the last stands. A run stopped
+  by `--max-calls` keeps its records and writes the report of what is
   done; a cap reached at a judgement keeps that record, its answer and
-  the judgement's failure, which a resume asks again whole.
+  the judgement's failure, whose judgements a resume completes.
 - A judge of the answering model's vendor warns on the error stream and
   the run goes on.
 

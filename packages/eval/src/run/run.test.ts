@@ -167,7 +167,7 @@ describe("bun run eval -- run", () => {
     });
 
     it("stops at --max-calls, keeping a paid answer, and resumes", async () => {
-        serve({ content: "Plot twelve, by the river." });
+        const { requests } = serve({ content: "Plot twelve, by the river." });
         const first = fakeIo();
         expect(
             await runCli(
@@ -197,11 +197,17 @@ describe("bun run eval -- run", () => {
         expect(capped?.answer?.text).toBe("Plot twelve, by the river.");
         expect(capped?.failures).toEqual(["declined: reached --max-calls (4)"]);
         const again = fakeIo();
+        const asked = requests.length;
         expect(
             await runCli(["run", "--work", work, "--resume", id], again.io),
         ).toBe(0);
-        // A record with a failure is asked again, its answer with it.
+        // The capped record is asked its judgement alone, its answer kept;
+        // the update is asked whole: an answer and three judgements.
+        expect(requests.length - asked).toBe(5);
         const records = await readRecords(work, id);
+        expect(
+            records.find((each) => each.type === "abstention")?.answer,
+        ).toEqual(capped?.answer ?? null);
         expect(records).toHaveLength(5);
         expect(new Set(records.map((each) => each.question)).size).toBe(5);
         expect(records.every((each) => each.failures.length === 0)).toBe(true);
@@ -593,6 +599,80 @@ describe("a run", () => {
                 const after = stub.requests.length;
                 await go();
                 expect(stub.requests).toHaveLength(after);
+                expect(lines(info.id)).toHaveLength(8);
+            } finally {
+                corpus.close();
+            }
+        });
+
+        it("asks only the judgements a paid answer lacks", async () => {
+            let judging = false;
+            let answers = 0;
+            stub = stubModels((request) =>
+                request.body.response_format === undefined
+                    ? { content: `Answer ${++answers}.` }
+                    : judging
+                      ? { json: { reasoning: "Checked.", score: true } }
+                      : { status: 500 },
+            );
+            writeFileSync(configPath(work), stubConfig(stub.url));
+            const corpus = await openCorpus(workEnv(work));
+            try {
+                const { questions } = await readQuestions(work);
+                const config = await readEvalConfig(work);
+                const info = newRunInfo(
+                    settings,
+                    questions,
+                    config,
+                    await readSnapshot(work),
+                    new Date("2026-10-19T01:00:00.000Z"),
+                );
+                const go = () =>
+                    runEvaluation(info, {
+                        work,
+                        corpus,
+                        questions,
+                        models: new Models(config, { env: {}, retryMs: 1 }),
+                        concurrency: 1,
+                    });
+                await go();
+                const first = await readRecords(work, info.id);
+                expect(answers).toBe(3);
+                expect(
+                    first.find((each) => each.type === "abstention")
+                        ?.failures[0],
+                ).toStartWith("declined: 500");
+                judging = true;
+                const before = stub.requests.length;
+                await go();
+                // Two judgements, one and three: no answer asked again.
+                expect(stub.requests.length - before).toBe(6);
+                expect(answers).toBe(3);
+                const records = await readRecords(work, info.id);
+                for (const each of records) {
+                    const was = first.find(
+                        (old) => old.question === each.question,
+                    );
+                    expect(each.answer).toEqual(was?.answer ?? null);
+                    expect(each.retrieval).toEqual(
+                        was?.retrieval as typeof each.retrieval,
+                    );
+                    expect(each.failures).toEqual([]);
+                }
+                const update = records.find(
+                    (each) => each.type === "knowledge-update",
+                );
+                expect(update?.judged).toEqual({
+                    strict: true,
+                    lenient: true,
+                    declined: false,
+                    stale: true,
+                    reasons: {
+                        strict: "Checked.",
+                        lenient: "Checked.",
+                        stale: "Checked.",
+                    },
+                });
                 expect(lines(info.id)).toHaveLength(8);
             } finally {
                 corpus.close();

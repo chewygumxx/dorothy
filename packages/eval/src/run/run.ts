@@ -23,13 +23,7 @@ import type { Summary } from "../report/summary.js";
 import type { SnapshotInfo } from "../snapshot/snapshot.js";
 import type { Corpus } from "../systems/corpus.js";
 import { makeSystem, type Retrieved, type System } from "../systems/system.js";
-import {
-    answerPrompt,
-    declines,
-    type Judge,
-    type Judges,
-    makeJudges,
-} from "./judges.js";
+import { answerPrompt, declines, type Judges, makeJudges } from "./judges.js";
 import {
     type RunInfo,
     type RunRecord,
@@ -148,29 +142,6 @@ export function checkResumable(
     }
 }
 
-// The model calls a run would make: none for a lookup, an answer and a
-// judgement for an abstention, an answer and two judgements for the rest,
-// and one more for an update with an older answer.
-export function modelCalls(info: RunInfo, accepted: Question[]): number {
-    if (info.retrievalOnly) {
-        return 0;
-    }
-    const each = accepted.reduce(
-        (sum, question) =>
-            sum +
-            (question.type === "lookup"
-                ? 0
-                : question.type === "abstention"
-                  ? 2
-                  : question.type === "knowledge-update" &&
-                      question.note !== null
-                    ? 4
-                    : 3),
-        0,
-    );
-    return each * info.systems.length;
-}
-
 // The cap reached at a judgement: the answer was paid for, so its record
 // is kept, with that judgement's failure, before the run stops.
 class Capped extends CallCap {
@@ -184,6 +155,120 @@ class Capped extends CallCap {
 
 const hasEvidence = (ranked: string[], evidence: string[]) =>
     ranked.some((id) => evidence.includes(id));
+
+// The verdicts a model owes an answered question: whether an abstention
+// declines; strict and lenient for the rest, and for an update with an
+// older answer, whether it gives that one.
+function owedVerdicts(question: Question): Verdict[] {
+    if (question.type === "abstention") {
+        return ["declined"];
+    }
+    return question.type === "knowledge-update" && question.note !== null
+        ? ["strict", "lenient", "stale"]
+        : ["strict", "lenient"];
+}
+
+// What is left to ask of a question and system: all of it, or, where a
+// record holds a paid answer that a judgement failed, the judgements it
+// lacks, from that record.
+export type Pending = {
+    question: Question;
+    system: string;
+    answered: RunRecord | null;
+};
+
+export function pendingOf(
+    info: RunInfo,
+    accepted: Question[],
+    records: RunRecord[],
+): Pending[] {
+    const last = new Map(
+        records.map((record) => [
+            `${record.question}\t${record.system}`,
+            record,
+        ]),
+    );
+    return accepted.flatMap((question) =>
+        info.systems.flatMap((system) => {
+            const record = last.get(`${question.id}\t${system}`);
+            if (record !== undefined && succeeded(record)) {
+                return [];
+            }
+            const answered =
+                record !== undefined &&
+                record.retrieval.error === null &&
+                record.answer !== null
+                    ? record
+                    : null;
+            return [{ question, system, answered }];
+        }),
+    );
+}
+
+// The model calls a run would make: none for a lookup, an answer and a
+// judgement for an abstention, an answer and two judgements for the rest,
+// and one more for an update with an older answer.
+export function modelCalls(info: RunInfo, accepted: Question[]): number {
+    if (info.retrievalOnly) {
+        return 0;
+    }
+    const each = accepted.reduce(
+        (sum, question) =>
+            sum +
+            (question.type === "lookup"
+                ? 0
+                : 1 + owedVerdicts(question).length),
+        0,
+    );
+    return each * info.systems.length;
+}
+
+// Asks each verdict the record lacks; a failed one is recorded and the
+// rest still run, but the cap stops them with the record kept.
+async function judge(
+    record: RunRecord,
+    question: Question,
+    judges: Judges,
+): Promise<RunRecord> {
+    const outputs = record.answer?.text ?? "";
+    if (question.type !== "abstention") {
+        // Declined wrongly, by a pattern, with no model asked.
+        record.judged.declined = declines(outputs);
+    }
+    // Strict and lenient against the reference; stale against the older.
+    const references = {
+        strict: question.answer ?? "",
+        lenient: question.answer ?? "",
+        stale: question.note ?? "",
+    };
+    for (const name of owedVerdicts(question)) {
+        if (record.judged[name] !== null) {
+            continue;
+        }
+        try {
+            const { score, reasoning } = await judges[name]({
+                inputs: question.question,
+                outputs,
+                ...(name === "declined"
+                    ? {}
+                    : { referenceOutputs: references[name] }),
+            });
+            record.judged[name] = score;
+            if (reasoning !== null) {
+                record.judged.reasons = {
+                    ...record.judged.reasons,
+                    [name]: reasoning,
+                };
+            }
+        } catch (caught) {
+            record.failures.push(`${name}: ${failureOf(caught)}`);
+            if (caught instanceof CallCap) {
+                throw new Capped(caught.message, record);
+            }
+        }
+    }
+    return record;
+}
 
 async function ask(
     question: Question,
@@ -267,42 +352,7 @@ async function ask(
         record.failures.push(`answer: ${failureOf(caught)}`);
         return record;
     }
-    const outputs = record.answer.text;
-    const verdict = async (name: Verdict, judge: Judge, reference?: string) => {
-        try {
-            const { score, reasoning } = await judge({
-                inputs: question.question,
-                outputs,
-                ...(reference === undefined
-                    ? {}
-                    : { referenceOutputs: reference }),
-            });
-            record.judged[name] = score;
-            if (reasoning !== null) {
-                record.judged.reasons = {
-                    ...record.judged.reasons,
-                    [name]: reasoning,
-                };
-            }
-        } catch (caught) {
-            record.failures.push(`${name}: ${failureOf(caught)}`);
-            if (caught instanceof CallCap) {
-                throw new Capped(caught.message, record);
-            }
-        }
-    };
-    if (question.type === "abstention") {
-        await verdict("declined", judges.declined);
-        return record;
-    }
-    const reference = question.answer ?? "";
-    await verdict("strict", judges.strict, reference);
-    await verdict("lenient", judges.lenient, reference);
-    record.judged.declined = declines(outputs);
-    if (question.type === "knowledge-update" && question.note !== null) {
-        await verdict("stale", judges.stale, question.note);
-    }
-    return record;
+    return await judge(record, question, judges);
 }
 
 export async function runEvaluation(
@@ -337,22 +387,40 @@ export async function runEvaluation(
             { mode: 0o600 },
         );
     }
-    const done = new Set(
-        (await readRecords(deps.work, info.id))
-            .filter(succeeded)
-            .map((record) => `${record.question}\t${record.system}`),
-    );
     const systems =
         deps.systems ??
         info.systems.map((name) => makeSystem(name, deps.corpus));
     const models = info.retrievalOnly ? null : deps.models;
     const judges = models === null ? null : makeJudges(models);
-    const tasks = accepted
-        .flatMap((question) => systems.map((system) => ({ question, system })))
-        .filter(
-            ({ question, system }) =>
-                !done.has(`${question.id}\t${system.name}`),
-        );
+    const tasks = pendingOf(
+        { ...info, systems: systems.map((system) => system.name) },
+        accepted,
+        await readRecords(deps.work, info.id),
+    );
+    const bySystem = new Map(systems.map((system) => [system.name, system]));
+    // A paid answer is judged again where it lacks a verdict, never asked
+    // again; anything else is asked whole.
+    const settle = (task: Pending) =>
+        task.answered !== null && judges !== null
+            ? judge(
+                  {
+                      ...task.answered,
+                      judged: {
+                          ...task.answered.judged,
+                          reasons: { ...task.answered.judged.reasons },
+                      },
+                      failures: [],
+                  },
+                  task.question,
+                  judges,
+              )
+            : ask(
+                  task.question,
+                  bySystem.get(task.system) as System,
+                  info,
+                  models,
+                  judges,
+              );
     for (const system of systems) {
         await system.prepare?.();
     }
@@ -374,9 +442,7 @@ export async function runEvaluation(
         while (stopped === null && next < tasks.length) {
             const task = tasks[next++] as (typeof tasks)[number];
             try {
-                await append(
-                    await ask(task.question, task.system, info, models, judges),
-                );
+                await append(await settle(task));
             } catch (error) {
                 if (error instanceof CallCap) {
                     if (error instanceof Capped) {
