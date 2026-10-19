@@ -106,6 +106,15 @@ describe("the workspace", () => {
         expect(holders).toEqual(["agent"]);
     });
 
+    it("lints an import of what a package does not declare", async () => {
+        const biome = await Bun.file(
+            join(import.meta.dir, ".biome.json"),
+        ).json();
+        expect(biome.linter.rules.correctness.noUndeclaredDependencies).toBe(
+            "error",
+        );
+    });
+
     it("resolves only what a package declares, and only its doors", () => {
         const from = (name: string) => join(PACKAGES, name, "src");
         expect(() =>
