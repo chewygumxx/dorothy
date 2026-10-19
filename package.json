@@ -80,5 +80,8 @@
         "plugins": [
             "@chewygumxx/remark-preset"
         ]
+    },
+    "patchedDependencies": {
+        "isomorphic-git@1.43.1": "patches/isomorphic-git@1.43.1.patch"
     }
 }

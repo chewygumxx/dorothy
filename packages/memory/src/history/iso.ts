@@ -433,20 +433,37 @@ export function isoRepo(location: string): MemoryRepo {
             if (!https(url)) {
                 throw new Error(NEEDS_BINARY);
             }
-            const result = await git.fetch({
+            // isomorphic-git requires a configured tracking refspec even
+            // with an explicit URL. Keep this separate from the mirror,
+            // which recovery installs only after opening every bundle.
+            const incoming = "dorothy-incoming";
+            await git.setConfig({
                 fs,
-                http,
                 dir,
-                url,
-                ref: branch,
-                singleBranch: true,
-                tags: false,
-                ...auth(token),
+                path: `remote.${incoming}.fetch`,
+                value: "+refs/heads/*:refs/remotes/dorothy-incoming/*",
             });
-            if (result.fetchHead === null) {
-                throw new Error(`the mirror has no ${branch}`);
+            try {
+                const fetched = (
+                    await git.fetch({
+                        fs,
+                        http,
+                        dir,
+                        url,
+                        remote: incoming,
+                        ref: branch,
+                        singleBranch: true,
+                        tags: false,
+                        ...auth(token),
+                    })
+                ).fetchHead;
+                if (fetched === null) {
+                    throw new Error(`the mirror has no ${branch}`);
+                }
+                await advance(`refs/heads/${branch}`, fetched);
+            } finally {
+                await git.deleteRemote({ fs, dir, remote: incoming });
             }
-            await advance(`refs/heads/${branch}`, result.fetchHead);
         },
         async checkout() {
             await git.checkout({ fs, dir, ref: "main", force: true });
