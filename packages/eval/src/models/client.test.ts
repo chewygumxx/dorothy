@@ -93,8 +93,14 @@ describe("Models", () => {
     });
 
     it("turns LangSmith's tracing off", () => {
-        expect(process.env.LANGSMITH_TRACING).toBe("false");
-        expect(process.env.LANGCHAIN_TRACING_V2).toBe("false");
+        for (const name of [
+            "LANGSMITH_TRACING",
+            "LANGSMITH_TRACING_V2",
+            "LANGCHAIN_TRACING",
+            "LANGCHAIN_TRACING_V2",
+        ]) {
+            expect(process.env[name]).toBe("false");
+        }
     });
 
     it("never retries a request the server refuses", async () => {

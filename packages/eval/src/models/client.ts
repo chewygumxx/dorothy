@@ -24,9 +24,16 @@ import {
 } from "./config.js";
 
 // openevals wraps its judges in LangSmith's tracing, which reads these
-// from the environment; her data never goes there.
-process.env.LANGSMITH_TRACING = "false";
-process.env.LANGCHAIN_TRACING_V2 = "false";
+// from the environment, as does @langchain/core, under either prefix;
+// her data never goes there.
+for (const name of [
+    "LANGSMITH_TRACING",
+    "LANGSMITH_TRACING_V2",
+    "LANGCHAIN_TRACING",
+    "LANGCHAIN_TRACING_V2",
+]) {
+    process.env[name] = "false";
+}
 
 export type Message = { role: "system" | "user"; content: string };
 export type Completion = {
