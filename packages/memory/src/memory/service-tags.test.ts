@@ -9,6 +9,7 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import * as filesystem from "node:fs/promises";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { RecallIndex } from "../recall/store.js";
@@ -228,6 +229,80 @@ describe("tagging", () => {
         );
         expect(warnings).toHaveLength(1);
         expect(await readFile(vocabulary, "utf8")).toBe("{ broken");
+    });
+
+    it("keeps tags when the vocabulary breaks during a review", async () => {
+        await writeVocabularyFile({ k00000001: concept("memory") });
+        await transcript(OTHER, [user("a"), reply("b")]);
+        await saved(OTHER, { tags: ["k00000001"] });
+        const fake = reviews({
+            ...NOTES,
+            tags: ["new"],
+            coined: [{ prefLabel: "new", scopeNote: "New." }],
+        });
+        const { memory } = setup({
+            vocabulary,
+            entries: [entry(OTHER, { tags: ["k00000001"] })],
+            call: async (request) => {
+                await writeFile(vocabulary, "{ broken");
+                return fake.fn(request);
+            },
+        });
+        memory.ready();
+        await until(
+            async () => (await sidecarOf(OTHER))?.title === NOTES.title,
+        );
+        await memory.stop();
+        expect((await sidecarOf(OTHER))?.tags).toEqual(["k00000001"]);
+        expect((await sidecarOf(OTHER))?.fields.tags).toBeUndefined();
+        expect(await readFile(vocabulary, "utf8")).toBe("{ broken");
+    });
+
+    it("changes neither file when the vocabulary write fails", async () => {
+        await writeVocabularyFile({ k00000001: concept("memory") });
+        await transcript(OTHER, [user("a"), reply("b")]);
+        await saved(OTHER, { title: "Before", tags: ["k00000001"] });
+        const beforeTags = await readFile(vocabulary, "utf8");
+        const beforeNotes = await readFile(sidecarPath(dir, OTHER), "utf8");
+        const rename = filesystem.rename;
+        const failed = spyOn(filesystem, "rename").mockImplementation(
+            async (from, to) => {
+                if (to === vocabulary)
+                    throw new Error("vocabulary write denied");
+                return rename(from, to);
+            },
+        );
+        const fake = reviews({
+            ...NOTES,
+            tags: ["new"],
+            coined: [{ prefLabel: "new", scopeNote: "New." }],
+        });
+        const { memory, notices } = setup({
+            call: fake.fn,
+            vocabulary,
+            entries: [entry(OTHER, null)],
+        });
+        try {
+            memory.ready();
+            await until(() =>
+                notices.some((notice) => notice.type === "warning"),
+            );
+            await memory.stop();
+            expect(
+                notices.some(
+                    (notice) =>
+                        notice.type === "warning" &&
+                        notice.message.includes("vocabulary write denied"),
+                ),
+            ).toBe(true);
+            expect(await readFile(vocabulary, "utf8")).toBe(beforeTags);
+            expect(await readFile(sidecarPath(dir, OTHER), "utf8")).toBe(
+                beforeNotes,
+            );
+        } finally {
+            failed.mockRestore();
+            await memory.stop();
+        }
     });
 
     it("writes no vocabulary that breaks the rules, nor tags from it", async () => {
