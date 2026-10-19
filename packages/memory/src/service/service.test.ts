@@ -26,6 +26,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { userLine } from "../bodies/fixtures.js";
 import { hookLogPath } from "../bodies/log.js";
 import { loadProfiles } from "../hosts/profiles.js";
+import { transcriptDir } from "../transcript.js";
 import {
     MAX_BODY,
     type RunningService,
@@ -113,6 +114,63 @@ describe("the memory service", () => {
         expect(ok.status).toBe(200);
     });
 
+    it("refuses a wrong, revoked or malformed token from beyond loopback", async () => {
+        await start(true);
+        const body = { host: "codex", session: "s", reason: "startup" };
+        const status = async (authorization: string) =>
+            (await post("/v1/block", body, { authorization })).status;
+        expect(await status(`Bearer ${token}`)).toBe(200);
+        expect(await status(`Bearer ${token}x`)).toBe(401);
+        expect(await status(`Bearer ${"a".repeat(token.length)}`)).toBe(401);
+        expect(await status("Bearer ")).toBe(401);
+        expect(await status(token)).toBe(401);
+        expect(await status(`bearer ${token}`)).toBe(401);
+        await tokens.revoke("laptop");
+        expect(await status(`Bearer ${token}`)).toBe(401);
+    });
+
+    it("judges loopback by the socket's peer, as the service is run", async () => {
+        // No override: the address of a real connection decides.
+        running = await startService({
+            env,
+            config,
+            profiles: await loadProfiles(),
+            tokens,
+            review: null,
+            port: 0,
+            listen: [],
+            warn: (message) => warned.push(message),
+        });
+        const response = await post("/v1/block", {
+            host: "codex",
+            session: "s",
+            reason: "startup",
+        });
+        expect(response.status).toBe(200);
+    });
+
+    it("answers a POST to a name it does not answer to with 421", async () => {
+        await start();
+        const response = await post(
+            "/v1/record",
+            {
+                host: "codex",
+                session: "s1",
+                events: [{ sourceId: "a", at: AT, kind: "user", text: "Hi" }],
+            },
+            { host: "evil.example" },
+        );
+        expect(response.status).toBe(421);
+        // Nothing was recorded.
+        const block = await post("/v1/block", {
+            host: "codex",
+            session: "s2",
+            reason: "startup",
+        });
+        expect((await block.json()).items).toEqual([]);
+        expect(existsSync(transcriptDir(env))).toBe(false);
+    });
+
     it("refuses a transcript path from beyond loopback, token or not", async () => {
         await start(true);
         const response = await post(
@@ -146,26 +204,37 @@ describe("the memory service", () => {
         expect((await fetch(`${running?.url}/v1/health`)).status).toBe(200);
     });
 
-    it("bounds a body that declares no length", async () => {
+    it("bounds a body that declares no length, on every route", async () => {
         await start();
-        const chunk = new TextEncoder().encode("x".repeat(1024 * 1024));
-        let sent = 0;
-        const body = new ReadableStream<Uint8Array>({
-            pull(controller) {
-                if (sent++ < 9) {
-                    controller.enqueue(chunk);
-                } else {
-                    controller.close();
-                }
-            },
-        });
-        const large = await fetch(`${running?.url}/v1/block`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body,
-            duplex: "half",
-        } as RequestInit);
-        expect(large.status).toBe(413);
+        for (const path of ["/v1/block", "/mcp"]) {
+            const chunk = new TextEncoder().encode("x".repeat(1024 * 1024));
+            let sent = 0;
+            const body = new ReadableStream<Uint8Array>({
+                pull(controller) {
+                    if (sent++ < 9) {
+                        controller.enqueue(chunk);
+                    } else {
+                        controller.close();
+                    }
+                },
+            });
+            const large = await fetch(`${running?.url}${path}`, {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                    accept: "application/json, text/event-stream",
+                },
+                body,
+                duplex: "half",
+            } as RequestInit);
+            expect({ path, status: large.status }).toEqual({
+                path,
+                status: 413,
+            });
+            expect(await large.json()).toEqual({
+                error: "the body is over 8 MiB",
+            });
+        }
         expect((await fetch(`${running?.url}/v1/health`)).status).toBe(200);
     });
 
@@ -262,6 +331,32 @@ describe("the memory service", () => {
         } finally {
             rmSync(second, { recursive: true, force: true });
         }
+    });
+
+    it("quotes a host's version in its warning, and remembers few", async () => {
+        await start();
+        const block = (hostVersion: string) =>
+            post("/v1/block", {
+                host: "codex",
+                hostVersion,
+                session: `s-${hostVersion}`,
+                reason: "startup",
+            });
+        await block("9.9\nwarn: forged");
+        expect(warned).toEqual([
+            'codex "9.9\\nwarn: forged" is not a version its profile was checked against',
+        ]);
+        warned.length = 0;
+        // Said once while recent; many others push it out of the memory.
+        await block("1.0.0");
+        await block("1.0.0");
+        expect(warned).toHaveLength(1);
+        for (let at = 0; at < 130; at++) {
+            await block(`2.${at}`);
+        }
+        warned.length = 0;
+        await block("1.0.0");
+        expect(warned).toHaveLength(1);
     });
 
     it("recalls for a prompt", async () => {

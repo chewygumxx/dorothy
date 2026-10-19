@@ -64,12 +64,15 @@ import { indexPath, RecallIndex } from "../recall/store.js";
 import { transcriptDir } from "../transcript.js";
 import { claudeConfigDir, confineTranscript } from "./confine.js";
 import { isLoopback } from "./loopback.js";
+import { Recent } from "./recent.js";
 import type { TokenStore } from "./tokens.js";
 
 export { isLoopback };
 
 export const MAX_BODY = 8 * 1024 * 1024;
 const TICK_MS = 15_000;
+const MAX_SESSIONS = 10_000;
+const MAX_VERSIONS = 128;
 const EXPORT_MS = 600_000;
 export type ServiceOptions = {
     env: Env;
@@ -209,7 +212,9 @@ export async function startService(
     });
     const frozen = new FrozenBlocks();
     const store: FactStore = { root, lock: index.lock, recorder, now };
-    const sessions = new Map<string, string>();
+    // Host sessions' conversations, found again through the index when
+    // one has gone; a host chooses the keys, so only the latest are kept.
+    const sessions = new Recent<string, string>(MAX_SESSIONS);
     // Conversations recorded and not yet extracted, by their last record.
     const idle = new Map<string, number>();
     // Projects recorded since the last export.
@@ -221,8 +226,8 @@ export async function startService(
             `reviews are off: ${options.noReviews ?? "no model is wired"}`,
         );
     }
-    // An unknown host version is served, and said once.
-    const versions = new Set<string>();
+    // An unknown host version is served, and said once, while recent.
+    const versions = new Recent<string, true>(MAX_VERSIONS);
     const noteVersion = (host: string, version: string | undefined) => {
         const checked = profiles.get(host)?.checked ?? [];
         const key = `${host} ${version}`;
@@ -233,9 +238,10 @@ export async function startService(
         ) {
             return;
         }
-        versions.add(key);
+        versions.set(key, true);
+        // The version is the client's text: quoted, it forges no line.
         warn(
-            `${host} ${version} is not a version its profile was checked against`,
+            `${host} ${JSON.stringify(version)} is not a version its profile was checked against`,
         );
     };
     const resolveProject = async (value: string) =>
@@ -414,6 +420,8 @@ export async function startService(
                         headers: { allow: "POST" },
                     });
                 }
+                // Read here, within the cap, as the other routes are.
+                const parsedBody = await bodyOf(request);
                 const project = url.searchParams.get("project");
                 const host = url.searchParams.get("host");
                 const server = createContractServer({
@@ -432,7 +440,7 @@ export async function startService(
                     enableJsonResponse: true,
                 });
                 await server.connect(transport);
-                return transport.handleRequest(request);
+                return transport.handleRequest(request, { parsedBody });
             }
             default:
                 return json(404, { error: `nothing at ${url.pathname}` });
