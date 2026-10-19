@@ -413,6 +413,22 @@ describe("Conversation", () => {
         expect(of(events, "turn-end")).toHaveLength(0);
     });
 
+    it("carries a failed turn's cost with its error", async () => {
+        const failed = {
+            ...(executionError(["network unavailable"]) as object),
+            total_cost_usd: 0.25,
+        } as unknown as SDKMessage;
+        const fake = fakeQuery([[delta("Checking..."), failed]]);
+        const { conversation, events } = started(fake);
+        conversation.send("hi");
+        await until(() => of(events, "error").length === 1);
+        expect(of(events, "error")[0]).toMatchObject({
+            message: "network unavailable",
+            partial: "Checking...",
+            stats: { costUsd: 0.25, sessionCostUsd: 0.25 },
+        });
+    });
+
     it("reports an execution error result with its errors", async () => {
         const fake = fakeQuery([[executionError(["one", "two"])]]);
         const { conversation, events } = started(fake);

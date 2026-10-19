@@ -426,8 +426,10 @@ export class Conversation implements ChatSession {
 
     // API failures (auth, rate limit, overload) do not throw: the turn ends
     // with an error result carrying the text instead of a reply.
+    // The failed turn still cost what the result says: it goes with the
+    // error, which the screen and the transcript account.
     #failTurn(message: ResultMessage): void {
-        this.#fail(failureText(message));
+        this.#fail(failureText(message), this.#stats(message));
     }
 
     #endTurn(message: ResultMessage): void {
@@ -511,16 +513,17 @@ export class Conversation implements ChatSession {
         }
     }
 
-    #fail(message: string): void {
+    #fail(message: string, stats?: TurnStats): void {
         this.#settleCalls();
         const partial = this.#reply;
         this.#reply = "";
         this.#interrupted = false;
-        this.#emit(
-            partial
-                ? { type: "error", message, partial }
-                : { type: "error", message },
-        );
+        this.#emit({
+            type: "error",
+            message,
+            ...(partial ? { partial } : {}),
+            ...(stats ? { stats } : {}),
+        });
     }
 
     #stats(result: ResultMessage): TurnStats {

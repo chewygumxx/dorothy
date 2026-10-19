@@ -75,7 +75,9 @@ export type ConversationEvent =
     // What a background call for memory cost, such as compaction's.
     | { type: "memory-cost"; usd: number }
     // partial: the reply streamed so far, when the turn died mid-reply.
-    | { type: "error"; message: string; partial?: string };
+    // stats: what the turn cost, when the model answered with a failure
+    // that still carried its usage.
+    | { type: "error"; message: string; partial?: string; stats?: TurnStats };
 
 export interface ChatSession {
     subscribe(listener: (event: ConversationEvent) => void): () => void;

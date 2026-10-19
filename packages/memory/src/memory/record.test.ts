@@ -77,6 +77,34 @@ describe("sessionRecorder", () => {
         expect(entries).toEqual(EXPECTED);
     });
 
+    it("records the cost of a failed turn after its partial reply", async () => {
+        const { entries, wrap } = recorded();
+        const inner = new FakeSession();
+        wrap(inner);
+        const stats = {
+            inputTokens: 10,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            outputTokens: 10,
+            ttftMs: null,
+            durationMs: 100,
+            costUsd: 0.25,
+            sessionCostUsd: 0.25,
+        };
+        inner.emit({ type: "delta", text: "Checking..." });
+        inner.emit({
+            type: "error",
+            message: "gone",
+            partial: "Checking...",
+            stats,
+        });
+        await settle();
+        expect(entries).toEqual([
+            { kind: "assistant", text: "Checking...", interrupted: true },
+            { kind: "stats", ...stats },
+        ]);
+    });
+
     it("records a remember as her own memory tool entry", async () => {
         const { entries, wrap } = recorded();
         const inner = new FakeSession();

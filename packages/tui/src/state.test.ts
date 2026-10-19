@@ -194,6 +194,28 @@ describe("reduce", () => {
         expect(state.live).toBe("");
     });
 
+    it("counts the cost of a turn that failed", () => {
+        let state = reduce(streaming(), {
+            type: "event",
+            event: { type: "turn-end", reply: "a", interrupted: false, stats },
+        });
+        state = reduce(state, { type: "sent", text: "again" });
+        state = reduce(state, {
+            type: "event",
+            event: {
+                type: "error",
+                message: "boom",
+                stats: { ...stats, costUsd: 0.25 },
+            },
+        });
+        expect(state.costUsd).toBeCloseTo(0.251);
+        state = reduce(state, {
+            type: "event",
+            event: { type: "error", message: "again" },
+        });
+        expect(state.costUsd).toBeCloseTo(0.251);
+    });
+
     it("keeps only the last RAW_LIMIT raw messages, with stable ids", () => {
         let state = initialState([]);
         for (let i = 0; i < RAW_LIMIT + 5; i++) {

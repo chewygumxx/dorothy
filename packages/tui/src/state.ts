@@ -413,6 +413,7 @@ function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
                     role: "error",
                     text: event.message,
                 }),
+                costUsd: state.costUsd + (event.stats?.costUsd ?? 0),
                 live: "",
                 streaming: false,
                 split: false,

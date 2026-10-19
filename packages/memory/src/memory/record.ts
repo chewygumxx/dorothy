@@ -92,12 +92,18 @@ export function sessionRecorder({
                 interrupted: event.interrupted,
             });
             record({ kind: "stats", ...event.stats });
-        } else if (event.type === "error" && event.partial) {
-            record({
-                kind: "assistant",
-                text: event.partial,
-                interrupted: true,
-            });
+        } else if (event.type === "error") {
+            if (event.partial) {
+                record({
+                    kind: "assistant",
+                    text: event.partial,
+                    interrupted: true,
+                });
+            }
+            // A failed turn still cost something.
+            if (event.stats) {
+                record({ kind: "stats", ...event.stats });
+            }
         }
     };
     return (session) => {
