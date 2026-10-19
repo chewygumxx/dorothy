@@ -17,17 +17,16 @@ import {
     lstat,
     mkdir,
     readdir,
-    readFile,
     realpath,
     rename,
     rm,
     stat,
-    writeFile,
 } from "node:fs/promises";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type { Env } from "@dorothy/core";
 import { z } from "zod";
 import { codeOf, UsageError } from "../errors.js";
+import { readRecord, writeAtomic } from "../files.js";
 
 const snapshotInfoSchema = z.object({
     source: z.string(),
@@ -178,7 +177,10 @@ export async function takeSnapshot(
             }
             throw error;
         }
-        await writeInfo(target, info);
+        await writeAtomic(
+            infoPath(target),
+            `${JSON.stringify(info, null, 4)}\n`,
+        );
         // The index was built from the old copy.
         await rm(join(target, "cache"), { recursive: true, force: true });
         await rm(old, { recursive: true, force: true });
@@ -188,54 +190,19 @@ export async function takeSnapshot(
     }
 }
 
-// Written whole or not at all: a torn record would refuse every command.
-async function writeInfo(work: string, info: SnapshotInfo): Promise<void> {
-    const path = infoPath(work);
-    const making = `${path}.${process.pid}.tmp`;
-    try {
-        await writeFile(making, `${JSON.stringify(info, null, 4)}\n`, {
-            mode: 0o600,
-        });
-        await rename(making, path);
-    } catch (error) {
-        await rm(making, { force: true });
-        throw error;
-    }
-}
-
 // The record of the snapshot a work directory holds. Only a missing file
 // is "no snapshot"; one that cannot be read or is no record is said so,
 // with how to mend it.
-export async function readSnapshot(work: string): Promise<SnapshotInfo> {
-    const path = infoPath(work);
-    let text: string;
-    try {
-        text = await readFile(path, "utf8");
-    } catch (error) {
-        const code = codeOf(error);
-        if (code === "ENOENT") {
-            throw new UsageError(
-                `${work} holds no snapshot: run \`bun run eval -- snapshot --from <data directory> --work ${work}\` first`,
-            );
-        }
-        throw new UsageError(
-            `cannot read ${path}: ${code ?? "failed"}; mend it, or take the snapshot again with --replace`,
-        );
-    }
-    let read: unknown;
-    try {
-        read = JSON.parse(text);
-    } catch {
-        throw new UsageError(
-            `${path} is not JSON; take the snapshot again with --replace`,
-        );
-    }
-    const parsed = snapshotInfoSchema.safeParse(read);
-    if (!parsed.success) {
-        const issue = parsed.error.issues[0];
-        throw new UsageError(
-            `${path} is not a snapshot record (${issue?.path.join(".") || "its form"}: ${issue?.message}); take the snapshot again with --replace`,
-        );
-    }
-    return parsed.data;
-}
+export const readSnapshot = (work: string): Promise<SnapshotInfo> =>
+    readRecord(infoPath(work), {
+        missing: `${work} holds no snapshot: run \`bun run eval -- snapshot --from <data directory> --work ${work}\` first`,
+        what: "a snapshot record",
+        again: "take the snapshot again with --replace",
+        check: (read) => {
+            const parsed = snapshotInfoSchema.safeParse(read);
+            const issue = parsed.success ? null : parsed.error.issues[0];
+            return parsed.success
+                ? parsed.data
+                : `${issue?.path.join(".") || "its form"}: ${issue?.message}`;
+        },
+    });

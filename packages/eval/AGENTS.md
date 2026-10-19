@@ -53,7 +53,11 @@ options declared and described for `--help`, its failures as
 
 ## Files
 
-- `main.ts`: the process around `runCli`, with the real terminal.
+- `main.ts`: the process around `runCli`, with the real terminal;
+  `editor.ts`: the owner's editor, whose failure to start is thrown.
+- `files.ts`: `readRecord`, which tells a missing JSON file from one
+  unreadable or invalid, and `writeAtomic`, which writes whole or not
+  at all.
 - `cli.ts`: the command table and `runCli`.
 - `command.ts`: `Io`, `Command` and the options' readers.
 - `snapshot/`: `takeSnapshot`, which refuses a work directory in the

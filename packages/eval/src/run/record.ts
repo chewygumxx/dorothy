@@ -14,7 +14,9 @@
 
 import { appendFile, open, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { UsageError } from "../errors.js";
+import { z } from "zod";
+import { codeOf, UsageError } from "../errors.js";
+import { readRecord } from "../files.js";
 import type { QuestionType } from "../questions/file.js";
 import type { SnapshotInfo } from "../snapshot/snapshot.js";
 
@@ -89,8 +91,16 @@ export async function readRecords(
     let text: string;
     try {
         text = await readFile(recordsPath(work, id), "utf8");
-    } catch {
-        return [];
+    } catch (error) {
+        // A run that has asked nothing has no file; any other failure must
+        // not look like one, or a resume would ask everything again.
+        const code = codeOf(error);
+        if (code === "ENOENT") {
+            return [];
+        }
+        throw new UsageError(
+            `cannot read ${recordsPath(work, id)}: ${code ?? "failed"}; mend it, or remove the run's directory`,
+        );
     }
     const records = new Map<string, RunRecord>();
     for (const line of text.split("\n")) {
@@ -139,12 +149,33 @@ export async function endRecords(work: string, id: string): Promise<void> {
 export const succeeded = (record: RunRecord) =>
     record.failures.length === 0 && record.retrieval.error === null;
 
-export async function readRunInfo(work: string, id: string): Promise<RunInfo> {
-    try {
-        return JSON.parse(
-            await readFile(runInfoPath(work, id), "utf8"),
-        ) as RunInfo;
-    } catch {
-        throw new UsageError(`no run ${id} in ${join(work, "runs")}`);
-    }
-}
+const runInfoSchema = z.object({
+    id: z.string(),
+    at: z.string(),
+    systems: z.array(z.string()),
+    budget: z.number(),
+    fullBudget: z.number(),
+    retrievalOnly: z.boolean(),
+    models: z.object({
+        answer: z.string().nullable(),
+        judge: z.string().nullable(),
+    }),
+    snapshot: z.object({ source: z.string(), at: z.string() }),
+    questions: z.number(),
+    questionIds: z.array(z.string()),
+});
+
+// A run's settings as run.json holds them, or why it does not.
+export const readRunInfo = (work: string, id: string): Promise<RunInfo> =>
+    readRecord(runInfoPath(work, id), {
+        missing: `no run ${id} in ${join(work, "runs")}`,
+        what: "a run record",
+        again: "remove the run's directory to start it again",
+        check: (read) => {
+            const parsed = runInfoSchema.safeParse(read);
+            const issue = parsed.success ? null : parsed.error.issues[0];
+            return parsed.success
+                ? (read as RunInfo)
+                : `${issue?.path.join(".") || "its form"}: ${issue?.message}`;
+        },
+    });

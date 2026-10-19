@@ -8,9 +8,9 @@
 //
 //
 
-import { readFile, writeFile } from "node:fs/promises";
 import { type Command, workOf } from "../command.js";
 import { UsageError } from "../errors.js";
+import { readRecord, writeAtomic } from "../files.js";
 import {
     checkRunId,
     readRecords,
@@ -29,12 +29,11 @@ export async function writeRunReport(
         await readRunInfo(work, id),
         await readRecords(work, id),
     );
-    await writeFile(
+    await writeAtomic(
         summaryPath(work, id),
         `${JSON.stringify(summary, null, 4)}\n`,
-        { mode: 0o600 },
     );
-    await writeFile(reportPath(work, id), reportOf(summary), { mode: 0o600 });
+    await writeAtomic(reportPath(work, id), reportOf(summary));
     return summary;
 }
 
@@ -46,15 +45,21 @@ function alike(a: Summary, b: Summary): boolean {
     return a.run.snapshot.at === b.run.snapshot.at && ids(a) === ids(b);
 }
 
-async function readSummary(work: string, id: string): Promise<Summary> {
-    try {
-        return JSON.parse(await readFile(summaryPath(work, id), "utf8"));
-    } catch {
-        throw new UsageError(
-            `run ${id} has no summary: finish it with \`bun run eval -- run --work ${work} --resume ${id}\``,
-        );
-    }
-}
+const isTable = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+
+// Only a summary not yet written is "unfinished"; one that cannot be read
+// or is no summary is said so.
+const readSummary = (work: string, id: string): Promise<Summary> =>
+    readRecord(summaryPath(work, id), {
+        missing: `run ${id} has no summary: finish it with \`bun run eval -- run --work ${work} --resume ${id}\``,
+        what: "a summary",
+        again: `write it again with \`bun run eval -- run --work ${work} --resume ${id}\``,
+        check: (read) =>
+            isTable(read) && isTable(read.run) && isTable(read.systems)
+                ? (read as unknown as Summary)
+                : "it lacks run or systems",
+    });
 
 export const compareCommand: Command = {
     summary: "compare two runs' summaries",

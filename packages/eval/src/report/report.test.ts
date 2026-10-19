@@ -9,7 +9,15 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+    appendFileSync,
+    mkdirSync,
+    readdirSync,
+    readFileSync,
+    rmSync,
+    writeFileSync,
+} from "node:fs";
+import { join } from "node:path";
 import { runCli } from "../cli.js";
 import {
     type RunInfo,
@@ -18,6 +26,7 @@ import {
     reportPath,
     runDir,
     runInfoPath,
+    summaryPath,
 } from "../run/record.js";
 import { fakeIo, tempRoot } from "../testing.js";
 import { writeRunReport } from "./command.js";
@@ -236,6 +245,64 @@ describe("the report", () => {
         );
     });
 
+    it("says a run without models asked none", () => {
+        const text = reportOf(
+            summarise(
+                {
+                    ...info("r1"),
+                    retrievalOnly: true,
+                    models: { answer: null, judge: null },
+                },
+                RECORDS,
+            ),
+        );
+        expect(text).toContain("; retrieval alone, with no model.");
+        expect(text).not.toContain("answering");
+    });
+
+    it("names the systems only one run has, and compares the rest", () => {
+        const before = summarise(info("r1"), RECORDS);
+        const after = summarise(
+            { ...info("r2"), systems: ["dorothy", "full"] },
+            [
+                ...RECORDS.filter((each) => each.system === "dorothy"),
+                record("q-1", "full"),
+            ],
+        );
+        const text = compareOf(before, after);
+        expect(text).toContain(
+            "Not compared: lexical only in r1; full only in r2.",
+        );
+        expect(text).toContain("| dorothy | all |");
+        expect(text).not.toContain("| lexical |");
+        expect(compareOf(before, before)).not.toContain("Not compared");
+    });
+
+    it("marks no noise on a difference of more than two questions", () => {
+        const many = (strict: boolean, n: number) =>
+            Array.from({ length: n }, (_, at) =>
+                record(`q-${at}`, "dorothy", {
+                    judged: {
+                        strict,
+                        lenient: strict,
+                        declined: false,
+                        stale: null,
+                    },
+                }),
+            );
+        const run = (id: string, strict: boolean) =>
+            summarise({ ...info(id), systems: ["dorothy"] }, many(strict, 20));
+        const text = compareOf(run("r1", false), run("r2", true));
+        expect(text).toContain(
+            "| dorothy | all | 0.0% (0/20) | 100.0% (20/20) | +100.0 points |",
+        );
+        expect(text).not.toContain("(noise)");
+        // No difference at all is still inside the noise.
+        expect(compareOf(run("r1", true), run("r2", true))).toContain(
+            "0.0 points (noise)",
+        );
+    });
+
     it("compares two runs, marking what two questions could undo", () => {
         const before = summarise(info("r1"), RECORDS);
         const after = summarise(info("r2"), [
@@ -324,6 +391,105 @@ describe("bun run eval -- compare", () => {
                     : "",
             );
         }
+    });
+
+    it("passes over a torn last line, as a resume does", async () => {
+        write("r1");
+        appendFileSync(
+            recordsPath(temp.root, "r1"),
+            '{"question": "q-9", "sys',
+        );
+        const summary = await writeRunReport(temp.root, "r1");
+        expect(summary.systems.dorothy?.all.n).toBe(3);
+        expect(summary.systems.lexical?.all.n).toBe(3);
+        expect(readFileSync(reportPath(temp.root, "r1"), "utf8")).toContain(
+            "# Memory evaluation r1",
+        );
+    });
+
+    it("writes a report whole or leaves the old one", async () => {
+        write("r1");
+        await writeRunReport(temp.root, "r1");
+        const before = readFileSync(reportPath(temp.root, "r1"), "utf8");
+        // A summary that cannot be replaced stops the report too.
+        rmSync(summaryPath(temp.root, "r1"));
+        mkdirSync(join(summaryPath(temp.root, "r1"), "held"), {
+            recursive: true,
+        });
+        await expect(writeRunReport(temp.root, "r1")).rejects.toThrow();
+        expect(readFileSync(reportPath(temp.root, "r1"), "utf8")).toBe(before);
+        expect(
+            readdirSync(runDir(temp.root, "r1")).filter((name) =>
+                name.includes("tmp"),
+            ),
+        ).toEqual([]);
+    });
+
+    it("tells a run that is missing from one that cannot be read", async () => {
+        await expect(writeRunReport(temp.root, "r1")).rejects.toThrow(
+            `no run r1 in ${join(temp.root, "runs")}`,
+        );
+        write("r1");
+        rmSync(runInfoPath(temp.root, "r1"));
+        mkdirSync(runInfoPath(temp.root, "r1"));
+        await expect(writeRunReport(temp.root, "r1")).rejects.toThrow(
+            `cannot read ${runInfoPath(temp.root, "r1")}: EISDIR`,
+        );
+        rmSync(runInfoPath(temp.root, "r1"), { recursive: true });
+        writeFileSync(runInfoPath(temp.root, "r1"), '{"id": "r1"');
+        await expect(writeRunReport(temp.root, "r1")).rejects.toThrow(
+            `${runInfoPath(temp.root, "r1")} is not JSON`,
+        );
+        writeFileSync(runInfoPath(temp.root, "r1"), '{"id": "r1"}');
+        await expect(writeRunReport(temp.root, "r1")).rejects.toThrow(
+            `${runInfoPath(temp.root, "r1")} is not a run record`,
+        );
+    });
+
+    it("does not read an unreadable records file as an empty run", async () => {
+        write("r1");
+        rmSync(recordsPath(temp.root, "r1"));
+        mkdirSync(recordsPath(temp.root, "r1"));
+        await expect(writeRunReport(temp.root, "r1")).rejects.toThrow(
+            `cannot read ${recordsPath(temp.root, "r1")}: EISDIR`,
+        );
+        rmSync(recordsPath(temp.root, "r1"), { recursive: true });
+        // A run that has asked nothing yet has no records file.
+        expect(
+            (await writeRunReport(temp.root, "r1")).systems.dorothy?.all.n,
+        ).toBe(0);
+    });
+
+    it("tells a summary that cannot be read from one not yet written", async () => {
+        write("r1");
+        await writeRunReport(temp.root, "r1");
+        const path = summaryPath(temp.root, "r1");
+        writeFileSync(path, "[1");
+        const { io, err } = fakeIo();
+        expect(
+            await runCli(["compare", "--work", temp.root, "r1", "r1"], io),
+        ).toBe(1);
+        expect(err.join("")).toContain(`${path} is not JSON`);
+        expect(err.join("")).not.toContain("has no summary");
+        writeFileSync(path, "{}");
+        const second = fakeIo();
+        expect(
+            await runCli(
+                ["compare", "--work", temp.root, "r1", "r1"],
+                second.io,
+            ),
+        ).toBe(1);
+        expect(second.err.join("")).toContain(`${path} is not a summary`);
+        rmSync(path);
+        mkdirSync(path);
+        const third = fakeIo();
+        expect(
+            await runCli(
+                ["compare", "--work", temp.root, "r1", "r1"],
+                third.io,
+            ),
+        ).toBe(1);
+        expect(third.err.join("")).toContain(`cannot read ${path}: EISDIR`);
     });
 
     it("says how to finish a run with no summary", async () => {
