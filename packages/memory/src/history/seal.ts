@@ -8,7 +8,9 @@
 //
 //
 
-const MAGIC = "dorothy-sealed 1";
+const PREFIX = "dorothy-sealed ";
+const VERSION = "1";
+const MAGIC = `${PREFIX}${VERSION}`;
 const NONCE_BYTES = 12;
 const KEY_BYTES = 32;
 
@@ -50,6 +52,9 @@ export async function seal(
     key: Uint8Array,
     nonce: Uint8Array = crypto.getRandomValues(new Uint8Array(NONCE_BYTES)),
 ): Promise<Uint8Array> {
+    if (nonce.length !== NONCE_BYTES) {
+        throw new Error(`the nonce must be ${NONCE_BYTES} bytes`);
+    }
     const header = encoder.encode(`${MAGIC}\n${base64(nonce)}\n`);
     const sealed = new Uint8Array(
         await crypto.subtle.encrypt(
@@ -73,13 +78,13 @@ export async function unseal(
     const magic = Buffer.from(sealed.subarray(0, Math.max(first, 0))).toString(
         "utf8",
     );
-    if (second === -1 || !magic.startsWith("dorothy-sealed ")) {
+    if (second === -1 || !magic.startsWith(PREFIX)) {
         return { ok: false, reason: "it is not a sealed bundle" };
     }
     if (magic !== MAGIC) {
         return {
             ok: false,
-            reason: `it is sealed as version ${magic.slice("dorothy-sealed ".length)}, not 1`,
+            reason: `it is sealed as version ${magic.slice(PREFIX.length)}, not ${VERSION}`,
         };
     }
     const nonce = Buffer.from(

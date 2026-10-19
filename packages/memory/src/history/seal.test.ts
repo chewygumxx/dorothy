@@ -41,6 +41,37 @@ describe("keys", () => {
 });
 
 describe("seal", () => {
+    it("refuses a nonce of another length before encrypting", async () => {
+        await expect(seal(BUNDLE, KEY, new Uint8Array(16))).rejects.toThrow(
+            "12 bytes",
+        );
+    });
+
+    it("authenticates a differently encoded header with the same nonce", async () => {
+        const bytes = await seal(BUNDLE, KEY, new Uint8Array(12));
+        const first = bytes.indexOf(10);
+        const second = bytes.indexOf(10, first + 1);
+        const header = new TextEncoder().encode(
+            `${text(bytes.subarray(0, second))}=\n`,
+        );
+        const changed = new Uint8Array(
+            header.length + bytes.length - second - 1,
+        );
+        changed.set(header);
+        changed.set(bytes.subarray(second + 1), header.length);
+        expect(
+            Buffer.from(
+                text(changed.subarray(first + 1, header.length - 1)),
+                "base64",
+            ),
+        ).toEqual(Buffer.alloc(12));
+        expect((await unseal(changed, KEY)).ok).toBe(false);
+    });
+
+    it("reports invalid key lengths without rejecting unseal", async () => {
+        const sealed = await seal(BUNDLE, KEY);
+        expect((await unseal(sealed, new Uint8Array(16))).ok).toBe(false);
+    });
     it("opens what it sealed, with the same key", async () => {
         const sealed = await seal(BUNDLE, KEY);
         expect(text(sealed.subarray(0, 17))).toBe("dorothy-sealed 1\n");
