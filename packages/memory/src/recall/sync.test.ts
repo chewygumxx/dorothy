@@ -8,7 +8,7 @@
 //
 //
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import {
     appendFile,
     chmod,
@@ -26,6 +26,7 @@ import { newPhrase } from "@dorothy/core";
 import { PERSONAL, putFact } from "../facts/store.js";
 import { EMPTY_SIDECAR, type Sidecar, sidecarPath } from "../memory/sidecar.js";
 import type { Concept } from "../memory/vocabulary.js";
+import * as vocabularies from "../memory/vocabulary.js";
 import { RecallIndex } from "./store.js";
 import {
     readsByTarget,
@@ -499,6 +500,85 @@ describe("the vocabulary", () => {
         expect(state().broken).not.toBeNull();
         await rm(path);
         await syncIndex(index, dir, Date.now(), path);
+        expect(state()).toEqual({ mtime: null, broken: null });
+    });
+
+    it("rolls back all tag tables and state when copying fails", async () => {
+        await write({ k00000001: concept("one") });
+        await syncIndex(index, dir, Date.now(), path);
+        const before = [
+            "concepts",
+            "labels",
+            "broader",
+            "merged",
+            "vocabulary",
+        ].map((table) => rows(`SELECT * FROM ${table}`));
+        index.db.run(
+            "CREATE TEMP TRIGGER reject_tag BEFORE INSERT ON concepts WHEN NEW.label = 'two' BEGIN SELECT RAISE(ABORT, 'fixture sync failed'); END",
+        );
+        await write({
+            k00000001: concept("two"),
+            k00000002: concept("child", { broader: ["k00000001"] }),
+        });
+        const later = new Date(Date.now() + 5000);
+        await utimes(path, later, later);
+        expect(
+            (await syncIndex(index, dir, Date.now(), path)).join("\n"),
+        ).toContain("fixture sync failed");
+        expect(
+            ["concepts", "labels", "broader", "merged", "vocabulary"].map(
+                (table) => rows(`SELECT * FROM ${table}`),
+            ),
+        ).toEqual(before);
+        index.db.run("DROP TRIGGER reject_tag");
+        expect(await syncIndex(index, dir, Date.now(), path)).toEqual([]);
+        expect(rows("SELECT label FROM concepts ORDER BY label")).toEqual([
+            { label: "child" },
+            { label: "two" },
+        ]);
+    });
+
+    it("remembers an unparseable file's mtime until it changes", async () => {
+        const at = new Date("2026-10-07T12:00:00Z");
+        await writeFile(path, "{ broken");
+        await utimes(path, at, at);
+        await syncIndex(index, dir, Date.now(), path);
+        expect(state()).toEqual({
+            mtime: at.getTime(),
+            broken: "it is not JSON",
+        });
+        await write({ k00000001: concept("repaired") });
+        await utimes(path, at, at);
+        await syncIndex(index, dir, Date.now(), path);
+        expect(state().broken).toBe("it is not JSON");
+        expect(rows("SELECT label FROM concepts")).toEqual([]);
+        const later = new Date(at.getTime() + 1000);
+        await utimes(path, later, later);
+        await syncIndex(index, dir, Date.now(), path);
+        expect(state().broken).toBeNull();
+        expect(rows("SELECT label FROM concepts")).toEqual([
+            { label: "repaired" },
+        ]);
+    });
+
+    it("repairs state next sync when the file vanishes after stat", async () => {
+        await write({ k00000001: concept("one") });
+        const read = vocabularies.readVocabulary;
+        const vanished = spyOn(
+            vocabularies,
+            "readVocabulary",
+        ).mockImplementation(async (file) => {
+            await rm(file);
+            return read(file);
+        });
+        try {
+            expect(await syncIndex(index, dir, Date.now(), path)).toEqual([]);
+        } finally {
+            vanished.mockRestore();
+        }
+        expect(state().mtime).not.toBeNull();
+        expect(rows("SELECT label FROM concepts")).toEqual([]);
+        expect(await syncIndex(index, dir, Date.now(), path)).toEqual([]);
         expect(state()).toEqual({ mtime: null, broken: null });
     });
 
