@@ -277,6 +277,61 @@ describe("the git binary engine's repository", () => {
 });
 
 describe("credentialHelpers", () => {
+    it.each(["push", "fetch"])(
+        "keeps URL scopes and resets during %s",
+        async (operation) => {
+            const dir = tempRoot();
+            const wanted = join(dir, "scoped");
+            const unwanted = join(dir, "global-or-other-url");
+            const config = join(dir, "gitconfig");
+            const server = Bun.serve({
+                port: 0,
+                hostname: "127.0.0.1",
+                fetch: () =>
+                    new Response("no", {
+                        status: 401,
+                        headers: {
+                            "WWW-Authenticate": 'Basic realm="fixture"',
+                        },
+                    }),
+            });
+            try {
+                const url = `http://127.0.0.1:${server.port}/repo.git`;
+                writeFileSync(
+                    config,
+                    [
+                        "[credential]",
+                        `helper = "!f() { touch ${unwanted}; }; f"`,
+                        `[credential "http://127.0.0.1:${server.port}"]`,
+                        "helper =",
+                        `helper = "!f() { touch ${wanted}; }; f"`,
+                        '[credential "https://unrelated.invalid"]',
+                        `helper = "!f() { touch ${unwanted}; }; f"`,
+                    ].join("\n"),
+                );
+                const repo = binaryRepo(join(dir, "data"), {
+                    env: { ...TEST_ENV, GIT_CONFIG_GLOBAL: config },
+                });
+                await repo.init();
+                await repo.appendSealed(
+                    "bundles/000001.enc",
+                    new Uint8Array([1]),
+                    "readme",
+                    "seal 1",
+                );
+                await repo.setRemote("mirror", url);
+                await expect(
+                    operation === "push"
+                        ? repo.push("mirror", "sealed", null)
+                        : repo.fetch(url, "sealed", null),
+                ).rejects.toThrow();
+                expect(existsSync(wanted)).toBe(true);
+                expect(existsSync(unwanted)).toBe(false);
+            } finally {
+                await server.stop(true);
+            }
+        },
+    );
     it("reads the user's helpers from their global configuration", async () => {
         const config = join(tempRoot(), "gitconfig");
         writeFileSync(
@@ -288,7 +343,10 @@ describe("credentialHelpers", () => {
                 ...process.env,
                 GIT_CONFIG_GLOBAL: config,
             }),
-        ).toEqual(["store", "cache --timeout=60"]);
+        ).toEqual([
+            ["credential.helper", "store"],
+            ["credential.helper", "cache --timeout=60"],
+        ]);
         expect(
             await credentialHelpers({
                 ...process.env,

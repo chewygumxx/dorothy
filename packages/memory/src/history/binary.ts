@@ -89,10 +89,17 @@ export function isolatedEnv(env: Env): Record<string, string> {
 // their global configuration, for pushing and fetching only.
 export async function credentialHelpers(
     env: Env = process.env,
-): Promise<string[]> {
+): Promise<[string, string][]> {
     try {
         const proc = Bun.spawn(
-            ["git", "config", "--global", "--get-all", "credential.helper"],
+            [
+                "git",
+                "config",
+                "--global",
+                "--null",
+                "--get-regexp",
+                "^credential(\\..*)?\\.helper$",
+            ],
             {
                 env: Object.fromEntries(
                     Object.entries(env).filter(
@@ -108,7 +115,18 @@ export async function credentialHelpers(
             new Response(proc.stdout).text(),
             proc.exited,
         ]);
-        return code === 0 ? out.split("\n").filter((line) => line !== "") : [];
+        return code === 0
+            ? out
+                  .split("\0")
+                  .filter(Boolean)
+                  .map((entry) => {
+                      const separator = entry.indexOf("\n");
+                      return [
+                          entry.slice(0, separator),
+                          entry.slice(separator + 1),
+                      ];
+                  })
+            : [];
     } catch {
         return [];
     }
@@ -148,7 +166,7 @@ export function binaryRepo(
         GIT_CEILING_DIRECTORIES: dirname(root),
         GIT_LITERAL_PATHSPECS: "1",
     };
-    let helpers: Promise<string[]> | null = null;
+    let helpers: ReturnType<typeof credentialHelpers> | null = null;
 
     const run = async (
         args: readonly string[],
@@ -215,8 +233,8 @@ export function binaryRepo(
             ...sshBatch(env),
             GIT_CONFIG_COUNT: String(found.length),
         };
-        found.forEach((helper, index) => {
-            extra[`GIT_CONFIG_KEY_${index}`] = "credential.helper";
+        found.forEach(([key, helper], index) => {
+            extra[`GIT_CONFIG_KEY_${index}`] = key;
             extra[`GIT_CONFIG_VALUE_${index}`] = helper;
         });
         return extra;
