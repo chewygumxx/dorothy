@@ -439,6 +439,51 @@ function takeTurn(event: unknown, parsing: Parsing): void {
     parsing.reply = turn.role === "assistant" ? resumed : null;
 }
 
+const TAIL_CHUNK = 64 * 1024;
+
+// A writer killed mid-append leaves a line that was never a whole event.
+// Cuts it off, so what is appended next starts a line of its own; true
+// where something was cut, false for a whole file or none. Only the last
+// line is read, and the caller holds the transcript's one lock.
+export async function cutTornTail(path: string): Promise<boolean> {
+    let handle: FileHandle;
+    try {
+        handle = await open(path, "r+");
+    } catch (error) {
+        if ((error as { code?: unknown }).code === "ENOENT") {
+            return false;
+        }
+        throw error;
+    }
+    try {
+        const { size } = await handle.stat();
+        const chunk = Buffer.alloc(Math.min(size, TAIL_CHUNK));
+        let end = size;
+        while (end > 0) {
+            const start = Math.max(0, end - chunk.length);
+            const { bytesRead } = await handle.read(
+                chunk,
+                0,
+                end - start,
+                start,
+            );
+            const newline = chunk.subarray(0, bytesRead).lastIndexOf(0x0a);
+            if (newline >= 0) {
+                const whole = start + newline + 1;
+                if (whole < size) {
+                    await handle.truncate(whole);
+                }
+                return whole < size;
+            }
+            end = start;
+        }
+        await handle.truncate(0);
+        return size > 0;
+    } finally {
+        await handle.close();
+    }
+}
+
 // Chats are private: new transcripts are the user's alone.
 const openAppend = (path: string) => open(path, "a", 0o600);
 

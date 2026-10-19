@@ -21,6 +21,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { describeLookup } from "@dorothy/core";
 import {
+    cutTornTail,
     parseTranscript,
     readTranscript,
     sourceOf,
@@ -418,6 +419,59 @@ describe("TranscriptWriter.flushed", () => {
             writer.append({ kind: "user", text: "late" }),
         ).rejects.toThrow();
         await expect(writer.flushed()).resolves.toBeUndefined();
+    });
+});
+
+describe("cutTornTail", () => {
+    const cut = async (text: string | null) => {
+        const path = join(dir, "chat.jsonl");
+        if (text !== null) {
+            await writeFile(path, text);
+        }
+        const cutOff = await cutTornTail(path);
+        return {
+            cutOff,
+            left: text === null ? null : await readFile(path, "utf8"),
+        };
+    };
+
+    it("cuts back to the last whole line", async () => {
+        expect(await cut('{"a":1}\n{"b":2}\n{"c"')).toEqual({
+            cutOff: true,
+            left: '{"a":1}\n{"b":2}\n',
+        });
+    });
+
+    it("cuts a tail that parses but was not ended", async () => {
+        expect(await cut('{"a":1}\n{"b":2}')).toEqual({
+            cutOff: true,
+            left: '{"a":1}\n',
+        });
+    });
+
+    it("cuts a tail longer than it reads at once, and a file of one", async () => {
+        const long = "x".repeat(200 * 1024);
+        expect(await cut(`{"a":1}\n${long}`)).toEqual({
+            cutOff: true,
+            left: '{"a":1}\n',
+        });
+        expect(await cut(long)).toEqual({ cutOff: true, left: "" });
+    });
+
+    it("leaves a whole file, an empty one and a missing one", async () => {
+        expect(await cut('{"a":1}\n')).toEqual({
+            cutOff: false,
+            left: '{"a":1}\n',
+        });
+        expect(await cut("")).toEqual({ cutOff: false, left: "" });
+        expect(await cut(null)).toEqual({ cutOff: false, left: null });
+    });
+
+    it("counts a multibyte character by its bytes", async () => {
+        expect(await cut('{"a":"é"}\n{"b":"é')).toEqual({
+            cutOff: true,
+            left: '{"a":"é"}\n',
+        });
     });
 });
 

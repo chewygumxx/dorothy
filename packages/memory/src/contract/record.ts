@@ -25,6 +25,7 @@ import type { Recorder } from "../memory/sidecar.js";
 import type { RecallIndex } from "../recall/store.js";
 import { sessionPhrase } from "../recall/sync.js";
 import {
+    cutTornTail,
     type TranscriptEntry,
     TranscriptWriter,
     toolEntry,
@@ -133,7 +134,9 @@ async function heldIn(
                 from,
             );
             const text = bytes.subarray(0, bytesRead).toString("utf8");
-            for (const id of recordedUuids(text).uuids) {
+            // A line cut short is no event held: a write will cut it off.
+            const whole = text.slice(0, text.lastIndexOf("\n") + 1);
+            for (const id of recordedUuids(whole).uuids) {
                 ids.add(id);
             }
         }
@@ -199,6 +202,11 @@ export async function acceptRecord(
             }
         }
         if (fresh.length > 0) {
+            // A writer killed mid-append left a line that would swallow
+            // the first event written after it.
+            if (await cutTornTail(path)) {
+                cache.delete(path);
+            }
             const writer = await TranscriptWriter.open(path, deps.now);
             try {
                 if (starting) {

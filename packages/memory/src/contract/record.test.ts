@@ -23,7 +23,11 @@ import { join } from "node:path";
 import type { Env, RecordEvent, RecordRequest } from "@dorothy/core";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { syncIndex } from "../recall/sync.js";
-import { transcriptDir, transcriptPath } from "../transcript.js";
+import {
+    readTranscript,
+    transcriptDir,
+    transcriptPath,
+} from "../transcript.js";
 import { ContractError } from "./errors.js";
 import { acceptRecord, type RecordDeps, sessionKey } from "./record.js";
 
@@ -201,6 +205,56 @@ describe("acceptRecord", () => {
             const again = await acceptRecord(request([user("t1")]), shared);
             expect(again).toMatchObject({ accepted: 0, duplicates: 1 });
         });
+    });
+
+    it("cuts a torn tail before it appends, so the event reads back", async () => {
+        const path = () => transcriptPath(PHRASE, env);
+        const shared = deps({ held: new Map() });
+        await acceptRecord(request([user("a", "First")]), shared);
+        appendFileSync(path(), '{"v":1,"kind":"user","text":"torn');
+        const result = await acceptRecord(
+            request([user("b", "Second")]),
+            shared,
+        );
+        expect(result).toEqual({ accepted: 1, duplicates: 0, through: "b" });
+        const read = await readTranscript(path());
+        expect(read.turns.map((turn) => turn.text)).toEqual([
+            "First",
+            "Second",
+        ]);
+        expect(read.skipped).toBe(0);
+        // A resend is found after the cut, a new event added.
+        const again = await acceptRecord(
+            request([user("b", "Second"), user("c", "Third")]),
+            shared,
+        );
+        expect(again).toEqual({ accepted: 1, duplicates: 1, through: "c" });
+        expect((await readTranscript(path())).turns).toHaveLength(3);
+    });
+
+    it("does not count a tail left unended as recorded", async () => {
+        const path = () => transcriptPath(PHRASE, env);
+        const shared = deps({ held: new Map() });
+        await acceptRecord(request([user("a", "First")]), shared);
+        // Whole JSON, but the writer died before its newline.
+        appendFileSync(
+            path(),
+            JSON.stringify({
+                v: 1,
+                kind: "user",
+                at: AT,
+                text: "Second",
+                sourceUuid: "b",
+            }),
+        );
+        const result = await acceptRecord(
+            request([user("b", "Second")]),
+            shared,
+        );
+        expect(result).toEqual({ accepted: 1, duplicates: 0, through: "b" });
+        expect(
+            (await readTranscript(path())).turns.map((turn) => turn.text),
+        ).toEqual(["First", "Second"]);
     });
 
     it("writes the session's header again where its file is gone", async () => {

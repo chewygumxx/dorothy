@@ -17,13 +17,13 @@
 // and the change committed to history, as chat commits a turn. A line
 // it cannot read halts the reading and is kept aside.
 
-import { readdir, readFile, truncate } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Env, newPhrase } from "@dorothy/core";
 import type { HistoryHandle, Lock } from "../memory/sidecar.js";
 import type { RecallIndex } from "../recall/store.js";
 import { sessionPhrase } from "../recall/sync.js";
-import { TranscriptWriter, transcriptDir } from "../transcript.js";
+import { cutTornTail, TranscriptWriter, transcriptDir } from "../transcript.js";
 import { type LinesRead, readLines } from "./claude-code.js";
 import type { HookLog } from "./log.js";
 import { keepHalt, keepNewType, resolveHalt } from "./unread.js";
@@ -127,21 +127,15 @@ async function scanFor(dir: string, session: string): Promise<string | null> {
     return null;
 }
 
-// A writer killed mid-append leaves a line that was never a whole
-// event: it is cut off before anything is appended.
-async function cutTornTail(path: string): Promise<string> {
-    let text: string;
+// A transcript's text, its torn tail cut off before anything is
+// appended.
+async function readCut(path: string): Promise<string> {
+    await cutTornTail(path);
     try {
-        text = await readFile(path, "utf8");
+        return await readFile(path, "utf8");
     } catch {
         return "";
     }
-    if (text === "" || text.endsWith("\n")) {
-        return text;
-    }
-    const whole = text.slice(0, text.lastIndexOf("\n") + 1);
-    await truncate(path, Buffer.byteLength(whole));
-    return whole;
 }
 
 export async function recordSession(
@@ -261,7 +255,7 @@ async function resumeFrom(
     if (found === null) {
         return { recorded: new Set(), joined: false, from: 0 };
     }
-    const own = await cutTornTail(join(dir, `${found}.jsonl`));
+    const own = await readCut(join(dir, `${found}.jsonl`));
     const { uuids, last } = recordedUuids(own);
     const at =
         last === null
