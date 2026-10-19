@@ -367,6 +367,31 @@ describe("open reads a conversation's turns from from through through", () => {
     });
 });
 
+describe("brief keeps to the connection's project", () => {
+    it("refuses another project than a bound connection's", async () => {
+        await client.close();
+        await connect(MINE);
+        const { isError, text } = await call("brief", { project: OTHER });
+        expect(isError).toBe(true);
+        expect(text).toBe("that project is outside this session's scope");
+    });
+
+    it("briefs a bound connection on its own project, named or not", async () => {
+        await client.close();
+        await connect(MINE);
+        for (const args of [{}, { project: MINE }]) {
+            const { isError, text } = await call("brief", args);
+            expect(isError).toBe(false);
+            expect(JSON.parse(text).text).toContain("likes-tea");
+        }
+    });
+
+    it("takes the call's project where the connection has none", async () => {
+        const { isError } = await call("brief", { project: OTHER });
+        expect(isError).toBe(false);
+    });
+});
+
 describe("open keeps to the connection's scope", () => {
     const own = phrase(1);
     const elsewhere = phrase(2);

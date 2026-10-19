@@ -88,7 +88,8 @@ gives back, and the service that speaks it. The spec is
   and names what else it finds there.
 - A hook request's `project` is a project's id as the client makes it,
   or a 400; the tools take an id or a path. `brief` keeps to the named
-  host's `blockBudget`, as the opening block does.
+  host's `blockBudget`, as the opening block does, and, like `open` and
+  `remember`, refuses (403) a project other than its connection's own.
 - With reviews off the service still takes idle conversations off its
   list, and writes why to its log (`claude-hook.log`).
 

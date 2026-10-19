@@ -165,8 +165,8 @@ export function createContractServer(deps: ToolDeps): McpServer {
     );
     const projectOf = async (value: string | undefined) =>
         value === undefined ? deps.project : deps.resolveProject(value);
-    // What open reads and remember writes keeps to a connection's own
-    // project: the service enforces scope, not the model's argument. A
+    // What brief, open and remember read and write keeps to a connection's
+    // own project: the service enforces scope, not the model's argument. A
     // connection with none, as a host with no directory has, names one.
     const ownProjectOf = async (value: string | undefined) => {
         const project = await projectOf(value);
@@ -209,7 +209,7 @@ export function createContractServer(deps: ToolDeps): McpServer {
             answer("brief", async () =>
                 buildBlock(
                     {
-                        project: await projectOf(input.project),
+                        project: await ownProjectOf(input.project),
                         budget: Math.min(
                             input.budget ?? BRIEF_BUDGET,
                             hostBudget ?? Number.POSITIVE_INFINITY,
