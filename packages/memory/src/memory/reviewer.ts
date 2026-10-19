@@ -40,6 +40,7 @@ import {
     type HistoryHandle,
     type Lock,
     markFailed,
+    markReviewed,
     mergeReview,
     ownsAll,
     readSidecar,
@@ -346,8 +347,9 @@ export class Reviewer {
             this.#options.dir,
             phrase,
             async (latest) => {
-                if (latest === null || latest.hidden) return null;
-                const marked = { ...latest, reviewedThrough: turns };
+                if (latest?.hidden) return null;
+                const marked = markReviewed(latest, turns);
+                if (marked === null) return null;
                 const path = this.#options.vocabulary;
                 if (path === null) return marked;
                 const read = await readVocabulary(path);
