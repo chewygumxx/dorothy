@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-18
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: packages/cli/AGENTS.md
 description: >-
@@ -70,14 +70,18 @@ lazy.
   With `[memory] enabled` it also notes the launch (`DOROTHY_LAUNCH`),
   passes `Stop` and `SessionEnd` hooks running `dorothy --claude-hook`
   (`hookSettings`) and, for a new session, `--session-id`
-  (`claudeSession`); the block leaves out a session resumed by id.
+  (`claudeSession`: a resume decides wherever a `--session-id`
+  stands, `-r<id>` counts, and a free-text flag's value is no flag);
+  the block leaves out a session resumed by id. It sets
+  `DOROTHY_ANTHROPIC_BASE_URL` from the user's `ANTHROPIC_BASE_URL`.
   `runClaude` runs it for `--claude`, forwards `SIGTERM` and `SIGHUP`,
   ignores `SIGINT` (the terminal sends it to `claude` too), and exits
   with `claude`'s code. This program runs again as `bun --no-env-file`,
   so a project's `.env` never reaches a hook, a catch-up or the recall
   server. Before `claude` starts it starts a detached catch-up of each
   launch a killed `dorothy` left behind, memory off or on, and says what
-  hooks left to tell; once `claude` exits, a catch-up of its own launch.
+  hooks left to tell; once `claude` exits, or fails to start, a
+  catch-up of its own launch, whatever else its teardown throws.
   From a package script (`bun run dev`), `userShell` gives `claude` the
   directory it was run from and the `PATH` before Bun prepended its
   `node_modules/.bin` entries.
@@ -91,10 +95,12 @@ lazy.
   `runClaudeHook` the environment `claude` gave the hook, in which it
   finds the launch, and reviews: `process.env` loses the gateway's URL,
   `ENABLE_TOOL_SEARCH`, `DOROTHY_LAUNCH`, `CLAUDECODE` and every
-  `CLAUDE_CODE_` variable (`reviewEnv`), then Dorothy's `.env` is loaded
+  `CLAUDE_CODE_` variable (`reviewEnv`), but for the user's own base
+  URL, which the launch passes on as `DOROTHY_ANTHROPIC_BASE_URL` and
+  reviews take as `ANTHROPIC_BASE_URL`; then Dorothy's `.env` is loaded
   by path from this checkout (`loadDotenv`), the console silenced around
-  the load and a failure logged by its code alone, and the agent only
-  for a hook or a catch-up. A hook and a catch-up log whatever fails,
+  the load and a failure logged by its code alone, and the agent
+  loaded when a review asks. A hook and a catch-up log whatever fails,
   through memory's `hookLog`, and always exit 0.
 - `index.ts` also runs `--serve` (memory's service through
   `@dorothy/memory/service`, with reviews from the agent, Claude Code's
