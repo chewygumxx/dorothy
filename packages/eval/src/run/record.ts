@@ -75,7 +75,8 @@ export const reportPath = (work: string, id: string) =>
     join(runDir(work, id), "report.md");
 
 // A line cut short by an interrupted write is passed over; its question
-// is asked again on resume.
+// is asked again on resume. A question asked again leaves two records
+// for a system; the last stands.
 export async function readRecords(
     work: string,
     id: string,
@@ -86,19 +87,24 @@ export async function readRecords(
     } catch {
         return [];
     }
-    const records: RunRecord[] = [];
+    const records = new Map<string, RunRecord>();
     for (const line of text.split("\n")) {
         if (line.trim() === "") {
             continue;
         }
         try {
-            records.push(JSON.parse(line) as RunRecord);
+            const record = JSON.parse(line) as RunRecord;
+            records.set(`${record.question}\t${record.system}`, record);
         } catch {
             // Cut short.
         }
     }
-    return records;
+    return [...records.values()];
 }
+
+// Whether a record stands as asked: no failure, no retrieval error.
+export const succeeded = (record: RunRecord) =>
+    record.failures.length === 0 && record.retrieval.error === null;
 
 export async function readRunInfo(work: string, id: string): Promise<RunInfo> {
     try {

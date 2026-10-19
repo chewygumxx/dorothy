@@ -30,7 +30,7 @@ import {
     stubModels,
     tempRoot,
 } from "../testing.js";
-import { readRecords, reportPath, summaryPath } from "./record.js";
+import { readRecords, recordsPath, reportPath, summaryPath } from "./record.js";
 import { newRunInfo, runEvaluation } from "./run.js";
 
 let temp: ReturnType<typeof tempRoot>;
@@ -349,5 +349,116 @@ describe("a run", () => {
         } finally {
             corpus.close();
         }
+    });
+
+    describe("on resume", () => {
+        const settings = {
+            systems: ["lexical"],
+            budget: 8000,
+            fullBudget: 400_000,
+            retrievalOnly: false,
+        };
+        const lines = (id: string) =>
+            readFileSync(recordsPath(work, id), "utf8")
+                .split("\n")
+                .filter((line) => line !== "");
+
+        it("asks a failed record again, and only that", async () => {
+            let failing = true;
+            stub = stubModels((request) =>
+                failing
+                    ? { status: 500 }
+                    : request.body.response_format === undefined
+                      ? { content: "Plot twelve, by the river." }
+                      : { json: { reasoning: "Checked.", score: true } },
+            );
+            writeFileSync(configPath(work), stubConfig(stub.url));
+            const corpus = await openCorpus(workEnv(work));
+            try {
+                const { questions } = await readQuestions(work);
+                const config = await readEvalConfig(work);
+                const info = newRunInfo(
+                    settings,
+                    questions,
+                    config,
+                    await readSnapshot(work),
+                    new Date("2026-10-19T01:00:00.000Z"),
+                );
+                const go = () =>
+                    runEvaluation(info, {
+                        work,
+                        corpus,
+                        questions,
+                        models: new Models(config, { env: {}, retryMs: 1 }),
+                        concurrency: 1,
+                    });
+                expect((await go()).summary.systems.lexical?.all.failures).toBe(
+                    3,
+                );
+                expect(lines(info.id)).toHaveLength(5);
+                failing = false;
+                const before = stub.requests.length;
+                const { summary } = await go();
+                // Three answers and six judgements, no lookup asked.
+                expect(stub.requests.length - before).toBe(9);
+                expect(lines(info.id)).toHaveLength(8);
+                const records = await readRecords(work, info.id);
+                expect(records).toHaveLength(5);
+                expect(
+                    records.every((each) => each.failures.length === 0),
+                ).toBe(true);
+                expect(summary.systems.lexical?.all.failures).toBe(0);
+                // What succeeded is not asked again.
+                const after = stub.requests.length;
+                await go();
+                expect(stub.requests).toHaveLength(after);
+                expect(lines(info.id)).toHaveLength(8);
+            } finally {
+                corpus.close();
+            }
+        });
+
+        it("spends no model call on a failed retrieval", async () => {
+            const { requests } = serve({ content: "Plot twelve." });
+            const corpus = await openCorpus(workEnv(work));
+            try {
+                const { questions } = await readQuestions(work);
+                const config = await readEvalConfig(work);
+                const info = newRunInfo(
+                    { ...settings, systems: ["broken"] },
+                    questions,
+                    config,
+                    await readSnapshot(work),
+                    new Date("2026-10-19T01:00:00.000Z"),
+                );
+                await runEvaluation(info, {
+                    work,
+                    corpus,
+                    questions,
+                    models: new Models(config, { env: {}, retryMs: 1 }),
+                    concurrency: 1,
+                    systems: [
+                        {
+                            name: "broken",
+                            retrieve: async () => {
+                                throw new Error("down");
+                            },
+                        },
+                    ],
+                });
+                expect(requests).toHaveLength(0);
+                const records = await readRecords(work, info.id);
+                expect(records).toHaveLength(5);
+                expect(
+                    records.every(
+                        (each) =>
+                            each.retrieval.error === "down" &&
+                            each.answer === null,
+                    ),
+                ).toBe(true);
+            } finally {
+                corpus.close();
+            }
+        });
     });
 });

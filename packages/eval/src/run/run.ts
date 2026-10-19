@@ -37,6 +37,7 @@ import {
     recordsPath,
     runDir,
     runInfoPath,
+    succeeded,
 } from "./record.js";
 
 export type RunSettings = {
@@ -181,7 +182,13 @@ async function ask(
         judged: { strict: null, lenient: null, declined: null, stale: null },
         failures: [],
     };
-    if (models === null || judges === null || question.type === "lookup") {
+    // A failed retrieval is a miss already: nothing more is spent on it.
+    if (
+        error !== null ||
+        models === null ||
+        judges === null ||
+        question.type === "lookup"
+    ) {
         return record;
     }
     try {
@@ -264,9 +271,9 @@ export async function runEvaluation(
         );
     }
     const done = new Set(
-        (await readRecords(deps.work, info.id)).map(
-            (record) => `${record.question}\t${record.system}`,
-        ),
+        (await readRecords(deps.work, info.id))
+            .filter(succeeded)
+            .map((record) => `${record.question}\t${record.system}`),
     );
     const systems =
         deps.systems ??
