@@ -283,12 +283,23 @@ describe("runVerify", () => {
                 },
             }),
         );
+        await putFact(
+            root,
+            PERSONAL,
+            fact("vouched", {
+                provenance: MODEL,
+                foreign: {
+                    verified: [{ by: "human:alice", at: NOW.toISOString() }],
+                },
+            }),
+        );
+        const names = ["mine", "synced", "checked", "vouched"];
         const before = await Promise.all(
-            ["mine", "synced", "checked"].map((name) =>
+            names.map((name) =>
                 Bun.file(factPath(root, PERSONAL, name)).text(),
             ),
         );
-        for (const name of ["mine", "synced", "checked"]) {
+        for (const name of names) {
             expect(await runVerify(`k:personal/${name}`, options())).toBe(0);
         }
         expect(out.text).toBe(
@@ -296,11 +307,12 @@ describe("runVerify", () => {
                 "k:personal/mine is confirmed already: it is yours.",
                 "k:personal/synced is confirmed already: it came from a project's repository.",
                 "k:personal/checked is confirmed already: you verified it.",
+                "k:personal/vouched is confirmed already: human:alice verified it.",
                 "",
             ].join("\n"),
         );
         const after = await Promise.all(
-            ["mine", "synced", "checked"].map((name) =>
+            names.map((name) =>
                 Bun.file(factPath(root, PERSONAL, name)).text(),
             ),
         );

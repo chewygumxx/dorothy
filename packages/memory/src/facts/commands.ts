@@ -18,7 +18,7 @@ import type { OpenHistory } from "../memory/sidecar.js";
 import { projectsPath, readRegistry } from "../projects/registry.js";
 import { type SyncReport, syncProject } from "../projects/sync.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
-import type { Fact } from "./file.js";
+import { type Fact, USER_ACTOR, verificationsOf } from "./file.js";
 import {
     dataRoot,
     type FactResult,
@@ -224,13 +224,20 @@ function targetOfId(id: string): { scope: Scope; name: string } | null {
     );
 }
 
-// Why knowledge is confirmed already.
-const whyConfirmed = (fact: Fact) =>
-    fact.provenance.origin === "user"
-        ? "it is yours"
-        : fact.provenance.origin === "repo"
-          ? "it came from a project's repository"
-          : "you verified it";
+// Why knowledge is confirmed already; a verification by another person
+// names them.
+function whyConfirmed(fact: Fact): string {
+    if (fact.provenance.origin === "user") {
+        return "it is yours";
+    }
+    if (fact.provenance.origin === "repo") {
+        return "it came from a project's repository";
+    }
+    const by = verificationsOf(fact).map((entry) => entry.by);
+    return by.includes(USER_ACTOR)
+        ? "you verified it"
+        : `${[...new Set(by)].join(", ")} verified it`;
+}
 
 // --verify: the user confirms a piece of knowledge a model or an
 // outside writer gave, by its id.
