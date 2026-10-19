@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-19
-mtime: 2026-10-19
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Repository code review
 description: >-
@@ -448,3 +448,64 @@ tail -n +7 \
   > /tmp/dorothy-review-replay.ts
 bun --no-env-file /tmp/dorothy-review-replay.ts
 ```
+
+## Recheck at c1aa151 (2026-10-20)
+
+Target: `c1aa15161336bc7ccdab4e9e00ecf81aae2fbea0`, inspected in the
+separate detached worktree `/tmp/dorothy-recheck`, removed afterward.
+All 11 saved probes were rerun with temporary roots and their imports
+redirected there. Adaptations supplied the new host profiles dependency,
+resolved the SDK mock by its installed path, and used `HookDeps.agent`.
+No target source was edited. Supplementary probes checked the remaining
+cross-process token and dump-cleanup cases, and changed gold definitions.
+
+Result: 18 findings reproduce unchanged, two reproduce in part, and two
+are fixed. Partial means a remaining part of the original finding still
+reproduces; no finding is left awaiting a recheck.
+
+| Finding | Status | Observed at this target |
+| --- | --- | --- |
+| F01 | Reproduces | SDK result errors still exit zero. |
+| F02 | Reproduces | Repeated settings still select the first model. |
+| F03 | Reproduces | A long matching turn yields header-only context. |
+| F04 | Reproduces | Resume silently omits a removed question. |
+| F05 | Reproduces | `from: 5, through: 7` still returns turns 1-7. |
+| F06 | Partial | In-process fixed; concurrent processes lose an update. |
+| F07 | Fixed | `ef03867`: flush and send share one deadline. |
+| F08 | Reproduces | Error results still emit no public cost event. |
+| F09 | Partial | `0747cd6` fixes launch cleanup; dump still leaks gateway. |
+| F10 | Reproduces | `--count 1` still allocates zero drafts. |
+| F11 | Reproduces | Appending after a torn tail acknowledges lost text. |
+| F12 | Fixed | `dfd9536`: a failed catch-up keeps its launch notes. |
+| F13 | Reproduces | Malformed user text still gives no halt. |
+| F14 | Reproduces | Ctrl+U still duplicates the first newline. |
+| F15 | Reproduces | Case-variant Authorization credentials survive. |
+| F16 | Reproduces | A new `constructor` fact is still retired. |
+| F17 | Reproduces | A concurrent `MEMORY.md` edit is still overwritten. |
+| F18 | Reproduces | Repository import still drops foreign/source fields. |
+| F19 | Reproduces | An outside full match still suppresses fallback. |
+| F20 | Reproduces | URL-scoped Git helpers are still omitted. |
+| F21 | Reproduces | A push still consumes a later update's timer. |
+| F22 | Reproduces | B's summary still displaces A's canonical turns. |
+
+F06's saved same-process probe now retains all six devices, fixed by
+`7682e23`. Its queue is process-local: two separate processes, gated after
+both read the old file, both exited zero but retained only two of three
+expected devices. F09's saved launch probe now stops its gateway and leaves
+zero private settings files; the sibling dump probe still leaves its
+gateway unstopped on the same real spawn failure. F07 took 101 ms for a
+100 ms budget, including overhead, versus the former doubled budget.
+
+Both concerns remain: `brief` still returns another project's full body
+when its argument overrides the connection's project, requiring the same
+scope-policy ruling. A valid non-lookup question's gold answer can change
+without changing its id; a retrieval-only resume accepted that change
+with status zero and no warning. No paid judgement was exercised.
+
+Focused tests at the target: 103 passed, zero failed, 368 expectations
+across the client, tokens, Claude launch and hook test files. The SDK and
+MCP probe compatibility failures on the first replay were corrected
+before assigning statuses. The review and sweep branches were not moved
+by these runs; only this review branch receives the report update.
+[Recheck evidence](./2026-10-19-code-review/c1aa151-recheck.txt) retains the
+outputs, adaptations and supplementary probe sources.
