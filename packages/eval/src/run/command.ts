@@ -11,7 +11,12 @@
 import { type Command, intOf, stringOf, workOf } from "../command.js";
 import { UsageError } from "../errors.js";
 import { Models } from "../models/client.js";
-import { readEvalConfig, requireRole, vendorOf } from "../models/config.js";
+import {
+    type EvalConfig,
+    readEvalConfig,
+    requireRole,
+    vendorOf,
+} from "../models/config.js";
 import { readQuestions } from "../questions/file.js";
 import { readSnapshot, workEnv } from "../snapshot/snapshot.js";
 import { openCorpus } from "../systems/corpus.js";
@@ -94,16 +99,24 @@ export const runCommand: Command = {
                 `--${given} is the run's own on --resume: leave it out`,
             );
         }
+        // Every run records its snapshot, and a resume checks it.
         const snapshot = await readSnapshot(work);
+        const resumed =
+            resume === null ? null : await readRunInfo(work, resume);
         const { questions, problems } = await readQuestions(work);
         for (const problem of problems) {
             io.err(`eval: skipped ${problem}\n`);
         }
         const accepted = questions.filter((q) => q.status === "accepted");
-        const config = await readEvalConfig(work);
+        const retrievalOnly =
+            resumed?.retrievalOnly ?? values["retrieval-only"] === true;
+        // A run that asks no model reads no eval.toml.
+        const config: EvalConfig = retrievalOnly
+            ? { generate: null, answer: null, judge: null }
+            : await readEvalConfig(work);
         const info =
-            resume !== null
-                ? await readRunInfo(work, resume)
+            resumed !== null
+                ? resumed
                 : newRunInfo(
                       {
                           systems: systemsOf(
@@ -118,7 +131,7 @@ export const runCommand: Command = {
                               500,
                               10_000_000,
                           ),
-                          retrievalOnly: values["retrieval-only"] === true,
+                          retrievalOnly,
                       },
                       accepted,
                       config,

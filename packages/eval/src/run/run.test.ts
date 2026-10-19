@@ -298,6 +298,35 @@ describe("bun run eval -- run", () => {
         expect(await readRecords(work, id)).toHaveLength(5);
     });
 
+    it("reads no eval.toml for a run that asks no model", async () => {
+        writeFileSync(configPath(work), "[models.answer\nbroken");
+        const { io, out } = fakeIo();
+        expect(
+            await runCli(
+                [
+                    "run",
+                    "--work",
+                    work,
+                    "--systems",
+                    "lexical",
+                    "--retrieval-only",
+                ],
+                io,
+            ),
+        ).toBe(0);
+        const id = idOf(out);
+        const again = fakeIo();
+        expect(
+            await runCli(["run", "--work", work, "--resume", id], again.io),
+        ).toBe(0);
+        expect(again.err).toEqual([]);
+        const judged = fakeIo();
+        expect(
+            await runCli(["run", "--work", work, "--dry-run"], judged.io),
+        ).toBe(1);
+        expect(judged.err.join("")).toContain("eval.toml does not parse");
+    });
+
     it("ends a line cut short before appending after it", async () => {
         const { io, out } = fakeIo();
         expect(
