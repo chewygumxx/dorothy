@@ -24,7 +24,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { factPath, PERSONAL, putFact, readFactFile } from "../facts/store.js";
 import { EMPTY_SIDECAR, sidecarPath } from "../memory/sidecar.js";
-import { createRecallServer, type RecallServerOptions } from "./server.js";
+import {
+    createRecallServer,
+    inSequence,
+    type RecallServerOptions,
+} from "./server.js";
 import { RecallIndex } from "./store.js";
 
 const A = newPhrase(() => Uint8Array.from([1, 1, 2, 3, 4, 5, 6, 7]));
@@ -67,6 +71,31 @@ async function connect(options: Partial<RecallServerOptions> = {}) {
 
 const textOf = (result: Awaited<ReturnType<Client["callTool"]>>) =>
     (result.content as { type: string; text: string }[])[0]?.text ?? "";
+
+describe("inSequence", () => {
+    it("runs calls one at a time, and goes on after one rejects", async () => {
+        const inOrder = inSequence();
+        const seen: string[] = [];
+        const slow = inOrder(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            seen.push("slow");
+            return "slow";
+        });
+        const failed = inOrder(async () => {
+            seen.push("failed");
+            throw new Error("boom");
+        });
+        const after = inOrder(async () => {
+            seen.push("after");
+            return "after";
+        });
+        expect(await slow).toBe("slow");
+        await expect(failed).rejects.toThrow("boom");
+        expect(await after).toBe("after");
+        expect(seen).toEqual(["slow", "failed", "after"]);
+        expect(await inOrder(async () => "later")).toBe("later");
+    });
+});
 
 describe("the recall server", () => {
     it("offers search and open", async () => {

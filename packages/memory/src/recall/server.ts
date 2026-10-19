@@ -120,6 +120,17 @@ export type RecallServerOptions = {
 const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
 
+// Runs the calls it is given one at a time, in the order given; a call
+// that rejects does not stop the ones after it.
+export function inSequence(): <T>(call: () => Promise<T>) => Promise<T> {
+    let queue: Promise<unknown> = Promise.resolve();
+    return (call) => {
+        const answered = queue.then(call);
+        queue = answered.catch(() => {});
+        return answered;
+    };
+}
+
 export function createRecallServer(options: RecallServerOptions): McpServer {
     const server = new McpServer({ name: SERVER_NAME, version: "1.0.0" });
     const now = options.now ?? Date.now;
@@ -132,14 +143,8 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
         return session === null ? null : sessionPhrase(index, session);
     };
     // Calls are answered in the order they arrived, so a search sent after
-    // a remember finds what it wrote; each call is settled before the
-    // next begins, as the tools never throw.
-    let queue: Promise<unknown> = Promise.resolve();
-    const inOrder = <T>(call: () => Promise<T>): Promise<T> => {
-        const answered = queue.then(call);
-        queue = answered;
-        return answered;
-    };
+    // a remember finds what it wrote.
+    const inOrder = inSequence();
     // Every call syncs first, so results are never stale. The sync holds the
     // write lock across awaits, and the call waits its turn in the index's
     // queue rather than reading rows a sync for another call has half
