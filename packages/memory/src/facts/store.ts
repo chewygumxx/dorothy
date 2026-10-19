@@ -222,8 +222,8 @@ export async function putFact(
         throw new Error(`${scopeLabel(scope)}/${fact.name}: ${read.reason}`);
     }
     const path = factPath(root, scope, fact.name);
-    await writeAtomic(path, text, options);
     await notePending(root, relative(root, path).split(sep).join("/"), text);
+    await writeAtomic(path, text, options);
     return path;
 }
 

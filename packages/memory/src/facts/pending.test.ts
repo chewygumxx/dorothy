@@ -35,18 +35,18 @@ it("keeps nothing where there is no repository", async () => {
     expect((await pendingWrites(root)).size).toBe(0);
 });
 
-it("keeps the latest hash of a path, and forgets a cleared one", async () => {
+it("keeps pending hashes of a path, and forgets a cleared one", async () => {
     await mkdir(join(root, ".git"));
     await notePending(root, "knowledge/personal/a.md", "one");
     await notePending(root, "knowledge/personal/a.md", "two");
     await notePending(root, "knowledge/personal/b.md", "three");
     expect([...(await pendingWrites(root))]).toEqual([
-        ["knowledge/personal/a.md", hashOf("two")],
-        ["knowledge/personal/b.md", hashOf("three")],
+        ["knowledge/personal/a.md", new Set([hashOf("one"), hashOf("two")])],
+        ["knowledge/personal/b.md", new Set([hashOf("three")])],
     ]);
     await clearPending(root, ["knowledge/personal/a.md"]);
     expect([...(await pendingWrites(root))]).toEqual([
-        ["knowledge/personal/b.md", hashOf("three")],
+        ["knowledge/personal/b.md", new Set([hashOf("three")])],
     ]);
     await clearPending(root, ["knowledge/personal/b.md"]);
     expect(existsSync(pendingPath(root))).toBe(false);

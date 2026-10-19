@@ -414,7 +414,7 @@ export class MemoryHistory {
     // user's by hand.
     async #dorothys(path: string, text: string): Promise<boolean> {
         const noted = (await pendingWrites(this.root)).get(path);
-        return noted !== undefined && noted === hashOf(text);
+        return noted?.has(hashOf(text)) ?? false;
     }
 
     async #recover(path: string, reason: string): Promise<boolean> {

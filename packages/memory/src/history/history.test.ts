@@ -15,6 +15,7 @@ import {
     describe,
     expect,
     it,
+    spyOn,
 } from "bun:test";
 import {
     appendFileSync,
@@ -29,8 +30,15 @@ import {
     utimesSync,
     writeFileSync,
 } from "node:fs";
+import * as filesystem from "node:fs/promises";
 import { join } from "node:path";
-import { type Fact, parseFact, renderFact } from "../facts/file.js";
+import {
+    type Fact,
+    isConfirmed,
+    parseFact,
+    renderFact,
+} from "../facts/file.js";
+import { pendingPath } from "../facts/pending.js";
 import {
     type FactStore,
     moveFact,
@@ -763,6 +771,90 @@ describe("a store write left uncommitted", () => {
         expect(await history.repo.changed()).toEqual([]);
         return provenanceOf(TEA_PATH);
     };
+
+    it.each(["unreadable", "malformed"])(
+        "warns and preserves unconfirmed attribution with an %s journal",
+        async (failure) => {
+            const history = await open();
+            await putFact(root, PERSONAL, EXTERNAL);
+            rmSync(pendingPath(root));
+            if (failure === "unreadable") {
+                mkdirSync(pendingPath(root));
+            } else {
+                writeFileSync(pendingPath(root), "interrupted record");
+            }
+            await history.sweep();
+            const read = parseFact(
+                readFileSync(join(root, TEA_PATH), "utf8"),
+                "likes-tea",
+            );
+            expect(read.kind === "ok" && isConfirmed(read.fact)).toBe(false);
+            expect(provenanceOf(TEA_PATH)).toEqual(EXTERNAL.provenance);
+            expect(warnings.join("\n")).toContain("dorothy-pending");
+            expect(await history.repo.changed()).toContain(TEA_PATH);
+        },
+    );
+
+    it("refuses a fact replacement when the journal cannot be written", async () => {
+        const history = await open();
+        await putFact(root, PERSONAL, EXTERNAL);
+        await history.sweep();
+        mkdirSync(pendingPath(root));
+        await expect(
+            putFact(root, PERSONAL, { ...EXTERNAL, body: "Replacement." }),
+        ).rejects.toThrow();
+        await history.sweep();
+        expect(readFileSync(join(root, TEA_PATH), "utf8")).toBe(
+            renderFact(EXTERNAL),
+        );
+        expect(provenanceOf(TEA_PATH)).toEqual(EXTERNAL.provenance);
+    });
+
+    it("keeps attribution after interruption immediately after fact replacement", async () => {
+        const history = await open();
+        const original = filesystem.rename;
+        const spy = spyOn(filesystem, "rename").mockImplementation(
+            async (from, to) => {
+                await original(from, to);
+                if (to === join(root, TEA_PATH)) {
+                    throw new Error("interrupted after replacement");
+                }
+            },
+        );
+        try {
+            await expect(putFact(root, PERSONAL, EXTERNAL)).rejects.toThrow(
+                "interrupted",
+            );
+        } finally {
+            spy.mockRestore();
+        }
+        await history.sweep();
+        expect(provenanceOf(TEA_PATH)).toEqual(EXTERNAL.provenance);
+        expect(warnings).toEqual([]);
+    });
+
+    it("keeps an earlier pending write if its replacement fails", async () => {
+        const history = await open();
+        await putFact(root, PERSONAL, EXTERNAL);
+        const original = filesystem.rename;
+        const spy = spyOn(filesystem, "rename").mockImplementation(
+            async (from, to) => {
+                if (to === join(root, TEA_PATH)) {
+                    throw new Error("replacement failed");
+                }
+                await original(from, to);
+            },
+        );
+        try {
+            await expect(
+                putFact(root, PERSONAL, { ...EXTERNAL, body: "Replacement." }),
+            ).rejects.toThrow();
+        } finally {
+            spy.mockRestore();
+        }
+        await history.sweep();
+        expect(provenanceOf(TEA_PATH)).toEqual(EXTERNAL.provenance);
+    });
 
     it.each([
         [

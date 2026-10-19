@@ -26,30 +26,43 @@ export const pendingPath = (root: string) =>
 export const hashOf = (bytes: string | Uint8Array) =>
     createHash("sha256").update(bytes).digest("hex");
 
-// Path, relative to the data directory with forward slashes, to the hash
-// of the bytes Dorothy last wrote there.
+// Paths to hashes noted before replacement. Keep earlier hashes until
+// commit too: a failed replacement must not lose its predecessor.
 export async function pendingWrites(
     root: string,
-): Promise<ReadonlyMap<string, string>> {
-    const pending = new Map<string, string>();
+): Promise<ReadonlyMap<string, ReadonlySet<string>>> {
+    const pending = new Map<string, Set<string>>();
     let text: string;
     try {
         text = await readFile(pendingPath(root), "utf8");
-    } catch {
-        return pending;
+    } catch (error) {
+        if ((error as { code?: string }).code === "ENOENT") {
+            return pending;
+        }
+        throw new Error(`${pendingPath(root)}: attribution unavailable`, {
+            cause: error,
+        });
     }
     for (const line of text.split("\n")) {
-        const space = line.indexOf(" ");
-        if (space > 0) {
-            pending.set(line.slice(space + 1), line.slice(0, space));
+        if (line === "") {
+            continue;
         }
+        const match = /^([a-f0-9]{64}) (.+)$/.exec(line);
+        if (match === null) {
+            throw new Error(`${pendingPath(root)}: invalid attribution record`);
+        }
+        const hash = match[1] as string;
+        const path = match[2] as string;
+        const hashes = pending.get(path) ?? new Set<string>();
+        hashes.add(hash);
+        pending.set(path, hashes);
     }
     return pending;
 }
 
-// Written under the lock the write was made under. With no repository
-// yet there is nothing to sweep, and nothing is kept; one that cannot be
-// kept leaves the write to be taken for an outside one.
+// Written under the store lock, before replacing the fact. With no
+// repository yet there is nothing to sweep. Any other failure must stop
+// the replacement, never leave an unrecorded write to be called a user edit.
 export async function notePending(
     root: string,
     path: string,
@@ -57,14 +70,17 @@ export async function notePending(
 ): Promise<void> {
     try {
         if (!(await stat(join(root, ".git"))).isDirectory()) {
+            throw new Error(`${join(root, ".git")}: not a directory`);
+        }
+    } catch (error) {
+        if ((error as { code?: string }).code === "ENOENT") {
             return;
         }
-        await appendFile(pendingPath(root), `${hashOf(bytes)} ${path}\n`, {
-            mode: 0o600,
-        });
-    } catch {
-        // The write stands.
+        throw error;
     }
+    await appendFile(pendingPath(root), `${hashOf(bytes)} ${path}\n`, {
+        mode: 0o600,
+    });
 }
 
 // Once the paths are committed, they are nobody's pending writes.
@@ -87,7 +103,11 @@ export async function clearPending(
         }
         await writeAtomic(
             pendingPath(root),
-            [...pending].map(([path, hash]) => `${hash} ${path}\n`).join(""),
+            [...pending]
+                .flatMap(([path, hashes]) =>
+                    [...hashes].map((hash) => `${hash} ${path}\n`),
+                )
+                .join(""),
         );
     } catch {
         // A stale entry matches only the bytes Dorothy wrote.
