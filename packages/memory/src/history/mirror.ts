@@ -141,7 +141,11 @@ export class Mirror {
     }
 
     schedule(): void {
-        if (this.#stopped || this.#timer !== null) {
+        if (
+            this.#stopped ||
+            this.#options.pushMs <= 0 ||
+            this.#timer !== null
+        ) {
             return;
         }
         this.#timer = this.#timers.set(() => {

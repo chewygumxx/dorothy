@@ -19,6 +19,7 @@ import {
     writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { REAL_TIMERS } from "@dorothy/core";
 import { keepHalt } from "../bodies/unread.js";
 import { runTagsEdit } from "../memory/commands.js";
 import { EMPTY_SIDECAR } from "../memory/sidecar.js";
@@ -100,6 +101,29 @@ const messages = async () =>
     (await repo().log(undefined, 50)).map((commit) => commit.message);
 // A command that sweeps, to commit what the test wrote.
 const sweep = () => runHistory({ ...options(), out: capture() });
+
+it("leaves no retry timer after a failed mirror command", async () => {
+    env.DOROTHY_MIRROR_KEY = newKey();
+    write("tags.json", vocabulary(1));
+    const pending = new Set<unknown>();
+    const set = spyOn(REAL_TIMERS, "set").mockImplementation(() => {
+        const handle = {};
+        pending.add(handle);
+        return handle;
+    });
+    const clear = spyOn(REAL_TIMERS, "clear").mockImplementation((handle) => {
+        pending.delete(handle);
+    });
+    try {
+        expect(
+            await runMirror(join(tempRoot(), "missing.git"), options()),
+        ).toBe(1);
+        expect(pending.size).toBe(0);
+    } finally {
+        set.mockRestore();
+        clear.mockRestore();
+    }
+});
 
 it.each(["restore", "rollback", "edit-tags"])(
     "pushes a %s commit before the command returns",

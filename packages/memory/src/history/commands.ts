@@ -722,14 +722,15 @@ export async function runMirror(
                 `Your conversations will be stored at ${target}, encrypted.\n`,
             );
         }
-        const outcome = await new Mirror({
+        const mirror = new Mirror({
             repo,
             lock: history.lock,
             key: () => key,
             token: () => env.DOROTHY_MIRROR_TOKEN ?? null,
             warn: (message) => err.write(`dorothy: ${message}\n`),
             pushMs: 0,
-        }).push();
+        });
+        const outcome = await mirror.push().finally(() => mirror.stop());
         if (outcome.kind !== "pushed") {
             return 1;
         }
