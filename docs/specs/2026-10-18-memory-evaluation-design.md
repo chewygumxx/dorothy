@@ -168,12 +168,12 @@ They have no reference answer, so they score retrieval alone. A read of
 a hidden conversation is passed over, as no system reaches it, and of a
 retired file, as her engine cannot reach it, though `lexical` and `full`
 can. They are mined accepted, as the appraisal is her own review; the
-owner may reject one. So is a read by one, counted
-and reported, as its project is not in the snapshot. A purpose read from the
-same target by several conversations is one question, its `exclude`
-the first reader's, since a question excludes one conversation. A
-purpose that fails the question's schema, such as one over 2,000
-characters, is dropped, counted and reported.
+owner may reject one. A read by a hidden or absent conversation is
+passed over too, counted and reported, as its project is not in the
+snapshot. A purpose read from the same target by several conversations
+is one question, its `exclude` the first reader's, since a question
+excludes one conversation. A purpose that fails the question's schema,
+such as one over 2,000 characters, is dropped, counted and reported.
 
 ```sh
 bun run eval -- mine --work ~/eval

@@ -8,8 +8,9 @@
 //
 //
 
-// A failure the user can mend, said in one line: what is wrong and what
-// to run or set. Anything else is a fault and keeps its stack.
+// A failure the user can mend, said in a line, or a line to each problem it
+// lists: what is wrong and what to run or set. Anything else is a fault
+// and keeps its stack.
 export class UsageError extends Error {}
 
 // The code of a failed system call, if the error has one.

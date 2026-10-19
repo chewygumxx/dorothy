@@ -40,8 +40,9 @@ reads no file of memory's itself.
   `--from` names.
 - Tests build their archive with `writeFixtureData` or
   `snapshotFixture` from `src/testing.ts`, under a temporary root.
-- A failure the user can mend is an `UsageError`, said in one line by
-  `runCli`; anything else is a fault and keeps its stack.
+- A failure the user can mend is an `UsageError`, said by `runCli` in a
+  line, or a line to each problem it lists; anything else is a fault
+  and keeps its stack.
 
 ## Commands
 
