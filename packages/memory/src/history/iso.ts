@@ -463,6 +463,11 @@ export function isoRepo(location: string): MemoryRepo {
                 await advance(`refs/heads/${branch}`, fetched);
             } finally {
                 await git.deleteRemote({ fs, dir, remote: incoming });
+                await git.deleteRef({
+                    fs,
+                    dir,
+                    ref: `refs/remotes/${incoming}/${branch}`,
+                });
             }
         },
         async checkout() {

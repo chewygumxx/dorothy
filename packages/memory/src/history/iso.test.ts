@@ -165,6 +165,9 @@ it.each([false, true])(
             const fresh = isoRepo(join(tempRoot(), "recovered"));
             const result = await recover({ repo: fresh, url, key, token });
             expect(result.stopped).toBeNull();
+            expect(
+                await fresh.resolve("refs/remotes/dorothy-incoming/sealed"),
+            ).toBeNull();
             expect(result.applied).toBe(2);
             expect(result.tip).toBe(await repo.resolve(MAIN));
             expect(
