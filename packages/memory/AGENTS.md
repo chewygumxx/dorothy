@@ -98,7 +98,7 @@ and prompts as text (`MemoryPrompts`).
   `commands.ts` has `commandHistory`, history/restore/rollback/check and
   mirror/recover commands. Commands that advance main await a push on close;
   mirror keys use dotenvx's `set`. `lock.ts` is the common `FileLock`.
-- `recording/`: pure harness readers; [guide](./src/recording/AGENTS.md).
+- `recording/`: harness readers; [guide](./src/recording/AGENTS.md).
 - `sqlite-lock.ts`: `exclusiveLock`, a SQLite `BEGIN IMMEDIATE` lock.
 
 ## Invariants

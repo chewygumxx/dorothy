@@ -19,9 +19,10 @@ tags:
 
 # packages/memory/src/recording/AGENTS.md
 
-Pure harness readers return core's `RecordEvent` values and session
-metadata. Sources and the sweep will supply files and persist those
-values through `contract/record.ts`; readers never open a store.
+Harness readers return core's `RecordEvent` values and session metadata.
+Decoding is pure; Hermes's query edge opens only its supplied path,
+read-only. Sources and the sweep persist through `contract/record.ts`;
+readers never open a Dorothy store.
 
 ## Files
 
@@ -31,19 +32,26 @@ values through `contract/record.ts`; readers never open a store.
   `turn_context` gives the working directory and model. Separate decoders
   validate session, context, message, call and output records before the
   ordered emission pass pairs calls inside the valid prefix.
+- `hermes.ts`: `readHermes(dbPath, since = 0)` opens Hermes SQLite
+  read-only and returns one `HermesRead` per session, in session-id order.
+  Each has `session`, `source`, `cwd`, `model`, `at`, `events`, `halt`,
+  `unknown` and `pending`. Only emitted events are filtered by `since`;
+  decode earlier rows too, for call correlation and stable identities.
+- `hermes-fixtures.ts`: installed Hermes v31 `sessions`/`messages` table
+  DDL and synthetic row builders. Writers create only temporary fixtures.
 - `fixtures.ts`: synthetic text in observed record shapes. No real
   session id, message, tool input/output, credential or account address.
 
 ## Invariants
 
-- A source id is the one-based physical line ordinal as a decimal string;
+- Codex source ids are one-based physical line ordinals as decimal strings;
   blank and bookkeeping lines count. `lineOffset` supplies the number of
   preceding physical lines when reading an appended slice. A tail has
   only the metadata it contains; the source must retain session metadata.
-- `halt.line`, `unknown.line` and `pending` index the supplied lines from
-  zero. A malformed mapped record halts; unknown types are kept once per
+- Codex's `halt.line`, `unknown.line` and `pending` index supplied lines
+  from zero. A malformed mapped record halts; unknown types are kept once per
   read. Diagnostics name the problem without quoting record contents.
-- Tool events use the call's id pairing, timestamp and line ordinal.
+- Codex tool events use the call's pairing, timestamp and line ordinal.
   Function and custom calls pair only with their own output family.
   Repeated ids pair the nth call with the nth output in physical order;
   an extra output cannot replace an earlier answer. `ok: true` means
@@ -63,11 +71,45 @@ values through `contract/record.ts`; readers never open a store.
 - The reader returns raw tool strings; the canonical record path owns
   scrubbing and trimming. Nothing here writes or calls a model.
 
+## Hermes invariants
+
+- The installed schema records a directory in `sessions.cwd`.
+  `source` and `origin_json` describe transport/routing, never a fallback
+  to this process's directory. No recorded cwd means a personal session.
+- Messages are decoded by integer id, never by timestamp (Unix seconds).
+  `since` is an exclusive global message-id floor for emitted events.
+  A malformed mapped row halts only its session, preserving the prefix;
+  `halt.id` names the bad row, or is null for metadata or an invalid id.
+  Unknown roles and tool types are retained once with their first `id`.
+- User and assistant speech use their row ids; a tool event uses its
+  result row's id and time. This keeps every event unique when one
+  assistant row has both speech and multiple calls. `ok` means answered.
+  Durable tool occurrence uids pair first; older rows use the latest
+  preceding call with that provider id within the same user turn.
+- `pending` is the earliest unanswered assistant row's id, holding
+  later events; its own speech can emit. Replay retains earlier rows,
+  so an answer after `since` can find its call. An ended session with
+  no result remains pending; no result id or outcome is invented.
+- The first retained row with a durable `message_uid` owns its stable
+  source id; compaction copies of that uid are skipped. Distinct uids
+  remain distinct even with identical text. Legacy rows without uids
+  retain their physical ids; never merge them just by repeated text.
+- Keep original compacted rows; omit inactive rewind rows, model-only
+  composites, synthetic display rows and standalone compression handoffs.
+  Read `content`, never `api_content`; remove user-role host wrappers and
+  memory fences, keeping actual speech around a compression handoff.
+  Assistant text and raw tool strings are not passed through that filter.
+- Sentinel `\0json:` content decodes once. Plain JSON-looking prose stays
+  prose; typed image blocks become `[image]`, known multimodal envelopes
+  yield their text summary. Malformed text or unknown block types halt.
+
 ## Tests
 
-`codex.test.ts` uses only synthetic in-memory lines. Never open a real
-harness store in a test. Shape inspection outside tests prints only
-record discriminators, keys and nesting, with dynamic map keys masked.
+`codex.test.ts` uses synthetic in-memory lines; `hermes.test.ts` builds
+SQLite fixtures under `mkdtemp` roots and removes them after each test.
+Never open a real harness store in a test. Shape inspection outside tests
+prints record discriminators, keys and nesting, with dynamic map keys
+masked.
 
 ## Later
 
