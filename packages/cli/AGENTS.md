@@ -55,9 +55,9 @@ lazy.
 - `dump.ts`: `runDump` composes `previewStart` with `dumpRequest` for
   `--dump-context`.
 - `claude.ts`: `launchClaude`, for `--claude` and its dump, starts the
-  gateway and starts `claude` with its base URL there, its host in both
-  proxy bypass lists, `ENABLE_TOOL_SEARCH=1` unless set, and the marker
-  appended to its prompt (with the user's own `--append-system-prompt`,
+  gateway and `claude` with its base URL there. With a proxy set, the
+  gateway host joins both bypass lists. `ENABLE_TOOL_SEARCH=1` unless
+  set, and the marker joins its prompt (with `--append-system-prompt`,
   as Claude Code keeps only the last; `claudeArgs`). With
   `[memory] enabled` it syncs the project `claude` starts in, gives the
   gateway chat's memory block as its section, and sets
