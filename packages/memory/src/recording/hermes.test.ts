@@ -414,6 +414,71 @@ describe("readHermes tools", () => {
         expect(read?.events).toEqual([]);
         expect(read?.pending).toBe(1);
     });
+    it("records an unanswered call failed when the session has ended, releasing what follows", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "user", "Go.");
+            hermesMessage(db, 2, "assistant", "Starting.", {
+                calls: JSON.stringify([hermesCall("lost", "run", '{"a":1}')]),
+            });
+            hermesMessage(db, 3, "assistant", "After.");
+        });
+        const [live] = readHermes(path, 0, "fixture-session");
+        expect(live?.events.map((event) => event.sourceId)).toEqual(["1", "2"]);
+        expect(live?.pending).toBe(2);
+        const [over] = readHermes(path, 0, "fixture-session", { ended: true });
+        expect(over?.pending).toBeNull();
+        expect(over?.events).toEqual([
+            { kind: "user", text: "Go.", sourceId: "1", at: hermesAt(1) },
+            {
+                kind: "assistant",
+                text: "Starting.",
+                sourceId: "2",
+                at: hermesAt(2),
+                interrupted: false,
+            },
+            {
+                kind: "tool",
+                name: "run",
+                input: '{"a":1}',
+                output: "",
+                ok: false,
+                sourceId: "2:lost",
+                at: hermesAt(2),
+            },
+            {
+                kind: "assistant",
+                text: "After.",
+                sourceId: "3",
+                at: hermesAt(3),
+                interrupted: false,
+            },
+        ]);
+    });
+    it("keeps an unanswered call pending after a halt even when the session has ended", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "assistant", null, {
+                calls: JSON.stringify([hermesCall("lost")]),
+            });
+            hermesMessage(db, 2, "user", "\0json:{");
+        });
+        const [read] = readHermes(path, 0, undefined, { ended: true });
+        expect(read?.halt).toMatchObject({ id: 2 });
+        expect(read?.pending).toBe(1);
+        expect(read?.events).toEqual([]);
+    });
+    it("records no failure for a call a parent already holds or the floor passed", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "assistant", null, {
+                calls: JSON.stringify([hermesCall("lost")]),
+            });
+            hermesMessage(db, 2, "assistant", "After.");
+        });
+        const [read] = readHermes(path, 1, undefined, { ended: true });
+        expect(read?.events.map((event) => event.sourceId)).toEqual(["2"]);
+    });
     it("never pairs a result across a user turn or another session", async () => {
         const path = await fixture((db) => {
             hermesSession(db, "fixture-session");

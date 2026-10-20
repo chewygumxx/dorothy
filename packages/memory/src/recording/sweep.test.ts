@@ -21,7 +21,7 @@ import {
     output,
     SESSION,
 } from "./fixtures.js";
-import { hermesMessage, hermesSession } from "./hermes-fixtures.js";
+import { hermesCall, hermesMessage, hermesSession } from "./hermes-fixtures.js";
 import { sweepPath } from "./state.js";
 import { HOUR, NOW, type Rig, rig } from "./sweep-testing.js";
 
@@ -382,6 +382,37 @@ describe("what is remembered and when", () => {
             "assistant",
         ]);
         expect(conversation?.[2]).toMatchObject({ ok: false });
+    });
+
+    it("holds a Hermes session behind an unanswered call until it ages, then records it failed", async () => {
+        await r.hermes((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "user", "Synthetic question.");
+            hermesMessage(db, 2, "assistant", "Synthetic start.", {
+                calls: JSON.stringify([hermesCall("lost")]),
+            });
+            hermesMessage(db, 3, "assistant", "After.");
+        });
+        const young = only(await r.run({ hosts: ["hermes"] }), "hermes");
+        expect(young.events).toBe(2);
+        const later = () => new Date(NOW.getTime() + 3 * HOUR);
+        const over = only(
+            await r.run({ hosts: ["hermes"], now: later }),
+            "hermes",
+        );
+        expect(over).toMatchObject({ events: 2, skipped: 0 });
+        const [conversation] = await r.conversations();
+        expect(conversation?.map((event) => event.kind)).toEqual([
+            "session",
+            "user",
+            "assistant",
+            "tool",
+            "assistant",
+        ]);
+        expect(conversation?.[3]).toMatchObject({ ok: false });
+        expect(
+            only(await r.run({ hosts: ["hermes"], now: later }), "hermes"),
+        ).toMatchObject({ skipped: 1, events: 0 });
     });
 
     it("pairs a call with its output when it arrives", async () => {

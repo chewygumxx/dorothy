@@ -30,6 +30,7 @@ import { message, meta } from "./fixtures.js";
 import {
     HERMES_SCHEMA,
     hermesAt,
+    hermesCall,
     hermesMessage,
     hermesSession,
 } from "./hermes-fixtures.js";
@@ -315,6 +316,26 @@ describe("recording Hermes observations", () => {
         ]);
         expect(read.stable).toBe(true);
         expect(await session.read(read.fingerprint)).toBeNull();
+    });
+    it("reads a session as over when asked, recording its unanswered call failed", async () => {
+        await hermesFixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "assistant", "Synthetic start.", {
+                calls: JSON.stringify([hermesCall("lost")]),
+            });
+            hermesMessage(db, 2, "assistant", "After.");
+        });
+        const session = only(await hermesSource(env).list());
+        const live = await session.read();
+        if (live?.kind !== "hermes") throw new Error("missing Hermes read");
+        expect(live.read.events.map((event) => event.sourceId)).toEqual(["1"]);
+        const over = await session.read(undefined, { ended: true });
+        if (over?.kind !== "hermes") throw new Error("missing Hermes read");
+        expect(over.read.events.map((event) => event.sourceId)).toEqual([
+            "1",
+            "1:lost",
+            "2",
+        ]);
     });
     it("replays changed sessions without dropping a stable id below the old maximum", async () => {
         const path = await hermesFixture((db) => {

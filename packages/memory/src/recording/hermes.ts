@@ -153,6 +153,8 @@ type ToolCall = {
     name: string;
     input: string;
     answered: boolean;
+    // Where the call was made, for recording it failed if never answered.
+    origin: { sourceId: number; at: string; emit: boolean } | null;
 };
 function callId(...values: unknown[]): string {
     for (const value of values) {
@@ -222,6 +224,7 @@ function calls(
                 "a tool call without its input",
             ),
             answered: false,
+            origin: null,
         });
     }
     return result;
@@ -334,6 +337,7 @@ function decodeSpeech(
     if (type === "assistant") {
         const decoded = calls(row, id);
         for (const call of decoded.calls) {
+            call.origin = { sourceId, at, emit };
             pending.push(call);
             byId.set(call.id, call);
             if (call.uid !== null) {
@@ -372,6 +376,7 @@ function decodeSession(
     since: number,
     parentUids: ReadonlySet<string>,
     ids: ReadonlyMap<string, number>,
+    ended: boolean,
 ): HermesRead {
     const read: HermesRead = {
         session: null,
@@ -479,6 +484,29 @@ function decodeSession(
         if (!(error instanceof Unreadable)) throw error;
         read.halt = { id, type, reason: error.message };
     }
+    // A session over answers no more: its unanswered calls are recorded
+    // failed, by the call's own message, and release what follows. No
+    // release past a halt, which may hide the answer.
+    if (ended && read.halt === null)
+        for (const call of pending) {
+            const { origin } = call;
+            if (call.answered || origin === null) continue;
+            call.answered = true;
+            if (origin.emit && origin.sourceId > since)
+                decoded.push({
+                    physical: call.message,
+                    event: {
+                        kind: "tool",
+                        name: call.name,
+                        input: call.input,
+                        output: "",
+                        ok: false,
+                        sourceId: `${origin.sourceId}:${call.id}`,
+                        at: origin.at,
+                    },
+                });
+        }
+    decoded.sort((a, b) => a.physical - b.physical);
     read.pending = pending.find((call) => !call.answered)?.message ?? null;
     const through = read.pending;
     read.events = decoded
@@ -493,6 +521,7 @@ export function readHermes(
     db: string,
     since = 0,
     session?: string,
+    { ended = false }: { ended?: boolean } = {},
 ): HermesRead[] {
     if (!Number.isSafeInteger(since) || since < 0)
         throw new RangeError("invalid message cursor");
@@ -533,6 +562,7 @@ export function readHermes(
                         ? identities.all(session.id)
                         : [],
                 ),
+                ended,
             ),
         );
     } finally {

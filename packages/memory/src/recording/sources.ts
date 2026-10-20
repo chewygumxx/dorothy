@@ -32,6 +32,8 @@ export type SourceRead = {
     | { kind: "file"; lines: string[]; lineOffset: 0 }
     | { kind: "hermes"; read: HermesRead }
 );
+// The session is over: a call never answered is recorded failed.
+export type ReadOptions = { ended?: boolean };
 export type SourceSession = {
     host: Host;
     key: string;
@@ -39,7 +41,10 @@ export type SourceSession = {
     session?: string;
     fingerprint: Fingerprint;
     at: string | null;
-    read(previous?: Fingerprint): Promise<SourceRead | null>;
+    read(
+        previous?: Fingerprint,
+        options?: ReadOptions,
+    ): Promise<SourceRead | null>;
 };
 export type Source = { host: Host; list(): Promise<SourceSession[]> };
 
@@ -251,13 +256,14 @@ async function readHermesSession(
     path: string,
     session: string,
     previous?: Fingerprint,
+    { ended = false }: ReadOptions = {},
 ): Promise<SourceRead | null> {
     const before = rowSummaries(path, session)[0];
     if (!before) return null;
     const fingerprint = rowsFingerprint(before);
     if (sameFingerprint(previous, fingerprint)) return null;
     // A physical max is a change hint, never the reader's source-id floor.
-    const read = readHermes(path, 0, session)[0];
+    const read = readHermes(path, 0, session, { ended })[0];
     if (!read) return null;
     const after = rowSummaries(path, session)[0];
     return {
@@ -284,8 +290,8 @@ export function hermesSource(env: Env): Source {
                 session: row.id,
                 fingerprint: rowsFingerprint(row),
                 at: summaryTime(row.at),
-                read: (previous?: Fingerprint) =>
-                    readHermesSession(path, row.id, previous),
+                read: (previous?: Fingerprint, options?: ReadOptions) =>
+                    readHermesSession(path, row.id, previous, options),
             }));
         },
     };

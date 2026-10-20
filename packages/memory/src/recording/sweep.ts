@@ -276,7 +276,9 @@ async function sweepHost(sweeping: Sweeping, host: Host, result: HostSweep) {
         }
         let read: SourceRead | null;
         try {
-            read = await session.read(state.sessions[session.key]);
+            read = await session.read(state.sessions[session.key], {
+                ended: isOver(sweeping, session),
+            });
         } catch (error) {
             result.failed += 1;
             deps.log.error(
@@ -292,6 +294,12 @@ async function sweepHost(sweeping: Sweeping, host: Host, result: HostSweep) {
     }
 }
 
+// A backfilled session, or one untouched for an hour, is over.
+function isOver({ deps, started }: Sweeping, session: SourceSession) {
+    const at = session.at === null ? Number.NaN : Date.parse(session.at);
+    return deps.backfill || started.getTime() - at >= ENDED_AFTER_MS;
+}
+
 async function recordRead(
     sweeping: Sweeping,
     session: SourceSession,
@@ -300,9 +308,7 @@ async function recordRead(
 ) {
     const { deps, state } = sweeping;
     const { host } = session;
-    const at = session.at === null ? Number.NaN : Date.parse(session.at);
-    const ended =
-        deps.backfill || sweeping.started.getTime() - at >= ENDED_AFTER_MS;
+    const ended = isOver(sweeping, session);
     if (host === "claude-code" && read.kind === "file")
         return recordClaudeRead(sweeping, session, read, ended, result);
     const found = view(read, ended, session.session ?? null);
