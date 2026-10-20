@@ -943,6 +943,103 @@ describe("dorothyFlags", () => {
         });
     });
 
+    for (const form of ["split", "equals"] as const) {
+        it(`keeps MCP file contents out of argv (${form} flag)`, () => {
+            const root = mkdtempSync(join(tmpdir(), "dorothy-mcp-argv-"));
+            try {
+                const path = join(root, "servers.json");
+                writeFileSync(
+                    path,
+                    JSON.stringify({
+                        mcpServers: {
+                            fixture: {
+                                command: "file-only-command",
+                                env: { FIXTURE_VALUE: "file-only-value" },
+                            },
+                        },
+                    }),
+                );
+                const user =
+                    form === "split"
+                        ? ["--mcp-config", path]
+                        : [`--mcp-config=${path}`];
+                const flags = dorothyFlags(
+                    [...user, "-p", "hi"],
+                    {
+                        settings: { permissions: { allow: ["a"] } },
+                        mcpConfig: {
+                            mcpServers: { dorothy: { type: "stdio" } },
+                        },
+                    },
+                    {
+                        cwd: root,
+                        read: (file) => readFileSync(file, "utf8"),
+                        writePrivate: privateWriter({ XDG_RUNTIME_DIR: root }),
+                    },
+                );
+                expect(flags.args.join(" ")).not.toContain("file-only-command");
+                expect(flags.args.join(" ")).not.toContain("file-only-value");
+                expect(flags.args).toEqual([
+                    '--settings={"permissions":{"allow":["a"]}}',
+                    '--mcp-config={"mcpServers":{"dorothy":{"type":"stdio"}}}',
+                    ...user,
+                    "-p",
+                    "hi",
+                ]);
+                expect(flags.files).toEqual([]);
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        });
+    }
+
+    it("passes each user MCP config once when the settings write fails", () => {
+        const root = mkdtempSync(join(tmpdir(), "dorothy-mcp-fallback-"));
+        try {
+            const settings = join(root, "settings.json");
+            const servers = join(root, "servers.json");
+            writeFileSync(settings, '{"model":"first"}');
+            writeFileSync(
+                servers,
+                '{"mcpServers":{"fixture":{"command":"file-only-command"}}}',
+            );
+            const user = [
+                "--settings",
+                settings,
+                "--mcp-config",
+                servers,
+                '--settings={"model":"last"}',
+                "--",
+                "--mcp-config=prompt-text",
+            ];
+            const flags = dorothyFlags(
+                user,
+                {
+                    settings: { permissions: { allow: ["a"] } },
+                    mcpConfig: { mcpServers: { dorothy: { type: "stdio" } } },
+                },
+                {
+                    cwd: root,
+                    read: (file) => readFileSync(file, "utf8"),
+                    writePrivate: () => {
+                        throw new Error("EACCES");
+                    },
+                },
+            );
+            expect(flags.args).toEqual([
+                '--mcp-config={"mcpServers":{"dorothy":{"type":"stdio"}}}',
+                ...user,
+            ]);
+            expect(flags.args.join(" ")).not.toContain("file-only-command");
+            expect(flags.files).toEqual([]);
+            expect(flags.warnings.join(" ")).toContain(
+                "Dorothy's settings could not be added",
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("merges objects key by key and joins arrays without repeats", () => {
         expect(
             mergeJson(
