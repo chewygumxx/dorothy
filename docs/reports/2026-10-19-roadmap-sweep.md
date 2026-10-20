@@ -55,8 +55,8 @@ required-header tests pass.
 
 Ranges exclude their left endpoint and include their right endpoint.
 Task 4's range also contains the three review-document imports above.
-The final fix wave's range ends at its last code commit; the commit
-that brings this record up to date with it follows.
+The final fix wave's range ends at its last code commit, and holds the
+commit that recorded it; the one that fixed this range follows.
 
 | Task | Subject | Commits | Implementer |
 | --- | --- | --- | --- |
@@ -72,7 +72,7 @@ that brings this record up to date with it follows.
 | 10 | Code review | `f956e2c..dc09077` | Both |
 | 11 | Probes | `dc09077..8883ac8` | Codex |
 | 12 | Record | `8883ac8..5eb5448` | Codex |
-| Final | Review fixes | `5eb5448..3522844` | Claude |
+| Final | Review fixes | `5eb5448..4fcf93d` | Claude |
 
 Claude Opus implemented Task 1, Claude Sonnet Tasks 2-4 and 8-9. Task 5
 began with Claude and its fixes used Codex; Task 10 likewise began with
