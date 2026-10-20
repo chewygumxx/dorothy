@@ -371,6 +371,7 @@ function decodeSession(
     rows: Json[],
     since: number,
     parentUids: ReadonlySet<string>,
+    ids: ReadonlyMap<string, number>,
 ): HermesRead {
     const read: HermesRead = {
         session: null,
@@ -408,7 +409,6 @@ function decodeSession(
         read.at = timestamp(session.started_at);
         const known = new Set<string>();
         const state = { read, decoded, since, pending, byId, byUid, known };
-        const ids = sourceIds(rows);
         const held = new Set(parentUids);
         for (const [uid, first] of ids) if (first <= since) held.add(uid);
         const seenMessages = new Set<string>();
@@ -489,22 +489,31 @@ function decodeSession(
 
 // The only I/O edge: the supplied path is always opened read-only. The
 // session decoder receives rows alone; this never opens a Dorothy store.
-export function readHermes(db: string, since = 0): HermesRead[] {
+export function readHermes(
+    db: string,
+    since = 0,
+    session?: string,
+): HermesRead[] {
     if (!Number.isSafeInteger(since) || since < 0)
         throw new RangeError("invalid message cursor");
     const reader = new Database(db, { readonly: true, create: false });
     try {
         const sessions = reader
-            .query<Json, []>(
-                "SELECT id, parent_session_id, source, cwd, model, started_at FROM sessions ORDER BY id",
+            .query<Json, [string | null, string | null]>(
+                `SELECT id, parent_session_id, source, cwd, model, started_at
+                 FROM sessions WHERE (? IS NULL OR id = ?) ORDER BY id`,
             )
-            .all();
+            .all(session ?? null, session ?? null);
         const messages = reader.query<Json, [string]>(
             `SELECT id, role, content, timestamp, tool_calls, tool_call_id,
                     tool_call_uids, tool_call_uid, active, compacted,
                     _compressed_summary, display_kind, display_metadata, message_uid,
                     absorbed_message_uids
-             FROM messages WHERE session_id = ? ORDER BY id`,
+             FROM messages WHERE session_id = ? AND (active = 1 OR compacted = 1)
+             ORDER BY id`,
+        );
+        const identities = reader.query<Json, [string]>(
+            "SELECT message_uid, MIN(id) AS id FROM messages WHERE session_id = ? GROUP BY message_uid",
         );
         const parentMessages = reader.query<Json, [string]>(
             "SELECT message_uid, absorbed_message_uids FROM messages WHERE session_id = ?",
@@ -517,6 +526,11 @@ export function readHermes(db: string, since = 0): HermesRead[] {
                 parentHoldings(
                     typeof session.parent_session_id === "string"
                         ? parentMessages.all(session.parent_session_id)
+                        : [],
+                ),
+                sourceIds(
+                    typeof session.id === "string"
+                        ? identities.all(session.id)
                         : [],
                 ),
             ),

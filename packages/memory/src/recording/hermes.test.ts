@@ -1407,3 +1407,67 @@ describe("readHermes merged tool uid lists", () => {
         expect(read?.halt).toMatchObject({ id: 1, type: "assistant" });
     });
 });
+
+describe("readHermes payload selection", () => {
+    function guardPayload(db: Database, condition: string) {
+        db.exec(`ALTER TABLE messages RENAME TO physical_messages;
+            CREATE VIEW messages AS SELECT id, session_id, role,
+                CASE WHEN ${condition} THEN json('unreadable fixture payload')
+                    ELSE content END AS content,
+                timestamp, tool_calls, tool_call_id, tool_call_uids,
+                tool_call_uid, active, compacted, _compressed_summary,
+                display_kind, display_metadata, message_uid,
+                absorbed_message_uids FROM physical_messages`);
+    }
+    it("does not fetch invisible payloads while keeping their uid minimum", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "user", "Earlier physical row.", {
+                active: 0,
+            });
+            hermesMessage(db, 7, "user", "Visible speech.");
+            db.run("UPDATE messages SET message_uid = 'fixture-shared'");
+            guardPayload(db, "active = 0 AND compacted = 0");
+        });
+        expect(readHermes(path, 0)[0]?.events).toEqual([
+            {
+                kind: "user",
+                text: "Visible speech.",
+                sourceId: "1",
+                at: hermesAt(7),
+            },
+        ]);
+    });
+    it("fetches only the selected session's payload without losing parent ownership", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db, "parent");
+            hermesSession(db, "child");
+            db.run(
+                "UPDATE sessions SET parent_session_id = 'parent' WHERE id = 'child'",
+            );
+            hermesMessage(db, 1, "user", "Parent speech.", {
+                session: "parent",
+            });
+            hermesMessage(db, 3, "user", "Parent speech.", {
+                session: "child",
+            });
+            hermesMessage(db, 4, "user", "Child speech.", { session: "child" });
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-carried' WHERE id IN (1, 3)",
+            );
+            guardPayload(db, "session_id = 'parent'");
+        });
+        const reads = readHermes(path, 0, "child");
+        expect(reads).toHaveLength(1);
+        expect(reads[0]?.parent).toBe("parent");
+        expect(reads[0]?.events).toEqual([
+            {
+                kind: "user",
+                text: "Child speech.",
+                sourceId: "4",
+                at: hermesAt(4),
+            },
+        ]);
+        expect(readHermes(path, 0, "absent")).toEqual([]);
+    });
+});
