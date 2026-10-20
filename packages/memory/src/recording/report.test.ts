@@ -51,7 +51,21 @@ describe("a sweep told", () => {
                 }),
             ]),
         ).toEqual([
-            "codex: 1 events in 1 sessions (4 waiting for the backfill, 2 private, 1 halted, 3 unreadable)",
+            "codex: 1 event in 1 session (4 waiting for the backfill, 2 private, 1 halted, 3 unreadable)",
+        ]);
+    });
+
+    it("counts one in the singular and the rest in the plural", () => {
+        expect(
+            hostLines([
+                result({ sessions: 1, events: 2 }),
+                result({ sessions: 2, events: 1 }),
+                result({}),
+            ]),
+        ).toEqual([
+            "codex: 2 events in 1 session",
+            "codex: 1 event in 2 sessions",
+            "codex: 0 events in 0 sessions",
         ]);
     });
 
@@ -68,7 +82,7 @@ describe("a sweep told", () => {
                 result({ events: 2, sessions: 1, error: "boom" }),
             ]),
         ).toBe(
-            "recording: swept claude-code: 12 events in 3 sessions; codex: 2 events in 1 sessions (stopped: boom)",
+            "recording: swept claude-code: 12 events in 3 sessions; codex: 2 events in 1 session (stopped: boom)",
         );
     });
 });

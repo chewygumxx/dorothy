@@ -165,9 +165,9 @@ describe("the sweep", () => {
             await jobs.stop();
         }
         expect(said.info.slice(0, 3)).toEqual([
-            "recording: swept codex: 1 events in 1 sessions",
-            "recording: swept codex: 2 events in 1 sessions",
-            "recording: swept codex: 3 events in 1 sessions",
+            "recording: swept codex: 1 event in 1 session",
+            "recording: swept codex: 2 events in 1 session",
+            "recording: swept codex: 3 events in 1 session",
         ]);
         expect(said.warn).toEqual([]);
     });
@@ -218,7 +218,7 @@ describe("the sweep", () => {
         }
         expect(said.warn).toEqual(["recording: sweep failed: injected"]);
         expect(said.info[0]).toBe(
-            "recording: swept hermes: 0 events in 1 sessions",
+            "recording: swept hermes: 0 events in 1 session",
         );
     });
 

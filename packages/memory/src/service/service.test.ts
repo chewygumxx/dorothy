@@ -671,7 +671,7 @@ describe("the memory service", () => {
                 readFileSync(hookLogPath(env), "utf8").includes("swept"),
             );
             expect(readFileSync(hookLogPath(env), "utf8")).toContain(
-                "recording: swept codex: 2 events in 1 sessions",
+                "recording: swept codex: 2 events in 1 session",
             );
             // Its conversation waits to be extracted from.
             expect(running?.waiting()).toBe(1);

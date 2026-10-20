@@ -13,6 +13,8 @@
 
 import type { HostSweep } from "./sweep.js";
 
+const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+
 function hostLine(result: HostSweep): string {
     const also = [
         result.waiting > 0 ? `${result.waiting} waiting for the backfill` : "",
@@ -21,7 +23,7 @@ function hostLine(result: HostSweep): string {
         result.failed > 0 ? `${result.failed} unreadable` : "",
         result.error === null ? "" : `stopped: ${result.error}`,
     ].filter((note) => note !== "");
-    return `${result.host}: ${result.events} events in ${result.sessions} sessions${also.length === 0 ? "" : ` (${also.join(", ")})`}`;
+    return `${result.host}: ${count(result.events, "event")} in ${count(result.sessions, "session")}${also.length === 0 ? "" : ` (${also.join(", ")})`}`;
 }
 
 export const hostLines = (results: readonly HostSweep[]): string[] =>
