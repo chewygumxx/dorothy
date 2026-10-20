@@ -87,7 +87,7 @@ export async function loadSweepState(
         if (state !== null) return state;
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-            warn("recording: sweep state missing; starting fresh");
+            // A first run, or a state lost: nothing to say.
             return emptySweepState();
         }
     }

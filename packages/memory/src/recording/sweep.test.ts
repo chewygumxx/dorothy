@@ -142,11 +142,24 @@ describe("sweeping hosts that send events", () => {
         r.logs.length = 0;
         const again = only(await r.run({ hosts: ["codex"] }), "codex");
         expect(again).toMatchObject({ sessions: 0, events: 0, skipped: 0 });
-        expect(r.logs.some((log) => log.includes("sweep state missing"))).toBe(
-            true,
-        );
+        // A missing file is a first run: silent.
+        expect(r.logs.filter((log) => log.includes("sweep state"))).toEqual([]);
         const [conversation, ...more] = await r.conversations();
         expect(more).toEqual([]);
+        expect(speakers(conversation ?? [])).toEqual(["3", "4"]);
+    });
+
+    it("warns of a sweep.json that is broken, and reads again", async () => {
+        await r.file(rollout(), text(...speech), 0);
+        await r.run({ hosts: ["codex"] });
+        await writeFile(sweepPath(r.env), "{not json");
+        r.logs.length = 0;
+        const again = only(await r.run({ hosts: ["codex"] }), "codex");
+        expect(again).toMatchObject({ sessions: 0, events: 0, skipped: 0 });
+        expect(
+            r.logs.filter((log) => log.includes("sweep state unreadable")),
+        ).toHaveLength(1);
+        const [conversation] = await r.conversations();
         expect(speakers(conversation ?? [])).toEqual(["3", "4"]);
     });
 

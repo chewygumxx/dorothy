@@ -55,14 +55,13 @@ describe("recording sweep state", () => {
         );
         expect(() => sweepPath({})).toThrow("recording state root");
     });
-    it("starts fresh with a warning when missing, without creating directories", async () => {
+    it("starts fresh and silent when missing, without creating directories", async () => {
         const warnings: string[] = [];
         const state = await loadSweepState(env, (warning) =>
             warnings.push(warning),
         );
         expect(state).toEqual({ v: 1, sessions: {} });
-        expect(warnings).toHaveLength(1);
-        expect(warnings[0]).toContain("missing");
+        expect(warnings).toEqual([]);
         expect(await readdir(root)).toEqual([]);
     });
     it("recovers from malformed JSON without echoing its contents", async () => {
@@ -249,7 +248,7 @@ describe("recording sweep state", () => {
                 at: "2026-10-20T09:00:01.000Z",
             },
         ]);
-        expect(warnings).toHaveLength(1);
+        expect(warnings).toEqual([]);
     });
     it("forgets a host's unlisted sessions and no other host's", () => {
         const state = emptySweepState();
