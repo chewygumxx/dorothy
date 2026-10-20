@@ -14,9 +14,12 @@ import {
     existsSync,
     mkdirSync,
     mkdtempSync,
+    readdirSync,
+    readFileSync,
     rmSync,
     symlinkSync,
     truncateSync,
+    utimesSync,
     writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -32,6 +35,7 @@ import { type Entry, indexCatalogue } from "../memory/catalogue.js";
 import { isStale } from "../memory/service.js";
 import { vocabularyPath } from "../memory/vocabulary.js";
 import { indexPath, RecallIndex, SCHEMA_VERSION } from "../recall/store.js";
+import { context, message, meta, SESSION } from "../recording/fixtures.js";
 import { transcriptDir } from "../transcript.js";
 import {
     MAX_BODY,
@@ -616,6 +620,80 @@ describe("the memory service", () => {
             await refused(join(home, "elsewhere", "b.jsonl"));
             const said = warned.filter((line) => line.includes("claude-dirs"));
             expect(said).toHaveLength(1);
+        });
+    });
+
+    describe("recording other harnesses", () => {
+        const swept: Config = {
+            ...config,
+            recording: { hosts: ["codex"], sweepSeconds: 300 },
+        };
+        // Events of 2026-10-20: after the service's start, before the
+        // watermark's mark for a later one.
+        const rollout = (name: string, session = SESSION) => {
+            const path = join(home, ".codex/sessions/2026/10/20", name);
+            mkdirSync(join(home, ".codex/sessions/2026/10/20"), {
+                recursive: true,
+            });
+            writeFileSync(
+                path,
+                `${[meta(), context(), message("user", "Synthetic question.", 1), message("assistant", "Synthetic answer.", 2)].join("\n")}\n`.replaceAll(
+                    SESSION,
+                    session,
+                ),
+            );
+            const when = new Date("2026-10-20T10:00:00.000Z");
+            utimesSync(path, when, when);
+        };
+        const started = () => new Date("2026-10-14T00:00:00.000Z");
+        const conversations = () => {
+            try {
+                return readdirSync(transcriptDir(env)).filter((name) =>
+                    name.endsWith(".jsonl"),
+                );
+            } catch {
+                return [];
+            }
+        };
+        const waitFor = async (done: () => boolean) => {
+            for (let tries = 0; !done() && tries < 200; tries++) {
+                await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+        };
+
+        it("sweeps the hosts it is set to at its start, and logs the counts", async () => {
+            rollout("rollout-one.jsonl");
+            await start(false, swept, { now: started });
+            await waitFor(() => conversations().length > 0);
+            expect(conversations()).toHaveLength(1);
+            await waitFor(() => existsSync(hookLogPath(env)));
+            await waitFor(() =>
+                readFileSync(hookLogPath(env), "utf8").includes("swept"),
+            );
+            expect(readFileSync(hookLogPath(env), "utf8")).toContain(
+                "recording: swept codex: 2 events in 1 sessions",
+            );
+            // Its conversation waits to be extracted from.
+            expect(running?.waiting()).toBe(1);
+        });
+
+        it("sweeps again on its interval, recording what is new", async () => {
+            rollout("rollout-one.jsonl");
+            await start(false, swept, { now: started, sweepMs: 20 });
+            await waitFor(() => conversations().length > 0);
+            rollout(
+                "rollout-two.jsonl",
+                "99999999-2222-4333-8444-555555555555",
+            );
+            await waitFor(() => conversations().length > 1);
+            expect(conversations()).toHaveLength(2);
+        });
+
+        it("sweeps no host that is not set", async () => {
+            rollout("rollout-one.jsonl");
+            await start(false, config, { now: started, sweepMs: 20 });
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            expect(conversations()).toEqual([]);
         });
     });
 });
