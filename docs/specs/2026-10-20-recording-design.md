@@ -149,8 +149,9 @@ own environment variable where the harness has one (`CLAUDE_CONFIG_DIR`,
 A probe records a temporary copy of a few real Codex and Claude Code
 sessions, scrubbed, as fixtures, and a retrieval run of the evaluation
 on a backfilled snapshot reports how many conversations and questions it
-now holds. Running the backfill on the user's real data is the user's
-call.
+now holds. The probe found that mining yields no questions from
+backfilled sessions, so questions over them come from `generate` and
+review. Running the backfill on the user's real data is the user's call.
 
 ## Later
 
