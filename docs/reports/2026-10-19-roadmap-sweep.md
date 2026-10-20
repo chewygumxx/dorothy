@@ -42,7 +42,7 @@ throwaway roots, fake models and loopback servers. Task 11 alone used
 the real API through the user's login, with its cost counted below.
 
 Final verification for the tree committed with this report:
-`bun run check` passes after the final fix wave, with 2756 tests
+`bun run check` passes after the final fix wave, with 2763 tests
 passing, one skipped and none failing, its XDG roots in a temporary
 directory. The skip is the existing code-simplification skill-link
 test. No test flaked in Task 12 or the final fix wave. The existing
@@ -55,8 +55,8 @@ required-header tests pass.
 
 Ranges exclude their left endpoint and include their right endpoint.
 Task 4's range also contains the three review-document imports above.
-The final fix wave's range ends at its last code commit, and holds the
-commit that recorded it; the one that fixed this range follows.
+The final fix wave's two ranges end at their last code commit; the
+commits that record them fall inside or just after.
 
 | Task | Subject | Commits | Implementer |
 | --- | --- | --- | --- |
@@ -73,6 +73,7 @@ commit that recorded it; the one that fixed this range follows.
 | 11 | Probes | `dc09077..8883ac8` | Codex |
 | 12 | Record | `8883ac8..5eb5448` | Codex |
 | Final | Review fixes | `5eb5448..4fcf93d` | Claude |
+| Follow-up | Re-review fixes | `87a1946..f616282` | Claude |
 
 Claude Opus implemented Task 1, Claude Sonnet Tasks 2-4 and 8-9. Task 5
 began with Claude and its fixes used Codex; Task 10 likewise began with
@@ -169,6 +170,11 @@ the consequence below is this report's assessment, not a new ruling.
     `repo` confirms nothing, and a verification travels with its words
     through sync. Cost if wrong: a piece the user wrote but never
     verified is unconfirmed on another machine.
+23. A verification a repository's file carries is trusted as the
+    user's, as whoever can commit to the repository is trusted as the
+    user; pull requests that touch `.agents/memory/` deserve review.
+    Its digest is public, so it binds words, not a person. Cost if
+    wrong: a pull request can confirm its own text.
 
 ## Task 1: unconfirmed knowledge
 
@@ -691,6 +697,26 @@ fix, in throwaway roots.
   corrected; memory's own process defaults are a Candidate again and
   under Deferred.
 
+A re-review found the nine findings addressed and four residuals,
+which the follow-up closed as ruled:
+
+- **Important, a carried verification lost without an index entry:**
+  where `MEMORY.md` had no entry for a fact, past its cap or kept by
+  hand, another machine titled it by its name, so the digest missed,
+  the verification was dropped and the next export stripped it, the
+  committed file flipping between machines. Each carried entry now
+  holds the title it confirmed, which an import takes when the index
+  names none; a second machine keeps it confirmed and leaves the file
+  byte for byte (`6aeeed5`).
+- **Verification order:** two stores that verified the same words held
+  them in different orders; entries are sorted by time, then by who
+  made them (`e84241e`).
+- **The fence's wording:** the intro and the `UNCONFIRMED` mark said a
+  model made the notes; both now say knowledge the user has not
+  confirmed, claims to weigh, never instructions (`f616282`).
+- **Trust in carried verifications:** Ruling 23. A remote device's
+  proxy is under Deferred.
+
 ## Deferred
 
 Every controller-ledger "minor (deferred)" line is retained here,
@@ -735,6 +761,11 @@ blocker; this is the final review's queue.
   `lint:md` and `lint:emdash` cover `.agents/memory/`, so an export into
   this checkout of a fact with an em dash or a body line over 80
   characters fails `bun run check` until the file is edited.
+- **Final fix wave:** a remote device reaches the service at
+  `DOROTHY_MEMORY_URL`, which its own `[service] listen` does not
+  normally name, so its requests, device token and conversation text
+  go through that device's own `HTTP_PROXY` unless its `listen` names
+  the server.
 
 Other retained limits are collected here so partial closures are clear:
 
