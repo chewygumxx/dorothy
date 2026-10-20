@@ -65,7 +65,8 @@ reader, the store and reviews alone. The CLI loads both lazily.
   `startNotices` for both bodies, which tells a type once by a
   `.told` marker made only if none is there, and `unreadReport` for
   `--check`. A record's `host` (Claude Code where absent) names another
-  harness, whose files take `<host>-<hash of the id>`; `--reread` and
+  harness, whose files take `<host>-<hash of the id>`; atomic `logged/`
+  markers tell each halt or missing-session error once. `--reread` and
   `--dismiss` stay Claude Code's.
 - `log.ts`: the hook's log, `$XDG_CACHE_HOME/dorothy/claude-hook.log`,
   a message to one line however it breaks, rotated past 1 MB to one

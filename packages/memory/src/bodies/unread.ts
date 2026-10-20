@@ -131,6 +131,27 @@ export async function keepHalt(
     return copy;
 }
 
+// A diagnostic logged once across sweeps and processes, like a new
+// type's .told marker. The key carries identity and position, not text.
+export async function claimLog(
+    env: Env,
+    key: readonly string[],
+): Promise<boolean> {
+    const dir = join(unreadDir(env), "logged");
+    await privateDir(dir);
+    const name = createHash("sha256").update(JSON.stringify(key)).digest("hex");
+    try {
+        await writeFile(join(dir, `${name}.told`), "", {
+            mode: 0o600,
+            flag: "wx",
+        });
+        return true;
+    } catch (error) {
+        if (codeOf(error) === "EEXIST") return false;
+        throw error;
+    }
+}
+
 // A type's file name: the type itself where that is a plain name, else
 // its characters made plain and a hash of the whole, so two types never
 // share a file.

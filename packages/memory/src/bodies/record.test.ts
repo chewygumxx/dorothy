@@ -40,7 +40,7 @@ import {
     recordSession,
     type SessionReport,
 } from "./record.js";
-import { copyPath, readRecord, unreadDir } from "./unread.js";
+import { copyPath, dismissHalt, readRecord, unreadDir } from "./unread.js";
 
 // Runs work one at a time, as the index's lock does across processes.
 function serial(): Lock {
@@ -379,6 +379,26 @@ describe("recordSession", () => {
         const read = await recordSession(report(), deps());
         expect(read).toMatchObject({ appended: 2, halted: false });
         expect(await readRecord(env, SESSION)).toBeNull();
+    });
+
+    it("logs each Claude halt once, including after dismissal", async () => {
+        const errors: string[] = [];
+        const recording = deps({
+            log: {
+                info() {},
+                warn() {},
+                error: (message) => errors.push(message),
+            },
+        });
+        await write(["{bad first line"]);
+        await recordSession(report(), recording);
+        await recordSession(report(), recording);
+        await dismissHalt(env, SESSION);
+        await recordSession(report(), recording);
+        expect(errors).toHaveLength(1);
+        await write([userLine("u1", 0, "Synthetic."), "{bad next line"]);
+        await recordSession(report(), recording);
+        expect(errors).toHaveLength(2);
     });
 
     it("keeps one example of a new type, and reads on", async () => {

@@ -673,6 +673,28 @@ describe("a session that halts", () => {
         });
     });
 
+    it("logs each rollout naming no session once across sweeps", async () => {
+        await r.file(
+            rollout("rollout-unnamed.jsonl"),
+            text(context(), message("user", "Synthetic.")),
+            0,
+        );
+        await r.run({ hosts: ["codex"] });
+        await r.run({ hosts: ["codex"] });
+        expect(
+            r.logs.filter((log) => log.includes("names no session")),
+        ).toHaveLength(1);
+        await r.file(
+            rollout("rollout-other.jsonl"),
+            text(context(), message("user", "Synthetic other.")),
+            0,
+        );
+        await r.run({ hosts: ["codex"] });
+        expect(
+            r.logs.filter((log) => log.includes("names no session")),
+        ).toHaveLength(2);
+    });
+
     it("keeps one example of an unknown type and says so once", async () => {
         await r.file(
             rollout(),

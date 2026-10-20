@@ -23,6 +23,7 @@ import type {
 import { type LinesRead, readLines } from "../bodies/claude-code.js";
 import type { Recorded, SessionReport } from "../bodies/record.js";
 import {
+    claimLog,
     keepHalt,
     keepNewType,
     readRecord,
@@ -391,9 +392,10 @@ async function recordRead(
         !waits(deps, found.events, mark)
     ) {
         result.failed += 1;
-        deps.log.error(
-            `recording: ${host}: ${named} names no session; not recorded`,
-        );
+        if (await claimLog(deps.env, ["missing-session", session.key]))
+            deps.log.error(
+                `recording: ${host}: ${named} names no session; not recorded`,
+            );
         return;
     }
     // Privacy first: a private session keeps nothing, not even aside; one
@@ -526,7 +528,6 @@ async function keepAside(
     result.halted += 1;
     const { line, type, reason, rest, uuid = null } = found.halt;
     try {
-        const before = await readRecord(deps.env, named, host);
         await keepHalt(
             deps.env,
             {
@@ -546,7 +547,16 @@ async function keepAside(
             rest,
         );
         // Told when it is new, not at every sweep.
-        if (before?.line === line) return kept;
+        if (
+            !(await claimLog(deps.env, [
+                "halt",
+                host,
+                named,
+                String(line),
+                reason,
+            ]))
+        )
+            return kept;
     } catch (error) {
         deps.log.warn(
             `recording: ${host}: ${named}: its halt can't be kept (${describe(error)})`,

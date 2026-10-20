@@ -30,7 +30,7 @@ import { sessionPhrase } from "../recall/sync.js";
 import { cutTornTail, TranscriptWriter, transcriptDir } from "../transcript.js";
 import { type LinesRead, readLines } from "./claude-code.js";
 import type { HookLog } from "./log.js";
-import { keepHalt, keepNewType, resolveHalt } from "./unread.js";
+import { claimLog, keepHalt, keepNewType, resolveHalt } from "./unread.js";
 
 export type SessionReport = {
     session: string;
@@ -382,6 +382,7 @@ async function noteHalt(
         return;
     }
     const line = from + halt.line;
+    let tell = true;
     try {
         await keepHalt(
             deps.env,
@@ -399,12 +400,20 @@ async function noteHalt(
             },
             lines.slice(line),
         );
+        tell = await claimLog(deps.env, [
+            "halt",
+            "claude-code",
+            report.session,
+            String(line + 1),
+            halt.reason,
+        ]);
     } catch (error) {
         deps.log.warn(
             `session ${report.session}: its halt can't be kept (${describeError(error)})`,
         );
     }
-    deps.log.error(
-        `session ${report.session}: halted at line ${line + 1} (${halt.type ?? "no type"}, ${halt.uuid ?? "no uuid"}): ${halt.reason}`,
-    );
+    if (tell)
+        deps.log.error(
+            `session ${report.session}: halted at line ${line + 1} (${halt.type ?? "no type"}, ${halt.uuid ?? "no uuid"}): ${halt.reason}`,
+        );
 }
