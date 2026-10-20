@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-20-recording/1-sweep.txt
+
+Probe: A first sweep notes the hosts' time and records nothing
+Date: 2026-10-20
+Bun: 1.4.2
+Code under test: 99be6c0
+Verdict: PASS
+
+Setup. One temporary root held a throwaway HOME, XDG_DATA_HOME,
+XDG_STATE_HOME, XDG_CACHE_HOME, XDG_CONFIG_HOME and XDG_RUNTIME_DIR; the
+environment was otherwise empty (env -i, PATH alone). Copies, made with
+cp -p so that modification times held, of 20 Claude Code transcripts
+(15 MB) from <home>/.config/claude/projects, laid out as
+<root>/home/.claude/projects/<project>/<session>.jsonl, and all 7 Codex
+rollouts (33 MB) from <home>/.codex/sessions, laid out as
+<root>/home/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl. The 20 were
+chosen at random among transcripts idle for an hour, over 4 KB and under
+4 MB, none an agent-* file. Nothing was written to the user's stores.
+
+Throwaway config.toml:
+  [history]
+  enabled = false
+  [recording]
+  hosts = ["claude-code", "codex"]
+
+Command, run from the repository on the branch under test:
+  bun run dev -- --sweep
+
+Output:
+  claude-code: 0 events in 0 sessions (20 waiting for the backfill)
+  codex: 0 events in 0 sessions (7 waiting for the backfill)
+
+Exit status: 0. Time: 0.45 s.
+Conversations made: 0. Halts: 0. Unknown types: 0.
+Standard error held only Bun's echo of the command.
+The sessions that wait are those whose events all precede the host's
+first sweep, as the spec says.

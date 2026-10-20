@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-20-recording/3-evaluation.txt
+
+Probe: The evaluation on a backfilled snapshot
+Date: 2026-10-20
+Bun: 1.4.2
+Code under test: 99be6c0
+Verdict: PASS WITH A FINDING
+
+Setup: the data directory of 2-backfill.txt, snapshotted into a second
+temporary directory (<work>); the environment as before.
+
+Commands (<data> and <work> being directories of the temporary root):
+  bun run eval -- snapshot --from <data>/dorothy --work <work>
+  bun run eval -- mine --work <work>
+  bun run eval -- run --work <work> --retrieval-only
+
+Output:
+  copied 27 conversations and 0 knowledge files from <data>/dorothy
+  mined 0 lookups, 0 new; 0 questions in all
+  eval: no accepted questions: mine or generate some, then review them
+Statuses: 0, 0, 1. Times: 0.21 s, 0.28 s, 0.21 s.
+
+Counts: conversations 27; knowledge files 0; questions 0; recall not
+measured, as no question exists.
+
+Finding. A backfill gives the snapshot its conversations but no
+question. `mine` makes questions from her own `open` calls whose reads
+her review appraised useful or essential; a backfilled session holds
+none of those, and no review runs over it, by design. Questions of
+backfilled sessions need `generate` and `review`, which name a model.
+A retrieval-only run of such a snapshot stops with the message above,
+rather than reporting zero questions: its refusal is clear, not a fault.
