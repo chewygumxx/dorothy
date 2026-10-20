@@ -339,3 +339,64 @@ records, and queues for review, a large live backlog in full; a capped
 review of backfilled sessions, recording through each harness's hooks,
 and subagents' transcripts linked to their parents remain the spec's
 Later.
+
+## Final review
+
+The whole-branch review found one Critical, three Important and six
+Minor findings. The final fix wave addressed all ten under the user's
+rulings, test-first for behavior, without reading real stores. The
+original probe captures remain historical evidence, rather than a
+verification of the corrected review-suppression mechanism.
+
+| Finding | Settlement | Fix commits |
+| --- | --- | --- |
+| C1 | Durable backfill review suppression | `5fcf1c4`, `9a1ae06` |
+| I1 | Sync before Claude's first swept record | `bada695` |
+| I2 | Publish session identity under the creation lock | `ef93610` |
+| I3 | Reread old halts with their backfill provenance | `3bed855` |
+| M1 | Age alone ends a backfilled session | `be6219e` |
+| M2 | Persistent atomic markers log diagnostics once | `44ae118` |
+| M3 | Quiet sweeps leave no counts line | `91d4e86` |
+| M4 | Progress every 100 backfilled sessions | `135f77f` |
+| M5 | Correct Task 7's range and roadmap candidates | `7a41802` |
+| M6 | State the unswept Hermes merge constituent's loss | `db072cc` |
+
+C1 now persists a sidecar mark under the recording lock, in the same
+history change as the transcript. Chat catch-up, the shared reviewer
+used by the hooks, and service extraction all honour it. A live append
+clears the mark; a replay does not. The process-local set is only a hint.
+A foreground backfill followed by chat catch-up makes no review call;
+a live turn then permits one, tested for Claude Code and Codex. The
+sidecar helper writes under the already-held lock without joining the
+ordinary sidecar queue: self-review found and tested the inverse queue
+wait that the first implementation introduced (`9a1ae06`).
+
+I1's test records as the hooks do, rebuilds the index and then sweeps:
+one conversation and one copy of each source uuid remain. I2's test
+uses independent index connections, both synced before either record,
+then orders the lock-held writes: Codex and Hermes each create one
+conversation. The first writer publishes its mapping before unlocking,
+so the second writer's lookup sees it even after a stale sync.
+
+I3 lets a reread visit every selected halt past both watermark gates.
+The halt journal carries whether the read was a backfill, including
+when it made no conversation; a repair preserves that suppression.
+M1 keeps every recently modified session pending through a backfill,
+then accepts a later answer, tested for all three hosts. Backfill no
+longer implies that a session is over.
+
+M2 uses atomic hashed markers alongside unread state for each halt and
+unnamed source, so a dismissed or unchanged halt does not flood the log.
+M3 retains counts for records, halts, failures and stopped hosts only.
+M4's 201-session test checks the archive size when each progress line
+is written, proving progress appears during the work. M5 gathers the
+recording limits and capped review in Candidates, and includes Task 7's
+last commit. M6 documents the cost of suppressing a whole mixed merge;
+the underlying limitation remains as ruled.
+
+The behavior regressions were each seen failing before their fixes.
+Final verification: `bun run check` with all XDG roots in a temporary
+directory, 3,116 passing, one existing skip, zero failures.
+The final fix report retains the individual RED and GREEN commands and
+outputs. No real backfill, model call, push or branch change was made.
+The user's backfill remains their call, after these fixes are verified.
