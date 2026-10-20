@@ -27,6 +27,11 @@ import {
     type RecordEvent,
     type RecordRequest,
 } from "@dorothy/core";
+import {
+    EMPTY_SIDECAR,
+    setBackfilled,
+    updateSidecar,
+} from "../memory/sidecar.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { syncIndex } from "../recall/sync.js";
 import {
@@ -204,6 +209,36 @@ describe("acceptRecord", () => {
                 other.close();
             }
         });
+
+    it("marks a backfill under the lock while another sidecar edit waits", async () => {
+        const pending: Promise<unknown>[] = [];
+        try {
+            await index.lock(async () => {
+                pending.push(
+                    updateSidecar(
+                        transcriptDir(env),
+                        PHRASE,
+                        (current) => ({
+                            ...(current ?? EMPTY_SIDECAR),
+                            title: "Synthetic.",
+                        }),
+                        index.lock,
+                    ),
+                );
+                const marked = setBackfilled(transcriptDir(env), PHRASE, true);
+                pending.push(marked);
+                const completed = await Promise.race([
+                    marked.then(() => true),
+                    new Promise<boolean>((resolve) =>
+                        setTimeout(() => resolve(false), 1000),
+                    ),
+                ]);
+                expect(completed).toBe(true);
+            });
+        } finally {
+            await Promise.allSettled(pending);
+        }
+    });
 
     describe("reading only what was appended", () => {
         const path = () => transcriptPath(PHRASE, env);

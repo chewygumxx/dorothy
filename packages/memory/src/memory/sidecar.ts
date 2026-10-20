@@ -736,12 +736,17 @@ export async function setBackfilled(
     phrase: string,
     backfilled: boolean,
 ): Promise<string | null> {
-    const result = await updateSidecar(dir, phrase, (current) =>
-        (current?.backfilled ?? false) === backfilled
-            ? null
-            : { ...(current ?? EMPTY_SIDECAR), backfilled },
+    // The caller holds the common lock. Joining updateSidecar's process
+    // queue could wait on an edit that is itself waiting for that lock.
+    const read = await readSidecar(dir, phrase);
+    if (read.kind === "unparseable")
+        throw new Error(`backfill mark could not be saved: ${read.reason}`);
+    const current = read.kind === "ok" ? read.sidecar : EMPTY_SIDECAR;
+    if ((current.backfilled ?? false) === backfilled) return null;
+    const path = sidecarPath(dir, phrase);
+    await writeAtomic(
+        path,
+        `${JSON.stringify({ ...current, rev: current.rev + 1, backfilled }, null, 2)}\n`,
     );
-    if (result.kind === "failed" || result.kind === "unparseable")
-        throw new Error(`backfill mark could not be saved: ${result.reason}`);
-    return result.kind === "written" ? sidecarPath(dir, phrase) : null;
+    return path;
 }
