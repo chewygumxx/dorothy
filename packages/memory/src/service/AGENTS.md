@@ -26,7 +26,8 @@ This guide holds what binds [the sweep](../recording/AGENTS.md) to a store.
 
 - `recording.ts`: `sweepBinding` and `sweepDeps` give the sweep its
   `record` (the contract's `acceptRecord`, returning the conversation's
-  phrase from the shared `sessions`), `recordClaude`, `conversation` (syncs
+  phrase from the shared `sessions`), `recordClaude` (syncs before its first
+  record per sweep), `conversation` (syncs
   the index, then looks the session up), `isPrivate` and `onRecorded`.
 - `jobs.ts`: `startJobs` also runs `sweep` at the start and every
   `[recording] sweep-seconds`, one at a time, a line of counts to the log

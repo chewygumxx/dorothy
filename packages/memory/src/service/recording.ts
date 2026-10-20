@@ -57,6 +57,7 @@ export function sweepDeps(
     only?: SweepDeps["only"],
 ): SweepDeps {
     const { env, index, store, sessions, log } = binding;
+    let claudeSynced = false;
     return {
         hosts: binding.hosts,
         backfill,
@@ -91,8 +92,12 @@ export function sweepDeps(
                     null,
             };
         },
-        recordClaude: (report, project) =>
-            recordSession(report, {
+        recordClaude: async (report, project) => {
+            if (!claudeSynced) {
+                await binding.sync();
+                claudeSynced = true;
+            }
+            return recordSession(report, {
                 env,
                 index,
                 versions: binding.versions,
@@ -100,7 +105,8 @@ export function sweepDeps(
                 project,
                 backfill,
                 ...(binding.now === undefined ? {} : { now: binding.now }),
-            }),
+            });
+        },
         conversation: async (host, session) => {
             await binding.sync();
             return sessionPhrase(index, sessionKey(host, session));

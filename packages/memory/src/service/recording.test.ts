@@ -9,7 +9,15 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
+import {
+    mkdir,
+    mkdtemp,
+    readdir,
+    readFile,
+    rm,
+    utimes,
+    writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type Env, newPhrase } from "@dorothy/core";
@@ -19,6 +27,7 @@ import {
     text,
     userLine,
 } from "../bodies/fixtures.js";
+import { recordSession } from "../bodies/record.js";
 import { dataRoot, type FactStore } from "../facts/store.js";
 import type { Lock } from "../memory/sidecar.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
@@ -148,6 +157,61 @@ const codex = (results: { host: string }[]) => {
 };
 
 describe("the sweep as the service binds it", () => {
+    it("continues a hooked Claude conversation after the index is rebuilt", async () => {
+        const path = join(
+            home,
+            ".claude/projects/-work",
+            `${CLAUDE_SESSION}.jsonl`,
+        );
+        const lines = [
+            userLine("u1", 0, "Synthetic."),
+            assistantLine("a1", 1, [text("Synthetic.")]),
+        ];
+        await mkdir(dirname(path), { recursive: true });
+        await writeFile(path, `${lines.join("\n")}\n`);
+        const first = await recordSession(
+            {
+                session: CLAUDE_SESSION,
+                transcript: path,
+                dir: "/synthetic",
+                since: null,
+                ended: true,
+            },
+            {
+                env,
+                index,
+                versions: null,
+                project: null,
+                log: { info() {}, warn() {}, error() {} },
+            },
+        );
+        expect(first.kind).toBe("recorded");
+        index.close();
+        await rm(indexPath(env));
+        index = RecallIndex.open(indexPath(env));
+        await writeFile(
+            path,
+            `${[...lines, userLine("u2", 2, "Synthetic more.")].join("\n")}\n`,
+        );
+        await utimes(path, LIVE, LIVE);
+        await binding(EARLY).bound.run({ backfill: true });
+        const files = (await readdir(transcriptDir(env))).filter((name) =>
+            name.endsWith(".jsonl"),
+        );
+        expect(files).toHaveLength(1);
+        const body = await readFile(
+            join(transcriptDir(env), files[0] ?? ""),
+            "utf8",
+        );
+        expect(
+            body
+                .trim()
+                .split("\n")
+                .map((line) => JSON.parse(line).sourceUuid)
+                .filter(Boolean),
+        ).toEqual(["u1", "a1", "u2"]);
+    });
+
     it("queues a live conversation for extraction and its project for export", async () => {
         const repo = await repoAt("app");
         await rollout(repo, LIVE);
