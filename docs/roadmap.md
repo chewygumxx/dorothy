@@ -113,19 +113,22 @@ then ran the six live probes. The report carries the remaining limits;
 the owner's evaluation run and the other harnesses' recording still
 lead the work ahead.
 
-- **Status**: Store, Bodies, Contract and Evaluation Built; the First
-  Run and Recording Next, then the Engine, then Delivery
+- **Status**: Store, Bodies, Contract and Evaluation Built; Recording
+  Next, then the First Run, the Engine and Delivery
 - **Required**: Requisites Fulfilled
 - **Rationale**: Wherever she goes, her memory follows with her. The
   contract gives every harness one service and every engine one
   interface, and the evaluation can now measure her memory, which the
-  user judges weak. Its first run comes first, as the engine's spec
-  chooses on its numbers; should those leave the choice open, the
-  engine's spec may first ask for adapters to the field's systems.
-  With the harnesses chosen, recording for Codex, OpenClaw and Hermes
-  waits on no number and goes beside the run, which needs the owner's
-  time. Delivery comes last, once the engine it delivers is chosen;
-  the sweep has closed its two preceding safety pieces.
+  user judges weak. A first retrieval run on her data (2026-10-20) found
+  10 conversations and one question to mine: she records only sessions
+  begun through `dorothy --claude`, while the user's Claude Code holds
+  some 970 sessions and Codex a few. Recording therefore comes first,
+  for Claude Code, Codex, OpenClaw and Hermes, with a backfill of the
+  sessions each already holds, recorded without a paid review apiece.
+  The first run follows on that corpus, and the engine's spec chooses on
+  its numbers; should they leave the choice open, it may first ask for
+  adapters to the field's systems. Delivery comes last, once the engine
+  it delivers is chosen; the sweep has closed its two safety pieces.
 
 ### Model Providers
 
@@ -246,8 +249,9 @@ Links between conversations and semantic search beside FTS5.
 
 Found but not scheduled, each with its source.
 
-- The sweep's remaining [deferred minors and limits](./reports/2026-10-19-roadmap-sweep.md#deferred),
-  including bridge timer cleanup, failure diagnostics, transcript-cache
+- The sweep's remaining deferred minors and limits
+  ([record](./reports/2026-10-19-roadmap-sweep.md#deferred)), including
+  bridge timer cleanup, failure diagnostics, transcript-cache
   assumptions, catalogue snapshot visibility and recovery edge cases.
 - The evaluation's later systems and checks: adapters for Hindsight,
   OpenViking, EverOS, Honcho and an improved Dorothy; an agentic mode
@@ -446,3 +450,7 @@ In order of completion.
   lose the closed work and keep the sweep's deferred minors and design
   limits. The owner's evaluation run and recording for Codex, OpenClaw
   and Hermes remain next; the engine and delivery still follow them.
+- 2026-10-20: A first retrieval run found her archive too small to
+  measure: 10 conversations, against some 970 Claude Code sessions she
+  never recorded. Recording, with a backfill of existing sessions, moves
+  ahead of the first run.
