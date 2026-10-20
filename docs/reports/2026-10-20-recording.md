@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-20
-mtime: 2026-10-20
+mtime: 2026-10-21
 spdx: GPL-3.0-only
 title: The recording implementation
 description: >-
@@ -40,7 +40,7 @@ No test read a harness's store or Dorothy's data. The one reading of the
 user's real stores was the probe, which copied sessions and ran on the
 copies, as its section says.
 
-Final verification for the tree committed with this report:
+Verification before the final review and its fix wave:
 `bun run check` passes with 3100 tests passing, one skipped and none
 failing, its XDG roots in a temporary directory. The skip is the
 existing code-simplification skill-link test. `lint:md`, `lint:emdash`
@@ -60,7 +60,7 @@ Task 4's range holds its four fix rounds.
 | 4 | The sweep | `800bf11..7e61b81` | Claude |
 | 5 | Service, CLI, configuration | `7e61b81..99be6c0` | Claude |
 | 6 | The probe | `99be6c0..8f357e9` | Claude |
-| 7 | The record | `8f357e9..b324af2` | Claude |
+| 7 | The record | `8f357e9..1ad7e1d` | Claude |
 
 Claude Sonnet implemented Tasks 4 to 7 and the fix rounds of Tasks 4 and
 5; a fresh Claude Opus took Task 4's fourth round. Tasks 1 and 2 had one
@@ -128,8 +128,9 @@ the consequence below is this report's assessment, not a new ruling.
     warns. Cost if wrong: a file lost later goes unremarked, and the
     replay it causes is deduplicated.
 15. A foreground `dorothy --sweep` leaves extraction to the next launch's
-    catch-up, binding throwaway idle, backfilled and touched maps. Cost
-    if wrong: no immediate notes after `--sweep`, which was not asked.
+    catch-up for live records. The final fix wave persists backfill
+    suppression in the sidecar; process maps are only hints. Cost if
+    wrong: no immediate notes after a foreground live sweep.
 16. A non-Claude halt is reread and dismissed under `--sweep`, as
     `--sweep --reread` and `--sweep --dismiss <host> <session>`, leaving
     `--claude-hook` to Claude; `--reread` visits only the sessions a halt
@@ -315,7 +316,8 @@ the open items the work leaves.
 - **Task 1:** User speech beginning with an unclosed host-wrapper marker
   is dropped; deliberate and tested.
 - **Task 2:** A merge of a swept and an unswept message is suppressed
-  whole, never split on text; the guide should say so.
+  whole, never split on text; its unswept text is never recorded. The
+  guide now states this cost (M6).
 - **Task 2:** A child's held set includes uids its parent never emitted,
   when the parent is halted or pending; rare.
 - **Task 2:** `decoded` is shadowed in `decodeSpeech`; rename.

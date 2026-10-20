@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-10-20
+mtime: 2026-10-21
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -117,8 +117,8 @@ knowledge is fenced and marked throughout recall, with `--verify` for
 the user, and the service clamps its block to each host's budget. It
 also closed the actionable deferred findings and code-review defects,
 then ran the six live probes. The report carries the remaining limits.
-Recording is built; the user's backfill, then the owner's first run, now
-lead the work ahead.
+Recording's final fixes close the backfill cost and reread defects;
+verify them before the user's backfill, then the owner's first run.
 
 - **Status**: Store, Bodies, Contract, Evaluation and Recording Built;
   the User's Backfill Next, then the First Run with generated and
@@ -263,6 +263,11 @@ Found but not scheduled, each with its source.
   ([record](./reports/2026-10-19-roadmap-sweep.md#deferred)), including
   bridge timer cleanup, failure diagnostics, transcript-cache
   assumptions, catalogue snapshot visibility and recovery edge cases.
+- Recording's deferred minors and limits
+  ([record](./reports/2026-10-20-recording.md#deferred)): mixed swept and
+  unswept Hermes merges, parent holdings, wrapper markers, fingerprint
+  UPDATE blindness and legacy UID ambiguity; a capped review of
+  backfilled sessions remains later work.
 - The evaluation's later systems and checks: adapters for Hindsight,
   OpenViking, EverOS, Honcho and an improved Dorothy; an agentic mode
   driving the MCP tools; LongMemEval-S as a public anchor; a corrected
