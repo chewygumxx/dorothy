@@ -233,6 +233,16 @@ function calls(
     return result;
 }
 
+// A failed call's source id: its message, its provider id percent-encoded
+// (so it holds no colon) and, past the first use, the use's number. No two
+// calls share one, whatever characters the provider's id holds.
+function failureId(message: number, call: ToolCall): string {
+    const id = encodeURIComponent(call.id);
+    return call.occurrence > 0
+        ? `${message}:${id}:${call.occurrence}`
+        : `${message}:${id}`;
+}
+
 function absorbedUids(value: unknown): string[] {
     if (value === null) return [];
     const uids = json(
@@ -504,7 +514,7 @@ function decodeSession(
                         input: call.input,
                         output: "",
                         ok: false,
-                        sourceId: `${origin.sourceId}:${call.id}${call.occurrence > 0 ? `:${call.occurrence}` : ""}`,
+                        sourceId: failureId(origin.sourceId, call),
                         at: origin.at,
                     },
                 });

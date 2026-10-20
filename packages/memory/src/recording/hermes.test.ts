@@ -493,6 +493,27 @@ describe("readHermes tools", () => {
             expect(again?.events).toEqual(read?.events);
         });
     }
+    it("keeps failure ids of delimiter-bearing provider ids apart", async () => {
+        const ids = ["repeated", "repeated", "repeated:1", "a%3Ab", "a:b"];
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "assistant", null, {
+                calls: JSON.stringify(ids.map((id) => hermesCall(id))),
+            });
+        });
+        const [read] = readHermes(path, 0, undefined, { ended: true });
+        const failed = read?.events.map((event) => event.sourceId) ?? [];
+        expect(failed).toEqual([
+            "1:repeated",
+            "1:repeated:1",
+            "1:repeated%3A1",
+            "1:a%253Ab",
+            "1:a%3Ab",
+        ]);
+        expect(new Set(failed).size).toBe(ids.length);
+        const [again] = readHermes(path, 0, undefined, { ended: true });
+        expect(again?.events).toEqual(read?.events);
+    });
     it("keeps an unanswered call pending after a halt even when the session has ended", async () => {
         const path = await fixture((db) => {
             hermesSession(db);

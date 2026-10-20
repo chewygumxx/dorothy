@@ -93,7 +93,7 @@ readers never open a Dorothy store.
 - `pending` is the earliest unanswered assistant row's id, holding
   later events; its own speech can emit. Replay retains earlier rows,
   so an answer after `since` can find its call. With `ended` and no halt
-  the call is recorded failed (source id `<row>:<id>[:n]`, n the repeat),
+  the call is recorded failed (source id `<row>:<id>[:n]`, id escaped),
   releasing the rest; else it stays pending.
 - A uid's source id is its lowest physical row id in that session,
   including rewind rows (`active=0, compacted=0`). Decode only visible
