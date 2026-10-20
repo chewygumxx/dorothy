@@ -89,6 +89,8 @@ readers never open a Dorothy store.
   one assistant row has both speech and multiple calls. `ok` means answered.
   Durable tool occurrence uids pair first; older rows use the latest
   preceding call with that provider id within the same user turn.
+  Folded UID maps can hold one uid per occurrence in a list; shared
+  response uids consume their calls in order, once per result.
 - `pending` is the earliest unanswered assistant row's id, holding
   later events; its own speech can emit. Replay retains earlier rows,
   so an answer after `since` can find its call. An ended session with
@@ -130,3 +132,8 @@ masked.
 `event_msg/item_completed` carries `exit_code` and `status` keys. A future
 reader could use those for execution outcomes if its `id` can be linked
 to the response item's `call_id`; that linkage is not established here.
+
+For Hermes, Task 3's source should apply `since` before decoding wherever
+possible. Preserve the all-row uid minimum and the call context needed
+by later results; a physical query cursor and a stable event id serve
+different purposes. The current reader still decodes earlier rows.
