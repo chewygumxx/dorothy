@@ -871,7 +871,7 @@ describe("readHermes compaction copies", () => {
             hermesSession(db);
             hermesMessage(db, 1, "user", "Original words.", {
                 active: 0,
-                compacted: 1,
+                compacted: 0,
             });
             hermesMessage(db, 2, "user", "Original words.", { second: 1 });
             db.run("UPDATE messages SET message_uid = 'fixture-uid'");
@@ -901,5 +901,123 @@ describe("readHermes compaction copies", () => {
         expect(
             readHermes(path, 0)[0]?.events.map((event) => event.sourceId),
         ).toEqual(["1", "2"]);
+    });
+});
+
+describe("readHermes stable ids across real tail flags", () => {
+    it("does not emit a carried copy again after its original was swept", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 3, "user", "Original speech.");
+            db.run("UPDATE messages SET message_uid = 'fixture-carried'");
+        });
+        expect(readHermes(path, 0)[0]?.events).toEqual([
+            {
+                kind: "user",
+                text: "Original speech.",
+                sourceId: "3",
+                at: hermesAt(3),
+            },
+        ]);
+        const writer = new Database(path);
+        try {
+            writer.run(
+                "UPDATE messages SET active = 0, compacted = 0 WHERE id = 3",
+            );
+            hermesMessage(writer, 9, "user", "Original speech.", { second: 3 });
+            writer.run(
+                "UPDATE messages SET message_uid = 'fixture-carried' WHERE id = 9",
+            );
+        } finally {
+            writer.close();
+        }
+        expect(readHermes(path, 3)[0]?.events).toEqual([]);
+        expect(readHermes(path, 0)[0]?.events).toEqual([
+            {
+                kind: "user",
+                text: "Original speech.",
+                sourceId: "3",
+                at: hermesAt(3),
+            },
+        ]);
+    });
+    it("uses the visible payload and the lowest physical id, without reviving an invisible uid", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "user", "Earlier payload.", { active: 0 });
+            hermesMessage(db, 2, "user", "Rewound speech.", { active: 0 });
+            hermesMessage(db, 8, "user", "Visible payload.");
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-copied' WHERE id IN (1, 8)",
+            );
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-rewound' WHERE id = 2",
+            );
+        });
+        expect(readHermes(path, 0)[0]?.events).toEqual([
+            {
+                kind: "user",
+                text: "Visible payload.",
+                sourceId: "1",
+                at: hermesAt(8),
+            },
+        ]);
+    });
+    it("preserves result ids through cloned call and result rows", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            const calls = JSON.stringify([hermesCall("call")]);
+            hermesMessage(db, 1, "assistant", null, { calls, active: 0 });
+            hermesMessage(db, 2, "tool", "Answer.", {
+                callId: "call",
+                active: 0,
+            });
+            hermesMessage(db, 6, "assistant", null, { calls, second: 1 });
+            hermesMessage(db, 7, "tool", "Answer.", {
+                callId: "call",
+                second: 2,
+            });
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-call' WHERE id IN (1, 6)",
+            );
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-result' WHERE id IN (2, 7)",
+            );
+        });
+        expect(readHermes(path, 0)[0]?.events).toEqual([
+            {
+                kind: "tool",
+                name: "fixture",
+                input: "{}",
+                output: "Answer.",
+                ok: true,
+                sourceId: "2",
+                at: hermesAt(2),
+            },
+        ]);
+        expect(readHermes(path, 2)[0]?.events).toEqual([]);
+    });
+    it("holds a later copied event by physical position when its stable id is earlier", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "assistant", null, {
+                calls: JSON.stringify([hermesCall("waiting")]),
+                active: 0,
+            });
+            hermesMessage(db, 3, "assistant", "Later speech.", { active: 0 });
+            hermesMessage(db, 6, "assistant", null, {
+                calls: JSON.stringify([hermesCall("waiting")]),
+            });
+            hermesMessage(db, 8, "assistant", "Later speech.", { second: 3 });
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-call' WHERE id IN (1, 6)",
+            );
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-speech' WHERE id IN (3, 8)",
+            );
+        });
+        const [read] = readHermes(path, 0);
+        expect(read?.pending).toBe(6);
+        expect(read?.events).toEqual([]);
     });
 });

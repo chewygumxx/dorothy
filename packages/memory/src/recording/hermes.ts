@@ -214,8 +214,27 @@ function calls(
     return result;
 }
 
+type Decoded = { physical: number; event: RecordEvent };
+function sourceIds(rows: Json[]): Map<string, number> {
+    const ids = new Map<string, number>();
+    for (const row of rows) {
+        if (
+            typeof row.message_uid === "string" &&
+            row.message_uid.trim() &&
+            typeof row.id === "number" &&
+            Number.isSafeInteger(row.id) &&
+            row.id > 0
+        )
+            ids.set(
+                row.message_uid,
+                Math.min(ids.get(row.message_uid) ?? row.id, row.id),
+            );
+    }
+    return ids;
+}
 type DecodeState = {
     read: HermesRead;
+    decoded: Decoded[];
     since: number;
     pending: ToolCall[];
     byId: Map<string, ToolCall>;
@@ -225,7 +244,8 @@ type DecodeState = {
 function decodeTool(
     row: Json,
     id: number,
-    { read, since, byId, byUid }: DecodeState,
+    sourceId: number,
+    { decoded, since, byId, byUid }: DecodeState,
 ) {
     const key = callId(row.tool_call_id);
     const output = content(row.content);
@@ -237,23 +257,27 @@ function decodeTool(
     const call = uid === null ? byId.get(key) : byUid.get(uid);
     if (call && call.id === key && !call.answered) {
         call.answered = true;
-        if (id > since)
-            read.events.push({
-                kind: "tool",
-                name: call.name,
-                input: call.input,
-                output,
-                ok: true,
-                sourceId: String(id),
-                at,
+        if (sourceId > since)
+            decoded.push({
+                physical: id,
+                event: {
+                    kind: "tool",
+                    name: call.name,
+                    input: call.input,
+                    output,
+                    ok: true,
+                    sourceId: String(sourceId),
+                    at,
+                },
             });
     }
 }
 function decodeSpeech(
     row: Json,
     id: number,
+    sourceId: number,
     type: "user" | "assistant",
-    { read, since, pending, byId, byUid, known }: DecodeState,
+    { read, decoded, since, pending, byId, byUid, known }: DecodeState,
 ) {
     const said = content(row.content, type === "user" ? humanText : undefined);
     const at = timestamp(row.timestamp);
@@ -274,13 +298,16 @@ function decodeSpeech(
         byId.clear();
         byUid.clear();
     }
-    if (id > since && said.trim())
-        read.events.push({
-            kind: type,
-            text: said,
-            sourceId: String(id),
-            at,
-            ...(type === "assistant" ? { interrupted: false } : {}),
+    if (sourceId > since && said.trim())
+        decoded.push({
+            physical: id,
+            event: {
+                kind: type,
+                text: said,
+                sourceId: String(sourceId),
+                at,
+                ...(type === "assistant" ? { interrupted: false } : {}),
+            },
         });
 }
 
@@ -296,6 +323,7 @@ function decodeSession(session: Json, rows: Json[], since: number): HermesRead {
         unknown: [],
         pending: null,
     };
+    const decoded: Decoded[] = [];
     const pending: ToolCall[] = [];
     const byId = new Map<string, ToolCall>();
     const byUid = new Map<string, ToolCall>();
@@ -314,7 +342,8 @@ function decodeSession(session: Json, rows: Json[], since: number): HermesRead {
                 : nonempty(session.model, "invalid model");
         read.at = timestamp(session.started_at);
         const known = new Set<string>();
-        const state = { read, since, pending, byId, byUid, known };
+        const state = { read, decoded, since, pending, byId, byUid, known };
+        const ids = sourceIds(rows);
         const seenMessages = new Set<string>();
         for (const row of rows) {
             if (row.active !== 1 && row.compacted !== 1) continue;
@@ -365,20 +394,20 @@ function decodeSession(session: Json, rows: Json[], since: number): HermesRead {
                 if (seenMessages.has(messageUid)) continue;
                 seenMessages.add(messageUid);
             }
-            if (type === "tool") decodeTool(row, id, state);
-            else decodeSpeech(row, id, type, state);
+            const sourceId =
+                messageUid === null ? id : (ids.get(messageUid) ?? id);
+            if (type === "tool") decodeTool(row, id, sourceId, state);
+            else decodeSpeech(row, id, sourceId, type, state);
         }
     } catch (error) {
         if (!(error instanceof Unreadable)) throw error;
         read.halt = { id, type, reason: error.message };
     }
     read.pending = pending.find((call) => !call.answered)?.message ?? null;
-    if (read.pending !== null) {
-        const through = read.pending;
-        read.events = read.events.filter(
-            (event) => Number(event.sourceId) <= through,
-        );
-    }
+    const through = read.pending;
+    read.events = decoded
+        .filter((item) => through === null || item.physical <= through)
+        .map((item) => item.event);
     return read;
 }
 

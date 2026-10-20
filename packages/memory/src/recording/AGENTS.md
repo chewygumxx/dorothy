@@ -81,19 +81,24 @@ readers never open a Dorothy store.
   A malformed mapped row halts only its session, preserving the prefix;
   `halt.id` names the bad row, or is null for metadata or an invalid id.
   Unknown roles and tool types are retained once with their first `id`.
-- User and assistant speech use their row ids; a tool event uses its
-  result row's id and time. This keeps every event unique when one
-  assistant row has both speech and multiple calls. `ok` means answered.
+- User and assistant speech use their stable message ids; a tool uses
+  its result message's stable id and time. Each event stays unique when
+  one assistant row has both speech and multiple calls. `ok` means answered.
   Durable tool occurrence uids pair first; older rows use the latest
   preceding call with that provider id within the same user turn.
 - `pending` is the earliest unanswered assistant row's id, holding
   later events; its own speech can emit. Replay retains earlier rows,
   so an answer after `since` can find its call. An ended session with
   no result remains pending; no result id or outcome is invented.
-- The first retained row with a durable `message_uid` owns its stable
-  source id; compaction copies of that uid are skipped. Distinct uids
-  remain distinct even with identical text. Legacy rows without uids
-  retain their physical ids; never merge them just by repeated text.
+- A uid's source id is its lowest physical row id in that session,
+  including rewind rows (`active=0, compacted=0`). Decode only visible
+  rows (`active=1` or `compacted=1`); an entirely invisible uid emits
+  nothing. Compare `since` with that stable id. Pending and halt still
+  use physical positions, so a later copied event cannot bypass a gap.
+- Legacy copies can acquire fresh random uids from Hermes's insert
+  trigger and cannot be linked to their originals; such stores can
+  yield duplicate events. Never merge on text. Rows without uids retain
+  their physical ids; distinct uids stay distinct even for equal text.
 - Keep original compacted rows; omit inactive rewind rows, model-only
   composites, synthetic display rows and standalone compression handoffs.
   Read `content`, never `api_content`; remove user-role host wrappers and
