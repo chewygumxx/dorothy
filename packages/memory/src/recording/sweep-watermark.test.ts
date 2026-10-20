@@ -340,6 +340,94 @@ describe("a waiting session whose read is incomplete", () => {
     });
 });
 
+describe("a private session that also waits", () => {
+    // Privacy is decided before anything is kept aside or recorded, even
+    // for a session the watermark would leave to the backfill.
+    const CANARY = "SYNTHETIC_PRIVATE_CANARY";
+    const touched = (iso: string) => NOW.getTime() - Date.parse(iso);
+    const nothingKept = async () =>
+        expect(await readdir(join(r.home, "state/dorothy"))).not.toContain(
+            "unread",
+        );
+
+    it("keeps nothing of a Codex halt or new type", async () => {
+        const bad = line(
+            "response_item",
+            { type: "message", role: "user", content: CANARY },
+            2,
+        );
+        await r.file(
+            rollout("rollout-secret.jsonl"),
+            text(
+                meta(),
+                context(),
+                message("user", "Old.", 1),
+                bad,
+                line("future_type", { note: CANARY }, 3),
+            ),
+            touched("2026-10-20T09:00:04.000Z"),
+        );
+        const asked: string[] = [];
+        const [codex] = await r.run({
+            hosts: ["codex"],
+            now: () => new Date("2026-10-20T09:00:01.500Z"),
+            isPrivate: ({ session }) => {
+                asked.push(session);
+                return true;
+            },
+        });
+        expect(asked).toEqual([SESSION]);
+        expect(codex).toMatchObject({ private: 1, halted: 0, sessions: 0 });
+        await nothingKept();
+        expect(await r.conversations()).toEqual([]);
+    });
+
+    it("keeps nothing of a Hermes halt", async () => {
+        await r.hermes((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "user", "Old.");
+            hermesMessage(db, 2, "user", "\0json:{");
+        });
+        const asked: string[] = [];
+        const [hermes] = await r.run({
+            hosts: ["hermes"],
+            now: () => new Date("2026-10-20T10:00:01.500Z"),
+            isPrivate: ({ session }) => {
+                asked.push(session);
+                return true;
+            },
+        });
+        expect(asked).toEqual(["fixture-session"]);
+        expect(hermes).toMatchObject({ private: 1, halted: 0, sessions: 0 });
+        await nothingKept();
+    });
+
+    it("keeps nothing of a Claude Code halt or new type", async () => {
+        await r.file(
+            join(r.home, ".claude/projects/-work", `${SESSION}.jsonl`),
+            `${[
+                userLine("u1", 0, "Old."),
+                `{torn ${CANARY}`,
+                JSON.stringify({ type: "future", note: CANARY }),
+            ].join("\n")}\n`,
+            touched("2026-10-15T09:01:30.000Z"),
+        );
+        const asked: string[] = [];
+        const [claude] = await r.run({
+            hosts: ["claude-code"],
+            now: () => new Date("2026-10-15T09:00:30.000Z"),
+            isPrivate: ({ session }) => {
+                asked.push(session);
+                return true;
+            },
+        });
+        expect(asked).toEqual([SESSION]);
+        expect(claude).toMatchObject({ private: 1, halted: 0, sessions: 0 });
+        await nothingKept();
+        expect(await r.conversations()).toEqual([]);
+    });
+});
+
 describe("the backfill", () => {
     it("records every session regardless of the watermark, marked backfilled", async () => {
         await r.file(rollout("rollout-old.jsonl"), speech, 5 * HOUR);

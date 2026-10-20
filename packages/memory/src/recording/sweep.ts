@@ -338,22 +338,26 @@ async function recordRead(
     const found = view(read, ended, session.session ?? null);
     const id = found.session;
     const named = id ?? basename(session.path, ".jsonl");
-    if (waits(deps, found.events, mark)) {
-        result.waiting += 1;
-        return settle(sweeping, session, read, named, found, ended, result);
-    }
-    if (id === null && found.events.length > 0) {
+    if (
+        id === null &&
+        found.events.length > 0 &&
+        !waits(deps, found.events, mark)
+    ) {
         result.failed += 1;
         deps.log.error(
             `recording: ${host}: ${named} names no session; not recorded`,
         );
         return;
     }
+    // Privacy first: a private session keeps nothing, not even aside.
     const secret =
         id !== null &&
         (deps.isPrivate?.({ host, session: id, cwd: found.cwd }) ?? false);
     if (secret) {
         result.private += 1;
+    } else if (waits(deps, found.events, mark)) {
+        result.waiting += 1;
+        return settle(sweeping, session, read, named, found, ended, result);
     }
     const project = secret ? null : await projectOf(sweeping, found.cwd);
     let response: SweepRecord = {
@@ -559,17 +563,18 @@ async function recordClaudeRead(
 ) {
     const { deps, state } = sweeping;
     const id = basename(session.path, ".jsonl");
+    const cwd = firstCwd(read.lines);
+    // Privacy first: a private session keeps nothing, not even aside.
+    if (deps.isPrivate?.({ host: "claude-code", session: id, cwd }) ?? false) {
+        result.private += 1;
+        rememberRead(state, session.key, read);
+        return;
+    }
     const lines = readLines(read.lines, { ended });
     if (waits(deps, lines.events, mark)) {
         result.waiting += 1;
         const found = claudeView(read.lines, lines, id);
         return settle(sweeping, session, read, id, found, ended, result);
-    }
-    const cwd = firstCwd(read.lines);
-    if (deps.isPrivate?.({ host: "claude-code", session: id, cwd }) ?? false) {
-        result.private += 1;
-        rememberRead(state, session.key, read);
-        return;
     }
     const project = await projectOf(sweeping, cwd);
     const recorded = await deps.recordClaude(
