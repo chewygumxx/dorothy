@@ -664,6 +664,51 @@ describe("recording", () => {
         }
         expect((await messages(history))[0]).toBe("user commit");
     });
+    it.each([
+        ["/facts", true],
+        ["/facts/projects", true],
+        ["-other", false],
+    ])(
+        "takes a git run in the data directory%s as running: %p",
+        async (under, kept) => {
+            const history = await open();
+            const path = join(root, ".git", "index.lock");
+            writeFileSync(path, "");
+            const old = Date.now() / 1000 - 120;
+            utimesSync(path, old, old);
+            const readdir = filesystem.readdir;
+            const readFile = filesystem.readFile;
+            const readlink = filesystem.readlink;
+            const directory = spyOn(filesystem, "readdir").mockImplementation(((
+                ...args: Parameters<typeof readdir>
+            ) =>
+                args[0] === "/proc"
+                    ? Promise.resolve(["300"])
+                    : readdir(...args)) as typeof readdir);
+            const file = spyOn(filesystem, "readFile").mockImplementation(((
+                ...args: Parameters<typeof readFile>
+            ) =>
+                args[0] === "/proc/300/comm"
+                    ? Promise.resolve("git\n")
+                    : readFile(...args)) as typeof readFile);
+            const link = spyOn(filesystem, "readlink").mockImplementation(((
+                ...args: Parameters<typeof readlink>
+            ) =>
+                args[0] === "/proc/300/cwd"
+                    ? Promise.resolve(`${realpathSync(root)}${under}`)
+                    : readlink(...args)) as typeof readlink);
+            try {
+                put(root, "tags.json", vocabulary(1));
+                await record(history, ["tags.json"], "git elsewhere");
+                expect(existsSync(path)).toBe(kept);
+            } finally {
+                directory.mockRestore();
+                file.mockRestore();
+                link.mockRestore();
+            }
+        },
+    );
+
     it("keeps known running git after an unreadable process", async () => {
         const history = await open();
         const path = join(root, ".git", "index.lock");

@@ -76,6 +76,7 @@ const STALE_LOCK_MS = 60_000;
 const UNINSPECTED_LOCK_MS = 600_000;
 
 // Linux exposes a process's executable name and actual working directory.
+// A git counts if it runs in the data directory or any directory within.
 // A null result means the process table cannot be inspected.
 async function runningGit(root: string): Promise<boolean | null> {
     let processes: string[];
@@ -90,7 +91,11 @@ async function runningGit(root: string): Promise<boolean | null> {
         try {
             if ((await readFile(`/proc/${pid}/comm`, "utf8")).trim() !== "git")
                 continue;
-            if ((await readlink(`/proc/${pid}/cwd`)) === directory) return true;
+            const cwd = await readlink(`/proc/${pid}/cwd`);
+            // Run in the data directory or below it, as git finds the
+            // repository from any directory within.
+            if (cwd === directory || cwd.startsWith(`${directory}/`))
+                return true;
         } catch (error) {
             if ((error as { code?: string }).code !== "ENOENT") unknown = true;
         }
