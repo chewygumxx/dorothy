@@ -340,6 +340,15 @@ review of backfilled sessions, recording through each harness's hooks,
 and subagents' transcripts linked to their parents remain the spec's
 Later.
 
+The follow-up's check left these: a resumed chat on an unparseable sidecar
+  warns on every turn, not once; a chat turn's cleared mark reaches
+  history with the next sidecar commit, not its own; resolving a halt
+  reads its record on each clean read. By reading only: a live sweep's
+  `waits` path, for a session whose mtime was refreshed, rewrites a
+  backfill-kept halt as live, so a later reread makes it reviewable;
+  and a hook that re-halts at the same line clears a backfill-kept
+  halt's flag, which live activity justifies.
+
 ## Final review
 
 The whole-branch review found one Critical, three Important and six
