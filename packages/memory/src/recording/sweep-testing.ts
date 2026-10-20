@@ -126,12 +126,13 @@ export async function rig(): Promise<Rig> {
                     error: log("error"),
                 },
                 onRecorded: (conversation) => recorded.push(conversation),
-                record: async (request) => {
+                record: async (request, backfill = false) => {
                     requests.push(request);
                     const result = await acceptRecord(request, {
                         env,
                         index,
                         recorder: null,
+                        backfill,
                         lock: index.lock,
                         loopback: true,
                         sync: () => syncIndex(index, transcriptDir(env)),

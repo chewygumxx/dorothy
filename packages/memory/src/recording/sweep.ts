@@ -78,7 +78,10 @@ export type SweepDeps = {
     // The data directory, its lock and its history.
     store: FactStore;
     // The contract's record path; the phrase is the conversation's.
-    record: (request: RecordRequest) => Promise<SweepRecord>;
+    record: (
+        request: RecordRequest,
+        backfill?: boolean,
+    ) => Promise<SweepRecord>;
     // Claude Code's recorder of a session's transcript.
     recordClaude: (
         report: SessionReport,
@@ -304,7 +307,7 @@ async function sweepHost(sweeping: Sweeping, host: Host, result: HostSweep) {
     for (const session of listed) {
         if (deps.only?.(session) === false) continue;
         const at = session.at === null ? Number.NaN : Date.parse(session.at);
-        if (!deps.backfill && at < mark) {
+        if (!deps.backfill && deps.only === undefined && at < mark) {
             result.waiting += 1;
             continue;
         }
@@ -340,6 +343,7 @@ function waits(
 ) {
     return (
         !deps.backfill &&
+        deps.only === undefined &&
         events.length > 0 &&
         events.every((event) => Date.parse(event.at) < mark)
     );
@@ -367,6 +371,20 @@ async function recordRead(
     const id = viewed.session;
     const found = id === null ? pointerOnly(viewed, session) : viewed;
     const named = id ?? basename(session.path, ".jsonl");
+    // A reread retains the provenance of the halt it is resolving.
+    if (
+        !deps.backfill &&
+        deps.only !== undefined &&
+        (await readRecord(deps.env, named, host))?.backfilled === true
+    ) {
+        return recordRead(
+            { ...sweeping, deps: { ...deps, backfill: true } },
+            session,
+            read,
+            mark,
+            result,
+        );
+    }
     if (
         id === null &&
         found.events.length > 0 &&
@@ -397,13 +415,16 @@ async function recordRead(
         phrase: null,
     };
     if (id !== null && (secret || found.events.length > 0)) {
-        response = await deps.record({
-            host,
-            session: id,
-            ...(project === null ? {} : { project }),
-            ...(found.parent === null ? {} : { parent: found.parent }),
-            ...(secret ? { private: true } : { events: found.events }),
-        });
+        response = await deps.record(
+            {
+                host,
+                session: id,
+                ...(project === null ? {} : { project }),
+                ...(found.parent === null ? {} : { parent: found.parent }),
+                ...(secret ? { private: true } : { events: found.events }),
+            },
+            deps.backfill,
+        );
     }
     if (response.accepted > 0) {
         result.sessions += 1;
@@ -512,6 +533,7 @@ async function keepAside(
                 host,
                 session: named,
                 conversation: phrase,
+                backfilled: deps.backfill,
                 transcript: session.path,
                 dir: dirname(session.path),
                 since: null,

@@ -37,6 +37,8 @@ export type UnreadRecord = {
     host?: string;
     session: string;
     conversation: string | null;
+    // A reread preserves the backfill's review suppression.
+    backfilled?: boolean;
     // Claude Code's transcript, the launch's directory and its start,
     // for reading it again.
     transcript: string;

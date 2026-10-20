@@ -71,12 +71,12 @@ export function sweepDeps(
         // its store, so none is judged so. A harness that does (OpenClaw's
         // incognito) will answer here when its reader joins.
         isPrivate: () => false,
-        record: async (request) => {
+        record: async (request, backfilled = backfill) => {
             const result = await acceptRecord(request, {
                 env,
                 index,
                 recorder: store.recorder,
-                backfill,
+                backfill: backfilled,
                 lock: store.lock,
                 loopback: true,
                 sync: binding.sync,

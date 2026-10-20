@@ -33,6 +33,7 @@ import { indexCatalogue } from "../memory/catalogue.js";
 import { Reviewer } from "../memory/reviewer.js";
 import { isStale, MemoryService } from "../memory/service.js";
 import { NOTES, reviews, settle, until } from "../memory/service-testing.js";
+import { readSidecar } from "../memory/sidecar.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import {
     context,
@@ -268,6 +269,37 @@ describe("dorothy --sweep", () => {
         ).toBe(0);
         expect(out.join("")).toBe("codex: 2 events in 1 session\n");
         expect(await conversations()).toHaveLength(1);
+    });
+
+    it("rereads an old backfill halt without turning it live", async () => {
+        await rollout([...speech, unknownBlock], STALE);
+        await runSweep({ ...io(), backfill: true, now: () => AFTER });
+        expect(await halts(env, "codex")).toHaveLength(1);
+        // A repaired source remains old, with one more old event.
+        await rollout(
+            [...speech, message("user", "Synthetic recovered.", 3)],
+            STALE,
+        );
+        expect(
+            await runSweep({
+                ...io(),
+                backfill: false,
+                reread: true,
+                now: () => AFTER,
+            }),
+        ).toBe(0);
+        expect(await halts(env, "codex")).toEqual([]);
+        const [file] = await conversations();
+        if (!file) throw new Error("missing backfill");
+        const sidecar = await readSidecar(
+            transcriptDir(env),
+            file.slice(0, -6),
+        );
+        expect(sidecar).toMatchObject({
+            kind: "ok",
+            sidecar: { backfilled: true },
+        });
+        expect(out.join("")).toContain(`read codex ${SESSION} to its end`);
     });
 
     it("keeps a halt, which a reread resolves once the session reads", async () => {
