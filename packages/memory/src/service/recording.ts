@@ -49,6 +49,7 @@ export type SweepBinding = {
     touched: JobsDeps["touched"];
     log: HookLog;
     now?: () => Date;
+    progress?: SweepDeps["progress"];
 };
 
 export function sweepDeps(
@@ -66,6 +67,9 @@ export function sweepDeps(
         store,
         claudeDirs: binding.claudeDirs,
         log,
+        ...(binding.progress === undefined
+            ? {}
+            : { progress: binding.progress }),
         ...(binding.now === undefined ? {} : { now: binding.now }),
         // None of Claude Code, Codex or Hermes marks a session private in
         // its store, so none is judged so. A harness that does (OpenClaw's

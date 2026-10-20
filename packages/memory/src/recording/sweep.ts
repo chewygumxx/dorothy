@@ -98,6 +98,8 @@ export type SweepDeps = {
         cwd: string | null;
     }) => boolean;
     onRecorded?: (conversation: SweepConversation) => void;
+    // Foreground backfills report each hundred visited sessions.
+    progress?: (count: { host: Host; sessions: number }) => void;
     // The conversation a session already has, if any, up to date with the
     // archive.
     conversation?: (host: Host, session: string) => Promise<string | null>;
@@ -305,33 +307,40 @@ async function sweepHost(sweeping: Sweeping, host: Host, result: HostSweep) {
     );
     const listed = await sourceOf(deps, host).list();
     forgetMissing(state, host, new Set(listed.map((session) => session.key)));
+    let visited = 0;
     for (const session of listed) {
         if (deps.only?.(session) === false) continue;
-        const at = session.at === null ? Number.NaN : Date.parse(session.at);
-        if (!deps.backfill && deps.only === undefined && at < mark) {
-            result.waiting += 1;
-            continue;
-        }
-        let read: SourceRead | null;
         try {
-            // A backfill ignores what a live sweep remembered: that may
-            // have left the session waiting for it.
-            read = await session.read(
-                deps.backfill ? undefined : state.sessions[session.key],
-                { ended: isOver(sweeping, session) },
-            );
-        } catch (error) {
-            result.failed += 1;
-            deps.log.error(
-                `recording: ${host}: ${basename(session.path)} could not be read (${describe(error)})`,
-            );
-            continue;
+            const at =
+                session.at === null ? Number.NaN : Date.parse(session.at);
+            if (!deps.backfill && deps.only === undefined && at < mark) {
+                result.waiting += 1;
+                continue;
+            }
+            let read: SourceRead | null;
+            try {
+                // A backfill ignores what a live sweep remembered: that may
+                // have left the session waiting for it.
+                read = await session.read(
+                    deps.backfill ? undefined : state.sessions[session.key],
+                    { ended: isOver(sweeping, session) },
+                );
+            } catch (error) {
+                result.failed += 1;
+                deps.log.error(
+                    `recording: ${host}: ${basename(session.path)} could not be read (${describe(error)})`,
+                );
+                continue;
+            }
+            if (read === null) {
+                result.skipped += 1;
+                continue;
+            }
+            await recordRead(sweeping, session, read, mark, result);
+        } finally {
+            if (deps.backfill && ++visited % 100 === 0)
+                deps.progress?.({ host, sessions: visited });
         }
-        if (read === null) {
-            result.skipped += 1;
-            continue;
-        }
-        await recordRead(sweeping, session, read, mark, result);
     }
 }
 

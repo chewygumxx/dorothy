@@ -111,6 +111,8 @@ export async function runSweep({
             idle: new Map(),
             backfilled: new Set(),
             touched: new Set(),
+            progress: ({ host, sessions }) =>
+                out.write(`${host}: visited ${sessions} sessions\n`),
             log: {
                 info: (message) => log.info(message),
                 warn: (message) => {

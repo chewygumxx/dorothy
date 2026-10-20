@@ -10,6 +10,7 @@
 
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { readdirSync } from "node:fs";
 import {
     mkdir,
     mkdtemp,
@@ -234,6 +235,43 @@ describe("dorothy --sweep", () => {
                 index.close();
             }
         });
+
+    it("prints backfill progress before each hundred-session batch finishes", async () => {
+        await Promise.all(
+            Array.from({ length: 201 }, async (_, i) => {
+                const session = `00000000-0000-4000-8000-${i.toString(16).padStart(12, "0")}`;
+                await rollout(
+                    speech.map((each) => each.replaceAll(SESSION, session)),
+                    STALE,
+                    `${i}.jsonl`,
+                );
+            }),
+        );
+        const seen: number[] = [];
+        expect(
+            await runSweep({
+                ...io(),
+                backfill: true,
+                now: () => AFTER,
+                out: {
+                    write: (text) => {
+                        out.push(text);
+                        if (text.includes("visited"))
+                            seen.push(
+                                readdirSync(transcriptDir(env)).filter((name) =>
+                                    name.endsWith(".jsonl"),
+                                ).length,
+                            );
+                    },
+                },
+            }),
+        ).toBe(0);
+        expect(seen).toEqual([100, 200]);
+        expect(out.join("")).toContain(
+            "codex: visited 100 sessions\ncodex: visited 200 sessions\n",
+        );
+        expect(out.at(-1)).toBe("codex: 402 events in 201 sessions\n");
+    }, 15000);
 
     it("says what to set when no host is", async () => {
         await settings("[history]\nenabled = false\n");
