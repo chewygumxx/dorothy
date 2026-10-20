@@ -81,7 +81,7 @@ describe("the hook's log", () => {
         expect(await readFile(`${path}.1`, "utf8")).toBe(
             "the old log\n".repeat(20),
         );
-        expect(await readdir(join(home, "cache", "dorothy"))).toEqual([
+        expect((await readdir(join(home, "cache", "dorothy"))).sort()).toEqual([
             "claude-hook.log",
             "claude-hook.log.1",
         ]);
