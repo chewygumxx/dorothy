@@ -576,3 +576,94 @@ describe("Codex unobserved bookkeeping", () => {
         });
     }
 });
+
+describe("Codex repeated call ids", () => {
+    for (const family of ["function", "custom_tool"] as const) {
+        it(`keeps the first ${family} answer when more outputs append`, () => {
+            const lines = [
+                call(`${family}_call`, "repeated", "fixture", "first input"),
+                output(`${family}_call_output`, "repeated", "first answer"),
+            ];
+            const first = readCodex(lines);
+            const appended = readCodex([
+                ...lines,
+                output(`${family}_call_output`, "repeated", "extra answer"),
+            ]);
+            expect(first.events[0]).toMatchObject({ output: "first answer" });
+            expect(appended.events).toEqual(first.events);
+        });
+        it(`pairs repeated ${family} calls with answers in occurrence order`, () => {
+            const firstCall = call(
+                `${family}_call`,
+                "repeated",
+                "fixture",
+                "first input",
+            );
+            const firstAnswer = output(
+                `${family}_call_output`,
+                "repeated",
+                "first answer",
+            );
+            const lines = [
+                firstCall,
+                firstAnswer,
+                call(
+                    `${family}_call`,
+                    "repeated",
+                    "fixture",
+                    "second input",
+                    4,
+                ),
+                message("assistant", "After.", 5),
+            ];
+            const waiting = readCodex(lines);
+            expect(waiting.events).toHaveLength(1);
+            expect(waiting.events[0]).toMatchObject({
+                output: "first answer",
+                sourceId: "1",
+            });
+            expect(waiting.pending).toBe(2);
+            const answered = readCodex([
+                ...lines,
+                output(`${family}_call_output`, "repeated", "second answer", 6),
+            ]);
+            expect(answered.events[0]).toEqual(waiting.events[0]);
+            expect(answered.events[1]).toMatchObject({
+                input: "second input",
+                output: "second answer",
+                sourceId: "3",
+                at: at(4),
+            });
+            expect(answered.events[2]).toMatchObject({
+                kind: "assistant",
+                sourceId: "4",
+            });
+            expect(answered.pending).toBeNull();
+            const ended = readCodex(lines, { ended: true });
+            expect(ended.events[1]).toMatchObject({
+                input: "second input",
+                output: "",
+                ok: false,
+            });
+        });
+    }
+    it("keeps separate answer queues for the two tool families", () => {
+        const read = readCodex([
+            call("function_call", "shared", "fixture", "function first"),
+            call("custom_tool_call", "shared", "fixture", "custom first"),
+            call("function_call", "shared", "fixture", "function second"),
+            call("custom_tool_call", "shared", "fixture", "custom second"),
+            output("custom_tool_call_output", "shared", "custom one"),
+            output("function_call_output", "shared", "function one"),
+            output("function_call_output", "shared", "function two"),
+            output("custom_tool_call_output", "shared", "custom two"),
+        ]);
+        expect(
+            read.events.map((event) =>
+                event.kind === "tool" ? event.output : null,
+            ),
+        ).toEqual(["function one", "custom one", "function two", "custom two"]);
+        expect(read.pending).toBeNull();
+        expect(read.halt).toBeNull();
+    });
+});

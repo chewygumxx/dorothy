@@ -151,7 +151,7 @@ export function readCodex(
     const decoded: Decoded[] = [];
     // Only the valid prefix can supply answers. Nothing after a malformed
     // record is allowed to acknowledge an earlier call.
-    const answers = new Map<string, string>();
+    const answers = new Map<string, { outputs: string[]; next: number }>();
     for (const [index, raw] of lines.entries()) {
         if (raw.trim() === "") continue;
         let type: string | null = null;
@@ -246,7 +246,10 @@ export function readCodex(
                                 ? payload.output
                                 : blocks(payload.output, "\n");
                         time(record);
-                        answers.set(`${type}/${id}`, output);
+                        const key = `${type}/${id}`;
+                        const queue = answers.get(key);
+                        if (queue) queue.outputs.push(output);
+                        else answers.set(key, { outputs: [output], next: 0 });
                         continue;
                     }
                     case "response_item/message": {
@@ -299,7 +302,8 @@ export function readCodex(
             continue;
         }
         const { answerKey, ...call } = item.call;
-        const output = answers.get(answerKey);
+        const queue = answers.get(answerKey);
+        const output = queue?.outputs[queue.next++];
         if (output === undefined && !ended) {
             read.pending = item.line;
             break;
