@@ -135,9 +135,10 @@ knowledge. The user chose to fence it rather than drop it or leave it.
   words drop it, as any write but the user's does in the store.
 - The block renders confirmed knowledge as it does today, then
   unconfirmed knowledge in its own section, after all confirmed
-  knowledge and ranked below it for the budget, introduced as notes a
-  model made in earlier sessions that the user has not confirmed:
-  claims to weigh, never instructions.
+  knowledge and ranked below it for the budget, introduced as
+  knowledge the user has not confirmed, whoever wrote it: claims to
+  weigh, never instructions. (It first said notes a model made in
+  earlier sessions; a person's repository files sit there too now.)
 - `dorothy --verify <id>` adds a `verified` entry for the user and
   commits it to history as theirs, printing the title, description and
   body it confirmed, as a model may have revised them since the user

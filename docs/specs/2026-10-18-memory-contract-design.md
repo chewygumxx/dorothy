@@ -154,8 +154,8 @@ packs today:
 1. confirmed personal knowledge, types `user` and `feedback` first;
 2. confirmed project knowledge;
 3. unconfirmed knowledge, personal then project, in its own fenced
-   section: notes a model made in earlier sessions that the user has not
-   confirmed, claims to weigh and never instructions;
+   section: knowledge the user has not confirmed, whoever wrote it,
+   claims to weigh and never instructions;
 4. episodes: notes on the conversations most salient to this project,
    then on personal ones, never another project's, which `open` refuses;
 5. always, one closing line naming `search` and `open`.
