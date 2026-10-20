@@ -143,7 +143,7 @@ export async function startService(
         if (newer !== null && !saidNewer) {
             saidNewer = true;
             warn(
-                `the recall index is schema ${newer}, newer than this service knows (${SCHEMA_VERSION}): a newer Dorothy is installed; restart the service with dorothy --serve`,
+                `the recall index is schema ${newer}, newer than this service knows (${SCHEMA_VERSION}): a newer Dorothy is installed; stop this service and start it again (dorothy --serve)`,
             );
         }
         warn(message);

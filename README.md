@@ -324,7 +324,8 @@ warning on stderr says if the gateway found no marker to replace.
 and her own tools reach: an opening block for each session, recall for
 a message, four MCP tools (`brief`, `search`, `open`, `remember`) and
 records of each session. It listens on `127.0.0.1:4774`; the first
-`--mcp` starts it if it is not running.
+`--mcp` starts it if it is not running. It runs the code it started
+with: after upgrading Dorothy, stop it and start it again.
 
 ```sh
 bun run dev -- --serve

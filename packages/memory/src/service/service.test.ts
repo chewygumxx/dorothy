@@ -201,7 +201,7 @@ describe("the memory service", () => {
         };
         expect((await post("/v1/record", record)).status).toBe(500);
         expect((await post("/v1/record", record)).status).toBe(500);
-        const said = `the recall index is schema ${SCHEMA_VERSION + 1}, newer than this service knows (${SCHEMA_VERSION}): a newer Dorothy is installed; restart the service with dorothy --serve`;
+        const said = `the recall index is schema ${SCHEMA_VERSION + 1}, newer than this service knows (${SCHEMA_VERSION}): a newer Dorothy is installed; stop this service and start it again (dorothy --serve)`;
         expect(warned.filter((message) => message === said)).toHaveLength(1);
     });
 
