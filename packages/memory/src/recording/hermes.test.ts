@@ -491,3 +491,376 @@ describe("readHermes tools", () => {
         });
     }
 });
+
+describe("readHermes host context", () => {
+    for (const prefix of [
+        "[System:",
+        "[CONTEXT",
+        "[PRIOR CONTEXT",
+        "[IMPORTANT: Background",
+        "[Your active task list",
+        "[Planning state preserved",
+        "[ASYNC DELEGATION",
+        "[OUT-OF-BAND",
+        "Cronjob Response:",
+    ]) {
+        it(`omits the installed host prefix ${prefix}`, async () => {
+            const path = await fixture((db) => {
+                hermesSession(db);
+                hermesMessage(
+                    db,
+                    1,
+                    "user",
+                    `${prefix} Synthetic host context.`,
+                );
+                hermesMessage(db, 2, "user", "Actual fixture speech.");
+            });
+            expect(readHermes(path, 0)[0]?.events).toEqual([
+                {
+                    kind: "user",
+                    text: "Actual fixture speech.",
+                    sourceId: "2",
+                    at: hermesAt(2),
+                },
+            ]);
+        });
+    }
+    it("strips memory fences from user blocks, ignores api_content and preserves assistant/tool text", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(
+                db,
+                1,
+                "user",
+                hermesContent([
+                    {
+                        type: "text",
+                        text: "Before. <memory-context>Synthetic recalled material.</memory-context> After.",
+                    },
+                    {
+                        type: "text",
+                        text: "<MEMORY-CONTEXT>Synthetic context only.</MEMORY-CONTEXT>",
+                    },
+                ]),
+                { api: "Synthetic API-only injection." },
+            );
+            hermesMessage(
+                db,
+                2,
+                "assistant",
+                "<memory-context>Assistant quotation.</memory-context>",
+                { calls: JSON.stringify([hermesCall("call")]) },
+            );
+            hermesMessage(
+                db,
+                3,
+                "tool",
+                "<memory-context>Raw tool bytes.</memory-context>",
+                { callId: "call" },
+            );
+        });
+        const [read] = readHermes(path, 0);
+        expect(read?.events[0]).toMatchObject({
+            kind: "user",
+            text: "Before.  After.",
+        });
+        expect(read?.events[1]).toMatchObject({
+            kind: "assistant",
+            text: "<memory-context>Assistant quotation.</memory-context>",
+        });
+        expect(read?.events[2]).toMatchObject({
+            kind: "tool",
+            output: "<memory-context>Raw tool bytes.</memory-context>",
+        });
+    });
+    it("does not attribute an unterminated memory fence to the user", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(
+                db,
+                1,
+                "user",
+                "Keep this. <memory-context>Synthetic partial host material.",
+            );
+        });
+        expect(readHermes(path, 0)[0]?.events[0]).toMatchObject({
+            text: "Keep this.",
+        });
+    });
+    it("keeps the user's words on either side of a merged compression handoff", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(
+                db,
+                1,
+                "user",
+                "Before.\n[END OF PRIOR CONTEXT \u2014 COMPACTION SUMMARY BELOW]\n[CONTEXT SUMMARY]: Synthetic handoff.\n--- END OF CONTEXT SUMMARY \u2014 respond to the message below, not the summary above ---\nAfter.",
+                { summary: 1 },
+            );
+        });
+        expect(readHermes(path, 0)[0]?.events[0]).toMatchObject({
+            text: "Before.\n\nAfter.",
+        });
+    });
+    it("keeps speech following a standalone handoff's end marker", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(
+                db,
+                1,
+                "user",
+                "[CONTEXT COMPACTION \u2014 REFERENCE ONLY] Synthetic handoff.\n--- END OF CONTEXT SUMMARY \u2014 respond to the message below, not the summary above ---\nActual speech.",
+                { summary: 1, display: "hidden" },
+            );
+        });
+        expect(readHermes(path, 0)[0]?.events[0]).toMatchObject({
+            text: "Actual speech.",
+        });
+    });
+    it("omits known synthetic display rows and model-only composites but keeps steering speech", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "user", "Synthetic handoff.", { summary: 1 });
+            hermesMessage(db, 2, "user", "Synthetic notification.", {
+                display: "async_delegation_complete",
+            });
+            hermesMessage(db, 3, "user", "Synthetic hidden host note.", {
+                display: "hidden",
+            });
+            hermesMessage(db, 4, "user", "Duplicate model-only composite.");
+            db.run("UPDATE messages SET display_metadata = ? WHERE id = 4", [
+                '{"model_only":true}',
+            ]);
+            hermesMessage(db, 5, "user", "Actual steering speech.", {
+                display: "steer",
+            });
+        });
+        expect(readHermes(path, 0)[0]?.events).toEqual([
+            {
+                kind: "user",
+                text: "Actual steering speech.",
+                sourceId: "5",
+                at: hermesAt(5),
+            },
+        ]);
+    });
+    it("keeps compacted original rows and omits rewound copies", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "user", "Original history.", {
+                active: 0,
+                compacted: 1,
+            });
+            hermesMessage(db, 2, "user", "Rewound draft.", { active: 0 });
+            hermesMessage(db, 3, "user", "Current speech.");
+        });
+        expect(
+            readHermes(path, 0)[0]?.events.map((event) => event.sourceId),
+        ).toEqual(["1", "3"]);
+    });
+});
+
+describe("readHermes halt boundaries", () => {
+    for (const bad of [
+        "UPDATE messages SET content = X'FF' WHERE id = 2",
+        "UPDATE messages SET timestamp = 'invalid fixture time' WHERE id = 2",
+        "UPDATE messages SET role = '' WHERE id = 2",
+    ]) {
+        it("keeps the valid prefix and continues other sessions after a bad mapped row", async () => {
+            const path = await fixture((db) => {
+                hermesSession(db);
+                hermesSession(db, "other-session");
+                hermesMessage(db, 1, "user", "Before.");
+                hermesMessage(db, 2, "user", "Invalid fixture row.");
+                hermesMessage(db, 3, "assistant", "Beyond the halt.");
+                hermesMessage(db, 4, "user", "Another session.", {
+                    session: "other-session",
+                });
+                db.exec(bad);
+            });
+            const reads = readHermes(path, 0);
+            expect(reads[0]?.events).toEqual([
+                {
+                    kind: "user",
+                    text: "Before.",
+                    sourceId: "1",
+                    at: hermesAt(1),
+                },
+            ]);
+            expect(reads[0]?.halt?.id).toBe(2);
+            expect(reads[0]?.halt?.reason).not.toContain(
+                "Invalid fixture row.",
+            );
+            expect(reads[1]?.events[0]).toMatchObject({
+                text: "Another session.",
+            });
+        });
+    }
+    for (const value of [
+        "\0json:{",
+        hermesContent({ text: "Unsupported envelope." }),
+        hermesContent([{ type: "text" }]),
+        hermesContent([{ type: "text", text: 42 }]),
+        hermesContent([{}]),
+        hermesContent([{ type: "future_block" }]),
+    ]) {
+        it("halts at malformed structured content without coercing it to speech", async () => {
+            const path = await fixture((db) => {
+                hermesSession(db);
+                hermesMessage(db, 1, "user", value);
+                hermesMessage(db, 2, "assistant", "After.");
+            });
+            const [read] = readHermes(path, 0);
+            expect(read?.events).toEqual([]);
+            expect(read?.halt).toMatchObject({ id: 1, type: "user" });
+        });
+    }
+    it("retains pending and halt and never acknowledges with an answer beyond the halt", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "assistant", null, {
+                calls: JSON.stringify([hermesCall("waiting")]),
+            });
+            hermesMessage(db, 2, "tool", "Bad answer.", { callId: "waiting" });
+            db.run(
+                "UPDATE messages SET timestamp = 'invalid fixture time' WHERE id = 2",
+            );
+            hermesMessage(db, 3, "tool", "Beyond halt.", { callId: "waiting" });
+        });
+        const [read] = readHermes(path, 0);
+        expect(read?.events).toEqual([]);
+        expect(read?.pending).toBe(1);
+        expect(read?.halt).toEqual({
+            id: 2,
+            type: "tool",
+            reason: "invalid timestamp",
+        });
+    });
+    for (const bad of [
+        "UPDATE sessions SET cwd = ''",
+        "UPDATE sessions SET started_at = 'invalid fixture time'",
+        "UPDATE sessions SET model = ''",
+        "UPDATE sessions SET source = ''",
+    ]) {
+        it("halts malformed session metadata before emitting messages", async () => {
+            const path = await fixture((db) => {
+                hermesSession(db);
+                hermesMessage(db, 1, "user", "After invalid metadata.");
+                db.exec(bad);
+            });
+            const [read] = readHermes(path, 0);
+            expect(read?.events).toEqual([]);
+            expect(read?.halt).toMatchObject({ id: null, type: "session" });
+        });
+    }
+    it("keeps the first unknown tool type without treating it as a function", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "assistant", "Before.", {
+                calls: JSON.stringify([
+                    { type: "future_tool" },
+                    { type: "future_tool" },
+                ]),
+            });
+            hermesMessage(db, 2, "assistant", "After.");
+        });
+        const [read] = readHermes(path, 0);
+        expect(read?.unknown).toEqual([
+            { id: 1, type: "tool_call/future_tool" },
+        ]);
+        expect(read?.events).toHaveLength(2);
+        expect(read?.halt).toBeNull();
+    });
+    it("never guesses a result for an ended session's unanswered call", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db, "fixture-session", { ended: 1 });
+            hermesMessage(db, 1, "assistant", null, {
+                calls: JSON.stringify([hermesCall("unanswered")]),
+            });
+        });
+        const [read] = readHermes(path, 0);
+        expect(read?.events).toEqual([]);
+        expect(read?.pending).toBe(1);
+    });
+});
+
+describe("readHermes memory notices", () => {
+    it("removes the recalled-memory system note while keeping speech after it", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(
+                db,
+                1,
+                "user",
+                "[System note: The following is recalled memory context, NOT new user input. Synthetic header.]\n<memory-context>Synthetic recalled facts.</memory-context>\nActual speech.",
+            );
+        });
+        expect(readHermes(path, 0)[0]?.events[0]).toMatchObject({
+            text: "Actual speech.",
+        });
+    });
+});
+
+describe("readHermes stored shapes", () => {
+    it("keeps unknown roles without interpreting their unrelated columns", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "future-role", null);
+            db.run(
+                "UPDATE messages SET content = X'FF', display_metadata = '{' WHERE id = 1",
+            );
+            hermesMessage(db, 2, "user", "After.");
+        });
+        const [read] = readHermes(path, 0);
+        expect(read?.unknown).toEqual([{ id: 1, type: "future-role" }]);
+        expect(read?.events[0]).toMatchObject({ text: "After." });
+        expect(read?.halt).toBeNull();
+    });
+    it("reads the known multimodal tool envelope without opening its image", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "assistant", null, {
+                calls: JSON.stringify([hermesCall("call")]),
+            });
+            hermesMessage(
+                db,
+                2,
+                "tool",
+                hermesContent({
+                    _multimodal: true,
+                    text_summary: "Synthetic image description.",
+                    content: [
+                        {
+                            type: "image",
+                            source: { type: "base64", data: "synthetic" },
+                        },
+                    ],
+                }),
+                { callId: "call" },
+            );
+        });
+        const [read] = readHermes(path, 0);
+        expect(read?.events[0]).toMatchObject({
+            kind: "tool",
+            output: "Synthetic image description.",
+            sourceId: "2",
+        });
+        expect(read?.halt).toBeNull();
+    });
+    for (const type of ["input_text", "output_text"]) {
+        it(`decodes the installed retry parser's ${type} text alias`, async () => {
+            const path = await fixture((db) => {
+                hermesSession(db);
+                hermesMessage(
+                    db,
+                    1,
+                    "user",
+                    hermesContent([{ type, text: "Synthetic text." }]),
+                );
+            });
+            expect(readHermes(path, 0)[0]?.events[0]).toMatchObject({
+                text: "Synthetic text.",
+            });
+        });
+    }
+});

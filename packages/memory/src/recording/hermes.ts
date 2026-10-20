@@ -51,13 +51,83 @@ function json(value: string, reason: string): unknown {
         throw new Unreadable(reason);
     }
 }
-function content(value: unknown): string {
+// Hermes's own synthetic-user markers, not inferred from user content.
+// agent/context_compressor.py and agent/memory_manager.py own these.
+const HOST_PREFIXES = [
+    "[System:",
+    "[CONTEXT",
+    "[PRIOR CONTEXT",
+    "[IMPORTANT: Background",
+    "[Your active task list",
+    "[Planning state preserved",
+    "[ASYNC DELEGATION",
+    "[OUT-OF-BAND",
+    "Cronjob Response:",
+];
+const MERGED = "[END OF PRIOR CONTEXT \u2014 COMPACTION SUMMARY BELOW]";
+const SUMMARY_END =
+    "--- END OF CONTEXT SUMMARY \u2014 respond to the message below, not the summary above ---";
+const MEMORY_NOTE =
+    "[System note: The following is recalled memory context, NOT new user input.";
+function hasSummary(value: unknown): value is string {
+    return (
+        typeof value === "string" &&
+        (value.includes("[CONTEXT") ||
+            value.includes("[PRIOR CONTEXT") ||
+            value.includes(MERGED))
+    );
+}
+function humanText(value: string): string | null {
+    let said = "";
+    let from = 0;
+    let fenced = false;
+    for (const match of value.matchAll(/<\s*(\/?)\s*memory-context\s*>/gi)) {
+        if (!fenced) said += value.slice(from, match.index);
+        fenced = match[1] !== "/";
+        from = match.index + match[0].length;
+    }
+    if (!fenced) said += value.slice(from);
+    said = said.trim();
+    if (said.startsWith(MEMORY_NOTE)) {
+        const end = said.indexOf("]");
+        said = end < 0 ? "" : said.slice(end + 1).trim();
+    }
+    const merged = said.indexOf(MERGED);
+    if (merged >= 0 && hasSummary(said.slice(merged + MERGED.length))) {
+        const end = said.indexOf(SUMMARY_END, merged);
+        const after =
+            end < 0 ? "" : said.slice(end + SUMMARY_END.length).trim();
+        said = [said.slice(0, merged).trim(), after]
+            .filter(Boolean)
+            .join("\n\n");
+    } else if (
+        said.startsWith("[CONTEXT") ||
+        said.startsWith("[PRIOR CONTEXT")
+    ) {
+        const end = said.indexOf(SUMMARY_END);
+        said = end < 0 ? "" : said.slice(end + SUMMARY_END.length).trim();
+    }
+    return !said || HOST_PREFIXES.some((prefix) => said.startsWith(prefix))
+        ? null
+        : said;
+}
+
+function content(
+    value: unknown,
+    spoken: (value: string) => string | null = (value) => value,
+): string {
     if (value === null) return "";
     const stored = text(value, "content is not text");
-    const decoded = stored.startsWith("\0json:")
+    let decoded = stored.startsWith("\0json:")
         ? json(stored.slice(6), "invalid content JSON")
         : stored;
-    if (typeof decoded === "string") return decoded;
+    if (
+        object(decoded) &&
+        decoded._multimodal === true &&
+        Array.isArray(decoded.content)
+    )
+        decoded = decoded.text_summary ?? decoded.content;
+    if (typeof decoded === "string") return spoken(decoded) ?? "";
     if (!Array.isArray(decoded))
         throw new Unreadable("unsupported structured content");
     return decoded
@@ -66,10 +136,13 @@ function content(value: unknown): string {
                 throw new Unreadable("a content block without its type");
             if (["image", "image_url", "input_image"].includes(block.type))
                 return "[image]";
-            if (block.type === "text")
-                return text(block.text, "a text block without its text");
+            if (["text", "input_text", "output_text"].includes(block.type))
+                return spoken(
+                    text(block.text, "a text block without its text"),
+                );
             throw new Unreadable("an unsupported content block");
         })
+        .filter((part): part is string => part !== null)
         .join("\n\n");
 }
 type ToolCall = {
@@ -172,6 +245,7 @@ function decodeSession(session: Json, rows: Json[], since: number): HermesRead {
         read.at = timestamp(session.started_at);
         const known = new Set<string>();
         for (const row of rows) {
+            if (row.active !== 1 && row.compacted !== 1) continue;
             id =
                 typeof row.id === "number" &&
                 Number.isSafeInteger(row.id) &&
@@ -182,6 +256,35 @@ function decodeSession(session: Json, rows: Json[], since: number): HermesRead {
             if (id === null) throw new Unreadable("invalid message id");
             type = nonempty(row.role, "no message role");
             if (type === "system" || type === "developer") continue;
+            if (type !== "user" && type !== "assistant" && type !== "tool") {
+                if (!known.has(type)) {
+                    read.unknown.push({ id, type });
+                    known.add(type);
+                }
+                continue;
+            }
+            if (row.display_metadata !== null) {
+                const display = json(
+                    text(row.display_metadata, "display metadata is not text"),
+                    "invalid display metadata JSON",
+                );
+                if (!object(display))
+                    throw new Unreadable("display metadata is not an object");
+                if (display.model_only === true) continue;
+            }
+            if (type === "user") {
+                if (row._compressed_summary === 1 && !hasSummary(row.content))
+                    continue;
+                if (
+                    row.display_kind !== null &&
+                    row.display_kind !== "steer" &&
+                    !(
+                        row.display_kind === "hidden" &&
+                        row._compressed_summary === 1
+                    )
+                )
+                    continue;
+            }
             if (type === "tool") {
                 const key = callId(row.tool_call_id);
                 const output = content(row.content);
@@ -209,14 +312,10 @@ function decodeSession(session: Json, rows: Json[], since: number): HermesRead {
                 }
                 continue;
             }
-            if (type !== "user" && type !== "assistant") {
-                if (!known.has(type)) {
-                    read.unknown.push({ id, type });
-                    known.add(type);
-                }
-                continue;
-            }
-            const said = content(row.content);
+            const said = content(
+                row.content,
+                type === "user" ? humanText : undefined,
+            );
             const at = timestamp(row.timestamp);
             if (type === "assistant") {
                 const decoded = calls(row, id);
@@ -271,7 +370,10 @@ export function readHermes(db: string, since = 0): HermesRead[] {
             )
             .all();
         const messages = reader.query<Json, [string]>(
-            "SELECT * FROM messages WHERE session_id = ? ORDER BY id",
+            `SELECT id, role, content, timestamp, tool_calls, tool_call_id,
+                    tool_call_uids, tool_call_uid, active, compacted,
+                    _compressed_summary, display_kind, display_metadata
+             FROM messages WHERE session_id = ? ORDER BY id`,
         );
         return sessions.map((session) =>
             decodeSession(
