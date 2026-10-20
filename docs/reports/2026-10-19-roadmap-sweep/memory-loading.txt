@@ -55,7 +55,7 @@ Model result:
     "fallback_credit": null
   }
 }
-stderr: 
+stderr:
 exit: 0
 
 memoryIndex checks for the two relative index links, and memoryHook
