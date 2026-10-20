@@ -11,7 +11,15 @@
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { closeSync, openSync, writeSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import {
+    chmod,
+    mkdir,
+    mkdtemp,
+    readFile,
+    rm,
+    stat,
+    writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { indexPath, RecallIndex, SCHEMA_VERSION, unusable } from "./store.js";
@@ -40,6 +48,11 @@ const insert = (index: RecallIndex, phrase: string) =>
         "INSERT INTO conversations (phrase, t_size, t_ino) VALUES (?, 0, 0)",
         [phrase],
     );
+
+// A persisted row survives only while the damaged file is left alone.
+// Read its bytes because damage makes the schema itself unqueryable.
+const SENTINEL = "recall-corruption-sentinel";
+const hasSentinel = async () => (await readFile(path)).includes(SENTINEL);
 
 describe("indexPath", () => {
     it("lives in the cache directory", () => {
@@ -263,9 +276,9 @@ describe("RecallIndex", () => {
 
         it("is rebuilt in place when no other process holds it", async () => {
             const index = RecallIndex.open(path);
-            insert(index, "a");
+            insert(index, SENTINEL);
             damage(index, Buffer.alloc(300, 0xff));
-            const before = (await stat(path)).ino;
+            expect(await hasSentinel()).toBe(true);
             const failure = await index
                 .exclusive(() => {
                     throw corruptError();
@@ -275,7 +288,7 @@ describe("RecallIndex", () => {
                 "database disk image is malformed",
             );
             expect(String(failure)).toContain("rebuilt");
-            expect((await stat(path)).ino).not.toBe(before);
+            expect(await hasSentinel()).toBe(false);
             expect(version(index)).toBe(SCHEMA_VERSION);
             expect(count(index)).toBe(0);
             // The next calls work on the new file.
@@ -289,15 +302,15 @@ describe("RecallIndex", () => {
 
         it("is left alone while another process holds it", async () => {
             const index = RecallIndex.open(path);
-            insert(index, "a");
+            insert(index, SENTINEL);
             index.db.run("PRAGMA wal_checkpoint(TRUNCATE)");
             const release = join(dir, "release");
             const child = holder(release);
-            const before = (await stat(path)).ino;
             let failure: unknown;
             try {
                 await child.stdout.getReader().read();
                 damage(index, Buffer.alloc(300, 0xff));
+                expect(await hasSentinel()).toBe(true);
                 failure = await index
                     .exclusive(() => {
                         throw corruptError();
@@ -311,7 +324,7 @@ describe("RecallIndex", () => {
                 "database disk image is malformed",
             );
             expect(String(failure)).toContain("not rebuilt");
-            expect((await stat(path)).ino).toBe(before);
+            expect(await hasSentinel()).toBe(true);
             // With the other process gone, the next failure rebuilds it.
             const later = await index
                 .exclusive(() => {
@@ -319,7 +332,7 @@ describe("RecallIndex", () => {
                 })
                 .catch((error: unknown) => error);
             expect(String(later)).toContain("rebuilt");
-            expect((await stat(path)).ino).not.toBe(before);
+            expect(await hasSentinel()).toBe(false);
             expect(count(index)).toBe(0);
             index.close();
         });
@@ -409,7 +422,7 @@ describe("RecallIndex", () => {
         };
         const made = () => {
             const first = RecallIndex.open(path);
-            insert(first, "a");
+            insert(first, SENTINEL);
             first.db.run("PRAGMA wal_checkpoint(TRUNCATE)");
             return first;
         };
@@ -417,9 +430,10 @@ describe("RecallIndex", () => {
         it("rebuilds it where no other process has it open", async () => {
             made().close();
             damageSchema();
-            const before = (await stat(path)).ino;
+            expect(await hasSentinel()).toBe(true);
             const index = RecallIndex.open(path);
-            expect((await stat(path)).ino).not.toBe(before);
+            expect(await hasSentinel()).toBe(false);
+            expect(version(index)).toBe(SCHEMA_VERSION);
             expect(count(index)).toBe(0);
             index.close();
         });
@@ -445,6 +459,7 @@ describe("RecallIndex", () => {
             }
             expect(String(failure)).toContain("not rebuilt");
             expect((await stat(path)).ino).toBe(before);
+            expect(await hasSentinel()).toBe(true);
         });
     });
 
