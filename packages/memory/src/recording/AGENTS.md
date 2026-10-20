@@ -143,7 +143,7 @@ readers never open a Dorothy store; tests use temporary roots.
 - Remember a read (`rememberRead`) only after the archive took it and unread
   diagnostics are saved. Never a halted or unstable read, one whose type was not
   kept, nor one holding lines behind an unanswered call (Claude's `held`,
-  others' `pending`) until `ended`: backfilled, or untouched an hour.
+  others' `pending`) until untouched an hour, including during backfill.
 - A halt keeps its rest in `bodies/unread.ts` under its host (Hermes counts
   rows); `dorothy --sweep --reread` and `--dismiss` serve it. A record
   failure stops that host, not others. [The service](../service/AGENTS.md)

@@ -349,10 +349,10 @@ function waits(
     );
 }
 
-// A backfilled session, or one untouched for an hour, is over.
-function isOver({ deps, started }: Sweeping, session: SourceSession) {
+// A session untouched for an hour is over, even during a backfill.
+function isOver({ started }: Sweeping, session: SourceSession) {
     const at = session.at === null ? Number.NaN : Date.parse(session.at);
-    return deps.backfill || started.getTime() - at >= ENDED_AFTER_MS;
+    return started.getTime() - at >= ENDED_AFTER_MS;
 }
 
 async function recordRead(

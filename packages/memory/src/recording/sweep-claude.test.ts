@@ -15,6 +15,7 @@ import {
     assistantLine,
     SESSION,
     text,
+    result as toolResult,
     use,
     userLine,
 } from "../bodies/fixtures.js";
@@ -169,6 +170,36 @@ describe("sweeping Claude Code", () => {
                 await claude({ now: () => new Date(NOW.getTime() + 3 * HOUR) }),
             ),
         ).toMatchObject({ skipped: 1 });
+    });
+
+    it("does not fail a Claude call still running during a backfill", async () => {
+        await r.file(
+            transcript(),
+            lines(
+                userLine("u1", 0, "Go."),
+                assistantLine("a1", 1, [use("active", "Bash", {})]),
+            ),
+            0,
+        );
+        await claude({ backfill: true });
+        expect(
+            JSON.parse(await readFile(sweepPath(r.env), "utf8")).sessions,
+        ).toEqual({});
+        expect(
+            (await r.conversations())
+                .flat()
+                .filter((event) => event.kind === "tool"),
+        ).toEqual([]);
+        await r.append(
+            transcript(),
+            lines(userLine("r1", 2, [toolResult("active", "Done.")])),
+        );
+        await claude({ backfill: true });
+        expect(
+            (await r.conversations())
+                .flat()
+                .filter((event) => event.kind === "tool"),
+        ).toMatchObject([{ ok: true, output: "Done." }]);
     });
 
     it("never records a private session", async () => {

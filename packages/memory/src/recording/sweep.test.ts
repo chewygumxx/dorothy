@@ -402,6 +402,67 @@ describe("what is remembered and when", () => {
         expect(conversation?.[2]).toMatchObject({ ok: false });
     });
 
+    it("does not fail a Codex call still running during a backfill", async () => {
+        const path = await r.file(
+            rollout(),
+            text(
+                meta(),
+                context(),
+                message("user", "Go."),
+                call("function_call", "active", "run", "{}", 2),
+            ),
+            0,
+        );
+        await r.run({ hosts: ["codex"], backfill: true });
+        expect(
+            JSON.parse(await readFile(sweepPath(r.env), "utf8")).sessions,
+        ).toEqual({});
+        expect(
+            (await r.conversations())
+                .flat()
+                .filter((event) => event.kind === "tool"),
+        ).toEqual([]);
+        await r.append(
+            path,
+            text(output("function_call_output", "active", "Done.", 3)),
+        );
+        await r.run({ hosts: ["codex"], backfill: true });
+        expect(
+            (await r.conversations())
+                .flat()
+                .filter((event) => event.kind === "tool"),
+        ).toMatchObject([{ ok: true, output: "Done." }]);
+    });
+
+    it("does not fail a Hermes call still running during a backfill", async () => {
+        await r.hermes((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "user", "Go.");
+            hermesMessage(db, 2, "assistant", null, {
+                calls: JSON.stringify([hermesCall("active")]),
+            });
+        });
+        const now = () => new Date("2026-10-20T10:00:04.000Z");
+        await r.run({ hosts: ["hermes"], backfill: true, now });
+        expect(
+            JSON.parse(await readFile(sweepPath(r.env), "utf8")).sessions,
+        ).toEqual({});
+        expect(
+            (await r.conversations())
+                .flat()
+                .filter((event) => event.kind === "tool"),
+        ).toEqual([]);
+        await r.hermes((db) =>
+            hermesMessage(db, 3, "tool", "Done.", { callId: "active" }),
+        );
+        await r.run({ hosts: ["hermes"], backfill: true, now });
+        expect(
+            (await r.conversations())
+                .flat()
+                .filter((event) => event.kind === "tool"),
+        ).toMatchObject([{ ok: true, output: "Done." }]);
+    });
+
     it("holds a Hermes session behind an unanswered call until it ages, then records it failed", async () => {
         await r.hermes((db) => {
             hermesSession(db);
@@ -446,8 +507,16 @@ describe("what is remembered and when", () => {
                 JSON.stringify({ repeated: ["uid-one", "uid-two"] }),
             ]);
         });
-        await r.run({ hosts: ["hermes"], backfill: true });
-        await r.run({ hosts: ["hermes"], backfill: true });
+        await r.run({
+            hosts: ["hermes"],
+            backfill: true,
+            now: () => new Date("2026-10-21T00:00:00.000Z"),
+        });
+        await r.run({
+            hosts: ["hermes"],
+            backfill: true,
+            now: () => new Date("2026-10-21T00:00:00.000Z"),
+        });
         const [conversation] = await r.conversations();
         const tools = conversation?.filter((event) => event.kind === "tool");
         expect(tools?.map((event) => event.sourceUuid)).toEqual([
