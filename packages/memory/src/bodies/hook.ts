@@ -579,7 +579,7 @@ async function reread(
     out: Output,
     err: Output,
 ): Promise<number> {
-    const records = await halts(env);
+    const records = await halts(env, "claude-code");
     if (records.length === 0) {
         out.write("dorothy: no unreadable lines are kept\n");
         return 0;
@@ -629,7 +629,7 @@ async function rereadOne(
         }
         return true;
     }
-    const now = (await halts(env)).find(
+    const now = (await halts(env, "claude-code")).find(
         (one) => one.session === record.session,
     );
     err.write(

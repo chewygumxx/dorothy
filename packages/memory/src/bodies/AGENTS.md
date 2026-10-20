@@ -64,7 +64,9 @@ reader, the store and reviews alone. The CLI loads both lazily.
   the notices a hook leaves for the next start (`notices.jsonl`);
   `startNotices` for both bodies, which tells a type once by a
   `.told` marker made only if none is there, and `unreadReport` for
-  `--check`.
+  `--check`. A record's `host` (Claude Code where absent) names another
+  harness, whose files take `<host>-<hash of the id>`; `--reread` and
+  `--dismiss` stay Claude Code's.
 - `log.ts`: the hook's log, `$XDG_CACHE_HOME/dorothy/claude-hook.log`,
   a message to one line however it breaks, rotated past 1 MB to one
   `.1` file (`rotate` moves it aside first, so a log another hook

@@ -184,4 +184,62 @@ describe("lines kept aside", () => {
         );
         expect(report.at(-1)).toContain("claude-hook.log holds errors");
     });
+
+    describe("another host's session", () => {
+        const HERMES = "20261020_101500_fixture";
+        const other = (host = "hermes", session = HERMES) => ({
+            ...halt(3),
+            host,
+            session,
+            transcript: "/h/state.db",
+        });
+
+        it("is kept under a name made of its host and a hash, not its id", async () => {
+            const copy = await keepHalt(env, other(), ["row 3"]);
+            expect(copy).not.toContain(HERMES);
+            expect(copy.startsWith(join(unreadDir(env), "hermes-"))).toBe(true);
+            expect(copy).toBe(copyPath(env, HERMES, "hermes"));
+            expect(await readFile(copy, "utf8")).toBe("row 3\n");
+            expect(await readRecord(env, HERMES, "hermes")).toMatchObject({
+                host: "hermes",
+                session: HERMES,
+            });
+            expect(await readRecord(env, HERMES)).toBeNull();
+        });
+
+        it("never collides with a Claude Code session of the same id", async () => {
+            await keepHalt(env, halt(), ["{bad"]);
+            await keepHalt(env, other("codex", S1), ["{bad too"]);
+            expect(await readFile(copyPath(env, S1), "utf8")).toBe("{bad\n");
+            expect(await readFile(copyPath(env, S1, "codex"), "utf8")).toBe(
+                "{bad too\n",
+            );
+            expect(await halts(env)).toHaveLength(2);
+            expect(await halts(env, "claude-code")).toHaveLength(1);
+            expect(await halts(env, "codex")).toHaveLength(1);
+        });
+
+        it("is told with its host, and without Claude Code's commands", async () => {
+            await keepHalt(env, other("codex", S1), ["{bad"]);
+            const [told] = await startNotices(env);
+            expect(told).toContain("a Codex session");
+            expect(told).toContain("past line 3");
+            expect(told).not.toContain("--claude-hook");
+        });
+
+        it("is dismissed and resolved by host", async () => {
+            await keepHalt(env, other(), ["row 3"]);
+            expect(await dismissHalt(env, HERMES)).toBe(false);
+            expect(await dismissHalt(env, HERMES, "hermes")).toBe(true);
+            expect(await startNotices(env)).toEqual([]);
+            await resolveHalt(env, HERMES, "hermes");
+            expect(await halts(env)).toEqual([]);
+            expect(await readdir(unreadDir(env))).toEqual([]);
+        });
+
+        it("is reported for --check", async () => {
+            await keepHalt(env, other(), ["row 3"]);
+            expect((await unreadReport(env))[0]).toContain("hermes");
+        });
+    });
 });

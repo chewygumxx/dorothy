@@ -30,8 +30,11 @@ import { type Env, isUuid } from "@dorothy/core";
 import { hookLogPath, logHasErrors } from "./log.js";
 import { beside, privateDir, stateDir, writePrivate } from "./state.js";
 
+const CLAUDE = "claude-code";
 export type UnreadRecord = {
     v: 1;
+    // The harness whose session halted; Claude Code where absent.
+    host?: string;
     session: string;
     conversation: string | null;
     // Claude Code's transcript, the launch's directory and its start,
@@ -54,16 +57,29 @@ export const unreadDir = (env: Env) => join(stateDir(env), "unread");
 const typesDir = (env: Env) => join(unreadDir(env), "types");
 const noticesPath = (env: Env) => join(stateDir(env), "notices.jsonl");
 
-function sessionFile(env: Env, session: string, suffix: string): string {
-    if (!isUuid(session)) {
-        throw new Error(`not a session id: ${session}`);
+// A session's file name: Claude Code's by its uuid, as it always was; any
+// other host's by the host and a hash of the id, which that host chooses
+// and may not be a safe name.
+function nameOf(host: string, session: string): string {
+    if (host === CLAUDE) {
+        if (!isUuid(session)) {
+            throw new Error(`not a session id: ${session}`);
+        }
+        return session;
     }
-    return join(unreadDir(env), `${session}${suffix}`);
+    if (!/^[a-z][a-z0-9-]*$/.test(host)) {
+        throw new Error(`not a host: ${host}`);
+    }
+    const hash = createHash("sha256").update(session).digest("hex");
+    return `${host}-${hash.slice(0, 24)}`;
 }
-export const copyPath = (env: Env, session: string) =>
-    sessionFile(env, session, ".jsonl");
-const recordPath = (env: Env, session: string) =>
-    sessionFile(env, session, ".json");
+const sessionFile = (env: Env, host: string, session: string, suffix: string) =>
+    join(unreadDir(env), `${nameOf(host, session)}${suffix}`);
+export const copyPath = (env: Env, session: string, host: string = CLAUDE) =>
+    sessionFile(env, host, session, ".jsonl");
+const recordPath = (env: Env, session: string, host: string = CLAUDE) =>
+    sessionFile(env, host, session, ".json");
+const hostOf = (record: Pick<UnreadRecord, "host">) => record.host ?? CLAUDE;
 
 async function list(dir: string): Promise<string[]> {
     try {
@@ -76,15 +92,17 @@ async function list(dir: string): Promise<string[]> {
 export async function readRecord(
     env: Env,
     session: string,
+    host: string = CLAUDE,
 ): Promise<UnreadRecord | null> {
-    if (!isUuid(session)) {
-        return null;
-    }
     try {
         const record = JSON.parse(
-            await readFile(recordPath(env, session), "utf8"),
+            await readFile(recordPath(env, session, host), "utf8"),
         );
-        return record?.v === 1 && record.session === session ? record : null;
+        return record?.v === 1 &&
+            record.session === session &&
+            hostOf(record) === host
+            ? record
+            : null;
     } catch {
         return null;
     }
@@ -99,12 +117,13 @@ export async function keepHalt(
     rest: readonly string[],
 ): Promise<string> {
     await privateDir(unreadDir(env));
-    const before = await readRecord(env, record.session);
-    const copy = copyPath(env, record.session);
+    const host = hostOf(record);
+    const before = await readRecord(env, record.session, host);
+    const copy = copyPath(env, record.session, host);
     await writePrivate(copy, rest.map((line) => `${line}\n`).join(""));
     const dismissed = before?.dismissed === true && before.line === record.line;
     await writePrivate(
-        recordPath(env, record.session),
+        recordPath(env, record.session, host),
         `${JSON.stringify({ v: 1, ...record, ...(dismissed ? { dismissed: true } : {}) })}\n`,
     );
     return copy;
@@ -145,40 +164,59 @@ export async function keepNewType(
     }
 }
 
-export async function halts(env: Env): Promise<UnreadRecord[]> {
+// The halts kept, of one host or all.
+export async function halts(env: Env, only?: string): Promise<UnreadRecord[]> {
     const records: UnreadRecord[] = [];
     for (const name of (await list(unreadDir(env))).sort()) {
-        const session = name.endsWith(".json")
-            ? name.slice(0, -".json".length)
-            : "";
-        const record = await readRecord(env, session);
-        if (record !== null) {
-            records.push(record);
+        if (!name.endsWith(".json")) {
+            continue;
+        }
+        try {
+            const record: UnreadRecord = JSON.parse(
+                await readFile(join(unreadDir(env), name), "utf8"),
+            );
+            if (
+                record?.v === 1 &&
+                `${nameOf(hostOf(record), record.session)}.json` === name &&
+                (only === undefined || hostOf(record) === only)
+            ) {
+                records.push(record);
+            }
+        } catch {
+            // Not a halt's record.
         }
     }
     return records;
 }
 
 // Stops a halt's notice; the copy stays. False when there is none.
-export async function dismissHalt(env: Env, session: string): Promise<boolean> {
-    const record = await readRecord(env, session);
+export async function dismissHalt(
+    env: Env,
+    session: string,
+    host: string = CLAUDE,
+): Promise<boolean> {
+    const record = await readRecord(env, session, host);
     if (record === null) {
         return false;
     }
     await writePrivate(
-        recordPath(env, session),
+        recordPath(env, session, host),
         `${JSON.stringify({ ...record, dismissed: true })}\n`,
     );
     return true;
 }
 
 // The session reads to its end: its copy and record go.
-export async function resolveHalt(env: Env, session: string): Promise<void> {
-    if (!isUuid(session)) {
+export async function resolveHalt(
+    env: Env,
+    session: string,
+    host: string = CLAUDE,
+): Promise<void> {
+    if (host === CLAUDE && !isUuid(session)) {
         return;
     }
-    await rm(copyPath(env, session), { force: true });
-    await rm(recordPath(env, session), { force: true });
+    await rm(copyPath(env, session, host), { force: true });
+    await rm(recordPath(env, session, host), { force: true });
 }
 
 export async function addNotice(
@@ -194,7 +232,12 @@ export async function addNotice(
     );
 }
 
+const HOSTS: Record<string, string> = { codex: "Codex", hermes: "Hermes" };
 const haltNotice = (env: Env, record: UnreadRecord) =>
+    hostOf(record) === CLAUDE
+        ? claudeNotice(env, record)
+        : `memory: a ${HOSTS[hostOf(record)] ?? hostOf(record)} session (${record.session}) could not be read past line ${record.line} (${record.reason}); the rest is kept in ${copyPath(env, record.session, hostOf(record))}. The sweep reads it again`;
+const claudeNotice = (env: Env, record: UnreadRecord) =>
     `memory: a Claude Code session (${record.session}) could not be read past line ${record.line} (${record.reason}); the rest is kept in ${copyPath(env, record.session)}. dorothy --claude-hook --reread tries again; --dismiss ${record.session} stops this notice`;
 
 // The types kept and not yet told, each now marked told: by a file made
@@ -278,7 +321,7 @@ export async function startNotices(env: Env): Promise<string[]> {
 export async function unreadReport(env: Env): Promise<string[]> {
     const lines = (await halts(env)).map(
         (record) =>
-            `unread: ${record.session} (${record.conversation ?? "no conversation yet"}), line ${record.line}: ${record.reason}; kept in ${copyPath(env, record.session)}${record.dismissed ? " (dismissed)" : ""}`,
+            `unread: ${hostOf(record) === CLAUDE ? "" : `${hostOf(record)} `}${record.session} (${record.conversation ?? "no conversation yet"}), line ${record.line}: ${record.reason}; kept in ${copyPath(env, record.session, hostOf(record))}${record.dismissed ? " (dismissed)" : ""}`,
     );
     const types = await keptTypes(env);
     if (types.length > 0) {
