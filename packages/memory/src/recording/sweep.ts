@@ -545,6 +545,7 @@ async function keepAside(
     }
     const { line, type, reason, rest, uuid = null } = found.halt;
     try {
+        const before = await readRecord(deps.env, named, host);
         await keepHalt(
             deps.env,
             {
@@ -563,6 +564,8 @@ async function keepAside(
             },
             rest,
         );
+        // Dismissal removes the claim, but the standing halt stays quiet.
+        if (before?.dismissed && before.line === line) return kept;
         // Told when it is new, not at every sweep.
         if (
             !(await claimLog(deps.env, [

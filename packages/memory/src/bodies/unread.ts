@@ -128,8 +128,31 @@ export async function keepHalt(
         recordPath(env, record.session, host),
         `${JSON.stringify({ v: 1, ...record, ...(dismissed ? { dismissed: true } : {}) })}\n`,
     );
+    if (
+        before &&
+        (before.line !== record.line || before.reason !== record.reason)
+    )
+        await forgetHaltLog(env, before);
     return copy;
 }
+
+const logPath = (env: Env, key: readonly string[]) =>
+    join(
+        unreadDir(env),
+        "logged",
+        `${createHash("sha256").update(JSON.stringify(key)).digest("hex")}.told`,
+    );
+const forgetHaltLog = (env: Env, record: UnreadRecord) =>
+    rm(
+        logPath(env, [
+            "halt",
+            hostOf(record),
+            record.session,
+            String(record.line),
+            record.reason,
+        ]),
+        { force: true },
+    );
 
 // A diagnostic logged once across sweeps and processes, like a new
 // type's .told marker. The key carries identity and position, not text.
@@ -139,9 +162,8 @@ export async function claimLog(
 ): Promise<boolean> {
     const dir = join(unreadDir(env), "logged");
     await privateDir(dir);
-    const name = createHash("sha256").update(JSON.stringify(key)).digest("hex");
     try {
-        await writeFile(join(dir, `${name}.told`), "", {
+        await writeFile(logPath(env, key), "", {
             mode: 0o600,
             flag: "wx",
         });
@@ -226,6 +248,7 @@ export async function dismissHalt(
         recordPath(env, session, host),
         `${JSON.stringify({ ...record, dismissed: true })}\n`,
     );
+    await forgetHaltLog(env, record);
     return true;
 }
 
@@ -238,6 +261,8 @@ export async function resolveHalt(
     if (host === CLAUDE && !isUuid(session)) {
         return;
     }
+    const record = await readRecord(env, session, host);
+    if (record !== null) await forgetHaltLog(env, record);
     await rm(copyPath(env, session, host), { force: true });
     await rm(recordPath(env, session, host), { force: true });
 }

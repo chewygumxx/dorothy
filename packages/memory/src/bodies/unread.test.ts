@@ -22,6 +22,7 @@ import { join } from "node:path";
 import { hookLog } from "./log.js";
 import {
     addNotice,
+    claimLog,
     copyPath,
     dismissHalt,
     halts,
@@ -99,6 +100,32 @@ describe("lines kept aside", () => {
         expect(await startNotices(env)).toEqual([]);
         await keepHalt(env, halt(9), ["{worse"]);
         expect(await startNotices(env)).toHaveLength(1);
+    });
+
+    for (const host of ["claude-code", "codex", "hermes"])
+        for (const action of ["resolve", "dismiss"])
+            it(`cleans only the ${host} halt log claim on ${action}`, async () => {
+                const record = { ...halt(), host };
+                const key = ["halt", host, S1, "7", record.reason];
+                await keepHalt(env, record, ["{bad"]);
+                expect(await claimLog(env, key)).toBe(true);
+                await claimLog(env, ["missing-session", "unrelated"]);
+                if (action === "resolve") await resolveHalt(env, S1, host);
+                else await dismissHalt(env, S1, host);
+                expect(
+                    await readdir(join(unreadDir(env), "logged")),
+                ).toHaveLength(1);
+                expect(await claimLog(env, key)).toBe(true);
+                expect(
+                    await claimLog(env, ["missing-session", "unrelated"]),
+                ).toBe(false);
+            });
+
+    it("cleans the previous halt log claim when the halt moves", async () => {
+        await keepHalt(env, halt(7), ["{bad"]);
+        await claimLog(env, ["halt", "claude-code", S1, "7", halt().reason]);
+        await keepHalt(env, halt(9), ["{bad next"]);
+        expect(await readdir(join(unreadDir(env), "logged"))).toEqual([]);
     });
 
     it("goes once resolved", async () => {

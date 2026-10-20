@@ -66,7 +66,9 @@ reader, the store and reviews alone. The CLI loads both lazily.
   `.told` marker made only if none is there, and `unreadReport` for
   `--check`. A record's `host` (Claude Code where absent) names another
   harness, whose files take `<host>-<hash of the id>`; atomic `logged/`
-  markers tell each halt or missing-session error once. `--reread` and
+  markers tell each halt or missing-session error once. Resolving or
+  dismissing a halt removes its marker; a dismissed standing halt stays
+  quiet, and a later recurrence is logged anew. `--reread` and
   `--dismiss` stay Claude Code's.
 - `log.ts`: the hook's log, `$XDG_CACHE_HOME/dorothy/claude-hook.log`,
   a message to one line however it breaks, rotated past 1 MB to one

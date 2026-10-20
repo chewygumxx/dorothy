@@ -426,3 +426,13 @@ The user's backfill remains their call, after these fixes are verified.
   lock and flush queue. Opening a chat or recording only its ready event
   leaves the mark intact. Actual openMemory resumes restore catalogue
   review eligibility, including when history is off.
+- N6: resolving or dismissing a halt removes its own hashed log marker,
+  preserving unrelated markers. Replacing a halt at another position
+  also removes the superseded marker. Dismissed standing halts remain
+  quiet; once resolved, a recurrence logs and counts again in every host.
+
+Follow-up fixes: `bf90a04` (N1), `5b54eaa` (N2), `58ce48d` (N3),
+`807020b` (N4), `7e40983` (N5), and this change (N6). The follow-up
+verification passed `bun run check` under temporary XDG roots: 3,143
+passed, one existing skip, zero failures. Individual RED/GREEN commands
+and outputs are in the ignored final fix report.

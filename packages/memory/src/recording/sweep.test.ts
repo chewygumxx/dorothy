@@ -663,6 +663,65 @@ describe("a session that halts", () => {
             ).toHaveLength(1);
         });
 
+    for (const host of ["claude-code", "codex", "hermes"] as const)
+        it(`logs a resolved ${host} halt again when it recurs`, async () => {
+            if (host === "hermes")
+                await r.hermes((db) => {
+                    hermesSession(db);
+                    hermesMessage(db, 1, "user", "Synthetic.");
+                });
+            const write = async (bad: boolean) => {
+                if (host === "claude-code")
+                    await r.file(
+                        join(
+                            r.home,
+                            ".claude/projects/-work",
+                            `${CLAUDE_SESSION}.jsonl`,
+                        ),
+                        text(
+                            claudeUser("u1", 0, "Synthetic."),
+                            ...(bad ? ["{bad"] : []),
+                        ),
+                        0,
+                    );
+                else if (host === "codex")
+                    await r.file(
+                        rollout(),
+                        text(
+                            ...speech,
+                            ...(bad
+                                ? [
+                                      line(
+                                          "response_item",
+                                          {
+                                              type: "message",
+                                              role: "user",
+                                              content: "not blocks",
+                                          },
+                                          3,
+                                      ),
+                                  ]
+                                : []),
+                        ),
+                        0,
+                    );
+                else
+                    await r.hermes((db) => {
+                        db.run("DELETE FROM messages WHERE id = 2");
+                        if (bad) hermesMessage(db, 2, "user", "\0json:{");
+                    });
+            };
+            await write(true);
+            expect((await r.run({ hosts: [host] }))[0]?.halted).toBe(1);
+            await write(false);
+            await r.run({ hosts: [host] });
+            await write(true);
+            expect((await r.run({ hosts: [host] }))[0]?.halted).toBe(1);
+            expect(
+                r.logs.filter((log) => log.includes("halted at")),
+            ).toHaveLength(2);
+        });
+
     it("keeps a Hermes halt by its row, filed under its host", async () => {
         await r.hermes((db) => {
             hermesSession(db);
