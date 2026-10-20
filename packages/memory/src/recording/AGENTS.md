@@ -34,8 +34,8 @@ readers never open a Dorothy store.
   ordered emission pass pairs calls inside the valid prefix.
 - `hermes.ts`: `readHermes(dbPath, since = 0)` opens Hermes SQLite
   read-only and returns one `HermesRead` per session, in session-id order.
-  Each has `session`, `source`, `cwd`, `model`, `at`, `events`, `halt`,
-  `unknown` and `pending`. Only emitted events are filtered by `since`;
+  Each has `session`, `parent`, `source`, `cwd`, `model`, `at`, `events`,
+  `halt`, `unknown` and `pending`. Only emitted events are filtered by `since`;
   decode earlier rows too, for call correlation and stable identities.
 - `hermes-fixtures.ts`: installed Hermes v31 `sessions`/`messages` table
   DDL and synthetic row builders. Writers create only temporary fixtures.
@@ -73,6 +73,9 @@ readers never open a Dorothy store.
 
 ## Hermes invariants
 
+- `parent` names `parent_session_id` for the contract's parent link.
+  A uid held by that parent session is not emitted again in the child.
+  Decode carried calls as correlation context for new child results.
 - The installed schema records a directory in `sessions.cwd`.
   `source` and `origin_json` describe transport/routing, never a fallback
   to this process's directory. No recorded cwd means a personal session.

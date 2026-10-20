@@ -13,6 +13,7 @@ import type { RecordEvent } from "@dorothy/core";
 
 export type HermesRead = {
     session: string | null;
+    parent: string | null;
     source: string | null;
     cwd: string | null;
     model: string | null;
@@ -246,6 +247,7 @@ function decodeTool(
     id: number,
     sourceId: number,
     { decoded, since, byId, byUid }: DecodeState,
+    emit: boolean,
 ) {
     const key = callId(row.tool_call_id);
     const output = content(row.content);
@@ -257,7 +259,7 @@ function decodeTool(
     const call = uid === null ? byId.get(key) : byUid.get(uid);
     if (call && call.id === key && !call.answered) {
         call.answered = true;
-        if (sourceId > since)
+        if (emit && sourceId > since)
             decoded.push({
                 physical: id,
                 event: {
@@ -278,6 +280,7 @@ function decodeSpeech(
     sourceId: number,
     type: "user" | "assistant",
     { read, decoded, since, pending, byId, byUid, known }: DecodeState,
+    emit: boolean,
 ) {
     const said = content(row.content, type === "user" ? humanText : undefined);
     const at = timestamp(row.timestamp);
@@ -298,7 +301,7 @@ function decodeSpeech(
         byId.clear();
         byUid.clear();
     }
-    if (sourceId > since && said.trim())
+    if (emit && sourceId > since && said.trim())
         decoded.push({
             physical: id,
             event: {
@@ -311,9 +314,15 @@ function decodeSpeech(
         });
 }
 
-function decodeSession(session: Json, rows: Json[], since: number): HermesRead {
+function decodeSession(
+    session: Json,
+    rows: Json[],
+    since: number,
+    parentUids: ReadonlySet<string>,
+): HermesRead {
     const read: HermesRead = {
         session: null,
+        parent: null,
         source: null,
         cwd: null,
         model: null,
@@ -331,6 +340,10 @@ function decodeSession(session: Json, rows: Json[], since: number): HermesRead {
     let type: string | null = "session";
     try {
         read.session = nonempty(session.id, "no session id");
+        read.parent =
+            session.parent_session_id === null
+                ? null
+                : nonempty(session.parent_session_id, "invalid parent session");
         read.source = nonempty(session.source, "no session source");
         read.cwd =
             session.cwd === null
@@ -396,8 +409,9 @@ function decodeSession(session: Json, rows: Json[], since: number): HermesRead {
             }
             const sourceId =
                 messageUid === null ? id : (ids.get(messageUid) ?? id);
-            if (type === "tool") decodeTool(row, id, sourceId, state);
-            else decodeSpeech(row, id, sourceId, type, state);
+            const emit = messageUid === null || !parentUids.has(messageUid);
+            if (type === "tool") decodeTool(row, id, sourceId, state, emit);
+            else decodeSpeech(row, id, sourceId, type, state, emit);
         }
     } catch (error) {
         if (!(error instanceof Unreadable)) throw error;
@@ -420,7 +434,7 @@ export function readHermes(db: string, since = 0): HermesRead[] {
     try {
         const sessions = reader
             .query<Json, []>(
-                "SELECT id, source, cwd, model, started_at FROM sessions ORDER BY id",
+                "SELECT id, parent_session_id, source, cwd, model, started_at FROM sessions ORDER BY id",
             )
             .all();
         const messages = reader.query<Json, [string]>(
@@ -429,11 +443,25 @@ export function readHermes(db: string, since = 0): HermesRead[] {
                     _compressed_summary, display_kind, display_metadata, message_uid
              FROM messages WHERE session_id = ? ORDER BY id`,
         );
+        const parentMessages = reader.query<Json, [string]>(
+            "SELECT DISTINCT message_uid FROM messages WHERE session_id = ? AND message_uid IS NOT NULL",
+        );
         return sessions.map((session) =>
             decodeSession(
                 session,
                 typeof session.id === "string" ? messages.all(session.id) : [],
                 since,
+                new Set(
+                    typeof session.parent_session_id === "string"
+                        ? parentMessages
+                              .all(session.parent_session_id)
+                              .flatMap((row) =>
+                                  typeof row.message_uid === "string"
+                                      ? [row.message_uid]
+                                      : [],
+                              )
+                        : [],
+                ),
             ),
         );
     } finally {

@@ -1021,3 +1021,139 @@ describe("readHermes stable ids across real tail flags", () => {
         expect(read?.events).toEqual([]);
     });
 });
+
+describe("readHermes compression children", () => {
+    it("names the parent and emits only the child's new uids regardless of session sort order", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db, "z-parent");
+            hermesSession(db, "a-child");
+            db.run(
+                "UPDATE sessions SET parent_session_id = 'z-parent' WHERE id = 'a-child'",
+            );
+            hermesMessage(db, 1, "user", "Carried speech.", {
+                session: "z-parent",
+            });
+            hermesMessage(db, 4, "user", "Carried speech.", {
+                session: "a-child",
+                second: 1,
+            });
+            hermesMessage(db, 5, "user", "New child speech.", {
+                session: "a-child",
+            });
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-carried' WHERE id IN (1, 4)",
+            );
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-new' WHERE id = 5",
+            );
+        });
+        const reads = readHermes(path, 0);
+        expect(reads[0]?.parent).toBe("z-parent");
+        expect(reads[0]?.events).toEqual([
+            {
+                kind: "user",
+                text: "New child speech.",
+                sourceId: "5",
+                at: hermesAt(5),
+            },
+        ]);
+        expect(reads[1]?.parent).toBeNull();
+        expect(reads[1]?.events).toEqual([
+            {
+                kind: "user",
+                text: "Carried speech.",
+                sourceId: "1",
+                at: hermesAt(1),
+            },
+        ]);
+        expect(
+            readHermes(path, 1)[0]?.events.map((event) => event.sourceId),
+        ).toEqual(["5"]);
+    });
+    it("does not emit a uid held by an invisible parent row", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db, "parent");
+            hermesSession(db, "child");
+            db.run(
+                "UPDATE sessions SET parent_session_id = 'parent' WHERE id = 'child'",
+            );
+            hermesMessage(db, 1, "user", "Carried.", {
+                session: "parent",
+                active: 0,
+            });
+            hermesMessage(db, 2, "user", "Carried.", { session: "child" });
+            db.run("UPDATE messages SET message_uid = 'fixture-carried'");
+        });
+        const reads = readHermes(path, 0);
+        expect(reads.flatMap((read) => read.events)).toEqual([]);
+        expect(reads[0]?.parent).toBe("parent");
+    });
+    it("keeps identical uids in unrelated sessions", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db, "first");
+            hermesSession(db, "second");
+            hermesMessage(db, 1, "user", "First.", { session: "first" });
+            hermesMessage(db, 2, "user", "Second.", { session: "second" });
+            db.run("UPDATE messages SET message_uid = 'fixture-unrelated'");
+        });
+        expect(
+            readHermes(path, 0).flatMap((read) =>
+                read.events.map((event) => event.sourceId),
+            ),
+        ).toEqual(["1", "2"]);
+    });
+    it("retains a carried call as correlation context for a new child result", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db, "parent");
+            hermesSession(db, "child");
+            db.run(
+                "UPDATE sessions SET parent_session_id = 'parent' WHERE id = 'child'",
+            );
+            const calls = JSON.stringify([
+                hermesCall("running", "fixture", "child input"),
+            ]);
+            hermesMessage(db, 1, "assistant", "Starting.", {
+                session: "parent",
+                calls,
+            });
+            hermesMessage(db, 3, "assistant", "Starting.", {
+                session: "child",
+                calls,
+                second: 1,
+            });
+            hermesMessage(db, 4, "tool", "Child answer.", {
+                session: "child",
+                callId: "running",
+            });
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-call' WHERE id IN (1, 3)",
+            );
+        });
+        const child = readHermes(path, 1).find(
+            (read) => read.session === "child",
+        );
+        expect(child?.events).toEqual([
+            {
+                kind: "tool",
+                name: "fixture",
+                input: "child input",
+                output: "Child answer.",
+                ok: true,
+                sourceId: "4",
+                at: hermesAt(4),
+            },
+        ]);
+        expect(child?.pending).toBeNull();
+        expect(child?.halt).toBeNull();
+    });
+    it("rejects a malformed parent as session metadata", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            db.run("UPDATE sessions SET parent_session_id = ''");
+            hermesMessage(db, 1, "user", "After bad metadata.");
+        });
+        const [read] = readHermes(path, 0);
+        expect(read?.events).toEqual([]);
+        expect(read?.halt).toMatchObject({ id: null, type: "session" });
+    });
+});
