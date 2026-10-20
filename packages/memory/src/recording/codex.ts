@@ -22,7 +22,7 @@ export type CodexRead = {
     events: RecordEvent[];
     halt: CodexHalt | null;
     unknown: { line: number; type: string }[];
-    // Zero-based line of an unanswered call; its sourceId is line + 1.
+    // Zero-based index in the supplied lines of an unanswered call.
     pending: number | null;
 };
 
@@ -68,7 +68,8 @@ function blocks(value: unknown, separator = "\n\n"): string {
         .map((block) => {
             if (
                 !object(block) ||
-                !["input_text", "output_text"].includes(String(block.type))
+                typeof block.type !== "string" ||
+                !["input_text", "output_text"].includes(block.type)
             ) {
                 throw new Unreadable("an unsupported text block");
             }
@@ -89,12 +90,23 @@ type Decoded =
               sourceId: string;
           };
       };
-export type CodexReadOptions = { ended?: boolean };
+export type CodexReadOptions = {
+    ended?: boolean;
+    // Physical lines preceding an appended slice; default is a full rollout.
+    lineOffset?: number;
+};
 
 export function readCodex(
     lines: readonly string[],
-    { ended = false }: CodexReadOptions = {},
+    { ended = false, lineOffset = 0 }: CodexReadOptions = {},
 ): CodexRead {
+    if (
+        lineOffset < 0 ||
+        !Number.isSafeInteger(lineOffset) ||
+        !Number.isSafeInteger(lineOffset + lines.length)
+    ) {
+        throw new RangeError("invalid line offset");
+    }
     const read: CodexRead = {
         session: null,
         cwd: null,
@@ -188,7 +200,7 @@ export function readCodex(
                                 name,
                                 input,
                                 at: time(record),
-                                sourceId: String(index + 1),
+                                sourceId: String(lineOffset + index + 1),
                             },
                         });
                         continue;
@@ -226,7 +238,7 @@ export function readCodex(
                                 event: {
                                     kind: payload.role,
                                     text: said,
-                                    sourceId: String(index + 1),
+                                    sourceId: String(lineOffset + index + 1),
                                     at,
                                     ...(payload.role === "assistant"
                                         ? { interrupted: false }

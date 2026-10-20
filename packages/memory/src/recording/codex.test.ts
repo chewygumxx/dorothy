@@ -179,6 +179,43 @@ describe("readCodex", () => {
         expect(read.events).toEqual([]);
         expect(read.halt?.line).toBe(0);
     });
+
+    it("halts rather than coercing an object used as a text block type", () => {
+        const read = readCodex([
+            line("response_item", {
+                type: "message",
+                role: "user",
+                content: [
+                    { type: { toString: null }, text: "Synthetic text." },
+                ],
+            }),
+        ]);
+        expect(read.events).toEqual([]);
+        expect(read.halt?.line).toBe(0);
+        expect(read.halt?.reason).toBe("an unsupported text block");
+    });
+});
+
+describe("Codex incremental line numbering", () => {
+    it("keeps source ids when a source supplies only an appended tail", () => {
+        const tail = [
+            call("function_call", "tail", "fixture", "{}"),
+            output("function_call_output", "tail", "Done."),
+        ];
+        const full = readCodex([meta(), context(), ...tail]);
+        const appended = readCodex(tail, { lineOffset: 2 });
+        expect(appended.events).toEqual(full.events);
+        expect(appended.events[0]?.sourceId).toBe("3");
+    });
+    for (const offset of [-1, 0.5, Number.MAX_SAFE_INTEGER]) {
+        it(`refuses an invalid or overflowing line offset (${offset})`, () => {
+            expect(() =>
+                readCodex([message("user", "Synthetic.")], {
+                    lineOffset: offset,
+                }),
+            ).toThrow("invalid line offset");
+        });
+    }
 });
 
 describe("Codex tool pairs", () => {
