@@ -1,0 +1,149 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-roadmap-sweep/http-proxy.txt
+
+Probe: HTTP_PROXY keeps the local gateway direct
+Date: 2026-10-20
+Claude Code: 2.1.300
+Bun: 1.4.2
+Herdr: 0.9.5
+Model: claude-haiku-5-5 (--model haiku; ANTHROPIC_MODEL=haiku for chat)
+Code under test: dc09077 before; working-tree fix committed as 1030eec after
+Verdict: PASS after test-first fix
+
+Commands:
+  python3 <probe-root>/proxy.py
+Ran once before and once after the fix below. The helper creates a proxy
+listener on 127.0.0.1 with an ephemeral port, then launches the real
+runClaude path with HTTP_PROXY at it, NO_PROXY and no_proxy empty, and
+other proxy variable variants removed. Parent CLAUDE_CODE_ check: none
+on both runs. All Dorothy roots are temporary; login is unchanged.
+The listener records destination host/port and method only, never headers
+or payloads. It tunnels the API and loopback requests, and denies unrelated
+hosts (only their count is kept). Listener and child are closed afterward.
+
+Child CLI arguments:
+  -p --model haiku --output-format json --no-session-persistence \
+     --tools '' -- 'Probe only: reply with exactly proxy-ok.'
+
+Selected proxy results:
+[
+  {
+    "phase": "before",
+    "gatewayPort": 41455,
+    "observerPort": 36059,
+    "proxyToGateway": 1,
+    "proxyToObserver": 1,
+    "proxyToApi": 9,
+    "unrelatedConnectionsBlocked": 4,
+    "result": "proxy-ok",
+    "exit": 0,
+    "costUsd": 0.0006920000000000001
+  },
+  {
+    "phase": "after",
+    "gatewayPort": 35269,
+    "observerPort": 43003,
+    "proxyToGateway": 0,
+    "proxyToObserver": 1,
+    "proxyToApi": 9,
+    "unrelatedConnectionsBlocked": 4,
+    "result": "proxy-ok",
+    "exit": 0,
+    "costUsd": 3.859e-05
+  }
+]
+Gateway after the fix:
+{"kind":"gateway-origin","port":"35269","inspectorPort":"43003"}
+{"kind":"request","path":"/v1/messages","model":"claude-haiku-5-5","systemBlocks":4,"identity":true,"markerLeft":false,"rootGuide":false,"packageGuide":false,"memoryIndex":false,"memoryHook":false}
+{"kind":"gateway-stats","injected":1,"drift":0}
+
+Before: a POST to the actual gateway port traversed the user's proxy.
+After: no connection to the gateway port reached the proxy, and the real
+reply succeeded. External API connections still traversed the proxy.
+The remaining loopback POST is the extra upstream observation hop, made
+by the probe's parent gateway process; it is not the Claude-to-gateway
+connection. Production's normal upstream is the external API.
+
+The after run used the working-tree patch, committed as 1030eec.
+Finding fixed in 1030eec, fix(cli): Bypass proxies for the local gateway.
+The child launch environment now includes the gateway hostname in both
+NO_PROXY and no_proxy whenever a proxy is configured. Existing entries
+from both lists are preserved, proxy URLs are unchanged, and the parent
+environment is untouched. The CLI guide documents this.
+
+Test-first RED command before changing production code:
+  bun test packages/cli/src/claude.test.ts
+  48 pass, 7 fail, 202 expect() calls; 55 tests.
+Failures: each HTTP/HTTPS/ALL proxy variable in either case lacked the
+loopback bypass; the existing-list preservation case also failed.
+
+GREEN command after the fix:
+  bun test packages/cli/src/claude.test.ts \
+    packages/cli/src/claude-dump.test.ts
+  64 pass, 0 fail, 265 expect() calls; 64 tests across two files.
+The real proxy probe was then rerun successfully as shown above.
+
+Cost: one model turn before and one after the fix, 0.000692 USD and
+0.00003859 USD respectively, as reported by the CLI. Proxy CONNECTs are
+connection attempts, not a count of model calls; the client's incidental
+startup requests are not part of the one user turn.
+
+Proxy fixture source (uses the helpers in interactive.txt):
+import json,select,socket,socketserver,subprocess,threading,urllib.parse
+from pathlib import Path
+from probe import ROOT,BUN,env_for,scrub
+connections=[]
+class Proxy(socketserver.BaseRequestHandler):
+    def handle(self):
+        data=b''
+        while b'\r\n\r\n' not in data and len(data)<65536:
+            part=self.request.recv(8192)
+            if not part:return
+            data+=part
+        head,_,tail=data.partition(b'\r\n\r\n')
+        method,target,_=head.split(b'\r\n',1)[0].decode().split(' ',2)
+        if method=='CONNECT':
+            host,port=target.rsplit(':',1);port=int(port)
+        else:
+            url=urllib.parse.urlsplit(target);host=url.hostname;port=url.port or 80
+        allowed=host in ['127.0.0.1','localhost','api.anthropic.com']
+        connections.append({'method':method,'host':host if allowed else '<unrelated-host>','port':port,'allowed':allowed})
+        if not allowed:
+            self.request.sendall(b'HTTP/1.1 502 Probe restricts destinations\r\nContent-Length: 0\r\n\r\n');return
+        with socket.create_connection((host,port),timeout=20) as upstream:
+            upstream.settimeout(None)
+            if method=='CONNECT':
+                self.request.sendall(b'HTTP/1.1 200 Connection Established\r\n\r\n')
+                if tail:upstream.sendall(tail)
+            else:
+                parts=head.split(b'\r\n');parts[0]=f'{method} {url.path or "/"}{"?"+url.query if url.query else ""} HTTP/1.1'.encode()
+                upstream.sendall(b'\r\n'.join(parts)+b'\r\n\r\n'+tail)
+            while True:
+                readable,_,_=select.select([self.request,upstream],[],[],20)
+                if not readable:return
+                for source in readable:
+                    part=source.recv(65536)
+                    if not part:return
+                    (upstream if source is self.request else self.request).sendall(part)
+class Server(socketserver.ThreadingTCPServer):
+    daemon_threads=True
+    allow_reuse_address=True
+server=Server(('127.0.0.1',0),Proxy)
+thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+env=env_for('proxy')
+for key in ['HTTP_PROXY','http_proxy','HTTPS_PROXY','https_proxy','ALL_PROXY','all_proxy','NO_PROXY','no_proxy']:
+    env.pop(key,None)
+env['HTTP_PROXY']=f'http://127.0.0.1:{server.server_address[1]}'
+env['NO_PROXY']='';env['no_proxy']=''
+try:
+    result=subprocess.run([BUN,'--no-env-file',str(ROOT/'observe.ts'),'dorothy','proxy','-p','--model','haiku','--output-format','json','--no-session-persistence','--tools','','--','Probe only: reply with exactly proxy-ok.'],env=env,cwd=ROOT/'proxy/cwd',stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,timeout=100)
+    try:
+        value=json.loads(result.stdout)
+        output={k:value.get(k) for k in ['result','is_error','total_cost_usd','num_turns']}
+    except ValueError:output={'stdout':scrub(result.stdout)}
+    output.update({'exit':result.returncode,'stderr':scrub(result.stderr),'connections':connections,'proxy_port':server.server_address[1]})
+    text=scrub(json.dumps(output,indent=2))
+    (ROOT/'proxy.result.txt').write_text(text+'\n');print(text)
+finally:
+    server.shutdown();server.server_close()
