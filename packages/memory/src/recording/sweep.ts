@@ -477,7 +477,8 @@ async function recordClaudeRead(
         case "nothing":
             // A halt on the first line leaves a record and no conversation.
             if ((await readRecord(deps.env, id)) !== null) result.halted += 1;
-            else rememberRead(state, session.key, read);
+            else if (!recorded.held || ended)
+                rememberRead(state, session.key, read);
             return;
         case "recorded": {
             if (recorded.appended > 0) {
@@ -492,8 +493,10 @@ async function recordClaudeRead(
                     backfilled: deps.backfill,
                 });
             }
+            // Lines held behind a call wait for its answer, or the end.
             if (recorded.halted) result.halted += 1;
-            else rememberRead(state, session.key, read);
+            else if (!recorded.held || ended)
+                rememberRead(state, session.key, read);
         }
     }
 }

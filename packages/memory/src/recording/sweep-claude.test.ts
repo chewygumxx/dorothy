@@ -11,7 +11,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { assistantLine, SESSION, text, userLine } from "../bodies/fixtures.js";
+import {
+    assistantLine,
+    SESSION,
+    text,
+    use,
+    userLine,
+} from "../bodies/fixtures.js";
 import type { SessionReport } from "../bodies/record.js";
 import { copyPath, readRecord } from "../bodies/unread.js";
 import { sessionPhrase } from "../recall/sync.js";
@@ -129,6 +135,40 @@ describe("sweeping Claude Code", () => {
             now: () => new Date(NOW.getTime() + 2 * HOUR),
         });
         expect(seen).toEqual([false, true]);
+    });
+
+    it("does not remember a read holding a call, and records it once the session is over", async () => {
+        await r.file(
+            transcript(),
+            lines(
+                userLine("u1", 0, "go"),
+                assistantLine("a1", 1, [
+                    text("Running."),
+                    use("t1", "Bash", { command: "sleep" }),
+                ]),
+            ),
+            0,
+        );
+        expect(only(await claude())).toMatchObject({ sessions: 1, events: 1 });
+        const hints = JSON.parse(await readFile(sweepPath(r.env), "utf8"));
+        expect(hints.sessions).toEqual({});
+        const later = only(
+            await claude({ now: () => new Date(NOW.getTime() + 2 * HOUR) }),
+        );
+        expect(later).toMatchObject({ sessions: 1, events: 2, skipped: 0 });
+        const [conversation] = await r.conversations();
+        expect(conversation?.map((event) => event.kind)).toEqual([
+            "session",
+            "user",
+            "assistant",
+            "tool",
+        ]);
+        // Over and read to its end, it is remembered at last.
+        expect(
+            only(
+                await claude({ now: () => new Date(NOW.getTime() + 3 * HOUR) }),
+            ),
+        ).toMatchObject({ skipped: 1 });
     });
 
     it("never records a private session", async () => {
