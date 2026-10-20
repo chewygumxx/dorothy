@@ -786,13 +786,12 @@ export function verificationsOf(fact: Fact): Verification[] {
     );
 }
 
-// Knowledge the user has confirmed: their own, a repository's, or any
-// they verified. The rest, written by a model or extraction or taken
-// from outside, is unconfirmed: a claim to weigh, never an instruction.
+// Knowledge the user has confirmed: their own, or any they verified.
+// The rest, written by a model or extraction, taken from outside or
+// from a repository's files, which a model may write too, is
+// unconfirmed: a claim to weigh, never an instruction.
 export const isConfirmed = (fact: Fact): boolean =>
-    fact.provenance.origin === "user" ||
-    fact.provenance.origin === "repo" ||
-    verificationsOf(fact).length > 0;
+    fact.provenance.origin === "user" || verificationsOf(fact).length > 0;
 // The mark search, open and recall give unconfirmed knowledge, as the
 // opening block heads it.
 export const UNCONFIRMED = [

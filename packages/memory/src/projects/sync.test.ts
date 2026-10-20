@@ -24,7 +24,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Fact } from "../facts/file.js";
+import { type Fact, isConfirmed } from "../facts/file.js";
 import {
     factPath,
     listFacts,
@@ -1415,5 +1415,40 @@ describe("syncProject when history cannot record", () => {
         expect(result.report.imported).toEqual(["a"]);
         expect(result.report.unrecorded).toBe("history is busy");
         expect((await facts())[0]?.name).toBe("a");
+    });
+});
+
+// Knowledge is confirmed only when the user wrote it or verified it: a
+// repository's file, which a model may have written, confirms nothing.
+describe("syncProject and confirmation", () => {
+    const confirmed = async () => (await facts()).map(isConfirmed);
+
+    it("leaves her fact unconfirmed when an older export of it returns", async () => {
+        await putFact(data, SCOPE, storeFact("a"));
+        await sync();
+        const older = await readFile(memory("a.md"), "utf8");
+        await putFact(data, SCOPE, storeFact("a", { body: "Revised." }));
+        expect(moved(await sync())).toEqual({ ...NOTHING, exported: ["a"] });
+        // A checkout of an older commit puts the first export back.
+        await putRepo("a.md", older);
+        expect(moved(await sync())).toEqual({ ...NOTHING, imported: ["a"] });
+        expect(await confirmed()).toEqual([false]);
+    });
+
+    it("leaves her exported fact unconfirmed in a fresh data directory", async () => {
+        await putFact(data, SCOPE, storeFact("a"));
+        await sync();
+        data = join(base, "fresh");
+        expect(moved(await sync())).toEqual({ ...NOTHING, imported: ["a"] });
+        expect(await confirmed()).toEqual([false]);
+    });
+
+    it("leaves Claude Code's auto memory unconfirmed", async () => {
+        await putRepo(
+            "feedback_testing.md",
+            repoFact("feedback_testing", "Run the tests first."),
+        );
+        await sync();
+        expect(await confirmed()).toEqual([false]);
     });
 });

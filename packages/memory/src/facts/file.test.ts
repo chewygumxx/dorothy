@@ -423,12 +423,15 @@ const confirmable = (
     fact({ provenance: { ...provenance, at: AT, created: AT }, ...fields });
 
 describe("isConfirmed", () => {
-    it("takes the user's and a repository's knowledge as confirmed", () => {
+    it("takes the user's own knowledge as confirmed", () => {
         expect(isConfirmed(confirmable({ origin: "user", by: "user" }))).toBe(
             true,
         );
+    });
+
+    it("takes a repository's unverified knowledge as unconfirmed", () => {
         expect(isConfirmed(confirmable({ origin: "repo", by: "repo" }))).toBe(
-            true,
+            false,
         );
     });
 

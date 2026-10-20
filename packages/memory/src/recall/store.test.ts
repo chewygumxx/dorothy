@@ -145,6 +145,17 @@ describe("RecallIndex", () => {
         index.close();
     });
 
+    it("rebuilds a schema-7 index, which took a repository's knowledge as confirmed", async () => {
+        const old = RecallIndex.open(path);
+        insert(old, "a");
+        old.db.run("PRAGMA user_version = 7");
+        old.close();
+        const index = RecallIndex.open(path);
+        expect(version(index)).toBe(SCHEMA_VERSION);
+        expect(count(index)).toBe(0);
+        index.close();
+    });
+
     it("rebuilds an index of another version in place", async () => {
         const old = RecallIndex.open(path);
         insert(old, "a");

@@ -22,7 +22,9 @@ import { type Env, xdgDir } from "@dorothy/core";
 import type { Lock } from "../memory/sidecar.js";
 import { exclusiveLock } from "../sqlite-lock.js";
 
-export const SCHEMA_VERSION = 7;
+// 8: a repository's knowledge is no longer confirmed, and the facts'
+// confirmed column of a schema-7 index said it was.
+export const SCHEMA_VERSION = 8;
 
 // Times are milliseconds since the epoch. Each FTS table takes its text
 // from the table beside it, which triggers keep them in step with.

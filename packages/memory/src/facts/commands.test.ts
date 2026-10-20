@@ -348,6 +348,22 @@ describe("runVerify", () => {
         expect(authorOf(commits[0] as string)).toBe("user");
     });
 
+    it("confirms knowledge a repository's file gave", async () => {
+        await putFact(
+            dataRoot(env),
+            PERSONAL,
+            fact("synced", {
+                provenance: { ...MODEL, origin: "repo", by: "repo" },
+            }),
+        );
+        expect(await runVerify("k:personal/synced", options())).toBe(0);
+        expect(out.text).toBe(
+            "Verified k:personal/synced: it is confirmed now.\n",
+        );
+        const verified = await read(PERSONAL, "synced");
+        expect(verified !== null && isConfirmed(verified)).toBe(true);
+    });
+
     it("keeps verifications another hand made", async () => {
         await putFact(
             dataRoot(env),
@@ -372,13 +388,6 @@ describe("runVerify", () => {
         await putFact(
             root,
             PERSONAL,
-            fact("synced", {
-                provenance: { ...MODEL, origin: "repo", by: "repo" },
-            }),
-        );
-        await putFact(
-            root,
-            PERSONAL,
             fact("checked", {
                 provenance: MODEL,
                 foreign: {
@@ -396,7 +405,7 @@ describe("runVerify", () => {
                 },
             }),
         );
-        const names = ["mine", "synced", "checked", "vouched"];
+        const names = ["mine", "checked", "vouched"];
         const before = await Promise.all(
             names.map((name) =>
                 Bun.file(factPath(root, PERSONAL, name)).text(),
@@ -408,7 +417,6 @@ describe("runVerify", () => {
         expect(out.text).toBe(
             [
                 "k:personal/mine is confirmed already: it is yours.",
-                "k:personal/synced is confirmed already: it came from a project's repository.",
                 "k:personal/checked is confirmed already: you verified it.",
                 "k:personal/vouched is confirmed already: human:alice verified it.",
                 "",

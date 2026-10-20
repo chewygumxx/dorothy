@@ -249,9 +249,6 @@ function whyConfirmed(fact: Fact): string {
     if (fact.provenance.origin === "user") {
         return "it is yours";
     }
-    if (fact.provenance.origin === "repo") {
-        return "it came from a project's repository";
-    }
     const by = verificationsOf(fact).map((entry) => entry.by);
     return by.includes(USER_ACTOR)
         ? "you verified it"
