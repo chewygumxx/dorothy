@@ -83,22 +83,22 @@ and prompts as text (`MemoryPrompts`).
   `hard`, before the next message), `compact()` splits the turns before
   the verbatim tail into topical clusters with an abstract each; read
   [its own guide](./src/compaction/AGENTS.md).
-- `history/`: the data directory as a git repository. `MemoryRepo`
-  (`repo.ts`) has two engines, the git binary run isolated from the
-  user's configuration (`binary.ts`) and isomorphic-git (`iso.ts`), chosen
-  once per process (`open.ts`). `MemoryHistory` (`history.ts`) commits
-  each logical change, sweeps up outside changes first, and restores a
-  file that fails `lint.ts` (`heal.ts`), keeping its bytes under
-  `broken/`. The lint knows facts and `projects.json`. The sweep keeps a
-  fact as hers if `facts/pending.ts` noted its hash. A damaged journal warns,
-  commits without changing attribution, then repairs; outside edits are user's.
-  `mirror.ts` seals new commits as AES-256-GCM bundles (`seal.ts`) on the
-  orphan branch `sealed` and pushes it to the remote
-  `mirror` under `DOROTHY_MIRROR_KEY`; `--recover` rebuilds from it.
-  `commands.ts` has `commandHistory`, history/restore/rollback/check and
+- `history/`: the data directory as a git repository. `MemoryRepo` (`repo.ts`)
+  has two engines, the git binary run isolated from the user's configuration
+  (`binary.ts`) and isomorphic-git (`iso.ts`), chosen once per process
+  (`open.ts`). `MemoryHistory` (`history.ts`) commits each logical change,
+  sweeps up outside changes first, and restores a file that fails `lint.ts`
+  (`heal.ts`), keeping its bytes under `broken/`. The lint knows facts and
+  `projects.json`. The sweep keeps a fact as hers if `facts/pending.ts` noted
+  its hash. A damaged journal warns, commits without changing attribution, then
+  repairs; outside edits are user's. `mirror.ts` seals new commits as
+  AES-256-GCM bundles (`seal.ts`) on the orphan branch `sealed` and pushes it
+  to the remote `mirror` under `DOROTHY_MIRROR_KEY`; `--recover` rebuilds from
+  it. `commands.ts` has `commandHistory`, history/restore/rollback/check and
   mirror/recover commands. Commands that advance main await a push on close;
   mirror keys use dotenvx's `set`. `lock.ts` is the common `FileLock`.
-- `recording/`: readers, sources and the sweep; [guide](./src/recording/AGENTS.md).
+- `recording/`: readers and the sweep, [guide](./src/recording/AGENTS.md);
+  `service/` binds it, [guide](./src/service/AGENTS.md).
 - `sqlite-lock.ts`: `exclusiveLock`, a SQLite `BEGIN IMMEDIATE` lock.
 
 ## Invariants
@@ -132,7 +132,7 @@ and prompts as text (`MemoryPrompts`).
 - Pass every root, key and environment in; tests keep to temporary
   directories (`history/testing.ts` has `tempRoot` and `TEST_ENV`).
 - Git tests isolate config; local HTTPS uses git http-backend and OpenSSL.
-- One contract test runs against both history engines, and across them.
+  One contract test runs against both history engines, and across them.
 - `memory/fake-session.ts` fakes a `ChatSession`; `*-testing.ts` share fixtures.
 
 ## See also

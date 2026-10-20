@@ -22,7 +22,7 @@ tags:
 Harness readers return core's `RecordEvent` values and session metadata.
 Decoding is pure; Hermes's query edge opens only its supplied path,
 read-only. Sources and the sweep persist through `contract/record.ts`;
-readers never open a Dorothy store.
+readers never open a Dorothy store; tests use temporary roots.
 
 ## Files
 
@@ -39,6 +39,8 @@ readers never open a Dorothy store.
 - `watermark.ts`: a host's first sweep time, in the data directory's
   `recording.json`, committed to history, never in `sweep.json`.
 - `sweep.ts`: `sweep(deps)`, one pass over the hosts; read below.
+- `report.ts`: `hostLines`, `sweepSummary`: a sweep told, a host and a count
+  a line, for `--sweep` and the service's log.
 - `fixtures.ts`, `hermes-fixtures.ts`, `sweep-testing.ts`: synthetic
   records, Hermes tables and the sweep's rig; nothing from a real store.
 
@@ -108,7 +110,7 @@ readers never open a Dorothy store.
   or merges speech, and malformed visible witnesses halt that session.
 - Legacy copies can get fresh random uids from Hermes's insert trigger
   and cannot be linked to originals: such stores can yield duplicates.
-  Never merge on text. Rows without uids keep their physical ids.
+  Rows without uids keep their physical ids.
 - Keep original compacted rows; omit inactive rewind rows, model-only
   composites, synthetic display rows and compression handoffs. Read
   `content`, never `api_content`; strip user-role host wrappers and
@@ -116,10 +118,6 @@ readers never open a Dorothy store.
 - Sentinel `\0json:` content decodes once. Plain JSON-looking prose stays
   prose; typed image blocks become `[image]`, known multimodal envelopes
   yield their text summary. Malformed text or unknown block types halt.
-
-## Tests
-
-Tests use synthetic lines and temporary roots; never open a real store.
 
 ## Sources and the sweep
 
@@ -147,4 +145,6 @@ Tests use synthetic lines and temporary roots; never open a real store.
   kept, nor one holding lines behind an unanswered call (Claude's `held`,
   others' `pending`) until `ended`: backfilled, or untouched an hour.
 - A halt keeps its rest in `bodies/unread.ts` under its host (Hermes counts
-  rows). A record failure stops that host, not others.
+  rows); `dorothy --sweep --reread` and `--dismiss` serve it. A record
+  failure stops that host, not others. [The service](../service/AGENTS.md)
+  binds the sweep and runs it.
