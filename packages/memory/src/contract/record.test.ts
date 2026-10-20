@@ -14,13 +14,19 @@ import {
     existsSync,
     mkdirSync,
     mkdtempSync,
+    readdirSync,
     readFileSync,
     rmSync,
     writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Env, RecordEvent, RecordRequest } from "@dorothy/core";
+import {
+    type Env,
+    newPhrase,
+    type RecordEvent,
+    type RecordRequest,
+} from "@dorothy/core";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { syncIndex } from "../recall/sync.js";
 import {
@@ -147,6 +153,57 @@ describe("acceptRecord", () => {
                 .map((line) => line.sourceUuid),
         ).toEqual(["a", "b", "c"]);
     });
+
+    for (const host of ["codex", "hermes"])
+        it(`serialises new ${host} sessions across index connections`, async () => {
+            const other = RecallIndex.open(indexPath(env));
+            // Order SQLite work as separate processes waiting on the store
+            // lock would: a synchronous BUSY wait cannot yield this event loop.
+            let queue: Promise<unknown> = Promise.resolve();
+            const ordered = <T>(work: () => Promise<T>): Promise<T> => {
+                const next = queue.then(work);
+                queue = next.catch(() => {});
+                return next;
+            };
+            let synced = 0;
+            const gate = Promise.withResolvers<void>();
+            const bothSynced = async (connection: RecallIndex) => {
+                await ordered(() => syncIndex(connection, transcriptDir(env)));
+                if (++synced === 2) gate.resolve();
+                await gate.promise;
+            };
+            try {
+                const record = { ...request([user("a")]), host };
+                const results = await Promise.all([
+                    acceptRecord(
+                        record,
+                        deps({
+                            sync: () => bothSynced(index),
+                            lock: (work) => ordered(() => index.lock(work)),
+                        }),
+                    ),
+                    acceptRecord(
+                        record,
+                        deps({
+                            index: other,
+                            sync: () => bothSynced(other),
+                            phrase: newPhrase,
+                            lock: (work) => ordered(() => other.lock(work)),
+                        }),
+                    ),
+                ]);
+                expect(
+                    results.reduce((sum, result) => sum + result.accepted, 0),
+                ).toBe(1);
+                expect(
+                    readdirSync(transcriptDir(env)).filter((name) =>
+                        name.endsWith(".jsonl"),
+                    ),
+                ).toHaveLength(1);
+            } finally {
+                other.close();
+            }
+        });
 
     describe("reading only what was appended", () => {
         const path = () => transcriptPath(PHRASE, env);

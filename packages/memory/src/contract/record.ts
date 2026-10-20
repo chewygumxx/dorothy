@@ -250,6 +250,12 @@ export async function acceptRecord(
             } finally {
                 await writer.close();
             }
+            // Publish under the same lock as creation. Another process
+            // may have synced before this file existed, then waited here.
+            deps.index.db.run(
+                "INSERT OR IGNORE INTO conversation_sessions (session, phrase) VALUES (?, ?)",
+                [key, phrase],
+            );
             await deps.recorder?.(
                 marked === null ? [path] : [path, marked],
                 `turn: ${phrase} (${request.host})`,

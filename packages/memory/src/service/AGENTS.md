@@ -57,7 +57,8 @@ This guide holds what binds [the sweep](../recording/AGENTS.md) to a store.
   `dorothy --sweep --reread` and `--sweep --dismiss <host> <session>`;
   Claude Code's keep `--claude-hook --reread` and `--dismiss`.
 - The service and a foreground sweep may overlap: the store's lock orders
-  their records, and `sweep.json` holds only skip hints.
+  their records; find-or-create checks and publishes the session mapping
+  inside that lock. `sweep.json` holds only skip hints.
 
 ## Tests
 
