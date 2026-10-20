@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-roadmap-sweep/memory-loading.txt
+
+Probe: A fresh session receives the agent memory index
+Date: 2026-10-20
+Claude Code: 2.1.300
+Bun: 1.4.2
+Herdr: 0.9.5
+Model: claude-haiku-5-5 (--model haiku; ANTHROPIC_MODEL=haiku for chat)
+Code under test: dc09077
+Verdict: PASS
+
+Commands:
+  python3 <probe-root>/probe.py claude memory -p --model haiku \
+    --output-format json --tools '' --no-session-persistence \
+    'Probe only. Do not use tools, modify files, or delegate. From project memory already loaded at startup, name the four memory priorities and the target harnesses. Say unknown if the index is absent; do not read any file to answer.'
+Working directory: <checkout>. New session, no resume and no persisted
+session. Parent CLAUDE_CODE_ check: none; all Dorothy roots temporary.
+Claude's existing local project setting points autoMemoryDirectory at
+<checkout>/.agents/memory. It was read in place and never changed.
+See interactive.txt for the observation and environment helper.
+
+Initial actual API request, selected observations:
+{"kind":"request","path":"/v1/messages","model":"claude-haiku-5-5","systemBlocks":3,"identity":false,"markerLeft":false,"rootGuide":true,"packageGuide":false,"memoryIndex":true,"memoryHook":true}
+
+Model result:
+{
+  "type": "result",
+  "subtype": "success",
+  "is_error": false,
+  "result": "**Memory priorities:** compatibility, access, progressive disclosure, persistence.\n\n**Target harnesses:** Claude Code, Codex, OpenClaw and Hermes.\n\nBoth come from the one-line hooks in the memory index loaded at startup. I did not open the underlying memory files.",
+  "total_cost_usd": 0.0007666000000000001,
+  "num_turns": 1,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3006,
+    "cache_read_input_tokens": 2620,
+    "output_tokens": 278,
+    "output_tokens_details": {
+      "thinking_tokens": 180
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 3006,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [],
+    "speed": "standard",
+    "fallback_credit": null
+  }
+}
+stderr: 
+exit: 0
+
+memoryIndex checks for the two relative index links, and memoryHook
+checks the exact priorities hook. Neither was supplied in the probe's
+question. These were present before the first reply, with tools disabled;
+the fresh session received MEMORY.md at startup. Underlying entry files
+were not opened. This verdict is for the user's existing local setting
+and installed guidance integration, not an unconfigured fresh install.
+Cost: one model turn, 0.0007666 USD.
