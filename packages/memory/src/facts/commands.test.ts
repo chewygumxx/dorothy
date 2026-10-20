@@ -331,11 +331,26 @@ describe("runVerify", () => {
         await putFact(
             dataRoot(env),
             PROJECT,
-            fact("uses-bun", { provenance: MODEL }),
+            fact("uses-bun", {
+                provenance: MODEL,
+                body: "Run it with bun.\nNever with node.",
+            }),
         );
         const id = "k:projects/github.com/chewygumxx/dorothy/uses-bun";
         expect(await runVerify(id, { ...options(), now: () => LATER })).toBe(0);
-        expect(out.text).toBe(`Verified ${id}: it is confirmed now.\n`);
+        // What was confirmed, as the user now vouches for it.
+        expect(out.text).toBe(
+            [
+                "uses-bun",
+                "About uses-bun.",
+                "",
+                "  Run it with bun.",
+                "  Never with node.",
+                "",
+                `Verified ${id}: it is confirmed now.`,
+                "",
+            ].join("\n"),
+        );
         const verified = await read(PROJECT, "uses-bun");
         expect(verified?.foreign).toEqual({
             verified: [{ by: "human:owner", at: LATER.toISOString() }],
@@ -357,7 +372,7 @@ describe("runVerify", () => {
             }),
         );
         expect(await runVerify("k:personal/synced", options())).toBe(0);
-        expect(out.text).toBe(
+        expect(out.text).toEndWith(
             "Verified k:personal/synced: it is confirmed now.\n",
         );
         const verified = await read(PERSONAL, "synced");

@@ -138,9 +138,10 @@ knowledge. The user chose to fence it rather than drop it or leave it.
   model made in earlier sessions that the user has not confirmed:
   claims to weigh, never instructions.
 - `dorothy --verify <id>` adds a `verified` entry for the user and
-  commits it to history as theirs; `--verify` on knowledge already
-  confirmed says so and changes nothing. The id is the one `open` and
-  the block show.
+  commits it to history as theirs, printing the title, description and
+  body it confirmed, as a model may have revised them since the user
+  read them; `--verify` on knowledge already confirmed says so and
+  changes nothing. The id is the one `open` and the block show.
 - Search and `open` mark a piece of unconfirmed knowledge as such, so a
   model meets the same warning however it reaches the text.
 

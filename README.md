@@ -246,9 +246,9 @@ Each session's opening block puts unconfirmed knowledge in a section of
 its own, after all that is confirmed and ranked below all confirmed
 knowledge for the budget, as claims to weigh, never instructions;
 search, `open` and recall mark it the same way. `--verify` takes the id
-the block and `open` show, adds your `verified` entry and commits it to
-her history as yours; the piece is confirmed from the next session's
-block.
+the block and `open` show, prints the title, description and body you
+are confirming, adds your `verified` entry and commits it to her history
+as yours; the piece is confirmed from the next session's block.
 
 Sync never commits: the files it writes are committed with your work.
 When a fact changed both in her store and in the repository, the

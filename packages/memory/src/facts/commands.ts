@@ -255,6 +255,24 @@ function whyConfirmed(fact: Fact): string {
         : `${[...new Set(by)].join(", ")} verified it`;
 }
 
+// A piece of knowledge as --verify confirmed it: its title, its
+// description and its body, indented, so the user sees, and the
+// terminal keeps, the words they vouched for.
+const shown = (fact: Fact) =>
+    [
+        fact.title,
+        fact.description,
+        ...(fact.body === ""
+            ? []
+            : [
+                  "",
+                  ...fact.body
+                      .split("\n")
+                      .map((line) => (line === "" ? "" : `  ${line}`)),
+              ]),
+        "",
+    ].join("\n");
+
 // --verify: the user confirms a piece of knowledge a model or an
 // outside writer gave, by its id.
 export async function runVerify(
@@ -277,7 +295,9 @@ export async function runVerify(
         const result = await verifyFact(opened.store, target);
         switch (result.kind) {
             case "written":
-                out.write(`Verified ${id}: it is confirmed now.\n`);
+                out.write(
+                    `${shown(result.fact)}\nVerified ${id}: it is confirmed now.\n`,
+                );
                 return 0;
             case "confirmed":
                 out.write(
