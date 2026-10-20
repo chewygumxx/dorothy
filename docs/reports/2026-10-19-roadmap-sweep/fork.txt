@@ -64,7 +64,7 @@ Corrected output:
     "fallback_credit": null
   }
 }
-stderr: 
+stderr:
 exit: 0
 
 Corrected gateway capture:
