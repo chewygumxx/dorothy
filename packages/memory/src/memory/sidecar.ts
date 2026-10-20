@@ -735,7 +735,13 @@ export async function setBackfilled(
     dir: string,
     phrase: string,
     backfilled: boolean,
-    warn?: (message: string) => void,
+    {
+        warn,
+        starting = true,
+    }: {
+        warn?: ((message: string) => void) | undefined;
+        starting?: boolean;
+    } = {},
 ): Promise<string | null> {
     // The caller holds the common lock. Joining updateSidecar's process
     // queue could wait on an edit that is itself waiting for that lock.
@@ -747,6 +753,9 @@ export async function setBackfilled(
         return null;
     }
     const current = read.kind === "ok" ? read.sidecar : EMPTY_SIDECAR;
+    // A backfill may extend an existing live conversation, but may not
+    // take its future reviews away. Already-marked conversations stay so.
+    if (backfilled && !starting && !current.backfilled) return null;
     if ((current.backfilled ?? false) === backfilled) return null;
     const path = sidecarPath(dir, phrase);
     await writeAtomic(

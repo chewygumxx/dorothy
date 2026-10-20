@@ -411,3 +411,8 @@ The user's backfill remains their call, after these fixes are verified.
   reread command passes it to the recorder, preserving suppression both
   when the backfill made a conversation and when it halted before any
   event. No paid review becomes due merely because the halt was repaired.
+- N3: a backfill marks only conversations it creates, preserving marks
+  already present. Existing live conversations stay reviewable when a
+  backfill adds turns, even after extraction emptied the service's idle
+  map. Sweep callbacks report the durable eligibility, not command mode;
+  the README and recording guide state this narrowed ruling.

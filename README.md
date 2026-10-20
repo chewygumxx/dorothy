@@ -391,9 +391,10 @@ project; one without a directory is personal.
 The first sweep of a host notes its time. The service records whole, and
 queues for extraction, any session with events after it, so a large live
 backlog is reviewed, each review a model call. Sessions whose events all
-precede it wait, and `--sweep --backfill` records them: whatever the hosts
-hold, marked durably so that no knowledge is extracted from it. A live
-append clears the mark. Without the service,
+precede it wait, and `--sweep --backfill` records them. Conversations it
+creates are marked durably so that no knowledge is extracted from them;
+ones already recorded live keep their review eligibility. A live append
+clears a backfill mark. Without the service,
 `--sweep` runs one sweep and prints a host and a count a line:
 
 ```sh

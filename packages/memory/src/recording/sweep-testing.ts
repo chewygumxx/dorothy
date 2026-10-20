@@ -25,7 +25,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Env, RecordRequest } from "@dorothy/core";
-import { recordSession } from "../bodies/record.js";
+import { recordSession, type SessionReport } from "../bodies/record.js";
 import { acceptRecord, sessionKey } from "../contract/record.js";
 import { dataRoot, type FactStore } from "../facts/store.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
@@ -87,7 +87,11 @@ export async function rig(): Promise<Rig> {
     const logs: string[] = [];
     const log = (level: string) => (message: string) =>
         logs.push(`${level} ${message}`);
-    const claude: SweepDeps["recordClaude"] = (report, project) =>
+    const claude = (
+        report: SessionReport,
+        project: string | null,
+        backfill = false,
+    ) =>
         recordSession(report, {
             env,
             index,
@@ -100,6 +104,7 @@ export async function rig(): Promise<Rig> {
             },
             log: { info() {}, warn: log("warn"), error: log("error") },
             project,
+            backfill,
         });
     const rig: Rig = {
         home,
@@ -152,7 +157,8 @@ export async function rig(): Promise<Rig> {
                     await syncIndex(index, transcriptDir(env));
                     return sessionPhrase(index, sessionKey(host, session));
                 },
-                recordClaude: claude,
+                recordClaude: (report, project) =>
+                    claude(report, project, options.backfill ?? false),
                 ...options,
             });
         },

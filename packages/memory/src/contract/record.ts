@@ -210,7 +210,7 @@ export async function acceptRecord(
                 transcriptDir(deps.env),
                 phrase,
                 deps.backfill ?? false,
-                deps.warn,
+                { warn: deps.warn, starting },
             );
             // A writer killed mid-append left a line that would swallow
             // the first event written after it.

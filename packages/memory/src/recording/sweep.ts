@@ -31,7 +31,9 @@ import {
     unit,
 } from "../bodies/unread.js";
 import type { FactStore } from "../facts/store.js";
+import { readSidecar } from "../memory/sidecar.js";
 import { identify } from "../projects/identify.js";
+import { transcriptDir } from "../transcript.js";
 import { readCodex } from "./codex.js";
 import {
     claudeSource,
@@ -243,6 +245,13 @@ function projectOf(sweeping: Sweeping, cwd: string | null) {
     return found;
 }
 
+// Review eligibility follows the durable mark, not which command
+// happened to append these events to an existing live conversation.
+async function isBackfilled(deps: SweepDeps, phrase: string): Promise<boolean> {
+    const read = await readSidecar(transcriptDir(deps.env), phrase);
+    return read.kind === "ok" && read.sidecar.backfilled === true;
+}
+
 function emptyResult(host: Host): HostSweep {
     return {
         host,
@@ -447,7 +456,7 @@ async function recordRead(
                 phrase: response.phrase,
                 project,
                 accepted: response.accepted,
-                backfilled: deps.backfill,
+                backfilled: await isBackfilled(deps, response.phrase),
             });
         }
     }
@@ -680,7 +689,7 @@ async function recordClaudeRead(
                     phrase: recorded.phrase,
                     project,
                     accepted: recorded.appended,
-                    backfilled: deps.backfill,
+                    backfilled: await isBackfilled(deps, recorded.phrase),
                 });
             }
             // Lines held behind a call wait for its answer, or the end.

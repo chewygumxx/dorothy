@@ -136,8 +136,8 @@ readers never open a Dorothy store; tests use temporary roots.
   (`bodies/record.ts`, continuing `dorothy --claude`'s conversation) and
   `conversation`. A session waits for the backfill when its mtime or all its
   events precede the watermark, yet keeps its diagnostics. A backfill ignores
-  hints; recorders persist a sidecar backfill mark under the store lock,
-  cleared by live appends. Every reviewer honours it. Private sessions send
+  hints; recorders mark new backfill conversations under the store lock.
+  Live appends clear marks; live chats stay reviewable. Private sessions send
   only `private: true`; one with no identity cannot be judged: a halt keeps
   only its key and line or row, and no new type.
 - Remember a read (`rememberRead`) only after the archive took it and unread

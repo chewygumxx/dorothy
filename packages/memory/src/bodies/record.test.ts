@@ -22,6 +22,7 @@ import { join } from "node:path";
 import {
     type HistoryHandle,
     type Lock,
+    readSidecar,
     sidecarPath,
 } from "../memory/sidecar.js";
 import { RecallIndex } from "../recall/store.js";
@@ -353,6 +354,24 @@ describe("recordSession", () => {
             });
             expect(await readFile(path, "utf8")).toBe("{not json");
             expect(warnings).toHaveLength(1);
+        });
+
+    for (const initiallyBackfilled of [false, true])
+        it(`keeps Claude review eligibility during backfill, marked=${initiallyBackfilled}`, async () => {
+            await write([userLine("u1", 0, "Synthetic.")]);
+            const first = await recordSession(
+                report(),
+                deps({ backfill: initiallyBackfilled }),
+            );
+            if (first.kind !== "recorded") throw new Error(first.kind);
+            await add([userLine("u2", 1, "Synthetic more.")]);
+            expect(
+                await recordSession(report(), deps({ backfill: true })),
+            ).toMatchObject({ appended: 1 });
+            const read = await readSidecar(transcriptDir(env), first.phrase);
+            expect(read.kind === "ok" && read.sidecar.backfilled === true).toBe(
+                initiallyBackfilled,
+            );
         });
 
     it("says it holds lines behind a call not yet answered", async () => {

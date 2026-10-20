@@ -254,6 +254,20 @@ describe("the sweep as the service binds it", () => {
         expect([...touched]).toEqual(["github.com/me/app"]);
     });
 
+    it("does not suppress an extracted live conversation when a backfill adds turns", async () => {
+        const path = await rollout("/synthetic", LIVE);
+        const { bound, idle, backfilled } = binding(EARLY);
+        await bound.run();
+        const [phrase] = idle.keys();
+        if (!phrase) throw new Error("missing live conversation");
+        idle.clear(); // Its live turns have already been extracted.
+        await appendFile(path, `${message("user", "Synthetic more.", 3)}\n`);
+        await utimes(path, LIVE, LIVE);
+        await bound.run({ backfill: true });
+        expect(backfilled.size).toBe(0);
+        expect(idle.has(phrase)).toBe(true);
+    });
+
     it("marks a backfilled conversation and queues nothing", async () => {
         await rollout("/fixture/project", OLD);
         const { bound, idle, backfilled } = binding(LATE);

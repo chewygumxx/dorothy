@@ -29,6 +29,7 @@ import {
 } from "@dorothy/core";
 import {
     EMPTY_SIDECAR,
+    readSidecar,
     setBackfilled,
     sidecarPath,
     updateSidecar,
@@ -116,6 +117,27 @@ describe("acceptRecord", () => {
                     .filter((line) => line.kind === "user")
                     .map((line) => line.sourceUuid),
             ).toEqual(["a", "b"]);
+        });
+
+    for (const initiallyBackfilled of [false, true])
+        it(`keeps prior review eligibility during backfill, marked=${initiallyBackfilled}`, async () => {
+            await acceptRecord(
+                request([user("a")]),
+                deps({ backfill: initiallyBackfilled }),
+            );
+            expect(
+                await acceptRecord(
+                    request([user("a"), user("b")]),
+                    deps({
+                        backfill: true,
+                        sync: () => syncIndex(index, transcriptDir(env)),
+                    }),
+                ),
+            ).toMatchObject({ accepted: 1 });
+            const read = await readSidecar(transcriptDir(env), PHRASE);
+            expect(read.kind === "ok" && read.sidecar.backfilled === true).toBe(
+                initiallyBackfilled,
+            );
         });
 
     it("opens a conversation for a new session and appends its events", async () => {
