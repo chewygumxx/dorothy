@@ -58,8 +58,10 @@ export type Recorded =
           // The bytes of Claude Code's transcript read.
           size: number;
           halted: boolean;
+          // Lines from a call not yet answered are held back.
+          held: boolean;
       }
-    | { kind: "nothing"; size: number }
+    | { kind: "nothing"; size: number; held: boolean }
     | { kind: "missing"; reason: string }
     | { kind: "unlocked" };
 
@@ -186,7 +188,7 @@ export async function recordSession(
                 : found;
         await noteHalt(read.halt, lines, from, phrase, recording);
         if (phrase === null) {
-            return { kind: "nothing", size };
+            return { kind: "nothing", size, held: read.held };
         }
         if (read.events.length > 0) {
             deps.log.info(
@@ -199,6 +201,7 @@ export async function recordSession(
             appended: read.events.length,
             size,
             halted: read.halt !== null,
+            held: read.held,
         };
     });
 }

@@ -72,7 +72,7 @@ function steps(script: {
     const fake: Steps = {
         record: async (ended) => {
             calls.push(`record${ended ? " ended" : ""}`);
-            return records.shift() ?? { kind: "nothing", size: 0 };
+            return records.shift() ?? { kind: "nothing", size: 0, held: false };
         },
         sync: async () => {
             calls.push("sync");
@@ -106,6 +106,7 @@ const recorded = (size = 10): Recorded => ({
     appended: 1,
     size,
     halted: false,
+    held: false,
 });
 
 describe("afterStop", () => {

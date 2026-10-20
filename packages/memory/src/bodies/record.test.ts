@@ -327,6 +327,29 @@ describe("recordSession", () => {
         );
     });
 
+    it("says it holds lines behind a call not yet answered", async () => {
+        await write([
+            userLine("u1", 0, "go"),
+            assistantLine("a1", 1, [use("t1", "Bash", { command: "ls" })]),
+        ]);
+        expect(await recordSession(report(), deps())).toMatchObject({
+            kind: "recorded",
+            appended: 1,
+            held: true,
+        });
+        expect(
+            await recordSession(report({ ended: true }), deps()),
+        ).toMatchObject({ kind: "recorded", appended: 1, held: false });
+    });
+
+    it("says it holds, though nothing was recorded", async () => {
+        await write([assistantLine("a1", 1, [use("t1", "Bash", {})])]);
+        expect(await recordSession(report(), deps())).toMatchObject({
+            kind: "nothing",
+            held: true,
+        });
+    });
+
     it("halts at a line it cannot read, keeps the rest aside, and resolves once read", async () => {
         await write([
             userLine("u1", 0, "fine"),
@@ -454,6 +477,7 @@ describe("recordSession", () => {
         ).toMatchObject({ kind: "missing" });
         expect(await recordSession(report(), deps())).toEqual({
             kind: "nothing",
+            held: false,
             size: Buffer.byteLength(`${meta("mode")}\n`),
         });
     });
