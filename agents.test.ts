@@ -478,6 +478,43 @@ describe("agent memory preparation", () => {
         }
     });
 
+    for (const existing of [false, true]) {
+        it(`warns without following a .claude symlink (${existing ? "existing" : "missing"} settings)`, () => {
+            const checkout = preparedCheckout();
+            const outside = mkdtempSync(
+                join(tmpdir(), "agent-memory-outside-"),
+            );
+            const path = join(outside, "settings.local.json");
+            try {
+                const text = '{ "other": "kept" }\n';
+                if (existing) writeFileSync(path, text, { mode: 0o640 });
+                const before = existing ? statSync(path) : undefined;
+                symlinkSync(outside, join(checkout.root, ".claude"));
+                const result = checkout.run();
+                expect(result.exitCode).toBe(0);
+                expect(result.stderr.toString()).toContain("warning");
+                expect(result.stderr.toString()).toContain(".claude");
+                expect(
+                    lstatSync(join(checkout.root, ".claude")).isSymbolicLink(),
+                ).toBe(true);
+                if (before) {
+                    expect(read(path)).toBe(text);
+                    expect(statSync(path).ino).toBe(before.ino);
+                    expect(statSync(path).mtimeMs).toBe(before.mtimeMs);
+                    expect(statSync(path).mode).toBe(before.mode);
+                } else {
+                    expect(existsSync(path)).toBe(false);
+                }
+                expect(readdirSync(outside)).toEqual(
+                    existing ? ["settings.local.json"] : [],
+                );
+            } finally {
+                checkout.remove();
+                rmSync(outside, { recursive: true, force: true });
+            }
+        });
+    }
+
     it("uses each checkout's own root and keeps all other settings", () => {
         for (let index = 0; index < 2; index++) {
             const checkout = preparedCheckout();

@@ -15,6 +15,7 @@
 
 import {
     existsSync,
+    lstatSync,
     mkdirSync,
     readFileSync,
     renameSync,
@@ -69,7 +70,19 @@ export const pointMemoryDirectory = (
     root: string,
     isIgnored: (path: string) => boolean = ignoredByGit,
 ): void => {
-    const path = join(root, ".claude", "settings.local.json");
+    const directory = join(root, ".claude");
+    try {
+        if (!lstatSync(directory).isDirectory()) {
+            console.warn(
+                `agent-memory: warning: ${directory} is not a real directory, so it is left alone`,
+            );
+            return;
+        }
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        // A missing directory is created below; symlinks never reach here.
+    }
+    const path = join(directory, "settings.local.json");
     if (!isIgnored(path)) {
         throw new Error(`${path} is not gitignored, so it is left alone`);
     }
