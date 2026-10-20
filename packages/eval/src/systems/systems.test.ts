@@ -137,16 +137,17 @@ describe("passage", () => {
         expect(text).toContain("my bicycle is crimson");
     });
 
-    for (const [word, query] of [
-        ["cafe\u0301", "café"],
-        ["㍿", "株式会社"],
+    for (const [word, query, padding] of [
+        ["cafe\u0301", "café", "ﬃ filler "],
+        ["㍿", "株式会社", "ﬃ filler "],
+        ["cafe\u0301", "café", "\uffa1\uffc2 filler "],
     ] as const) {
-        it(`keeps a normalized ${query} match at its original offset`, () => {
-            // Ligatures expand under NFKC, so a normalized offset cannot
-            // be used to slice the original turn.
+        it(`keeps a normalized ${query} match after ${padding}`, () => {
+            // Normalization expands ligatures and composes halfwidth jamo,
+            // so its offsets cannot be used to slice the original turn.
             const answer = `My ${word} order is espresso.`;
             const long = longTurn(
-                `${"ﬃ filler ".repeat(500)}${answer}${" filler".repeat(500)}`,
+                `${padding.repeat(500)}${answer}${" filler".repeat(500)}`,
             );
             const terms = termsOf(query);
             expect(scoreOf(long.turns[0]?.text ?? "", terms)).toBe(1);
