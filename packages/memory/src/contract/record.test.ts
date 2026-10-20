@@ -9,13 +9,25 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+    appendFileSync,
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Env, RecordEvent, RecordRequest } from "@dorothy/core";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { syncIndex } from "../recall/sync.js";
-import { transcriptDir, transcriptPath } from "../transcript.js";
+import {
+    readTranscript,
+    transcriptDir,
+    transcriptPath,
+} from "../transcript.js";
 import { ContractError } from "./errors.js";
 import { acceptRecord, type RecordDeps, sessionKey } from "./record.js";
 
@@ -129,7 +141,138 @@ describe("acceptRecord", () => {
             acceptRecord(request(events), shared),
         ]);
         expect((first?.accepted ?? 0) + (second?.accepted ?? 0)).toBe(3);
-        expect(lines().filter((line) => line.kind === "user")).toHaveLength(3);
+        expect(
+            lines()
+                .filter((line) => line.kind === "user")
+                .map((line) => line.sourceUuid),
+        ).toEqual(["a", "b", "c"]);
+    });
+
+    describe("reading only what was appended", () => {
+        const path = () => transcriptPath(PHRASE, env);
+        const line = (id: string) =>
+            `${JSON.stringify({ v: 1, kind: "user", at: AT, text: "x", sourceUuid: id })}\n`;
+
+        it("trusts what it read before, and reads what came after", async () => {
+            const shared = deps({ held: new Map() });
+            await acceptRecord(request([user("a")]), shared);
+            // A second record reads the file once, and keeps what it found.
+            await acceptRecord(request([user("a")]), shared);
+            // Garble the first event in place, its length kept: a read of
+            // the whole file would no longer find "a" there.
+            const text = readFileSync(path(), "utf8");
+            const garbled = text.replace(
+                '"sourceUuid":"a"',
+                '"sourceUuid":"z"',
+            );
+            expect(garbled).not.toBe(text);
+            writeFileSync(path(), garbled);
+            appendFileSync(path(), line("x"));
+            const again = await acceptRecord(
+                request([user("a"), user("x"), user("b")]),
+                shared,
+            );
+            expect(again).toEqual({ accepted: 1, duplicates: 2, through: "b" });
+            // Without what was read before, the whole file is read.
+            const cold = await acceptRecord(
+                request([user("a")]),
+                deps({ sessions: shared.sessions, held: new Map() }),
+            );
+            expect(cold.accepted).toBe(1);
+        });
+
+        it("reads it all again when the file shrank or was replaced", async () => {
+            const shared = deps({ held: new Map() });
+            await acceptRecord(request([user("a"), user("b")]), shared);
+            // Replaced by a shorter file of other events.
+            rmSync(path());
+            writeFileSync(path(), line("q"));
+            const again = await acceptRecord(
+                request([user("a"), user("q")]),
+                shared,
+            );
+            expect(again).toMatchObject({ accepted: 1, duplicates: 1 });
+        });
+
+        it("reads it all again when the last read ended inside a line", async () => {
+            const shared = deps({ held: new Map() });
+            await acceptRecord(request([user("a")]), shared);
+            const torn = line("t1");
+            appendFileSync(path(), torn.slice(0, 20));
+            await acceptRecord(request([user("a")]), shared);
+            appendFileSync(path(), torn.slice(20));
+            // Read on from the middle of the line, t1 would not be found.
+            const again = await acceptRecord(request([user("t1")]), shared);
+            expect(again).toMatchObject({ accepted: 0, duplicates: 1 });
+        });
+    });
+
+    it("cuts a torn tail before it appends, so the event reads back", async () => {
+        const path = () => transcriptPath(PHRASE, env);
+        const shared = deps({ held: new Map() });
+        await acceptRecord(request([user("a", "First")]), shared);
+        appendFileSync(path(), '{"v":1,"kind":"user","text":"torn');
+        const result = await acceptRecord(
+            request([user("b", "Second")]),
+            shared,
+        );
+        expect(result).toEqual({ accepted: 1, duplicates: 0, through: "b" });
+        const read = await readTranscript(path());
+        expect(read.turns.map((turn) => turn.text)).toEqual([
+            "First",
+            "Second",
+        ]);
+        expect(read.skipped).toBe(0);
+        // A resend is found after the cut, a new event added.
+        const again = await acceptRecord(
+            request([user("b", "Second"), user("c", "Third")]),
+            shared,
+        );
+        expect(again).toEqual({ accepted: 1, duplicates: 1, through: "c" });
+        expect((await readTranscript(path())).turns).toHaveLength(3);
+    });
+
+    it("does not count a tail left unended as recorded", async () => {
+        const path = () => transcriptPath(PHRASE, env);
+        const shared = deps({ held: new Map() });
+        await acceptRecord(request([user("a", "First")]), shared);
+        // Whole JSON, but the writer died before its newline.
+        appendFileSync(
+            path(),
+            JSON.stringify({
+                v: 1,
+                kind: "user",
+                at: AT,
+                text: "Second",
+                sourceUuid: "b",
+            }),
+        );
+        const result = await acceptRecord(
+            request([user("b", "Second")]),
+            shared,
+        );
+        expect(result).toEqual({ accepted: 1, duplicates: 0, through: "b" });
+        expect(
+            (await readTranscript(path())).turns.map((turn) => turn.text),
+        ).toEqual(["First", "Second"]);
+    });
+
+    it("writes the session's header again where its file is gone", async () => {
+        const shared = deps();
+        await acceptRecord(request([user("a")]), shared);
+        // History may remove a file a session cache still names.
+        rmSync(transcriptPath(PHRASE, env));
+        const again = await acceptRecord(
+            request([user("a"), user("b")]),
+            shared,
+        );
+        expect(again).toEqual({ accepted: 2, duplicates: 0, through: "b" });
+        expect(lines().map((line) => line.kind)).toEqual([
+            "session",
+            "user",
+            "user",
+        ]);
+        expect(lines()[0]).toMatchObject({ source: "codex", phrase: PHRASE });
     });
 
     it("finds the conversation again after a restart, through the index", async () => {
@@ -152,12 +295,41 @@ describe("acceptRecord", () => {
     });
 
     it("stores nothing of a private session", async () => {
+        const sessions = new Map<string, string>();
+        let read = 0;
+        const shared = deps({
+            sessions,
+            sync: async () => {
+                read += 1;
+            },
+            claudeTranscript: async () => {
+                read += 1;
+                return { accepted: 1, duplicates: 0, through: null };
+            },
+        });
+        const nothing = { accepted: 0, duplicates: 0, through: null };
+        for (const body of [
+            { events: [user("a")] },
+            { transcript: "/tmp/x.jsonl" },
+        ]) {
+            expect(
+                await acceptRecord(
+                    {
+                        host: "claude-code",
+                        session: "s1",
+                        private: true,
+                        ...body,
+                    },
+                    shared,
+                ),
+            ).toEqual(nothing);
+        }
+        expect(read).toBe(0);
+        expect(sessions.size).toBe(0);
+        expect(existsSync(transcriptDir(env))).toBe(false);
         expect(
-            await acceptRecord(
-                { ...request([user("a")]), private: true },
-                deps(),
-            ),
-        ).toEqual({ accepted: 0, duplicates: 0, through: null });
+            index.db.query("SELECT COUNT(*) AS n FROM conversations").get(),
+        ).toEqual({ n: 0 });
     });
 
     it("refuses a transcript path from beyond loopback, or with no reader", async () => {

@@ -28,10 +28,13 @@ export async function runService({
     env = process.env,
     err = process.stderr,
     review,
+    noReviews,
 }: {
     env?: Env;
     err?: Output;
     review: { call: StructuredCall; persona: string } | null;
+    // Why review is null, which the service's log keeps.
+    noReviews?: string;
 }): Promise<number> {
     const { config, warnings } = await readConfig(env);
     for (const warning of warnings) {
@@ -45,6 +48,7 @@ export async function runService({
             profiles: await loadProfiles(),
             tokens: tokenStore(tokensPath(env)),
             review,
+            ...(noReviews === undefined ? {} : { noReviews }),
             warn: (message) => err.write(`dorothy: ${message}\n`),
         });
     } catch (error) {

@@ -8,7 +8,7 @@
 //
 //
 
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it, spyOn } from "bun:test";
 import { chmodSync, existsSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import {
@@ -65,6 +65,53 @@ describe("isolatedEnv", () => {
 });
 
 describe("the git binary engine", () => {
+    it("keeps a bundle error when snapshot cleanup also fails", async () => {
+        const root = tempRoot();
+        const repo = binaryRepo(root, { env: TEST_ENV });
+        await repo.init();
+        put(root, "note.txt", "one");
+        await repo.commit(["note.txt"], "one");
+        const original = Bun.spawn;
+        const spy = spyOn(Bun, "spawn").mockImplementation(((
+            ...args: Parameters<typeof Bun.spawn>
+        ) => {
+            const command = args[0];
+            if (Array.isArray(command)) {
+                if (command.includes("bundle") && command.includes("create"))
+                    throw new Error("packing failed");
+                if (command.includes("update-ref") && command.includes("-d"))
+                    throw new Error("cleanup failed");
+            }
+            return original(...args);
+        }) as typeof Bun.spawn);
+        try {
+            await expect(repo.bundle(null)).rejects.toThrow("packing failed");
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    it("isolates post-commit hooks that no-verify does not skip", async () => {
+        const home = tempRoot();
+        const marker = join(home, "hook-ran");
+        const config = join(home, "gitconfig");
+        put(home, "hooks/post-commit", `#!/bin/sh\ntouch '${marker}'\n`);
+        chmodSync(join(home, "hooks/post-commit"), 0o700);
+        writeFileSync(config, `[core]\n hooksPath = ${join(home, "hooks")}\n`);
+        const repo = binaryRepo(join(tempRoot(), "data"), {
+            env: { ...TEST_ENV, GIT_CONFIG_GLOBAL: config },
+        });
+        await repo.init();
+        put(
+            repo.root,
+            ".git/hooks/post-commit",
+            `#!/bin/sh\ntouch '${marker}'\n`,
+        );
+        chmodSync(join(repo.root, ".git/hooks/post-commit"), 0o700);
+        put(repo.root, "a.txt", "one");
+        expect(await repo.commit(["a.txt"], "one")).not.toBeNull();
+        expect(existsSync(marker)).toBe(false);
+    });
     it("keeps the user's signing and hooks away from its commits", async () => {
         const home = tempRoot();
         const hook = join(home, "hooks", "pre-commit");
@@ -277,6 +324,63 @@ describe("the git binary engine's repository", () => {
 });
 
 describe("credentialHelpers", () => {
+    it.each([
+        ["push", "helper"],
+        ["fetch", "helper"],
+        ["push", "helper ="],
+        ["fetch", "helper ="],
+    ])("keeps URL scopes during %s with %s", async (operation, reset) => {
+        const dir = tempRoot();
+        const wanted = join(dir, "scoped");
+        const unwanted = join(dir, "global-or-other-url");
+        const config = join(dir, "gitconfig");
+        const server = Bun.serve({
+            port: 0,
+            hostname: "127.0.0.1",
+            fetch: () =>
+                new Response("no", {
+                    status: 401,
+                    headers: {
+                        "WWW-Authenticate": 'Basic realm="fixture"',
+                    },
+                }),
+        });
+        try {
+            const url = `http://127.0.0.1:${server.port}/repo.git`;
+            writeFileSync(
+                config,
+                [
+                    "[credential]",
+                    `helper = "!f() { touch ${unwanted}; }; f"`,
+                    `[credential "http://127.0.0.1:${server.port}"]`,
+                    reset,
+                    `helper = "!f() { touch ${wanted}; }; f"`,
+                    '[credential "https://unrelated.invalid"]',
+                    `helper = "!f() { touch ${unwanted}; }; f"`,
+                ].join("\n"),
+            );
+            const repo = binaryRepo(join(dir, "data"), {
+                env: { ...TEST_ENV, GIT_CONFIG_GLOBAL: config },
+            });
+            await repo.init();
+            await repo.appendSealed(
+                "bundles/000001.enc",
+                new Uint8Array([1]),
+                "readme",
+                "seal 1",
+            );
+            await repo.setRemote("mirror", url);
+            await expect(
+                operation === "push"
+                    ? repo.push("mirror", "sealed", null)
+                    : repo.fetch(url, "sealed", null),
+            ).rejects.toThrow();
+            expect(existsSync(wanted)).toBe(true);
+            expect(existsSync(unwanted)).toBe(false);
+        } finally {
+            await server.stop(true);
+        }
+    });
     it("reads the user's helpers from their global configuration", async () => {
         const config = join(tempRoot(), "gitconfig");
         writeFileSync(
@@ -288,7 +392,10 @@ describe("credentialHelpers", () => {
                 ...process.env,
                 GIT_CONFIG_GLOBAL: config,
             }),
-        ).toEqual(["store", "cache --timeout=60"]);
+        ).toEqual([
+            ["credential.helper", "store"],
+            ["credential.helper", "cache --timeout=60"],
+        ]);
         expect(
             await credentialHelpers({
                 ...process.env,

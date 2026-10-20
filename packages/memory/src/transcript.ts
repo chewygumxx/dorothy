@@ -12,12 +12,15 @@ import { type FileHandle, mkdir, open, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
     type Env,
+    REMEMBER_TOOL,
     type RecallEvent,
+    type ResumedRemember,
     type ResumedTurn,
     type Turn,
     type TurnStats,
     xdgDir,
 } from "@dorothy/core";
+import type { Lock } from "./memory/sidecar.js";
 import { scrub } from "./scrub.js";
 
 // The body a session ran in: chat, or a host as its profile names it.
@@ -55,6 +58,9 @@ export type ToolEvent = {
     ok: boolean;
     cut: { input: number; output: number };
     memory?: true;
+    // Where in the reply a call to remember happened, as a lookup's
+    // offset, so a resumed chat can place it.
+    offset?: number;
 };
 export type UserEvent = { v: 1; kind: "user"; at: string; text: string };
 export type AssistantEvent = {
@@ -126,12 +132,14 @@ export function toolEntry({
     output,
     ok,
     memory = false,
+    offset,
 }: {
     name: string;
     input: string;
     output: string;
     ok: boolean;
     memory?: boolean;
+    offset?: number;
 }): Extract<TranscriptEntry, { kind: "tool" }> {
     const inside = trimmed(scrub(input));
     const outside = trimmed(scrub(output));
@@ -143,6 +151,7 @@ export function toolEntry({
         ok,
         cut: { input: inside.cut, output: outside.cut },
         ...(memory ? { memory: true as const } : {}),
+        ...(offset === undefined ? {} : { offset }),
     };
 }
 
@@ -350,6 +359,7 @@ export function parseTranscript(text: string): TranscriptRead {
         read: { turns: [], skipped: 0, costUsd: 0, claudeSession: null },
         reply: null,
         lookups: [],
+        remembers: [],
     };
     for (const line of text.split("\n")) {
         if (line.trim() === "") {
@@ -373,6 +383,8 @@ function takeEvent(event: unknown, parsing: Parsing): void {
         takeStats(event as Written, parsing);
     } else if (kind === "recall") {
         takeRecall(event, parsing);
+    } else if (kind === "tool") {
+        takeTool(event as Written, parsing);
     } else {
         if (kind === "session") {
             takeSession(event as Written, parsing);
@@ -390,11 +402,13 @@ function takeSession(event: Written, parsing: Parsing): void {
 }
 
 // What reading a transcript has read so far, the reply a stats line
-// would belong to, and the lookups awaiting the reply after them.
+// would belong to, and the lookups and remembers awaiting the reply after
+// them.
 type Parsing = {
     read: TranscriptRead;
     reply: ResumedTurn | null;
     lookups: RecallEvent[];
+    remembers: ResumedRemember[];
 };
 
 function takeStats(fields: Written, parsing: Parsing): void {
@@ -419,8 +433,34 @@ function takeRecall(event: unknown, parsing: Parsing): void {
     }
 }
 
-// Lookups belong to the reply after them; a user message means the reply
-// they began never came.
+// Only her own calls to remember are told again, and only those that say
+// where in the reply they happened; the rest of a body's tool calls are
+// not turns.
+function takeTool(event: Written, parsing: Parsing): void {
+    const { name, input, output, ok, memory, offset } = event;
+    if (
+        name !== REMEMBER_TOOL ||
+        memory !== true ||
+        typeof input !== "string" ||
+        typeof output !== "string" ||
+        typeof ok !== "boolean" ||
+        typeof offset !== "number" ||
+        !Number.isInteger(offset) ||
+        offset < 0
+    ) {
+        return;
+    }
+    let given: unknown = {};
+    try {
+        given = JSON.parse(input);
+    } catch {
+        // Cut short at the trim: the output still says what was kept.
+    }
+    parsing.remembers.push({ ok, offset, input: given, output });
+}
+
+// Lookups and remembers belong to the reply after them; a user message
+// means the reply they began never came.
 function takeTurn(event: unknown, parsing: Parsing): void {
     const turn = toTurn(event);
     if (turn === "malformed") {
@@ -434,9 +474,58 @@ function takeTurn(event: unknown, parsing: Parsing): void {
     if (turn.role === "assistant" && parsing.lookups.length > 0) {
         resumed.lookups = parsing.lookups;
     }
+    if (turn.role === "assistant" && parsing.remembers.length > 0) {
+        resumed.remembers = parsing.remembers;
+    }
     parsing.lookups = [];
+    parsing.remembers = [];
     parsing.read.turns.push(resumed);
     parsing.reply = turn.role === "assistant" ? resumed : null;
+}
+
+const TAIL_CHUNK = 64 * 1024;
+
+// A writer killed mid-append leaves a line that was never a whole event.
+// Cuts it off, so what is appended next starts a line of its own; true
+// where something was cut, false for a whole file or none. Only the last
+// line is read, and the caller holds the transcript's one lock.
+export async function cutTornTail(path: string): Promise<boolean> {
+    let handle: FileHandle;
+    try {
+        handle = await open(path, "r+");
+    } catch (error) {
+        if ((error as { code?: unknown }).code === "ENOENT") {
+            return false;
+        }
+        throw error;
+    }
+    try {
+        const { size } = await handle.stat();
+        const chunk = Buffer.alloc(Math.min(size, TAIL_CHUNK));
+        let end = size;
+        while (end > 0) {
+            const start = Math.max(0, end - chunk.length);
+            const { bytesRead } = await handle.read(
+                chunk,
+                0,
+                end - start,
+                start,
+            );
+            const newline = chunk.subarray(0, bytesRead).lastIndexOf(0x0a);
+            if (newline >= 0) {
+                const whole = start + newline + 1;
+                if (whole < size) {
+                    await handle.truncate(whole);
+                }
+                return whole < size;
+            }
+            end = start;
+        }
+        await handle.truncate(0);
+        return size > 0;
+    } finally {
+        await handle.close();
+    }
 }
 
 // Chats are private: new transcripts are the user's alone.
@@ -451,21 +540,29 @@ export class TranscriptWriter {
     readonly #path: string;
     #handle: FileHandle;
     readonly #now: () => Date;
+    readonly #lock: Lock | undefined;
     #pending: Promise<void> = Promise.resolve();
 
-    private constructor(path: string, handle: FileHandle, now: () => Date) {
+    private constructor(
+        path: string,
+        handle: FileHandle,
+        now: () => Date,
+        lock: Lock | undefined,
+    ) {
         this.#path = path;
         this.#handle = handle;
         this.#now = now;
+        this.#lock = lock;
     }
 
     static async open(
         path: string,
         now: () => Date = () => new Date(),
+        lock?: Lock,
     ): Promise<TranscriptWriter> {
         // New directories are the user's alone too.
         await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-        return new TranscriptWriter(path, await openAppend(path), now);
+        return new TranscriptWriter(path, await openAppend(path), now, lock);
     }
 
     // Appends are chained so un-awaited calls still land in call order, and a
@@ -482,10 +579,13 @@ export class TranscriptWriter {
                 : { sourceUuid: stamp.sourceUuid }),
         };
         const line = `${JSON.stringify(event)}\n`;
-        const write = this.#pending.then(async () => {
+        const append = async () => {
             await this.#follow();
             await this.#handle.appendFile(line, "utf8");
-        });
+        };
+        const write = this.#pending.then(() =>
+            this.#lock === undefined ? append() : this.#lock(append),
+        );
         this.#pending = write.catch(() => {});
         return write;
     }

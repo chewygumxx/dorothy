@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-15
-mtime: 2026-10-18
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Dorothy's memory store design
 description: >-
@@ -285,7 +285,9 @@ outside it but in `metadata`, and every value of the type and pattern
 its key expects. A value that parsed as something else, such as a title
 written `null` or `1e3` by hand or in a repository, fails rather than
 being coerced back; in the store the file is restored or kept aside, and
-from a repository it is not imported.
+from a repository it is not imported. So does a key a block mapping holds
+twice, which YAML would settle silently by keeping the last, and a time
+the calendar lacks, such as 2026-02-31.
 
 A fact in the store that passes the check but is not in this canonical
 form, after a hand edit, is rewritten in it in the commit that sweeps
@@ -307,12 +309,24 @@ A fact rewritten in place keeps its earlier versions in history, where
 The user may edit or add a fact by hand in the data directory: history
 sweeps up outside changes before its next commit, and the lint heals a
 broken edit. A fact the user adds or edits by hand is `origin: user`: the
-sweep keeps a changed fact as Dorothy's own write only when it is in
-canonical form and its provenance differs from the committed version's,
-and otherwise makes it the user's. Every write of the store's, a move,
-retirement or revival and sync's own included, sets `provenance.at`, and
-`by` where the write names a writer, so one left uncommitted is still
-hers. A broken file kept in `broken/` keeps the user's bytes.
+sweep keeps a changed fact as Dorothy's own write only when its bytes
+are ones the store noted writing (`facts/pending.ts`, in `.git/`, until
+history commits them), so one left uncommitted by a crash is still hers.
+The store notes the hash before replacing a fact and refuses replacement
+if noting fails. A note starts a fresh line after a torn final record.
+Earlier pending hashes stay until commit, in case a replacement fails.
+An unreadable or malformed journal warns for facts
+without matching readable records, and commits their bytes and attribution
+unchanged, without making them the user's or confirmed. Other history
+recording proceeds. After the entire sweep succeeds, cleanup repairs the
+journal from its readable records, keeping hashes for uncommitted paths.
+An interrupted sweep leaves the damaged journal for the next sweep, so
+missing attribution never becomes evidence of an outside edit. Failed
+cleanup warns and leaves conservative records for another attempt.
+What a file says of its writer is a claim, and the sweep never trusts it:
+an outside writer's canonical bytes, whatever provenance or verification
+they claim, are an outside change and the user's. A broken file kept in
+`broken/` keeps the user's bytes.
 
 ### Retiring
 
@@ -439,8 +453,29 @@ spaces and no list item, with no blank line between; a heading, prose,
 a nested list or a paragraph after a blank line means a hand kept it,
 and it is left, the report saying why. A description that would wrap
 onto a list marker has the marker escaped, `\-` or `1\.`, so that it
-reads as text. It is left too when no fact is live, or when a skipped
-file is one it links.
+reads as text. It is left too when a skipped file is one it links, or when
+no fact is live and the index lists anything the store holds no fact for;
+else the last fact's retirement empties it. An entry whose fact's
+description is the same on both sides and in the store as before the sync
+keeps its hook lines, where a hand may have written them; one whose
+description changed is written afresh. It is written only once it is
+found as it was first read, as a fact's file is.
+
+A file's stem names its fact: `feedback_testing.md` is `feedback-testing`
+(underscores are hyphens), for Claude Code's auto-memory writes snake
+case. Its frontmatter `name` may be either. The file keeps its name: an
+export or removal goes to it, `MEMORY.md` links it, and the report names
+the fact it became. A file named as the fact beats a snake-case twin of
+it, which is skipped and named. Any other stem a fact's name refuses is
+skipped and named, as before.
+
+A fact retired in the store has the form removed from the repository
+recorded in its `synced` row, `removed:<hash>`: the file reappearing as
+it was is removed again, rather than reviving the fact, but one the
+repository changed is its version. An import keeps what only the store
+holds, tags, importance, creation, foreign keys and other sources; a
+verification goes with the words it confirmed, as with any write but the
+user's.
 
 Export writes atomically, only inside `<root>/<memoryDir>`, and refuses
 a memory directory that resolves outside the root or through a symlink.
@@ -607,13 +642,6 @@ rules require; nothing touches the user's data.
   nothing else; ranking keeps them below live facts.
 - **The scrub is by shape.** It misses a password with no telling key
   beside it.
-- **Snake-case names.** Claude Code's auto-memory often names its files
-  in snake case, `feedback_testing.md`, which a fact's name refuses:
-  such a file is skipped and named in the report, never lost, and a
-  `MEMORY.md` that links it is left as it is.
-- **Hooks give way to descriptions.** A `MEMORY.md` in sync's own form
-  is regenerated from the facts, so each entry's hook line, where a
-  hand wrote one, is replaced by its fact's description.
 - **One remote, one project.** Forks with different remotes are
   different projects; a repository whose `origin` changes becomes a new
   one until the user edits `projects.json`.

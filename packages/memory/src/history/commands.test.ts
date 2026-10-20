@@ -8,9 +8,10 @@
 //
 //
 
-import { afterAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import {
     appendFileSync,
+    chmodSync,
     existsSync,
     readdirSync,
     readFileSync,
@@ -18,7 +19,9 @@ import {
     writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { REAL_TIMERS } from "@dorothy/core";
 import { keepHalt } from "../bodies/unread.js";
+import { runTagsEdit } from "../memory/commands.js";
 import { EMPTY_SIDECAR } from "../memory/sidecar.js";
 import { binaryRepo } from "./binary.js";
 import {
@@ -32,7 +35,8 @@ import {
     runRestore,
     runRollback,
 } from "./commands.js";
-import { newKey } from "./seal.js";
+import { recover } from "./mirror.js";
+import { newKey, parseKey } from "./seal.js";
 import { bareRepo, put, removeRoots, TEST_ENV, tempRoot } from "./testing.js";
 
 afterAll(removeRoots);
@@ -98,7 +102,253 @@ const messages = async () =>
 // A command that sweeps, to commit what the test wrote.
 const sweep = () => runHistory({ ...options(), out: capture() });
 
+it("leaves no retry timer after a failed mirror command", async () => {
+    env.DOROTHY_MIRROR_KEY = newKey();
+    write("tags.json", vocabulary(1));
+    const pending = new Set<unknown>();
+    const set = spyOn(REAL_TIMERS, "set").mockImplementation(() => {
+        const handle = {};
+        pending.add(handle);
+        return handle;
+    });
+    const clear = spyOn(REAL_TIMERS, "clear").mockImplementation((handle) => {
+        pending.delete(handle);
+    });
+    try {
+        expect(
+            await runMirror(join(tempRoot(), "missing.git"), options()),
+        ).toBe(1);
+        expect(pending.size).toBe(0);
+    } finally {
+        set.mockRestore();
+        clear.mockRestore();
+    }
+});
+
+it.each(["history", "handle"])(
+    "does not push a read-only %s session",
+    async (kind) => {
+        env.DOROTHY_MIRROR_KEY = newKey();
+        write("tags.json", vocabulary(1));
+        expect(await runMirror(await bareRepo(), options())).toBe(0);
+        const original = Bun.spawn;
+        let pushes = 0;
+        const spy = spyOn(Bun, "spawn").mockImplementation(((
+            ...args: Parameters<typeof Bun.spawn>
+        ) => {
+            if (Array.isArray(args[0]) && args[0].includes("push")) pushes++;
+            return original(...args);
+        }) as typeof Bun.spawn);
+        try {
+            if (kind === "history") expect(await runHistory(options())).toBe(0);
+            else {
+                const handle = await commandHistory({ env, err, hook: null })(
+                    null,
+                );
+                await handle?.close();
+            }
+            expect(pushes).toBe(0);
+        } finally {
+            spy.mockRestore();
+        }
+    },
+);
+
+it.each(["restore", "rollback", "edit-tags"])(
+    "pushes a %s commit before the command returns",
+    async (operation) => {
+        const key = newKey();
+        env.DOROTHY_MIRROR_KEY = key;
+        write("tags.json", vocabulary(1));
+        await sweep();
+        const first = (await repo().resolve("HEAD")) as string;
+        write(
+            "tags.json",
+            JSON.stringify({
+                v: 1,
+                rev: 2,
+                concepts: {
+                    k00000001: {
+                        prefLabel: "memory",
+                        scopeNote: "Remembering.",
+                        by: "dorothy",
+                        at: NOW.toISOString(),
+                    },
+                },
+            }),
+        );
+        await repo().commit(["tags.json"], "second");
+        const bare = await bareRepo();
+        expect(await runMirror(bare, options())).toBe(0);
+        const result =
+            operation === "restore"
+                ? await runRestore("tags.json", first, options())
+                : operation === "rollback"
+                  ? await runRollback(first, options())
+                  : await runTagsEdit({
+                        env,
+                        err,
+                        openHistory: commandHistory({ env, err, hook: null }),
+                        edit: async (text) => ({
+                            ok: true,
+                            text: text.replace(
+                                "Tag: memory",
+                                "Tag: remembering",
+                            ),
+                        }),
+                    });
+        expect(result).toBe(0);
+        const fresh = binaryRepo(join(tempRoot(), "recovered"), {
+            env: TEST_ENV,
+        });
+        const recovered = await recover({
+            repo: fresh,
+            url: bare,
+            key: parseKey(key) as Uint8Array,
+            token: null,
+        });
+        expect(recovered.tip).toBe(await repo().resolve("HEAD"));
+        expect(
+            new TextDecoder().decode(
+                (await fresh.show("tags.json", "HEAD")) ?? undefined,
+            ),
+        ).toBe(read("tags.json"));
+    },
+);
+
+it.each(["history", "restore", "rollback", "recover"])(
+    "reports unexpected %s failures as command errors",
+    async (operation) => {
+        const bare = await bareRepo();
+        env.DOROTHY_MIRROR_KEY = newKey();
+        let tip = "";
+        if (operation !== "recover") {
+            write("tags.json", vocabulary(1));
+            await sweep();
+            tip = (await repo().resolve("HEAD")) as string;
+        }
+        const original = Bun.spawn;
+        const failedCommand =
+            operation === "history"
+                ? "log"
+                : operation === "recover"
+                  ? "init"
+                  : "cat-file";
+        const spy = spyOn(Bun, "spawn").mockImplementation(((
+            ...args: Parameters<typeof Bun.spawn>
+        ) => {
+            if (
+                Array.isArray(args[0]) &&
+                args[0][0] === "git" &&
+                args[0].includes(failedCommand)
+            )
+                throw new Error("fixture git failure");
+            return original(...args);
+        }) as typeof Bun.spawn);
+        try {
+            const result =
+                operation === "history"
+                    ? runHistory(options())
+                    : operation === "restore"
+                      ? runRestore("tags.json", tip, options())
+                      : operation === "rollback"
+                        ? runRollback(tip, options())
+                        : runRecover(bare, options());
+            await expect(result).resolves.toBe(1);
+            expect(err.text).toContain("dorothy:");
+            expect(err.text).toContain("fixture git failure");
+            if (operation === "history")
+                expect(err.text).toContain("couldn't list history:");
+        } finally {
+            spy.mockRestore();
+        }
+    },
+);
+
+it("restores paths after normalising dot and parent components", async () => {
+    write("tags.json", vocabulary(1));
+    await sweep();
+    const first = (await repo().resolve("HEAD")) as string;
+    write("tags.json", vocabulary(2));
+    await sweep();
+    expect(await runRestore("./other/../tags.json", first, options())).toBe(0);
+    expect(read("tags.json")).toBe(vocabulary(1));
+});
+
+it("normalises a restore path before linting its historical bytes", async () => {
+    write("tags.json", vocabulary(1));
+    await sweep();
+    write("tags.json", "{");
+    const broken = await repo().commit(["tags.json"], "broken version");
+    write("tags.json", vocabulary(2));
+    await repo().commit(["tags.json"], "good again");
+    expect(await runRestore("./other/../tags.json", broken, options())).toBe(1);
+    expect(read("tags.json")).toBe(vocabulary(2));
+});
+
+it("checks standalone transcript syntax when history is off", async () => {
+    write(TRANSCRIPT, event("one") + event("two"));
+    await sweep();
+    write(TRANSCRIPT, event("changed"));
+    put(home, "dorothy/config.toml", "[history]\nenabled = false\n");
+    expect(await runCheck(options())).toBe(0);
+});
+
+it("distinguishes an encrypted mirror value from malformed base64", async () => {
+    expect(
+        await runMirror(await bareRepo(), {
+            ...options(),
+            env: { ...env, DOROTHY_MIRROR_KEY: "encrypted:fixture" },
+        }),
+    ).toBe(1);
+    expect(err.text).toContain("still encrypted");
+    expect(err.text).not.toContain("not 32 bytes");
+});
+
+it("refuses an empty mirror argument without treating it as cwd", async () => {
+    expect(isLocal("")).toBe(false);
+    expect(await runMirror("", options())).toBe(1);
+    expect(err.text).toContain("not a url or path");
+});
+
+it("finishes recovery from a sealed branch holding no bundles", async () => {
+    const source = binaryRepo(join(tempRoot(), "source"), { env: TEST_ENV });
+    const bare = await bareRepo();
+    await source.init();
+    await source.appendSealed(
+        "nothing.txt",
+        new Uint8Array([1]),
+        "readme",
+        "empty mirror",
+    );
+    await source.setRemote("mirror", bare);
+    await source.push("mirror", "sealed", null);
+    env.DOROTHY_MIRROR_KEY = newKey();
+    await expect(runRecover(bare, options())).resolves.toBe(0);
+    expect(existsSync(data(".git"))).toBe(false);
+    expect(out.text).toContain("Recovered 0 of 0 bundles");
+});
+
 describe("commandHistory", () => {
+    it("keeps usable history when inspecting its mirror fails", async () => {
+        await sweep();
+        const original = Bun.spawn;
+        const spy = spyOn(Bun, "spawn").mockImplementation(((
+            ...args: Parameters<typeof Bun.spawn>
+        ) => {
+            if (Array.isArray(args[0]) && args[0].includes("get-url"))
+                throw new Error("fixture mirror inspection failed");
+            return original(...args);
+        }) as typeof Bun.spawn);
+        try {
+            const handle = await commandHistory({ env, err, hook: null })(null);
+            expect(handle).not.toBeNull();
+            await handle?.close();
+            expect(err.text).toContain("fixture mirror inspection failed");
+        } finally {
+            spy.mockRestore();
+        }
+    });
     it("adopts and sweeps the data directory, and closes", async () => {
         write("tags.json", vocabulary(1));
         const handle = await commandHistory({ env, err, hook: null })(null);
@@ -107,7 +357,7 @@ describe("commandHistory", () => {
         write("tags.json", vocabulary(2));
         await handle?.sweep();
         expect((await messages())[0]).toBe("outside: tags.json");
-        handle?.close();
+        await handle?.close();
         expect(err.text).toBe(
             "dorothy: memory has no mirror · dorothy --mirror <url>\n",
         );
@@ -120,7 +370,7 @@ describe("commandHistory", () => {
             hook: null,
             remindMirror: false,
         })(null);
-        handle?.close();
+        await handle?.close();
         expect(err.text).toBe("");
     });
 
@@ -329,6 +579,19 @@ describe("runCheck", () => {
         );
     });
 
+    it("says when the lines kept aside cannot be listed, leaving the exit code alone", async () => {
+        write("tags.json", vocabulary(1));
+        const broken = {
+            ...env,
+            get XDG_STATE_HOME(): string {
+                throw new Error("no state");
+            },
+        };
+        expect(await runCheck({ ...options(), env: broken })).toBe(0);
+        expect(out.text).toContain("unread: couldn't be listed (no state)");
+        expect(err.text).toBe("");
+    });
+
     it("lints a directory with no history yet", async () => {
         write("tags.json", "{");
         write(SIDECAR, sidecar("One"));
@@ -362,6 +625,60 @@ describe("runCheck", () => {
 });
 
 describe("runMirror", () => {
+    it("shows an unsealed mirror without needing a key or dotenv file", async () => {
+        await sweep();
+        const bare = await bareRepo();
+        await repo().setRemote("mirror", bare);
+        err = capture();
+        expect(await runMirror(null, { ...options(), cwd: tempRoot() })).toBe(
+            0,
+        );
+        expect(out.text).toContain(`Mirror: ${bare}`);
+        expect(out.text).toContain("Sealed through: nothing yet");
+        expect(err.text).toBe("");
+    });
+
+    it("checks the key when showing mirror status", async () => {
+        const bare = await bareRepo();
+        const key = newKey();
+        expect(
+            await runMirror(bare, {
+                ...options(),
+                env: { ...env, DOROTHY_MIRROR_KEY: key },
+            }),
+        ).toBe(0);
+        err = capture();
+        expect(
+            await runMirror(null, {
+                ...options(),
+                env: { ...env, DOROTHY_MIRROR_KEY: newKey() },
+            }),
+        ).toBe(1);
+        expect(err.text).toContain("does not open");
+    });
+
+    it("reports an unreadable local bundle without rejecting", async () => {
+        const bare = await bareRepo();
+        const keyed = {
+            ...options(),
+            env: { ...env, DOROTHY_MIRROR_KEY: newKey() },
+        };
+        expect(await runMirror(bare, keyed)).toBe(0);
+        const child = Bun.spawn(
+            ["git", "rev-parse", "refs/heads/sealed:bundles/000001.enc"],
+            { cwd: data(), env: TEST_ENV, stdout: "pipe" },
+        );
+        const oid = (await new Response(child.stdout).text()).trim();
+        expect(await child.exited).toBe(0);
+        const blob = data(`.git/objects/${oid.slice(0, 2)}/${oid.slice(2)}`);
+        chmodSync(blob, 0);
+        try {
+            await expect(runMirror(bare, keyed)).resolves.toBe(1);
+            expect(err.text).toContain("dorothy:");
+        } finally {
+            chmodSync(blob, 0o600);
+        }
+    });
     it("says when there is no mirror yet", async () => {
         expect(await runMirror(null, options())).toBe(0);
         expect(out.text).toBe(
@@ -603,6 +920,7 @@ describe("runRecover", () => {
         expect(err.text).toBe(
             `dorothy: ${data()} is not empty; --recover only fills an empty data directory\n`,
         );
+        expect(existsSync(data(".git"))).toBe(false);
         const other = tempRoot();
         err = capture();
         expect(

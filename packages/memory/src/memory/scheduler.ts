@@ -8,9 +8,13 @@
 //
 //
 
-import { REAL_TIMERS, type Timers } from "@dorothy/core";
+import { CLOSE_GRACE_MS, REAL_TIMERS, type Timers } from "@dorothy/core";
 
 export type Review = (phrase: string, signal: AbortSignal) => Promise<void>;
+
+// How long quitting waits for a review that was told to stop, as long as
+// the session's own grace; one that ignores its signal is left to go on.
+export const REVIEW_STOP_GRACE_MS = CLOSE_GRACE_MS;
 
 // One review at a time. The live conversation's go ahead of catch-up's, and
 // a request for the one under review runs it once more when it finishes.
@@ -95,13 +99,24 @@ export class ReviewScheduler {
 
     // The timer and queue go, and the running review is told to stop. The
     // promise settles once that review has finished (never rejecting), for
-    // whatever it holds to be let go.
+    // whatever it holds to be let go, or once REVIEW_STOP_GRACE_MS has
+    // passed, for a review that ignores the signal.
     stop(): Promise<void> {
         this.#stopped = true;
         this.cancelIdle();
         this.#queue = [];
-        this.#running?.controller.abort();
-        return this.#running?.done ?? Promise.resolve();
+        const running = this.#running;
+        if (running === null) {
+            return Promise.resolve();
+        }
+        running.controller.abort();
+        return new Promise((resolve) => {
+            const timer = this.#timers.set(resolve, REVIEW_STOP_GRACE_MS);
+            void running.done.then(() => {
+                this.#timers.clear(timer);
+                resolve();
+            });
+        });
     }
 
     #next(): void {

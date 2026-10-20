@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-18
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: AGENTS.md
 description: >-
@@ -39,8 +39,8 @@ declares, as Bun's isolated linker fails an undeclared or internal import.
 - `bun run check`: everything CI runs, ending with the tests;
   `bun run test` runs the tests alone.
 - `bun run dev`: the CLI from source.
-- `bun run skills`: fetches the remote skills a fresh checkout lacks;
-  `bun install` links the rest.
+- `bun run skills` fetches remote skills; `bun install` links the rest
+  and points Claude's local settings at this checkout's `.agents/memory`.
 - After removing a `@dorothy` dependency, reinstall from clean to see the
   boundary: `rm -rf node_modules packages/*/node_modules && bun install`.
 
@@ -61,7 +61,7 @@ declares, as Bun's isolated linker fails an undeclared or internal import.
 - Declare in this repository every agentic asset and utility it employs;
   never leave one to a user's own settings or a hand-made step.
 - Every new file carries the house header, copied from a sibling;
-  `lint:header` keeps headers in sync but only warns of a missing one.
+  `lint:header` syncs headers, `header.test.ts` fails a missing one.
 - A change to a package's architecture updates its `AGENTS.md` in the
   same branch.
 

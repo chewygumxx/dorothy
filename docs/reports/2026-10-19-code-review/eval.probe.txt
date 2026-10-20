@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-code-review/eval.probe.txt
+#
+
+import { passage } from '/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/eval/src/systems/corpus.ts';
+import { lexicalSystem } from '/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/eval/src/systems/lexical.ts';
+import { countsFor } from '/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/eval/src/questions/generate.ts';
+import { newRunInfo, runEvaluation, pendingOf } from '/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/eval/src/run/run.ts';
+import { questionId, writeQuestions } from '/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/eval/src/questions/file.ts';
+import { fakeIo, snapshotFixture, tempRoot } from '/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/eval/src/testing.ts';
+import { readSnapshot, workEnv } from '/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/eval/src/snapshot/snapshot.ts';
+import { openCorpus } from '/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/eval/src/systems/corpus.ts';
+import { runCli } from '/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/eval/src/cli.ts';
+const c:any={id:'c:long', phrase:'long', project:null, title:'Discussion', tags:[],firstAt:'2026-10-01T00:00:00Z',lastAt:'2026-10-01T00:00:00Z',turns:[{n:1,role:'user',at:'2026-10-01T00:00:00Z',text:'My bicycle is crimson. '+ 'details '.repeat(1000)}]};
+console.log('long_turn_passage',JSON.stringify(passage(c,['bicycle'],2666)));
+console.log('lexical_long_turn',await lexicalSystem({conversations:new Map([[c.id,c]]),knowledge:new Map()} as any).retrieve({text:'What color is my bicycle?',asOf:'2026-10-19',project:null,exclude:null},8000));
+console.log('count_1',countsFor(1));
+const tmp=tempRoot('review-eval-probe');
+try{
+const work=await snapshotFixture(tmp.root); const corpus=await openCorpus(workEnv(work));
+try{
+const q=(text:string)=>({id:questionId(text,['k:personal/uses-helix']),type:'lookup',question:text,answer:null,evidence:['k:personal/uses-helix'],exclude:null,asOf:'2026-10-19',project:null,source:'mined',status:'accepted',note:null}) as any;
+const qs=[q('first question'),q('second question')];
+const info=newRunInfo({systems:['lexical'],budget:8000,fullBudget:400000,retrievalOnly:true},qs,{generate:null,answer:null,judge:null},await readSnapshot(work),new Date('2026-10-19T01:00:00Z'));
+// Represent a stopped run that has not yet reached question two.
+const first=await runEvaluation(info,{work,corpus,questions:[qs[0]],models:null,concurrency:1});
+await writeQuestions(work,[qs[0]]); const io=fakeIo(); const status=await runCli(['run','--work',work,'--resume',info.id],io.io);
+console.log('missing_recorded_question_resume',{status,out:io.out,err:io.err,declared:first.summary.run.questions,actuallyAsked:first.summary.systems.lexical.all.n});
+}finally{corpus.close();}
+}finally{tmp.remove();}

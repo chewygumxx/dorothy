@@ -35,6 +35,7 @@ import {
 } from "@dorothy/gateway";
 // A type, erased: the CLI still loads memory lazily.
 import type { LaunchNote } from "@dorothy/memory";
+import { passSession } from "./dotenvx-session.js";
 
 export type Spawned = {
     exited: Promise<number>;
@@ -63,7 +64,7 @@ export type ClaudeDeps = {
     remove?: (path: string) => void;
     // Starts a process that outlives dorothy and the terminal, for a
     // catch-up.
-    spawnDetached?: (cmd: string[]) => void;
+    spawnDetached?: (cmd: string[], env: Env) => void;
     // A new uuid, for a launch and a new session.
     newId?: () => string;
     now?: () => Date;
@@ -191,29 +192,58 @@ const RESUMING: ReadonlySet<string> = new Set([
     "--from-pr",
 ]);
 
+// The flags whose value is free text, which may itself look like a flag
+// (--system-prompt -c): the word after one is its value, not a flag.
+const TEXTUAL: ReadonlySet<string> = new Set([
+    "--append-system-prompt",
+    "--system-prompt",
+    "--agents",
+    "--settings",
+    "--mcp-config",
+    "--json-schema",
+    "-n",
+    "--name",
+]);
+
 const uuidOf = (value: string | undefined) =>
     value !== undefined && isUuid(value) ? value : null;
 
+// -r with its value attached, as -r<uuid> (the form's other short flags
+// take none).
+const attachedResume = (word: string) =>
+    word.startsWith("-r") && !word.startsWith("--") && word.length > 2;
+
+// The session the arguments name, from the flags before --. A resume
+// decides it wherever a --session-id stands, which beside --fork-session
+// names the copy's.
 export function claudeSession(args: readonly string[]): ClaudeSession {
+    let named: ClaudeSession | null = null;
     for (let index = 0; index < args.length; index += 1) {
-        if (args[index] === "--") {
+        const word = args[index] as string;
+        if (word === "--") {
             break;
         }
-        const { flag, value } = flagAt(args, index);
-        const id = uuidOf(value);
-        if (flag === "--session-id") {
-            return id === null
-                ? { kind: "resumed", id: null }
-                : { kind: "named", id };
+        if (attachedResume(word)) {
+            return { kind: "resumed", id: uuidOf(word.slice(2)) };
         }
-        if (RESUMING.has(flag)) {
+        const { flag, value, words } = flagAt(args, index);
+        if (TEXTUAL.has(flag)) {
+            index += words - 1;
+        } else if (flag === "--session-id") {
+            const id = uuidOf(value);
+            // Claude Code keeps the last it is given.
+            named =
+                id === null
+                    ? { kind: "resumed", id: null }
+                    : { kind: "named", id };
+        } else if (RESUMING.has(flag)) {
             return {
                 kind: "resumed",
-                id: flag === "-r" || flag === "--resume" ? id : null,
+                id: flag === "-r" || flag === "--resume" ? uuidOf(value) : null,
             };
         }
     }
-    return { kind: "new" };
+    return named ?? { kind: "new" };
 }
 
 // SessionEnd's hook only hands its session to a detached catch-up.
@@ -257,13 +287,18 @@ const selfCommand = () => [
 ];
 
 // A process of its own session, which outlives dorothy and a terminal
-// that hangs up.
-function spawnDetached(cmd: string[]): void {
+// that hangs up, in the environment given. One that cannot start is not
+// an error here: the next start's catch-up makes good.
+export function spawnDetached(cmd: string[], env: Env): void {
     const [command, ...rest] = cmd;
     if (command === undefined) {
         return;
     }
-    spawnChild(command, rest, { detached: true, stdio: "ignore" })
+    spawnChild(command, rest, {
+        detached: true,
+        stdio: "ignore",
+        env: env as NodeJS.ProcessEnv,
+    })
         .on("error", () => {})
         .unref();
 }
@@ -320,8 +355,8 @@ export type DorothyFlags = { settings: Json | null; mcpConfig: Json | null };
 
 // Dorothy's --settings and --mcp-config, each in its = form so that a
 // variadic flag never takes the user's prompt, before the user's
-// arguments. A user's own value of a flag in MERGED is merged into it,
-// Dorothy's keys winning; one that cannot be read is passed on after
+// arguments. A user's own values of a flag in MERGED are merged, the last
+// winning as Claude Code's do, and into Dorothy's, her keys winning; one that cannot be read is passed on after
 // hers, with a warning. Anything after -- is the user's alone.
 export function dorothyFlags(
     args: readonly string[],
@@ -337,20 +372,22 @@ export function dorothyFlags(
     },
 ): { args: string[]; warnings: string[]; files: string[] } {
     const merged = mergeTheirs(args, flags, { cwd, read });
-    const front = frontFlags(merged, flags, writePrivate);
+    const front = frontFlags(merged, writePrivate);
     return {
-        args: [...front.args, ...merged.rest, ...front.passedOn],
+        args: [...front.args, ...front.rest],
         warnings: [...merged.warnings, ...front.warnings],
         files: front.files,
     };
 }
 
 // Dorothy's flags with the user's own merged in, and the user's arguments
-// left: theirs where it could not be read, with a warning. filed holds
-// each flag whose value was a file, as the user gave it.
+// left: theirs where it could not be read, with a warning. Keep the
+// original arguments for a failed private write, including inline
+// settings and their order relative to files and --.
 type Merged = {
     values: Record<string, Json | null>;
-    filed: string[][];
+    hasFile: boolean;
+    original: readonly string[];
     rest: string[];
     warnings: string[];
 };
@@ -360,11 +397,13 @@ function mergeTheirs(
     flags: DorothyFlags,
     { cwd, read }: { cwd: string; read: (path: string) => string },
 ): Merged {
-    const values: Record<string, Json | null> = {
+    const dorothy: Record<string, Json | null> = {
         [SETTINGS]: flags.settings,
         [MCP_CONFIG]: flags.mcpConfig,
     };
-    const filed: string[][] = [];
+    // Each flag's values from the user, the last above the earlier ones.
+    const users: Record<string, Json> = {};
+    let hasFile = false;
     const rest: string[] = [];
     const warnings: string[] = [];
     for (let index = 0; index < args.length; index += 1) {
@@ -374,7 +413,7 @@ function mergeTheirs(
             break;
         }
         const { flag, value, words } = flagAt(args, index);
-        const ours = MERGED.has(flag) ? (values[flag] ?? null) : null;
+        const ours = MERGED.has(flag) ? (dorothy[flag] ?? null) : null;
         if (ours === null || value === undefined) {
             rest.push(arg);
             continue;
@@ -390,44 +429,46 @@ function mergeTheirs(
             );
             continue;
         }
-        values[flag] = mergeJson(theirs as Json, ours);
+        users[flag] = mergeJson(users[flag] ?? {}, theirs as Json);
         if (!isInline(value)) {
-            filed.push(given);
+            hasFile = true;
         }
     }
-    return { values, filed, rest, warnings };
+    const values = { ...dorothy };
+    for (const [flag, theirs] of Object.entries(users)) {
+        values[flag] = mergeJson(theirs, dorothy[flag] as Json);
+    }
+    return { values, hasFile, original: args, rest, warnings };
 }
 
 // Dorothy's flags as claude takes them. What the user's --settings files
 // held may be secret (an env block of tokens), and argv is readable by
 // other users: a merge that includes a file goes to a private file,
 // passed by path. Without one the secrets stay with the user's own
-// flags, passed on as given, and Dorothy's settings go in alone.
+// flags, passed on as given, and Dorothy's settings cannot be added.
 type Front = {
     args: string[];
-    passedOn: string[];
+    rest: readonly string[];
     warnings: string[];
     files: string[];
 };
 
 function frontFlags(
-    { values, filed }: Merged,
-    flags: DorothyFlags,
+    { values, hasFile, original, rest }: Merged,
     writePrivate: (text: string) => string,
 ): Front {
-    const front: Front = { args: [], passedOn: [], warnings: [], files: [] };
+    const front: Front = { args: [], rest, warnings: [], files: [] };
     const settings = values[SETTINGS] ?? null;
-    if (settings !== null && filed.length > 0) {
+    if (settings !== null && hasFile) {
         const written = writeSettings(settings, writePrivate);
         if ("path" in written) {
             front.files.push(written.path);
             front.args.push(`${SETTINGS}=${written.path}`);
         } else {
-            front.passedOn.push(...filed.flat());
+            front.rest = original;
             front.warnings.push(
-                `a private settings file could not be written (${written.problem}); your --settings is passed on as given, and may override Dorothy's`,
+                `a private settings file could not be written (${written.problem}); your --settings is passed on as given; Dorothy's settings could not be added`,
             );
-            front.args.push(jsonFlag(SETTINGS, flags.settings));
         }
     } else if (settings !== null) {
         front.args.push(jsonFlag(SETTINGS, settings));
@@ -722,7 +763,9 @@ function launchSettings(
 }
 
 // The environment claude runs in: the user's shell's, pointed at the
-// gateway.
+// gateway. The user's own base URL, which claude's hooks lose, goes on
+// as DOROTHY_ANTHROPIC_BASE_URL for the reviews of the hook, and the
+// directory of Dotenvx Armor's session as DOROTHY_DOTENVX_CONFIG.
 function launchEnv(
     shellEnv: Env,
     env: Env,
@@ -745,7 +788,50 @@ function launchEnv(
         // A launch this one runs inside is not this one's.
         delete launchEnv.DOROTHY_LAUNCH;
     }
+    bypassGatewayProxy(launchEnv, url);
+    withReviewBaseUrl(launchEnv, env);
+    passSession(launchEnv, env);
     return launchEnv;
+}
+
+// Claude talks to our loopback server directly, even when the user's
+// external traffic needs a proxy. Clients differ on the variable's case:
+// keep the exclusions from both, and give both the same complete list.
+function bypassGatewayProxy(env: Env, gateway: string): void {
+    const proxies = [
+        "HTTP_PROXY",
+        "http_proxy",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+    ];
+    if (!proxies.some((name) => env[name])) {
+        return;
+    }
+    const hosts = [
+        env.NO_PROXY ?? "",
+        env.no_proxy ?? "",
+        new URL(gateway).hostname,
+    ]
+        .join(",")
+        .split(",")
+        .map((host) => host.trim())
+        .filter(Boolean);
+    env.NO_PROXY = [...new Set(hosts)].join(",");
+    env.no_proxy = env.NO_PROXY;
+}
+
+// The user's own base URL, taken from env, as the one reviews use; none
+// is none, and an outer launch's is not this one's.
+function withReviewBaseUrl(target: Env, env: Env): Env {
+    const proxy = env.ANTHROPIC_BASE_URL;
+    if (proxy === undefined || proxy === "") {
+        delete target.DOROTHY_ANTHROPIC_BASE_URL;
+    } else {
+        target.DOROTHY_ANTHROPIC_BASE_URL = proxy;
+    }
+    return target;
 }
 
 function removeAll(
@@ -787,8 +873,12 @@ export async function runClaude(
         self = selfCommand(),
         spawnDetached: detach = spawnDetached,
     } = deps;
+    // Its reviews go through the user's own proxy, which the hook finds
+    // in DOROTHY_ANTHROPIC_BASE_URL, as it does in a launch's, and find
+    // Armor's session in DOROTHY_DOTENVX_CONFIG.
+    const catchUpEnv = passSession(withReviewBaseUrl({ ...env }, env), env);
     const catchUp = (launch: string) =>
-        detach([...self, "--claude-hook", "--catch-up", launch]);
+        detach([...self, "--claude-hook", "--catch-up", launch], catchUpEnv);
     // Launches whose dorothy was killed before its catch-up, with memory
     // off too: their notes were written with it on.
     for (const launch of await memory.stale(env).catch(() => [])) {
@@ -807,29 +897,49 @@ export async function runClaude(
     if (typeof launch === "number") {
         return launch;
     }
-    const child = spawn(launch.cmd, launch.env, launch.cwd);
     const ignore = () => {};
-    const handlers = FORWARDED.map(
-        (signal) => [signal, () => child.kill(signal)] as const,
-    );
-    signals.on("SIGINT", ignore);
-    for (const [signal, handler] of handlers) {
-        signals.on(signal, handler);
-    }
+    const handlers: (readonly [NodeJS.Signals, () => void])[] = [];
     try {
+        const child = spawn(launch.cmd, launch.env, launch.cwd);
+        signals.on("SIGINT", ignore);
+        for (const signal of FORWARDED) {
+            const handler = () => child.kill(signal);
+            handlers.push([signal, handler]);
+            signals.on(signal, handler);
+        }
         return await child.exited;
     } finally {
-        signals.off("SIGINT", ignore);
-        for (const [signal, handler] of handlers) {
-            signals.off(signal, handler);
+        runAll([
+            () => signals.off("SIGINT", ignore),
+            ...handlers.map(([signal, handler]) => () => {
+                signals.off(signal, handler);
+            }),
+            () => launch.gateway.stop(),
+            launch.cleanup,
+            () => warnDrift(launch.gateway.stats, write),
+            // Its sessions recorded, synced and reviewed as SessionEnd
+            // would, by a process that outlives this one: whatever
+            // failed above, and a claude that never started.
+            () => {
+                if (launch.launch !== null) {
+                    catchUp(launch.launch);
+                }
+            },
+        ]);
+    }
+}
+
+// Every step runs though one throws; the first error is thrown after.
+export function runAll(steps: readonly (() => void)[]): void {
+    const failures: unknown[] = [];
+    for (const step of steps) {
+        try {
+            step();
+        } catch (error) {
+            failures.push(error);
         }
-        launch.gateway.stop();
-        launch.cleanup();
-        warnDrift(launch.gateway.stats, write);
-        // Its sessions recorded, synced and reviewed as SessionEnd would,
-        // by a process that outlives this one.
-        if (launch.launch !== null) {
-            catchUp(launch.launch);
-        }
+    }
+    if (failures.length > 0) {
+        throw failures[0];
     }
 }

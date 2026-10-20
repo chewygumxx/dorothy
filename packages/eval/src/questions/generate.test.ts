@@ -96,6 +96,28 @@ describe("counts", () => {
         expect(countsFor(300, { temporal: 40 }).temporal).toBe(40);
     });
 
+    it("add up to the count asked for, the fractions' remainder spread", () => {
+        const sum = (count: number) =>
+            Object.values(countsFor(count)).reduce((a, b) => a + b, 0);
+        for (const count of [1, 2, 5, 10, 100, 299, 300, 531, 5000]) {
+            expect(sum(count)).toBe(count);
+        }
+        // One question goes to the largest share: the first of two equal.
+        expect(countsFor(1)).toEqual({
+            "single-session": 0,
+            preference: 0,
+            "multi-session": 1,
+            "knowledge-update": 0,
+            temporal: 0,
+            abstention: 0,
+        });
+        // A type's own count leaves the others as they were.
+        expect(countsFor(10, { temporal: 4 })).toEqual({
+            ...countsFor(10),
+            temporal: 4,
+        });
+    });
+
     it("are read from type=count", () => {
         expect(parseTypeCounts(["temporal=40", "preference=0"])).toEqual({
             temporal: 40,

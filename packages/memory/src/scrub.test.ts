@@ -25,6 +25,11 @@ const CASES: [string, string][] = [
     ["token: ghp_abcdefghijklmnopqrstuvwxyz0123", "token: [secret]"],
     ["key sk-ant-api03-abcdefghij", "key [secret]"],
     ["AKIAABCDEFGHIJKLMNOP", "[secret]"],
+    // A device token, as dorothy --serve --token-add prints it.
+    [
+        "$ dorothy --serve --token-add laptop\ndmt_-Xq9_aB3vT0kLm2NpQ7rS8uV1wY4zC6eF5gH0jK-_\n",
+        "$ dorothy --serve --token-add laptop\n[secret]\n",
+    ],
     [
         "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----",
         "[secret]",
@@ -52,9 +57,88 @@ const CASES: [string, string][] = [
     ],
 ];
 
+// An HTTP authentication scheme is not case-sensitive.
+const SCHEMES = ["Bearer", "bearer", "BEARER", "Basic", "basic", "TOKEN"];
+
 describe("scrub", () => {
     it.each(CASES)("replaces the secret in %p", (input, expected) => {
         expect(scrub(input)).toBe(expected);
+    });
+
+    it.each(SCHEMES)("redacts a credential after the scheme %s", (scheme) => {
+        expect(
+            scrub(`curl -H 'Authorization: ${scheme} opaque1234567890'`),
+        ).toBe(`curl -H 'Authorization: ${scheme} [secret]'`);
+    });
+
+    it.each([
+        "basic functionality is useful",
+        "basic understanding of this system",
+        "Some basic understanding.",
+        "bearer authentication is supported",
+        "token accounting is useful",
+        "basic read-only access",
+        "see basic file/dir layout",
+        "bearer read-only access",
+        "token file/dir layout",
+    ])("keeps ordinary prose: %s", (text) => {
+        expect(scrub(text)).toBe(text);
+    });
+
+    it.each([
+        ["bearer opaque1234567890", "bearer [secret]"],
+        ["basic dXNlcjpwYXNz", "basic [secret]"],
+        ["token abc_defghijk", "token [secret]"],
+        ["Authorization: basic read-only", "Authorization: basic [secret]"],
+        ["authorization: basic file/dir", "authorization: basic [secret]"],
+        ["Basic read-only", "Basic [secret]"],
+        ["bAsIc file/dir", "bAsIc [secret]"],
+        ['"authorization": "  basic file/dir"', '"authorization": "[secret]"'],
+        [
+            '{"authorization":"basic opaquecredential"}',
+            '{"authorization":"basic [secret]"}',
+        ],
+        [
+            "proxy-authorization: token opaquecredential",
+            "proxy-authorization: token [secret]",
+        ],
+    ])("redacts header context or credential shape: %s", (text, expected) => {
+        expect(scrub(text)).toBe(expected);
+    });
+
+    it.each([
+        ["author: Jane Doe", "author: Jane Doe"],
+        ["monkey: banana", "monkey: banana"],
+        ["authority=example.com", "authority=example.com"],
+        ["keyboard: qwerty", "keyboard: qwerty"],
+        ["apiKey: abc123", "apiKey: [secret]"],
+        ["apikey=abc123", "apikey=[secret]"],
+        ["AWS_SECRET_ACCESS_KEY=abc123", "AWS_SECRET_ACCESS_KEY=[secret]"],
+        ["X-Auth-Token: abc123", "X-Auth-Token: [secret]"],
+        ["db.passwd = abc123", "db.passwd = [secret]"],
+        ["auth: abc123", "auth: [secret]"],
+        ["authorization=abc123", "authorization=[secret]"],
+    ])("reads the key of %p as a word, not a substring", (input, expected) => {
+        expect(scrub(input)).toBe(expected);
+    });
+
+    it("takes linear time over keys that are no secrets", () => {
+        for (const text of [
+            "author:".repeat(100000),
+            "monkey=a ".repeat(50000),
+        ]) {
+            const start = performance.now();
+            expect(scrub(text)).toBe(text);
+            expect(performance.now() - start).toBeLessThan(500);
+        }
+    });
+
+    it("takes linear time over whitespace after an authorization header", () => {
+        const spaces = " ".repeat(100000);
+        const start = performance.now();
+        const scrubbed = scrub(`authorization:${spaces}x`);
+        expect(performance.now() - start).toBeLessThan(500);
+        expect(scrubbed).toBe(`authorization:${spaces}[secret]`);
     });
 
     it("leaves text with no secret's shape alone", () => {

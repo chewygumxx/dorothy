@@ -8,6 +8,7 @@
 //
 //
 
+import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
     chmod,
@@ -21,6 +22,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { exclusiveLock } from "../sqlite-lock.js";
 import {
     appendClusters,
     type Cluster,
@@ -213,6 +215,74 @@ describe("updateSidecar", () => {
             sidecar: null,
         });
         expect(await readdir(dir)).toEqual([]);
+    });
+
+    it("round-trips tags through two mutually exclusive async changes", async () => {
+        const gate = Promise.withResolvers<void>();
+        const entered = Promise.withResolvers<void>();
+        const secondQueued = Promise.withResolvers<void>();
+        const db = new Database(":memory:");
+        const exclusive = exclusiveLock(db);
+        let requests = 0;
+        const lock: Lock = (work) => {
+            const pending = exclusive(work);
+            if (++requests === 2) secondQueued.resolve();
+            return pending;
+        };
+        const first = updateSidecar(
+            dir,
+            PHRASE,
+            async (current) => {
+                entered.resolve();
+                await gate.promise;
+                return mergeEdit(current, { tags: ["k00000001"] }, AT);
+            },
+            lock,
+        );
+        let second: ReturnType<typeof updateSidecar> | undefined;
+        try {
+            await entered.promise;
+            let secondEntered = false;
+            // Separate paths avoid the per-path queue masking a missing lock.
+            const other = "amber-otter-quietly-sings";
+            second = updateSidecar(
+                dir,
+                other,
+                async (current) => {
+                    secondEntered = true;
+                    const read = await readSidecar(dir, PHRASE);
+                    expect(read.kind === "ok" && read.sidecar.tags).toEqual([
+                        "k00000001",
+                    ]);
+                    return mergeEdit(
+                        current,
+                        { tags: ["k00000001"], pinned: true },
+                        AT,
+                    );
+                },
+                lock,
+            );
+            // An unlocked writer finishes while the first is still gated;
+            // a locked one reaches the contention signal instead.
+            await Promise.race([secondQueued.promise, second]);
+            expect(secondEntered).toBe(false);
+            gate.resolve();
+            expect((await first).kind).toBe("written");
+            expect((await second).kind).toBe("written");
+            expect(await readSidecar(dir, other)).toMatchObject({
+                kind: "ok",
+                sidecar: {
+                    rev: 1,
+                    tags: ["k00000001"],
+                    pinned: true,
+                    fields: { tags: { by: "user", at: AT } },
+                },
+            });
+        } finally {
+            gate.resolve();
+            await Promise.all([first, second]);
+            db.close();
+        }
     });
 
     it("never writes over an unparseable sidecar", async () => {
@@ -570,24 +640,50 @@ describe("clusters", () => {
     });
 
     it("stop at the first that does not follow on", () => {
-        const bad = [
-            [cluster(2, 4)],
-            [cluster(1, 4), cluster(6, 9)],
-            [cluster(1, 4), cluster(5, 4)],
-            [cluster(1, 4), cluster(5, 9, "   ")],
-            [cluster(1, 4), cluster(5, 9, "x".repeat(1001))],
-            [cluster(1, 4), { ...cluster(5, 9), at: 3 }],
-            [cluster(1, 4), { ...cluster(5, 9), model: null }],
-            [cluster(1, 4), { ...cluster(5, 9), from: 5.5 }],
+        const bad: [string, unknown[], number[]][] = [
+            ["starts past turn 1", [cluster(2, 4)], []],
+            ["leaves a gap", [cluster(1, 4), cluster(6, 9)], [4]],
+            ["ends before it starts", [cluster(1, 4), cluster(5, 4)], [4]],
+            [
+                "has a blank abstract",
+                [cluster(1, 4), cluster(5, 9, "   ")],
+                [4],
+            ],
+            [
+                "has an abstract past 1000 characters",
+                [cluster(1, 4), cluster(5, 9, "x".repeat(1001))],
+                [4],
+            ],
+            [
+                "has a time that is not text",
+                [cluster(1, 4), { ...cluster(5, 9), at: 3 }],
+                [4],
+            ],
+            [
+                "has no model",
+                [cluster(1, 4), { ...cluster(5, 9), model: null }],
+                [4],
+            ],
+            [
+                "has a fractional turn",
+                [cluster(1, 4), { ...cluster(5, 9), from: 5.5 }],
+                [4],
+            ],
+            [
+                "drops what follows the invalid one",
+                [cluster(1, 4), cluster(6, 9), cluster(10, 12)],
+                [4],
+            ],
         ];
-        for (const clusters of bad) {
+        for (const [why, clusters, kept] of bad) {
             const read = parseSidecar(
                 JSON.stringify({ ...EMPTY_SIDECAR, clusters }),
             );
             expect(
                 read.kind === "ok" &&
-                    read.sidecar.clusters.map((kept) => kept.through),
-            ).toEqual(clusters[0]?.from === 1 ? [4] : []);
+                    read.sidecar.clusters.map((cluster) => cluster.through),
+                `a cluster list that ${why}`,
+            ).toEqual(kept);
         }
     });
 
@@ -664,6 +760,37 @@ describe("tags", () => {
         expect(read({ tags: [], fields: { tags: by } })?.fields.tags).toEqual(
             by,
         );
+    });
+
+    it("normalises tags at both merge boundaries", () => {
+        const tags = [
+            "bad",
+            "k00000001",
+            "k00000001",
+            7,
+            "k00000002",
+            "k00000003",
+            "k00000004",
+            "k00000005",
+            "k00000006",
+        ] as unknown as string[];
+        const expected = [
+            "k00000001",
+            "k00000002",
+            "k00000003",
+            "k00000004",
+            "k00000005",
+        ];
+        expect(mergeReview(null, NOTES, { ...REVIEW, tags }).tags).toEqual(
+            expected,
+        );
+        expect(mergeEdit(null, { tags }, AT).tags).toEqual(expected);
+    });
+
+    it("ignores unknown tag provenance authors", () => {
+        expect(
+            read({ fields: { tags: { by: "stranger", at: AT } } })?.fields.tags,
+        ).toBeUndefined();
     });
 
     it("stamps her tags, and leaves the user's set theirs", () => {

@@ -209,6 +209,16 @@ describe("runClaudeDump", () => {
         expect(capture.stopped).toBe(true);
     });
 
+    it("stops the gateway and capture though claude cannot be spawned", async () => {
+        const { calls, capture, deps } = harness();
+        deps.spawn = () => {
+            throw new Error("ENOENT");
+        };
+        await expect(runClaudeDump([], "hi", deps)).rejects.toThrow("ENOENT");
+        expect(calls.stopped).toBe(true);
+        expect(capture.stopped).toBe(true);
+    });
+
     it("exits 127 when claude is not on PATH, the capture stopped", async () => {
         const { calls, capture, deps } = harness();
         deps.which = () => null;

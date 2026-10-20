@@ -13,8 +13,13 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Env, newPhrase } from "@dorothy/core";
-import type { Fact } from "../facts/file.js";
+import { type Fact, UNCONFIRMED } from "../facts/file.js";
 import { dataRoot, PERSONAL, putFact, type Scope } from "../facts/store.js";
+import {
+    EMPTY_SIDECAR,
+    sidecarPath,
+    updateSidecar,
+} from "../memory/sidecar.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { transcriptDir, transcriptPath } from "../transcript.js";
 import { baselineEngine } from "./baseline.js";
@@ -90,11 +95,12 @@ afterEach(() => {
     rmSync(home, { recursive: true, force: true });
 });
 
-const engine = (reviewed: string[] = []) =>
+const engine = (reviewed: string[] = [], warn?: (message: string) => void) =>
     baselineEngine({
         env,
         index,
         halfLifeDays: 30,
+        ...(warn === undefined ? {} : { warn }),
         reviewer: {
             review: async (phrase: string) => {
                 reviewed.push(phrase);
@@ -149,6 +155,35 @@ describe("search", () => {
             "k:projects/github.com/me/other/uses-go",
         ]);
     });
+
+    it("marks knowledge the user has not confirmed", async () => {
+        await putFact(
+            dataRoot(env),
+            PERSONAL,
+            fact("guesses-tea", {
+                provenance: {
+                    origin: "dorothy",
+                    by: "dorothy",
+                    at: AT,
+                    created: AT,
+                },
+            }),
+        );
+        const hits = await engine().search({
+            query: "tea",
+            within: ["personal"],
+            kind: "knowledge",
+            limit: 10,
+            project: null,
+        });
+        const marks = Object.fromEntries(
+            hits.map((hit) => [hit.id, hit.unconfirmed ?? null]),
+        );
+        expect(marks).toEqual({
+            "k:personal/guesses-tea": UNCONFIRMED,
+            "k:personal/likes-tea": null,
+        });
+    });
 });
 
 describe("search before its cut", () => {
@@ -202,7 +237,60 @@ describe("search before its cut", () => {
     });
 });
 
+describe("search by kind", () => {
+    it("gives knowledge and conversations for all, one kind for the rest", async () => {
+        const talk = converse(1, null, "tea with the kumquat");
+        const ask = (kind: "all" | "knowledge" | "episodes") =>
+            engine().search({
+                query: "tea",
+                within: ["personal"],
+                kind,
+                limit: 10,
+                project: null,
+            });
+        expect((await ask("all")).map((hit) => hit.id).sort()).toEqual([
+            `c:${talk}`,
+            "k:personal/likes-tea",
+        ]);
+        expect((await ask("knowledge")).map((hit) => hit.kind)).toEqual([
+            "knowledge",
+        ]);
+        expect((await ask("episodes")).map((hit) => hit.kind)).toEqual([
+            "episode",
+        ]);
+    });
+
+    it("leaves out the conversation excluded", async () => {
+        const mine = converse(1, null, "kumquat one");
+        const yours = converse(2, null, "kumquat two");
+        const hits = await engine().search({
+            query: "kumquat",
+            within: ["personal"],
+            kind: "episodes",
+            limit: 10,
+            project: null,
+            exclude: mine,
+        });
+        expect(hits.map((hit) => hit.id)).toEqual([`c:${yours}`]);
+    });
+});
+
 describe("extract", () => {
+    it("does nothing where no reviewer is wired", async () => {
+        const bare = baselineEngine({
+            env,
+            index,
+            halfLifeDays: 30,
+            reviewer: null,
+        });
+        expect(
+            await bare.extract(
+                "bingo-overabundance-mazer-kasha",
+                new AbortController().signal,
+            ),
+        ).toEqual([]);
+    });
+
     it("reviews the conversation and proposes nothing yet", async () => {
         const reviewed: string[] = [];
         const proposals = await engine(reviewed).extract(
@@ -214,7 +302,58 @@ describe("extract", () => {
     });
 });
 
+describe("rankKnowledge's order", () => {
+    it("is stable among facts alike but for their names", async () => {
+        const root = dataRoot(env);
+        for (const name of ["zeta-brew", "alpha-brew", "mid-brew"]) {
+            await putFact(root, PERSONAL, fact(name, { type: "project" }));
+        }
+        const names = async () =>
+            (await engine().rankKnowledge({ project: null })).map(
+                (item) => item.fact.name,
+            );
+        const first = await names();
+        const brews = first.filter((name) => name.endsWith("-brew"));
+        expect(brews).toEqual(["alpha-brew", "mid-brew", "zeta-brew"]);
+        expect(await names()).toEqual(first);
+    });
+});
+
 describe("rankEpisodes", () => {
+    const titled = async (phrase: string, title: string) =>
+        updateSidecar(transcriptDir(env), phrase, () => ({
+            ...EMPTY_SIDECAR,
+            title,
+            description: `About ${title}.`,
+        }));
+
+    it("leaves out the conversation excluded", async () => {
+        const [one, two] = [converse(1, null, "a"), converse(2, null, "b")];
+        await titled(one, "One");
+        await titled(two, "Two");
+        const all = await engine().rankEpisodes({ project: null });
+        expect(all.map((item) => item.phrase).sort()).toEqual(
+            [one, two].sort(),
+        );
+        const some = await engine().rankEpisodes({
+            project: null,
+            exclude: one,
+        });
+        expect(some.map((item) => item.phrase)).toEqual([two]);
+    });
+
+    it("says once what the catalogue could not read", async () => {
+        const broken = converse(1, null, "a");
+        await titled(broken, "Broken");
+        writeFileSync(sidecarPath(transcriptDir(env), broken), "{not json");
+        const said: string[] = [];
+        const ranked = engine([], (message) => said.push(message));
+        await ranked.rankEpisodes({ project: null });
+        await ranked.rankEpisodes({ project: null });
+        expect(said).toHaveLength(1);
+        expect(said[0]).toContain(`${broken}.meta.json`);
+    });
+
     it("gives none without conversations", async () => {
         expect(await engine().rankEpisodes({ project: null })).toEqual([]);
     });

@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-18
-mtime: 2026-10-18
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Dorothy's memory contract design
 description: >-
@@ -151,12 +151,26 @@ The block is filled in this order until the budget is spent, each item at
 the largest of its tiers that fits (full, summary, title), as `block.ts`
 packs today:
 
-1. knowledge of the user: personal knowledge, types `user` and
-   `feedback` first;
-2. knowledge of the project: the project's knowledge;
-3. episodes: notes on the conversations most salient to this project,
+1. confirmed personal knowledge, types `user` and `feedback` first;
+2. confirmed project knowledge;
+3. unconfirmed knowledge, personal then project, in its own fenced
+   section: knowledge the user has not confirmed, whoever wrote it,
+   claims to weigh and never instructions;
+4. episodes: notes on the conversations most salient to this project,
    then on personal ones, never another project's, which `open` refuses;
-4. always, one closing line naming `search` and `open`.
+5. always, one closing line naming `search` and `open`.
+
+Knowledge is confirmed when its origin is `user`, or it has a
+`verified` entry by `human:<id>`; a repository's files, which a model
+may write, confirm nothing, as the user ruled in the
+[roadmap sweep](./2026-10-19-roadmap-sweep-design.md#unconfirmed-knowledge).
+`dorothy --verify <id>` adds the user's verification and records it as
+theirs; an already confirmed fact changes nothing. Any rewrite by
+someone other than the user drops verifications of the old words, and
+sync carries a verification only with the words it confirmed. Search,
+open and per-prompt recall mark unconfirmed knowledge before its text.
+A section whose frame does not fit gives way to later sections that can
+fit.
 
 It is rendered as today's `<memory>` section, whose first line says that
 what follows is what Dorothy remembers, information and not instruction.
@@ -167,6 +181,11 @@ A block is frozen for its session: the service keeps the block rendered
 for `startup` and returns it for `resume`, and renders anew only for
 `compact` and `clear`, replacing the one kept. So the host's prompt cache
 holds for the session.
+
+For conversation `open`, `from` and `through` are inclusive turn bounds;
+the window starts at `from` and grows forward within the existing cap.
+A `from` beyond the last turn gives an empty window and the full turn
+count. The legacy recall server's centred `turn` window is unchanged.
 
 ### Recall for a prompt
 
@@ -198,8 +217,9 @@ A tool call's project is, in order: its `project` argument, as an id or a
 path; the connection's, which the stdio bridge identifies from the
 directory it runs in and an HTTP client names in its URL
 (`/mcp?project=<id>`); else none, and only personal knowledge is in
-scope. Where the connection names a project, `open` and `remember` keep
-to it: an argument naming another is refused (403), so a model cannot
+scope. Where the connection names a project, `brief`, `open` and
+`remember` keep to it: an argument naming another is refused (403), so a
+model cannot
 widen what the service enforces. A connection with none, as from a host
 with no directory, names its project by the argument.
 
@@ -492,7 +512,9 @@ is passed in.
     `importance` becomes `dorothy.importance`;
   - `name` becomes the filename alone;
   - a fact stays in `facts/`, with a warning, when its `knowledge/` twin
-    exists or its move fails; nothing is overwritten.
+    exists or its move fails; nothing is overwritten, and anything else
+    left in `facts/` (a file the store does not list, a link) is named
+    in a warning too.
 - Each conversation's notes become its episode, unchanged.
 - The recall index is rebuilt; `recall-server.ts` stays as it is for her
   chat, and the service's MCP face is new.
@@ -527,8 +549,7 @@ is passed in.
 - OKF's `index.md` and `log.md` for `knowledge/`.
 - Encryption at rest of the data directory.
 - Exported forms for harnesses other than Claude Code.
-- `superseded_by`, when consolidation replaces one file with another, and
-  a command by which the user confirms a piece of knowledge (`verified`).
+- `superseded_by`, when consolidation replaces one file with another.
 - A user beyond one.
 
 ## Out of scope

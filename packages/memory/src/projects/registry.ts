@@ -49,7 +49,8 @@ export const projectsPath = (root: string) => join(root, "projects.json");
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
-const HASH = /^[0-9a-f]{64}$/;
+// A hash, or the one removed from the repository for a retired fact.
+const HASH = /^(?:removed:)?[0-9a-f]{64}$/;
 const codeOf = (error: unknown) => (error as { code?: unknown }).code;
 
 // Null when dir is a relative path that stays inside the repository.

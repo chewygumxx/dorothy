@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-07
-mtime: 2026-10-18
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Compaction probes
 description: "Live checks that the CLI's own compaction stays off and that Dorothy's compacts, seeds and recollects"
@@ -136,6 +136,9 @@ offered `mcp__memory__search`, `mcp__memory__open` and
 probe had only this one.
 
 ## Notes
+
+The live split and failed-CLI-compaction gaps were closed by the roadmap
+sweep: see [the sweep report](./2026-10-19-roadmap-sweep.md#probes).
 
 - dotenvx keeps its device key under `$XDG_CONFIG_HOME/dotenvx`. With a
   temporary `XDG_CONFIG_HOME` the credentials cannot be decrypted and

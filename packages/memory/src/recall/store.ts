@@ -9,13 +9,22 @@
 //
 
 import { Database } from "bun:sqlite";
-import { chmodSync, closeSync, mkdirSync, openSync, rmSync } from "node:fs";
+import {
+    chmodSync,
+    closeSync,
+    existsSync,
+    mkdirSync,
+    openSync,
+    rmSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { type Env, xdgDir } from "@dorothy/core";
 import type { Lock } from "../memory/sidecar.js";
 import { exclusiveLock } from "../sqlite-lock.js";
 
-export const SCHEMA_VERSION = 5;
+// 8: a repository's knowledge is no longer confirmed, and the facts'
+// confirmed column of a schema-7 index said it was.
+export const SCHEMA_VERSION = 8;
 
 // Times are milliseconds since the epoch. Each FTS table takes its text
 // from the table beside it, which triggers keep them in step with.
@@ -113,7 +122,8 @@ const SCHEMA = [
         PRIMARY KEY (phrase, id)
     )`,
     // Every fact in the store, retired ones too; scope is "personal" or a
-    // project id, created milliseconds since the epoch.
+    // project id, created milliseconds since the epoch, confirmed 1 for
+    // knowledge the user has confirmed.
     `CREATE TABLE facts (
         path TEXT PRIMARY KEY,
         scope TEXT NOT NULL,
@@ -126,7 +136,9 @@ const SCHEMA = [
         importance INTEGER,
         created INTEGER NOT NULL,
         retired INTEGER NOT NULL,
-        mtime REAL NOT NULL
+        confirmed INTEGER NOT NULL,
+        mtime REAL NOT NULL,
+        hash TEXT NOT NULL DEFAULT ''
     )`,
     `CREATE TABLE fact_tags (
         path TEXT NOT NULL,
@@ -258,40 +270,198 @@ function prepare(path: string, busyMs: number): Database {
     }
 }
 
+const FILES = ["", "-wal", "-shm"];
+
+const describeError = (error: unknown) =>
+    error instanceof Error ? error.message : String(error);
+
+// What an error says, with a note on what was done about it. It keeps its
+// SQLite code and the error it noted.
+function noted(error: unknown, note: string): Error {
+    return Object.assign(
+        new Error(`${describeError(error)} (${note})`, { cause: error }),
+        { code: (error as { code?: unknown } | null)?.code },
+    );
+}
+
+// Shows that no process but this one has the index open, if it can: an
+// exclusive transaction on a connection that takes SQLite's exclusive
+// locking mode, which in a WAL database fails while any other connection,
+// even an idle one, has it open. The proof lasts until the returned lock
+// is closed; null where it fails, as it does for a header SQLite cannot
+// read, which says nothing of who holds the file.
+//
+// The probe leaves WAL mode first, where it can, so that closing it later
+// has no -wal file to delete by name: that would take a new index's, were
+// another process to make one in the moment between the old files being
+// deleted and the probe closing.
+function soleHolder(path: string): { close(): void } | null {
+    if (!existsSync(path)) {
+        return { close() {} };
+    }
+    let probe: Database | null = null;
+    try {
+        probe = new Database(path, { readwrite: true, strict: true });
+        probe.run("PRAGMA busy_timeout = 0");
+        probe.run("PRAGMA locking_mode = EXCLUSIVE");
+        try {
+            probe.run("PRAGMA journal_mode = DELETE");
+        } catch {
+            // A damaged log may not checkpoint; the proof below stands alone.
+        }
+        probe.run("BEGIN EXCLUSIVE");
+        return probe;
+    } catch {
+        probe?.close();
+        return null;
+    }
+}
+
+const NOT_REBUILT =
+    "it is corrupt and another process may have it open, so it is not rebuilt; delete it once none has";
+
+// A new index in place of a corrupt one, where the proof shows no other
+// process has the old open; the error, noted, where it does not or the
+// deleting or making fails. The deleting happens while the proof holds.
+function rebuild(path: string, busyMs: number, error: unknown): Database {
+    const proof = soleHolder(path);
+    if (proof === null) {
+        throw noted(error, NOT_REBUILT);
+    }
+    try {
+        for (const suffix of FILES) {
+            rmSync(`${path}${suffix}`, { force: true });
+        }
+    } catch (failure) {
+        throw noted(
+            error,
+            `it is corrupt; deleting it failed: ${describeError(failure)}`,
+        );
+    } finally {
+        proof.close();
+    }
+    try {
+        return prepare(path, busyMs);
+    } catch (failure) {
+        throw noted(
+            error,
+            `it is corrupt; rebuilding it failed: ${describeError(failure)}`,
+        );
+    }
+}
+
 // The derived index: deleting it costs a rebuild, never data.
 export class RecallIndex {
-    readonly db: Database;
+    #db: Database;
+    #lock: ReturnType<typeof exclusiveLock>;
+    // Work holding the lock, one at a time, so that a rebuild never meets
+    // another run on the file it replaces.
+    #turn: Promise<unknown> = Promise.resolve();
+    readonly #path: string;
+    readonly #busyMs: number;
 
-    private constructor(db: Database) {
-        this.db = db;
-        this.exclusive = exclusiveLock(db);
+    private constructor(db: Database, path: string, busyMs: number) {
+        this.#db = db;
+        this.#lock = exclusiveLock(db);
+        this.#path = path;
+        this.#busyMs = busyMs;
     }
 
-    // A file SQLite says is not a database is deleted and made again; it
-    // holds nothing that cannot be rebuilt. Any other failure, such as the
-    // write lock staying held, leaves the file alone: another process may
-    // be using it.
+    // The database now in use: another after the index is rebuilt.
+    get db(): Database {
+        return this.#db;
+    }
+
+    // The schema a newer Dorothy rebuilt this index for while it was open,
+    // which this one's writes then fail against; null while it is ours.
+    newerSchema(): number | null {
+        try {
+            const version = versionOf(this.#db);
+            return version > SCHEMA_VERSION ? version : null;
+        } catch {
+            return null;
+        }
+    }
+
+    // A file SQLite says is not a database is deleted and made again: no
+    // valid index can be open on it, and it holds nothing that cannot be
+    // rebuilt. One it finds corrupt is rebuilt only where no other process
+    // has it open, as in use (see exclusive); where one may, or any other
+    // failure such as the write lock staying held, the file is left alone,
+    // for another process may be using it.
     static open(path: string, busyMs = 5000): RecallIndex {
         const dir = dirname(path);
         mkdirSync(dir, { recursive: true, mode: 0o700 });
         chmodSync(dir, 0o700);
         try {
-            return new RecallIndex(prepare(path, busyMs));
+            return new RecallIndex(prepare(path, busyMs), path, busyMs);
         } catch (error) {
             if (!unusable(error)) {
                 throw error;
             }
-            for (const suffix of ["", "-wal", "-shm"]) {
+            if ((error as { code?: unknown }).code !== "SQLITE_NOTADB") {
+                return new RecallIndex(
+                    rebuild(path, busyMs, error),
+                    path,
+                    busyMs,
+                );
+            }
+            for (const suffix of FILES) {
                 rmSync(`${path}${suffix}`, { force: true });
             }
-            return new RecallIndex(prepare(path, busyMs));
+            return new RecallIndex(prepare(path, busyMs), path, busyMs);
         }
     }
 
     // Runs work holding the index's write lock, which other processes wait
     // for (and SQLite releases if this one dies); work in this process takes
-    // turns.
-    readonly exclusive: <T>(work: () => T | Promise<T>) => Promise<T>;
+    // turns. A file that proves corrupt in use is rebuilt where no other
+    // process has it open, and the failure, noted, still reaches the caller,
+    // whose next call finds a new index. Where another process may hold it,
+    // it is left as it is, for deleting a shared index leaves that process
+    // writing to a file nothing else reads.
+    readonly exclusive: <T>(work: () => T | Promise<T>) => Promise<T> = <T>(
+        work: () => T | Promise<T>,
+    ) => {
+        const run = async (): Promise<T> => {
+            try {
+                return await this.#lock(work);
+            } catch (error) {
+                throw unusable(error) ? this.#recover(error) : error;
+            }
+        };
+        const result = this.#turn.then(run, run);
+        this.#turn = result.catch(() => {});
+        return result;
+    };
+
+    #recover(error: unknown): Error {
+        try {
+            this.#db.close();
+        } catch {
+            // Closed already, or too damaged to say so.
+        }
+        try {
+            this.#db = rebuild(this.#path, this.#busyMs, error);
+            this.#lock = exclusiveLock(this.#db);
+            return noted(
+                error,
+                "it was corrupt and has been rebuilt; ask again",
+            );
+        } catch (failure) {
+            // Whatever is left is used as it was, failing as it did.
+            try {
+                this.#db = new Database(this.#path, { strict: true });
+                this.#db.run(`PRAGMA busy_timeout = ${this.#busyMs}`);
+                this.#lock = exclusiveLock(this.#db);
+            } catch {
+                // Left closed: every call says why.
+            }
+            return failure instanceof Error
+                ? failure
+                : noted(error, String(failure));
+        }
+    }
 
     // For updateSidecar: a sidecar's read, change and rename happen under
     // the lock.

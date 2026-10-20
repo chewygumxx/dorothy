@@ -12,7 +12,15 @@ import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import type { Env } from "@dorothy/core";
-import { AUTHOR, type Commit, MAIN, type MemoryRepo, SEALED } from "./repo.js";
+import {
+    AUTHOR,
+    type Commit,
+    definedEnv,
+    MAIN,
+    type MemoryRepo,
+    SEALED,
+    SEALED_AUTHOR,
+} from "./repo.js";
 
 // Before every command: the user's signing, hooks and automatic garbage
 // collection never reach Dorothy's repository, and paths print as they
@@ -89,17 +97,19 @@ export function isolatedEnv(env: Env): Record<string, string> {
 // their global configuration, for pushing and fetching only.
 export async function credentialHelpers(
     env: Env = process.env,
-): Promise<string[]> {
+): Promise<[string, string][]> {
     try {
         const proc = Bun.spawn(
-            ["git", "config", "--global", "--get-all", "credential.helper"],
+            [
+                "git",
+                "config",
+                "--global",
+                "--null",
+                "--get-regexp",
+                "^credential(\\..*)?\\.helper$",
+            ],
             {
-                env: Object.fromEntries(
-                    Object.entries(env).filter(
-                        (entry): entry is [string, string] =>
-                            entry[1] !== undefined,
-                    ),
-                ),
+                env: definedEnv(env),
                 stdout: "pipe",
                 stderr: "ignore",
             },
@@ -108,7 +118,20 @@ export async function credentialHelpers(
             new Response(proc.stdout).text(),
             proc.exited,
         ]);
-        return code === 0 ? out.split("\n").filter((line) => line !== "") : [];
+        return code === 0
+            ? out
+                  .split("\0")
+                  .filter(Boolean)
+                  .map((entry) => {
+                      const separator = entry.indexOf("\n");
+                      // A valueless helper is an empty reset, with no newline.
+                      if (separator < 0) return [entry, ""];
+                      return [
+                          entry.slice(0, separator),
+                          entry.slice(separator + 1),
+                      ];
+                  })
+            : [];
     } catch {
         return [];
     }
@@ -148,7 +171,7 @@ export function binaryRepo(
         GIT_CEILING_DIRECTORIES: dirname(root),
         GIT_LITERAL_PATHSPECS: "1",
     };
-    let helpers: Promise<string[]> | null = null;
+    let helpers: ReturnType<typeof credentialHelpers> | null = null;
 
     const run = async (
         args: readonly string[],
@@ -215,8 +238,8 @@ export function binaryRepo(
             ...sshBatch(env),
             GIT_CONFIG_COUNT: String(found.length),
         };
-        found.forEach((helper, index) => {
-            extra[`GIT_CONFIG_KEY_${index}`] = "credential.helper";
+        found.forEach(([key, helper], index) => {
+            extra[`GIT_CONFIG_KEY_${index}`] = key;
             extra[`GIT_CONFIG_VALUE_${index}`] = helper;
         });
         return extra;
@@ -317,19 +340,50 @@ export function binaryRepo(
         async deleteRef(name) {
             await must(["update-ref", "-d", name]);
         },
-        async bundle(since) {
-            const tip = await resolve(MAIN);
+        async bundle(since, at) {
+            const tip = at ?? (await resolve(MAIN));
             if (tip === null || tip === since) {
                 return null;
             }
-            const ran = await must([
-                "bundle",
-                "create",
-                "-q",
-                "-",
-                since === null ? "main" : `${since}..main`,
-            ]);
-            return ran.stdout;
+            if (
+                since !== null &&
+                (await run(["merge-base", "--is-ancestor", since, tip]))
+                    .code !== 0
+            ) {
+                throw new Error(`${since} is not in main's history`);
+            }
+            const snapshot = `refs/dorothy/bundling-${crypto.randomUUID()}`;
+            await must(["update-ref", snapshot, tip]);
+            let bundle: Uint8Array;
+            const cleanup = () => must(["update-ref", "-d", snapshot]);
+            try {
+                const ran = await must([
+                    "bundle",
+                    "create",
+                    "-q",
+                    "-",
+                    snapshot,
+                    ...(since === null ? [] : [`^${since}`]),
+                ]);
+                // Advertise main while building from the immutable private ref.
+                const marker = Buffer.from(`${tip} ${snapshot}\n`);
+                const bytes = Buffer.from(ran.stdout);
+                const position = bytes.indexOf(marker);
+                if (position < 0)
+                    throw new Error("the bundle has no snapshot reference");
+                bundle = new Uint8Array(
+                    Buffer.concat([
+                        bytes.subarray(0, position),
+                        Buffer.from(`${tip} ${MAIN}\n`),
+                        bytes.subarray(position + marker.length),
+                    ]),
+                );
+            } catch (error) {
+                await cleanup().catch(() => {});
+                throw error;
+            }
+            await cleanup();
+            return bundle;
         },
         async unbundle(bundle) {
             const file = join(root, ".git", "dorothy-incoming.bundle");
@@ -393,13 +447,21 @@ export function binaryRepo(
                 }
                 const tree = text(await must(["write-tree"], { extra })).trim();
                 const commit = text(
-                    await must([
-                        "commit-tree",
-                        tree,
-                        ...(tip === null ? [] : ["-p", tip]),
-                        "-m",
-                        message,
-                    ]),
+                    await must(
+                        [
+                            "commit-tree",
+                            tree,
+                            ...(tip === null ? [] : ["-p", tip]),
+                            "-m",
+                            message,
+                        ],
+                        {
+                            extra: {
+                                GIT_AUTHOR_DATE: `@${SEALED_AUTHOR.timestamp} +0000`,
+                                GIT_COMMITTER_DATE: `@${SEALED_AUTHOR.timestamp} +0000`,
+                            },
+                        },
+                    ),
                 ).trim();
                 await must(["update-ref", SEALED, commit]);
                 return commit;
@@ -432,8 +494,7 @@ export function binaryRepo(
                 .stdout;
         },
         async setRemote(name, url) {
-            await run(["remote", "remove", name]);
-            await must(["remote", "add", name, url]);
+            await must(["config", "--replace-all", `remote.${name}.url`, url]);
         },
         async remote(name) {
             const ran = await run(["remote", "get-url", name]);

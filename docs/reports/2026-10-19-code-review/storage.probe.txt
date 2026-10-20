@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-code-review/storage.probe.txt
+#
+
+import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { toolEntry } from "/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/memory/src/transcript.ts";
+import { RecallIndex } from "/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/memory/src/recall/store.ts";
+import { search } from "/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/memory/src/recall/query.ts";
+import { putFact, listFacts } from "/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/memory/src/facts/store.ts";
+import { syncProject } from "/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/memory/src/projects/sync.ts";
+const base = await mkdtemp("/tmp/dorothy-storage-review-");
+console.log("scratch", base);
+for (const scheme of ["Bearer", "bearer", "BEARER", "Basic", "basic", "TOKEN"]) {
+  const output = toolEntry({ name: "Bash", input: `curl -H 'Authorization: ${scheme} opaque1234567890'`, output: "", ok: true });
+  console.log("scrub", scheme, JSON.stringify(output.input));
+}
+const index = RecallIndex.open(join(base, "index", "recall.sqlite"));
+const now = Date.now();
+const conversation = (phrase, project, text) => {
+  index.db.run("INSERT INTO conversations (phrase,t_size,t_ino,project,first_at,last_at) VALUES (?,0,0,?,?,?)", [phrase,project,now,now]);
+  index.db.run("INSERT INTO turns (phrase,n,role,at,text) VALUES (?,1,'user',?,?)", [phrase,now,text]);
+};
+conversation("personal-hit", null, "alpha");
+conversation("project-hit", "github.com/other/repo", "alpha beta");
+const opts = { exclude:null, now, halfLifeDays:30, within:["personal"] };
+console.log("search with out-of-scope AND hit", JSON.stringify(search(index,{query:"alpha beta",kind:"conversations"},opts)));
+index.db.run("DELETE FROM turns WHERE phrase = ?", ["project-hit"]);
+console.log("search after deleting out-of-scope hit", JSON.stringify(search(index,{query:"alpha beta",kind:"conversations"},opts)));
+index.close();
+const repo = join(base,"repo"), root = join(base,"data");
+await mkdir(join(repo,".git"),{recursive:true});
+await writeFile(join(repo,".git","config"),'[remote "origin"]\nurl=git@github.com:me/repo.git\n');
+const scope = {kind:"project",id:"github.com/me/repo"} as const;
+const stamp = "2026-10-19T00:00:00.000Z";
+await putFact(root,scope,{name:"known-fact",title:"Known fact",description:"Before",type:"project",extra:{},tags:[],importance:5,provenance:{origin:"dorothy",by:"dorothy",at:stamp,created:stamp},retired:null,body:"A fact.",foreign:{license:"MIT"},otherSources:[{resource:"https://example.com/source"}]});
+const syncOpts={root,lock:(work)=>work(),recorder:null};
+await syncProject(repo,syncOpts);
+const exported=join(repo,".agents","memory","known-fact.md");
+await writeFile(exported,(await readFile(exported,"utf8")).replace("Before","After"));
+const report=await syncProject(repo,syncOpts);
+console.log("metadata import result",JSON.stringify(report));
+const fact=(await listFacts(root,scope)).facts[0].fact;
+console.log("metadata preserved?",JSON.stringify({foreign:fact.foreign??null,otherSources:fact.otherSources??null,importance:fact.importance}));
+await putFact(root,scope,{...fact,name:"constructor",title:"Constructor fact",description:"A valid name",foreign:undefined,otherSources:undefined});
+console.log("constructor before",(await listFacts(root,scope)).facts.find(x=>x.fact.name==="constructor").fact.retired);
+console.log("constructor sync",JSON.stringify(await syncProject(repo,syncOpts)));
+console.log("constructor after",JSON.stringify((await listFacts(root,scope)).facts.find(x=>x.fact.name==="constructor").fact.retired));

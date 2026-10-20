@@ -8,7 +8,7 @@
 //
 //
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import type {
     ResumedTurn,
     StructuredCall,
@@ -321,6 +321,37 @@ describe("pendingReads", () => {
         expect(pendingReads(READ_TURNS, { toolu_1: {} }, String)).toEqual([]);
     });
 
+    it("lists an id once, however often it was recorded", () => {
+        const again: ResumedTurn[] = [
+            ...READ_TURNS,
+            {
+                role: "assistant",
+                text: "Again.",
+                lookups: [lookup("toolu_1", 0), lookup("toolu_4", 0)],
+            },
+        ];
+        const reads = pendingReads(again, {}, () => "Name");
+        expect(reads.map((read) => read.id)).toEqual(["toolu_1", "toolu_4"]);
+        // So a review can answer them all: two appraisals, one each.
+        const ids = reads.map((read) => read.id);
+        expect(
+            (reviewSchema(ids) as { properties: { appraisals: object } })
+                .properties.appraisals,
+        ).toMatchObject({ minItems: 2, maxItems: 2 });
+        expect(
+            validateReview(
+                {
+                    ...NOTES,
+                    appraisals: [
+                        { id: "toolu_4", served: "none" },
+                        { id: "toolu_1", served: "useful" },
+                    ],
+                },
+                ids,
+            ).ok,
+        ).toBe(true);
+    });
+
     it("awaits the appraisal of a fact's read, named by its title", () => {
         const turns: ResumedTurn[] = [
             { role: "user", text: "tea?" },
@@ -495,6 +526,21 @@ describe("reviewing a compacted conversation", () => {
         expect(prompt).not.toContain("Old one.");
     });
 
+    it("lists a read made in a compacted turn, with no mark in the text", () => {
+        const read = lookup("toolu_old", 3);
+        const withRead: ResumedTurn[] = turns.map((turn, at) =>
+            at === 1 ? { ...turn, lookups: [read] } : turn,
+        );
+        const reads = pendingReads(withRead, {}, () => "Old name");
+        expect(reads.map((pending) => pending.id)).toEqual(["toolu_old"]);
+        const prompt = reviewPrompt(withRead, current, reads);
+        expect(prompt).toContain(
+            '<read id="toolu_old" conversation="Old name" turns="3-5">why toolu_old</read>',
+        );
+        expect(prompt).not.toContain("[read");
+        expect(prompt).not.toContain("Old two.");
+    });
+
     it("says how to read them", () => {
         expect(CLUSTERS_INSTRUCTION).toContain("<earlier>");
     });
@@ -536,6 +582,33 @@ describe("tags in the review", () => {
         ],
     };
     const turns: Turn[] = [{ role: "user", text: "Hi" }];
+
+    it("scans a vocabulary once for IDs and once for rendering", () => {
+        const concepts: [string, Concept][] = Array.from(
+            { length: 512 },
+            (_, n) => [
+                `k${n.toString(16).padStart(8, "0")}`,
+                concept(`tag${n}`),
+            ],
+        );
+        const many: Vocabulary = {
+            v: 1,
+            rev: 1,
+            concepts: Object.fromEntries(concepts),
+        };
+        const scans = spyOn(concepts, "map");
+        try {
+            const prompt = reviewPrompt([], null, [], {
+                vocabulary: many,
+                concepts,
+            });
+            expect(prompt.match(/<concept /g)).toHaveLength(512);
+            // One pass builds the visible-ID set; one renders every concept.
+            expect(scans).toHaveBeenCalledTimes(2);
+        } finally {
+            scans.mockRestore();
+        }
+    });
 
     it("lists the vocabulary she may see, escaped", () => {
         const prompt = reviewPrompt(turns, null, [], tags);

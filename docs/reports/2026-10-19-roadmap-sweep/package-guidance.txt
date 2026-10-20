@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-roadmap-sweep/package-guidance.txt
+
+Probe: A session started inside packages/tui/src
+Date: 2026-10-20
+Claude Code: 2.1.300
+Bun: 1.4.2
+Herdr: 0.9.5
+Model: claude-haiku-5-5 (--model haiku; ANTHROPIC_MODEL=haiku for chat)
+Code under test: dc09077
+Verdict: PASS
+
+Commands:
+  python3 <probe-root>/probe.py claude package -p --model haiku \
+    --output-format json --tools '' --no-session-persistence \
+    'Probe only. Do not use tools, modify files, or delegate. From guidance already in your context, which packages may the TUI import, and what commit type do agent assets use? Answer in one sentence; say unknown where guidance is absent.'
+Working directory: <checkout>/packages/tui/src.
+Parent CLAUDE_CODE_ check: none. All Dorothy XDG roots are temporary.
+Claude's existing login and local project settings remain in place.
+See interactive.txt for the observer and environment helper.
+
+The initial attempt stopped before a model request because changing XDG
+roots hid mise's trust database. Its error was "Config files ... are not
+trusted." No trust setting was changed. The helper was corrected to put
+the installed Claude, Bun and Node binaries before their mise shims.
+The command above then completed normally, with no tool calls.
+
+Initial real API request, selected observations:
+{"kind":"request","path":"/v1/messages","model":"claude-haiku-5-5","systemBlocks":3,"identity":false,"markerLeft":false,"rootGuide":true,"packageGuide":true,"memoryIndex":true,"memoryHook":true}
+
+Model result:
+{
+  "type": "result",
+  "subtype": "success",
+  "is_error": false,
+  "result": "The TUI may import only `@dorothy/core` (per `packages/tui/AGENTS.md`, which says it \"depends on `core` alone\" among the `@dorothy` packages), and agent assets take the `ai` commit type (per the root `AGENTS.md` Commits section).",
+  "total_cost_usd": 0.0013727,
+  "num_turns": 1,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 6630,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 93,
+    "output_tokens_details": {
+      "thinking_tokens": 0
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 6630,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [],
+    "speed": "standard",
+    "fallback_credit": null
+  }
+}
+stderr:
+exit: 0
+
+rootGuide=true and packageGuide=true were computed from the actual first
+request, which contained headings # AGENTS.md and # packages/tui/AGENTS.md.
+The answer alone would not prove which file loaded; the captured request
+supplies that evidence. The startup request also held the memory index.
+Cost: one model turn, 0.0013727 USD. The mise rejection made no API call.

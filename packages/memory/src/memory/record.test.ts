@@ -77,6 +77,34 @@ describe("sessionRecorder", () => {
         expect(entries).toEqual(EXPECTED);
     });
 
+    it("records the cost of a failed turn after its partial reply", async () => {
+        const { entries, wrap } = recorded();
+        const inner = new FakeSession();
+        wrap(inner);
+        const stats = {
+            inputTokens: 10,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            outputTokens: 10,
+            ttftMs: null,
+            durationMs: 100,
+            costUsd: 0.25,
+            sessionCostUsd: 0.25,
+        };
+        inner.emit({ type: "delta", text: "Checking..." });
+        inner.emit({
+            type: "error",
+            message: "gone",
+            partial: "Checking...",
+            stats,
+        });
+        await settle();
+        expect(entries).toEqual([
+            { kind: "assistant", text: "Checking...", interrupted: true },
+            { kind: "stats", ...stats },
+        ]);
+    });
+
     it("records a remember as her own memory tool entry", async () => {
         const { entries, wrap } = recorded();
         const inner = new FakeSession();
@@ -85,7 +113,7 @@ describe("sessionRecorder", () => {
             type: "remember",
             id: "t1",
             ok: true,
-            offset: 0,
+            offset: 12,
             input: { action: "write", name: "tea" },
             output: '{"action":"written","id":"personal/tea"}',
         });
@@ -99,6 +127,7 @@ describe("sessionRecorder", () => {
                 ok: true,
                 cut: { input: 0, output: 0 },
                 memory: true,
+                offset: 12,
             },
         ]);
     });

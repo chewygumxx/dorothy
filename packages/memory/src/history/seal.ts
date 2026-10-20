@@ -8,7 +8,9 @@
 //
 //
 
-const MAGIC = "dorothy-sealed 1";
+const PREFIX = "dorothy-sealed ";
+const VERSION = "1";
+const MAGIC = `${PREFIX}${VERSION}`;
 const NONCE_BYTES = 12;
 const KEY_BYTES = 32;
 
@@ -20,7 +22,7 @@ const base64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");
 
 export type Opened =
     | { ok: true; bundle: Uint8Array }
-    | { ok: false; reason: string };
+    | { ok: false; kind: "format" | "key"; reason: string };
 
 // A new DOROTHY_MIRROR_KEY: 32 random bytes, as base64.
 export function newKey(): string {
@@ -50,6 +52,9 @@ export async function seal(
     key: Uint8Array,
     nonce: Uint8Array = crypto.getRandomValues(new Uint8Array(NONCE_BYTES)),
 ): Promise<Uint8Array> {
+    if (nonce.length !== NONCE_BYTES) {
+        throw new Error(`the nonce must be ${NONCE_BYTES} bytes`);
+    }
     const header = encoder.encode(`${MAGIC}\n${base64(nonce)}\n`);
     const sealed = new Uint8Array(
         await crypto.subtle.encrypt(
@@ -73,13 +78,18 @@ export async function unseal(
     const magic = Buffer.from(sealed.subarray(0, Math.max(first, 0))).toString(
         "utf8",
     );
-    if (second === -1 || !magic.startsWith("dorothy-sealed ")) {
-        return { ok: false, reason: "it is not a sealed bundle" };
+    if (second === -1 || !magic.startsWith(PREFIX)) {
+        return {
+            ok: false,
+            kind: "format",
+            reason: "it is not a sealed bundle",
+        };
     }
     if (magic !== MAGIC) {
         return {
             ok: false,
-            reason: `it is sealed as version ${magic.slice("dorothy-sealed ".length)}, not 1`,
+            kind: "format",
+            reason: `it is sealed as version ${magic.slice(PREFIX.length)}, not ${VERSION}`,
         };
     }
     const nonce = Buffer.from(
@@ -87,7 +97,11 @@ export async function unseal(
         "base64",
     );
     if (nonce.length !== NONCE_BYTES) {
-        return { ok: false, reason: "its nonce is not 12 bytes" };
+        return {
+            ok: false,
+            kind: "format",
+            reason: "its nonce is not 12 bytes",
+        };
     }
     try {
         const bundle = await crypto.subtle.decrypt(
@@ -103,6 +117,7 @@ export async function unseal(
     } catch {
         return {
             ok: false,
+            kind: "key",
             reason: "it does not open with this key, or it was changed",
         };
     }

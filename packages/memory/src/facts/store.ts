@@ -29,12 +29,15 @@ import {
     type Fact,
     type FactRead,
     type FactType,
+    isConfirmed,
     nextOrigin,
     type Origin,
     parseFact,
     renderFact,
+    USER_ACTOR,
     type Writer,
 } from "./file.js";
+import { notePending } from "./pending.js";
 
 export type Scope = { kind: "personal" } | { kind: "project"; id: string };
 export const PERSONAL: Scope = Object.freeze({ kind: "personal" });
@@ -61,8 +64,7 @@ export function scopeDir(
     if (scope.kind === "personal") {
         return join(root, under, "personal");
     }
-    // The guard today's scopeDir holds: an id with .. or an empty part
-    // would write outside the store.
+    // An id with .. or an empty part would write outside the store.
     if (!isProjectId(scope.id)) {
         throw new Error(`${scope.id} is not a project id`);
     }
@@ -156,10 +158,14 @@ export async function factFiles(
     );
 }
 
+// A fact file read: none where there is none, unreadable where the system
+// refuses it (a permission, say), which says nothing of its contents.
 export async function readFactFile(
     path: string,
     name: string,
-): Promise<FactRead | { kind: "none" }> {
+): Promise<
+    FactRead | { kind: "none" } | { kind: "unreadable"; reason: string }
+> {
     let text: string;
     try {
         text = await readFile(path, "utf8");
@@ -167,7 +173,7 @@ export async function readFactFile(
         if (codeOf(error) === "ENOENT") {
             return { kind: "none" };
         }
-        return { kind: "unparseable", reason: describeError(error) };
+        return { kind: "unreadable", reason: describeError(error) };
     }
     return parseFact(text, name);
 }
@@ -179,27 +185,36 @@ export async function listFacts(
     scope?: Scope,
 ): Promise<{
     facts: StoredFact[];
+    // Files that read but are no fact.
     broken: { path: string; reason: string }[];
+    // Files the system would not let be read.
+    unreadable: { path: string; reason: string }[];
 }> {
     const facts: StoredFact[] = [];
     const broken: { path: string; reason: string }[] = [];
+    const unreadable: { path: string; reason: string }[] = [];
     for (const file of await factFiles(root, scope)) {
         const read = await readFactFile(file.path, file.name);
         if (read.kind === "ok") {
             facts.push({ scope: file.scope, path: file.path, fact: read.fact });
         } else if (read.kind === "unparseable") {
             broken.push({ path: file.path, reason: read.reason });
+        } else if (read.kind === "unreadable") {
+            unreadable.push({ path: file.path, reason: read.reason });
         }
     }
-    return { facts, broken };
+    return { facts, broken, unreadable };
 }
 
-// Writes a fact where it belongs once it reads back as written. The
-// caller holds the lock and records the path.
+// Writes a fact where it belongs once it reads back as written, replacing
+// one there; with keep it fails with EEXIST instead. The caller holds the
+// lock and records the path; until history commits it, pending.ts has the
+// write as hers.
 export async function putFact(
     root: string,
     scope: Scope,
     fact: Fact,
+    options: { keep?: boolean } = {},
 ): Promise<string> {
     const text = renderFact(fact);
     const read = parseFact(text, fact.name);
@@ -207,7 +222,8 @@ export async function putFact(
         throw new Error(`${scopeLabel(scope)}/${fact.name}: ${read.reason}`);
     }
     const path = factPath(root, scope, fact.name);
-    await writeAtomic(path, text);
+    await notePending(root, relative(root, path).split(sep).join("/"), text);
+    await writeAtomic(path, text, options);
     return path;
 }
 
@@ -289,6 +305,9 @@ async function existing(
     if (read.kind === "unparseable") {
         return { kind: "failed", reason: `it is broken: ${read.reason}` };
     }
+    if (read.kind === "unreadable") {
+        return { kind: "failed", reason: `it cannot be read: ${read.reason}` };
+    }
     return { path, fact: read.kind === "ok" ? read.fact : null };
 }
 
@@ -311,6 +330,23 @@ export function writeFact(
         await store.recorder?.([path], `fact: ${label(input)}`);
         return { kind: "written", fact };
     });
+}
+
+// The keys another producer wrote, kept through a write; the user's
+// verifications only through the user's own, as they confirmed the
+// words a write by anyone else replaces.
+export function foreignAfter(
+    foreign: Fact["foreign"],
+    by: Writer,
+): Pick<Fact, "foreign"> {
+    if (foreign === undefined) {
+        return {};
+    }
+    if (by === "user" || !("verified" in foreign)) {
+        return { foreign };
+    }
+    const { verified: _, ...rest } = foreign;
+    return Object.keys(rest).length === 0 ? {} : { foreign: rest };
 }
 
 // The fact as written: what the input gives, else what it held before.
@@ -341,7 +377,7 @@ function factOf(input: FactInput, before: Fact | null, now: string): Fact {
         },
         retired: null,
         body: input.body.trim(),
-        ...(before?.foreign === undefined ? {} : { foreign: before.foreign }),
+        ...foreignAfter(before?.foreign, input.by),
         ...(before?.otherSources === undefined
             ? {}
             : { otherSources: before.otherSources }),
@@ -373,7 +409,19 @@ export function moveFact(
         }
         const fact = stamped(found.fact, at(store));
         const path = await putFact(store.root, to, fact);
-        await rm(found.path);
+        try {
+            await rm(found.path);
+        } catch (error) {
+            // Never a fact in two scopes: the copy is taken back.
+            const undone = await rm(path).then(
+                () => true,
+                () => false,
+            );
+            return {
+                kind: "failed",
+                reason: `${label(from)} could not be removed (${describeError(error)}); ${undone ? "nothing moved" : `a copy of it was left at ${path}`}`,
+            };
+        }
         await store.recorder?.(
             [found.path, path],
             `move: ${label(from)} to ${scopeLabel(to)}`,
@@ -435,40 +483,101 @@ export function reviveFact(
     });
 }
 
+export type VerifyResult =
+    | { kind: "written"; fact: Fact }
+    | { kind: "confirmed"; fact: Fact }
+    | { kind: "missing" }
+    | { kind: "failed"; reason: string };
+
+// The user's confirmation of a fact, OKF's verified entry beside any
+// another hand made, committed as theirs. The fact's own writing is
+// left as it was. Knowledge already confirmed is left alone.
+export function verifyFact(
+    store: FactStore,
+    target: Target,
+): Promise<VerifyResult> {
+    return held(store, async (): Promise<VerifyResult> => {
+        const found = await existing(store, target);
+        if ("kind" in found) {
+            return found;
+        }
+        if (found.fact === null) {
+            return { kind: "missing" };
+        }
+        if (isConfirmed(found.fact)) {
+            return { kind: "confirmed", fact: found.fact };
+        }
+        const foreign = found.fact.foreign ?? {};
+        const before = foreign.verified ?? [];
+        if (!Array.isArray(before)) {
+            return { kind: "failed", reason: "its verified key is not a list" };
+        }
+        const fact: Fact = {
+            ...found.fact,
+            foreign: {
+                ...foreign,
+                verified: [...before, { by: USER_ACTOR, at: at(store) }],
+            },
+        };
+        const path = await putFact(store.root, target.scope, fact);
+        await store.recorder?.([path], `verify: ${label(target)} (user)`);
+        return { kind: "written", fact };
+    });
+}
+
 // Every live fact whose provenance names the conversation, retired in one
-// commit, for when a conversation turns out to have been wrong.
+// commit, for when a conversation turns out to have been wrong. A write
+// that fails part way records the facts already retired and names them.
 export function retireFacts(
     store: FactStore,
     phrase: string,
     { by, why }: { by: Writer; why: string },
 ): Promise<
-    { kind: "done"; retired: string[] } | { kind: "failed"; reason: string }
+    | { kind: "done"; retired: string[] }
+    | { kind: "failed"; reason: string; retired?: string[] }
 > {
     return held(store, async () => {
         const { facts } = await listFacts(store.root);
         const paths: string[] = [];
         const retired: string[] = [];
         const now = at(store);
-        for (const { scope, fact } of facts) {
-            if (
-                fact.retired !== null ||
-                fact.provenance.from?.split("#")[0] !== phrase
-            ) {
-                continue;
+        const record = () =>
+            paths.length === 0
+                ? undefined
+                : store.recorder?.(
+                      paths,
+                      `retire: ${paths.length} ${paths.length === 1 ? "fact" : "facts"} from ${phrase}`,
+                  );
+        let failure: string | undefined;
+        try {
+            for (const { scope, fact } of facts) {
+                if (
+                    fact.retired !== null ||
+                    fact.provenance.from?.split("#")[0] !== phrase
+                ) {
+                    continue;
+                }
+                const next = {
+                    ...stamped(fact, now, by),
+                    retired: { at: now, by, why: normalise(why) },
+                };
+                paths.push(await putFact(store.root, scope, next));
+                retired.push(label({ scope, name: fact.name }));
             }
-            const next = {
-                ...stamped(fact, now, by),
-                retired: { at: now, by, why: normalise(why) },
-            };
-            paths.push(await putFact(store.root, scope, next));
-            retired.push(label({ scope, name: fact.name }));
+        } catch (error) {
+            failure = describeError(error);
         }
-        if (paths.length > 0) {
-            await store.recorder?.(
-                paths,
-                `retire: ${paths.length} ${paths.length === 1 ? "fact" : "facts"} from ${phrase}`,
-            );
+        try {
+            await record();
+        } catch (error) {
+            const reason = describeError(error);
+            failure =
+                failure === undefined
+                    ? reason
+                    : `${failure}; history: ${reason}`;
         }
-        return { kind: "done" as const, retired };
+        return failure === undefined
+            ? { kind: "done" as const, retired }
+            : { kind: "failed" as const, reason: failure, retired };
     });
 }

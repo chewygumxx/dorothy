@@ -53,7 +53,7 @@ const ENTRIES: Record<string, string[]> = {
         "./recall-server",
         "./service",
     ],
-    tui: ["."],
+    tui: [".", "./editor"],
 };
 
 const SDK = "@anthropic-ai/claude-agent-sdk";
@@ -106,6 +106,15 @@ describe("the workspace", () => {
         expect(holders).toEqual(["agent"]);
     });
 
+    it("lints an import of what a package does not declare", async () => {
+        const biome = await Bun.file(
+            join(import.meta.dir, ".biome.json"),
+        ).json();
+        expect(biome.linter.rules.correctness.noUndeclaredDependencies).toBe(
+            "error",
+        );
+    });
+
     it("resolves only what a package declares, and only its doors", () => {
         const from = (name: string) => join(PACKAGES, name, "src");
         expect(() =>
@@ -119,6 +128,9 @@ describe("the workspace", () => {
         ).toThrow();
         expect(() => Bun.resolveSync(SDK, from("memory"))).toThrow();
         expect(() => Bun.resolveSync(SDK, from("tui"))).toThrow();
+        expect(() =>
+            Bun.resolveSync("@dorothy/tui/editor", from("cli")),
+        ).not.toThrow();
         expect(() =>
             Bun.resolveSync("@dorothy/memory/src/memory/open.ts", from("cli")),
         ).toThrow();

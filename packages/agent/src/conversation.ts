@@ -36,6 +36,7 @@ import {
     personaPrompt,
     withHistory,
 } from "./persona.js";
+import { failureText, type ResultMessage } from "./result.js";
 
 export type QueryHandle = AsyncIterable<SDKMessage> & {
     interrupt(): Promise<unknown>;
@@ -46,8 +47,6 @@ export type QueryFn = (params: {
     options: Options;
 }) => QueryHandle;
 
-type ResultMessage = Extract<SDKMessage, { type: "result" }>;
-
 type PendingCall = { tool: Tool; input: unknown; offset: number };
 type PendingRemember = { input: unknown; offset: number };
 
@@ -57,6 +56,13 @@ type PendingRemember = { input: unknown; offset: number };
 // turn on screen and lose its reply, while the turn continues as usual.
 export const COMPACTED_BY_CLI =
     "the CLI compacted this session itself, despite DISABLE_COMPACT";
+
+// The CLI reports a compaction it tried and failed only in a status
+// message, with no boundary after it.
+export const cliCompactFailed = (error: string | undefined) =>
+    `the CLI tried to compact this session itself, despite DISABLE_COMPACT, and failed${
+        error === undefined || error === "" ? "" : `: ${error}`
+    }`;
 
 // Characters as the note limits count them, four to a token.
 const estimate = (text: string) => Math.ceil([...text].length / 4);
@@ -302,6 +308,15 @@ export class Conversation implements ChatSession {
             this.#emit({ type: "warning", message: COMPACTED_BY_CLI });
             return;
         }
+        if (message.subtype === "status") {
+            if (message.compact_result === "failed") {
+                this.#emit({
+                    type: "warning",
+                    message: cliCompactFailed(message.compact_error),
+                });
+            }
+            return;
+        }
         if (message.subtype !== "init") {
             return;
         }
@@ -411,12 +426,10 @@ export class Conversation implements ChatSession {
 
     // API failures (auth, rate limit, overload) do not throw: the turn ends
     // with an error result carrying the text instead of a reply.
+    // The failed turn still cost what the result says: it goes with the
+    // error, which the screen and the transcript account.
     #failTurn(message: ResultMessage): void {
-        const text =
-            message.subtype === "success"
-                ? message.result
-                : message.errors.join("; ");
-        this.#fail(text || message.subtype);
+        this.#fail(failureText(message), this.#stats(message));
     }
 
     #endTurn(message: ResultMessage): void {
@@ -500,16 +513,17 @@ export class Conversation implements ChatSession {
         }
     }
 
-    #fail(message: string): void {
+    #fail(message: string, stats?: TurnStats): void {
         this.#settleCalls();
         const partial = this.#reply;
         this.#reply = "";
         this.#interrupted = false;
-        this.#emit(
-            partial
-                ? { type: "error", message, partial }
-                : { type: "error", message },
-        );
+        this.#emit({
+            type: "error",
+            message,
+            ...(partial ? { partial } : {}),
+            ...(stats ? { stats } : {}),
+        });
     }
 
     #stats(result: ResultMessage): TurnStats {

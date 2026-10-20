@@ -52,6 +52,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
 
 function eventProblem(line: Uint8Array): string | null {
+    if (line.length === 0) return "blank";
     let event: unknown;
     try {
         event = JSON.parse(utf8.decode(line));

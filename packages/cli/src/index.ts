@@ -12,6 +12,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { StructuredCall } from "@dorothy/core";
 import { config } from "@dotenvx/dotenvx";
+import { ambient } from "./ambient.js";
 import { type Mode, parseArgs, USAGE } from "./args.js";
 
 // What runs each mode, and the code it exits with; nothing where it set
@@ -21,6 +22,12 @@ type Runners = {
     [K in Mode["kind"]]: (
         mode: Extract<Mode, { kind: K }>,
     ) => Promise<number | undefined>;
+};
+
+// What a command opens the data directory's history on.
+const history = () => {
+    const { env, err, hook } = ambient();
+    return { env, err, hook };
 };
 
 const commands = () => import("@dorothy/memory/commands");
@@ -38,11 +45,12 @@ const selfServe = () => [
 // Reviews for the service: Claude Code's variables dropped first, as a
 // service --mcp starts inside her Claude Code would inherit its gateway,
 // which dies with the session; then Dorothy's .env by path from this
-// checkout, then the agent. Off, and said, when either fails.
-async function reviewAgent(): Promise<{
-    call: StructuredCall;
-    persona: string;
-} | null> {
+// checkout, then the agent. Off, and said, when either fails; the
+// service keeps the reason in its log, as its stderr may be ignored.
+async function reviewAgent(): Promise<
+    | { review: { call: StructuredCall; persona: string } }
+    | { review: null; noReviews: string }
+> {
     try {
         const { checkoutRoot, loadDotenv, stripClaude } = await import(
             "./claude-hook.js"
@@ -60,12 +68,14 @@ async function reviewAgent(): Promise<{
             "@dorothy/agent"
         );
         prepareCliHome();
-        return { call: structuredCall(), persona: systemPrompt };
+        return {
+            review: { call: structuredCall(), persona: systemPrompt },
+        };
     } catch (error) {
-        process.stderr.write(
-            `dorothy: reviews are off: ${error instanceof Error ? error.message : String(error)}\n`,
-        );
-        return null;
+        const noReviews =
+            error instanceof Error ? error.message : String(error);
+        process.stderr.write(`dorothy: reviews are off: ${noReviews}\n`);
+        return { review: null, noReviews };
     }
 }
 
@@ -111,73 +121,87 @@ const RUNNERS: Runners = {
     },
     list: async () => {
         const { commandHistory, runList } = await commands();
-        return runList({ openHistory: commandHistory() });
+        return runList({ openHistory: commandHistory(history()) });
     },
     memory: async (mode) => {
         const { commandHistory, runMemoryEdit } = await commands();
-        const { editInEditor } = await import("@dorothy/tui");
+        const { editInEditor } = await import("@dorothy/tui/editor");
         return runMemoryEdit(mode.phrase, {
             edit: (text) => editInEditor(text),
-            openHistory: commandHistory(),
+            openHistory: commandHistory(history()),
         });
     },
     tags: async () => {
         const { commandHistory, runTags } = await commands();
-        return runTags({ openHistory: commandHistory() });
+        return runTags({ openHistory: commandHistory(history()) });
     },
     "tags-edit": async () => {
         const { commandHistory, runTagsEdit } = await commands();
-        const { editInEditor } = await import("@dorothy/tui");
+        const { editInEditor } = await import("@dorothy/tui/editor");
         return runTagsEdit({
             edit: (text) => editInEditor(text),
-            openHistory: commandHistory(),
+            openHistory: commandHistory(history()),
         });
     },
     history: async (mode) => {
         const { runHistory } = await commands();
-        return runHistory({ path: mode.path, count: mode.count });
+        return runHistory({
+            ...ambient(),
+            path: mode.path,
+            count: mode.count,
+        });
     },
     restore: async (mode) => {
         const { runRestore } = await commands();
-        return runRestore(mode.path, mode.rev);
+        return runRestore(mode.path, mode.rev, ambient());
     },
     rollback: async (mode) => {
         const { runRollback } = await commands();
-        return runRollback(mode.rev);
+        return runRollback(mode.rev, ambient());
     },
     check: async (mode) => {
         const { runCheck } = await commands();
-        return runCheck({ staged: mode.staged });
+        return runCheck({ ...ambient(), staged: mode.staged });
     },
     mirror: async (mode) => {
         loadCredentials();
         const { runMirror } = await commands();
-        return runMirror(mode.url);
+        return runMirror(mode.url, ambient());
     },
     recover: async (mode) => {
         loadCredentials();
         const { runRecover } = await commands();
-        return runRecover(mode.url);
+        return runRecover(mode.url, ambient());
     },
     facts: async () => {
         const { commandHistory, runFacts } = await commands();
-        return runFacts({ openHistory: commandHistory() });
+        return runFacts({ openHistory: commandHistory(history()) });
     },
     retire: async (mode) => {
         const { commandHistory, runRetire } = await commands();
-        return runRetire(mode.target, { openHistory: commandHistory() });
+        return runRetire(mode.target, {
+            openHistory: commandHistory(history()),
+        });
     },
     "retire-from": async (mode) => {
         const { commandHistory, runRetireFrom } = await commands();
-        return runRetireFrom(mode.phrase, { openHistory: commandHistory() });
+        return runRetireFrom(mode.phrase, {
+            openHistory: commandHistory(history()),
+        });
     },
     revive: async (mode) => {
         const { commandHistory, runRevive } = await commands();
-        return runRevive(mode.target, { openHistory: commandHistory() });
+        return runRevive(mode.target, {
+            openHistory: commandHistory(history()),
+        });
+    },
+    verify: async (mode) => {
+        const { commandHistory, runVerify } = await commands();
+        return runVerify(mode.id, { openHistory: commandHistory(history()) });
     },
     sync: async (mode) => {
         const { commandHistory, runSync } = await commands();
-        return runSync(mode.path, { openHistory: commandHistory() });
+        return runSync(mode.path, { openHistory: commandHistory(history()) });
     },
     projects: async () => {
         const { runProjects } = await commands();
@@ -195,7 +219,7 @@ const RUNNERS: Runners = {
     },
     serve: async () => {
         const { runService } = await service();
-        return runService({ review: await reviewAgent() });
+        return runService(await reviewAgent());
     },
     "token-add": async (mode) => {
         const { runTokenAdd } = await service();

@@ -10,14 +10,15 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
-    chmodSync,
     existsSync,
     mkdirSync,
     mkdtempSync,
     readFileSync,
     rmSync,
+    symlinkSync,
     writeFileSync,
 } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { syncFacts } from "../recall/facts.js";
@@ -127,22 +128,50 @@ describe("migrateFacts", () => {
     it("warns of a file it cannot read and moves the rest", async () => {
         put("facts/personal/likes-tea.md", renderLegacyFact(TEA));
         put("facts/personal/uses-rust.md", renderLegacyFact(RUST));
-        chmodSync(join(root, "facts/personal/likes-tea.md"), 0o000);
-        try {
-            const warnings = await migrateFacts(root);
-            expect(warnings).toHaveLength(1);
-            expect(warnings[0]).toStartWith(
-                "facts/personal/likes-tea.md was left in facts/",
-            );
-            expect(
-                existsSync(join(root, "knowledge/personal/uses-rust.md")),
-            ).toBe(true);
-            expect(existsSync(join(root, "facts/personal/likes-tea.md"))).toBe(
-                true,
-            );
-        } finally {
-            chmodSync(join(root, "facts/personal/likes-tea.md"), 0o644);
-        }
+        // A read that fails whoever runs the test, as chmod 000 would not.
+        const read = (async (path: string, encoding: "utf8") => {
+            if (path.endsWith("likes-tea.md")) {
+                throw Object.assign(new Error("EACCES: denied"), {
+                    code: "EACCES",
+                });
+            }
+            return readFile(path, encoding);
+        }) as typeof readFile;
+        const warnings = await migrateFacts(root, { read });
+        expect(warnings).toEqual([
+            "facts/personal/likes-tea.md was left in facts/: EACCES: denied",
+        ]);
+        expect(existsSync(join(root, "knowledge/personal/uses-rust.md"))).toBe(
+            true,
+        );
+        expect(existsSync(join(root, "facts/personal/likes-tea.md"))).toBe(
+            true,
+        );
+    });
+
+    it("mentions what else it leaves in facts/", async () => {
+        put("facts/personal/likes-tea.md", renderLegacyFact(TEA));
+        put("facts/personal/Not A Name.md", "x\n");
+        put("facts/notes.txt", "x\n");
+        put("facts/deep/er/than/it.md", "x\n");
+        const warnings = await migrateFacts(root);
+        expect(warnings.sort()).toEqual([
+            "facts/deep/er/than/it.md was left in facts/: it is no fact the store lists",
+            "facts/notes.txt was left in facts/: it is no fact the store lists",
+            "facts/personal/Not A Name.md was left in facts/: it is no fact the store lists",
+        ]);
+    });
+
+    it("prunes no directory outside facts/ through a link", async () => {
+        put("facts/personal/likes-tea.md", renderLegacyFact(TEA));
+        const outside = join(root, "outside");
+        mkdirSync(join(outside, "empty"), { recursive: true });
+        symlinkSync(outside, join(root, "facts/linked"));
+        const warnings = await migrateFacts(root);
+        expect(existsSync(join(outside, "empty"))).toBe(true);
+        expect(warnings).toEqual([
+            "facts/linked was left in facts/: it is a link",
+        ]);
     });
 
     it("warns of a file it cannot write and moves the rest", async () => {

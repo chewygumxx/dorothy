@@ -20,6 +20,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { StructuredCall } from "@dorothy/core";
+import { indexPath } from "../recall/store.js";
 import { transcriptDir } from "../transcript.js";
 import {
     assistantLine,
@@ -39,6 +40,8 @@ import {
 } from "./hook.js";
 import {
     launchesDir,
+    launchSessions,
+    legacyLaunchesDir,
     liveSession,
     noteLaunch,
     noteSession,
@@ -50,6 +53,7 @@ import type { Recorded } from "./record.js";
 import { keepHalt, readRecord, startNotices } from "./unread.js";
 
 const LAUNCH = "6c84fb90-12c4-11e1-840d-7b25c5ee775a";
+const OLD = "7d95fc01-23d5-42f2-951e-8c36d6ff886b";
 const NOTES = {
     title: "Hello",
     description: "A greeting.",
@@ -244,6 +248,7 @@ describe("runClaudeHook", () => {
     let said = "";
     const out = { write: (text: string) => (said += text) };
     const reviews: string[] = [];
+    let agents = 0;
     const call: StructuredCall = async ({ prompt }) => {
         reviews.push(prompt);
         return { ok: true, output: NOTES, model: "m", costUsd: 0.01 };
@@ -278,6 +283,7 @@ describe("runClaudeHook", () => {
         });
         said = "";
         reviews.length = 0;
+        agents = 0;
     });
     afterEach(async () => {
         await rm(home, { recursive: true, force: true });
@@ -292,8 +298,10 @@ describe("runClaudeHook", () => {
     const deps = (stdin: string, spawned: string[][] = []) => ({
         env,
         stdin: async () => stdin,
-        call,
-        persona: "You are Dorothy.",
+        agent: async () => {
+            agents += 1;
+            return { call, persona: "You are Dorothy." };
+        },
         self: ["/bin/bun", "/d/index.ts"],
         spawnDetached: (cmd: string[]) => spawned.push(cmd),
         out,
@@ -335,6 +343,100 @@ describe("runClaudeHook", () => {
         expect(await conversations()).toEqual([]);
     });
 
+    it("loads the agent for a review alone, not for a SessionEnd", async () => {
+        await runClaudeHook({ kind: "hook" }, deps(input("SessionEnd")));
+        expect(agents).toBe(0);
+        await runClaudeHook({ kind: "hook" }, deps(input("Stop")));
+        expect(reviews).toHaveLength(1);
+        expect(agents).toBe(1);
+    });
+
+    describe("the detached catch-up, really started", () => {
+        let scripts = "";
+        beforeEach(async () => {
+            scripts = await mkdtemp(join(tmpdir(), "dorothy-hook-script-"));
+        });
+        afterEach(async () => {
+            await rm(scripts, { recursive: true, force: true });
+            delete process.env.DOROTHY_TEST_CANARY;
+        });
+
+        const until = async <T>(look: () => Promise<T | null>) => {
+            for (let tries = 0; tries < 200; tries += 1) {
+                const found = await look().catch(() => null);
+                if (found !== null) {
+                    return found;
+                }
+                await new Promise((resolve) => setTimeout(resolve, 25));
+            }
+            throw new Error("never came");
+        };
+
+        it("runs in the environment the hook was given, not this process's", async () => {
+            const dump = join(home, "dump.json");
+            const script = join(scripts, "dump.ts");
+            await writeFile(
+                script,
+                [
+                    'import { renameSync, writeFileSync } from "node:fs";',
+                    "const to = process.env.DUMP_TO as string;",
+                    'writeFileSync(to + ".tmp", JSON.stringify({',
+                    "    argv: process.argv.slice(2),",
+                    "    env: Object.keys(process.env),",
+                    "}));",
+                    'renameSync(to + ".tmp", to);',
+                    "",
+                ].join("\n"),
+            );
+            // What Dorothy's .env decrypted into this process, say.
+            process.env.DOROTHY_TEST_CANARY = "decrypted";
+            expect(
+                await runClaudeHook(
+                    { kind: "hook" },
+                    {
+                        ...deps(input("SessionEnd")),
+                        env: { ...env, DUMP_TO: dump },
+                        self: [process.execPath, script],
+                        spawnDetached: undefined,
+                    },
+                ),
+            ).toBe(0);
+            const seen = await until(async () =>
+                JSON.parse(await readFile(dump, "utf8")),
+            );
+            expect(seen.argv).toEqual([
+                "--claude-hook",
+                "--catch-up",
+                LAUNCH,
+                "--session",
+                SESSION,
+            ]);
+            expect(seen.env).toContain("DUMP_TO");
+            expect(seen.env).toContain("DOROTHY_LAUNCH");
+            expect(seen.env).not.toContain("DOROTHY_TEST_CANARY");
+        });
+
+        it("logs a start that fails, and still exits 0", async () => {
+            expect(
+                await runClaudeHook(
+                    { kind: "hook" },
+                    {
+                        ...deps(input("SessionEnd")),
+                        self: [join(scripts, "no-such-program")],
+                        spawnDetached: undefined,
+                    },
+                ),
+            ).toBe(0);
+            const log = await until(async () => {
+                const text = await readFile(hookLogPath(env), "utf8");
+                return text.includes("the catch-up could not start")
+                    ? text
+                    : null;
+            });
+            expect(log).toMatch(/ error \d+ the catch-up could not start/);
+        });
+    });
+
     it("leaves no live session once a SessionEnd has come", async () => {
         await runClaudeHook({ kind: "hook" }, deps(input("Stop")));
         expect(await liveSession(env, LAUNCH)).toBe(SESSION);
@@ -372,6 +474,93 @@ describe("runClaudeHook", () => {
         expect(reviews).toHaveLength(1);
         expect(await readLaunch(env, LAUNCH)).toBeNull();
         expect(await readdir(launchesDir(env))).toEqual([]);
+    });
+
+    it("catches up a launch an earlier Dorothy left in the runtime directory", async () => {
+        const before = { ...env, XDG_STATE_HOME: join(home, "run") };
+        await noteLaunch(before, {
+            launch: OLD,
+            pid: 1,
+            started: "2026-10-15T09:00:00.000Z",
+            dir: join(home, "work"),
+            session: SESSION,
+            claude: join(home, "claude"),
+        });
+        await noteSession(env, OLD, {
+            session: SESSION,
+            transcript: claude,
+            cwd: join(home, "work"),
+            seen: "2026-10-15T09:03:00.000Z",
+        });
+        await runClaudeHook(
+            { kind: "catch-up", launch: OLD, session: null },
+            deps(""),
+        );
+        expect(await conversations()).toHaveLength(1);
+        expect(await readLaunch(env, OLD)).toBeNull();
+        expect(await readdir(legacyLaunchesDir(env))).toEqual([]);
+    });
+
+    it("tells of a session no hook ran for once, though its catch-up is retried", async () => {
+        await mkdir(join(home, "config", "dorothy"), { recursive: true });
+        await writeFile(
+            join(home, "config", "dorothy", "config.toml"),
+            "[history]\nenabled = false\n",
+        );
+        await mkdir(indexPath(env), { recursive: true });
+        const catchUp = () =>
+            runClaudeHook(
+                { kind: "catch-up", launch: LAUNCH, session: null },
+                deps(""),
+            );
+        await catchUp();
+        await catchUp();
+        const locked = await startNotices(env);
+        expect(locked).toHaveLength(2);
+        expect(locked.join("\n")).not.toContain("ran no hooks");
+        expect(await readLaunch(env, LAUNCH)).not.toBeNull();
+        await rm(indexPath(env), { recursive: true });
+        await rm(join(home, "config"), { recursive: true });
+        await catchUp();
+        const told = await startNotices(env);
+        expect(told).toHaveLength(1);
+        expect(told[0]).toContain("ran no hooks");
+        expect(await readLaunch(env, LAUNCH)).toBeNull();
+    });
+
+    it("keeps a launch's notes when neither the index nor history can lock", async () => {
+        await noteSession(env, LAUNCH, {
+            session: SESSION,
+            transcript: claude,
+            cwd: join(home, "work"),
+            seen: "2026-10-15T09:03:00.000Z",
+        });
+        await mkdir(join(home, "config", "dorothy"), { recursive: true });
+        await writeFile(
+            join(home, "config", "dorothy", "config.toml"),
+            "[history]\nenabled = false\n",
+        );
+        // An index that cannot be opened: a directory where it should be.
+        await mkdir(indexPath(env), { recursive: true });
+        await runClaudeHook(
+            { kind: "catch-up", launch: LAUNCH, session: null },
+            deps(""),
+        );
+        expect(await conversations()).toEqual([]);
+        expect(await readLaunch(env, LAUNCH)).not.toBeNull();
+        expect(await launchSessions(env, LAUNCH)).toHaveLength(1);
+        expect(await readFile(hookLogPath(env), "utf8")).toContain(
+            "nothing recorded",
+        );
+        // The next start's catch-up has it once the store opens.
+        await rm(indexPath(env), { recursive: true });
+        await rm(join(home, "config"), { recursive: true });
+        await runClaudeHook(
+            { kind: "catch-up", launch: LAUNCH, session: null },
+            deps(""),
+        );
+        expect(await conversations()).toHaveLength(1);
+        expect(await readLaunch(env, LAUNCH)).toBeNull();
     });
 
     it("catches up one session and keeps the launch's notes", async () => {
@@ -438,7 +627,10 @@ describe("runClaudeHook", () => {
             answers.shift() ?? { ok: false, reason: "none left", costUsd: 0 };
         await runClaudeHook(
             { kind: "hook" },
-            { ...deps(input("Stop")), call: scripted },
+            {
+                ...deps(input("Stop")),
+                agent: async () => ({ call: scripted, persona: "" }),
+            },
         );
         await writeFile(
             claude,
@@ -446,7 +638,10 @@ describe("runClaudeHook", () => {
         );
         await runClaudeHook(
             { kind: "catch-up", launch: LAUNCH, session: null },
-            { ...deps(""), call: scripted },
+            {
+                ...deps(""),
+                agent: async () => ({ call: scripted, persona: "" }),
+            },
         );
         expect(answers).toEqual([]);
         const [name] = await conversations();
@@ -467,7 +662,10 @@ describe("runClaudeHook", () => {
         });
         await runClaudeHook(
             { kind: "hook" },
-            { ...deps(input("Stop")), call: unusable },
+            {
+                ...deps(input("Stop")),
+                agent: async () => ({ call: unusable, persona: "" }),
+            },
         );
         const [name] = await conversations();
         const phrase = (name ?? "").replace(/\.jsonl$/, "");

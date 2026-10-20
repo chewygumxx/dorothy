@@ -3,5 +3,12 @@
     "extends": ["@chewygumxx/biome-config"],
     "files": {
         "includes": ["**", "!skills-lock.json"]
+    },
+    "linter": {
+        "rules": {
+            "correctness": {
+                "noUndeclaredDependencies": "error"
+            }
+        }
     }
 }

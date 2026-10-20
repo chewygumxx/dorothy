@@ -103,7 +103,7 @@ export async function runList({
         out.write(`${formatList(listRows(loaded.entries, tiered))}\n`);
         return 0;
     } finally {
-        versions?.close();
+        await versions?.close();
         index.close();
     }
 }
@@ -166,13 +166,14 @@ export async function runTags({
         );
         return 1;
     } finally {
-        versions?.close();
+        await versions?.close();
         index.close();
     }
 }
 
-// The error line a reopened template starts with, never more than one.
-const ERROR_LINES = /^(# error: .*\n)+/;
+// The error lines a reopened template carried, wherever the user left them:
+// it starts with the new one alone.
+const ERROR_LINES = /^# error: .*(\n|$)/gm;
 
 const tagsContext = (read: VocabularyRead): TagsContext =>
     read.kind === "unparseable"
@@ -277,6 +278,7 @@ export async function runMemoryEdit(
                     edited,
                     shown,
                     fresh.kind === "ok" ? fresh : tags,
+                    tags,
                 );
                 if (parsed.kind !== "edit") {
                     return parsed.kind === "unchanged"
@@ -286,7 +288,7 @@ export async function runMemoryEdit(
                 return saveNotes(phrase, parsed.changes, {
                     dir,
                     path,
-                    lock: index?.lock ?? versions?.lock,
+                    lock: versions?.lock ?? index?.lock,
                     versions,
                     at: now().toISOString(),
                     err,
@@ -294,7 +296,7 @@ export async function runMemoryEdit(
             },
         );
     } finally {
-        versions?.close();
+        await versions?.close();
         index?.close();
     }
 }
@@ -350,7 +352,6 @@ async function saveNotes(
             : {
                   recorder: versions.recorder,
                   message: `edit: ${phrase} (user)`,
-                  also: [path],
               },
     );
     if (refused.tags) {
@@ -395,7 +396,7 @@ export async function runTagsEdit({
             return 1;
         }
         const shown = read.kind === "ok" ? read.vocabulary : EMPTY_VOCABULARY;
-        const counts = await viewCounts(index, env, now, path);
+        const counts = await viewCounts(index, env, now, path, err);
         return await editLoop(
             edit,
             err,
@@ -409,7 +410,7 @@ export async function runTagsEdit({
                 }
                 return saveTags(parsed.edit, {
                     path,
-                    lock: index?.lock ?? versions?.lock,
+                    lock: versions?.lock ?? index?.lock,
                     versions,
                     at: now().toISOString(),
                     err,
@@ -417,7 +418,7 @@ export async function runTagsEdit({
             },
         );
     } finally {
-        versions?.close();
+        await versions?.close();
         index?.close();
     }
 }
@@ -430,20 +431,25 @@ async function viewCounts(
     env: Env,
     now: () => Date,
     path: string,
+    err: Output,
 ): Promise<Map<string, number>> {
     if (index === null) {
         return new Map();
     }
     try {
-        await syncIndex(
+        for (const warning of await syncIndex(
             index,
             transcriptDir(env),
             now().getTime(),
             path,
             dataRoot(env),
-        );
+        ))
+            err.write(`dorothy: ${warning}\n`);
         return await index.exclusive(() => carrierCounts(index));
-    } catch {
+    } catch (error) {
+        err.write(
+            `dorothy: conversation counts are unavailable: ${describeError(error)}\n`,
+        );
         return new Map();
     }
 }

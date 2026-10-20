@@ -28,12 +28,13 @@ import {
     type HistoryHandle,
     type Lock,
     provisionalTitle,
-    type Recording,
+    recordingFor,
     reviewDue,
     type Sidecar,
     untagged,
     updateSidecar,
     withProvisional,
+    writeLock,
 } from "./sidecar.js";
 import type { MemoryHooks } from "./track.js";
 
@@ -78,7 +79,7 @@ export const REVIEW_CLAIM_RETRY_MS = 2000;
 
 // It has turns no review has covered, or was reviewed before tags while
 // Dorothy tags; she may review it, and its back-off is over.
-function isStale(entry: Entry, now: number, tagging: boolean): boolean {
+export function isStale(entry: Entry, now: number, tagging: boolean): boolean {
     if (entry.sidecar.kind === "none") {
         return entry.turns > 0;
     }
@@ -292,18 +293,12 @@ export class MemoryService implements MemoryHooks {
         this.#emit({ type: "warning", message });
     }
 
-    // The lock writes take: the index's, or history's own without it.
     get #lock(): Lock | undefined {
-        return this.#index?.lock ?? this.#versions?.lock;
+        return writeLock(this.#index, this.#versions);
     }
 
-    #recording(
-        message: string,
-        also: readonly string[] = [],
-    ): Recording | undefined {
-        return this.#versions === null
-            ? undefined
-            : { recorder: this.#versions.recorder, message, also };
+    #recording(message: string, also: readonly string[] = []) {
+        return recordingFor(this.#versions, message, also);
     }
 
     #build(

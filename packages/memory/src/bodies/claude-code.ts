@@ -118,9 +118,8 @@ export function spoken(text: string): string | null {
     ) {
         return null;
     }
-    const command = COMMAND_START.test(trimmed) ? COMMAND.exec(trimmed) : null;
-    if (command !== null) {
-        const name = (command[1] ?? "").trim();
+    if (COMMAND_START.test(trimmed)) {
+        const name = (COMMAND.exec(trimmed)?.[1] ?? "").trim();
         if (name === "") {
             return null;
         }
@@ -438,7 +437,10 @@ function userWords(content: Json[] | string): string | null {
 
 function userBlock(block: Json): string | null {
     if (block.type === "text") {
-        return typeof block.text === "string" ? spoken(block.text) : null;
+        if (typeof block.text !== "string") {
+            throw new Unreadable("a text block without its text");
+        }
+        return spoken(block.text);
     }
     if (block.type === "image") {
         return "[image]";

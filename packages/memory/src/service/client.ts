@@ -45,6 +45,7 @@ import {
     recallResponseSchema,
     recordResponseSchema,
 } from "../contract/schemas.js";
+import { type FetchLike, fetchFor } from "./direct.js";
 import { isLoopbackUrl } from "./loopback.js";
 
 export const DEFAULT_URL = `http://127.0.0.1:${SERVICE_PORT}`;
@@ -63,7 +64,8 @@ export type ClientOptions = {
     url?: string;
     // The device's token file by default; null sends none.
     token?: string | null;
-    fetch?: typeof fetch;
+    // fetchFor's by default: direct to this machine's service.
+    fetch?: FetchLike;
     // Shorter timeouts than TIMEOUTS, for tests.
     timeouts?: Partial<Record<keyof typeof TIMEOUTS, number>>;
 };
@@ -72,7 +74,7 @@ type Client = {
     env: Env;
     url: string;
     token: string | null;
-    fetch: typeof fetch;
+    fetch: FetchLike;
     timeouts: Record<keyof typeof TIMEOUTS, number>;
 };
 
@@ -85,7 +87,7 @@ const blockPath = (env: Env, host: string, project: string | undefined) =>
     join(
         stateDir(env),
         "blocks",
-        host,
+        encodeURIComponent(host),
         `${encodeURIComponent(project ?? "personal")}.md`,
     );
 
@@ -100,16 +102,25 @@ async function readToken(env: Env): Promise<string | null> {
 
 export async function clientOf(options: ClientOptions = {}): Promise<Client> {
     const env = options.env ?? process.env;
+    const config = async () => (await readConfig(env)).config.service;
     const url =
         options.url ??
         env.DOROTHY_MEMORY_URL ??
-        `http://127.0.0.1:${(await readConfig(env)).config.service.port}`;
+        `http://127.0.0.1:${(await config()).port}`;
     return {
         env,
         url,
         token:
             options.token === undefined ? await readToken(env) : options.token,
-        fetch: options.fetch ?? fetch,
+        fetch:
+            options.fetch ??
+            fetchFor(
+                url,
+                // Loopback goes direct without reading the configuration.
+                URL.canParse(url) && !isLoopbackUrl(url)
+                    ? (await config()).listen
+                    : [],
+            ),
         timeouts: { ...TIMEOUTS, ...options.timeouts },
     };
 }
@@ -172,11 +183,19 @@ async function post<T>(
     }
 }
 
+// The client of these options, or null where they cannot be read: the
+// calls below promise never to throw.
+const clientOrNull = (options: ClientOptions) =>
+    clientOf(options).catch(() => null);
+
 export async function requestBlock(
     request: BlockRequest,
     options: ClientOptions = {},
 ): Promise<BlockResponse | null> {
-    const client = await clientOf(options);
+    const client = await clientOrNull(options);
+    if (client === null) {
+        return null;
+    }
     const path = blockPath(client.env, request.host, request.project);
     const posted = await post(
         client,
@@ -201,7 +220,10 @@ export async function requestRecall(
     request: RecallRequest,
     options: ClientOptions = {},
 ): Promise<RecallResponse | null> {
-    const client = await clientOf(options);
+    const client = await clientOrNull(options);
+    if (client === null) {
+        return null;
+    }
     const posted = await post(
         client,
         SERVICE_PATHS.recall,
@@ -218,14 +240,14 @@ export async function flushPending(
     options: ClientOptions = {},
 ): Promise<number> {
     try {
-        return await flush(await clientOf(options));
+        const client = await clientOf(options);
+        return await flush(client, Date.now() + client.timeouts.record);
     } catch {
         return 0;
     }
 }
 
-async function flush(client: Client): Promise<number> {
-    const deadline = Date.now() + client.timeouts.record;
+async function flush(client: Client, deadline: number): Promise<number> {
     let names: string[];
     try {
         names = (await readdir(pendingDir(client.env)))
@@ -262,19 +284,28 @@ async function flush(client: Client): Promise<number> {
     return 0;
 }
 
+// Breaks a tie between records made in one millisecond, in order.
+let queued = 0;
+
 export async function sendRecord(
     request: RecordRequest,
     options: ClientOptions = {},
 ): Promise<RecordResponse | null> {
-    const client = await clientOf(options);
-    const waiting = await flushPending({ ...options, ...client });
+    const client = await clientOrNull(options);
+    if (client === null) {
+        return null;
+    }
+    // One budget for the flush and the send together.
+    const deadline = Date.now() + client.timeouts.record;
+    const waiting = await flush(client, deadline);
+    const left = deadline - Date.now();
     const posted =
-        waiting === 0
+        waiting === 0 && left > 0
             ? await post(
                   client,
                   SERVICE_PATHS.record,
                   request,
-                  client.timeouts.record,
+                  left,
                   recordResponseSchema,
               )
             : ({ kind: "unreachable" } as const);
@@ -283,7 +314,10 @@ export async function sendRecord(
     }
     if (posted.kind === "unreachable") {
         await writePrivate(
-            join(pendingDir(client.env), `${Date.now()}-${randomUUID()}.json`),
+            join(
+                pendingDir(client.env),
+                `${Date.now()}-${String(queued++).padStart(8, "0")}-${randomUUID()}.json`,
+            ),
             JSON.stringify(request),
         ).catch(() => {});
     }

@@ -53,7 +53,12 @@ export async function recallFor(
     const lines: string[] = [];
     const ids: string[] = [];
     for (const hit of hits) {
-        const line = `- ${escapeXml(hit.title)} (${hit.id}): ${escapeXml(hit.snippet)}`;
+        // Unconfirmed knowledge carries search's warning before its text.
+        const mark =
+            hit.unconfirmed === undefined
+                ? ""
+                : ` [${escapeXml(hit.unconfirmed)}]`;
+        const line = `- ${escapeXml(hit.title)} (${hit.id})${mark}: ${escapeXml(hit.snippet)}`;
         if (size(line) + 1 > left) {
             continue;
         }

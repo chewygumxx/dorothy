@@ -13,6 +13,14 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type ChatSession, newPhrase } from "@dorothy/core";
 import {
+    CLUSTERED,
+    HISTORY,
+    harness,
+    settle,
+    until,
+} from "../compaction/testing.js";
+import { FakeSession } from "./fake-session.js";
+import {
     mergeNotices,
     notesReady,
     projectSyncer,
@@ -20,7 +28,6 @@ import {
     turnCommitter,
     withTurnEnd,
 } from "./open.js";
-
 import { dir, useXdgDir } from "./open-testing.js";
 
 useXdgDir();
@@ -59,6 +66,67 @@ describe("sessionMaker", () => {
         });
         create([]).send("next");
         expect(log).toEqual(["memory next", "held next"]);
+    });
+});
+
+describe("sessionMaker with a real Compaction", () => {
+    it("tells memory of each send, ready and turn-end across a handover, after compaction's idle wait is armed", async () => {
+        const { compaction, timers, calls, events } = harness();
+        const log: string[] = [];
+        const inners: FakeSession[] = [];
+        const create = sessionMaker({
+            compaction,
+            connect: () => {
+                const inner = new FakeSession();
+                inners.push(inner);
+                return inner;
+            },
+            clusters: [],
+            memory: {
+                sent: (text) => log.push(`sent ${text}`),
+                ready: () => log.push("ready"),
+                // Compaction's idle wait must be armed first, so that at a
+                // shared idle it runs before the review.
+                turnEnded: () =>
+                    log.push(`turn-end, ${timers.pending.size} wait`),
+            },
+        });
+        const session = create(HISTORY);
+        session.subscribe((event) => events.push(event));
+        const first = inners[0] as FakeSession;
+        session.send("one");
+        first.emit({ type: "ready", model: "m", sdkSessionId: "s" });
+        first.emit({
+            type: "turn-end",
+            reply: "abcd",
+            interrupted: false,
+            contextTokens: 150,
+            stats: {
+                inputTokens: 1,
+                cacheReadTokens: 0,
+                cacheWriteTokens: 0,
+                outputTokens: 1,
+                ttftMs: null,
+                durationMs: 1,
+                costUsd: 0,
+                sessionCostUsd: 0,
+            },
+        });
+        expect(log).toEqual(["sent one", "ready", "turn-end, 1 wait"]);
+
+        // The idle wait ends and compaction hands over to a second session.
+        timers.advance(1000);
+        await until(() => calls.length === 1);
+        calls[0]?.answer(CLUSTERED);
+        await until(() => inners.length === 2);
+        await settle();
+        const second = inners[1] as FakeSession;
+        expect(events.map((event) => event.type)).toContain("compacted");
+        session.send("two");
+        second.emit({ type: "ready", model: "m", sdkSessionId: "t" });
+        expect(second.sent).toEqual(["two"]);
+        expect(log.slice(3)).toEqual(["sent two", "ready"]);
+        await session.close();
     });
 });
 
@@ -102,8 +170,8 @@ describe("turnCommitter", () => {
         const log: string[] = [];
         const turns = turnCommitter(
             {
-                turn: async (path, count) => {
-                    log.push(`turn ${path} #${count}`);
+                turn: async (...args) => {
+                    log.push(`turn ${args.join(" ")}`);
                 },
                 warn: (message) => log.push(message),
             },
@@ -112,16 +180,15 @@ describe("turnCommitter", () => {
                 await new Promise((resolve) => setTimeout(resolve, 5));
                 log.push("flushed");
             },
-            3,
         );
         turns.ended();
         turns.ended();
         await turns.settled();
         expect(log).toEqual([
             "flushed",
-            "turn /data/x.jsonl #4",
+            "turn /data/x.jsonl",
             "flushed",
-            "turn /data/x.jsonl #5",
+            "turn /data/x.jsonl",
         ]);
     });
 
@@ -136,11 +203,10 @@ describe("turnCommitter", () => {
             },
             "/data/x.jsonl",
             async () => {},
-            0,
         );
         turns.ended();
         await turns.settled();
-        expect(warnings).toEqual(["history: couldn't commit turn 1 (locked)"]);
+        expect(warnings).toEqual(["history: couldn't commit turn (locked)"]);
     });
 });
 

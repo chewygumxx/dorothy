@@ -39,6 +39,7 @@ export type Mode =
     | { kind: "retire"; target: string }
     | { kind: "retire-from"; phrase: string }
     | { kind: "revive"; target: string }
+    | { kind: "verify"; id: string }
     | { kind: "sync"; path: string | null }
     | { kind: "projects" }
     | {
@@ -78,6 +79,7 @@ export const USAGE = [
     "                                  retire a fact, or what a chat gave",
     "       dorothy --revive <scope>/<name>",
     "                                  bring a retired fact back",
+    "       dorothy --verify <id>      confirm knowledge a model gave",
     "       dorothy --sync [<path>]    sync a project's facts with its repo",
     "       dorothy --projects         the projects Dorothy knows",
     "       dorothy --recall-server    memory tools for MCP clients (stdio)",
@@ -141,10 +143,8 @@ const COMMANDS: Record<string, Command> = {
     "--facts": noArguments("--facts", { kind: "facts" }),
     "--retire": parseRetire,
     "--revive": parseRevive,
-    "--sync": ([path, ...extra]) =>
-        extra.length === 0
-            ? { kind: "sync", path: path ?? null }
-            : usage("--sync takes [<path>]"),
+    "--verify": parseVerify,
+    "--sync": parseSync,
     "--projects": noArguments("--projects", { kind: "projects" }),
     "--recall-server": parseRecallServer,
     "--serve": parseServe,
@@ -292,11 +292,28 @@ function parseRetire(rest: readonly string[]): Mode {
         : usage(RETIRE_USAGE);
 }
 
+// A path that starts with - follows --, as for any command.
+function parseSync(rest: readonly string[]): Mode {
+    const parsed = options(rest, {});
+    return parsed === null || parsed.positionals.length > 1
+        ? usage("--sync takes [<path>]")
+        : { kind: "sync", path: parsed.positionals[0] ?? null };
+}
+
 function parseRevive(rest: readonly string[]): Mode {
     const [target, ...extra] = options(rest, {})?.positionals ?? [];
     return target !== undefined && extra.length === 0
         ? { kind: "revive", target }
         : usage("--revive takes <scope>/<name>");
+}
+
+// A knowledge id, k:..., as open and the block show it; checked where
+// it is looked up.
+function parseVerify(rest: readonly string[]): Mode {
+    const [id, ...extra] = options(rest, {})?.positionals ?? [];
+    return id !== undefined && extra.length === 0
+        ? { kind: "verify", id }
+        : usage("--verify takes one knowledge id, k:...");
 }
 
 const RECALL_USAGE =
@@ -334,13 +351,20 @@ const SERVE_USAGE =
 
 function parseServe(rest: readonly string[]): Mode {
     const parsed = options(rest, {
-        "token-add": { type: "string" },
-        "token-revoke": { type: "string" },
+        "token-add": { type: "string", multiple: true },
+        "token-revoke": { type: "string", multiple: true },
     });
+    // An option given twice would keep its last value: refused instead.
     if (parsed === null || parsed.positionals.length > 0) {
         return usage(SERVE_USAGE);
     }
-    const { "token-add": add, "token-revoke": revoke } = parsed.values;
+    const once = (values: string[] | undefined) =>
+        values === undefined || values.length === 1 ? values?.[0] : null;
+    const add = once(parsed.values["token-add"]);
+    const revoke = once(parsed.values["token-revoke"]);
+    if (add === null || revoke === null) {
+        return usage(SERVE_USAGE);
+    }
     if (add !== undefined && revoke !== undefined) {
         return usage(SERVE_USAGE);
     }
@@ -360,11 +384,15 @@ function parseServe(rest: readonly string[]): Mode {
 const MCP_USAGE = "--mcp takes [--host <host>], a host as its profile names it";
 
 function parseMcp(rest: readonly string[]): Mode {
-    const parsed = options(rest, { host: { type: "string" } });
-    if (parsed === null || parsed.positionals.length > 0) {
+    const parsed = options(rest, { host: { type: "string", multiple: true } });
+    if (
+        parsed === null ||
+        parsed.positionals.length > 0 ||
+        (parsed.values.host?.length ?? 0) > 1
+    ) {
         return usage(MCP_USAGE);
     }
-    const { host } = parsed.values;
+    const host = parsed.values.host?.[0];
     if (host !== undefined && !HOST_ID.test(host)) {
         return usage(MCP_USAGE);
     }

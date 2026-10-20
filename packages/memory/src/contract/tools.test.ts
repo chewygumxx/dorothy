@@ -18,12 +18,14 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { newPhrase } from "@dorothy/core";
+import { type HostProfile, newPhrase } from "@dorothy/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { baselineEngine } from "../engine/baseline.js";
 import type { MemoryEngine } from "../engine/engine.js";
+import { UNCONFIRMED } from "../facts/file.js";
 import { PERSONAL, putFact } from "../facts/store.js";
+import type { Profiles } from "../hosts/profiles.js";
 import { EMPTY_SIDECAR, updateSidecar } from "../memory/sidecar.js";
 import { RecallIndex } from "../recall/store.js";
 import { transcriptDir, transcriptPath } from "../transcript.js";
@@ -49,14 +51,34 @@ const engine = fakeEngine({
 const MINE = "github.com/me/app";
 const OTHER = "github.com/me/other";
 
-async function connect(project: string | null, host: MemoryEngine = engine) {
+const profile = (id: string, blockBudget: number): HostProfile => ({
+    id,
+    checked: [],
+    blockBudget,
+    recallBudget: 1000,
+    delivery: ["mcp"],
+    instructions: 512,
+});
+const PROFILES: Profiles = new Map([
+    ["codex", profile("codex", 16_000)],
+    ["hermes", profile("hermes", 4000)],
+]);
+
+async function connect(
+    project: string | null,
+    host: MemoryEngine = engine,
+    named: string | null = "codex",
+    warn?: (message: string) => void,
+) {
     const server = createContractServer({
         engine: host,
         index,
         store: { root, lock: index.lock, recorder: null },
         project,
-        host: "codex",
+        host: named,
+        profiles: PROFILES,
         resolveProject: async (value) => value,
+        warn,
     });
     const [near, far] = InMemoryTransport.createLinkedPair();
     await server.connect(near);
@@ -105,6 +127,29 @@ describe("the contract's MCP server", () => {
         expect(JSON.parse(text).text).toContain("likes-tea");
     });
 
+    it("clamps a brief's budget to the named host's profile", async () => {
+        const big = fakeEngine({
+            knowledge: Array.from({ length: 80 }, (_, at) =>
+                knowledge(`fact-${at}`, { body: "x".repeat(300) }),
+            ),
+        });
+        const used = async (named: string | null, budget?: number) => {
+            await client.close();
+            await connect(null, big, named);
+            const { text } = await call(
+                "brief",
+                budget === undefined ? {} : { budget },
+            );
+            return JSON.parse(text).used as number;
+        };
+        expect(await used("hermes")).toBeLessThanOrEqual(4000);
+        expect(await used("hermes", 20_000)).toBeLessThanOrEqual(4000);
+        expect(await used("codex", 20_000)).toBeLessThanOrEqual(16_000);
+        expect(await used("codex", 20_000)).toBeGreaterThan(4000);
+        // A host with no profile, or none named, keeps the request's own.
+        expect(await used(null, 20_000)).toBeGreaterThan(16_000);
+    });
+
     it("searches within personal and the connection's project", async () => {
         const { text } = await call("search", { query: "tea" });
         expect(JSON.parse(text)[0].id).toBe("k:personal/likes-tea");
@@ -120,10 +165,88 @@ describe("the contract's MCP server", () => {
         expect(text).toContain("no project here");
     });
 
+    it("gives search ten hits by default, and no more than it is asked", async () => {
+        const hits = Array.from({ length: 25 }, (_, at) => ({
+            id: `k:personal/fact-${at}`,
+            kind: "knowledge" as const,
+            scope: "personal",
+            title: `fact-${at}`,
+            snippet: "Tea.",
+        }));
+        await client.close();
+        await connect(null, fakeEngine({ hits }));
+        const count = async (args: Record<string, unknown>) =>
+            JSON.parse((await call("search", { query: "tea", ...args })).text)
+                .length;
+        expect(await count({})).toBe(10);
+        expect(await count({ limit: 3 })).toBe(3);
+        expect(await count({ limit: 20 })).toBe(20);
+        // Beyond the contract's twenty, the schema refuses.
+        const refused = await client
+            .callTool({
+                name: "search",
+                arguments: { query: "tea", limit: 21 },
+            })
+            .catch((error: unknown) => error);
+        expect(
+            refused instanceof Error ||
+                (refused as { isError?: boolean }).isError === true,
+        ).toBe(true);
+    });
+
+    it("says a search's date is no date, as a tool error", async () => {
+        for (const args of [{ after: "yesterday" }, { before: "2026-02-31" }]) {
+            await client.close();
+            await connect(
+                null,
+                baselineEngine({
+                    env: {
+                        HOME: root,
+                        XDG_DATA_HOME: join(root, "data"),
+                        XDG_CACHE_HOME: join(root, "cache"),
+                        XDG_STATE_HOME: join(root, "state"),
+                    },
+                    index,
+                    halfLifeDays: 30,
+                    reviewer: null,
+                }),
+            );
+            const { isError, text } = await call("search", {
+                query: "tea",
+                ...args,
+            });
+            expect(isError).toBe(true);
+            expect(text).toMatch(/^(after|before) must be a date like/);
+        }
+    });
+
     it("refuses to open what is no memory id", async () => {
         const { isError, text } = await call("open", { id: "likes-tea" });
         expect(isError).toBe(true);
         expect(text).toContain("is not a memory id");
+    });
+
+    it("refuses an open whose from is past its through", async () => {
+        const { isError, text } = await call("open", {
+            id: "c:bingo-overabundance-mazer-kasha",
+            from: 5,
+            through: 2,
+        });
+        expect(isError).toBe(true);
+        expect(text).toBe("from is after through");
+    });
+
+    it("tells the client why a remember was refused", async () => {
+        const gone = await call("remember", {
+            action: "retire",
+            id: "k:personal/never-was",
+            why: "It was wrong.",
+        });
+        expect(gone.isError).toBe(true);
+        expect(gone.text).toBe("there is no k:personal/never-was");
+        const bare = await call("remember", { action: "add", text: "Tea." });
+        expect(bare.isError).toBe(true);
+        expect(bare.text).toBe("give the knowledge's title and text");
     });
 
     it("refuses a traversal-shaped id", async () => {
@@ -149,6 +272,18 @@ describe("the contract's MCP server", () => {
         expect(existsSync(join(root, "knowledge/personal/likes-tea.md"))).toBe(
             true,
         );
+    });
+
+    it("opens what a model remembered marked unconfirmed", async () => {
+        await call("remember", {
+            action: "add",
+            title: "Likes tea",
+            text: "Tea at four.",
+            type: "user",
+            scope: "personal",
+        });
+        const { text } = await call("open", { id: "k:personal/likes-tea" });
+        expect(JSON.parse(text).unconfirmed).toBe(UNCONFIRMED);
     });
 });
 
@@ -183,6 +318,79 @@ const converse = (name: string, project: string | null) => {
         [name],
     );
 };
+
+describe("open reads a conversation's turns from from through through", () => {
+    const long = phrase(7);
+    const turnsOf = async (args: Record<string, unknown>) => {
+        const { isError, text } = await call("open", {
+            id: `c:${long}`,
+            ...args,
+        });
+        expect(isError).toBe(false);
+        const opened = JSON.parse(text) as {
+            turns: number;
+            window: { turn: number }[];
+        };
+        return { all: opened.turns, window: opened.window.map((t) => t.turn) };
+    };
+
+    beforeEach(() => {
+        converse(long, null);
+        for (let n = 2; n <= 10; n++) {
+            index.db.run(
+                "INSERT INTO turns (phrase, n, role, at, text) VALUES (?, ?, ?, 1, ?)",
+                [long, n, n % 2 === 0 ? "assistant" : "user", `Turn ${n}.`],
+            );
+        }
+        index.db.run("UPDATE conversations SET turns = 10 WHERE phrase = ?", [
+            long,
+        ]);
+    });
+
+    it("takes no turn before from, nor after through", async () => {
+        expect(await turnsOf({ from: 5, through: 7 })).toEqual({
+            all: 10,
+            window: [5, 6, 7],
+        });
+    });
+
+    it("goes forward from from to the end, or from the start to through", async () => {
+        expect((await turnsOf({ from: 8 })).window).toEqual([8, 9, 10]);
+        expect((await turnsOf({ through: 3 })).window).toEqual([1, 2, 3]);
+        expect((await turnsOf({})).window).toEqual([
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+        ]);
+    });
+
+    it("gives no turns for a from past the end, saying how many there are", async () => {
+        expect(await turnsOf({ from: 11 })).toEqual({ all: 10, window: [] });
+    });
+});
+
+describe("brief keeps to the connection's project", () => {
+    it("refuses another project than a bound connection's", async () => {
+        await client.close();
+        await connect(MINE);
+        const { isError, text } = await call("brief", { project: OTHER });
+        expect(isError).toBe(true);
+        expect(text).toBe("that project is outside this session's scope");
+    });
+
+    it("briefs a bound connection on its own project, named or not", async () => {
+        await client.close();
+        await connect(MINE);
+        for (const args of [{}, { project: MINE }]) {
+            const { isError, text } = await call("brief", args);
+            expect(isError).toBe(false);
+            expect(JSON.parse(text).text).toContain("likes-tea");
+        }
+    });
+
+    it("takes the call's project where the connection has none", async () => {
+        const { isError } = await call("brief", { project: OTHER });
+        expect(isError).toBe(false);
+    });
+});
 
 describe("open keeps to the connection's scope", () => {
     const own = phrase(1);
@@ -349,12 +557,26 @@ describe("a failure nobody meant to show", () => {
         broken.index = async () => {
             throw new Error("SQLITE_CORRUPT at /home/user/.cache/dorothy/x");
         };
+        const warned: string[] = [];
         await client.close();
-        await connect(null, broken);
+        await connect(null, broken, "codex", (message) => warned.push(message));
         const { isError, text } = await call("open", {
             id: "k:personal/likes-tea",
         });
         expect(isError).toBe(true);
         expect(text).toBe("Memory failed.");
+        // The service's log keeps what the caller is spared.
+        expect(warned).toEqual([
+            "the open tool failed: SQLITE_CORRUPT at /home/user/.cache/dorothy/x",
+        ]);
+    });
+
+    it("logs nothing for a refusal the contract meant", async () => {
+        const warned: string[] = [];
+        await client.close();
+        await connect(null, engine, "codex", (message) => warned.push(message));
+        const { isError } = await call("open", { id: "nonsense" });
+        expect(isError).toBe(true);
+        expect(warned).toEqual([]);
     });
 });

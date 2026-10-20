@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-10-18
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -74,21 +74,58 @@ and #24. The contract:
 [spec](./specs/2026-10-18-memory-contract-design.md),
 [plan](./plans/2026-10-18-memory-contract.md),
 [report](./reports/2026-10-18-memory-contract.md), with its deferred
-findings; merged in #69.
+findings; merged in #69. The evaluation:
+[spec](./specs/2026-10-18-memory-evaluation-design.md),
+[plan](./plans/2026-10-18-memory-evaluation.md),
+[report](./reports/2026-10-18-memory-evaluation.md), whose deferred
+findings were all addressed; merged in #71 and #72. The roadmap sweep:
+[spec](./specs/2026-10-19-roadmap-sweep-design.md),
+[plan](./plans/2026-10-19-roadmap-sweep.md),
+[report](./reports/2026-10-19-roadmap-sweep.md), including the
+[repository code review](./reports/2026-10-19-code-review.md).
 
 The contract opened four more pieces, each with its own spec: the
 evaluation, which measures her memory against the field and chooses the
 engine; recording each harness's sessions; the engine; and delivery into
-the harnesses chosen.
+the harnesses chosen. The evaluation is built as `@dorothy/eval` but not
+yet run: the owner reviews its generated questions, then runs her
+memory beside the lexical baseline and full context, with models named
+in `eval.toml`.
 
-- **Status**: Store, Bodies and Contract Built; the Evaluation Next
+The harnesses she is provided for and tested against are Claude Code,
+Codex, OpenClaw and Hermes Agent, as the user chose. Claude Code is
+recorded already; Codex offers hooks and its rollout files, and
+OpenClaw and Hermes a memory plugin each, in a slot that takes one
+provider, as the contract's host profiles record. The recording and
+delivery specs settle how her persona reaches each (generated files,
+the proxy or both) and how each one's sessions reach her memory.
+Existing tools, such as rulesync, are researched before anything
+bespoke is built: research on
+[cross-harness](./reports/2026-10-18-protocol-diversity/cross-harness.md)
+tooling names rulesync, Hindsight's adapters and Letta's transcript
+parser.
+
+The sweep closed the two safety pieces before delivery: unconfirmed
+knowledge is fenced and marked throughout recall, with `--verify` for
+the user, and the service clamps its block to each host's budget. It
+also closed the actionable deferred findings and code-review defects,
+then ran the six live probes. The report carries the remaining limits;
+the owner's evaluation run and the other harnesses' recording still
+lead the work ahead.
+
+- **Status**: Store, Bodies, Contract and Evaluation Built; the First
+  Run and Recording Next, then the Engine, then Delivery
 - **Required**: Requisites Fulfilled
 - **Rationale**: Wherever she goes, her memory follows with her. The
   contract gives every harness one service and every engine one
-  interface, but her memory has never been measured, and the user judges
-  it weak. The evaluation goes first, as the engine waits on it and it
-  waits on no choice of harness; recording may follow it or run beside
-  it, and delivery follows the choice of harnesses.
+  interface, and the evaluation can now measure her memory, which the
+  user judges weak. Its first run comes first, as the engine's spec
+  chooses on its numbers; should those leave the choice open, the
+  engine's spec may first ask for adapters to the field's systems.
+  With the harnesses chosen, recording for Codex, OpenClaw and Hermes
+  waits on no number and goes beside the run, which needs the owner's
+  time. Delivery comes last, once the engine it delivers is chosen;
+  the sweep has closed its two preceding safety pieces.
 
 ### Model Providers
 
@@ -97,9 +134,15 @@ OpenAI-compatible implementation, and per-role routing in `config.toml`,
 so chat, reviews, compaction and maintenance each take a model fit for
 them. When Anthropic's usage runs out, requests fall back to another
 provider, such as featherless.ai or OpenRouter. Replaces the move to the
-Messages API alone (the `api` commit scope). Findings:
+Messages API alone (the `api` commit scope). Its design settles what
+the protocol diversity minutes left open: whether Dorothy keeps a
+runtime of her own for chat, reviews and compaction, and on what, such
+as LangChain.js, whose middleware covers fallback. The evaluation
+already reaches any OpenAI-compatible model through LangChain's
+`ChatOpenAI`, a client per role. Findings:
 [context leak](./reports/2026-10-07-context-leak.md),
-[objectives](./reports/2026-10-15-objectives.md).
+[objectives](./reports/2026-10-15-objectives.md),
+[LangChain](./reports/2026-10-18-protocol-diversity/langchain-and-standards.md).
 
 - **Status**: Pending Design
 - **Required**: Requisites Fulfilled
@@ -133,7 +176,9 @@ Code; Dorothy's Memory may bring her memory to it first. Notes:
 Dorothy revises, merges and prunes the tag vocabulary and deep-tags
 conversations from their notes, in background passes that can be undone.
 Its undo and log are to be revisited against memory history, and what it
-maintains against Dorothy's Memory.
+maintains against Dorothy's Memory, whose engine is to consolidate
+knowledge. The design agreed so far is in
+[agent memory](../.agents/memory/maintenance-design-agreed.md).
 
 - **Status**: Design Agreed, Pending Specification
 - **Required**: Dorothy's Memory, Model Providers
@@ -193,67 +238,78 @@ Links between conversations and semantic search beside FTS5.
 - **Status**: Conditional
 - **Required**: Requisites Fulfilled
 - **Rationale**: Only worth building once recall shows FTS5 falling short;
-  there is no such evidence yet. Dorothy's Memory may take it up.
+  there is no such evidence yet, and the evaluation's first run is where
+  it would show. Dorothy's Memory may take it up, as an engine with
+  embeddings would.
 
 ## Candidates
 
 Found but not scheduled, each with its source.
 
-- Sweeps of deferred findings:
-  [memory history](./deferred/2026-10-08_memory-history-deferred.md),
-  [tags](./deferred/2026-10-08_tags-deferred.md),
-  [compaction test gaps](./deferred/2026-10-07_compaction-test-gaps.md),
-  [memory bodies](./deferred/2026-10-16_memory-bodies-deferred.md) and
-  the [memory contract](./reports/2026-10-18-memory-contract.md)'s.
-- The memory service's loose ends: `brief` clamped to a host's budget,
-  the hook API's `project` checked, idle sessions bounded with reviews
-  off, and the port bound before the history launch (memory contract,
-  final review).
-- Launch notes kept in the state directory rather than the runtime one,
-  so a launch killed by a crash or a power-off is still caught up after
-  a reboot (memory bodies report).
-- Reviews from Claude Code's hooks through a user's own proxy, passed as
-  a variable of Dorothy's own, since the hook drops
-  `ANTHROPIC_BASE_URL` (memory bodies report).
+- The sweep's remaining [deferred minors and limits](./reports/2026-10-19-roadmap-sweep.md#deferred),
+  including bridge timer cleanup, failure diagnostics, transcript-cache
+  assumptions, catalogue snapshot visibility and recovery edge cases.
+- The evaluation's later systems and checks: adapters for Hindsight,
+  OpenViking, EverOS, Honcho and an improved Dorothy; an agentic mode
+  driving the MCP tools; LongMemEval-S as a public anchor; a corrected
+  memory surviving a re-ingest, and two clients writing while a second
+  machine reads; and a second ingest model (memory evaluation spec,
+  Later).
+- The contract's later work: her commands writing through the service;
+  OKF's `index.md` and `log.md` for `knowledge/`; encryption at rest;
+  `superseded_by`; a project without an `origin` being one across machines;
+  and a user beyond one (memory contract spec, Later and Known risks).
 - Subagents' transcripts as conversations of their own, and a forked
   session linked to the conversation it forked from (memory bodies
   spec, Later; report).
-- Turn times stored in UTC while `dateCreated` and the `after` and
-  `before` filters use the local date (memory bodies, delivery's hand
-  check).
-- The store's open gaps: snake-case memory files skipped, regenerating
-  `MEMORY.md` replacing hook lines, and history keeping the provenance
-  an outside writer claims; and a `--fact` editor like `--memory`
-  (memory store and bodies specs, Later).
+- The recording's remaining rough edges: a branch the user rewinds from
+  stays, and a session's plain `claude` turns are recorded as hers once
+  it is resumed in her launch (memory bodies report).
+- The store's remaining gaps: a `--fact` editor like `--memory`, retired
+  facts and sync records kept indefinitely, repository-wins conflicts,
+  stale checkouts and the scrubber's shape-based limits (the store's
+  report and the sweep's retained-behaviour record).
 - Forgetting a conversation, which must reach history and the mirror
   (memory history spec, Later).
 - Consolidating sealed bundles, and more than one mirror (memory history
   spec, Later).
+- History grows without bound; pruning needs its own design (memory
+  history spec, Known limitations).
+- Compaction's remaining limits: the seed's size estimated rather than
+  measured, a launch waiting behind another TUI's claim, a `/compact`
+  command, edited abstracts and regrouped clusters (compaction report
+  and spec).
+- The catalogue's and recall's remaining limits: a review can cost more
+  than the turn it follows, a hidden conversation may still be named in
+  others' notes, and corrupt-index recovery cannot proceed without
+  sole-holder proof, including a TUI with its recall server open
+  (catalogue spec and sweep report).
+- The vocabulary's limits, for maintenance to weigh: labels compare
+  without case, deleted concepts' tombstones accumulate, a recap chat is
+  tagged with the topics it recalls, and a renamed concept's old label
+  may be coined again (tags spec and report).
 - A proposer and supervisor in maintenance: a cheaper model proposes and
   Dorothy approves (the maintenance design's approach C).
 - A provisional title from a cheap model, editing memory from inside the
   TUI, and memory in one-shot mode (catalogue spec, Out of scope).
-- Memory's commands taking their dependencies injected more widely: the
-  CLI passes the history commands none, so each falls back to the
-  process's environment, streams and entry script (workspace modularity).
+- Memory's commands keeping no process defaults of their own: the CLI
+  now passes the history commands' environment, streams and entry
+  script, but memory still falls back to the process's (workspace
+  modularity; the sweep's record, Deferred).
 - A single binary with `bun build --compile` from `cli` (workspace
   modularity spec, Later).
 - Splitting `memory` along its subdirectories, should it outgrow one
   package (workspace modularity spec, Later).
-- Enabling Biome's `noUndeclaredDependencies`, or an equivalent check, so
-  that a package cannot import something only the root declares: the
-  isolated linker leaves the root's declarations visible to every package
-  (workspace modularity, final review).
+- The TUI's deferred features: undo, rendering while streaming, OSC 8
+  links, a theme, and configuration reloaded live (TUI chat, input
+  editor, Markdown replies and status line specs, Out of scope).
 - Dorothy's own tool loop, should serving behind clients fall short
   (agentic asset refactor).
-- Checking that every file of a headed type carries the house header, not
-  only that existing headers are in sync (agentic asset refactor).
 - `repo-memory` preferring `.agents/memory/` upstream, so other
   repositories can move their memory too (agentic asset refactor).
-- An OpenAI-protocol adapter for the gateway, and `--codex` and
-  `--opencode` launchers beside `--claude` (identity spec, Later).
-- Checking that Claude Code's forks keep the identity marker, which the
-  probes could not observe without a model reply (Dorothy's identity).
+- An OpenAI-protocol adapter for the gateway, and a `--codex` launcher
+  beside `--claude`, which delivery to Codex may call for; `--opencode`
+  waits, as OpenCode is not a target (identity spec, Later).
 - Probing how open models from featherless.ai or OpenRouter do behind
   Claude Code's prompt and tool schemas, before fallback leans on them
   (objectives).
@@ -360,3 +416,33 @@ In order of completion.
   is next within the phase, ahead of recording, the engine and delivery.
   Candidates gain the contract's deferred findings and the service's
   loose ends.
+- 2026-10-19: Dorothy's Memory has built its evaluation, `@dorothy/eval`,
+  with every finding it deferred addressed. Its first run, by the owner,
+  is next within the phase, and the engine follows on its numbers.
+  Candidates gain the evaluation's later systems and checks, and the
+  unlogged tool failure the contract's final review left.
+- 2026-10-19: The choice of harnesses, which the protocol diversity
+  minutes deferred until memory was designed, joins the first run as
+  next, with its open questions; recording and delivery both follow it,
+  as recording is of the harnesses chosen.
+- 2026-10-19: A sweep of every spec's and report's later work, known
+  limits and open questions against Candidates. Model Providers gains
+  the question of her own runtime, maintenance a link to its agreed
+  design, and Relations and Embeddings the evaluation as its evidence.
+  Candidates gain knowledge told apart by its source before it reaches
+  the block, the contract's later work, and the limits of recording,
+  the store, history, compaction, recall, the vocabulary, the TUI, the
+  asset refactor and the identity.
+- 2026-10-19: The user chose the harnesses: Claude Code, Codex, OpenClaw
+  and Hermes Agent. Recording for them goes beside the first run, and
+  delivery follows the engine. Each candidate was asked whether it
+  makes the next pieces safer done first: knowledge told apart by its
+  source and the service's loose ends move out of Candidates to go
+  before delivery. Turn times in UTC stay, as the evaluation reads every
+  date in UTC alike, and `--opencode` waits.
+- 2026-10-20: The roadmap sweep closed the knowledge fence and service
+  safety work before delivery, the actionable deferred findings and all
+  22 code-review findings, and completed the six live probes. Candidates
+  lose the closed work and keep the sweep's deferred minors and design
+  limits. The owner's evaluation run and recording for Codex, OpenClaw
+  and Hermes remain next; the engine and delivery still follow them.

@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-18
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: packages/cli/AGENTS.md
 description: >-
@@ -39,6 +39,8 @@ lazy.
 - `index.ts`: the entry guard, which runs the mode `parseArgs` gives
   from `RUNNERS`, each runner returning its exit code, or nothing where
   it set its own (`runOneShot`).
+- `ambient.ts`: `ambient`, the process's environment, streams and entry
+  script, passed to memory's history commands.
 - `args.ts`: the flags (`parseArgs`, `USAGE`) and the modes they give:
   `COMMANDS` maps each flag to a reader of the words after it, those
   taking options through `node:util`'s `parseArgs`.
@@ -53,10 +55,10 @@ lazy.
 - `dump.ts`: `runDump` composes `previewStart` with `dumpRequest` for
   `--dump-context`.
 - `claude.ts`: `launchClaude`, for `--claude` and its dump, starts the
-  gateway and readies `claude` from `PATH` with `ANTHROPIC_BASE_URL` at
-  it, `ENABLE_TOOL_SEARCH=1` unless the user set it, and the marker
-  appended to its prompt (with the user's own `--append-system-prompt`,
-  as Claude Code keeps only the last; `claudeArgs`). With
+  gateway and `claude` with its base URL there. With a proxy set, the
+  gateway host joins both bypass lists. It sets `ENABLE_TOOL_SEARCH=1`
+  unless set, and the marker joins the user's own `--append-system-prompt`
+  (Claude Code keeps only the last; `claudeArgs`). With
   `[memory] enabled` it syncs the project `claude` starts in, gives the
   gateway chat's memory block as its section, and sets
   `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`; with `recall` too, `--mcp-config=`
@@ -66,18 +68,26 @@ lazy.
   world-readable, so the merge goes to a private file (mode 0600, in
   `$XDG_RUNTIME_DIR/dorothy` or a 0700 `dorothy-<uid>` under the temporary
   directory; `privateWriter`) passed by path, removed by `Launch.cleanup`
-  when `claude` exits; inline JSON stays inline.
+  when `claude` exits; inline JSON stays inline. If the private write
+  fails, the user's original arguments are kept and a warning says
+  Dorothy's settings could not be added.
   With `[memory] enabled` it also notes the launch (`DOROTHY_LAUNCH`),
   passes `Stop` and `SessionEnd` hooks running `dorothy --claude-hook`
   (`hookSettings`) and, for a new session, `--session-id`
-  (`claudeSession`); the block leaves out a session resumed by id.
-  `runClaude` runs it for `--claude`, forwards `SIGTERM` and `SIGHUP`,
-  ignores `SIGINT` (the terminal sends it to `claude` too), and exits
-  with `claude`'s code. This program runs again as `bun --no-env-file`,
-  so a project's `.env` never reaches a hook, a catch-up or the recall
-  server. Before `claude` starts it starts a detached catch-up of each
-  launch a killed `dorothy` left behind, memory off or on, and says what
-  hooks left to tell; once `claude` exits, a catch-up of its own launch.
+  (`claudeSession`: a resume decides wherever a `--session-id`
+  stands, `-r<id>` counts, and a free-text flag's value is no flag);
+  the block leaves out a session resumed by id. It sets
+  `DOROTHY_ANTHROPIC_BASE_URL` from the user's `ANTHROPIC_BASE_URL`, and
+  `DOROTHY_DOTENVX_CONFIG` from the directory of Dotenvx Armor's session
+  it finds (`dotenvx-session.ts`). `runClaude` runs it for `--claude`,
+  forwards `SIGTERM` and `SIGHUP`, ignores `SIGINT` (the terminal sends
+  it to `claude` too), and exits with `claude`'s code. This program runs
+  again as `bun --no-env-file`, so a project's `.env` never reaches a
+  hook, a catch-up or the recall server. Before `claude` starts it
+  starts a detached catch-up of each launch a killed `dorothy` left
+  behind, memory off or on, and says what hooks left to tell; once
+  `claude` exits, or fails to start, a catch-up of its own launch,
+  whatever else its teardown throws.
   From a package script (`bun run dev`), `userShell` gives `claude` the
   directory it was run from and the `PATH` before Bun prepended its
   `node_modules/.bin` entries.
@@ -91,10 +101,14 @@ lazy.
   `runClaudeHook` the environment `claude` gave the hook, in which it
   finds the launch, and reviews: `process.env` loses the gateway's URL,
   `ENABLE_TOOL_SEARCH`, `DOROTHY_LAUNCH`, `CLAUDECODE` and every
-  `CLAUDE_CODE_` variable (`reviewEnv`), then Dorothy's `.env` is loaded
-  by path from this checkout (`loadDotenv`), the console silenced around
-  the load and a failure logged by its code alone, and the agent only
-  for a hook or a catch-up. A hook and a catch-up log whatever fails,
+  `CLAUDE_CODE_` variable (`reviewEnv`), but for the user's own base
+  URL, which the launch passes on as `DOROTHY_ANTHROPIC_BASE_URL` and
+  reviews take as `ANTHROPIC_BASE_URL`; then Dorothy's `.env` is loaded
+  by path from this checkout (`loadDotenv`), with `DOTENVX_CONFIG` set
+  from `DOROTHY_DOTENVX_CONFIG` so that a `claude` with another
+  `XDG_CONFIG_HOME` still finds Armor's session, the console silenced
+  around the load and a failure logged by its code alone, and the agent
+  loaded when a review asks. A hook and a catch-up log whatever fails,
   through memory's `hookLog`, and always exit 0.
 - `index.ts` also runs `--serve` (memory's service through
   `@dorothy/memory/service`, with reviews from the agent, Claude Code's
@@ -120,9 +134,10 @@ lazy.
   save the mirror's key with its `set`, and in the root's development
   dependencies, which the root's `lint:env` script and the pre-commit
   hook need.
-- The CLI passes `commandHistory()` to memory's commands, the fact and
-  project commands among them, and `editInEditor` to `--memory` and
-  `--edit-tags`.
+- The CLI passes `ambient()` to memory's history commands, and
+  `commandHistory(...)` of it to memory's commands, the fact and
+  project commands among them, and `editInEditor` (from
+  `@dorothy/tui/editor`) to `--memory` and `--edit-tags`.
 
 ## Tests
 

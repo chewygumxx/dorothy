@@ -86,6 +86,25 @@ describe("outgoing", () => {
     });
 });
 
+describe("outgoing past the last user turn", () => {
+    it("finds nothing when a cluster reaches past the last user turn", () => {
+        // The latest exchange (turns 5 and 6) stays however far the clusters
+        // reach into it.
+        expect(outgoing(SIX, [cluster(1, 5)], 1)).toBeNull();
+        expect(outgoing(SIX, [cluster(1, 6)], 1)).toBeNull();
+    });
+
+    it("keeps only what fits the tail when there is no user turn", () => {
+        const replies = [reply(), reply(), reply()];
+        expect(outgoing(replies, [], 1)).toEqual({ from: 1, through: 2 });
+        expect(outgoing(replies, [cluster(1, 1)], 1)).toEqual({
+            from: 2,
+            through: 2,
+        });
+        expect(outgoing(replies, [], 100)).toBeNull();
+    });
+});
+
 describe("callCap", () => {
     it("is what a live compaction sends: soft less tail", () => {
         expect(callCap({ soft: 64_000, tail: 16_000 })).toBe(48_000);

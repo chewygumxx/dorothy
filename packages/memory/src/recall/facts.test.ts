@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { chmod, mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Fact } from "../facts/file.js";
+import { type Fact, renderFact } from "../facts/file.js";
 import { factPath, PERSONAL, putFact, type Scope } from "../facts/store.js";
 import { syncFacts } from "./facts.js";
 import { RecallIndex } from "./store.js";
@@ -121,6 +121,26 @@ describe("syncFacts", () => {
         expect(rows()).toHaveLength(1);
     });
 
+    it.each(["Assam tea.", "Assam tea, with a longer description."])(
+        "reindexes changed bytes with a preserved timestamp: %s",
+        async (body) => {
+            const path = await putFact(
+                root,
+                PERSONAL,
+                fact("tea", { body: "Darjeeling" }),
+            );
+            const timestamp = new Date(AT);
+            await utimes(path, timestamp, timestamp);
+            await syncFacts(index, root);
+            expect(search("darjeeling")).toEqual(["tea"]);
+            await writeFile(path, renderFact(fact("tea", { body })));
+            await utimes(path, timestamp, timestamp);
+            expect(await syncFacts(index, root)).toEqual([]);
+            expect(search("darjeeling")).toEqual([]);
+            expect(search("assam")).toEqual(["tea"]);
+        },
+    );
+
     it("leaves out a fact it cannot read, and says why", async () => {
         await mkdir(join(root, "knowledge", "personal"), { recursive: true });
         await writeFile(
@@ -133,7 +153,7 @@ describe("syncFacts", () => {
         expect(rows()).toEqual([]);
     });
 
-    it("skips a fact it cannot open rather than failing", async () => {
+    it("keeps a fact it cannot open as it was indexed, and says why", async () => {
         await putFact(root, PERSONAL, fact("tea"));
         await putFact(root, PERSONAL, fact("coffee"));
         await syncFacts(index, root);
@@ -141,12 +161,22 @@ describe("syncFacts", () => {
         const later = new Date(Date.parse(AT) + 60_000);
         await utimes(factPath(root, PERSONAL, "tea"), later, later);
         await chmod(factPath(root, PERSONAL, "tea"), 0o000);
-        const warnings = await syncFacts(index, root);
-        expect(warnings).toHaveLength(1);
-        expect(warnings[0]).toStartWith(`${factPath(root, PERSONAL, "tea")}: `);
-        expect(rows().map((row) => (row as { name: string }).name)).toEqual([
-            "coffee",
-        ]);
+        try {
+            const warnings = await syncFacts(index, root);
+            expect(warnings).toHaveLength(1);
+            expect(warnings[0]).toStartWith(
+                `${factPath(root, PERSONAL, "tea")}: `,
+            );
+            expect(rows().map((row) => (row as { name: string }).name)).toEqual(
+                ["coffee", "tea"],
+            );
+            expect(search("assam")).toEqual([]);
+        } finally {
+            await chmod(factPath(root, PERSONAL, "tea"), 0o600);
+        }
+        // Readable again, it is read again at once.
+        expect(await syncFacts(index, root)).toEqual([]);
+        expect(search("assam")).toEqual(["tea"]);
     });
 
     it("keeps a fact's tags", async () => {

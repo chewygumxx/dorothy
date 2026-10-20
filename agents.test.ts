@@ -10,10 +10,11 @@
 
 // The agent assets' layout, as the agentic asset refactor agreed it: the
 // guidance and its budgets, the linked skills, agent memory and Claude's
-// plugins. It reads only the repository.
+// plugins. Settings preparation also runs in disposable checkouts.
 
 import { describe, expect, it } from "bun:test";
 import {
+    copyFileSync,
     existsSync,
     lstatSync,
     mkdirSync,
@@ -39,7 +40,10 @@ const at = (...parts: string[]) => join(ROOT, ...parts);
 const read = (path: string) => readFileSync(path, "utf8");
 
 type Lock = {
-    skills: Record<string, { source: string; sourceType: string }>;
+    skills: Record<
+        string,
+        { source: string; sourceType: string; ref?: string }
+    >;
 };
 
 // Superpowers' skills less the four the `skills` script excludes.
@@ -160,6 +164,20 @@ describe("the skills", () => {
             expect(
                 linked(dir).filter((name) => EXCLUDED.includes(name)),
             ).toEqual([]);
+        }
+    });
+
+    it("pins every remote skill source to a commit", () => {
+        const manifest = JSON.parse(read(at("package.json"))) as {
+            skills: { source: string; ref?: string }[];
+        };
+        expect(manifest.skills.length).toBeGreaterThan(0);
+        for (const entry of manifest.skills) {
+            expect(entry.ref ?? "").toMatch(/^[0-9a-f]{40}$/);
+            const locked = Object.values(lock().skills).find(
+                (skill) => skill.source === entry.source,
+            );
+            expect(locked?.ref).toBe(entry.ref);
         }
     });
 
@@ -340,13 +358,8 @@ describe("agent memory", () => {
         expect(indexed).toEqual(memories);
     });
 
-    it("reads an empty local settings file as no settings", () => {
-        expect(parseSettings("", "/x/settings.local.json")).toEqual({});
-        expect(parseSettings(" \n", "/x/settings.local.json")).toEqual({});
-    });
-
     it("names the file when its settings are not a JSON object", () => {
-        for (const text of ["{oops", "[]", "null"]) {
+        for (const text of ["{oops", "[]", "null", "", " \n"]) {
             expect(() => parseSettings(text, "/x/settings.local.json")).toThrow(
                 "/x/settings.local.json is not a JSON object",
             );
@@ -398,6 +411,185 @@ describe("agent memory", () => {
             enabledMcpjsonServers: ["github"],
         });
     });
+});
+
+// Run the real prepare and memory setup in a disposable checkout. Other
+// prepare steps are no-ops here; only the memory script uses the real Bun.
+const preparedCheckout = () => {
+    const root = mkdtempSync(join(tmpdir(), "agent-memory-prepare-"));
+    const bin = join(root, "bin");
+    mkdirSync(bin);
+    mkdirSync(join(root, "node_modules", "husky"), { recursive: true });
+    mkdirSync(join(root, "scripts"));
+    for (const name of ["prepare.sh", "agent-memory.ts"]) {
+        copyFileSync(at("scripts", name), join(root, "scripts", name));
+    }
+    writeFileSync(join(bin, "husky"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    writeFileSync(
+        join(bin, "bun"),
+        [
+            "#!/bin/sh",
+            'if [ "$1" = scripts/agent-memory.ts ]; then',
+            '    exec "$PREPARE_TEST_BUN" --no-env-file "$@"',
+            "fi",
+            "exit 0",
+            "",
+        ].join("\n"),
+        { mode: 0o755 },
+    );
+    const path = join(root, ".claude", "settings.local.json");
+    return {
+        root,
+        path,
+        write(text: string) {
+            mkdirSync(dirname(path), { recursive: true });
+            writeFileSync(path, text, { mode: 0o640 });
+        },
+        run: () =>
+            Bun.spawnSync(["sh", "scripts/prepare.sh"], {
+                cwd: root,
+                env: {
+                    HOME: root,
+                    PATH: `${bin}:/usr/bin:/bin`,
+                    PREPARE_TEST_BUN: process.execPath,
+                    GIT_CONFIG_GLOBAL: "/dev/null",
+                    GIT_CONFIG_NOSYSTEM: "1",
+                    XDG_DATA_HOME: join(root, "data"),
+                    XDG_STATE_HOME: join(root, "state"),
+                    XDG_CONFIG_HOME: join(root, "config"),
+                    XDG_CACHE_HOME: join(root, "cache"),
+                },
+            }),
+        remove: () => rmSync(root, { recursive: true, force: true }),
+    };
+};
+
+describe("agent memory preparation", () => {
+    it("creates private settings in a checkout with no .claude directory", () => {
+        const checkout = preparedCheckout();
+        try {
+            expect(checkout.run().exitCode).toBe(0);
+            expect(JSON.parse(read(checkout.path))).toEqual({
+                autoMemoryDirectory: join(checkout.root, ".agents", "memory"),
+            });
+            expect(statSync(checkout.path).mode & 0o777).toBe(0o600);
+        } finally {
+            checkout.remove();
+        }
+    });
+
+    for (const existing of [false, true]) {
+        it(`warns without following a .claude symlink (${existing ? "existing" : "missing"} settings)`, () => {
+            const checkout = preparedCheckout();
+            const outside = mkdtempSync(
+                join(tmpdir(), "agent-memory-outside-"),
+            );
+            const path = join(outside, "settings.local.json");
+            try {
+                const text = '{ "other": "kept" }\n';
+                if (existing) writeFileSync(path, text, { mode: 0o640 });
+                const before = existing ? statSync(path) : undefined;
+                symlinkSync(outside, join(checkout.root, ".claude"));
+                const result = checkout.run();
+                expect(result.exitCode).toBe(0);
+                expect(result.stderr.toString()).toContain("warning");
+                expect(result.stderr.toString()).toContain(".claude");
+                expect(
+                    lstatSync(join(checkout.root, ".claude")).isSymbolicLink(),
+                ).toBe(true);
+                if (before) {
+                    expect(read(path)).toBe(text);
+                    expect(statSync(path).ino).toBe(before.ino);
+                    expect(statSync(path).mtimeMs).toBe(before.mtimeMs);
+                    expect(statSync(path).mode).toBe(before.mode);
+                } else {
+                    expect(existsSync(path)).toBe(false);
+                }
+                expect(readdirSync(outside)).toEqual(
+                    existing ? ["settings.local.json"] : [],
+                );
+            } finally {
+                checkout.remove();
+                rmSync(outside, { recursive: true, force: true });
+            }
+        });
+    }
+
+    it("uses each checkout's own root and keeps all other settings", () => {
+        for (let index = 0; index < 2; index++) {
+            const checkout = preparedCheckout();
+            try {
+                checkout.write(
+                    JSON.stringify({
+                        autoMemoryDirectory: "/another/checkout/.agents/memory",
+                        permissions: { allow: ["Read"], deny: ["Write"] },
+                        env: { FIXTURE: "kept" },
+                        enabledMcpjsonServers: ["fixture"],
+                        enabled: false,
+                    }),
+                );
+                expect(checkout.run().exitCode).toBe(0);
+                expect(JSON.parse(read(checkout.path))).toEqual({
+                    autoMemoryDirectory: join(
+                        checkout.root,
+                        ".agents",
+                        "memory",
+                    ),
+                    permissions: { allow: ["Read"], deny: ["Write"] },
+                    env: { FIXTURE: "kept" },
+                    enabledMcpjsonServers: ["fixture"],
+                    enabled: false,
+                });
+            } finally {
+                checkout.remove();
+            }
+        }
+    });
+
+    it("does not rewrite or chmod settings already pointing at this checkout", () => {
+        const checkout = preparedCheckout();
+        try {
+            const text = `{ "other": 2, "autoMemoryDirectory": ${JSON.stringify(join(checkout.root, ".agents", "memory"))} }\n`;
+            checkout.write(text);
+            const before = statSync(checkout.path);
+            expect(checkout.run().exitCode).toBe(0);
+            const after = statSync(checkout.path);
+            expect(read(checkout.path)).toBe(text);
+            expect(after.ino).toBe(before.ino);
+            expect(after.mtimeMs).toBe(before.mtimeMs);
+            expect(after.mode).toBe(before.mode);
+        } finally {
+            checkout.remove();
+        }
+    });
+
+    for (const [kind, text] of [
+        ["invalid JSON", "{oops"],
+        ["array", "[]"],
+        ["null", "null"],
+        ["empty", ""],
+        ["whitespace", " \n"],
+    ] as const) {
+        it(`warns and preserves ${kind} settings without failing prepare`, () => {
+            const checkout = preparedCheckout();
+            try {
+                checkout.write(text);
+                const before = statSync(checkout.path);
+                const result = checkout.run();
+                expect(result.exitCode).toBe(0);
+                expect(result.stderr.toString()).toContain("warning");
+                expect(result.stderr.toString()).toContain(
+                    "settings.local.json",
+                );
+                expect(read(checkout.path)).toBe(text);
+                expect(statSync(checkout.path).ino).toBe(before.ino);
+                expect(statSync(checkout.path).mtimeMs).toBe(before.mtimeMs);
+                expect(statSync(checkout.path).mode).toBe(before.mode);
+            } finally {
+                checkout.remove();
+            }
+        });
+    }
 });
 
 // Each stays because nothing neutral does its job, and is declared here

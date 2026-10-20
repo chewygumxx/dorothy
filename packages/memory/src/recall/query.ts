@@ -25,6 +25,7 @@ import {
     type TagsResult,
     type WindowTurn,
 } from "@dorothy/core";
+import { isConfirmed, UNCONFIRMED } from "../facts/file.js";
 import {
     factPath,
     parseTarget,
@@ -243,11 +244,13 @@ function carryingAll(
         const keys = new Set(
             pairs.filter(([of]) => of === id).map(([, key]) => key),
         );
-        const before: Set<string> | null = allowed;
-        allowed =
-            before === null
-                ? keys
-                : new Set([...before].filter((key) => keys.has(key)));
+        if (allowed === null) {
+            allowed = keys;
+        } else {
+            for (const key of allowed) {
+                if (!keys.has(key)) allowed.delete(key);
+            }
+        }
     }
     return allowed ?? new Set();
 }
@@ -285,11 +288,12 @@ type FactRow = {
     type: string;
     origin: string;
     retired: number;
+    confirmed: number;
     score: number;
     snippet: string;
 };
 const FACT_COLUMNS =
-    "f.path AS path, f.scope AS scope, f.name AS name, f.title AS title, f.description AS description, f.type AS type, f.origin AS origin, f.retired AS retired";
+    "f.path AS path, f.scope AS scope, f.name AS name, f.title AS title, f.description AS description, f.type AS type, f.origin AS origin, f.retired AS retired, f.confirmed AS confirmed";
 
 // BM25 is lower for a better match; the snippet is from whichever of
 // title, description and body matched best.
@@ -335,6 +339,7 @@ const factHit = (row: FactRow): FactHit => ({
     origin: row.origin,
     snippet: row.snippet,
     ...(row.retired !== 0 ? { retired: true as const } : {}),
+    ...(row.confirmed === 0 ? { unconfirmed: UNCONFIRMED } : {}),
 });
 
 // Live facts before retired ones, personal and this project's before
@@ -451,21 +456,12 @@ export function search(
             .filter((row) => !row.hidden && row.phrase !== exclude)
             .map((row) => [row.id, row.phrase] as const),
     );
-    const hits = conversationHits(index, terms, allowed, { from, to, exclude });
-    if (options.within !== undefined) {
-        const scopes = options.within;
-        const project = index.db.query(
-            "SELECT project FROM conversations WHERE phrase = ?",
-        );
-        for (const phrase of [...hits.keys()]) {
-            const row = project.get(phrase) as {
-                project: string | null;
-            } | null;
-            if (!scopes.includes(row?.project ?? "personal")) {
-                hits.delete(phrase);
-            }
-        }
-    }
+    const hits = conversationHits(index, terms, allowed, {
+        from,
+        to,
+        exclude,
+        inScope: scopeFilter(index, options.within),
+    });
     return {
         ...facts,
         ...rankConversations(index, hits, limit, broken, options),
@@ -506,21 +502,57 @@ function searchQuery(
     return { terms, labels, kind, broken };
 }
 
+// Whether a conversation is in one of the scopes allowed, "personal" for
+// one outside any project; every conversation when none are named.
+function scopeFilter(
+    index: RecallIndex,
+    within: readonly string[] | undefined,
+): (phrase: string) => boolean {
+    if (within === undefined) {
+        return () => true;
+    }
+    const project = index.db.query(
+        "SELECT project FROM conversations WHERE phrase = ?",
+    );
+    return (phrase) => {
+        const row = project.get(phrase) as { project: string | null } | null;
+        return within.includes(row?.project ?? "personal");
+    };
+}
+
 // Conversations with every word, else any of them; with no words, those
-// active in the dates. allowed: the conversations tags leave, or null.
+// active in the dates. allowed: the conversations tags leave, or null. Both
+// the tags and the scopes narrow the conversations found before the choice
+// of any word, so that a match outside them cannot stand in for the
+// matches within.
 function conversationHits(
     index: RecallIndex,
     terms: readonly string[],
     allowed: Set<string> | null,
-    { from, to, exclude }: { from: number; to: number; exclude: string },
+    {
+        from,
+        to,
+        exclude,
+        inScope,
+    }: {
+        from: number;
+        to: number;
+        exclude: string;
+        inScope: (phrase: string) => boolean;
+    },
 ): Map<string, Hit> {
     if (terms.length === 0) {
-        return activeIn(index, allowed ?? new Set(), from, to);
+        const active = activeIn(index, allowed ?? new Set(), from, to);
+        return new Map([...active].filter(([phrase]) => inScope(phrase)));
     }
     const within = (found: Map<string, Hit>) =>
-        allowed === null
-            ? found
-            : new Map([...found].filter(([phrase]) => allowed.has(phrase)));
+        new Map(
+            [...found].filter(
+                ([phrase]) =>
+                    inScope(phrase) &&
+                    (allowed === null || allowed.has(phrase)),
+            ),
+        );
     const hits = within(findHits(index, terms.join(" "), from, to, exclude));
     return hits.size === 0 && terms.length > 1
         ? within(findHits(index, terms.join(" OR "), from, to, exclude))
@@ -580,7 +612,7 @@ export function windowOf<T extends { text: string }>(
 }
 
 // A turn as the index holds it, its time in milliseconds.
-type TurnRow = {
+export type TurnRow = {
     turn: number;
     role: "user" | "assistant";
     at: number;
@@ -610,10 +642,16 @@ function checkPurpose(text: string): void {
     }
 }
 
+// options.range, where given, is the turns to read, from the first to the
+// last of them: the window then begins at the first and keeps to the
+// last, rather than centring on input.turn.
 export function openConversation(
     index: RecallIndex,
     input: OpenInput & { conversation: string },
-    options: { exclude: string | null },
+    options: {
+        exclude: string | null;
+        range?: { from?: number | undefined; through?: number | undefined };
+    },
 ): OpenResult {
     checkPurpose(input.purpose);
     const row = index.db
@@ -644,7 +682,17 @@ export function openConversation(
         ),
         ...(row.abstract !== null ? { abstract: row.abstract } : {}),
         turns: turns.length,
-        window: isoWindow(turns, input.turn),
+        window:
+            options.range === undefined
+                ? isoWindow(turns, input.turn)
+                : isoWindow(
+                      turns.filter(
+                          ({ turn }) =>
+                              turn >= (options.range?.from ?? 1) &&
+                              turn <= (options.range?.through ?? Infinity),
+                      ),
+                      1,
+                  ),
     };
 }
 
@@ -665,7 +713,7 @@ export async function openFact(
     if (read.kind === "none") {
         throw new RecallError(NO_FACT);
     }
-    if (read.kind === "unparseable") {
+    if (read.kind === "unparseable" || read.kind === "unreadable") {
         throw new RecallError(`That fact cannot be read: ${read.reason}`);
     }
     const { fact } = read;
@@ -685,6 +733,7 @@ export async function openFact(
         provenance: fact.provenance,
         retired: fact.retired,
         body: fact.body,
+        ...(isConfirmed(fact) ? {} : { unconfirmed: UNCONFIRMED }),
     };
 }
 
@@ -773,6 +822,7 @@ function tagScope(
         return listed;
     }
     const label = normalise(under);
+    if (label === "") return listed;
     const root = conceptByLabel(index, label);
     if (root === null || !listed.has(root)) {
         throw new RecallError(`${NO_TAG}: ${label}.`);
@@ -942,10 +992,45 @@ function findWords(
     );
 }
 
+// The words of a text, lowercased: runs of letters and digits.
+const wordsOf = (text: string): string[] =>
+    text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+
+// The first turn from start to last with every word, else any of them,
+// among turns read from the transcript rather than found by FTS: the words
+// match whole, in any case, without stemming.
+function findWordsIn(
+    turns: readonly TurnRow[],
+    words: string,
+    start: number,
+    last: number,
+): { n: number } | null {
+    if (normalise(words) === "") {
+        throw new RecallError("Give some words to look for.");
+    }
+    const terms = wordsOf(words).slice(0, MAX_TERMS);
+    const within = turns
+        .filter((row) => row.turn >= start && row.turn <= last)
+        .map((row) => ({ turn: row.turn, words: new Set(wordsOf(row.text)) }));
+    const find = (every: boolean) => {
+        const found = within.find((row) =>
+            every
+                ? terms.every((term) => row.words.has(term))
+                : terms.some((term) => row.words.has(term)),
+        );
+        return found === undefined ? null : { n: found.turn };
+    };
+    return terms.length === 0
+        ? null
+        : (find(true) ?? (terms.length > 1 ? find(false) : null));
+}
+
+// kept: the conversation's turns read from its transcript, for one the
+// index keeps no text of because it is hidden.
 export function recollect(
     index: RecallIndex,
     input: RecollectInput,
-    options: { phrase: string | null },
+    options: { phrase: string | null; kept?: readonly TurnRow[] },
 ): RecollectResult {
     const phrase = options.phrase;
     // A cluster is a whole number or nothing: no rounding, so the cluster
@@ -964,17 +1049,23 @@ export function recollect(
         throw new RecallError(NO_CLUSTER);
     }
     const start = startTurn(input.turn, range, n);
+    const kept = options.kept;
     const found =
         input.words === undefined
             ? null
-            : findWords(index, input.words, phrase, start, range.last);
+            : kept === undefined
+              ? findWords(index, input.words, phrase, start, range.last)
+              : findWordsIn(kept, input.words, start, range.last);
     const centre = found?.n ?? start;
     const matched = input.words === undefined ? undefined : found !== null;
-    const turns = index.db
-        .query(
-            "SELECT n AS turn, role, at, text FROM turns WHERE phrase = ? AND n BETWEEN ? AND ? ORDER BY n",
-        )
-        .all(phrase, start, range.last) as TurnRow[];
+    const turns =
+        kept === undefined
+            ? (index.db
+                  .query(
+                      "SELECT n AS turn, role, at, text FROM turns WHERE phrase = ? AND n BETWEEN ? AND ? ORDER BY n",
+                  )
+                  .all(phrase, start, range.last) as TurnRow[])
+            : kept.filter((row) => row.turn >= start && row.turn <= range.last);
     const total =
         (
             index.db

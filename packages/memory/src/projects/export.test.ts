@@ -9,12 +9,15 @@
 //
 
 import { describe, expect, it } from "bun:test";
+import { createHash } from "node:crypto";
 import {
     type ExportedFact,
     formHash,
     type IndexEntry,
+    indexHooks,
     indexTitles,
     isGeneratedIndex,
+    nameOfStem,
     parseExported,
     renderExported,
     renderIndex,
@@ -50,6 +53,24 @@ const FORM: ExportedFact = {
 };
 
 describe("parseExported", () => {
+    it.each([
+        "metadata: {type: reference, type: feedback}",
+        'metadata: {type: reference, "\\u0074ype": feedback}',
+        'metadata:\n  type: reference\n  "\\u0074ype": feedback',
+    ])(
+        "rejects duplicate exported keys, including decoded keys: %s",
+        (metadata) => {
+            const text =
+                NATIVE.slice(0, NATIVE.indexOf("metadata:")) +
+                `${metadata}\n---\n\nNotes.\n`;
+            const read = parseExported(text, "bg-session-force-color");
+            expect(read.kind).toBe("unparseable");
+            expect(read.kind === "unparseable" && read.reason).toContain(
+                "repeats the key",
+            );
+        },
+    );
+
     it("reads a fact as Claude Code's auto-memory writes one", () => {
         expect(parseExported(NATIVE, "bg-session-force-color")).toEqual({
             kind: "ok",
@@ -116,6 +137,76 @@ describe("parseExported", () => {
     });
 });
 
+// The user's verification, as a repository's file carries it.
+const VERIFIED = {
+    by: "human:owner",
+    at: "2026-10-20T09:30:00.000Z",
+    title: "Force colour",
+    digest: "a".repeat(64),
+};
+
+describe("a verification in the exported form", () => {
+    it("is written and read back", () => {
+        const form = { ...FORM, verified: [VERIFIED] };
+        const text = renderExported(form);
+        expect(text).toContain(`verified:\n  - ${JSON.stringify(VERIFIED)}\n`);
+        expect(parseExported(text, FORM.name)).toEqual({ kind: "ok", form });
+    });
+
+    it("is left out of a form with none", () => {
+        expect(renderExported({ ...FORM, verified: [] })).toBe(
+            renderExported(FORM),
+        );
+        expect(renderExported(FORM)).not.toContain("verified");
+    });
+
+    it.each([
+        ["no list", `verified: ${JSON.stringify(VERIFIED)}`],
+        [
+            "no person's",
+            `verified: [${JSON.stringify({ ...VERIFIED, by: "claude-code/opus" })}]`,
+        ],
+        [
+            "no digest",
+            `verified: [${JSON.stringify({ ...VERIFIED, digest: "x" })}]`,
+        ],
+        [
+            "no time",
+            `verified: [${JSON.stringify({ ...VERIFIED, at: "then" })}]`,
+        ],
+        [
+            "another key",
+            `verified: [${JSON.stringify({ ...VERIFIED, more: 1 })}]`,
+        ],
+        [
+            "a hidden character, escaped",
+            `verified: [${JSON.stringify(VERIFIED).replace("owner", "ow\\u200bner")}]`,
+        ],
+        [
+            "no title",
+            `verified: [${JSON.stringify({ ...VERIFIED, title: undefined })}]`,
+        ],
+        [
+            "a title too long",
+            `verified: [${JSON.stringify({ ...VERIFIED, title: "x".repeat(61) })}]`,
+        ],
+        [
+            "a title not normalised",
+            `verified: [${JSON.stringify({ ...VERIFIED, title: " Force  colour" })}]`,
+        ],
+    ])("refuses %s", (_, line) => {
+        expect(
+            parseExported(
+                NATIVE.replace("metadata:", `${line}\nmetadata:`),
+                FORM.name,
+            ),
+        ).toEqual({
+            kind: "unparseable",
+            reason: "verified is not a list of the user's verifications",
+        });
+    });
+});
+
 describe("formHash", () => {
     it("hashes the content, not how it is written", () => {
         expect(formHash(FORM)).toMatch(/^[0-9a-f]{64}$/);
@@ -135,6 +226,27 @@ describe("formHash", () => {
     it("changes with the content", () => {
         expect(formHash({ ...FORM, body: "Other." })).not.toBe(formHash(FORM));
         expect(formHash({ ...FORM, type: "project" })).not.toBe(formHash(FORM));
+        expect(formHash({ ...FORM, verified: [VERIFIED] })).not.toBe(
+            formHash(FORM),
+        );
+    });
+
+    it("hashes a form without verifications as it always has", () => {
+        const before = createHash("sha256")
+            .update(
+                JSON.stringify([
+                    FORM.name,
+                    FORM.description,
+                    FORM.type,
+                    Object.entries(FORM.extra).sort(([a], [b]) =>
+                        a < b ? -1 : 1,
+                    ),
+                    FORM.body,
+                ]),
+            )
+            .digest("hex");
+        expect(formHash(FORM)).toBe(before);
+        expect(formHash({ ...FORM, verified: [] })).toBe(before);
     });
 });
 
@@ -286,5 +398,91 @@ describe("isGeneratedIndex", () => {
             expect(lines.every((line) => line.length <= 80)).toBe(true);
             expect(isGeneratedIndex(text)).toBe(true);
         }
+    });
+});
+
+describe("renderIndex and wide text", () => {
+    it("wraps a description by columns, as a terminal shows it", () => {
+        const word = "日本語".repeat(12);
+        const { text } = renderIndex([
+            entry("a", { description: `${word} ${word}` }),
+        ]);
+        const lines = text.split("\n").slice(1, 3);
+        expect(lines).toEqual([`  ${word}`, `  ${word}`]);
+    });
+});
+
+describe("snake-case files", () => {
+    it.each([
+        ["feedback_testing", "feedback-testing"],
+        ["a_b_c", "a-b-c"],
+        ["plain", "plain"],
+        ["kebab-case", "kebab-case"],
+        ["mixed_kebab-case", "mixed-kebab-case"],
+        ["Feedback_Testing", null],
+        ["double__score", null],
+        ["_leading", null],
+        ["1_up", null],
+        ["null", null],
+    ])("names the fact of the file %p as %p", (stem, name) => {
+        expect(nameOfStem(stem)).toBe(name);
+    });
+
+    it("reads a file in snake case, its frontmatter naming either", () => {
+        for (const name of ["feedback_testing", "feedback-testing"]) {
+            const read = parseExported(
+                NATIVE.replace("bg-session-force-color", name),
+                "feedback_testing",
+            );
+            expect(read).toMatchObject({
+                kind: "ok",
+                form: { name: "feedback-testing" },
+            });
+        }
+    });
+
+    it("refuses a file whose frontmatter names another fact", () => {
+        expect(
+            parseExported(
+                NATIVE.replace("bg-session-force-color", "other-fact"),
+                "feedback_testing",
+            ),
+        ).toEqual({
+            kind: "unparseable",
+            reason: "its name is other-fact, not its file's, feedback-testing",
+        });
+    });
+
+    it("reads titles and hooks by the file's stem, and takes the index as generated", () => {
+        const text = [
+            "- [Testing](./feedback_testing.md)",
+            "  A hook",
+            "  on two lines.",
+            "- [Bee](./b.md)",
+            "  Another.",
+            "",
+        ].join("\n");
+        expect(isGeneratedIndex(text)).toBe(true);
+        expect([...indexTitles(text)]).toEqual([
+            ["feedback_testing", "Testing"],
+            ["b", "Bee"],
+        ]);
+        expect([...indexHooks(text)]).toEqual([
+            ["feedback_testing", ["A hook", "on two lines."]],
+            ["b", ["Another."]],
+        ]);
+    });
+
+    it("links an entry to its file, and keeps a hook in place of the description", () => {
+        const { text } = renderIndex([
+            {
+                ...entry("feedback-testing", { title: "Testing" }),
+                file: "feedback_testing",
+                hook: ["A hand's hook", "on two lines."],
+            },
+        ]);
+        expect(text).toBe(
+            "- [Testing](./feedback_testing.md)\n  A hand's hook\n  on two lines.\n",
+        );
     });
 });

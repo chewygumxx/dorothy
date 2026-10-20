@@ -9,7 +9,14 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+    appendFile,
+    chmod,
+    mkdtemp,
+    readFile,
+    rm,
+    writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HistoryHandle, Lock } from "../memory/sidecar.js";
@@ -26,7 +33,7 @@ import {
     use,
     userLine,
 } from "./fixtures.js";
-import { hookLog } from "./log.js";
+import { hookLog, hookLogPath } from "./log.js";
 import {
     type RecordDeps,
     recordedUuids,
@@ -103,6 +110,15 @@ const events = async (phrase: string) =>
         .map((line) => JSON.parse(line));
 
 describe("recordSession", () => {
+    it("takes history's combined lock when the index is available", async () => {
+        await write([userLine("u1", 0, "hello")]);
+        const holding: Lock = async () => {
+            throw new Error("shared history lock busy");
+        };
+        await expect(
+            recordSession(report(), deps({ versions: versions(holding) })),
+        ).rejects.toThrow("shared history lock busy");
+    });
     it("records a new session as a conversation of its own, from its lines", async () => {
         await write([
             userLine("u1", 0, "hello"),
@@ -255,6 +271,28 @@ describe("recordSession", () => {
         ).toEqual(["session", "u1", "u2"]);
     });
 
+    it("reads a transcript it cannot cut, its whole lines only", async () => {
+        await write([userLine("u1", 0, "a")]);
+        const first = await recordSession(report(), deps());
+        if (first.kind !== "recorded") {
+            throw new Error(first.kind);
+        }
+        const path = join(transcriptDir(env), `${first.phrase}.jsonl`);
+        await appendFile(path, '{"v":1,"kind":"us');
+        // Readable, but not open for writing.
+        await chmod(path, 0o444);
+        const again = await recordSession(report(), deps());
+        expect(again).toMatchObject({
+            kind: "recorded",
+            phrase: first.phrase,
+            appended: 0,
+        });
+        // Left as it was, and nothing recorded twice.
+        const kept = await readFile(path, "utf8");
+        expect(kept.endsWith('{"v":1,"kind":"us')).toBe(true);
+        expect(kept.split('"sourceUuid":"u1"')).toHaveLength(2);
+    });
+
     it("leaves a line Claude Code is still writing for the next reading", async () => {
         await writeFile(
             claude,
@@ -332,6 +370,37 @@ describe("recordSession", () => {
                 "utf8",
             ),
         ).toBe(`${meta("brand-new")}\n`);
+    });
+
+    it("warns of a new type after the last line recorded once, not at every reading", async () => {
+        await write([userLine("u1", 0, "a"), meta("brand-new")]);
+        for (let reading = 0; reading < 3; reading += 1) {
+            await recordSession(report(), deps());
+        }
+        const log = await readFile(hookLogPath(env), "utf8");
+        expect(log.match(/is of a new type/g)).toHaveLength(1);
+        // Nothing appended, nothing said of it.
+        expect(log.match(/events into/g)).toHaveLength(1);
+    });
+
+    it("records though the state directory cannot be written", async () => {
+        await writeFile(join(home, "state"), "a file, not a directory");
+        await write([meta("brand-new"), userLine("u1", 0, "fine")]);
+        expect(await recordSession(report(), deps())).toMatchObject({
+            kind: "recorded",
+            appended: 1,
+            halted: false,
+        });
+        await add([userLine("u2", 1, "x"), "{torn but whole"]);
+        expect(await recordSession(report(), deps())).toMatchObject({
+            kind: "recorded",
+            appended: 1,
+            halted: true,
+        });
+        const log = await readFile(hookLogPath(env), "utf8");
+        expect(log).toContain("can't be kept");
+        expect(log).toContain("its halt can't be kept");
+        expect(commits).toHaveLength(2);
     });
 
     it("continues the conversation of a session its lines name", async () => {

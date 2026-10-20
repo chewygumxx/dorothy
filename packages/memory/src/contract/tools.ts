@@ -22,6 +22,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { conversationProject } from "../engine/baseline.js";
 import type { MemoryEngine, Within } from "../engine/engine.js";
 import type { FactStore } from "../facts/store.js";
+import type { Profiles } from "../hosts/profiles.js";
 import { openConversation, openFact, RecallError } from "../recall/query.js";
 import type { RecallIndex } from "../recall/store.js";
 import { buildBlock } from "./block.js";
@@ -59,6 +60,8 @@ export type ToolDeps = {
     // The connection's project and host; null when none is known.
     project: string | null;
     host: string | null;
+    // The host profiles, whose budget a named host's brief keeps to.
+    profiles: Profiles;
     // A tool's project argument, an id or a path, as a project's id.
     resolveProject: (value: string) => Promise<string | null>;
     // Where a failure's detail goes, which a caller never sees.
@@ -89,10 +92,10 @@ export function withinOf(
 
 // Only a failure the contract or recall raised on purpose shows its own
 // words; any other may carry a path or the database's text.
+const meant = (error: unknown): error is ContractError | RecallError =>
+    error instanceof ContractError || error instanceof RecallError;
 const messageOf = (error: unknown) =>
-    error instanceof ContractError || error instanceof RecallError
-        ? error.message
-        : "Memory failed.";
+    meant(error) ? error.message : "Memory failed.";
 
 const OUT_OF_SCOPE = "that id is outside this session's scope";
 const OTHER_PROJECT = "that project is outside this session's scope";
@@ -117,6 +120,13 @@ async function openId(
             `${input.id} is not a memory id: k:... or c:...`,
         );
     }
+    if (
+        input.from !== undefined &&
+        input.through !== undefined &&
+        input.from > input.through
+    ) {
+        throw new ContractError(400, "from is after through");
+    }
     await deps.engine.index();
     if (id.kind === "knowledge") {
         // A project's id may hold slashes: projects/<id>/<name>.
@@ -135,21 +145,17 @@ async function openId(
         // The contract's id, not recall's.
         return { ...opened, id: input.id };
     }
-    const opened = await deps.index.exclusive(() => {
+    return deps.index.exclusive(() => {
         checkScope(conversationProject(deps.index, id.phrase), project);
         return openConversation(
             deps.index,
-            { conversation: id.phrase, purpose: PURPOSE, turn: input.from },
-            { exclude: null },
+            { conversation: id.phrase, purpose: PURPOSE },
+            {
+                exclude: null,
+                range: { from: input.from, through: input.through },
+            },
         );
     });
-    const { through } = input;
-    return through === undefined
-        ? opened
-        : {
-              ...opened,
-              window: opened.window.filter((turn) => turn.turn <= through),
-          };
 }
 
 export function createContractServer(deps: ToolDeps): McpServer {
@@ -159,8 +165,8 @@ export function createContractServer(deps: ToolDeps): McpServer {
     );
     const projectOf = async (value: string | undefined) =>
         value === undefined ? deps.project : deps.resolveProject(value);
-    // What open reads and remember writes keeps to a connection's own
-    // project: the service enforces scope, not the model's argument. A
+    // What brief, open and remember read and write keeps to a connection's
+    // own project: the service enforces scope, not the model's argument. A
     // connection with none, as a host with no directory has, names one.
     const ownProjectOf = async (value: string | undefined) => {
         const project = await projectOf(value);
@@ -169,7 +175,12 @@ export function createContractServer(deps: ToolDeps): McpServer {
         }
         return project;
     };
-    const answer = async (work: () => Promise<unknown>) => {
+    // The named host's own budget, which a brief never passes.
+    const hostBudget =
+        deps.host === null
+            ? undefined
+            : deps.profiles.get(deps.host)?.blockBudget;
+    const answer = async (tool: string, work: () => Promise<unknown>) => {
         try {
             return {
                 content: [
@@ -180,6 +191,11 @@ export function createContractServer(deps: ToolDeps): McpServer {
                 ],
             };
         } catch (error) {
+            if (!meant(error)) {
+                deps.warn?.(
+                    `the ${tool} tool failed: ${error instanceof Error ? error.message : String(error)}`,
+                );
+            }
             return {
                 isError: true,
                 content: [{ type: "text" as const, text: messageOf(error) }],
@@ -190,11 +206,14 @@ export function createContractServer(deps: ToolDeps): McpServer {
         "brief",
         { description: BRIEF_DESCRIPTION, inputSchema: briefShape },
         (input) =>
-            answer(async () =>
+            answer("brief", async () =>
                 buildBlock(
                     {
-                        project: await projectOf(input.project),
-                        budget: input.budget ?? BRIEF_BUDGET,
+                        project: await ownProjectOf(input.project),
+                        budget: Math.min(
+                            input.budget ?? BRIEF_BUDGET,
+                            hostBudget ?? Number.POSITIVE_INFINITY,
+                        ),
                     },
                     deps.engine,
                 ),
@@ -204,7 +223,7 @@ export function createContractServer(deps: ToolDeps): McpServer {
         "search",
         { description: SEARCH_DESCRIPTION, inputSchema: searchShape },
         (input) =>
-            answer(async () => {
+            answer("search", async () => {
                 const project = await projectOf(input.project);
                 return deps.engine.search({
                     query: input.query,
@@ -221,7 +240,7 @@ export function createContractServer(deps: ToolDeps): McpServer {
         "open",
         { description: OPEN_DESCRIPTION, inputSchema: openShape },
         (input) =>
-            answer(async () =>
+            answer("open", async () =>
                 openId(input, await ownProjectOf(input.project), deps),
             ),
     );
@@ -229,7 +248,7 @@ export function createContractServer(deps: ToolDeps): McpServer {
         "remember",
         { description: REMEMBER_DESCRIPTION, inputSchema: rememberShape },
         (input) =>
-            answer(async () =>
+            answer("remember", async () =>
                 contractRemember(input, {
                     store: deps.store,
                     project: await ownProjectOf(input.project),

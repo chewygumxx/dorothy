@@ -8,14 +8,16 @@
 //
 //
 
-// The store's facts in the recall index, synced by each file's mtime: a
-// changed fact is read again, a gone one dropped, and one that cannot be
-// read left out with a warning.
+// The store's facts in the recall index, synced by each file's hash: a
+// changed fact is read again, a gone one dropped, a broken one left out
+// with a warning, and one that cannot be read kept as it was indexed, with
+// a warning.
 
 import { readFile, stat } from "node:fs/promises";
 import { relative, sep } from "node:path";
-import { type Fact, parseFact } from "../facts/file.js";
+import { type Fact, isConfirmed, parseFact } from "../facts/file.js";
 import { migrateFacts } from "../facts/migrate.js";
+import { hashOf } from "../facts/pending.js";
 import { factFiles, scopeLabel } from "../facts/store.js";
 import type { RecallIndex } from "./store.js";
 
@@ -37,11 +39,11 @@ export async function syncFacts(
         warnings.push(...(await migrateFacts(root)));
         const known = new Map(
             (
-                index.db.query("SELECT path, mtime FROM facts").all() as {
+                index.db.query("SELECT path, hash FROM facts").all() as {
                     path: string;
-                    mtime: number;
+                    hash: string;
                 }[]
-            ).map(({ path, mtime }) => [path, mtime]),
+            ).map(({ path, hash }) => [path, hash]),
         );
         let files: FactFile[];
         try {
@@ -75,24 +77,26 @@ async function syncFile(
     index: RecallIndex,
     file: FactFile,
     key: string,
-    mtime: number | undefined,
+    hash: string | undefined,
     warnings: string[],
 ): Promise<boolean> {
-    const read = await readChanged(file.path, mtime);
+    const read = await readChanged(file.path, hash);
     if (read.kind === "gone") {
         return false;
     }
     if (read.kind === "same") {
         return true;
     }
-    drop(index, key);
     if (read.kind === "unreadable") {
+        // The row stays as indexed, and is read again next time, rather
+        // than the fact going missing because a read failed once.
         warnings.push(`${file.path}: ${read.reason}`);
         return true;
     }
+    drop(index, key);
     const parsed = parseFact(read.text, file.name);
     if (parsed.kind === "ok") {
-        insertFact(index, key, file, parsed.fact, read.mtime);
+        insertFact(index, key, file, parsed.fact, read.mtime, read.hash);
     } else {
         warnings.push(`${file.path}: ${parsed.reason}`);
     }
@@ -103,19 +107,22 @@ type Changed =
     | { kind: "same" }
     | { kind: "gone" }
     | { kind: "unreadable"; reason: string }
-    | { kind: "read"; text: string; mtime: number };
+    | { kind: "read"; text: string; mtime: number; hash: string };
 
-// A fact file read again only if its mtime is not the one indexed.
+// Read every file: timestamps and sizes can survive an outside edit.
+// Only changed bytes need parsing and replacement of the derived row.
 async function readChanged(
     path: string,
-    known: number | undefined,
+    known: string | undefined,
 ): Promise<Changed> {
     try {
         const mtime = (await stat(path)).mtimeMs;
-        if (known === mtime) {
+        const text = await readFile(path, "utf8");
+        const hash = hashOf(text);
+        if (known === hash) {
             return { kind: "same" };
         }
-        return { kind: "read", text: await readFile(path, "utf8"), mtime };
+        return { kind: "read", text, mtime, hash };
     } catch (error) {
         return codeOf(error) === "ENOENT"
             ? { kind: "gone" }
@@ -129,9 +136,10 @@ function insertFact(
     file: FactFile,
     fact: Fact,
     mtime: number,
+    hash: string,
 ): void {
     index.db.run(
-        "INSERT INTO facts (path, scope, name, title, description, type, body, origin, importance, created, retired, mtime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO facts (path, scope, name, title, description, type, body, origin, importance, created, retired, confirmed, mtime, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
             key,
             scopeLabel(file.scope),
@@ -144,7 +152,9 @@ function insertFact(
             fact.importance,
             Date.parse(fact.provenance.created),
             fact.retired === null ? 0 : 1,
+            isConfirmed(fact) ? 1 : 0,
             mtime,
+            hash,
         ],
     );
     for (const [n, id] of fact.tags.entries()) {

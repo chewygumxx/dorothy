@@ -9,7 +9,14 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import {
+    mkdtemp,
+    readdir,
+    readFile,
+    rm,
+    stat,
+    writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hookLog } from "./log.js";
@@ -113,7 +120,47 @@ describe("lines kept aside", () => {
             ),
         ).toBe('{"type":"brand-new","n":1}\n');
         const [told] = await startNotices(env);
-        expect(told).toContain("___odd_type, brand-new");
+        expect(told).toMatch(/\(___odd_type-[0-9a-f]{8}, brand-new\)/);
+        expect(await startNotices(env)).toEqual([]);
+    });
+
+    it("keeps an example of each type, though their names sanitise alike", async () => {
+        await keepNewType(env, "a/b", '{"type":"a/b"}');
+        await keepNewType(env, "a?b", '{"type":"a?b"}');
+        await keepNewType(env, "a_b", '{"type":"a_b"}');
+        const names = await readdir(join(unreadDir(env), "types"));
+        expect(names).toHaveLength(3);
+        const kept = await Promise.all(
+            names.map((name) =>
+                readFile(join(unreadDir(env), "types", name), "utf8"),
+            ),
+        );
+        expect(kept.sort()).toEqual([
+            '{"type":"a/b"}\n',
+            '{"type":"a?b"}\n',
+            '{"type":"a_b"}\n',
+        ]);
+        expect(await readdir(unreadDir(env))).toEqual(["types"]);
+    });
+
+    it("tells a new type once, though two starts ask at once", async () => {
+        await keepNewType(env, "brand-new", '{"type":"brand-new"}');
+        await keepNewType(env, "newer", '{"type":"newer"}');
+        const told = (
+            await Promise.all(
+                Array.from({ length: 6 }, () => startNotices(env)),
+            )
+        ).flat();
+        const text = told.join("\n");
+        expect(text.match(/brand-new/g)).toHaveLength(1);
+        expect(text.match(/newer/g)).toHaveLength(1);
+        await keepNewType(env, "newest", '{"type":"newest"}');
+        expect(await startNotices(env)).toHaveLength(1);
+    });
+
+    it("does not tell again a type an earlier version told", async () => {
+        await keepNewType(env, "brand-new", '{"type":"brand-new"}');
+        await writeFile(join(unreadDir(env), "types.json"), '["brand-new"]\n');
         expect(await startNotices(env)).toEqual([]);
     });
 

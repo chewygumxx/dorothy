@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-07
-mtime: 2026-10-07
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Compaction implementation report
 description: "How compaction was built: deviations from the spec, what review changed, every commit and what is left"
@@ -31,7 +31,7 @@ waits for it. The CLI's own compaction is switched off.
 - Spec: [`docs/specs/2026-10-07-compaction-design.md`](../specs/2026-10-07-compaction-design.md)
 - Plan: [`docs/plans/2026-10-07-compaction.md`](../plans/2026-10-07-compaction.md)
 - Probes: [`docs/reports/2026-10-07-compaction.md`](2026-10-07-compaction.md)
-- Deferred test gaps: [`docs/deferred/2026-10-07_compaction-test-gaps.md`](../deferred/2026-10-07_compaction-test-gaps.md)
+- Deferred test gaps: [closed by the sweep](./2026-10-19-roadmap-sweep.md#task-8-compaction-recall-and-catalogue)
 - Branch: `feat/compaction`, from `main` at `19a861e`
 
 At the head of the branch `bun run check` passes with 787 tests across 46
@@ -254,6 +254,11 @@ Both probes are described in full in the
 
 ## Known limitations
 
+The live split, failed CLI compactions and deferred test gaps.
+Closed by the roadmap sweep: see
+[the sweep report](./2026-10-19-roadmap-sweep.md). Remaining limits
+are recorded there.
+
 None blocks merge.
 
 - **A split into several clusters was never exercised live.** At the
@@ -275,7 +280,8 @@ None blocks merge.
   editing abstracts through `--memory`, are out of scope.
 - **Test gaps.** Behaviours that hold but have no test of their own are
   listed in the
-  [deferred doc](../deferred/2026-10-07_compaction-test-gaps.md), led by an
+  [sweep record](./2026-10-19-roadmap-sweep.md#task-8-compaction-recall-and-catalogue),
+  led by an
   end-to-end test of turn numbering across App, the transcript, the sidecar,
   the index and `recollect`.
 - **Not fixed here.** The CLI still adds its `# Environment` message to

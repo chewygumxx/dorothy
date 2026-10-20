@@ -11,13 +11,14 @@
 // The commands over facts and projects: each opens the index for its
 // lock, has history swept first, and writes through the store.
 
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Env } from "@dorothy/core";
+import { type Env, parseMemoryId } from "@dorothy/core";
 import type { OpenHistory } from "../memory/sidecar.js";
 import { projectsPath, readRegistry } from "../projects/registry.js";
 import { type SyncReport, syncProject } from "../projects/sync.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
+import { type Fact, USER_ACTOR, verificationsOf } from "./file.js";
 import {
     dataRoot,
     type FactResult,
@@ -30,6 +31,7 @@ import {
     type Scope,
     type StoredFact,
     scopeLabel,
+    verifyFact,
 } from "./store.js";
 
 export type Output = { write(text: string): unknown };
@@ -44,14 +46,17 @@ export type FactCommandOptions = {
 const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
 
-// The store under the index's lock, history swept first; null, said on
+// The store under history's combined lock, swept first; null, said on
 // err, when the index cannot be opened.
 async function openStore({
     env = process.env,
     err = process.stderr,
     now,
     openHistory,
-}: FactCommandOptions): Promise<{ store: FactStore; close(): void } | null> {
+}: FactCommandOptions): Promise<{
+    store: FactStore;
+    close(): Promise<void>;
+} | null> {
     let index: RecallIndex;
     try {
         index = RecallIndex.open(indexPath(env));
@@ -65,12 +70,12 @@ async function openStore({
     return {
         store: {
             root: dataRoot(env),
-            lock: index.lock,
+            lock: versions?.lock ?? index.lock,
             recorder: versions?.recorder ?? null,
             ...(now === undefined ? {} : { now }),
         },
-        close: () => {
-            versions?.close();
+        close: async () => {
+            await versions?.close();
             index.close();
         },
     };
@@ -105,14 +110,19 @@ export async function runFacts(
         return 1;
     }
     try {
-        const { facts, broken } = await listFacts(opened.store.root);
+        const { facts, broken, unreadable } = await listFacts(
+            opened.store.root,
+        );
         for (const { path, reason } of broken) {
             err.write(`dorothy: ${path}: ${reason}\n`);
+        }
+        for (const { path, reason } of unreadable) {
+            err.write(`dorothy: ${path}: it cannot be read: ${reason}\n`);
         }
         out.write(formatFacts(facts));
         return 0;
     } finally {
-        opened.close();
+        await opened.close();
     }
 }
 
@@ -155,7 +165,7 @@ async function onTarget(
         );
         return 1;
     } finally {
-        opened.close();
+        await opened.close();
     }
 }
 
@@ -198,15 +208,111 @@ export async function runRetireFrom(
         });
         if (result.kind === "failed") {
             err.write(`dorothy: ${result.reason}\n`);
+            if (result.retired !== undefined && result.retired.length > 0) {
+                err.write(
+                    `dorothy: retired before it failed: ${result.retired.join(", ")}\n`,
+                );
+            }
             return 1;
         }
         const count = result.retired.length;
+        if (count === 0) {
+            err.write(
+                `dorothy: no live fact came from ${phrase}; nothing was retired\n`,
+            );
+            return 1;
+        }
         out.write(
             `Retired ${count} ${count === 1 ? "fact" : "facts"} from ${phrase}.\n`,
         );
         return 0;
     } finally {
-        opened.close();
+        await opened.close();
+    }
+}
+
+// A knowledge id, as open and the block show it, as the store's target.
+function targetOfId(id: string): { scope: Scope; name: string } | null {
+    const parsed = parseMemoryId(id);
+    if (parsed?.kind !== "knowledge") {
+        return null;
+    }
+    const { path } = parsed;
+    return parseTarget(
+        path.startsWith("projects/") ? path.slice("projects/".length) : path,
+    );
+}
+
+// Why knowledge is confirmed already; a verification by another person
+// names them.
+function whyConfirmed(fact: Fact): string {
+    if (fact.provenance.origin === "user") {
+        return "it is yours";
+    }
+    const by = verificationsOf(fact).map((entry) => entry.by);
+    return by.includes(USER_ACTOR)
+        ? "you verified it"
+        : `${[...new Set(by)].join(", ")} verified it`;
+}
+
+// A piece of knowledge as --verify confirmed it: its title, its
+// description and its body, indented, so the user sees, and the
+// terminal keeps, the words they vouched for.
+const shown = (fact: Fact) =>
+    [
+        fact.title,
+        fact.description,
+        ...(fact.body === ""
+            ? []
+            : [
+                  "",
+                  ...fact.body
+                      .split("\n")
+                      .map((line) => (line === "" ? "" : `  ${line}`)),
+              ]),
+        "",
+    ].join("\n");
+
+// --verify: the user confirms a piece of knowledge a model or an
+// outside writer gave, by its id.
+export async function runVerify(
+    id: string,
+    options: FactCommandOptions = {},
+): Promise<number> {
+    const { out = process.stdout, err = process.stderr } = options;
+    const target = targetOfId(id);
+    if (target === null) {
+        err.write(
+            `dorothy: ${id} is no knowledge's id; give k:personal/<name> or k:projects/<project id>/<name>\n`,
+        );
+        return 1;
+    }
+    const opened = await openStore(options);
+    if (opened === null) {
+        return 1;
+    }
+    try {
+        const result = await verifyFact(opened.store, target);
+        switch (result.kind) {
+            case "written":
+                out.write(
+                    `${shown(result.fact)}\nVerified ${id}: it is confirmed now.\n`,
+                );
+                return 0;
+            case "confirmed":
+                out.write(
+                    `${id} is confirmed already: ${whyConfirmed(result.fact)}.\n`,
+                );
+                return 0;
+            case "missing":
+                err.write(`dorothy: there is no knowledge ${id}\n`);
+                return 1;
+            default:
+                err.write(`dorothy: ${id}: ${result.reason}\n`);
+                return 1;
+        }
+    } finally {
+        await opened.close();
     }
 }
 
@@ -219,6 +325,9 @@ export function formatReport(report: SyncReport): string {
         ...MOVES.filter((way) => report[way].length > 0).map(
             (way) => `${way}: ${report[way].join(", ")}`,
         ),
+        ...report.renamed.map(
+            ({ file, name }) => `named: ${file} as the fact ${name}`,
+        ),
         ...report.conflicts.map(
             (name) => `conflict: ${name}; the repository's version was kept`,
         ),
@@ -226,6 +335,11 @@ export function formatReport(report: SyncReport): string {
             ({ name, reason }) => `skipped: ${name} (${reason})`,
         ),
     ];
+    if (report.unrecorded !== undefined) {
+        lines.push(
+            `history was not told of this, and will find it next time: ${report.unrecorded}`,
+        );
+    }
     if (report.index === "left") {
         lines.push(
             `MEMORY.md left as it is${report.indexReason === undefined ? "" : `: ${report.indexReason}`}`,
@@ -253,6 +367,10 @@ export async function runSync(
         err.write(`dorothy: ${target} does not exist\n`);
         return 1;
     }
+    if (!statSync(target).isDirectory()) {
+        err.write(`dorothy: ${target} is not a directory\n`);
+        return 1;
+    }
     const opened = await openStore(options);
     if (opened === null) {
         return 1;
@@ -276,7 +394,7 @@ export async function runSync(
         out.write(formatReport(result.report));
         return 0;
     } finally {
-        opened.close();
+        await opened.close();
     }
 }
 

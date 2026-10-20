@@ -39,11 +39,20 @@ export async function writeRunReport(
 }
 
 // Whether two runs asked the same questions of the same snapshot, without
-// which a difference's noise mark means little.
+// which a difference's noise mark means little: the same ids, and, where
+// both kept them, the same definitions behind the ids.
 function alike(a: Summary, b: Summary): boolean {
     const ids = (summary: Summary) =>
         JSON.stringify([...summary.run.questionIds].sort());
-    return a.run.snapshot.at === b.run.snapshot.at && ids(a) === ids(b);
+    const defined = (summary: Summary) =>
+        JSON.stringify(Object.entries(summary.run.definitions ?? {}).sort());
+    return (
+        a.run.snapshot.at === b.run.snapshot.at &&
+        ids(a) === ids(b) &&
+        (a.run.definitions === undefined ||
+            b.run.definitions === undefined ||
+            defined(a) === defined(b))
+    );
 }
 
 const isTable = (value: unknown): value is Record<string, unknown> =>

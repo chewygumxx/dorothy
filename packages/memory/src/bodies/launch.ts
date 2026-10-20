@@ -64,14 +64,18 @@ export async function claudeBlock({
     }
 }
 
-// Syncs the project dir is in, under the index's lock, or history's
-// own without the index, history committing what changed and never
-// pushing. Null when synced or dir is in no repository; else why not.
+// Syncs the project dir is in, under history's combined lock, or the
+// index alone without history, committing what changed without pushing.
+// Null when synced or dir is in no repository; else why not.
 export async function syncDirectory(
     dir: string,
     {
         env = process.env,
-        openHistory = commandHistory({ env, remindMirror: false }),
+        openHistory = commandHistory({
+            env,
+            remindMirror: false,
+            pushOnClose: false,
+        }),
     }: { env?: Env; openHistory?: OpenHistory } = {},
 ): Promise<string | null> {
     let index: RecallIndex | null = null;
@@ -82,7 +86,7 @@ export async function syncDirectory(
     }
     const versions = await openHistory(index);
     try {
-        const lock = index?.lock ?? versions?.lock;
+        const lock = versions?.lock ?? index?.lock;
         if (lock === undefined) {
             return "neither the memory index nor history can lock the store";
         }
@@ -95,7 +99,7 @@ export async function syncDirectory(
     } catch (error) {
         return describeError(error);
     } finally {
-        versions?.close();
+        await versions?.close();
         index?.close();
     }
 }

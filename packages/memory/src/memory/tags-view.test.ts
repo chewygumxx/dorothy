@@ -22,7 +22,9 @@ import {
     type Vocabulary,
 } from "./vocabulary.js";
 
-const AT = "2026-10-07T12:00:00.000Z";
+// Local midday on the day, so dates read the same in every time zone.
+const midday = (date: number) => new Date(2026, 9, date, 12).toISOString();
+const AT = midday(7);
 const concept = (
     prefLabel: string,
     fields: Partial<Concept> = {},
@@ -72,6 +74,53 @@ const COUNTS = new Map([
     [K.rendering, 3],
 ]);
 
+// Times near midnight UTC fall on another day in a zone far ahead of it or
+// behind it.
+const ZONES = [
+    ["Pacific/Kiritimati", "2026-10-04T23:30:00.000Z", "2026-10-05"],
+    ["Etc/GMT+12", "2026-10-05T05:00:00.000Z", "2026-10-04"],
+] as const;
+
+function inZones(check: (at: string, day: string) => void): void {
+    const zone = process.env.TZ;
+    try {
+        for (const [tz, at, day] of ZONES) {
+            process.env.TZ = tz;
+            check(at, day);
+        }
+    } finally {
+        if (zone === undefined) {
+            delete process.env.TZ;
+        } else {
+            process.env.TZ = zone;
+        }
+    }
+}
+
+describe("renderTagsView's dates", () => {
+    it("names the local day a concept was made or edited", () => {
+        inZones((at, day) => {
+            const v: Vocabulary = {
+                v: 1,
+                rev: 1,
+                concepts: {
+                    k00000001: concept("mine", { by: "user", at }),
+                    k00000002: concept("hers", { at }),
+                    k00000003: concept("edited", { edited: at }),
+                },
+            };
+            const text = renderTagsView(v, new Map());
+            expect(text).toContain(`# (yours, ${day}; 0 conversations)`);
+            expect(text).toContain(
+                `# (Dorothy, claude-opus-5-5, ${day}; 0 conversations)`,
+            );
+            expect(text.match(new RegExp(`yours, ${day}`, "g"))).toHaveLength(
+                2,
+            );
+        });
+    });
+});
+
 describe("renderTagsTree", () => {
     it("prints the hierarchy, a second parent's copy pointing above", () => {
         expect(renderTagsTree(TREE, COUNTS)).toBe(
@@ -80,6 +129,30 @@ describe("renderTagsTree", () => {
                 "  memory (7)",
                 "    compaction (3)",
                 "    tagging (2)",
+                "  persona (4)",
+                "misc (0)",
+                "tui (5)",
+                "  rendering (3)",
+                "  tagging (2, see above)",
+            ].join("\n"),
+        );
+    });
+
+    it("prints a shared concept's children only on its first occurrence", () => {
+        const diamond: Vocabulary = {
+            ...TREE,
+            concepts: {
+                ...TREE.concepts,
+                k00000010: concept("types", { broader: [K.tagging] }),
+            },
+        };
+        expect(renderTagsTree(diamond, COUNTS)).toBe(
+            [
+                "dorothy (12)",
+                "  memory (7)",
+                "    compaction (3)",
+                "    tagging (2)",
+                "      types (0)",
                 "  persona (4)",
                 "misc (0)",
                 "tui (5)",
@@ -105,7 +178,7 @@ describe("the edit view", () => {
                 broader: ["k00000001"],
             }),
             k00000003: concept("recollection", { by: "user" }),
-            k00000004: concept("tui", { edited: "2026-10-08T09:00:00.000Z" }),
+            k00000004: concept("tui", { edited: midday(8) }),
             k00000005: concept("rendering", { broader: ["k00000004"] }),
             k00000009: { deleted: AT, labels: ["misc"] },
         },
@@ -195,6 +268,29 @@ describe("the edit view", () => {
                 "",
             ].join("\n"),
         );
+    });
+
+    it("keeps parent reordering unchanged and its provenance intact", () => {
+        const view = renderTagsView(TREE, new Map());
+        expect(
+            parseTagsView(
+                view.replace("Under: memory; tui", "Under: tui; memory"),
+                TREE,
+            ),
+        ).toEqual({ kind: "unchanged" });
+    });
+
+    it("drops a survivor's edge to itself after merging its parent", () => {
+        const result = vocabularyOf(
+            applied(parse(["Tag: dorothy", "Tag: dorothy\nMerge: memory"])),
+        );
+        expect(result.concepts.k00000002).toMatchObject({
+            broader: [],
+            altLabel: ["recall", "dorothy"],
+        });
+        expect(result.concepts.k00000001).toMatchObject({
+            mergedInto: "k00000002",
+        });
     });
 
     it("finds nothing changed in the view as rendered", () => {

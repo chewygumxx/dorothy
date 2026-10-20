@@ -1,0 +1,158 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-code-review/eval-notes.txt
+#
+
+# Dorothy eval review, bounded batch
+
+Reviewed commit: 7602316f9dd3e1d8a46f0b1b885162a759d4ea58.
+Scope: packages/eval production code, relevant tests, and memory-evaluation
+spec passages. Review only: no tracked edits, fixes, commits or remote actions.
+Systematic debugging instructions read and followed for probes.
+
+## Findings
+
+### P2: Keep a clipped best-matching turn when it exceeds the passage budget
+
+Location: packages/eval/src/systems/corpus.ts:113-116.
+
+Trigger: a relevant conversation's highest-scoring turn is longer than its
+allocated passage. With the default run budget (8000), Dorothy allocates
+2000 characters per conversation and lexical allocates 2666. Ordinary long
+user requests or assistant replies can exceed either size.
+
+The code adds the relevant turn, observes that render() exceeds chars,
+removes the entire turn, and returns immediately. If this is the first
+candidate, it returns only the conversation title and dates. It neither
+clips that relevant turn nor considers a shorter matching candidate.
+The systems still rank that conversation as retrieved, so recall can score
+true while the answering model gets none of its text. This depresses answer
+accuracy for reasons unrelated to retrieval quality and misleads diagnosis.
+
+Evidence: /tmp/dorothy-eval-review-probe.ts constructs one turn beginning
+'My bicycle is crimson.' followed by 8000 characters. passage(..., 2666)
+returns exactly 'Discussion, 2026-10-01 to 2026-10-01'. A lexical retrieval
+at budget 8000 returns ranked ['c:long'] and an item containing that header
+alone; 'crimson' is absent even though it fits near the beginning.
+
+Challenge against callers/tests: both dorothy.ts and lexical.ts call this
+function with fixed fractions of the budget. systems.test.ts covers tiny
+budgets by checking length only and many short turns by checking the id,
+so neither verifies that an oversized relevant turn contributes any text.
+The spec describes retrieved/opened passages as the answering context;
+header-only output for a long first match is not a useful passage.
+
+Suggested correction: allocate/clamp matching turn text so an oversized
+first relevant turn can contribute its available prefix (or an appropriate
+query-centered excerpt), without silently discarding all matching content.
+
+### P2: Refuse resume when recorded questions have disappeared
+
+Location: packages/eval/src/run/run.ts:378-381.
+
+Trigger: stop a run, then delete, reject, corrupt, or edit the text/evidence
+of one of its outstanding questions before resuming, leaving at least one
+other recorded question accepted. Question text/evidence edits produce a
+new id, and malformed questions are skipped by readQuestions.
+
+Resume intersects current accepted questions with info.questionIds and
+checks only whether the intersection is empty. It never checks that all
+recorded ids are still represented. Outstanding questions disappear from
+tasks, the command exits zero with no warning, and its report still claims
+run.questions from the original run. Completed runs with fewer records can
+then be compared as though they asked the original matching question set,
+since compare's alike() compares run.questionIds rather than actual records.
+
+Evidence: /tmp/dorothy-eval-review-probe.ts creates a temporary fixture
+snapshot and a run with two recorded lookup ids, represents interruption
+before the second question, removes that question from questions.jsonl,
+and invokes runCli(['run', '--work', work, '--resume', id]). Result:
+status 0, stderr [], declared question count 2, actual record count 1.
+No model/network is used.
+
+Challenge against callers/tests: run/command.ts passes only the current
+accepted questions, so it does not restore the missing questions first.
+Resume tests cover settings/snapshot/model/provider drift, torn records,
+retries and paid answers, but not question removal or modification.
+The design says resume takes its questions from run.json and finishes
+missing work. Keeping ids alone does not satisfy that when the live file
+changes. A complete run's zero tasks is valid; silently losing recorded
+questions is a different case.
+
+Related integrity gap: answer, asOf, project, exclude, type and note do
+not participate in questionId. Changing those leaves an id valid, so the
+same resume can use new gold answers/context parameters for pending tasks
+and old verdicts for completed tasks. Persisting immutable run questions
+or checking a full question-content fingerprint would cover both gaps.
+This related case was traced statically, not separately executed.
+
+Suggested correction: save the original accepted question definitions in
+the run, or at minimum require every original id and reject any missing
+or changed definition before any paid work.
+
+### P3: Allocate at least the requested total across generated types
+
+Location: packages/eval/src/questions/generate.ts:57-61.
+
+Trigger: use the supported '--count 1' without per-type overrides.
+Every type's scaled share is less than one half, so Math.round sets every
+count to zero. Generation calls no model and emits zero drafts without a
+shortfall: its zero per-type targets were all met. Other counts also lose
+or add a question before generation starts (300 allocates 299, 100 allocates
+101). This is separate from legitimate shortfalls due to rejected drafts
+or missing material.
+
+Evidence: the same isolated probe prints countsFor(1) with all six entries
+zero. A direct Bun probe prints requested/allocated totals 1/0, 10/11,
+100/101 and 300/299. Existing tests check the shares at their full scale
+and a single per-type override; they do not assert conservation or a
+positive allocation at the permitted minimum.
+
+Suggested correction: allocate the integer remainder after scaling (and
+define how explicit type overrides affect the total), instead of rounding
+each category independently.
+
+## Validation
+
+- Read root AGENTS.md and packages/eval/AGENTS.md.
+- Read .agents/skills/systematic-debugging/SKILL.md.
+- `bun test packages/eval`: first sandboxed invocation failed on local
+  HTTP binding (EPERM), so those failures were environmental.
+- Reran the same suite with approved local-loopback permission, output in
+  /tmp/dorothy-eval-review-tests.log: 259 pass, 0 fail, 993 expectations,
+  13 files, 2.75 seconds.
+- `bun /tmp/dorothy-eval-review-probe.ts`: exited 0 and reproduced the
+  passage, missing-question resume and count-allocation issues above.
+- `git rev-parse HEAD`: matched the reviewed commit. `git status --short`
+  showed only docs/reports/2026-10-19-code-review.md as untracked, created
+  by the parent review work; this reviewer made no repository edits.
+
+## Coverage
+
+Read all production files under packages/eval/src:
+cli.ts, command.ts, editor.ts, errors.ts, files.ts, main.ts, testing.ts;
+models/client.ts and config.ts;
+questions/file.ts, generate.ts, generate-command.ts, mine.ts, review.ts;
+report/command.ts, markdown.ts, summary.ts;
+run/command.ts, judges.ts, record.ts, run.ts;
+snapshot/command.ts, snapshot.ts;
+systems/corpus.ts, dorothy.ts, full.ts, lexical.ts, system.ts, terms.ts.
+Also read package.json and relevant design-spec sections about snapshot,
+question generation/ids, retrieval, retries, resume and reporting.
+
+Read the model client tests and system tests in full, the run tests'
+setup and resume/failed-retrieval sections, and relevant count/report/
+snapshot/review/locking test cases plus test names throughout all 13
+files. All 13 test files executed. Test execution is not a claim that
+all test bodies or dependencies were manually audited.
+
+No paid models, real credentials, real user roots or external provider
+traffic were used. Probes use temporary fixtures/fake questions only;
+probe-created data directories were removed by their fixture cleanup.
+No memory-package implementation was audited in this batch. No hostile
+filesystem race, concurrent snapshot swap, concurrent same-run resume,
+or real provider SDK compatibility audit was attempted. Base-URL query
+changes, whole-snapshot retrieval irrespective of asOf, answer-token-only
+cost totals, and source top-level symlink following are documented design
+choices, so they were not reported as defects.

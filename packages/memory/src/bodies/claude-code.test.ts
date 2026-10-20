@@ -329,6 +329,20 @@ describe("readLines", () => {
             });
         });
 
+        it("halts at a user text block without its text", () => {
+            const read = readLines([
+                userLine("u1", 0, [{ type: "text", text: { new: "shape" } }]),
+                assistantLine("a1", 1, [text("Hi.")]),
+            ]);
+            expect(read.events).toEqual([]);
+            expect(read.halt).toEqual({
+                line: 0,
+                type: "user",
+                uuid: "u1",
+                reason: "a text block without its text",
+            });
+        });
+
         it("halts at an assistant line without a uuid, recording none of its blocks", () => {
             const bad = JSON.stringify({
                 type: "assistant",
@@ -358,6 +372,46 @@ describe("readLines", () => {
                 "a tool call without its id or name",
             );
         });
+    });
+});
+
+describe("command markup and gaps in a line", () => {
+    const COMPACT =
+        "<command-name>/compact</command-name>\n<command-args>tea</command-args>";
+
+    it("takes a command from a whole user line, whether text or blocks", () => {
+        expect(
+            entries([
+                userLine("u1", 0, COMPACT),
+                userLine("u2", 1, [text(COMPACT)]),
+                userLine(
+                    "u3",
+                    2,
+                    "<local-command-stdout>ok</local-command-stdout>",
+                ),
+            ]),
+        ).toEqual([
+            { kind: "user", text: "/compact tea" },
+            { kind: "user", text: "/compact tea" },
+        ]);
+    });
+
+    it("takes a queued prompt that names no command mode as a prompt", () => {
+        expect(entries([queued("q1", 0, "also this", null)])).toEqual([
+            { kind: "user", text: "also this" },
+        ]);
+        expect(entries([queued("q2", 0, "ls", "bash")])).toEqual([]);
+    });
+
+    it("halts at a tool result without its call's id", () => {
+        const read = readLines([
+            userLine("u1", 0, [
+                { type: "tool_result", content: "ok" },
+                text("after"),
+            ]),
+        ]);
+        expect(read.events).toEqual([]);
+        expect(read.halt?.reason).toBe("a tool result without its call's id");
     });
 });
 
@@ -403,6 +457,12 @@ describe("spoken", () => {
         expect(
             spoken(
                 "<command-message>m</command-message>\n<command-name> </command-name>",
+            ),
+        ).toBeNull();
+        expect(spoken("<command-message>herdr</command-message>")).toBeNull();
+        expect(
+            spoken(
+                "<command-message>m</command-message>\n<command-args>x</command-args>",
             ),
         ).toBeNull();
     });

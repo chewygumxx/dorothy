@@ -8,22 +8,33 @@
 //
 //
 
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import {
+    type Options,
+    query,
+    type SDKMessage,
+} from "@anthropic-ai/claude-agent-sdk";
 import {
     baseOptions,
     cliOptions,
     type PersonaMode,
     personaPrompt,
 } from "./persona.js";
+import { failureText } from "./result.js";
+
+export type OneShotQuery = (params: {
+    prompt: string;
+    options: Options;
+}) => AsyncIterable<SDKMessage>;
 
 // One reply, streamed to stdout, for dorothy <prompt>: no memory, no
 // recall, no transcript.
 export async function runOneShot(
     prompt: string,
     persona: PersonaMode,
+    queryFn: OneShotQuery = query,
 ): Promise<void> {
     try {
-        for await (const message of query({
+        for await (const message of queryFn({
             prompt,
             options: {
                 ...baseOptions,
@@ -37,6 +48,9 @@ export async function runOneShot(
                 message.event.delta.type === "text_delta"
             ) {
                 process.stdout.write(message.event.delta.text);
+            } else if (message.type === "result" && message.is_error) {
+                // An API failure ends the turn with a result, not a throw.
+                throw new Error(failureText(message));
             }
         }
     } catch (error) {

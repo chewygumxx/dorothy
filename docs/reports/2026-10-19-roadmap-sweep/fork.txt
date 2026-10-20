@@ -1,0 +1,79 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-roadmap-sweep/fork.txt
+
+Probe: A resumed session fork retains the identity marker
+Date: 2026-10-20
+Claude Code: 2.1.300
+Bun: 1.4.2
+Herdr: 0.9.5
+Model: claude-haiku-5-5 (--model haiku; ANTHROPIC_MODEL=haiku for chat)
+Code under test: dc09077
+Verdict: PASS
+
+Commands, using the session created by the interactive probe:
+  python3 <probe-root>/probe.py dorothy fork-corrected -p \
+    --resume <probe-session> --fork-session --model haiku \
+    --output-format json --tools '' -- \
+    'Probe only: do not use tools or modify anything. Who are you? Answer in one short sentence.'
+The Python launcher passed stdin=DEVNULL. Parent variable check: none.
+All Dorothy roots were the interactive probe's temporary roots.
+See interactive.txt for the observer and environment helper.
+
+Setup accounting:
+- The first attempt omitted -- after the variadic --tools flag. The CLI
+  consumed the positional prompt as a tool value and read the launcher's
+  Python text from stdin instead. It made one model turn, charged
+  0.00228981 USD; its response said it could not run the script. That
+  response is not used for this verdict. The known probe transcript
+  confirmed the accidental input; no outside session was inspected.
+- A retry with empty stdin but still without -- exited locally with:
+  "No deferred tool marker found in the resumed session."
+  Its gateway reported injected=0, drift=0; no model turn was made.
+- The corrected command above terminates the flag values and has empty
+  stdin. It forks the known probe session and answers the intended prompt.
+
+Corrected output:
+{
+  "type": "result",
+  "subtype": "success",
+  "is_error": false,
+  "result": "I'm Dorothy, an agentic assistant here to help you reach your goals.",
+  "total_cost_usd": 0.00206221,
+  "num_turns": 1,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 143,
+    "cache_read_input_tokens": 7281,
+    "output_tokens": 28,
+    "output_tokens_details": {
+      "thinking_tokens": 0
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 143,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [],
+    "speed": "standard",
+    "fallback_credit": null
+  }
+}
+stderr:
+exit: 0
+
+Corrected gateway capture:
+{"kind":"request","path":"/v1/messages","model":"claude-haiku-5-5","systemBlocks":4,"identity":true,"markerLeft":false,"rootGuide":false,"packageGuide":false,"memoryIndex":false,"memoryHook":false}
+{"kind":"gateway-stats","injected":1,"drift":0}
+
+The fork's main request contained Dorothy's identity downstream. The
+incoming marker was replaced once, with zero drift. This verifies the
+marker in the real forked request, independently of the model's answer.
+The parent and corrected fork had distinct session IDs (not retained).
+Cost: two model turns including the malformed setup turn; one additional
+local rejection made no model request. Corrected turn: 0.00206221 USD.

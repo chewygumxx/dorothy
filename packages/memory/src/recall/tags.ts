@@ -152,8 +152,8 @@ export function narrowerThan(index: RecallIndex, id: string): Set<string> {
                 UNION
                 SELECT b.id FROM broader b JOIN below ON b.parent = below.id
             )
-            SELECT id FROM below`,
+            SELECT id FROM below WHERE id != ?`,
         )
-        .all(id) as { id: string }[];
+        .all(id, id) as { id: string }[];
     return new Set(rows.map((row) => row.id));
 }

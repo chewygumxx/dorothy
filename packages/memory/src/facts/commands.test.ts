@@ -9,11 +9,22 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import {
+    chmod,
+    mkdir,
+    mkdtemp,
+    realpath,
+    rm,
+    writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { buildBlock } from "../contract/block.js";
+import { baselineEngine } from "../engine/baseline.js";
+import { authorOf } from "../history/commands.js";
 import type { HistoryHandle, OpenHistory } from "../memory/sidecar.js";
 import type { SyncReport } from "../projects/sync.js";
+import { indexPath, RecallIndex } from "../recall/store.js";
 import {
     formatReport,
     runFacts,
@@ -22,8 +33,9 @@ import {
     runRetireFrom,
     runRevive,
     runSync,
+    runVerify,
 } from "./commands.js";
-import type { Fact } from "./file.js";
+import { type Fact, isConfirmed } from "./file.js";
 import {
     dataRoot,
     factPath,
@@ -202,6 +214,287 @@ describe("retiring and reviving", () => {
     });
 });
 
+describe("retiring what one conversation gave, and finding none", () => {
+    it("says there is none, and fails", async () => {
+        await putFact(dataRoot(env), PERSONAL, fact("a"));
+        expect(await runRetireFrom(PHRASE, options())).toBe(1);
+        expect(out.text).toBe("");
+        expect(err.text).toBe(
+            `dorothy: no live fact came from ${PHRASE}; nothing was retired\n`,
+        );
+    });
+
+    it.each([false, true])(
+        "names completed retirements after recorder failure (partial: %s)",
+        async (partial) => {
+            for (const [name, scope] of [
+                ["a", PERSONAL],
+                ["b", PROJECT],
+            ] as const) {
+                await putFact(
+                    dataRoot(env),
+                    scope,
+                    fact(name, {
+                        provenance: {
+                            origin: "external",
+                            by: "review",
+                            at: NOW.toISOString(),
+                            created: NOW.toISOString(),
+                            from: `${PHRASE}#2`,
+                        },
+                    }),
+                );
+            }
+            const directory = dirname(factPath(dataRoot(env), PROJECT, "b"));
+            if (partial) {
+                await chmod(directory, 0o500);
+            }
+            try {
+                expect(
+                    await runRetireFrom(PHRASE, {
+                        ...options(),
+                        openHistory: async (index) => ({
+                            ...((await history(index)) as HistoryHandle),
+                            recorder: async () => {
+                                throw new Error("recorder unavailable");
+                            },
+                        }),
+                    }),
+                ).toBe(1);
+            } finally {
+                await chmod(directory, 0o700);
+            }
+            expect(err.text).toContain("recorder unavailable");
+            expect(err.text).toContain(
+                partial
+                    ? "retired before it failed: personal/a\n"
+                    : "retired before it failed: personal/a, github.com/chewygumxx/dorothy/b\n",
+            );
+            expect(out.text).toBe("");
+            expect(
+                (
+                    await readFactFile(
+                        factPath(dataRoot(env), PERSONAL, "a"),
+                        "a",
+                    )
+                ).kind,
+            ).toBe("ok");
+        },
+    );
+
+    it("names the facts retired before a write failed", async () => {
+        const given = (name: string, scope: Scope) =>
+            putFact(
+                dataRoot(env),
+                scope,
+                fact(name, {
+                    provenance: {
+                        origin: "dorothy",
+                        by: "review",
+                        at: NOW.toISOString(),
+                        created: NOW.toISOString(),
+                        from: `${PHRASE}#2`,
+                    },
+                }),
+            );
+        await given("a", PERSONAL);
+        await given("b", PROJECT);
+        const project = dirname(factPath(dataRoot(env), PROJECT, "b"));
+        await chmod(project, 0o500);
+        try {
+            expect(await runRetireFrom(PHRASE, options())).toBe(1);
+        } finally {
+            await chmod(project, 0o700);
+        }
+        expect(err.text).toContain("retired before it failed: personal/a\n");
+        expect(commits).toEqual([`retire: 1 fact from ${PHRASE}`]);
+    });
+});
+
+describe("runVerify", () => {
+    const MODEL = {
+        origin: "dorothy" as const,
+        by: "dorothy" as const,
+        at: NOW.toISOString(),
+        created: NOW.toISOString(),
+    };
+    const LATER = new Date("2026-10-16T09:30:00.000Z");
+    const read = async (scope: Scope, name: string) => {
+        const found = await readFactFile(
+            factPath(dataRoot(env), scope, name),
+            name,
+        );
+        return found.kind === "ok" ? found.fact : null;
+    };
+
+    it("confirms a model's knowledge as the user's, and says so", async () => {
+        await putFact(
+            dataRoot(env),
+            PROJECT,
+            fact("uses-bun", {
+                provenance: MODEL,
+                body: "Run it with bun.\nNever with node.",
+            }),
+        );
+        const id = "k:projects/github.com/chewygumxx/dorothy/uses-bun";
+        expect(await runVerify(id, { ...options(), now: () => LATER })).toBe(0);
+        // What was confirmed, as the user now vouches for it.
+        expect(out.text).toBe(
+            [
+                "uses-bun",
+                "About uses-bun.",
+                "",
+                "  Run it with bun.",
+                "  Never with node.",
+                "",
+                `Verified ${id}: it is confirmed now.`,
+                "",
+            ].join("\n"),
+        );
+        const verified = await read(PROJECT, "uses-bun");
+        expect(verified?.foreign).toEqual({
+            verified: [{ by: "human:owner", at: LATER.toISOString() }],
+        });
+        expect(verified?.provenance).toEqual(MODEL);
+        expect(verified !== null && isConfirmed(verified)).toBe(true);
+        expect(commits).toEqual([
+            "verify: github.com/chewygumxx/dorothy/uses-bun (user)",
+        ]);
+        expect(authorOf(commits[0] as string)).toBe("user");
+    });
+
+    it("confirms knowledge a repository's file gave", async () => {
+        await putFact(
+            dataRoot(env),
+            PERSONAL,
+            fact("synced", {
+                provenance: { ...MODEL, origin: "repo", by: "repo" },
+            }),
+        );
+        expect(await runVerify("k:personal/synced", options())).toBe(0);
+        expect(out.text).toEndWith(
+            "Verified k:personal/synced: it is confirmed now.\n",
+        );
+        const verified = await read(PERSONAL, "synced");
+        expect(verified !== null && isConfirmed(verified)).toBe(true);
+    });
+
+    it("keeps verifications another hand made", async () => {
+        await putFact(
+            dataRoot(env),
+            PERSONAL,
+            fact("likes-tea", {
+                provenance: MODEL,
+                foreign: { verified: [{ by: "agent:x", at: "then" }] },
+            }),
+        );
+        expect(await runVerify("k:personal/likes-tea", options())).toBe(0);
+        expect((await read(PERSONAL, "likes-tea"))?.foreign).toEqual({
+            verified: [
+                { by: "agent:x", at: "then" },
+                { by: "human:owner", at: NOW.toISOString() },
+            ],
+        });
+    });
+
+    it("changes nothing on confirmed knowledge, and says why", async () => {
+        const root = dataRoot(env);
+        await putFact(root, PERSONAL, fact("mine"));
+        await putFact(
+            root,
+            PERSONAL,
+            fact("checked", {
+                provenance: MODEL,
+                foreign: {
+                    verified: [{ by: "human:owner", at: NOW.toISOString() }],
+                },
+            }),
+        );
+        await putFact(
+            root,
+            PERSONAL,
+            fact("vouched", {
+                provenance: MODEL,
+                foreign: {
+                    verified: [{ by: "human:alice", at: NOW.toISOString() }],
+                },
+            }),
+        );
+        const names = ["mine", "checked", "vouched"];
+        const before = await Promise.all(
+            names.map((name) =>
+                Bun.file(factPath(root, PERSONAL, name)).text(),
+            ),
+        );
+        for (const name of names) {
+            expect(await runVerify(`k:personal/${name}`, options())).toBe(0);
+        }
+        expect(out.text).toBe(
+            [
+                "k:personal/mine is confirmed already: it is yours.",
+                "k:personal/checked is confirmed already: you verified it.",
+                "k:personal/vouched is confirmed already: human:alice verified it.",
+                "",
+            ].join("\n"),
+        );
+        const after = await Promise.all(
+            names.map((name) =>
+                Bun.file(factPath(root, PERSONAL, name)).text(),
+            ),
+        );
+        expect(after).toEqual(before);
+        expect(commits).toEqual([]);
+    });
+
+    it("refuses an unknown id, and one that is no knowledge's", async () => {
+        expect(await runVerify("k:personal/nothing", options())).toBe(1);
+        expect(err.text).toBe(
+            "dorothy: there is no knowledge k:personal/nothing\n",
+        );
+        for (const id of ["personal/likes-tea", `c:${PHRASE}`, "k:x"]) {
+            expect(await runVerify(id, options())).toBe(1);
+            expect(err.text).toEndWith(
+                `dorothy: ${id} is no knowledge's id; give k:personal/<name> or k:projects/<project id>/<name>\n`,
+            );
+        }
+        expect(commits).toEqual([]);
+    });
+
+    it("shows the piece as confirmed in the next block", async () => {
+        await putFact(
+            dataRoot(env),
+            PERSONAL,
+            fact("likes-tea", { provenance: MODEL }),
+        );
+        const block = async () => {
+            const index = RecallIndex.open(indexPath(env));
+            try {
+                const engine = baselineEngine({
+                    env,
+                    index,
+                    halfLifeDays: 30,
+                    reviewer: null,
+                });
+                return (
+                    await buildBlock({ project: null, budget: 10_000 }, engine)
+                ).text;
+            } finally {
+                index.close();
+            }
+        };
+        const fenced = await block();
+        expect(fenced.indexOf("<unconfirmed-knowledge>")).toBeLessThan(
+            fenced.indexOf("k:personal/likes-tea"),
+        );
+        expect(await runVerify("k:personal/likes-tea", options())).toBe(0);
+        const confirmed = await block();
+        expect(confirmed).not.toContain("<unconfirmed-knowledge>");
+        expect(confirmed).toContain(
+            '<knowledge scope="personal">\n- likes-tea (k:personal/likes-tea)',
+        );
+    });
+});
+
 describe("runSync and runProjects", () => {
     it("syncs the repository the working directory is in, and lists it", async () => {
         const repo = join(dir, "repo");
@@ -229,6 +522,13 @@ describe("runSync and runProjects", () => {
         );
     });
 
+    it("says when the path is a file, not a directory", async () => {
+        const file = join(dir, "notes.md");
+        await writeFile(file, "x\n");
+        expect(await runSync(file, { ...options(), cwd: dir })).toBe(1);
+        expect(err.text).toBe(`dorothy: ${file} is not a directory\n`);
+    });
+
     it("says when the path is in no repository", async () => {
         expect(await runSync(null, { ...options(), cwd: dir })).toBe(1);
         expect(err.text).toBe(`dorothy: ${dir} is not in a git repository\n`);
@@ -252,6 +552,7 @@ describe("formatReport", () => {
         project: { root: "/r", id: "github.com/o/r", name: "r" },
         memoryDir: ".agents/memory",
         imported: ["a", "b"],
+        renamed: [],
         exported: ["c"],
         removed: [],
         retired: ["d"],
@@ -273,6 +574,33 @@ describe("formatReport", () => {
                 "skipped: x (it has no frontmatter)",
                 "MEMORY.md left as it is: it holds lines sync did not write",
                 "MEMORY.md leaves out 2 facts, past what Claude Code loads",
+                "",
+            ].join("\n"),
+        );
+    });
+
+    it("names the facts that files in snake case became, and an unrecorded sync", () => {
+        const text = formatReport({
+            ...report,
+            imported: ["feedback-testing"],
+            renamed: [
+                { file: "feedback_testing.md", name: "feedback-testing" },
+            ],
+            exported: [],
+            retired: [],
+            conflicts: [],
+            skipped: [],
+            omitted: 0,
+            index: "written",
+            indexReason: undefined,
+            unrecorded: "history is busy",
+        });
+        expect(text).toBe(
+            [
+                "github.com/o/r: 1 in, 0 out (.agents/memory)",
+                "imported: feedback-testing",
+                "named: feedback_testing.md as the fact feedback-testing",
+                "history was not told of this, and will find it next time: history is busy",
                 "",
             ].join("\n"),
         );

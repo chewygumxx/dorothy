@@ -156,6 +156,56 @@ describe("compact", () => {
         });
     });
 
+    it("compacts after the earlier clusters, which it shows for context", async () => {
+        const { call, requests } = answering({
+            ok: true,
+            output: { clusters: [{ through: 4, abstract: "The middle." }] },
+            model: "claude-test",
+            costUsd: 0.1,
+        });
+        const outcome = await compact({
+            turns: [...turns, ...turns.slice(0, 2)],
+            clusters: [
+                {
+                    from: 1,
+                    through: 2,
+                    abstract: "The start.",
+                    at: NOW.toISOString(),
+                    model: "claude-test",
+                },
+            ],
+            tail: 2,
+            persona: "P",
+            recollect: true,
+            call,
+            now: () => NOW,
+        });
+        expect(outcome.kind === "compacted" && outcome.range).toEqual({
+            from: 3,
+            through: 4,
+        });
+        expect(
+            outcome.kind === "compacted" && outcome.clusters[0],
+        ).toMatchObject({ from: 3, through: 4, abstract: "The middle." });
+        const prompt = requests[0]?.prompt ?? "";
+        expect(prompt).toContain(
+            '<cluster n="1" turns="1-2">The start.</cluster>',
+        );
+        expect(prompt).toContain('<turn n="3">');
+        expect(prompt).toContain('<turn n="4">');
+        expect(prompt).not.toContain('<turn n="2">');
+        expect(prompt).not.toContain('<turn n="5">');
+        expect(requests[0]?.schema).toMatchObject({
+            properties: {
+                clusters: {
+                    items: {
+                        properties: { through: { minimum: 3, maximum: 4 } },
+                    },
+                },
+            },
+        });
+    });
+
     it("passes the signal on", async () => {
         const controller = new AbortController();
         const { call, requests } = answering({

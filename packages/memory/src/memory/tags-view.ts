@@ -9,8 +9,10 @@
 //
 
 import { viewLines, wrap } from "./edit-view.js";
+import { localDay as day } from "./list.js";
 import { normalise } from "./sidecar.js";
 import {
+    byLabel,
     type Concept,
     isConcept,
     isDeleted,
@@ -63,7 +65,6 @@ export function renderTagsTree(
 
 const FIELD = /^(Concept|Tag|Also|Under|Merge|Note):(.*)$/;
 const UNKNOWN = /^([A-Z][A-Za-z-]*):/;
-const day = (at: string) => at.slice(0, 10);
 const list = (labels: readonly string[]) => labels.join("; ");
 const listOf = (text: string) =>
     text
@@ -357,7 +358,7 @@ function changeOf(
     }
     if (
         under !== undefined &&
-        list(under) !== list(parentLabels(shown, concept))
+        list([...under].sort(byLabel)) !== list(parentLabels(shown, concept))
     ) {
         change.under = under;
     }

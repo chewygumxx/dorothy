@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-code-review/bodies.probe.txt
+#
+
+// SPDX-License-Identifier: GPL-3.0-only
+// Temporary review fixtures, no real user data or model calls.
+import {mkdtemp, mkdir, writeFile, readFile, rm} from "node:fs/promises";
+import {join} from "node:path";
+const repo = "/home/chewygumxx/dev/_worktree/dorothy/codex-code-review";
+const {readLines} = await import(`${repo}/packages/memory/src/bodies/claude-code.ts`);
+const {noteLaunch, noteSession, readLaunch} = await import(`${repo}/packages/memory/src/bodies/launches.ts`);
+const {runClaudeHook} = await import(`${repo}/packages/memory/src/bodies/hook.ts`);
+const {halts, startNotices} = await import(`${repo}/packages/memory/src/bodies/unread.ts`);
+const at = "2026-10-19T00:00:00.000Z";
+const session = "11111111-1111-4111-8111-111111111111";
+const launch = "22222222-2222-4222-8222-222222222222";
+const bad = {type:"user",uuid:"bad-user",timestamp:at,sessionId:session,message:{content:[{type:"text",text:{unexpected:"new format"}}]}};
+const good = {type:"assistant",uuid:"good-assistant",timestamp:at,sessionId:session,message:{model:"fixture",content:[{type:"text",text:"Hello"}]}};
+const parsed = readLines([JSON.stringify(bad),JSON.stringify(good)]);
+console.log("malformed-user", {events: parsed.events.map(event=>event.uuid), halt: parsed.halt});
+const root = await mkdtemp("/tmp/dorothy-review-bodies-");
+const env = {HOME:root,XDG_DATA_HOME:join(root,"data"),XDG_CACHE_HOME:join(root,"cache"),XDG_STATE_HOME:join(root,"state"),XDG_CONFIG_HOME:join(root,"config"),XDG_RUNTIME_DIR:join(root,"runtime")};
+await mkdir(join(root,"config","dorothy"),{recursive:true});
+await writeFile(join(root,"config","dorothy","config.toml"),"[history]\nenabled = false\n");
+await mkdir(join(root,"cache"),{recursive:true});
+await writeFile(join(root,"cache","dorothy"),"blocks cache directory");
+const transcript = join(root,"session.jsonl");
+await writeFile(transcript,JSON.stringify(good)+"\n");
+await noteLaunch(env,{launch,pid:process.pid,started:at,dir:root,session,claude:join(root,"claude")});
+await noteSession(env,launch,{session,transcript,cwd:root,seen:at,ended:true});
+const status = await runClaudeHook({kind:"catch-up",launch,session:null},{env,call:async()=>{throw new Error("unexpected model");},persona:"fixture",self:[]});
+console.log("failed-catchup",{status,launchRemains:(await readLaunch(env,launch))!==null,halts:(await halts(env)).length,notices:await startNotices(env)});
+await rm(root,{recursive:true,force:true});

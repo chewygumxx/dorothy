@@ -153,6 +153,14 @@ function sideways(input: string, key: Key, current: Draft): Draft | null {
     return null;
 }
 
+// A terminal's answer to the kitty keyboard query, `CSI ? flags u`, with
+// its escape byte or, once Ink has split that off, without. Ink stops
+// listening for it after 200 ms, and a terminal that answers later, as
+// herdr's does, would otherwise have it typed into the draft. With the
+// escape byte optional, a literal `[?1u` typed or pasted is dropped too.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching it is the point.
+const KITTY_REPLY = /\u001B?\[\?\d+u/g;
+
 // Text typed, as no key the editor acts on.
 const isText = (input: string, key: Key) =>
     !key.meta && !key.escape && !key.tab && input !== "";
@@ -292,7 +300,11 @@ export function Input({
         }
     };
 
-    useInput((input, key) => {
+    useInput((raw, key) => {
+        const input = raw.replace(KITTY_REPLY, "");
+        if (raw !== "" && input === "") {
+            return;
+        }
         const moved = moveFor(input, key, latest.current);
         if (key.return) {
             enter(key.shift);

@@ -20,7 +20,9 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { describeLookup } from "@dorothy/core";
+import { type Lock, writeAtomic } from "./memory/sidecar.js";
 import {
+    cutTornTail,
     parseTranscript,
     readTranscript,
     sourceOf,
@@ -31,6 +33,47 @@ import {
     transcriptDir,
     transcriptPath,
 } from "./transcript.js";
+
+it("serialises appends with a restore under the shared write lock", async () => {
+    const folder = await mkdtemp(join(tmpdir(), "dorothy-append-restore-"));
+    const path = join(folder, "conversation.jsonl");
+    let queue = Promise.resolve<unknown>(undefined);
+    const lock: Lock = (work) => {
+        const next = queue.then(work);
+        queue = next.catch(() => {});
+        return next;
+    };
+    const writer = await TranscriptWriter.open(
+        path,
+        () => new Date("2026-10-08T00:00:00Z"),
+        lock,
+    );
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const restoring = lock(async () => {
+        entered.resolve();
+        await release.promise;
+        await writeAtomic(path, '{"v":1,"kind":"user","text":"restored"}\n');
+    });
+    await entered.promise;
+    let appended = false;
+    let turns: string[] = [];
+    const writing = writer.append({ kind: "user", text: "after" }).then(() => {
+        appended = true;
+    });
+    try {
+        await Bun.sleep(20);
+        expect(appended).toBe(false);
+    } finally {
+        release.resolve();
+        await restoring;
+        await writing;
+        await writer.close();
+        turns = (await readTranscript(path)).turns.map((turn) => turn.text);
+        await rm(folder, { recursive: true, force: true });
+    }
+    expect(turns).toEqual(["restored", "after"]);
+});
 
 const AT = new Date("2026-10-03T00:00:00.000Z");
 const clock = () => AT;
@@ -421,6 +464,127 @@ describe("TranscriptWriter.flushed", () => {
     });
 });
 
+describe("cutTornTail", () => {
+    const cut = async (text: string | null) => {
+        const path = join(dir, "chat.jsonl");
+        if (text !== null) {
+            await writeFile(path, text);
+        }
+        const cutOff = await cutTornTail(path);
+        return {
+            cutOff,
+            left: text === null ? null : await readFile(path, "utf8"),
+        };
+    };
+
+    it("cuts back to the last whole line", async () => {
+        expect(await cut('{"a":1}\n{"b":2}\n{"c"')).toEqual({
+            cutOff: true,
+            left: '{"a":1}\n{"b":2}\n',
+        });
+    });
+
+    it("cuts a tail that parses but was not ended", async () => {
+        expect(await cut('{"a":1}\n{"b":2}')).toEqual({
+            cutOff: true,
+            left: '{"a":1}\n',
+        });
+    });
+
+    it("cuts a tail longer than it reads at once, and a file of one", async () => {
+        const long = "x".repeat(200 * 1024);
+        expect(await cut(`{"a":1}\n${long}`)).toEqual({
+            cutOff: true,
+            left: '{"a":1}\n',
+        });
+        expect(await cut(long)).toEqual({ cutOff: true, left: "" });
+    });
+
+    it("leaves a whole file, an empty one and a missing one", async () => {
+        expect(await cut('{"a":1}\n')).toEqual({
+            cutOff: false,
+            left: '{"a":1}\n',
+        });
+        expect(await cut("")).toEqual({ cutOff: false, left: "" });
+        expect(await cut(null)).toEqual({ cutOff: false, left: null });
+    });
+
+    it("counts a multibyte character by its bytes", async () => {
+        expect(await cut('{"a":"é"}\n{"b":"é')).toEqual({
+            cutOff: true,
+            left: '{"a":"é"}\n',
+        });
+    });
+});
+
+describe("remember events", () => {
+    const line = (fields: object) =>
+        JSON.stringify({ v: 1, at: "2026-10-03T00:00:00.000Z", ...fields });
+    const user = line({ kind: "user", text: "keep this" });
+    const reply = line({
+        kind: "assistant",
+        text: "Noted.\n\nDone.",
+        interrupted: false,
+    });
+    const remembered = (fields: object = {}) =>
+        line({
+            kind: "tool",
+            name: "mcp__memory__remember",
+            input: '{"action":"write","name":"tea"}',
+            output: '{"action":"written","id":"personal/tea"}',
+            ok: true,
+            cut: { input: 0, output: 0 },
+            memory: true,
+            offset: 7,
+            ...fields,
+        });
+
+    it("gives the reply that follows them their remembers", () => {
+        const read = parseTranscript([user, remembered(), reply].join("\n"));
+        expect(read.skipped).toBe(0);
+        expect(read.turns[1]?.remembers).toEqual([
+            {
+                ok: true,
+                offset: 7,
+                input: { action: "write", name: "tea" },
+                output: '{"action":"written","id":"personal/tea"}',
+            },
+        ]);
+        expect(read.turns[0]?.remembers).toBeUndefined();
+    });
+
+    it("drops remembers whose reply never came", () => {
+        const read = parseTranscript(
+            [user, remembered(), user, reply].join("\n"),
+        );
+        expect(read.turns[2]?.remembers).toBeUndefined();
+    });
+
+    it("leaves out a remember that cannot be placed or is not hers", () => {
+        const read = parseTranscript(
+            [
+                user,
+                remembered({ offset: undefined }),
+                remembered({ offset: -1 }),
+                remembered({ memory: undefined }),
+                remembered({ name: "mcp__memory__search" }),
+                reply,
+            ].join("\n"),
+        );
+        expect(read.skipped).toBe(0);
+        expect(read.turns[1]?.remembers).toBeUndefined();
+    });
+
+    it("keeps a remember whose input was cut short", () => {
+        const read = parseTranscript(
+            [user, remembered({ input: '{"action":"wri' }), reply].join("\n"),
+        );
+        expect(read.turns[1]?.remembers).toEqual([
+            expect.objectContaining({ input: {}, offset: 7 }),
+        ]);
+    });
+});
+
 describe("recall events", () => {
     const line = (fields: object) =>
         JSON.stringify({ v: 1, at: "2026-10-03T00:00:00.000Z", ...fields });
@@ -475,6 +639,27 @@ describe("recall events", () => {
         const read = parseTranscript([user, broken, reply].join("\n"));
         expect(read.skipped).toBe(1);
         expect(read.turns[1]?.lookups).toBeUndefined();
+    });
+
+    it("keeps a search event from before tags unchanged", () => {
+        const old = {
+            v: 1,
+            at: "2026-10-03T00:00:00.000Z",
+            kind: "recall",
+            id: "toolu_legacy",
+            ok: true,
+            offset: 0,
+            tool: "search",
+            query: "render",
+            hits: 2,
+        } as const;
+        expect(toRecall(old)).toEqual(old);
+        const read = parseTranscript(
+            [user, JSON.stringify(old), reply].join("\n"),
+        );
+        expect(read.skipped).toBe(0);
+        expect(read.turns[1]?.lookups).toEqual([old]);
+        expect(read.turns[1]?.lookups?.[0]).not.toHaveProperty("tags");
     });
 
     it("reads both kinds of lookup", () => {

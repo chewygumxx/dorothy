@@ -8,8 +8,10 @@
 //
 //
 
+import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
+    existsSync,
     mkdirSync,
     mkdtempSync,
     rmSync,
@@ -23,8 +25,20 @@ import { type Config, DEFAULT_CONFIG, type Env } from "@dorothy/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { userLine } from "../bodies/fixtures.js";
+import { hookLogPath } from "../bodies/log.js";
+import { dataRoot } from "../facts/store.js";
 import { loadProfiles } from "../hosts/profiles.js";
-import { MAX_BODY, type RunningService, startService } from "./service.js";
+import { type Entry, indexCatalogue } from "../memory/catalogue.js";
+import { isStale } from "../memory/service.js";
+import { vocabularyPath } from "../memory/vocabulary.js";
+import { indexPath, RecallIndex, SCHEMA_VERSION } from "../recall/store.js";
+import { transcriptDir } from "../transcript.js";
+import {
+    MAX_BODY,
+    type RunningService,
+    type ServiceOptions,
+    startService,
+} from "./service.js";
 import { type TokenStore, tokenStore } from "./tokens.js";
 
 const AT = "2026-10-18T09:30:00.000Z";
@@ -61,7 +75,11 @@ afterEach(async () => {
     rmSync(home, { recursive: true, force: true });
 });
 
-const start = async (remote = false, settings: Config = config) => {
+const start = async (
+    remote = false,
+    settings: Config = config,
+    extra: Partial<ServiceOptions> = {},
+) => {
     running = await startService({
         env,
         config: settings,
@@ -74,6 +92,7 @@ const start = async (remote = false, settings: Config = config) => {
         warn: (message) => warned.push(message),
         claudeDir: claude,
         maxTranscript: 4096,
+        ...extra,
     });
     return running;
 };
@@ -101,6 +120,63 @@ describe("the memory service", () => {
         expect(ok.status).toBe(200);
     });
 
+    it("refuses a wrong, revoked or malformed token from beyond loopback", async () => {
+        await start(true);
+        const body = { host: "codex", session: "s", reason: "startup" };
+        const status = async (authorization: string) =>
+            (await post("/v1/block", body, { authorization })).status;
+        expect(await status(`Bearer ${token}`)).toBe(200);
+        expect(await status(`Bearer ${token}x`)).toBe(401);
+        expect(await status(`Bearer ${"a".repeat(token.length)}`)).toBe(401);
+        expect(await status("Bearer ")).toBe(401);
+        expect(await status(token)).toBe(401);
+        expect(await status(`bearer ${token}`)).toBe(401);
+        await tokens.revoke("laptop");
+        expect(await status(`Bearer ${token}`)).toBe(401);
+    });
+
+    it("judges loopback by the socket's peer, as the service is run", async () => {
+        // No override: the address of a real connection decides.
+        running = await startService({
+            env,
+            config,
+            profiles: await loadProfiles(),
+            tokens,
+            review: null,
+            port: 0,
+            listen: [],
+            warn: (message) => warned.push(message),
+        });
+        const response = await post("/v1/block", {
+            host: "codex",
+            session: "s",
+            reason: "startup",
+        });
+        expect(response.status).toBe(200);
+    });
+
+    it("answers a POST to a name it does not answer to with 421", async () => {
+        await start();
+        const response = await post(
+            "/v1/record",
+            {
+                host: "codex",
+                session: "s1",
+                events: [{ sourceId: "a", at: AT, kind: "user", text: "Hi" }],
+            },
+            { host: "evil.example" },
+        );
+        expect(response.status).toBe(421);
+        // Nothing was recorded.
+        const block = await post("/v1/block", {
+            host: "codex",
+            session: "s2",
+            reason: "startup",
+        });
+        expect((await block.json()).items).toEqual([]);
+        expect(existsSync(transcriptDir(env))).toBe(false);
+    });
+
     it("refuses a transcript path from beyond loopback, token or not", async () => {
         await start(true);
         const response = await post(
@@ -109,6 +185,24 @@ describe("the memory service", () => {
             { authorization: `Bearer ${token}` },
         );
         expect(response.status).toBe(403);
+    });
+
+    it("says to restart it once a newer Dorothy has rebuilt the index", async () => {
+        await start();
+        // As a newer Dorothy's first open does: its own schema, in place.
+        const newer = new Database(indexPath(env));
+        newer.run("DROP TABLE conversations");
+        newer.run(`PRAGMA user_version = ${SCHEMA_VERSION + 1}`);
+        newer.close();
+        const record = {
+            host: "codex",
+            session: "s1",
+            events: [{ sourceId: "a", at: AT, kind: "user", text: "Hi" }],
+        };
+        expect((await post("/v1/record", record)).status).toBe(500);
+        expect((await post("/v1/record", record)).status).toBe(500);
+        const said = `the recall index is schema ${SCHEMA_VERSION + 1}, newer than this service knows (${SCHEMA_VERSION}): a newer Dorothy is installed; stop this service and start it again (dorothy --serve)`;
+        expect(warned.filter((message) => message === said)).toHaveLength(1);
     });
 
     it("names a host with no profile", async () => {
@@ -134,26 +228,37 @@ describe("the memory service", () => {
         expect((await fetch(`${running?.url}/v1/health`)).status).toBe(200);
     });
 
-    it("bounds a body that declares no length", async () => {
+    it("bounds a body that declares no length, on every route", async () => {
         await start();
-        const chunk = new TextEncoder().encode("x".repeat(1024 * 1024));
-        let sent = 0;
-        const body = new ReadableStream<Uint8Array>({
-            pull(controller) {
-                if (sent++ < 9) {
-                    controller.enqueue(chunk);
-                } else {
-                    controller.close();
-                }
-            },
-        });
-        const large = await fetch(`${running?.url}/v1/block`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body,
-            duplex: "half",
-        } as RequestInit);
-        expect(large.status).toBe(413);
+        for (const path of ["/v1/block", "/mcp"]) {
+            const chunk = new TextEncoder().encode("x".repeat(1024 * 1024));
+            let sent = 0;
+            const body = new ReadableStream<Uint8Array>({
+                pull(controller) {
+                    if (sent++ < 9) {
+                        controller.enqueue(chunk);
+                    } else {
+                        controller.close();
+                    }
+                },
+            });
+            const large = await fetch(`${running?.url}${path}`, {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                    accept: "application/json, text/event-stream",
+                },
+                body,
+                duplex: "half",
+            } as RequestInit);
+            expect({ path, status: large.status }).toEqual({
+                path,
+                status: 413,
+            });
+            expect(await large.json()).toEqual({
+                error: "the body is over 8 MiB",
+            });
+        }
         expect((await fetch(`${running?.url}/v1/health`)).status).toBe(200);
     });
 
@@ -221,6 +326,102 @@ describe("the memory service", () => {
         );
     });
 
+    it("does no history work when its port is taken", async () => {
+        const first = await start();
+        const second = mkdtempSync(join(tmpdir(), "dorothy-service-"));
+        try {
+            const other = {
+                HOME: second,
+                XDG_DATA_HOME: join(second, "data"),
+                XDG_CACHE_HOME: join(second, "cache"),
+                XDG_STATE_HOME: join(second, "state"),
+                XDG_CONFIG_HOME: join(second, "config"),
+            };
+            await expect(
+                startService({
+                    env: other,
+                    config: DEFAULT_CONFIG,
+                    profiles: await loadProfiles(),
+                    tokens,
+                    review: null,
+                    port: first.ports[0] as number,
+                    listen: [],
+                    warn: () => {},
+                }),
+            ).rejects.toThrow();
+            // Not even the data directory was made, let alone a repository.
+            expect(existsSync(join(second, "data"))).toBe(false);
+            expect(existsSync(join(second, "cache"))).toBe(false);
+        } finally {
+            rmSync(second, { recursive: true, force: true });
+        }
+    });
+
+    it("quotes a host's version in its warning, and remembers few", async () => {
+        await start();
+        const block = (hostVersion: string) =>
+            post("/v1/block", {
+                host: "codex",
+                hostVersion,
+                session: `s-${hostVersion}`,
+                reason: "startup",
+            });
+        await block("9.9\nwarn: forged");
+        expect(warned).toEqual([
+            'codex "9.9\\nwarn: forged" is not a version its profile was checked against',
+        ]);
+        warned.length = 0;
+        // Said once while recent; many others push it out of the memory.
+        await block("1.0.0");
+        await block("1.0.0");
+        expect(warned).toHaveLength(1);
+        for (let at = 0; at < 130; at++) {
+            await block(`2.${at}`);
+        }
+        warned.length = 0;
+        await block("1.0.0");
+        expect(warned).toHaveLength(1);
+    });
+
+    it("leaves nothing bound when its start fails", async () => {
+        const probe = Bun.serve({
+            port: 0,
+            hostname: "127.0.0.1",
+            fetch: () => new Response("x"),
+        });
+        const port = probe.port as number;
+        probe.stop(true);
+        const failing: Config = {
+            ...config,
+            service: {
+                ...config.service,
+                get claudeDirs(): string[] {
+                    throw new Error("injected failure");
+                },
+            },
+        };
+        await expect(
+            startService({
+                env,
+                config: failing,
+                profiles: await loadProfiles(),
+                tokens,
+                review: null,
+                port,
+                listen: [],
+                warn: () => {},
+            }),
+        ).rejects.toThrow("injected failure");
+        // The port is free again, so no request waits on a service that
+        // will never be ready.
+        const again = Bun.serve({
+            port,
+            hostname: "127.0.0.1",
+            fetch: () => new Response("x"),
+        });
+        again.stop(true);
+    });
+
     it("recalls for a prompt", async () => {
         await start();
         const response = await post("/v1/recall", {
@@ -255,6 +456,69 @@ describe("the memory service", () => {
         });
         expect(block.status).toBe(200);
         expect((await block.json()).digest).toMatch(/^xxh3:/);
+    });
+
+    describe("with reviews off", () => {
+        const eager: Config = {
+            ...config,
+            memory: { ...config.memory, idleSeconds: 0 },
+        };
+        const sleep = (ms: number) =>
+            new Promise((resolve) => setTimeout(resolve, ms));
+
+        it("writes why to its log, which a detached service has", async () => {
+            await start(false, config, { noReviews: "no key was found" });
+            const log = await Bun.file(hookLogPath(env)).text();
+            expect(log).toMatch(
+                / warn \d+ reviews are off: no key was found\n/,
+            );
+        });
+
+        it("leaves the conversation stale for her chat's catch-up", async () => {
+            const service = await start(false, eager, { tickMs: 10 });
+            await post("/v1/record", {
+                host: "codex",
+                session: "s1",
+                events: [{ sourceId: "a", at: AT, kind: "user", text: "Tea?" }],
+            });
+            for (let tries = 0; service.waiting() > 0 && tries < 100; tries++) {
+                await sleep(10);
+            }
+            // Dropped from the idle list unreviewed, it has no notes; the
+            // catalogue her chat's launch reads finds it, and the catch-up
+            // takes the stale ones, most recent first.
+            const index = RecallIndex.open(indexPath(env));
+            try {
+                const { entries } = await indexCatalogue(
+                    index,
+                    transcriptDir(env),
+                    vocabularyPath(env),
+                    dataRoot(env),
+                ).load();
+                expect(entries).toHaveLength(1);
+                expect(entries[0]?.sidecar.kind).toBe("none");
+                expect(isStale(entries[0] as Entry, Date.now(), false)).toBe(
+                    true,
+                );
+            } finally {
+                index.close();
+            }
+        });
+
+        it("lets an idle conversation go, as with reviews on", async () => {
+            const service = await start(false, eager, { tickMs: 10 });
+            const sent = await post("/v1/record", {
+                host: "codex",
+                session: "s1",
+                events: [{ sourceId: "a", at: AT, kind: "user", text: "Tea?" }],
+            });
+            expect(sent.status).toBe(200);
+            for (let tries = 0; service.waiting() > 0 && tries < 100; tries++) {
+                await sleep(10);
+            }
+            expect(service.waiting()).toBe(0);
+            expect(warned).toEqual([]);
+        });
     });
 
     it("serves the four tools over MCP", async () => {

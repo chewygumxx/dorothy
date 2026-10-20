@@ -394,6 +394,27 @@ describe("bun run eval -- compare", () => {
         }
     });
 
+    it("warns when one id stands for two definitions", async () => {
+        const ids = { q1: "a1", q2: "b1", q3: "c1" };
+        write("r1", { definitions: ids });
+        write("r2", { definitions: { ...ids, q2: "b2" } });
+        write("r3", { definitions: { ...ids } });
+        // A run that kept none is held to its ids.
+        write("r4");
+        for (const id of ["r1", "r2", "r3", "r4"]) {
+            await writeRunReport(temp.root, id);
+        }
+        for (const [other, warned] of [
+            ["r2", true],
+            ["r3", false],
+            ["r4", false],
+        ] as const) {
+            const { io, err } = fakeIo();
+            await runCli(["compare", "--work", temp.root, "r1", other], io);
+            expect(err.join("") !== "").toBe(warned);
+        }
+    });
+
     it("passes over a torn last line, as a resume does", async () => {
         write("r1");
         appendFileSync(

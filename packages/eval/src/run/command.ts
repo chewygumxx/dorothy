@@ -139,7 +139,7 @@ export const runCommand: Command = {
                       new Date(),
                   );
         if (resume !== null) {
-            checkResumable(info, config, snapshot);
+            checkResumable(info, config, snapshot, accepted);
         }
         if (values["dry-run"] === true) {
             const asked = new Set(info.questionIds);

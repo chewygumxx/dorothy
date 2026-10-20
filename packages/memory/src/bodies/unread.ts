@@ -16,10 +16,9 @@
 // line. Beside them, the notices a hook leaves for the next start, which
 // it cannot tell itself.
 
+import { createHash } from "node:crypto";
 import {
     appendFile,
-    chmod,
-    mkdir,
     readdir,
     readFile,
     rename,
@@ -27,8 +26,9 @@ import {
     writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
-import { type Env, isUuid, xdgDir } from "@dorothy/core";
+import { type Env, isUuid } from "@dorothy/core";
 import { hookLogPath, logHasErrors } from "./log.js";
+import { beside, privateDir, stateDir, writePrivate } from "./state.js";
 
 export type UnreadRecord = {
     v: 1;
@@ -50,8 +50,6 @@ export type UnreadRecord = {
 
 const codeOf = (error: unknown) => (error as { code?: unknown }).code;
 
-export const stateDir = (env: Env) =>
-    join(xdgDir(env, "XDG_STATE_HOME", ".local/state"), "dorothy");
 export const unreadDir = (env: Env) => join(stateDir(env), "unread");
 const typesDir = (env: Env) => join(unreadDir(env), "types");
 const noticesPath = (env: Env) => join(stateDir(env), "notices.jsonl");
@@ -66,17 +64,6 @@ export const copyPath = (env: Env, session: string) =>
     sessionFile(env, session, ".jsonl");
 const recordPath = (env: Env, session: string) =>
     sessionFile(env, session, ".json");
-
-async function privateDir(path: string): Promise<void> {
-    await mkdir(path, { recursive: true, mode: 0o700 });
-    await chmod(path, 0o700);
-}
-
-async function writePrivate(path: string, text: string): Promise<void> {
-    const making = `${path}.${process.pid}.tmp`;
-    await writeFile(making, text, { mode: 0o600 });
-    await rename(making, path);
-}
 
 async function list(dir: string): Promise<string[]> {
     try {
@@ -123,23 +110,38 @@ export async function keepHalt(
     return copy;
 }
 
+// A type's file name: the type itself where that is a plain name, else
+// its characters made plain and a hash of the whole, so two types never
+// share a file.
+function typeFile(type: string): string {
+    const plain = type.replaceAll(/[^A-Za-z0-9_-]/g, "_");
+    if (plain === type && type !== "" && type.length <= 64) {
+        return type;
+    }
+    const hash = createHash("sha256").update(type).digest("hex").slice(0, 8);
+    return `${plain.slice(0, 48) || "_"}-${hash}`;
+}
+
 // A line of a type the reader does not know: the first example of each.
+// Whether this one was it.
 export async function keepNewType(
     env: Env,
     type: string,
     line: string,
-): Promise<void> {
-    const name = type.replaceAll(/[^A-Za-z0-9_-]/g, "_").slice(0, 64) || "_";
+): Promise<boolean> {
     await privateDir(typesDir(env));
     try {
-        await writeFile(join(typesDir(env), `${name}.jsonl`), `${line}\n`, {
-            mode: 0o600,
-            flag: "wx",
-        });
+        await writeFile(
+            join(typesDir(env), `${typeFile(type)}.jsonl`),
+            `${line}\n`,
+            { mode: 0o600, flag: "wx" },
+        );
+        return true;
     } catch (error) {
         if (codeOf(error) !== "EEXIST") {
             throw error;
         }
+        return false;
     }
 }
 
@@ -195,38 +197,61 @@ export async function addNotice(
 const haltNotice = (env: Env, record: UnreadRecord) =>
     `memory: a Claude Code session (${record.session}) could not be read past line ${record.line} (${record.reason}); the rest is kept in ${copyPath(env, record.session)}. dorothy --claude-hook --reread tries again; --dismiss ${record.session} stops this notice`;
 
-// What to tell at a start of either body: each halt not dismissed, every
-// time; new types and hooks' notices, once.
-export async function startNotices(env: Env): Promise<string[]> {
-    const told = (await halts(env))
-        .filter((record) => record.dismissed !== true)
-        .map((record) => haltNotice(env, record));
-    const toldPath = join(unreadDir(env), "types.json");
+// The types kept and not yet told, each now marked told: by a file made
+// only if none is there, so of starts at once, one tells a type. Types
+// an earlier version told are in types.json, which is only read.
+async function untoldTypes(env: Env): Promise<string[]> {
     let known: string[] = [];
     try {
-        const read: unknown = JSON.parse(await readFile(toldPath, "utf8"));
+        const read: unknown = JSON.parse(
+            await readFile(join(unreadDir(env), "types.json"), "utf8"),
+        );
         known = Array.isArray(read)
             ? read.filter((t) => typeof t === "string")
             : [];
     } catch {
         // None told yet.
     }
-    const fresh = (await list(typesDir(env)))
+    const fresh: string[] = [];
+    for (const type of await keptTypes(env)) {
+        if (known.includes(type)) {
+            continue;
+        }
+        try {
+            await writeFile(join(typesDir(env), `${type}.told`), "", {
+                mode: 0o600,
+                flag: "wx",
+            });
+            fresh.push(type);
+        } catch (error) {
+            if (codeOf(error) !== "EEXIST") {
+                throw error;
+            }
+        }
+    }
+    return fresh;
+}
+
+const keptTypes = async (env: Env) =>
+    (await list(typesDir(env)))
         .filter((name) => name.endsWith(".jsonl"))
         .map((name) => name.slice(0, -".jsonl".length))
-        .filter((type) => !known.includes(type))
         .sort();
+
+// What to tell at a start of either body: each halt not dismissed, every
+// time; new types and hooks' notices, once.
+export async function startNotices(env: Env): Promise<string[]> {
+    const told = (await halts(env))
+        .filter((record) => record.dismissed !== true)
+        .map((record) => haltNotice(env, record));
+    const fresh = await untoldTypes(env);
     if (fresh.length > 0) {
         told.push(
             `memory: Claude Code wrote lines of a type Dorothy does not know (${fresh.join(", ")}); they were passed over, and an example of each is kept in ${typesDir(env)}`,
         );
-        await writePrivate(
-            toldPath,
-            `${JSON.stringify([...known, ...fresh].sort())}\n`,
-        );
     }
     // Taken away first, so a notice added meanwhile waits for the next.
-    const taking = `${noticesPath(env)}.${process.pid}.taking`;
+    const taking = beside(noticesPath(env), "taking");
     try {
         await rename(noticesPath(env), taking);
     } catch {
@@ -255,10 +280,7 @@ export async function unreadReport(env: Env): Promise<string[]> {
         (record) =>
             `unread: ${record.session} (${record.conversation ?? "no conversation yet"}), line ${record.line}: ${record.reason}; kept in ${copyPath(env, record.session)}${record.dismissed ? " (dismissed)" : ""}`,
     );
-    const types = (await list(typesDir(env)))
-        .filter((name) => name.endsWith(".jsonl"))
-        .map((name) => name.slice(0, -".jsonl".length))
-        .sort();
+    const types = await keptTypes(env);
     if (types.length > 0) {
         lines.push(
             `unread: new types kept in ${typesDir(env)}: ${types.join(", ")}`,

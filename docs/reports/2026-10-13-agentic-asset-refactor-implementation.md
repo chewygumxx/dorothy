@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-13
-mtime: 2026-10-13
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Agentic asset refactor implementation report
 description: >-
@@ -301,6 +301,11 @@ verification passed, none out of sync. `bun run prepare`: exit 0, its
 skills checks 16 pass.
 
 ## Known limitations
+
+The herdr pin and two remaining probes.
+Closed by the roadmap sweep: see
+[the sweep report](./2026-10-19-roadmap-sweep.md). Remaining limits
+are recorded there.
 
 - **herdr is unpinned.** A remote source, it follows its upstream's
   default branch whenever `bun run skills` fetches it; a fresh checkout,

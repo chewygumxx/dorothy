@@ -15,9 +15,9 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { type Env, readConfig } from "@dorothy/core";
 import { set } from "@dotenvx/dotenvx";
 import { unreadReport } from "../bodies/unread.js";
-import { type OpenHistory, writeAtomic } from "../memory/sidecar.js";
+import { type Lock, type OpenHistory, writeAtomic } from "../memory/sidecar.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
-import { goodVersion, putBack, RECOVERY_DEPTH, type Version } from "./heal.js";
+import { goodVersion, putBack, type Version } from "./heal.js";
 import {
     type HookCommand,
     historyRoot,
@@ -26,9 +26,10 @@ import {
     openHistory,
 } from "./history.js";
 import { fileKind, lint } from "./lint.js";
-import { Mirror, opensSealed, recover, waiting } from "./mirror.js";
+import { Mirror, recover, sealedProblem, waiting } from "./mirror.js";
 import { openRepo } from "./open.js";
 import {
+    definedEnv,
     type Engine,
     MAIN,
     type MemoryRepo,
@@ -65,51 +66,129 @@ export function entryHook(): HookCommand | null {
         : { exec: process.execPath, script: resolve(script) };
 }
 
-// For memory's commands: history under the index's lock (or its own),
+// For memory's commands: history under the combined write lock,
 // swept before the command reads anything. Null when the config turns it
 // off, or when it can't be used, which is said on err.
 export function commandHistory({
     env = process.env,
     err = process.stderr,
     hook = entryHook(),
-    // false for a short-lived process, which leaves the mirror to chat's launch.
+    // Whether to remind about a missing mirror.
     remindMirror = true,
+    pushOnClose = true,
 }: {
     env?: Env;
     err?: Output;
     hook?: HookCommand | null;
     remindMirror?: boolean;
+    // Hooks and background readers leave network work to chat.
+    pushOnClose?: boolean;
 } = {}): OpenHistory {
     return async (index) => {
         const { config } = await readConfig(env);
         if (!config.history.enabled) {
             return null;
         }
-        const warn = (message: string) => err.write(`dorothy: ${message}\n`);
-        const opened = await openHistory({
-            root: historyRoot(env),
-            index,
-            hook,
-            warn,
+        const opened = await openSwept({ env, err, hook }, index, remindMirror);
+        if (opened === null) return null;
+        return opened.history.handle(async () => {
+            try {
+                if (pushOnClose)
+                    await pushForCommand(opened.history, env, opened.tip);
+            } finally {
+                opened.close();
+            }
         });
-        if (!opened.ok) {
-            warn(opened.reason);
-            return null;
-        }
-        await opened.history.sweep();
-        if (
-            remindMirror &&
-            (await opened.history.repo.remote(MIRROR)) === null
-        ) {
-            warn(NO_MIRROR);
-        }
-        return opened.history.handle(opened.close);
     };
 }
 
-// History for one of its own commands: under the index's lock when the
-// index opens, swept first. Null, said on err, when it is off or broken.
+async function openSwept(
+    {
+        env = process.env,
+        err = process.stderr,
+        hook = entryHook(),
+        engine,
+        now,
+    }: CommandOptions,
+    index: { lock: Lock } | null,
+    remind: boolean,
+) {
+    const warn = (message: string) => err.write(`dorothy: ${message}\n`);
+    const opened = await openHistory({
+        root: historyRoot(env),
+        index,
+        hook,
+        warn,
+        ...(engine === undefined ? {} : { engine }),
+        ...(now === undefined ? {} : { now }),
+    });
+    if (!opened.ok) {
+        warn(opened.reason);
+        return null;
+    }
+    const tip = await opened.history.repo.resolve(MAIN);
+    await opened.history.sweep();
+    if (remind) await remindOfMirror(opened.history, warn);
+    return { ...opened, tip };
+}
+
+async function pushForCommand(
+    history: MemoryHistory,
+    env: Env,
+    tip: string | null,
+): Promise<void> {
+    try {
+        if ((await history.repo.resolve(MAIN)) === tip) return;
+        if ((await history.repo.remote(MIRROR)) === null) return;
+        const mirror = new Mirror({
+            repo: history.repo,
+            lock: history.lock,
+            key: () => parseKey(env.DOROTHY_MIRROR_KEY),
+            token: () => env.DOROTHY_MIRROR_TOKEN ?? null,
+            warn: (message) => history.warn(message),
+            pushMs: 0,
+        });
+        try {
+            await mirror.push();
+        } finally {
+            await mirror.stop();
+        }
+    } catch (error) {
+        history.warn(
+            `history: couldn't push command changes (${describeError(error)})`,
+        );
+    }
+}
+
+async function remindOfMirror(
+    history: MemoryHistory,
+    warn: (message: string) => unknown,
+): Promise<void> {
+    try {
+        if ((await history.repo.remote(MIRROR)) === null) warn(NO_MIRROR);
+    } catch (error) {
+        warn(`history: couldn't inspect the mirror (${describeError(error)})`);
+    }
+}
+
+// History for its own commands, swept under the combined write lock.
+// Null, said on err, when it is off or broken.
 async function session(
+    options: CommandOptions,
+    remind = true,
+    pushOnClose = true,
+) {
+    try {
+        return await openSession(options, remind, pushOnClose);
+    } catch (error) {
+        (options.err ?? process.stderr).write(
+            `dorothy: couldn't open history: ${describeError(error)}\n`,
+        );
+        return null;
+    }
+}
+
+async function openSession(
     {
         env = process.env,
         err = process.stderr,
@@ -119,7 +198,8 @@ async function session(
     }: CommandOptions,
     // Whether to remind of a missing mirror: not when one is being set.
     remind = true,
-): Promise<{ history: MemoryHistory; close(): void } | null> {
+    pushOnClose = true,
+): Promise<{ history: MemoryHistory; close(): Promise<void> } | null> {
     const { config } = await readConfig(env);
     if (!config.history.enabled) {
         err.write("dorothy: history is off in config.toml\n");
@@ -131,28 +211,31 @@ async function session(
     } catch {
         // History takes a lock of its own.
     }
-    const opened = await openHistory({
-        root: historyRoot(env),
+    const opened = await openSwept(
+        {
+            env,
+            err,
+            hook,
+            ...(engine === undefined ? {} : { engine }),
+            ...(now === undefined ? {} : { now }),
+        },
         index,
-        hook,
-        warn: (message) => err.write(`dorothy: ${message}\n`),
-        ...(engine === undefined ? {} : { engine }),
-        ...(now === undefined ? {} : { now }),
-    });
-    if (!opened.ok) {
+        remind,
+    );
+    if (opened === null) {
         index?.close();
-        err.write(`dorothy: ${opened.reason}\n`);
         return null;
-    }
-    await opened.history.sweep();
-    if (remind && (await opened.history.repo.remote(MIRROR)) === null) {
-        err.write(`dorothy: ${NO_MIRROR}\n`);
     }
     return {
         history: opened.history,
-        close: () => {
-            opened.close();
-            index?.close();
+        close: async () => {
+            try {
+                if (pushOnClose)
+                    await pushForCommand(opened.history, env, opened.tip);
+            } finally {
+                opened.close();
+                index?.close();
+            }
         },
     };
 }
@@ -160,8 +243,11 @@ async function session(
 // A path the user typed, as history names it: relative to the data
 // directory, with /. Null when it lies outside.
 function named(root: string, path: string): string | null {
-    const inside = isAbsolute(path) ? relative(root, path) : path;
-    return inside === "" || inside.startsWith("..") || isAbsolute(inside)
+    const inside = relative(root, resolve(root, path));
+    return inside === "" ||
+        inside === ".." ||
+        inside.startsWith(`..${sep}`) ||
+        isAbsolute(inside)
         ? null
         : inside.split(sep).join("/");
 }
@@ -221,8 +307,11 @@ export async function runHistory(
             );
         }
         return 0;
+    } catch (error) {
+        err.write(`dorothy: couldn't list history: ${describeError(error)}\n`);
+        return 1;
     } finally {
-        opened.close();
+        await opened.close();
     }
 }
 
@@ -273,8 +362,11 @@ export async function runRestore(
             );
             return 0;
         });
+    } catch (error) {
+        err.write(`dorothy: couldn't restore: ${describeError(error)}\n`);
+        return 1;
     } finally {
-        opened.close();
+        await opened.close();
     }
 }
 
@@ -300,11 +392,7 @@ async function versionAt(
     if (problem !== null) {
         return `${path} at ${rev} is broken too (${problem})`;
     }
-    const at =
-        (await repo.log(path, RECOVERY_DEPTH)).find(
-            (commit) => commit.sha === sha,
-        )?.at ?? "";
-    return { sha, at, bytes };
+    return { sha, at: "", bytes };
 }
 
 // Notes and tags as they were at a revision, in one commit. Transcripts
@@ -350,8 +438,11 @@ export async function runRollback(
             );
             return 0;
         });
+    } catch (error) {
+        err.write(`dorothy: couldn't rollback: ${describeError(error)}\n`);
+        return 1;
     } finally {
-        opened.close();
+        await opened.close();
     }
 }
 
@@ -457,11 +548,7 @@ async function gitIn(
 ): Promise<{ code: number; stdout: Uint8Array }> {
     const proc = Bun.spawn(["git", ...args], {
         cwd: root,
-        env: Object.fromEntries(
-            Object.entries(env).filter(
-                (entry): entry is [string, string] => entry[1] !== undefined,
-            ),
-        ),
+        env: definedEnv(env),
         stdout: "pipe",
         stderr: "ignore",
     });
@@ -531,15 +618,24 @@ export async function runCheck(
             root,
             options.engine === undefined ? {} : { engine: options.engine },
         );
-        const committed = repo.exists() && (await repo.resolve(MAIN)) !== null;
+        const { config } = await readConfig(env);
+        const committed =
+            config.history.enabled &&
+            repo.exists() &&
+            (await repo.resolve(MAIN)) !== null;
         const code = report(
             await checkTree(root, committed ? repo : null),
             out,
         );
         // What recording kept aside, and errors in its hook's log: not
-        // memory's files, so the exit code is the lint's alone.
-        for (const line of await unreadReport(env)) {
-            out.write(`${line}\n`);
+        // memory's files, so the exit code is the lint's alone, and a
+        // report that fails is said, not counted.
+        try {
+            for (const line of await unreadReport(env)) {
+                out.write(`${line}\n`);
+            }
+        } catch (error) {
+            out.write(`unread: couldn't be listed (${describeError(error)})\n`);
         }
         return code;
     } catch (error) {
@@ -552,7 +648,9 @@ export async function runCheck(
 // (other than file://) or scp-like, a colon before the first slash, as in
 // git@host:repo.git; anything else is a path.
 export const isLocal = (url: string) =>
-    url.startsWith("file://") || !(url.includes("://") || /^[^/]*:/.test(url));
+    url !== "" &&
+    (url.startsWith("file://") ||
+        !(url.includes("://") || /^[^/]*:/.test(url)));
 
 // A mirror as git is to be given it: a local path made absolute from the
 // user's directory (git runs in the data directory), with ~ expanded. Null,
@@ -565,7 +663,7 @@ function mirrorUrl(
         cwd = process.cwd(),
     }: CommandOptions,
 ): string | null {
-    if (url.startsWith("-")) {
+    if (url.trim() === "" || url.startsWith("-")) {
         err.write(`dorothy: ${url} is not a url or path\n`);
         return null;
     }
@@ -606,7 +704,7 @@ export async function runMirror(
     if (url !== null && target === null) {
         return 1;
     }
-    const opened = await session(options, false);
+    const opened = await session(options, false, false);
     if (opened === null) {
         return 1;
     }
@@ -614,6 +712,18 @@ export async function runMirror(
     const repo = history.repo;
     try {
         if (target === null) {
+            if ((await repo.remote(MIRROR)) !== null) {
+                const problem = await keyProblem(
+                    env.DOROTHY_MIRROR_KEY,
+                    repo,
+                    cwd,
+                    false,
+                );
+                if (problem !== null) {
+                    err.write(`dorothy: ${problem}\n`);
+                    return 1;
+                }
+            }
             return await showMirror(repo, out);
         }
         const existing = env.DOROTHY_MIRROR_KEY;
@@ -629,21 +739,27 @@ export async function runMirror(
                 `Your conversations will be stored at ${target}, encrypted.\n`,
             );
         }
-        const outcome = await new Mirror({
+        const mirror = new Mirror({
             repo,
             lock: history.lock,
             key: () => key,
             token: () => env.DOROTHY_MIRROR_TOKEN ?? null,
             warn: (message) => err.write(`dorothy: ${message}\n`),
             pushMs: 0,
-        }).push();
+        });
+        const outcome = await mirror.push().finally(() => mirror.stop());
         if (outcome.kind !== "pushed") {
             return 1;
         }
         out.write(`Pushed to ${target}\n`);
         return 0;
+    } catch (error) {
+        err.write(
+            `dorothy: couldn't set the mirror: ${describeError(error)}\n`,
+        );
+        return 1;
     } finally {
-        opened.close();
+        await opened.close();
     }
 }
 
@@ -671,20 +787,25 @@ async function keyProblem(
     existing: string | undefined,
     repo: MemoryRepo,
     cwd: string,
+    makingKey = true,
 ): Promise<string | null> {
+    if (existing?.startsWith("encrypted:"))
+        return "DOROTHY_MIRROR_KEY is still encrypted; load the decrypted environment before setting the mirror. Nothing was changed";
     const key = parseKey(existing);
     if (existing !== undefined && existing !== "" && key === null) {
         return "DOROTHY_MIRROR_KEY is set but is not 32 bytes of base64; it is left as it is, and no mirror is set";
     }
     if (key !== null) {
-        return (await opensSealed(repo, key))
-            ? null
-            : "DOROTHY_MIRROR_KEY does not open the bundles already sealed; set the key they were sealed with. Nothing was changed";
+        const problem = await sealedProblem(repo, key);
+        if (problem === null) return null;
+        return problem.kind === "key"
+            ? "DOROTHY_MIRROR_KEY does not open the bundles already sealed; set the key they were sealed with. Nothing was changed"
+            : `the newest sealed bundle cannot be opened (${problem.reason}); nothing was changed`;
     }
     if ((await repo.sealedNames()).length > 0) {
         return "DOROTHY_MIRROR_KEY is not set, and the bundles already sealed need the key they were sealed with; set that one with dotenvx set. Nothing was changed";
     }
-    return existsSync(join(cwd, ".env"))
+    return !makingKey || existsSync(join(cwd, ".env"))
         ? null
         : `there is no .env in ${cwd} to keep DOROTHY_MIRROR_KEY in; run --mirror from the checkout whose .env holds Dorothy's credentials. Nothing was changed`;
 }
@@ -711,45 +832,53 @@ export async function runRecover(
         out = process.stdout,
         err = process.stderr,
     } = options;
-    const target = mirrorUrl(url, options);
-    if (target === null) {
-        return 1;
-    }
-    const root = historyRoot(env);
-    if (existsSync(root) && readdirSync(root).length > 0) {
-        err.write(
-            `dorothy: ${root} is not empty; --recover only fills an empty data directory\n`,
+    try {
+        const target = mirrorUrl(url, options);
+        if (target === null) {
+            return 1;
+        }
+        const root = historyRoot(env);
+        if (existsSync(root) && readdirSync(root).length > 0) {
+            err.write(
+                `dorothy: ${root} is not empty; --recover only fills an empty data directory\n`,
+            );
+            return 1;
+        }
+        const key = parseKey(env.DOROTHY_MIRROR_KEY);
+        if (key === null) {
+            err.write(
+                "dorothy: --recover needs DOROTHY_MIRROR_KEY, the key the mirror was sealed with\n",
+            );
+            return 1;
+        }
+        const repo = await openRepo(
+            root,
+            options.engine === undefined ? {} : { engine: options.engine },
         );
-        return 1;
-    }
-    const key = parseKey(env.DOROTHY_MIRROR_KEY);
-    if (key === null) {
-        err.write(
-            "dorothy: --recover needs DOROTHY_MIRROR_KEY, the key the mirror was sealed with\n",
+        const recovered = await recover({
+            repo,
+            url: target,
+            key,
+            token: env.DOROTHY_MIRROR_TOKEN ?? null,
+        });
+        if (recovered.applied === 0) {
+            // The directory was empty or missing, so what is there is what
+            // recover made; leaving it would make every retry refuse it.
+            await rm(join(root, ".git"), { recursive: true, force: true });
+        }
+        out.write(
+            `Recovered ${recovered.applied} of ${recovered.of} bundles${recovered.tip === null ? "" : `; main is at ${short(recovered.tip)}`}\n`,
         );
+        if (recovered.stopped !== null) {
+            err.write(`dorothy: recovery stopped: ${recovered.stopped}\n`);
+            return 1;
+        }
+        return report(
+            await checkTree(root, recovered.applied === 0 ? null : repo),
+            out,
+        );
+    } catch (error) {
+        err.write(`dorothy: couldn't recover: ${describeError(error)}\n`);
         return 1;
     }
-    const repo = await openRepo(
-        root,
-        options.engine === undefined ? {} : { engine: options.engine },
-    );
-    const recovered = await recover({
-        repo,
-        url: target,
-        key,
-        token: env.DOROTHY_MIRROR_TOKEN ?? null,
-    });
-    if (recovered.applied === 0) {
-        // The directory was empty or missing, so what is there is what
-        // recover made; leaving it would make every retry refuse it.
-        await rm(join(root, ".git"), { recursive: true, force: true });
-    }
-    out.write(
-        `Recovered ${recovered.applied} of ${recovered.of} bundles${recovered.tip === null ? "" : `; main is at ${short(recovered.tip)}`}\n`,
-    );
-    if (recovered.stopped !== null) {
-        err.write(`dorothy: recovery stopped: ${recovered.stopped}\n`);
-        return 1;
-    }
-    return report(await checkTree(root, repo), out);
 }

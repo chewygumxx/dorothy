@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-15
-mtime: 2026-10-15
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: packages/memory/src/projects/AGENTS.md
 description: >-
@@ -48,12 +48,37 @@ memory directory, `.agents/memory/` by default.
   overwritten or retired.
 - A file is overwritten or removed only after sync reads it again and
   finds it as it first read it, so an edit made meanwhile survives.
+- A repository file is a fact's whatever its stem names one: Claude Code's
+  `feedback_testing.md` is the fact `feedback-testing` (`nameOfStem`),
+  its frontmatter naming either. It keeps its file name: an export or a
+  removal goes to that file, `MEMORY.md` links it, and the report names
+  the file (`renamed`). A file named as the fact beats a snake-case twin,
+  which is skipped and named.
 - `MEMORY.md` is rewritten only when it is absent or every line is one
   sync writes (an entry, or its description indented two spaces, no list
-  item and no blank line before it), a live fact exists, and no skipped
-  file is one it links; else it is left, and the report says why. An
-  imported fact's title is its entry's, in sync's form or Claude Code's
-  one-line one, else the store's, else its name.
+  item and no blank line before it), and no skipped file is one it links;
+  else it is left, and the report says why. Past the last live fact it is
+  emptied only if it lists nothing but the store's facts. An entry whose
+  fact's description did not change keeps its hook lines, which a hand
+  may have written. It is written only once found as first read, so an
+  edit made meanwhile survives. An imported fact's title is its entry's,
+  in sync's form or Claude Code's one-line one, else the store's, else
+  its name.
+- An import keeps what only the store holds: tags, importance, creation,
+  foreign keys and other sources. Its origin is `repo`, which confirms
+  nothing. A verification stays only for the words it confirmed: one
+  the store held for the same words, or one the file carries
+  (`verified`, each entry with the title it confirmed and the
+  `wordsDigest` of its words, which the export writes), so changed
+  words or a renamed title drop it. Where the index has no entry for
+  the fact, its title is the one a matching entry carries.
+- A form without verifications hashes as it always has, so records made
+  before verifications travelled stay valid.
+- A fact retired in the store has the form removed from the repository
+  recorded (`removed:<hash>`): the file reappearing as it was is removed
+  again, changed is the repository's version, and a revival exports.
+- A recorder that throws leaves the report, with `unrecorded`; the writes
+  stand and history sweeps them up.
 - Each root keeps its own record of what it last synced with each
   memory directory, so one remote's checkouts never undo each other and
   a directory switched away from and back is synced from what it last

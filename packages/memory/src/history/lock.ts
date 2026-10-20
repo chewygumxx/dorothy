@@ -14,8 +14,8 @@ import { dirname } from "node:path";
 import type { Lock } from "../memory/sidecar.js";
 import { exclusiveLock } from "../sqlite-lock.js";
 
-// History's own write lock, for when there is no recall index to hold
-// one: SQLite's, on a file of its own, the way the index holds its lock.
+// History's common write lock, taken with or without a recall index:
+// SQLite's, on a file of its own, the way the index holds its lock.
 // Other processes wait for it, and SQLite lets go if this one dies; work
 // in this process takes turns.
 export class FileLock {

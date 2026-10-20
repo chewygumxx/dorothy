@@ -20,6 +20,7 @@ import {
     type MemoryRepo,
     NEEDS_BINARY,
     SEALED,
+    SEALED_AUTHOR,
 } from "./repo.js";
 
 const encoder = new TextEncoder();
@@ -27,11 +28,11 @@ const decoder = new TextDecoder();
 
 type StatusRow = [string, 0 | 1, 0 | 1 | 2, 0 | 1 | 2 | 3];
 
-// A staged path differs from HEAD: added, deleted or changed in the index.
-const staged = ([, head, , stage]: StatusRow) =>
-    head === 0 ? stage !== 0 : stage !== 1;
-
-const firstLine = (message: string) => message.trim().split("\n")[0] ?? "";
+const subject = (message: string) =>
+    (message.trim().split(/\n\s*\n/)[0] ?? "")
+        .split("\n")
+        .map((line) => line.trim())
+        .join(" ");
 
 // Where the blank line that ends a bundle's header sits.
 function headerEnd(bundle: Uint8Array): number {
@@ -175,8 +176,28 @@ export function isoRepo(location: string): MemoryRepo {
             }
             // The whole index, as the binary decides: a change the user
             // staged by hand rides along.
-            const rows = (await git.statusMatrix({ fs, dir })) as StatusRow[];
-            if (!rows.some(staged)) {
+            const changes =
+                (await resolve(MAIN)) === null
+                    ? await git.listFiles({ fs, dir })
+                    : await git.walk({
+                          fs,
+                          dir,
+                          trees: [git.TREE({ ref: MAIN }), git.STAGE()],
+                          map: async (path, [head, stage]) => {
+                              if (
+                                  path === "." ||
+                                  (await head?.type()) === "tree" ||
+                                  (await stage?.type()) === "tree"
+                              )
+                                  return;
+                              return (
+                                  (await head?.oid()) !==
+                                      (await stage?.oid()) ||
+                                  (await head?.mode()) !== (await stage?.mode())
+                              );
+                          },
+                      });
+            if (!changes.some(Boolean)) {
                 return null;
             }
             return git.commit({
@@ -215,7 +236,7 @@ export function isoRepo(location: string): MemoryRepo {
                     at: new Date(
                         entry.commit.committer.timestamp * 1000,
                     ).toISOString(),
-                    message: firstLine(entry.commit.message),
+                    message: subject(entry.commit.message),
                 }),
             );
         },
@@ -254,8 +275,8 @@ export function isoRepo(location: string): MemoryRepo {
         async deleteRef(name) {
             await git.deleteRef({ fs, dir, ref: name });
         },
-        async bundle(since) {
-            const tip = await resolve(MAIN);
+        async bundle(since, at) {
+            const tip = at ?? (await resolve(MAIN));
             if (tip === null || tip === since) {
                 return null;
             }
@@ -366,8 +387,8 @@ export function isoRepo(location: string): MemoryRepo {
                 fs,
                 dir,
                 message,
-                author: AUTHOR,
-                committer: AUTHOR,
+                author: SEALED_AUTHOR,
+                committer: SEALED_AUTHOR,
                 tree,
                 parent: tip === null ? [] : [tip],
                 ref: SEALED,
@@ -412,20 +433,42 @@ export function isoRepo(location: string): MemoryRepo {
             if (!https(url)) {
                 throw new Error(NEEDS_BINARY);
             }
-            const result = await git.fetch({
+            // isomorphic-git requires a configured tracking refspec even
+            // with an explicit URL. Keep this separate from the mirror,
+            // which recovery installs only after opening every bundle.
+            const incoming = "dorothy-incoming";
+            await git.setConfig({
                 fs,
-                http,
                 dir,
-                url,
-                ref: branch,
-                singleBranch: true,
-                tags: false,
-                ...auth(token),
+                path: `remote.${incoming}.fetch`,
+                value: "+refs/heads/*:refs/remotes/dorothy-incoming/*",
             });
-            if (result.fetchHead === null) {
-                throw new Error(`the mirror has no ${branch}`);
+            try {
+                const fetched = (
+                    await git.fetch({
+                        fs,
+                        http,
+                        dir,
+                        url,
+                        remote: incoming,
+                        ref: branch,
+                        singleBranch: true,
+                        tags: false,
+                        ...auth(token),
+                    })
+                ).fetchHead;
+                if (fetched === null) {
+                    throw new Error(`the mirror has no ${branch}`);
+                }
+                await advance(`refs/heads/${branch}`, fetched);
+            } finally {
+                await git.deleteRemote({ fs, dir, remote: incoming });
+                await git.deleteRef({
+                    fs,
+                    dir,
+                    ref: `refs/remotes/${incoming}/${branch}`,
+                });
             }
-            await advance(`refs/heads/${branch}`, result.fetchHead);
         },
         async checkout() {
             await git.checkout({ fs, dir, ref: "main", force: true });

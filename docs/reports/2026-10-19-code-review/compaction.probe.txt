@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-code-review/compaction.probe.txt
+#
+
+import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { configPath, newPhrase } from '/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/core/src/index.ts';
+import { openMemory } from '/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/memory/src/memory/open.ts';
+import { FakeSession } from '/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/memory/src/memory/fake-session.ts';
+import { seedTurns } from '/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/memory/src/compaction/plan.ts';
+import { EMPTY_SIDECAR, readSidecar, sidecarPath, writeAtomic } from '/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/memory/src/memory/sidecar.ts';
+import { transcriptDir, transcriptPath, TranscriptWriter, readTranscript } from '/home/chewygumxx/dev/_worktree/dorothy/codex-code-review/packages/memory/src/transcript.ts';
+const root=await mkdtemp(join(tmpdir(),'dorothy-review-multiwriter-integration-'));
+const memories:any[]=[];
+try {
+const env={HOME:join(root,'home'), XDG_DATA_HOME:join(root,'data'), XDG_CACHE_HOME:join(root,'cache'), XDG_CONFIG_HOME:join(root,'config'),XDG_STATE_HOME:join(root,'state')};
+await mkdir(dirname(configPath(env)),{recursive:true});
+await writeFile(configPath(env),'[memory]\nenabled = false\nrecall = false\n[history]\nenabled = false\n[compaction]\nsoft = 2000\nhard = 4000\ntail = 500\n');
+const phrase=newPhrase(); const writer=await TranscriptWriter.open(transcriptPath(phrase,env));
+for(const [kind,text] of [['user','Common one'],['assistant','Common two'],['user','Common three'],['assistant','Common four']]) await writer.append({kind,text,...(kind==='assistant'?{interrupted:false}:{})} as any);
+await writer.close();
+await writeAtomic(sidecarPath(transcriptDir(env),phrase),JSON.stringify({...EMPTY_SIDECAR,clusters:[{from:1,through:4,abstract:'Common history.',at:'2026-10-19T00:00:00Z',model:'fake'}]}));
+const innerA=new FakeSession(); const innerB:FakeSession[]=[]; let compactionPrompt='';
+const start=async(connect:any)=>{const opened=await openMemory({resume:phrase,env,cwd:null,call:async req=>{compactionPrompt=req.prompt;return {ok:true,output:{clusters:[{through:6,abstract:'B only; B replied.'}]},model:'fake',costUsd:0};},prompts:{review:'fake',compaction:'fake',hash:()=>'',session:start=>JSON.stringify(start)},connect,recallLaunch:()=>{throw Error('No recall expected');}});if(!opened.ok)throw Error(opened.message);memories.push(opened.memory);return opened.memory;};
+const a=await start(()=>innerA);const b=await start(()=>{const f=new FakeSession();innerB.push(f);return f;});
+const sa=a.createSession(a.history);const sb=b.createSession(b.history);
+const stats={inputTokens:0,cacheReadTokens:0,cacheWriteTokens:0,outputTokens:0,ttftMs:null,durationMs:0,costUsd:0,sessionCostUsd:0};
+const reply=(s:FakeSession,text:string,contextTokens:number)=>s.emit({type:'turn-end',reply:text,contextTokens,interrupted:false,stats});
+sa.send('A essential fact: scarlet bicycle');reply(innerA,'A acknowledged',0);
+// Independent transcript writers may otherwise interleave their queued writes.
+// Establish the intended canonical A-before-B sequence before B sends.
+let aFlushed=false;
+for(let i=0;i<200;i++) {
+ const seen=await readTranscript(transcriptPath(phrase,env));
+ if(seen.turns.length===6 && seen.turns[4]?.text==='A essential fact: scarlet bicycle' && seen.turns[5]?.text==='A acknowledged') {aFlushed=true;break;}
+ await Bun.sleep(5);
+}
+if(!aFlushed)throw Error('A transcript did not flush at canonical turns 5-6 within one second');
+sb.send('B only '+ 'b'.repeat(1200));reply(innerB[0], 'B replied '+ 'c'.repeat(2400),0);
+sb.send('Latest B');reply(innerB[0],'Latest answer',5000);sb.send('Held next');
+for(let i=0;i<200 && innerB.length<2;i++)await Bun.sleep(5);
+for(const m of memories)await m.close();memories.length=0;
+const disk=await readTranscript(transcriptPath(phrase,env));const notes=await readSidecar(transcriptDir(env),phrase);if(notes.kind!=='ok')throw Error('No notes');
+if(disk.turns[4]?.text!=='A essential fact: scarlet bicycle')throw Error('Unexpected canonical turn ordering');
+console.log({connectionsB:innerB.length,compactedB:compactionPrompt.includes('B only'),compactedA:compactionPrompt.includes('scarlet bicycle'),canonicalTurn5:disk.turns[4]?.text,savedCluster:notes.sidecar.clusters[1],AInResumedContext:JSON.stringify({clusters:notes.sidecar.clusters,turns:seedTurns(disk.turns,notes.sidecar.clusters)}).includes('scarlet bicycle')});
+}finally{for(const m of memories)await m.close();await rm(root,{recursive:true,force:true});}

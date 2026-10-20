@@ -207,5 +207,30 @@ describe("structuredCall", () => {
             costUsd: 0,
         });
         expect(pending.size).toBe(0);
+        expect(hang.closed).toBe(true);
+    });
+
+    it("fails with the result's text when a success is flagged an error", async () => {
+        const flagged = (result: string) =>
+            ({
+                type: "result",
+                subtype: "success",
+                is_error: true,
+                result,
+                structured_output: { a: 1 },
+                total_cost_usd: 0.4,
+            }) as unknown as SDKMessage;
+        const named = fakeQuery([init(), flagged("overloaded")]);
+        expect(await structuredCall({ queryFn: named.fn })(REQUEST)).toEqual({
+            ok: false,
+            reason: "overloaded",
+            costUsd: 0.4,
+        });
+        const bare = fakeQuery([init(), flagged("")]);
+        expect(await structuredCall({ queryFn: bare.fn })(REQUEST)).toEqual({
+            ok: false,
+            reason: "error",
+            costUsd: 0.4,
+        });
     });
 });

@@ -9,6 +9,7 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import * as filesystem from "node:fs/promises";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { RecallIndex } from "../recall/store.js";
@@ -171,6 +172,36 @@ describe("tagging", () => {
         expect(Object.keys(await conceptsIn())).toHaveLength(3);
     });
 
+    it("prunes unresolved user tags when all fields are fixed", async () => {
+        await writeVocabularyFile({
+            k00000001: concept("memory"),
+            k00000002: { mergedInto: "k00000001", at: AT },
+            k00000003: { deleted: AT, labels: ["misc"] },
+        });
+        const owned = mergeEdit(
+            null,
+            { ...NOTES, tags: ["k00000002", "k00000003"] },
+            AT,
+        );
+        await transcript(OTHER, [user("a"), reply("b")]);
+        await saved(OTHER, owned);
+        const fake = reviews(NOTES);
+        const { memory } = setup({
+            call: fake.fn,
+            vocabulary,
+            entries: [entry(OTHER, owned)],
+        });
+        memory.ready();
+        await until(
+            async () => (await sidecarOf(OTHER))?.reviewedThrough === 2,
+        );
+        expect(fake.calls).toHaveLength(0);
+        expect((await sidecarOf(OTHER))?.tags).toEqual(["k00000001"]);
+        expect((await sidecarOf(OTHER))?.fields.tags).toEqual(
+            owned.fields.tags,
+        );
+    });
+
     it("pauses tags while the vocabulary is broken, saying so once", async () => {
         await writeFile(vocabulary, "{ broken");
         await transcript(OTHER, [user("a"), reply("b")]);
@@ -198,6 +229,80 @@ describe("tagging", () => {
         );
         expect(warnings).toHaveLength(1);
         expect(await readFile(vocabulary, "utf8")).toBe("{ broken");
+    });
+
+    it("keeps tags when the vocabulary breaks during a review", async () => {
+        await writeVocabularyFile({ k00000001: concept("memory") });
+        await transcript(OTHER, [user("a"), reply("b")]);
+        await saved(OTHER, { tags: ["k00000001"] });
+        const fake = reviews({
+            ...NOTES,
+            tags: ["new"],
+            coined: [{ prefLabel: "new", scopeNote: "New." }],
+        });
+        const { memory } = setup({
+            vocabulary,
+            entries: [entry(OTHER, { tags: ["k00000001"] })],
+            call: async (request) => {
+                await writeFile(vocabulary, "{ broken");
+                return fake.fn(request);
+            },
+        });
+        memory.ready();
+        await until(
+            async () => (await sidecarOf(OTHER))?.title === NOTES.title,
+        );
+        await memory.stop();
+        expect((await sidecarOf(OTHER))?.tags).toEqual(["k00000001"]);
+        expect((await sidecarOf(OTHER))?.fields.tags).toBeUndefined();
+        expect(await readFile(vocabulary, "utf8")).toBe("{ broken");
+    });
+
+    it("changes neither file when the vocabulary write fails", async () => {
+        await writeVocabularyFile({ k00000001: concept("memory") });
+        await transcript(OTHER, [user("a"), reply("b")]);
+        await saved(OTHER, { title: "Before", tags: ["k00000001"] });
+        const beforeTags = await readFile(vocabulary, "utf8");
+        const beforeNotes = await readFile(sidecarPath(dir, OTHER), "utf8");
+        const rename = filesystem.rename;
+        const failed = spyOn(filesystem, "rename").mockImplementation(
+            async (from, to) => {
+                if (to === vocabulary)
+                    throw new Error("vocabulary write denied");
+                return rename(from, to);
+            },
+        );
+        const fake = reviews({
+            ...NOTES,
+            tags: ["new"],
+            coined: [{ prefLabel: "new", scopeNote: "New." }],
+        });
+        const { memory, notices } = setup({
+            call: fake.fn,
+            vocabulary,
+            entries: [entry(OTHER, null)],
+        });
+        try {
+            memory.ready();
+            await until(() =>
+                notices.some((notice) => notice.type === "warning"),
+            );
+            await memory.stop();
+            expect(
+                notices.some(
+                    (notice) =>
+                        notice.type === "warning" &&
+                        notice.message.includes("vocabulary write denied"),
+                ),
+            ).toBe(true);
+            expect(await readFile(vocabulary, "utf8")).toBe(beforeTags);
+            expect(await readFile(sidecarPath(dir, OTHER), "utf8")).toBe(
+                beforeNotes,
+            );
+        } finally {
+            failed.mockRestore();
+            await memory.stop();
+        }
     });
 
     it("writes no vocabulary that breaks the rules, nor tags from it", async () => {

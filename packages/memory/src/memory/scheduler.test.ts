@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "bun:test";
 import type { Timers } from "@dorothy/core";
-import { ReviewScheduler } from "./scheduler.js";
+import { REVIEW_STOP_GRACE_MS, ReviewScheduler } from "./scheduler.js";
 
 class FakeTimers implements Timers {
     #next = 1;
@@ -146,5 +146,46 @@ describe("ReviewScheduler", () => {
         timers.advance(60_000);
         scheduler.now("d");
         expect(started).toEqual(["a"]);
+    });
+
+    it("on stop, waits for a review that has finished, then settles", async () => {
+        const { scheduler, finish } = setup();
+        scheduler.now("a");
+        let settled = false;
+        const stopped = scheduler.stop().then(() => {
+            settled = true;
+        });
+        await settle();
+        expect(settled).toBe(false);
+        await finish();
+        await stopped;
+        expect(settled).toBe(true);
+    });
+
+    it("on stop, gives up on a review that ignores its signal after a grace", async () => {
+        const { timers, scheduler } = setup();
+        scheduler.now("a");
+        let settled = false;
+        const stopped = scheduler.stop().then(() => {
+            settled = true;
+        });
+        await settle();
+        timers.advance(REVIEW_STOP_GRACE_MS - 1);
+        await settle();
+        expect(settled).toBe(false);
+        timers.advance(1);
+        await stopped;
+        expect(settled).toBe(true);
+        // Its grace timer is gone once it is over.
+        expect(timers.pending.size).toBe(0);
+    });
+
+    it("on stop, leaves no grace timer behind when the review finishes in time", async () => {
+        const { timers, scheduler, finish } = setup();
+        scheduler.now("a");
+        const stopped = scheduler.stop();
+        await finish();
+        await stopped;
+        expect(timers.pending.size).toBe(0);
     });
 });

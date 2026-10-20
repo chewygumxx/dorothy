@@ -15,6 +15,7 @@ import {
     describe,
     expect,
     it,
+    spyOn,
 } from "bun:test";
 import {
     appendFileSync,
@@ -29,12 +30,20 @@ import {
     utimesSync,
     writeFileSync,
 } from "node:fs";
+import * as filesystem from "node:fs/promises";
 import { join } from "node:path";
-import { type Fact, parseFact, renderFact } from "../facts/file.js";
+import {
+    type Fact,
+    isConfirmed,
+    parseFact,
+    renderFact,
+} from "../facts/file.js";
+import { pendingPath } from "../facts/pending.js";
 import {
     type FactStore,
     moveFact,
     PERSONAL,
+    putFact,
     retireFact,
     retireFacts,
     reviveFact,
@@ -51,6 +60,7 @@ import {
     openHistory,
 } from "./history.js";
 import { isoRepo } from "./iso.js";
+import { FileLock } from "./lock.js";
 import { openRepo } from "./open.js";
 import { put, removeRoots, TEST_ENV, tempRoot } from "./testing.js";
 
@@ -112,6 +122,25 @@ const record = (history: MemoryHistory, paths: string[], message: string) =>
     );
 
 describe("adopting", () => {
+    it("adds temporary-file ignores without losing existing patterns", async () => {
+        put(root, ".gitignore", "# hand kept\nprivate/\n");
+        const history = await open();
+        put(root, "leftover.tmp", "incomplete");
+        expect(readFileSync(join(root, ".gitignore"), "utf8")).toContain(
+            "# hand kept\nprivate/\n",
+        );
+        expect(await history.repo.changed()).not.toContain("leftover.tmp");
+    });
+
+    it("leaves an empty new transcript uncommitted until it has an event", async () => {
+        const history = await open();
+        put(root, TRANSCRIPT, "");
+        await history.sweep();
+        expect(await history.repo.show(TRANSCRIPT, "HEAD")).toBeNull();
+        put(root, TRANSCRIPT, event("one"));
+        await history.sweep();
+        expect((await messages(history))[0]).toBe(`turn: ${PHRASE}`);
+    });
     it("commits what the directory holds, once", async () => {
         put(root, "tags.json", vocabulary(1));
         put(root, TRANSCRIPT, event("hi"));
@@ -199,6 +228,22 @@ describe("adopting", () => {
             "exec '/usr/bin/bun' '/it'\\''s/index.ts' --check --staged",
         );
         expect(script).toContain("if [ ! -f '/it'\\''s/index.ts' ]; then");
+    });
+
+    it("lets the hook step aside when its Bun executable is gone", async () => {
+        const fixture = tempRoot();
+        const entry = join(fixture, "entry.ts");
+        writeFileSync(entry, "// fixture\n");
+        const hook = join(fixture, "hook.sh");
+        writeFileSync(hook, hookScript(join(fixture, "missing-bun"), entry));
+        const child = Bun.spawn(["sh", hook], {
+            env: TEST_ENV,
+            stdout: "ignore",
+            stderr: "pipe",
+        });
+        const diagnostic = await new Response(child.stderr).text();
+        expect(await child.exited).toBe(0);
+        expect(diagnostic).toContain("not linted");
     });
 
     it("rewrites a fact edited by hand as Dorothy writes one, and makes it the user's", async () => {
@@ -332,8 +377,8 @@ describe("facts in the sweep and in a record", () => {
                 created: "2026-10-02T00:00:00.000Z",
             },
         };
-        put(root, TEA_PATH, renderFact(TEA));
-        put(root, "knowledge/personal/from-repo.md", renderFact(repo));
+        await putFact(root, PERSONAL, TEA);
+        await putFact(root, PERSONAL, repo);
         await history.sweep();
         expect(readFileSync(join(root, TEA_PATH), "utf8")).toBe(
             renderFact(TEA),
@@ -346,6 +391,64 @@ describe("facts in the sweep and in a record", () => {
             `outside: ${TEA_PATH}`,
         ]);
         expect(await history.repo.changed()).toEqual([]);
+    });
+
+    it.each([
+        ["a new file", false],
+        ["a changed file", true],
+    ])(
+        "takes %s an outside writer made canonical as an outside change, the claim ignored",
+        async (_, committed) => {
+            if (committed) {
+                put(root, TEA_PATH, renderFact(TEA));
+            }
+            const history = await open();
+            const verified = [
+                { by: "human:owner", at: "2026-10-02T00:00:00.000Z" },
+            ];
+            // Canonical to the byte, claiming Dorothy's own write and a
+            // verification by the owner, which nothing noted.
+            put(
+                root,
+                TEA_PATH,
+                renderFact({
+                    ...TEA,
+                    body: "Coffee.",
+                    provenance: {
+                        origin: "dorothy",
+                        by: "dorothy",
+                        host: "claude-code",
+                        at: "2026-10-09T00:00:00.000Z",
+                        created: TEA.provenance.created,
+                    },
+                    foreign: { verified },
+                }),
+            );
+            await history.sweep();
+            expect(provenanceOf(TEA_PATH)).toEqual({
+                origin: "user",
+                by: "user",
+                at: NOW.toISOString(),
+                created: TEA.provenance.created,
+            });
+            expect((await messages(history))[0]).toBe(`outside: ${TEA_PATH}`);
+            expect(await history.repo.changed()).toEqual([]);
+        },
+    );
+
+    it("trusts only the bytes Dorothy wrote, not a later edit of them", async () => {
+        const history = await open();
+        await putFact(root, PERSONAL, TEA);
+        put(root, TEA_PATH, renderFact({ ...TEA, body: "Coffee." }));
+        await history.sweep();
+        expect(provenanceOf(TEA_PATH)?.by).toBe("user");
+    });
+
+    it("forgets a write once it is committed", async () => {
+        const history = await open();
+        await putFact(root, PERSONAL, TEA);
+        await record(history, [TEA_PATH], "fact: likes-tea");
+        expect(existsSync(join(root, ".git", "dorothy-pending"))).toBe(false);
     });
 
     it("takes a canonical hand edit keeping its provenance as the user's", async () => {
@@ -424,6 +527,253 @@ describe("facts in the sweep and in a record", () => {
 });
 
 describe("recording", () => {
+    it("normalises relative paths before excluding a named write", async () => {
+        const history = await open();
+        put(root, "tags.json", vocabulary(1));
+        await history.lock(() =>
+            history.record(["./other/../tags.json"], "tags: normalised"),
+        );
+        expect((await messages(history))[0]).toBe("tags: normalised");
+        expect(await history.repo.changed()).toEqual([]);
+    });
+
+    it("warns for an unreadable outside file and records other changes", async () => {
+        const history = await open();
+        put(root, "a-unreadable.txt", "held");
+        chmodSync(join(root, "a-unreadable.txt"), 0);
+        put(root, "tags.json", vocabulary(1));
+        put(root, SIDECAR, sidecar("One"));
+        await record(history, [SIDECAR], "review: readable");
+        expect((await messages(history))[0]).toBe("review: readable");
+        expect(warnings.join("\n")).toContain("a-unreadable.txt");
+        expect(await history.repo.changed()).toEqual(["a-unreadable.txt"]);
+    });
+
+    it("commits an outside tracked deletion as outside", async () => {
+        put(root, "tags.json", vocabulary(1));
+        const history = await open();
+        rmSync(join(root, "tags.json"));
+        await history.sweep();
+        expect((await messages(history))[0]).toBe("outside: tags.json");
+        expect(await history.repo.show("tags.json", "HEAD")).toBeNull();
+    });
+
+    it("avoids repeated recovery walks and callbacks with no new commit", async () => {
+        const history = await open();
+        put(root, "tags.json", "{");
+        let commits = 0;
+        history.afterCommit(() => {
+            commits += 1;
+        });
+        const original = history.repo.log;
+        let walks = 0;
+        const spy = spyOn(history.repo, "log").mockImplementation(
+            (path, limit) => {
+                if (limit === 200) walks += 1;
+                return original(path, limit);
+            },
+        );
+        try {
+            await history.sweep();
+            await history.sweep();
+        } finally {
+            spy.mockRestore();
+        }
+        expect(commits).toBe(1);
+        expect(walks).toBe(1);
+    });
+
+    it("reports each actual restoration even with identical warning text", async () => {
+        put(root, "tags.json", vocabulary(1));
+        const history = await open();
+        for (let count = 0; count < 2; count += 1) {
+            put(root, "tags.json", "{");
+            await history.heal("tags.json");
+        }
+        expect(
+            warnings.filter((warning) =>
+                warning.startsWith("Restored tags.json"),
+            ),
+        ).toHaveLength(2);
+    });
+
+    it("degrades a recovery read failure to a warning", async () => {
+        put(root, "tags.json", vocabulary(1));
+        const history = await open();
+        put(root, "tags.json", "{");
+        const spy = spyOn(history.repo, "show").mockRejectedValue(
+            new Error("recovery unavailable"),
+        );
+        try {
+            expect(await history.heal("tags.json")).toBe(false);
+        } finally {
+            spy.mockRestore();
+        }
+        expect(warnings.join("\n")).toContain("recovery unavailable");
+    });
+    it("leaves a stale index lock while git is running in the repository", async () => {
+        const history = await open();
+        const editor = join(tempRoot(), "editor.sh");
+        writeFileSync(
+            editor,
+            '#!/bin/sh\necho ready\nread answer\necho "user commit" > "$1"\n',
+        );
+        put(root, "tags.json", vocabulary(1));
+        await record(history, ["tags.json"], "tags: initial");
+        put(root, "tags.json", vocabulary(2));
+        const child = Bun.spawn(
+            [
+                "git",
+                "-c",
+                "core.hooksPath=/dev/null",
+                "commit",
+                "--only",
+                "--",
+                "tags.json",
+            ],
+            {
+                cwd: root,
+                env: { ...TEST_ENV, GIT_EDITOR: `sh ${editor}` },
+                stdin: "pipe",
+                stdout: "pipe",
+                stderr: "pipe",
+            },
+        );
+        const reader = child.stdout.getReader();
+        try {
+            expect(
+                new TextDecoder().decode((await reader.read()).value),
+            ).toContain("ready");
+            const lock = join(root, ".git", "index.lock");
+            // The active git owns this lock even though its timestamp is old.
+            expect(existsSync(lock)).toBe(true);
+            const old = Date.now() / 1000 - 120;
+            utimesSync(lock, old, old);
+            put(root, SIDECAR, sidecar("One"));
+            await record(history, [SIDECAR], "review: concurrent");
+            expect(existsSync(lock)).toBe(true);
+        } finally {
+            child.stdin.write("continue\n");
+            child.stdin.end();
+            while (!(await reader.read()).done) {
+                /* Drain git's summary. */
+            }
+            reader.releaseLock();
+            await new Response(child.stderr).text();
+            await child.exited;
+        }
+        expect((await messages(history))[0]).toBe("user commit");
+    });
+    it.each([
+        ["/facts", true],
+        ["/facts/projects", true],
+        ["-other", false],
+    ])(
+        "takes a git run in the data directory%s as running: %p",
+        async (under, kept) => {
+            const history = await open();
+            const path = join(root, ".git", "index.lock");
+            writeFileSync(path, "");
+            const old = Date.now() / 1000 - 120;
+            utimesSync(path, old, old);
+            const readdir = filesystem.readdir;
+            const readFile = filesystem.readFile;
+            const readlink = filesystem.readlink;
+            const directory = spyOn(filesystem, "readdir").mockImplementation(((
+                ...args: Parameters<typeof readdir>
+            ) =>
+                args[0] === "/proc"
+                    ? Promise.resolve(["300"])
+                    : readdir(...args)) as typeof readdir);
+            const file = spyOn(filesystem, "readFile").mockImplementation(((
+                ...args: Parameters<typeof readFile>
+            ) =>
+                args[0] === "/proc/300/comm"
+                    ? Promise.resolve("git\n")
+                    : readFile(...args)) as typeof readFile);
+            const link = spyOn(filesystem, "readlink").mockImplementation(((
+                ...args: Parameters<typeof readlink>
+            ) =>
+                args[0] === "/proc/300/cwd"
+                    ? Promise.resolve(`${realpathSync(root)}${under}`)
+                    : readlink(...args)) as typeof readlink);
+            try {
+                put(root, "tags.json", vocabulary(1));
+                await record(history, ["tags.json"], "git elsewhere");
+                expect(existsSync(path)).toBe(kept);
+            } finally {
+                directory.mockRestore();
+                file.mockRestore();
+                link.mockRestore();
+            }
+        },
+    );
+
+    it("keeps known running git after an unreadable process", async () => {
+        const history = await open();
+        const path = join(root, ".git", "index.lock");
+        writeFileSync(path, "");
+        const old = Date.now() / 1000 - 660;
+        utimesSync(path, old, old);
+        const readdir = filesystem.readdir;
+        const readFile = filesystem.readFile;
+        const readlink = filesystem.readlink;
+        const directory = spyOn(filesystem, "readdir").mockImplementation(((
+            ...args: Parameters<typeof readdir>
+        ) =>
+            args[0] === "/proc"
+                ? Promise.resolve(["100", "200"])
+                : readdir(...args)) as typeof readdir);
+        const file = spyOn(filesystem, "readFile").mockImplementation(((
+            ...args: Parameters<typeof readFile>
+        ) => {
+            if (args[0] === "/proc/100/comm")
+                return Promise.reject(
+                    Object.assign(new Error("denied"), { code: "EACCES" }),
+                );
+            if (args[0] === "/proc/200/comm") return Promise.resolve("git\n");
+            return readFile(...args);
+        }) as typeof readFile);
+        const link = spyOn(filesystem, "readlink").mockImplementation(((
+            ...args: Parameters<typeof readlink>
+        ) =>
+            args[0] === "/proc/200/cwd"
+                ? Promise.resolve(realpathSync(root))
+                : readlink(...args)) as typeof readlink);
+        try {
+            put(root, "tags.json", vocabulary(1));
+            await record(history, ["tags.json"], "active git");
+            expect(existsSync(path)).toBe(true);
+        } finally {
+            directory.mockRestore();
+            file.mockRestore();
+            link.mockRestore();
+        }
+    });
+
+    it.each([
+        [false, 120, false],
+        [true, 660, true],
+        [null, 120, true],
+        [null, 660, false],
+    ] as const)(
+        "handles stale locks with reader %s at age %s",
+        async (running, age, kept) => {
+            const history = await MemoryHistory.open({
+                repo: binaryRepo(root, { env: TEST_ENV }),
+                lock: (work) => work(),
+                gitRunning: async () => running,
+            });
+            const path = join(root, ".git", "index.lock");
+            writeFileSync(path, "");
+            const old = Date.now() / 1000 - age;
+            utimesSync(path, old, old);
+            put(root, "tags.json", vocabulary(1));
+            await record(history, ["tags.json"], "reader test");
+            expect(existsSync(path)).toBe(kept);
+        },
+    );
+
     it("clears a lock a crashed git left, and only a stale one", async () => {
         const history = await open();
         const lock = join(root, ".git", "index.lock");
@@ -600,10 +950,38 @@ describe("recording", () => {
 });
 
 describe("taking the lock itself", () => {
-    it("commits a turn with its count", async () => {
+    it("excludes a fallback writer while an indexed writer holds history", async () => {
+        const indexLock = FileLock.open(join(tempRoot(), "index.sqlite"), 20);
+        const opened = await openHistory({
+            root,
+            index: indexLock,
+            engine: "git",
+        });
+        if (!opened.ok) throw new Error(opened.reason);
+        const fallback = FileLock.open(join(root, ".git", "dorothy.lock"), 20);
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const writing = opened.history.lock(async () => {
+            entered.resolve();
+            await release.promise;
+        });
+        try {
+            await entered.promise;
+            await expect(
+                fallback.lock(async () => "overlap"),
+            ).rejects.toThrow();
+        } finally {
+            release.resolve();
+            await writing;
+            opened.close();
+            fallback.close();
+            indexLock.close();
+        }
+    });
+    it("commits a turn with its canonical count", async () => {
         const history = await open();
-        put(root, TRANSCRIPT, event("one"));
-        await history.turn(join(root, TRANSCRIPT), 3);
+        put(root, TRANSCRIPT, event("one") + event("two") + event("three"));
+        await history.turn(join(root, TRANSCRIPT));
         expect((await messages(history))[0]).toBe(`turn: ${PHRASE} #3`);
     });
 
@@ -667,7 +1045,7 @@ describe("a lock that fails", () => {
         put(root, "tags.json", "{");
         busy = true;
         await history.sweep();
-        await history.turn(join(root, TRANSCRIPT), 1);
+        await history.turn(join(root, TRANSCRIPT));
         expect(await history.heal(join(root, "tags.json"))).toBe(false);
         expect(warnings).toEqual([
             "history: couldn't look for changes (busy)",
@@ -704,6 +1082,195 @@ describe("a store write left uncommitted", () => {
         expect(await history.repo.changed()).toEqual([]);
         return provenanceOf(TEA_PATH);
     };
+
+    it.each(["unreadable", "malformed"])(
+        "records changes without promoting facts with an %s journal",
+        async (failure) => {
+            const history = await open();
+            await putFact(root, PERSONAL, EXTERNAL);
+            const coffeePath = "knowledge/personal/likes-coffee.md";
+            const coffee = { ...EXTERNAL, name: "likes-coffee" };
+            await putFact(root, PERSONAL, coffee);
+            rmSync(pendingPath(root));
+            if (failure === "unreadable") {
+                mkdirSync(pendingPath(root));
+            } else {
+                writeFileSync(pendingPath(root), "interrupted record");
+            }
+            put(root, TRANSCRIPT, event("one"));
+            await history.record([TRANSCRIPT], "turn: journal recovery");
+            const read = parseFact(
+                readFileSync(join(root, TEA_PATH), "utf8"),
+                "likes-tea",
+            );
+            expect(read.kind === "ok" && isConfirmed(read.fact)).toBe(false);
+            expect(provenanceOf(TEA_PATH)).toEqual(EXTERNAL.provenance);
+            expect(warnings.join("\n")).toContain("dorothy-pending");
+            expect(await history.repo.changed()).toEqual([]);
+            expect(
+                new TextDecoder().decode(
+                    (await history.repo.show(TEA_PATH, "HEAD")) ?? undefined,
+                ),
+            ).toBe(renderFact(EXTERNAL));
+            expect(
+                new TextDecoder().decode(
+                    (await history.repo.show(coffeePath, "HEAD")) ?? undefined,
+                ),
+            ).toBe(renderFact(coffee));
+            expect((await messages(history))[0]).toBe("turn: journal recovery");
+            expect(existsSync(pendingPath(root))).toBe(false);
+
+            await putFact(root, PERSONAL, {
+                ...EXTERNAL,
+                body: "Replacement.",
+            });
+            await history.record([TEA_PATH], "fact: after journal recovery");
+            expect((await messages(history))[0]).toBe(
+                "fact: after journal recovery",
+            );
+            expect(await history.repo.changed()).toEqual([]);
+            expect(
+                warnings.some((warning) => warning.includes("couldn't commit")),
+            ).toBe(false);
+        },
+    );
+
+    it("keeps uncertain attribution across an interrupted sweep", async () => {
+        const history = await open();
+        await putFact(root, PERSONAL, EXTERNAL);
+        const coffeePath = "knowledge/personal/likes-coffee.md";
+        const coffee = { ...EXTERNAL, name: "likes-coffee" };
+        await putFact(root, PERSONAL, coffee);
+        writeFileSync(pendingPath(root), "interrupted record\n");
+        const original = history.repo.commit;
+        let commits = 0;
+        const spy = spyOn(history.repo, "commit").mockImplementation(
+            async (paths, message) => {
+                commits += 1;
+                if (commits === 2) {
+                    throw new Error("interrupted sweep");
+                }
+                return original(paths, message);
+            },
+        );
+        try {
+            await history.sweep();
+        } finally {
+            spy.mockRestore();
+        }
+        expect(warnings.join("\n")).toContain("interrupted sweep");
+        expect((await history.repo.changed()).length).toBe(1);
+        await history.sweep();
+        expect(await history.repo.changed()).toEqual([]);
+        expect(
+            new TextDecoder().decode(
+                (await history.repo.show(TEA_PATH, "HEAD")) ?? undefined,
+            ),
+        ).toBe(renderFact(EXTERNAL));
+        expect(
+            new TextDecoder().decode(
+                (await history.repo.show(coffeePath, "HEAD")) ?? undefined,
+            ),
+        ).toBe(renderFact(coffee));
+    });
+
+    it("keeps a write after a torn journal, failed commit and restart", async () => {
+        const history = await open();
+        writeFileSync(pendingPath(root), "interrupted record");
+        await putFact(root, PERSONAL, EXTERNAL);
+        const spy = spyOn(history.repo, "commit").mockRejectedValue(
+            new Error("commit interrupted"),
+        );
+        try {
+            await record(history, [TEA_PATH], "fact: interrupted");
+        } finally {
+            spy.mockRestore();
+        }
+        // Reopening drops the process-local catch-up set, as a crash does.
+        const restarted = await open();
+        await restarted.sweep();
+        expect(provenanceOf(TEA_PATH)).toEqual(EXTERNAL.provenance);
+        expect(await restarted.repo.changed()).toEqual([]);
+    });
+
+    it("warns when journal repair fails and still records changes", async () => {
+        const history = await open();
+        mkdirSync(pendingPath(root));
+        writeFileSync(join(pendingPath(root), "keep"), "occupied");
+        put(root, TRANSCRIPT, event("one"));
+        await record(history, [TRANSCRIPT], "turn: journal repair failed");
+        expect((await messages(history))[0]).toBe(
+            "turn: journal repair failed",
+        );
+        expect(warnings.join("\n")).toContain(
+            "couldn't clear pending attribution",
+        );
+        expect(warnings.join("\n")).toContain("dorothy-pending");
+        expect(readFileSync(join(pendingPath(root), "keep"), "utf8")).toBe(
+            "occupied",
+        );
+    });
+
+    it("refuses a fact replacement when the journal cannot be written", async () => {
+        const history = await open();
+        await putFact(root, PERSONAL, EXTERNAL);
+        await history.sweep();
+        mkdirSync(pendingPath(root));
+        await expect(
+            putFact(root, PERSONAL, { ...EXTERNAL, body: "Replacement." }),
+        ).rejects.toThrow();
+        await history.sweep();
+        expect(readFileSync(join(root, TEA_PATH), "utf8")).toBe(
+            renderFact(EXTERNAL),
+        );
+        expect(provenanceOf(TEA_PATH)).toEqual(EXTERNAL.provenance);
+    });
+
+    it("keeps attribution after interruption immediately after fact replacement", async () => {
+        const history = await open();
+        const original = filesystem.rename;
+        const spy = spyOn(filesystem, "rename").mockImplementation(
+            async (from, to) => {
+                await original(from, to);
+                if (to === join(root, TEA_PATH)) {
+                    throw new Error("interrupted after replacement");
+                }
+            },
+        );
+        try {
+            await expect(putFact(root, PERSONAL, EXTERNAL)).rejects.toThrow(
+                "interrupted",
+            );
+        } finally {
+            spy.mockRestore();
+        }
+        await history.sweep();
+        expect(provenanceOf(TEA_PATH)).toEqual(EXTERNAL.provenance);
+        expect(warnings).toEqual([]);
+    });
+
+    it("keeps an earlier pending write if its replacement fails", async () => {
+        const history = await open();
+        await putFact(root, PERSONAL, EXTERNAL);
+        const original = filesystem.rename;
+        const spy = spyOn(filesystem, "rename").mockImplementation(
+            async (from, to) => {
+                if (to === join(root, TEA_PATH)) {
+                    throw new Error("replacement failed");
+                }
+                await original(from, to);
+            },
+        );
+        try {
+            await expect(
+                putFact(root, PERSONAL, { ...EXTERNAL, body: "Replacement." }),
+            ).rejects.toThrow();
+        } finally {
+            spy.mockRestore();
+        }
+        await history.sweep();
+        expect(provenanceOf(TEA_PATH)).toEqual(EXTERNAL.provenance);
+    });
 
     it.each([
         [

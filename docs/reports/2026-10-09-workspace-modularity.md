@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-10-09
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Workspace modularity report
 description: "How Dorothy became five workspace packages: the launch probes, the rulings made along the way, every commit and what is left"
@@ -373,6 +373,11 @@ the commits from before the packages use it.
 - `ee6aa1e` ai: Say why the sdk scope remains
 
 ## Known limitations
+
+Kitty replies, dependency checks, the editor entry and CLI injection.
+Closed by the roadmap sweep: see
+[the sweep report](./2026-10-19-roadmap-sweep.md). Remaining limits
+are recorded there.
 
 No limitation is known to block merge; merging is the user's call.
 

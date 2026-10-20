@@ -66,6 +66,12 @@ describe("lint on transcripts", () => {
     const path = "transcripts/a-b-c-d.jsonl";
     const two = event("user") + event("assistant");
 
+    it("distinguishes a blank line from malformed JSON", () => {
+        expect(lint(path, bytes(`${event("user")}\n`), null)).toBe(
+            "line 2 is blank",
+        );
+    });
+
     it("passes whole events, and a torn last line", () => {
         expect(lint(path, bytes(two), null)).toBeNull();
         expect(lint(path, bytes(`${two}{"v":1,"ki`), null)).toBeNull();
@@ -145,6 +151,14 @@ describe("facts and projects", () => {
         );
         expect(fileKind("projects.json")).toBe("projects");
         expect(fileKind("facts/likes-tea.md")).toBe("other");
+        // The layout before knowledge/ is no fact's place.
+        expect(fileKind("facts/personal/likes-tea.md")).toBe("other");
+        expect(fileKind("facts/projects/github.com/a/b/likes-tea.md")).toBe(
+            "other",
+        );
+        expect(lint("facts/personal/likes-tea.md", bytes("x\n"), null)).toBe(
+            null,
+        );
         expect(fileKind("knowledge/personal/sub/likes-tea.md")).toBe("other");
     });
 

@@ -24,6 +24,7 @@ import type { Cluster } from "../memory/sidecar.js";
 import {
     type Claim,
     Compaction,
+    type Outgoing,
     type SaveResult,
     type Seed,
 } from "./session.js";
@@ -160,8 +161,9 @@ export function harness({
     recording?: Promise<void>;
     // Settles when the first session may finish closing.
     closing?: Promise<void>;
-    // What the check before Dorothy's call answers; no check without.
-    ready?: SaveResult;
+    // What the check before Dorothy's call answers, or by the turns about
+    // to leave; no check without.
+    ready?: SaveResult | ((outgoing: Outgoing | null) => SaveResult);
     // Whether the sessions offer recollect.
     recollect?: boolean;
     // Whether a call answers "cancelled" when aborted, as a real one does;
@@ -175,6 +177,8 @@ export function harness({
     // What each save was given as the compaction's cost.
     const costs: number[] = [];
     const recorded: { through: number; clusters: number }[] = [];
+    // What the check before each call was given.
+    const checked: (Outgoing | null)[] = [];
     // Set to make connecting, estimating a seed, or sending this text,
     // throw.
     const faults: {
@@ -223,7 +227,16 @@ export function harness({
             }
             return typeof estimate === "number" ? estimate : estimate(seed);
         },
-        ...(ready === undefined ? {} : { ready: async () => ready }),
+        ...(ready === undefined
+            ? {}
+            : {
+                  ready: async (outgoing: Outgoing | null) => {
+                      checked.push(outgoing);
+                      return typeof ready === "function"
+                          ? ready(outgoing)
+                          : ready;
+                  },
+              }),
         claims: claims ?? (claim === null ? null : () => claim),
         timers,
         now: () => NOW,
@@ -259,6 +272,7 @@ export function harness({
         saved,
         costs,
         recorded,
+        checked,
         events,
         faults,
     };

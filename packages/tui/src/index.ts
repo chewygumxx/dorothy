@@ -8,7 +8,8 @@
 //
 //
 
-// @dorothy/tui: the chat on the terminal, and the editor it opens.
+// @dorothy/tui: the chat on the terminal. The editor it opens is the
+// separate entry point `./editor`, so a command that only edits need not
+// load the chat.
 
-export { editInEditor } from "./external-editor.js";
 export { type RunAppOptions, runApp } from "./run-app.js";

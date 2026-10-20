@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-11
-mtime: 2026-10-12
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Agentic asset refactor design
 description: >-
@@ -159,8 +159,9 @@ In this order:
    - the agentic assets and utilities the repository employs are declared
      in it, never left to a user's own settings;
    - every new file carries the house header, copied from a sibling;
-     `lint:header` keeps headers in sync but only warns of a missing
-     one.
+     `lint:header` keeps headers in sync and `header.test.ts` rejects a
+     missing header on a headed type, with explicit generated-file
+     exemptions.
 5. Commits: granular Conventional Commits, single-line where that
    suffices, headers of at most 50 characters, no em dashes, no agent
    trailers; the scopes are the package names with `config`, `claude` and
@@ -230,12 +231,16 @@ development dependencies, pinned, and herdr as a remote source in its
     "skills": "1.7.2",
     "superpowers": "github:obra/superpowers#v6.4.1"
 },
-"skills": [{ "source": "herdrdev/herdr", "skills": ["herdr"] }]
+"skills": [{
+    "source": "herdrdev/herdr",
+    "ref": "2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01",
+    "skills": ["herdr"]
+}]
 ```
 
-`bun.lock` pins superpowers to its commit. herdr is a remote source, so
-nothing pins it: the sync fetches its default branch and
-`skills-lock.json` records the hash it found. A probe confirmed that
+`bun.lock` pins superpowers to its commit. herdr's remote source is
+pinned to the v0.9.5 commit in `package.json`; `skills-lock.json` records
+the installed hash. Both are upgraded on purpose. A probe confirmed that
 bun's isolated linker installs superpowers from GitHub and that the CLI
 discovers the `skills/` directory of every installed dependency.
 
@@ -312,9 +317,12 @@ skill twice here.
   gitignored `.claude/settings.local.json`. `scripts/agent-memory.ts`,
   which `prepare` runs after the sync, writes it there from the
   checkout's own path, leaving the file's other settings alone, so every
-  install sets it and no one sets it by hand. The repo-memory plugin,
-  which rewrote it to `.claude/memory` at every session start, is
-  disabled here.
+  install sets it and no one sets it by hand. Missing settings are
+  created privately; malformed settings warn and stay byte-for-byte
+  unchanged. A `.claude` entry that is not a real directory, symlinks
+  included, warns and is left alone. A correct pointer is a no-op.
+  The repo-memory plugin, which rewrote it to `.claude/memory` at every
+  session start, is disabled here.
 
 ## Claude's settings
 
@@ -455,10 +463,6 @@ Revised with this spec:
 - **The sync is experimental.** The `skills` CLI names it
   `experimental_sync`. It is pinned exactly and upgraded on purpose, and
   `agents.test.ts` fails if its links ever stop matching the lock.
-- **An unpinned remote.** herdr follows its upstream's default branch
-  whenever `bun run skills` fetches it, and a fresh checkout has none
-  until then. Should that bite, herdr moves to a pinned dependency like
-  superpowers.
 - **Losing `using-superpowers`.** The plugin's hook made skill use the
   first thing in every session. The root's Process section is shorter and
   softer; if agents skip the process without it, the skill comes back.
@@ -478,8 +482,6 @@ Revised with this spec:
 - Model Providers and Dorothy's Gateway, as above.
 - A skill of the repository's own, such as the report or the probe
   procedure, once one recurs.
-- Checking that every file of a headed type has the header, not only that
-  existing headers are in sync.
 
 ## Out of scope
 

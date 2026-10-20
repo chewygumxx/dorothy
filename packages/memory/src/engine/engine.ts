@@ -18,6 +18,12 @@ import type { Fact, FactType } from "../facts/file.js";
 import type { Scope } from "../facts/store.js";
 import type { Note } from "../memory/block.js";
 
+// A piece of knowledge's id path: personal/<name>, or the project's.
+export const knowledgePath = (scope: Scope, name: string) =>
+    scope.kind === "personal"
+        ? `personal/${name}`
+        : `projects/${scope.id}/${name}`;
+
 export type KnowledgeItem = { id: string; scope: Scope; fact: Fact };
 export type EpisodeItem = {
     id: string;

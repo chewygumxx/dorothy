@@ -8,7 +8,7 @@
 //
 //
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import {
     appendFile,
     chmod,
@@ -26,6 +26,7 @@ import { newPhrase } from "@dorothy/core";
 import { PERSONAL, putFact } from "../facts/store.js";
 import { EMPTY_SIDECAR, type Sidecar, sidecarPath } from "../memory/sidecar.js";
 import type { Concept } from "../memory/vocabulary.js";
+import * as vocabularies from "../memory/vocabulary.js";
 import { RecallIndex } from "./store.js";
 import {
     readsByTarget,
@@ -367,6 +368,62 @@ describe("syncIndex", () => {
     });
 });
 
+describe("a failure while syncing", () => {
+    // Makes the statements starting as a key does throw its error, others
+    // as they were.
+    const failing = (faults: Record<string, Error>) => {
+        const run = index.db.run.bind(index.db);
+        return spyOn(index.db, "run").mockImplementation(((
+            statement: string,
+            ...rest: never[]
+        ) => {
+            for (const [sql, error] of Object.entries(faults)) {
+                if (statement.startsWith(sql)) {
+                    throw error;
+                }
+            }
+            return run(statement, ...rest);
+        }) as typeof index.db.run);
+    };
+
+    it("is told as it was when the savepoint's rollback cannot be", async () => {
+        await writeFile(transcript(A), user(1, "hello"));
+        // A statement that aborts the whole transaction leaves no savepoint
+        // to roll back to.
+        const failure = failing({
+            "INSERT INTO turns": new Error("disk full"),
+            "ROLLBACK TO": new Error("no such savepoint: sync"),
+        });
+        const error = await syncIndex(index, dir).catch(
+            (caught: unknown) => caught,
+        );
+        failure.mockRestore();
+        expect(String(error)).toContain("disk full");
+        expect(String(error)).not.toContain("no such savepoint");
+    });
+
+    it("is not a warning when the index is corrupt, which rebuilds it", async () => {
+        await writeFile(transcript(A), user(1, "hello"));
+        await syncIndex(index, dir);
+        const failure = failing({
+            "INSERT INTO turns": Object.assign(
+                new Error("database disk image is malformed"),
+                { code: "SQLITE_CORRUPT" },
+            ),
+        });
+        await appendFile(transcript(A), user(2, "again"));
+        const error = await syncIndex(index, dir).catch(
+            (caught: unknown) => caught,
+        );
+        failure.mockRestore();
+        expect(String(error)).toContain("database disk image is malformed");
+        expect(String(error)).toContain("rebuilt");
+        // The next sync fills the new index from the transcripts.
+        expect(await syncIndex(index, dir)).toEqual([]);
+        expect(turns(A)).toHaveLength(2);
+    });
+});
+
 describe("clusters", () => {
     const cluster = (from: number, through: number) => ({
         from,
@@ -401,10 +458,106 @@ describe("clusters", () => {
         const later = new Date(Date.now() + 5000);
         await utimes(sidecarPath(dir, A), later, later);
         await syncIndex(index, dir);
-        expect(rows()).toHaveLength(2);
+        expect(rows()).toEqual([
+            { phrase: A, n: 1, first: 1, last: 4 },
+            { phrase: A, n: 2, first: 5, last: 6 },
+        ]);
         await rm(transcript(A));
         await syncIndex(index, dir);
         expect(rows()).toEqual([]);
+    });
+});
+
+describe("hidden conversations", () => {
+    const words = (word: string) =>
+        index.db
+            .query("SELECT rowid FROM turns_fts WHERE turns_fts MATCH ?")
+            .all(word);
+    const counts = (of: string) =>
+        index.db
+            .query(
+                "SELECT turns, sessions, (SELECT count(*) FROM visits WHERE phrase = ?1) AS visits FROM conversations WHERE phrase = ?1",
+            )
+            .get(of);
+    const body = () =>
+        [
+            session(0),
+            user(1, "the walnut cake"),
+            reply(2, "baked at four"),
+        ].join("");
+    // A new mtime, as a rename by updateSidecar would give it.
+    const touched = async (of: string) => {
+        const later = new Date(Date.now() + 5000 * ++tick);
+        await utimes(sidecarPath(dir, of), later, later);
+    };
+    let tick = 0;
+
+    it("keep their text out of the index, counting their turns", async () => {
+        await writeFile(transcript(A), body());
+        await sidecar(A, { hidden: true });
+        await syncIndex(index, dir);
+        expect(turns(A)).toEqual([]);
+        expect(words("walnut")).toEqual([]);
+        expect(row(A)).toMatchObject({ hidden: 1, turns: 2, sessions: 1 });
+        expect(counts(A)).toEqual({ turns: 2, sessions: 1, visits: 1 });
+        await appendFile(transcript(A), user(3, "more walnut"));
+        await syncIndex(index, dir);
+        expect(turns(A)).toEqual([]);
+        expect(row(A)).toMatchObject({ turns: 3 });
+    });
+
+    it("lose their text from the index once hidden", async () => {
+        await writeFile(transcript(A), body());
+        await syncIndex(index, dir);
+        expect(turns(A)).toHaveLength(2);
+        expect(words("walnut")).toHaveLength(1);
+        await sidecar(A, { hidden: true });
+        await syncIndex(index, dir);
+        expect(turns(A)).toEqual([]);
+        expect(words("walnut")).toEqual([]);
+        expect(counts(A)).toEqual({ turns: 2, sessions: 1, visits: 1 });
+    });
+
+    it("have the text of an index that held it before swept out", async () => {
+        await writeFile(transcript(A), body());
+        await sidecar(A, {});
+        await syncIndex(index, dir);
+        // As an index from before hidden text was left out would hold it.
+        index.db.run("UPDATE conversations SET hidden = 1 WHERE phrase = ?", [
+            A,
+        ]);
+        await syncIndex(index, dir);
+        expect(turns(A)).toEqual([]);
+        expect(words("walnut")).toEqual([]);
+    });
+
+    it("get their text back, with the rest, once shown again", async () => {
+        await writeFile(transcript(A), body());
+        await sidecar(A, { hidden: true });
+        await syncIndex(index, dir);
+        await appendFile(transcript(A), user(3, "and the kiln"));
+        await sidecar(A, { hidden: false, title: "Cakes" });
+        await touched(A);
+        await syncIndex(index, dir);
+        expect(turns(A)).toEqual([
+            { n: 1, role: "user", text: "the walnut cake" },
+            { n: 2, role: "assistant", text: "baked at four" },
+            { n: 3, role: "user", text: "and the kiln" },
+        ]);
+        expect(words("walnut")).toHaveLength(1);
+        expect(row(A)).toMatchObject({ hidden: 0, turns: 3, title: "Cakes" });
+        expect(counts(A)).toEqual({ turns: 3, sessions: 1, visits: 1 });
+    });
+
+    it("leave other conversations' text alone", async () => {
+        await writeFile(transcript(A), body());
+        await writeFile(transcript(B), user(1, "the other walnut"));
+        await sidecar(A, { hidden: true });
+        await syncIndex(index, dir);
+        expect(turns(B)).toEqual([
+            { n: 1, role: "user", text: "the other walnut" },
+        ]);
+        expect(words("walnut")).toHaveLength(1);
     });
 });
 
@@ -499,6 +652,85 @@ describe("the vocabulary", () => {
         expect(state().broken).not.toBeNull();
         await rm(path);
         await syncIndex(index, dir, Date.now(), path);
+        expect(state()).toEqual({ mtime: null, broken: null });
+    });
+
+    it("rolls back all tag tables and state when copying fails", async () => {
+        await write({ k00000001: concept("one") });
+        await syncIndex(index, dir, Date.now(), path);
+        const before = [
+            "concepts",
+            "labels",
+            "broader",
+            "merged",
+            "vocabulary",
+        ].map((table) => rows(`SELECT * FROM ${table}`));
+        index.db.run(
+            "CREATE TEMP TRIGGER reject_tag BEFORE INSERT ON concepts WHEN NEW.label = 'two' BEGIN SELECT RAISE(ABORT, 'fixture sync failed'); END",
+        );
+        await write({
+            k00000001: concept("two"),
+            k00000002: concept("child", { broader: ["k00000001"] }),
+        });
+        const later = new Date(Date.now() + 5000);
+        await utimes(path, later, later);
+        expect(
+            (await syncIndex(index, dir, Date.now(), path)).join("\n"),
+        ).toContain("fixture sync failed");
+        expect(
+            ["concepts", "labels", "broader", "merged", "vocabulary"].map(
+                (table) => rows(`SELECT * FROM ${table}`),
+            ),
+        ).toEqual(before);
+        index.db.run("DROP TRIGGER reject_tag");
+        expect(await syncIndex(index, dir, Date.now(), path)).toEqual([]);
+        expect(rows("SELECT label FROM concepts ORDER BY label")).toEqual([
+            { label: "child" },
+            { label: "two" },
+        ]);
+    });
+
+    it("remembers an unparseable file's mtime until it changes", async () => {
+        const at = new Date("2026-10-07T12:00:00Z");
+        await writeFile(path, "{ broken");
+        await utimes(path, at, at);
+        await syncIndex(index, dir, Date.now(), path);
+        expect(state()).toEqual({
+            mtime: at.getTime(),
+            broken: "it is not JSON",
+        });
+        await write({ k00000001: concept("repaired") });
+        await utimes(path, at, at);
+        await syncIndex(index, dir, Date.now(), path);
+        expect(state().broken).toBe("it is not JSON");
+        expect(rows("SELECT label FROM concepts")).toEqual([]);
+        const later = new Date(at.getTime() + 1000);
+        await utimes(path, later, later);
+        await syncIndex(index, dir, Date.now(), path);
+        expect(state().broken).toBeNull();
+        expect(rows("SELECT label FROM concepts")).toEqual([
+            { label: "repaired" },
+        ]);
+    });
+
+    it("repairs state next sync when the file vanishes after stat", async () => {
+        await write({ k00000001: concept("one") });
+        const read = vocabularies.readVocabulary;
+        const vanished = spyOn(
+            vocabularies,
+            "readVocabulary",
+        ).mockImplementation(async (file) => {
+            await rm(file);
+            return read(file);
+        });
+        try {
+            expect(await syncIndex(index, dir, Date.now(), path)).toEqual([]);
+        } finally {
+            vanished.mockRestore();
+        }
+        expect(state().mtime).not.toBeNull();
+        expect(rows("SELECT label FROM concepts")).toEqual([]);
+        expect(await syncIndex(index, dir, Date.now(), path)).toEqual([]);
         expect(state()).toEqual({ mtime: null, broken: null });
     });
 

@@ -1,0 +1,273 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-code-review/storage-notes.txt
+#
+
+# R06: facts, projects, recall, transcripts and scrubbing
+
+Revision: 7602316f9dd3e1d8a46f0b1b885162a759d4ea58.
+One bounded, read-only pass through all 18 assigned production modules
+(about 6,400 lines), plus selected tests and callers. No tracked edits,
+commits, pushes, subagents, model calls or network requests. All executable
+probes use synthetic data below /tmp with all four XDG homes redirected.
+
+## Verified findings
+
+### P2: case variants of Authorization schemes bypass secret scrubbing
+
+Location: packages/memory/src/scrub.ts:24.
+
+BEARER is case-sensitive, while NAMED's exclusion of Bearer, Basic and
+token at line 36 is case-insensitive. Therefore a tool input/output holding
+`Authorization: bearer <opaque token>`, `basic <base64 credentials>` or
+`TOKEN <opaque token>` passes through both redactors with its credential
+unchanged. HTTP authentication schemes are case-insensitive, so these are
+ordinary valid headers. Values without one of PREFIXED's independent key
+prefixes remain exposed.
+
+toolEntry calls scrub before writing tool text into persistent transcripts.
+Claude Code ingestion passes non-memory tool inputs and outputs through
+toolEntry (bodies/claude-code.ts:218); the service's record path does too
+(contract/record.ts:73, caller identified by search, parent-owned scope).
+Those tool events can then reach later reviews. This defeats a stated
+secret-scrubbing behavior on an identifiable secret shape.
+
+Probe: /tmp/dorothy-review-storage-probes.ts, invoking real toolEntry with
+synthetic non-secret credential `opaque1234567890`:
+
+    Bearer -> "curl -H 'Authorization: Bearer [secret]'"
+    bearer -> "curl -H 'Authorization: bearer opaque1234567890'"
+    BEARER -> "curl -H 'Authorization: BEARER opaque1234567890'"
+    Basic  -> "curl -H 'Authorization: Basic [secret]'"
+    basic  -> "curl -H 'Authorization: basic opaque1234567890'"
+    TOKEN  -> "curl -H 'Authorization: TOKEN opaque1234567890'"
+
+Use the same case-insensitive scheme match in both passes. scrub.test.ts
+tests canonical Bearer/Basic and lower-case token, but no other casing.
+
+### P2: syncing a new fact named constructor retires it instead of exporting
+
+Location: packages/memory/src/projects/sync.ts:441-447.
+
+`constructor` is a valid fact name. With no own record of that name,
+`sync.synced[name]` retrieves Object.prototype.constructor from the ordinary
+object used for synced. `last` therefore is not undefined on the first
+sync of this fact. A live store fact and absent repository file are both
+classified as changed; sync selects the missing repository side and
+retires the live fact as "deleted in the repository". Nothing is exported.
+This also happens when adding the fact to a project already synced before.
+
+Probe: /tmp/dorothy-review-storage-probes.ts. After a successful ordinary
+project sync, putFact creates a live constructor fact using the real parser
+and renderer. The next real syncProject returned:
+
+    retired: ["constructor"]
+    conflicts: ["constructor"]
+    exported: []
+    skipped: []
+
+Reading the fact back showed retired initially null, then:
+
+    {"by":"repo","why":"deleted in the repository",...}
+
+Check Object.hasOwn before looking up the record, or use a null-prototype
+map. Registry helpers already guard their own record lookups with hasOwn.
+Existing tests use ordinary names such as a, b and tea; none exercises this
+legal inherited property name.
+
+### P2: automatic sync overwrites MEMORY.md edited while sync runs
+
+Location: packages/memory/src/projects/sync.ts:581-583.
+
+syncIndex decides whether the index is hand-written from readRepo's
+initial snapshot. After multiple filesystem awaits importing/exporting
+facts, it overwrites MEMORY.md without checking the file still holds that
+snapshot. A user or another agent adding a heading or notes during sync
+loses that edit, although the new file should be left as hand-written.
+writeRepoFile only rejects symlinks and does not compare content.
+
+The project guide explicitly says a file is overwritten only after reading
+it again and finding it as first read. Fact exports use holds for this;
+the index path omits the check. MEMORY.md is in the user's repository, and
+sync never commits it, so Dorothy's store history cannot recover its lost
+hand-written lines.
+
+Probe: /tmp/dorothy-review-index-race.ts. Real filesystem and real
+syncProject; a node:fs/promises readFile wrapper performs one deterministic
+concurrent edit immediately after reading the initial MEMORY.md snapshot,
+before returning that snapshot to sync. The edit adds a hand-written
+heading and notes, then ordinary reconciliation continues.
+
+    edited: true
+    handEditSurvived: false
+    report.index: "written"
+    after: "- [Old title](./a.md)\n  Fresh description.\n"
+
+Re-read MEMORY.md and compare its exact bytes/existence with the snapshot
+before replacing it, leaving/reporting it when it changed.
+
+### P2: importing a repository edit deletes store-only OKF metadata
+
+Location: packages/memory/src/projects/sync.ts:528-532.
+
+An existing OKF fact can carry foreign top-level fields and extra source
+resources, represented by Fact.foreign and Fact.otherSources. These fields
+are intentionally preserved by the file parser/renderer and by writeFact.
+They are not present in the repository's exported form. importFact builds
+a fresh Fact using only theirs, title, tags, importance, provenance and
+retired; it omits both store-only fields. Every repository content edit
+therefore silently erases them on the next sync. They are never conflicting
+repository content, because export strips them in the first place.
+
+Probe: /tmp/dorothy-review-storage-probes.ts:
+
+1. putFact creates a project fact with foreign={license:"MIT"},
+   otherSources=[{resource:"https://example.com/source"}], importance=5.
+2. syncProject exports it to the synthetic repository.
+3. Change only that exported file's description, Before -> After.
+4. syncProject reports imported:["known-fact"], with no skips/conflicts.
+5. Read real store file back: foreign=null, otherSources=null,
+   importance=5. Both metadata/source fields were lost.
+
+Preserve held.foreign and held.otherSources alongside tags and importance.
+facts/file.test.ts:205-242 explicitly verifies these fields survive file
+round-trips. projects/sync.test.ts:228-247 checks import preservation only
+for tags, importance and creation.
+
+### P2: out-of-scope matches prevent scoped search's OR fallback
+
+Location: packages/memory/src/recall/query.ts:454-465.
+
+conversationHits first searches all conversations for every query word,
+falling back to any word only when that global result is empty. search
+applies options.within afterwards. Thus an all-word match in another
+project suppresses the normal partial-word fallback in the requested
+scope. The user sees no relevant conversations even though those same
+in-scope hits would appear if the unrelated project's record did not
+exist. The facts branch correctly applies scopes before fallback.
+
+The engine baseline passes request.within into QueryOptions.within, so the
+service's project/personal-scoped search and automatic recall can trigger
+this (engine/baseline.ts:90-105; parent owns the contract caller review).
+
+Probe: /tmp/dorothy-review-storage-probes.ts uses a temporary RecallIndex
+and synthetic rows: personal conversation contains alpha; unrelated
+github.com/other/repo conversation contains alpha beta. Search query
+"alpha beta", kind conversations, within ["personal"] returns results:[].
+Delete only the unrelated project's turn and repeat the identical query:
+the personal conversation is now returned with the alpha snippet.
+
+Apply the scope restriction when determining hits, before deciding whether
+to use OR, as the facts branch already does. query.test.ts:170 tests the
+AND/OR fallback; scoped engine tests do not combine it with a full match
+outside the allowed scope.
+
+## Probes and results
+
+Both commands exited 0 and printed the outcomes above:
+
+    env XDG_DATA_HOME=/tmp/dorothy-review-storage-data \
+      XDG_CACHE_HOME=/tmp/dorothy-review-storage-cache \
+      XDG_CONFIG_HOME=/tmp/dorothy-review-storage-config \
+      XDG_STATE_HOME=/tmp/dorothy-review-storage-state \
+      /home/chewygumxx/.local/share/mise/installs/bun/1.4.2/bin/bun \
+      /tmp/dorothy-review-storage-probes.ts
+
+    # Same env/Bun prefix:
+    bun /tmp/dorothy-review-index-race.ts
+
+Latest scratch roots, intentionally left for evidence:
+
+- /tmp/dorothy-storage-review-rERiND
+- /tmp/dorothy-index-race-QyUQdi
+
+The first script contains four independent real implementation probes:
+toolEntry scrubbing, SQLite search, filesystem project metadata import and
+filesystem constructor-fact reconciliation. The second script only mocks
+one filesystem read to schedule an otherwise ordinary concurrent edit.
+No HTTP requests, git commands, real credentials or model calls occur.
+
+Parent reports the full baseline suite already passed 2,154 tests with
+5 skipped and 0 failures. I did not rerun that suite in this R06 pass.
+
+## Coverage
+
+Read memory package AGENTS.md in the prior pass and nested
+projects/AGENTS.md in this pass. Read all assigned production modules:
+
+- facts/commands.ts
+- facts/file.ts
+- facts/legacy.ts
+- facts/migrate.ts
+- facts/store.ts
+- projects/export.ts
+- projects/identify.ts
+- projects/registry.ts
+- projects/sync.ts
+- recall/facts.ts
+- recall/query.ts
+- recall/remember.ts
+- recall/server.ts
+- recall/store.ts
+- recall/sync.ts
+- recall/tags.ts
+- transcript.ts
+- scrub.ts
+
+Test coverage inspection was selective, not a full reading of every test:
+
+- Read all scrub.test.ts, especially all credential and long-input cases.
+- Read project sync fixtures and the repository import preservation,
+  conflict and first-sync tests; inventoried every sync test name.
+- Read facts/file.test.ts foreign/source preservation and malformed actor,
+  status and hidden-character cases, plus handEdited cases.
+- Read legacy.test.ts fixtures, rendering, FACT_NAME cases and generator
+  setup; inventoried later parser/body/origin tests.
+- Read facts/store.test.ts fixtures and initial guard behavior;
+  inventoried write/move/retire/list/parseTarget test names.
+- Read recall/query.test.ts fixtures; inventoried search/open/window,
+  recollect, fact search and tag coverage by test names.
+- Read recall/facts.test.ts changed/gone/unreadable/tag tests.
+- Read recall/sync.test.ts appended/torn-line/shrunk/replaced/deleted tests;
+  inventoried vocabulary, sidecar, cluster and session mapping tests.
+- Inventoried facts commands/migrate, recall tags/server/remember/store
+  and transcript tests by test names. Those files were not fully read.
+- Identify/registry/export tests were listed but not reviewed in detail.
+
+Targeted caller checks:
+
+- engine/baseline.ts scoped search delegation, lines 84-114.
+- bodies/claude-code.ts toolEntry call, lines 205-230.
+- memory/record.ts lookup/remember recording, lines 65-90.
+- Identified memory/open.ts automatic sync and contract record/recall/tools
+  callers with rg; parent reviews the contract behavior separately.
+
+## Gaps and concerns not elevated
+
+- No full provider/harness integration or adversarial multiprocess race
+  stress. The deterministic index-edit probe isolates the missing check.
+- File export also has a small check-to-rename interval after holds; did
+  not separately elevate this general atomicity limitation without a
+  stronger synchronization design requirement.
+- TranscriptWriter append does not repair a torn JSONL tail; parent is
+  separately verifying/reporting generic acceptRecord against that fact.
+  Avoid counting it twice from this pass.
+- Incremental transcript indexing keys on inode and byte growth. Direct
+  same-inode/same-size in-place transcript edits are not detected, but
+  ordinary history restoration uses replacement and existing tests cover
+  replacement/shrink. No supported production trigger established here.
+- Fact indexing keys on mtime only; did not elevate equal-mtime edits
+  without a realistic supported trigger beyond deliberately preserving it.
+- Scope leakage through old global recall/tag listing was not asserted:
+  its project option intentionally ranks rather than limits; the newer
+  contract paths are reviewed by the parent.
+- Did not test recursive YAML aliases or deeply nested foreign metadata
+  under Bun's parser; unexpected parser resource behavior remains untested.
+- Fact-store symlink and migration-prune hardening was not judged as an
+  external attack boundary; the store is local private data, while project
+  memory directories explicitly reject symlinks.
+- History engines, review scheduling, compaction and service contracts
+  are outside this assigned pass.
+
+No behavior was set aside solely because a spec was silent.

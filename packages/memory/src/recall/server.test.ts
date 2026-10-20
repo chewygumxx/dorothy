@@ -24,7 +24,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { factPath, PERSONAL, putFact, readFactFile } from "../facts/store.js";
 import { EMPTY_SIDECAR, sidecarPath } from "../memory/sidecar.js";
-import { createRecallServer, type RecallServerOptions } from "./server.js";
+import {
+    createRecallServer,
+    inSequence,
+    type RecallServerOptions,
+} from "./server.js";
 import { RecallIndex } from "./store.js";
 
 const A = newPhrase(() => Uint8Array.from([1, 1, 2, 3, 4, 5, 6, 7]));
@@ -67,6 +71,31 @@ async function connect(options: Partial<RecallServerOptions> = {}) {
 
 const textOf = (result: Awaited<ReturnType<Client["callTool"]>>) =>
     (result.content as { type: string; text: string }[])[0]?.text ?? "";
+
+describe("inSequence", () => {
+    it("runs calls one at a time, and goes on after one rejects", async () => {
+        const inOrder = inSequence();
+        const seen: string[] = [];
+        const slow = inOrder(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            seen.push("slow");
+            return "slow";
+        });
+        const failed = inOrder(async () => {
+            seen.push("failed");
+            throw new Error("boom");
+        });
+        const after = inOrder(async () => {
+            seen.push("after");
+            return "after";
+        });
+        expect(await slow).toBe("slow");
+        await expect(failed).rejects.toThrow("boom");
+        expect(await after).toBe("after");
+        expect(seen).toEqual(["slow", "failed", "after"]);
+        expect(await inOrder(async () => "later")).toBe("later");
+    });
+});
 
 describe("the recall server", () => {
     it("offers search and open", async () => {
@@ -121,6 +150,16 @@ describe("the recall server", () => {
         expect(
             found.results.map((hit) => [hit.identifier, hit.keywords]),
         ).toEqual([[A, ["rendering"]]]);
+    });
+
+    it("relays tag-limit errors to the recall client", async () => {
+        const client = await connect({ vocabulary: join(dir, "tags.json") });
+        const result = await client.callTool({
+            name: "search",
+            arguments: { tags: ["a", "b", "c", "d", "e", "f"] },
+        });
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toBe("Give at most 5 tags.");
     });
 
     it("relays a tag it does not know as a tool error", async () => {
@@ -283,6 +322,60 @@ describe("recollect on the server", () => {
         expect(textOf(missing)).toBe("No cluster by that number.");
     });
 
+    it("reopens a hidden chat's own turns from its transcript, which the index leaves out", async () => {
+        await writeFile(
+            join(dir, `${LIVE}.jsonl`),
+            [
+                user("the walnut cake"),
+                user("a render bug"),
+                user("then the kiln"),
+            ].join(""),
+        );
+        await writeFile(
+            sidecarPath(dir, LIVE),
+            JSON.stringify({
+                ...EMPTY_SIDECAR,
+                hidden: true,
+                clusters: [
+                    {
+                        from: 1,
+                        through: 3,
+                        abstract: "Cakes.",
+                        at: "2026-10-04T12:00:00.000Z",
+                        model: "m",
+                    },
+                ],
+            }),
+        );
+        const client = await connect({ recollect: true });
+        const opened = await client.callTool({
+            name: "recollect",
+            arguments: { cluster: 1, words: "Kiln" },
+        });
+        expect(opened.isError).toBeFalsy();
+        const result = JSON.parse(textOf(opened)) as RecollectResult;
+        expect(result.total).toBe(3);
+        expect(result.matched).toBe(true);
+        expect(result.window.map((turn) => turn.text)).toEqual([
+            "the walnut cake",
+            "a render bug",
+            "then the kiln",
+        ]);
+        expect(result.window[2]?.at).toBe("2026-10-04T12:00:00.000Z");
+        // Nothing of it was kept in the index.
+        const index = indexes[0] as RecallIndex;
+        expect(
+            index.db
+                .query("SELECT count(*) AS n FROM turns WHERE phrase = ?")
+                .get(LIVE),
+        ).toEqual({ n: 0 });
+        const missing = await client.callTool({
+            name: "recollect",
+            arguments: { cluster: 2 },
+        });
+        expect(textOf(missing)).toBe("No cluster by that number.");
+    });
+
     it.each([1.5, 0, -1])(
         "refuses cluster %p, not a whole number from 1",
         async (value) => {
@@ -433,6 +526,42 @@ describe("the recall server's facts", () => {
             "gateway",
         );
         expect(read.kind === "ok" && read.fact.provenance.from).toBe(LIVE);
+    });
+
+    it("answers a search after the remember sent before it", async () => {
+        const client = await connect({
+            facts: dir,
+            project: "github.com/u/here",
+            // A remember that takes its time, as a slow disk would.
+            openHistory: async () => {
+                await new Promise((resolve) => setTimeout(resolve, 100));
+                return null;
+            },
+        });
+        // Both are sent before either is answered.
+        const remembered = client.callTool({
+            name: "remember",
+            arguments: {
+                action: "write",
+                name: "gateway",
+                scope: "project",
+                type: "project",
+                title: "The gateway",
+                description: "How the gateway runs.",
+                body: "On loopback.",
+            },
+        });
+        const searched = client.callTool({
+            name: "search",
+            arguments: { query: "gateway", kind: "facts" },
+        });
+        expect(JSON.parse(textOf(await remembered))).toMatchObject({
+            action: "written",
+        });
+        const found = JSON.parse(textOf(await searched)) as SearchResult;
+        expect(found.facts.map((fact) => fact.id)).toEqual([
+            "github.com/u/here/gateway",
+        ]);
     });
 
     it("relays a refusal as a tool error", async () => {

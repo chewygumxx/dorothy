@@ -1,0 +1,32 @@
+# vim:set expandtab shiftwidth=4 filetype=diff:
+# SPDX-License-Identifier: GPL-3.0-only
+
+# ~chewygumxx/dorothy.git
+# ::: :/patches/isomorphic-git@1.43.1.patch
+
+diff --git a/index.cjs b/index.cjs
+index d6ebc67fafbbc86c849d62b4b49e5a6a820ee860..3f16ccdcf9f523131a17adf197bb65bd6ddf4952 100644
+--- a/index.cjs
++++ b/index.cjs
+@@ -10668,7 +10668,7 @@ async function _fetch({
+   response.HEAD = remoteHTTP.symrefs.get('HEAD');
+   // AWS CodeCommit doesn't list HEAD as a symref, but we can reverse engineer it
+   // Find the SHA of the branch called HEAD
+-  if (response.HEAD === undefined) {
++  if (response.HEAD === undefined && remoteRefs.has('HEAD')) {
+     const { oid } = GitRefManager.resolveAgainstMap({
+       ref: 'HEAD',
+       map: remoteRefs,
+diff --git a/index.js b/index.js
+index a6dab0a5c77830b7793fb521e49c606c8bb9d3ea..91378c4e525f7378579d6aad41c0b3dfaa0535d9 100644
+--- a/index.js
++++ b/index.js
+@@ -10655,7 +10655,7 @@ async function _fetch({
+   response.HEAD = remoteHTTP.symrefs.get('HEAD');
+   // AWS CodeCommit doesn't list HEAD as a symref, but we can reverse engineer it
+   // Find the SHA of the branch called HEAD
+-  if (response.HEAD === undefined) {
++  if (response.HEAD === undefined && remoteRefs.has('HEAD')) {
+     const { oid } = GitRefManager.resolveAgainstMap({
+       ref: 'HEAD',
+       map: remoteRefs,

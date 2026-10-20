@@ -13,7 +13,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { newPhrase } from "@dorothy/core";
-import type { Fact } from "../facts/file.js";
+import { type Fact, UNCONFIRMED } from "../facts/file.js";
 import { PERSONAL, putFact, type Scope } from "../facts/store.js";
 import { EMPTY_SIDECAR, type Sidecar, sidecarPath } from "../memory/sidecar.js";
 import {
@@ -195,6 +195,53 @@ describe("search", () => {
         ).toEqual([A, B].sort());
     });
 
+    it("reads turns' UTC times as the local day they fell on", async () => {
+        const zone = process.env.TZ;
+        try {
+            // One zone a day ahead of UTC and one half a day behind, so the
+            // same instants fall on a different day in each.
+            const NEXT = {
+                "2026-10-05": "2026-10-06",
+                "2026-10-04": "2026-10-05",
+            };
+            const PREVIOUS = {
+                "2026-10-05": "2026-10-04",
+                "2026-10-04": "2026-10-03",
+            };
+            const cases = [
+                [
+                    "Pacific/Kiritimati",
+                    "2026-10-04T23:30:00.000Z",
+                    "2026-10-05",
+                ],
+                ["Etc/GMT+12", "2026-10-05T05:00:00.000Z", "2026-10-04"],
+            ] as const;
+            for (const [n, [tz, at, local]] of cases.entries()) {
+                const word = n === 0 ? "eastword" : "westword";
+                process.env.TZ = tz;
+                await conversation(phrase(40 + n), [
+                    session(at),
+                    user(at, `A ${word} turn.`),
+                ]);
+                await syncIndex(index, dir);
+                const asked = (bounds: object) =>
+                    search(index, { query: word, ...bounds }, OPTIONS).results;
+                const [hit] = asked({});
+                expect(hit?.dateCreated).toBe(local);
+                expect(asked({ after: local })).toHaveLength(1);
+                expect(asked({ before: local })).toHaveLength(1);
+                expect(asked({ after: NEXT[local] })).toHaveLength(0);
+                expect(asked({ before: PREVIOUS[local] })).toHaveLength(0);
+            }
+        } finally {
+            if (zone === undefined) {
+                delete process.env.TZ;
+            } else {
+                process.env.TZ = zone;
+            }
+        }
+    });
+
     it("refuses dates written loosely", () => {
         for (const after of ["last week", "2026-02-30", "2026-1-5"]) {
             expect(() => search(index, { query: "x", after }, OPTIONS)).toThrow(
@@ -349,6 +396,53 @@ describe("windowOf", () => {
     });
 });
 
+describe("search within scopes", () => {
+    const HERE = "github.com/u/here";
+    const THERE = "github.com/u/there";
+    // A, B and C are in the fixtures of the other tests; these are not.
+    const P = phrase(4);
+    const Q = phrase(5);
+    const R = phrase(6);
+    const inProject = (project: string | null, at: string) =>
+        line("session", at, {
+            phrase: "p",
+            sdkSessionId: "s",
+            model: "m",
+            promptHash: "h",
+            resumed: false,
+            ...(project === null ? {} : { project }),
+        });
+    const scoped = (query: string, within: string[]) =>
+        search(index, { query }, { ...OPTIONS, within }).results.map(
+            (hit) => hit.identifier,
+        );
+
+    it("falls back to any word among the scopes' own conversations, whatever lies outside", async () => {
+        await conversation(P, [
+            inProject(HERE, day(4)),
+            user(day(4), "alpha only, in this project"),
+        ]);
+        await conversation(Q, [
+            inProject(THERE, day(5)),
+            user(day(5), "alpha and beta together, in another project"),
+        ]);
+        await conversation(R, [
+            inProject(null, day(6)),
+            user(day(6), "alpha beta, personal"),
+        ]);
+        await syncIndex(index, dir);
+        // All the words are in other scopes' conversations; here only one is.
+        expect(scoped("alpha beta", [HERE])).toEqual([P]);
+        // With the others allowed, their full matches still come first alone.
+        expect(scoped("alpha beta", [HERE, THERE]).sort()).toEqual([Q]);
+        expect(scoped("alpha beta", ["personal"])).toEqual([R]);
+        expect(scoped("alpha beta", [THERE, "personal"]).sort()).toEqual(
+            [Q, R].sort(),
+        );
+        expect(scoped("alpha beta", ["github.com/u/nowhere"])).toEqual([]);
+    });
+});
+
 describe("recollect", () => {
     const cluster = (from: number, through: number) => ({
         from,
@@ -459,6 +553,52 @@ describe("recollect", () => {
         }
     });
 
+    it("serves turns it is given in place of the index's, for a hidden chat", () => {
+        const kept = [
+            "the cat sat",
+            "on the mat",
+            "a render bug",
+            "the dog",
+        ].map((text, at) => ({
+            turn: at + 1,
+            role: at % 2 === 0 ? ("user" as const) : ("assistant" as const),
+            at: Date.parse(day(1, at)),
+            text,
+        }));
+        const ask = (input: Parameters<typeof recollect>[1]) =>
+            recollect(index, input, { phrase: OWN, kept });
+        // Cluster 1 is turns 1 to 3; the index's own text is not used.
+        const plain = ask({ cluster: 1 });
+        expect(plain.window.map((turn) => turn.text)).toEqual([
+            "the cat sat",
+            "on the mat",
+            "a render bug",
+        ]);
+        expect(plain.window[0]?.at).toBe(day(1, 0));
+        // Every word, else any; whole words, any case.
+        expect(ask({ cluster: 1, words: "RENDER bug" })).toMatchObject({
+            matched: true,
+            window: [{ turn: 1 }, { turn: 2 }, { turn: 3 }],
+        });
+        expect(ask({ cluster: 1, words: "mat dog" }).matched).toBe(true);
+        expect(ask({ cluster: 1, words: "kiln" }).matched).toBe(false);
+        // Whole words: "cat" is not "category", "mat" not "format".
+        expect(ask({ cluster: 1, words: "cat" })).toMatchObject({
+            matched: true,
+            window: [{ turn: 1 }, { turn: 2 }, { turn: 3 }],
+        });
+        expect(ask({ cluster: 1, words: "ca" }).matched).toBe(false);
+        expect(ask({ cluster: 1, words: "bu" }).matched).toBe(false);
+        expect(ask({ cluster: 1, words: "bug." }).matched).toBe(true);
+        expect(ask({ cluster: 1, words: "?!" }).matched).toBe(false);
+        // Only from the turn asked for, and within the cluster.
+        expect(ask({ cluster: 1, words: "cat", turn: 2 }).matched).toBe(false);
+        expect(ask({ cluster: 1, words: "dog" }).matched).toBe(false);
+        expect(() => ask({ cluster: 1, words: "  " })).toThrow(
+            "Give some words to look for.",
+        );
+    });
+
     it("never opens another conversation's clusters", async () => {
         await conversation(A, [user(day(2), "elsewhere")], {
             clusters: [cluster(1, 1)],
@@ -555,7 +695,43 @@ describe("search over facts", () => {
             description: "What she knows of tea.",
             origin: "dorothy",
             snippet: expect.stringContaining("«tea»"),
+            unconfirmed: UNCONFIRMED,
         });
+    });
+
+    it("marks only knowledge the user has not confirmed", async () => {
+        await putFact(
+            dir,
+            PERSONAL,
+            fact("milk", {
+                body: "Render milk.",
+                provenance: {
+                    origin: "user",
+                    by: "user",
+                    at: day(5),
+                    created: day(5),
+                },
+            }),
+        );
+        await putFact(
+            dir,
+            PERSONAL,
+            fact("sugar", {
+                body: "Render sugar.",
+                foreign: { verified: [{ by: "human:owner", at: day(6) }] },
+            }),
+        );
+        await syncFactsToo();
+        const marks = Object.fromEntries(
+            search(
+                index,
+                { query: "render", kind: "facts" },
+                withProject,
+            ).facts.map((hit) => [hit.id, hit.unconfirmed ?? null]),
+        );
+        expect(marks["personal/tea"]).toBe(UNCONFIRMED);
+        expect(marks["personal/milk"]).toBeNull();
+        expect(marks["personal/sugar"]).toBeNull();
     });
 
     it("searches one group alone by kind, and caps each at the limit", () => {
@@ -704,7 +880,25 @@ describe("openFact", () => {
             },
             retired: null,
             body: "Four o'clock.",
+            unconfirmed: UNCONFIRMED,
         });
+    });
+
+    it("leaves confirmed knowledge unmarked", async () => {
+        await putFact(
+            dir,
+            PERSONAL,
+            fact("tea", {
+                foreign: { verified: [{ by: "human:owner", at: day(6) }] },
+            }),
+        );
+        await syncFactsToo();
+        const opened = await openFact(
+            index,
+            { fact: "personal/tea", purpose: "her tea" },
+            dir,
+        );
+        expect(opened.unconfirmed).toBeUndefined();
     });
 
     it("relays a fact that is not there, and asks for a purpose", async () => {

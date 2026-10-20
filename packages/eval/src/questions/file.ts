@@ -94,6 +94,29 @@ export function questionId(
     return `q-${digest.slice(0, 8)}`;
 }
 
+// A digest of all that decides how a question is asked and judged, which
+// its id leaves out (the gold answer, the older answer, the date, the
+// project and the conversation excluded), so that a run can tell the
+// question it began with from one edited since. The evidence is in the
+// order of its ids, as questionId takes it.
+export function definitionOf(question: Question): string {
+    return createHash("sha256")
+        .update(
+            JSON.stringify([
+                question.type,
+                question.question,
+                question.answer,
+                [...question.evidence].sort(),
+                question.exclude,
+                question.asOf,
+                question.project,
+                question.note,
+            ]),
+        )
+        .digest("hex")
+        .slice(0, 16);
+}
+
 export const questionsPath = (work: string) => join(work, "questions.jsonl");
 
 // A schema failure in a line: the first issue, with the field it is in.

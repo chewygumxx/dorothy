@@ -12,10 +12,12 @@
 // once, kept only as SHA-256 hashes in the state directory, mode 0600. A
 // file that cannot be read trusts no device.
 
+import { Database } from "bun:sqlite";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { chmod, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { type Env, xdgDir } from "@dorothy/core";
+import { exclusiveLock } from "../sqlite-lock.js";
 
 export const DEVICE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 
@@ -41,27 +43,65 @@ export const tokensPath = (env: Env) =>
 const hashOf = (token: string) =>
     createHash("sha256").update(token).digest("hex");
 
-const isTokenFile = (value: unknown): value is TokenFile => {
-    if (typeof value !== "object" || value === null) {
-        return false;
-    }
-    const { v, devices } = value as { v?: unknown; devices?: unknown };
-    return (
-        v === 1 &&
-        typeof devices === "object" &&
-        devices !== null &&
-        Object.values(devices).every(
-            (entry) =>
-                typeof entry === "object" &&
-                entry !== null &&
-                typeof (entry as { hash?: unknown }).hash === "string",
-        )
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+
+// Exactly the file this store writes: a mapping of device names to a
+// SHA-256 hash and a time.
+const isTokenFile = (value: unknown): value is TokenFile =>
+    isRecord(value) &&
+    value.v === 1 &&
+    isRecord(value.devices) &&
+    Object.entries(value.devices).every(
+        ([device, entry]) =>
+            DEVICE.test(device) &&
+            isRecord(entry) &&
+            typeof entry.hash === "string" &&
+            /^[0-9a-f]{64}$/.test(entry.hash) &&
+            typeof entry.at === "string",
     );
-};
+
+// Changes to one file take turns, whichever store or process makes them.
+const queues = new Map<string, Promise<unknown>>();
+function inTurn<T>(path: string, work: () => Promise<T>): Promise<T> {
+    const result = (queues.get(path) ?? Promise.resolve()).then(() =>
+        underLock(path, work),
+    );
+    const tail = result.catch(() => {});
+    queues.set(path, tail);
+    void tail.then(() => {
+        if (queues.get(path) === tail) {
+            queues.delete(path);
+        }
+    });
+    return result;
+}
+
+// How long a change waits for another process's.
+const LOCK_WAIT_MS = 5000;
+
+// Changes of all processes take turns: SQLite's write lock on a file of
+// its own beside the tokens, as the index and history hold theirs, which
+// other processes wait for and SQLite lets go if the holder dies. The
+// whole read, change and write runs under it.
+async function underLock<T>(path: string, work: () => Promise<T>): Promise<T> {
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+    const lockPath = `${path}.lock`;
+    const db = new Database(lockPath, { create: true });
+    try {
+        await chmod(lockPath, 0o600);
+        db.run(`PRAGMA busy_timeout = ${LOCK_WAIT_MS}`);
+        return await exclusiveLock(db)(work);
+    } finally {
+        db.close();
+    }
+}
 
 export function tokenStore(
     path: string,
     now: () => Date = () => new Date(),
+    // The swap into place; for tests.
+    fs: { rename?: typeof rename } = {},
 ): TokenStore {
     const empty = (): TokenFile => ({ v: 1, devices: {} });
     // Only a missing file is an empty store; anything else is an error, so
@@ -93,10 +133,21 @@ export function tokenStore(
     const write = async (file: TokenFile) => {
         await mkdir(dirname(path), { recursive: true, mode: 0o700 });
         const temp = `${path}.${randomBytes(4).toString("hex")}.tmp`;
-        await writeFile(temp, `${JSON.stringify(file, null, 4)}\n`, {
-            mode: 0o600,
-        });
-        await rename(temp, path);
+        try {
+            // Synced before the swap, so a power loss leaves the old file
+            // or the new, never an empty one.
+            const handle = await open(temp, "wx", 0o600);
+            try {
+                await handle.writeFile(`${JSON.stringify(file, null, 4)}\n`);
+                await handle.sync();
+            } finally {
+                await handle.close();
+            }
+            await (fs.rename ?? rename)(temp, path);
+        } catch (error) {
+            await rm(temp, { force: true });
+            throw error;
+        }
     };
     return {
         async add(device) {
@@ -106,27 +157,30 @@ export function tokenStore(
                 );
             }
             const token = `dmt_${randomBytes(32).toString("base64url")}`;
-            const file = await load();
-            file.devices[device] = {
-                hash: hashOf(token),
-                at: now().toISOString(),
-            };
-            await write(file);
+            await inTurn(path, async () => {
+                const file = await load();
+                file.devices[device] = {
+                    hash: hashOf(token),
+                    at: now().toISOString(),
+                };
+                await write(file);
+            });
             return token;
         },
-        async revoke(device) {
-            const file = await load();
-            if (!Object.hasOwn(file.devices, device)) {
-                return false;
-            }
-            file.devices = Object.fromEntries(
-                Object.entries(file.devices).filter(
-                    ([name]) => name !== device,
-                ),
-            );
-            await write(file);
-            return true;
-        },
+        revoke: (device) =>
+            inTurn(path, async () => {
+                const file = await load();
+                if (!Object.hasOwn(file.devices, device)) {
+                    return false;
+                }
+                file.devices = Object.fromEntries(
+                    Object.entries(file.devices).filter(
+                        ([name]) => name !== device,
+                    ),
+                );
+                await write(file);
+                return true;
+            }),
         async verify(token) {
             const hash = Buffer.from(hashOf(token), "hex");
             for (const [device, entry] of Object.entries(

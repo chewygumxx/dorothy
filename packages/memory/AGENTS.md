@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-18
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: packages/memory/AGENTS.md
 description: >-
@@ -31,19 +31,17 @@ text (`MemoryPrompts`).
   `--claude` asks of memory; `"./claude-hook"` (`src/claude-hook.ts`):
   `runClaudeHook`, for its hooks. Read [their guide](./src/bodies/AGENTS.md).
 - `"./commands"` (`src/commands.ts`): `--list`, `--memory`, `--tags`,
-  `--edit-tags`, `--facts`, `--retire`, `--revive`, `--sync`,
+  `--edit-tags`, `--facts`, `--retire`, `--revive`, `--verify`, `--sync`,
   `--projects`, the history commands and `commandHistory()`.
 - `"./recall-server"` (`src/recall-server.ts`): `runRecallServer` alone;
   `"./service"`, `"./client"`, `"./bridge"`, `"./evaluation"`: [the contract's guide](./src/contract/AGENTS.md).
 
-Of the `@dorothy` packages it depends on `core` alone.
-
 ## Files
 
-- `transcript.ts`: transcripts, private JSONL under
-  `$XDG_DATA_HOME/dorothy/`, of any body's sessions; a session event may
-  name its `source`, an event its `sourceUuid`. A tool call is scrubbed
-  of secrets (`scrub.ts`) and trimmed to 2,000 characters a side.
+- `transcript.ts`: private JSONL under `$XDG_DATA_HOME/dorothy/`.
+  Sessions name their `source`, events their `sourceUuid`. Tool text is
+  scrubbed (`scrub.ts`) and trimmed to 2,000 characters a side. Chat's
+  appends share history's lock with restores, through `TranscriptWriter`.
 - `memory/open.ts`: `openMemory` opens a chat's memory and returns its
   `createSession(turns)`, whose sessions are compacting, tracked by memory
   and recorded by `sessionRecorder` (`record.ts`). Each starts from the
@@ -67,20 +65,21 @@ Of the `@dorothy` packages it depends on `core` alone.
   checks a review's tags leniently, a bad tag never failing the notes, and
   coins concepts inside the sidecar's lock.
 - `facts/`: facts as OKF Markdown under `knowledge/` (`file.ts`; `migrate.ts`
-  moves `legacy.ts`'s old form once), personal or a project's, written under the
-  lock, retired and revived (`store.ts`); `commands.ts` the commands.
+  moves `legacy.ts`'s old form once), personal or a project's, written under
+  the lock (`store.ts`); `yaml` checks duplicate keys; `commands.ts` theirs.
 - `projects/`: a project's identity, registry, exported form and sync
   with its repository; read [its own guide](./src/projects/AGENTS.md).
 - `recall/`: search over past conversations and facts. `store.ts` is a
   derived SQLite FTS5 index in the XDG cache; `sync.ts` syncs it from the
-  transcripts and sidecars before every query, a conversation's source
+  transcripts and sidecars before every query: a conversation's source
   and project from its first session, its body sessions (`sessionPhrase`)
-  too, and `facts.ts` the store's facts by mtime; `query.ts` has `search`
-  and `open`, of either; `tags.ts` mirrors the vocabulary; `remember.ts`
-  writes her own facts; `server.ts` serves them over MCP on stdio as
-  `dorothy --recall-server`, history opened without the mirror. Reviews
-  appraise each read into the sidecar, and `salience()` (`rank.ts`)
-  weighs appraised reads with visits.
+  too, a hidden one's turns counted but their text left out, and
+  `facts.ts` the facts by content hash. `query.ts` has `search`, `open`,
+  `recollect` (a hidden chat's turns from its transcript); `tags.ts`
+  mirrors the vocabulary; `remember.ts` writes her facts; `server.ts`
+  serves them over MCP on stdio as `dorothy --recall-server`, one call at
+  a time, history opened without the mirror. Reviews appraise each read
+  into the sidecar, and `salience()` (`rank.ts`) weighs appraised reads.
 - `compaction/`: past `[compaction] soft` tokens, at the next idle (past
   `hard`, before the next message), `compact()` splits the turns before
   the verbatim tail into topical clusters with an abstract each; read
@@ -92,23 +91,24 @@ Of the `@dorothy` packages it depends on `core` alone.
   each logical change, sweeps up outside changes first, and restores a
   file that fails `lint.ts` (`heal.ts`), keeping its bytes under
   `broken/`. The lint knows facts and `projects.json`. The sweep keeps a
-  canonical changed fact whose provenance differs from HEAD's as hers;
-  else it is the user's, rewritten canonically only if that lints.
+  fact as hers if `facts/pending.ts` noted its hash. A damaged journal warns,
+  commits without changing attribution, then repairs; outside edits are user's.
   `mirror.ts` seals new commits as AES-256-GCM bundles (`seal.ts`) on the
   orphan branch `sealed` and pushes it to the remote
   `mirror` under `DOROTHY_MIRROR_KEY`; `--recover` rebuilds from it.
-  `commands.ts` has `commandHistory` and `--history`, `--restore`,
-  `--rollback`, `--check`, `--mirror` and `--recover`, saving the
-  mirror's key with dotenvx's `set`; `lock.ts` is the `FileLock`.
+  `commands.ts` has `commandHistory`, history/restore/rollback/check and
+  mirror/recover commands. Commands that advance main await a push on close;
+  mirror keys use dotenvx's `set`. `lock.ts` is the common `FileLock`.
 - `sqlite-lock.ts`: `exclusiveLock`, a SQLite `BEGIN IMMEDIATE` lock.
 
 ## Invariants
 
 - The recall index doubles as the sidecar write lock and holds review
-  claims, so two TUIs never review one conversation at once. Without the
-  index, history's `FileLock` (`.git/dorothy.lock`) is the lock; both are
-  `exclusiveLock`. History commits a change inside the lock it was written
-  under; healing takes the lock, so it happens only outside it.
+  claims, so two TUIs never review one conversation at once; a corrupt
+  one is rebuilt in place only if `soleHolder` shows no other process has
+  it open. History's `FileLock` (`.git/dorothy.lock`) excludes all history
+  writers, with the index's lock taken first when available; history
+  commits inside it, and healing takes it, so only outside it.
 - `updateSidecar`'s change may be async, so coining a concept inside its
   lock means two runs never coin one label twice.
 - The notes never import history; only `openMemory` wires the two.
@@ -119,7 +119,7 @@ Of the `@dorothy` packages it depends on `core` alone.
   commits each turn once the transcript is flushed.
 - The memory block charges the earlier turns' abstracts first.
 - `recollect` is served only with `--recollect`, for a chat with clusters.
-- A concept only hidden conversations carry is never shown to her.
+- At catalogue load, concepts carried only by hidden chats are omitted.
 - Nothing deletes a fact: one retired stays indexed, searchable and in
   history. Its origin is set by the code that writes it, never read
   from its text, and only the user raises it.
@@ -131,7 +131,7 @@ Of the `@dorothy` packages it depends on `core` alone.
 
 - Pass every root, key and environment in; tests keep to temporary
   directories (`history/testing.ts` has `tempRoot` and `TEST_ENV`).
-- The git binary's tests shut out the user's git configuration.
+- Git tests isolate config; local HTTPS uses git http-backend and OpenSSL.
 - One contract test runs against both history engines, and across them.
 - `memory/fake-session.ts` fakes a `ChatSession`; `*-testing.ts` share fixtures.
 

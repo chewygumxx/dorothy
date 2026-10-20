@@ -27,17 +27,25 @@ const describeError = (error: unknown) =>
 export const WRONG_KEY =
     "history: DOROTHY_MIRROR_KEY does not open the sealed bundles; set the key they were sealed with";
 
-// Whether the key opens the newest sealed bundle, as every bundle in the
-// chain must; true when nothing is sealed yet.
+// Why the newest sealed bundle cannot be opened; null when it opens or
+// nothing is sealed yet.
+export type SealedProblem = { kind: "format" | "key"; reason: string };
+
+export async function sealedProblem(
+    repo: MemoryRepo,
+    key: Uint8Array,
+): Promise<SealedProblem | null> {
+    const newest = (await repo.sealedNames()).at(-1);
+    if (newest === undefined) return null;
+    const opened = await unseal(await repo.sealedFile(newest), key);
+    return opened.ok ? null : { kind: opened.kind, reason: opened.reason };
+}
+
 export async function opensSealed(
     repo: MemoryRepo,
     key: Uint8Array,
 ): Promise<boolean> {
-    const newest = (await repo.sealedNames()).at(-1);
-    return (
-        newest === undefined ||
-        (await unseal(await repo.sealedFile(newest), key)).ok
-    );
+    return (await sealedProblem(repo, key)) === null;
 }
 
 export type Sealed = "sealed" | "nothing" | "wrong-key";
@@ -45,32 +53,53 @@ export type Sealed = "sealed" | "nothing" | "wrong-key";
 // The commits on main since the last sealed one, sealed as the next bundle
 // on the sealed branch: "nothing" when there were none, "wrong-key" when
 // the key does not open the bundles before it, since recovery would stop
-// at the first sealed under another. The caller holds the lock.
+// at the first sealed under another. Only snapshot and append hold the lock.
 export async function sealPending(
     repo: MemoryRepo,
     key: Uint8Array,
+    lock: Lock = (work) => work(),
+    checked?: { head: string | null; problem: SealedProblem | null },
 ): Promise<Sealed> {
-    const since = await repo.resolve(SEALED_THROUGH);
-    const tip = await repo.resolve(MAIN);
-    if (tip === null || tip === since) {
-        return "nothing";
+    for (;;) {
+        const snapshot = await lock(async () => {
+            const since = await repo.resolve(SEALED_THROUGH);
+            const tip = await repo.resolve(MAIN);
+            if (tip === null || tip === since) return "nothing" as const;
+            const head = await repo.resolve(SEALED);
+            const problem =
+                checked !== undefined && checked.head === head
+                    ? checked.problem
+                    : await sealedProblem(repo, key);
+            if (problem !== null) return "wrong-key" as const;
+            return {
+                since,
+                tip,
+                head,
+                sequence: (await repo.sealedNames()).length + 1,
+            };
+        });
+        if (typeof snapshot === "string") return snapshot;
+        // Both main's tip and its prerequisite are immutable commits.
+        const bundle = await repo.bundle(snapshot.since, snapshot.tip);
+        if (bundle === null) return "nothing";
+        const bytes = await seal(bundle, key);
+        const appended = await lock(async () => {
+            if (
+                (await repo.resolve(SEALED_THROUGH)) !== snapshot.since ||
+                (await repo.resolve(SEALED)) !== snapshot.head
+            )
+                return false;
+            await repo.appendSealed(
+                sealedName(snapshot.sequence),
+                bytes,
+                SEALED_README,
+                `seal ${snapshot.sequence}`,
+            );
+            await repo.setRef(SEALED_THROUGH, snapshot.tip);
+            return true;
+        });
+        if (appended) return "sealed";
     }
-    if (!(await opensSealed(repo, key))) {
-        return "wrong-key";
-    }
-    const bundle = await repo.bundle(since);
-    if (bundle === null) {
-        return "nothing";
-    }
-    const sequence = (await repo.sealedNames()).length + 1;
-    await repo.appendSealed(
-        sealedName(sequence),
-        await seal(bundle, key),
-        SEALED_README,
-        `seal ${sequence}`,
-    );
-    await repo.setRef(SEALED_THROUGH, tip);
-    return "sealed";
 }
 
 // Whether main has commits not yet sealed.
@@ -81,6 +110,7 @@ export async function waiting(repo: MemoryRepo): Promise<boolean> {
 
 export type PushOutcome =
     | { kind: "no-mirror" }
+    | { kind: "nothing" }
     | { kind: "no-key" }
     | { kind: "pushed"; sealed: boolean }
     // Nothing new was sealed; what was sealed before is pushed.
@@ -101,14 +131,15 @@ export type MirrorOptions = {
 };
 
 // Pushes the sealed branch to the mirror, at most once a period after
-// commits. Sealing happens under the lock; the push, which may take a
-// while, does not. One push runs at a time.
+// commits. Bundle construction and network work are outside the lock;
+// only the snapshot and append take it. One push runs at a time.
 export class Mirror {
     readonly #options: MirrorOptions;
     readonly #timers: Timers;
     #timer: unknown = null;
     #stopped = false;
     #running: Promise<PushOutcome> | null = null;
+    #again = false;
     // A seal under way, which stopping waits for; it never rejects.
     #sealing: Promise<unknown> | null = null;
 
@@ -118,7 +149,11 @@ export class Mirror {
     }
 
     schedule(): void {
-        if (this.#stopped || this.#timer !== null) {
+        if (
+            this.#stopped ||
+            this.#options.pushMs <= 0 ||
+            this.#timer !== null
+        ) {
             return;
         }
         this.#timer = this.#timers.set(() => {
@@ -128,8 +163,16 @@ export class Mirror {
     }
 
     push(): Promise<PushOutcome> {
+        if (this.#running !== null) {
+            this.#again = true;
+            return this.#running;
+        }
         this.#running ??= this.#push().finally(() => {
             this.#running = null;
+            if (this.#again) {
+                this.#again = false;
+                this.schedule();
+            }
         });
         return this.#running;
     }
@@ -162,7 +205,13 @@ export class Mirror {
             if (this.#stopped) {
                 return { kind: "stopped" };
             }
-            const sealing = lock(() => sealPending(repo, key));
+            const head = await repo.resolve(SEALED);
+            const problem = await sealedProblem(repo, key);
+            if (this.#stopped) return { kind: "stopped" };
+            const sealing =
+                problem === null
+                    ? sealPending(repo, key, lock, { head, problem })
+                    : Promise.resolve("wrong-key" as const);
             this.#sealing = sealing.then(
                 () => {},
                 () => {},
@@ -174,17 +223,26 @@ export class Mirror {
                 this.#sealing = null;
             }
             if (sealed === "wrong-key") {
-                warn(WRONG_KEY);
+                warn(
+                    problem === null || problem.kind === "key"
+                        ? WRONG_KEY
+                        : `history: the newest sealed bundle cannot be opened (${problem.reason}); nothing new was sealed`,
+                );
             }
-            if ((await repo.resolve(SEALED)) !== null) {
-                await repo.push(MIRROR, "sealed", this.#options.token());
-            }
+            if ((await repo.resolve(SEALED)) === null)
+                return { kind: "nothing" };
+            await repo.push(MIRROR, "sealed", this.#options.token());
             return sealed === "wrong-key"
                 ? { kind: "wrong-key" }
                 : { kind: "pushed", sealed: sealed === "sealed" };
         } catch (error) {
-            const reason = describeError(error);
+            const detail = describeError(error);
+            const reason =
+                /non-fast-forward|fetch first|not fast forward/i.test(detail)
+                    ? `${detail}; the mirror already holds sealed history: use its original key and --recover into an empty directory, or choose a new empty mirror`
+                    : detail;
             warn(`history: couldn't push to the mirror (${reason})`);
+            this.schedule();
             return { kind: "failed", reason };
         }
     }

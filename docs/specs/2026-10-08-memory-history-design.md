@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-08
-mtime: 2026-10-18
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Memory history design
 description: "Design spec for keeping Dorothy's data directory as a git repository, with recovery and a sealed mirror"
@@ -166,15 +166,19 @@ command run later in the same process never switches.
 - the data directory as `-C`, and no inherited `GIT_DIR` or
   `GIT_WORK_TREE`.
 
-One setting is carried over from the user's global configuration, for
-pushing only: `credential.helper`, read once with
-`git config --global --get-all credential.helper` and passed as `-c`.
+Credential-helper settings alone are carried over from the user's global
+configuration for push and fetch. Their original keys, URL scopes, order
+and empty reset values are preserved in Git's configuration environment,
+so Git selects helpers for the actual remote URL. Other global settings
+stay isolated.
 When `DOROTHY_MIRROR_TOKEN` is set, a helper of Dorothy's that answers
 with it replaces the user's, so their helpers never store it; the token
 reaches git only in a push's or a fetch's environment.
 
 **isomorphic-git**, pinned at 1.43.1 (MIT), reads no configuration. It
-uses the same author, and Node's `fs` under Bun.
+uses the same author, and Node's `fs` under Bun. Its declared Bun patch
+allows HTTPS fetch from a sealed-only mirror with an unborn remote HEAD;
+fetch configures and then removes a private incoming tracking remote.
 
 **One contract.** A single test suite runs against both engines, and
 cross-engine tests commit with one and log, show, restore and bundle with
@@ -203,15 +207,17 @@ records, right after them:
   `Lock`, and call `record(paths, message)` inside the lock after their
   atomic writes. `src/memory/` does not import `src/history/`.
 - **A turn** is committed at turn end, under the lock: the transcript as
-  it stands, with its turn count.
+  it stands, with its canonical user-event count, including failed turns.
 - **Outside changes first.** Before a logical commit, `changed()` is
   checked. Any changed file the commit does not name, other than this
   process's catch-up paths, is linted and either committed alone as
   `outside: <path>` or restored (see Recovery). So every commit has one
-  author.
-- **Transcripts are never outside.** A live TUI appends to its transcript
-  outside the lock, between turn commits, so another process often finds
-  one changed. A transcript change that passes the append-only lint is
+  author. An unreadable outside path warns and waits for a later sweep;
+  other paths and the named change still proceed. New empty transcripts
+  wait for their first event before being committed.
+- **Transcripts are never outside.** A live TUI appends under history's
+  shared write lock, between turn commits. Restores take the same lock,
+  closing the inode-check/append window. An append-only transcript change is
   the conversation's own, and whoever finds it commits it as
   `turn: <phrase> #<n>`; only one that fails is recovered.
 - **A failed commit** leaves its writes standing and is reported once per
@@ -222,13 +228,17 @@ records, right after them:
 
 ### The lock
 
-Commits take the cross-process lock that guards sidecar writes: the recall
-index's (`RecallIndex.exclusive`). Without the index, as when recall is
-off, history takes an equivalent lock on `.git/dorothy.lock`, held the way
-the index holds its own, so commits are never unlocked even where sidecar
-writes are today. isomorphic-git does not reliably honour git's own lock
-files; this lock is what keeps two processes, and two engines, from
-writing at once.
+Every history writer takes the common cross-process lock on
+`.git/dorothy.lock`. With an index, its `RecallIndex.exclusive` lock is
+taken first, then the common lock, so canonical writes and index changes
+share their transaction. Canonical writers prefer this combined lock.
+A hook with the index and one without therefore exclude each other.
+isomorphic-git does not reliably honour Git's own lock files.
+
+A `.git/index.lock` older than a minute is cleared when no Git process
+is running in this repository. If the process table cannot be inspected,
+it is cleared only after ten minutes. Linux uses `/proc` process names
+and working directories. A known running Git always keeps its lock.
 
 ## The lint
 
@@ -302,8 +312,10 @@ Recovering one file:
    will be stored on that host, encrypted;
 5. pushes once, at once, so a bad URL fails while the user is watching.
 
-`dorothy --mirror` with no argument prints the mirror, the last push and
-how many commits wait.
+`dorothy --mirror` with no argument checks that the key opens the newest
+sealed bundle and prints the mirror, last sealed tip and whether commits
+wait. An unreadable bundle or incompatible format names its actual cause;
+a failed check exits 1.
 
 ### Required
 
@@ -316,9 +328,11 @@ work fully without one.
 
 The local repository stays plain text. What leaves the machine is sealed:
 
-1. **A bundle.** At each push, `bundle(since)` packs the commits on `main`
-   after the last sealed one. A bundle is git's own transport format, a
-   header and a packfile, and keeps git's delta compression: a turn
+1. **A bundle.** At each push, capture the current `main` tip, prerequisite
+   and sealed sequence under the lock. `bundle(since, tip)` packs that
+   immutable snapshot outside the lock, as does encryption. A bundle is
+   Git's transport format: a header and a packfile with delta compression.
+   A turn
    appended to a transcript costs a few hundred bytes, not the transcript.
    The binary makes it with `git bundle create`; isomorphic-git writes
    the same header around `packObjects`.
@@ -334,7 +348,10 @@ The local repository stays plain text. What leaves the machine is sealed:
 3. **Committed to `sealed`.** The ciphertext is committed as
    `bundles/<six-digit sequence>.enc` to `sealed`, an orphan branch in the
    same repository, with the message `seal <sequence>`. A file at the
-   branch's root, `SEALED`, says what it is and how to recover it.
+   branch's root, `SEALED`, says what it is and how to recover it. Before
+   appending under the lock, compare the sealed refs with the snapshot;
+   if another sealer advanced them, retry. Sealed author and committer
+   times are fixed at 2000-01-01 UTC, avoiding activity metadata.
 4. **Pushed.** Only `sealed` is pushed to the mirror.
 
 Names are sequence numbers, so nothing about the content, not even a
@@ -351,8 +368,14 @@ Every mirror is sealed, local paths included.
   warned of and never forced.
 - Quitting never waits on a push; what is left is pushed at the next
   launch.
-- A failure is warned of once per run, with its reason, and retried at
-  the next push.
+- A failure is warned of once per run, with its reason. Periodic pushes
+  schedule a retry only while running and with a positive push interval.
+  One-shot commands stop after their attempt. A timer that fires during a
+  running push leaves follow-up work scheduled, so later commits do not
+  need another commit or launch.
+- Commands that advance main await one push on close, after their write
+  transaction. Short-lived hook/launch handles keep their background
+  policy. Chat shutdown still never waits for network completion.
 - With no key while a mirror is set, sealing stops with a warning naming
   `dotenvx`; commits go on.
 
@@ -518,7 +541,9 @@ tests shut out the user's git configuration as production does.
 - **A crash between a write and its commit** leaves the change uncommitted
   until the next launch, which commits it as `outside:` rather than as
   Dorothy's. So does another process's failed commit, since its catch-up
-  paths live only in its memory.
+  paths live only in its memory. Facts are the exception: the store's
+  pending hash journal preserves attribution across a crash; an
+  unavailable journal never promotes a fact to the user or confirmed.
 - **isomorphic-git cannot push over ssh or to a path.** Without the binary,
   only an `https://` mirror is pushed.
 - **Losing the key loses the mirror.** It is generated once and kept only

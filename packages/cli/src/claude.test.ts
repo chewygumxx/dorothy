@@ -17,6 +17,7 @@ import {
     readFileSync,
     rmSync,
     statSync,
+    writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,11 +33,13 @@ import {
     mergeJson,
     privateWriter,
     runClaude,
+    spawnDetached,
 } from "./claude.js";
 
 const LAUNCH = "6c84fb90-12c4-11e1-840d-7b25c5ee775a";
 const SESSION = "0f8fad5b-d9cb-469f-a165-70867728950e";
 const OTHER = "7d95fc01-23d5-42f2-951e-8c36d6ff886b";
+const SESSION2 = "1a9fbe6c-eadc-4a7f-b276-81978839a61f";
 const SELF = ["/bin/bun", "/d/index.ts"];
 
 function harness(exit: number | Promise<number> = 0, memoryOn = false) {
@@ -50,6 +53,7 @@ function harness(exit: number | Promise<number> = 0, memoryOn = false) {
         killed: [] as string[],
         err: "",
         spawned: [] as string[][],
+        spawnedEnv: [] as Record<string, string | undefined>[],
     };
     const signals = new EventEmitter();
     const stats = { injected: 0, drift: 0 };
@@ -113,8 +117,9 @@ function harness(exit: number | Promise<number> = 0, memoryOn = false) {
             stale: async () => memory.stale,
             notices: async () => memory.notices,
         },
-        spawnDetached: (cmd) => {
+        spawnDetached: (cmd, env) => {
             calls.spawned.push(cmd);
+            calls.spawnedEnv.push(env);
         },
         newId: (() => {
             const ids = [LAUNCH, SESSION];
@@ -156,12 +161,89 @@ describe("runClaude", () => {
         expect(calls.err).toBe("");
     });
 
+    for (const proxy of [
+        "HTTP_PROXY",
+        "http_proxy",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+    ]) {
+        it(`bypasses the loopback gateway with ${proxy}`, async () => {
+            const { calls, deps } = harness();
+            deps.env = { ...deps.env, [proxy]: "http://127.0.0.1:1234" };
+            await runClaude(["-p", "hi"], deps);
+            expect(calls.env[proxy]).toBe("http://127.0.0.1:1234");
+            expect(calls.env.NO_PROXY).toBe("127.0.0.1");
+            expect(calls.env.no_proxy).toBe("127.0.0.1");
+            expect(deps.env.NO_PROXY).toBeUndefined();
+            expect(deps.env.no_proxy).toBeUndefined();
+        });
+    }
+
+    it("keeps both proxy bypass lists when adding the gateway", async () => {
+        const { calls, deps } = harness();
+        deps.env = {
+            ...deps.env,
+            HTTP_PROXY: "http://127.0.0.1:1234",
+            NO_PROXY: "example.test, .corp.test",
+            no_proxy: "localhost,example.test",
+        };
+        await runClaude(["-p", "hi"], deps);
+        expect(calls.env.NO_PROXY).toBe(
+            "example.test,.corp.test,localhost,127.0.0.1",
+        );
+        expect(calls.env.no_proxy).toBe(calls.env.NO_PROXY);
+        expect(deps.env.NO_PROXY).toBe("example.test, .corp.test");
+        expect(deps.env.no_proxy).toBe("localhost,example.test");
+    });
+
     it("chains onto the user's own base URL", async () => {
         const { calls, deps } = harness();
         deps.env = { ...deps.env, ANTHROPIC_BASE_URL: "http://proxy/x" };
         await runClaude([], deps);
         expect(calls.upstream).toBe("http://proxy/x");
         expect(calls.env.ANTHROPIC_BASE_URL).toBe("http://127.0.0.1:4321");
+    });
+
+    it("passes the user's own base URL on to the hook's reviews, and no other", async () => {
+        const { calls, deps } = harness();
+        deps.env = { ...deps.env, ANTHROPIC_BASE_URL: "http://proxy/x" };
+        await runClaude([], deps);
+        expect(calls.env.DOROTHY_ANTHROPIC_BASE_URL).toBe("http://proxy/x");
+        // Without one, a variable of an outer launch is not passed on.
+        const bare = harness();
+        bare.deps.env = {
+            ...bare.deps.env,
+            DOROTHY_ANTHROPIC_BASE_URL: "http://outer/x",
+        };
+        await runClaude([], bare.deps);
+        expect("DOROTHY_ANTHROPIC_BASE_URL" in bare.calls.env).toBe(false);
+        const empty = harness();
+        empty.deps.env = { ...empty.deps.env, ANTHROPIC_BASE_URL: "" };
+        await runClaude([], empty.deps);
+        expect("DOROTHY_ANTHROPIC_BASE_URL" in empty.calls.env).toBe(false);
+    });
+
+    it("passes the directory of Dotenvx Armor's session on to the hook, and no other", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "dorothy-armor-"));
+        try {
+            writeFileSync(join(dir, ".env"), "SESSION=held\n");
+            const { calls, deps } = harness();
+            deps.env = { ...deps.env, DOTENVX_CONFIG: dir };
+            await runClaude([], deps);
+            expect(calls.env.DOROTHY_DOTENVX_CONFIG).toBe(dir);
+            // Where none is found, an outer launch's is not passed on.
+            const bare = harness();
+            bare.deps.env = {
+                ...bare.deps.env,
+                DOROTHY_DOTENVX_CONFIG: "/outer/dotenvx",
+            };
+            await runClaude([], bare.deps);
+            expect("DOROTHY_DOTENVX_CONFIG" in bare.calls.env).toBe(false);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
     });
 
     it("exits as claude did, a signal's code included", async () => {
@@ -474,6 +556,83 @@ describe("dorothy --claude records her sessions", () => {
         ]);
     });
 
+    it("starts its catch-ups where reviews find the user's own proxy", async () => {
+        const { calls, deps, memory } = harness(0, true);
+        deps.env = {
+            ...deps.env,
+            ANTHROPIC_BASE_URL: "http://proxy/x",
+            DOROTHY_ANTHROPIC_BASE_URL: "http://outer/x",
+        };
+        memory.stale = [OTHER];
+        await runClaude([], deps);
+        // The stale launch's and its own.
+        expect(calls.spawned).toHaveLength(2);
+        for (const env of calls.spawnedEnv) {
+            expect(env.DOROTHY_ANTHROPIC_BASE_URL).toBe("http://proxy/x");
+            expect(env.HOME).toBe("/home/u");
+        }
+        // With no proxy of the user's, an outer launch's is not passed on.
+        const bare = harness(0, true);
+        bare.deps.env = {
+            ...bare.deps.env,
+            DOROTHY_ANTHROPIC_BASE_URL: "http://outer/x",
+        };
+        await runClaude([], bare.deps);
+        expect(
+            "DOROTHY_ANTHROPIC_BASE_URL" in (bare.calls.spawnedEnv[0] ?? {}),
+        ).toBe(false);
+    });
+
+    it("starts its catch-ups where the hook finds Armor's session too", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "dorothy-armor-"));
+        try {
+            writeFileSync(join(dir, ".env"), "SESSION=held\n");
+            const { calls, deps } = harness(0, true);
+            deps.env = { ...deps.env, DOTENVX_CONFIG: dir };
+            await runClaude([], deps);
+            expect(calls.spawnedEnv.length).toBeGreaterThan(0);
+            for (const env of calls.spawnedEnv) {
+                expect(env.DOROTHY_DOTENVX_CONFIG).toBe(dir);
+            }
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it("catches up its launch though claude never started", async () => {
+        const { calls, deps } = harness(0, true);
+        deps.spawn = () => {
+            throw new Error("ENOENT: spawn claude");
+        };
+        await expect(runClaude([], deps)).rejects.toThrow("ENOENT");
+        expect(calls.stopped).toBe(true);
+        expect(calls.spawned).toEqual([
+            [...SELF, "--claude-hook", "--catch-up", LAUNCH],
+        ]);
+    });
+
+    it("cleans up and catches up though stopping the gateway throws", async () => {
+        const { calls, deps } = harness(0, true);
+        const removed: string[] = [];
+        deps.startGateway = () => ({
+            url: "http://127.0.0.1:4321",
+            stats: { injected: 0, drift: 0 },
+            stop: () => {
+                throw new Error("already closed");
+            },
+        });
+        deps.read = () => '{"model":"x"}';
+        deps.writePrivate = () => "/run/dorothy/settings-1.json";
+        deps.remove = (path) => removed.push(path);
+        await expect(
+            runClaude(["--settings", "mine.json"], deps),
+        ).rejects.toThrow("already closed");
+        expect(removed).toEqual(["/run/dorothy/settings-1.json"]);
+        expect(calls.spawned).toEqual([
+            [...SELF, "--claude-hook", "--catch-up", LAUNCH],
+        ]);
+    });
+
     it("catches up launches left behind and tells what hooks left, with memory off too", async () => {
         const { calls, deps, memory } = harness(0, false);
         memory.stale = [OTHER];
@@ -502,6 +661,20 @@ describe("dorothy --claude records her sessions", () => {
             [["--session-id", OTHER], OTHER, null],
             [[`--session-id=${OTHER}`], OTHER, null],
             [["-p", "--", "--resume", OTHER], SESSION, null],
+            // -r with its value attached, as claude takes it.
+            [[`-r${OTHER}`], null, OTHER],
+            [["-rmy-title"], null, null],
+            // A resume decides it wherever a --session-id stands.
+            [["--session-id", SESSION2, "--resume", OTHER], null, OTHER],
+            [["--resume", OTHER, "--session-id", SESSION2], null, OTHER],
+            [["-c", "--session-id", SESSION2], null, null],
+            // The last --session-id, as Claude Code keeps it.
+            [["--session-id", SESSION2, "--session-id", OTHER], OTHER, null],
+            // A value that is itself a flag is not one.
+            [["--system-prompt", "-c"], SESSION, null],
+            [["--append-system-prompt=-c"], SESSION, null],
+            [["--name", "--resume", "-p"], SESSION, null],
+            [["--settings", "-r", "-p", "x"], SESSION, null],
         ];
         for (const [args, noted, left] of cases) {
             const { calls, deps, memory } = harness(0, true);
@@ -700,24 +873,59 @@ describe("dorothyFlags", () => {
         expect(written).toEqual([]);
     });
 
-    it("passes a file on as given, saying so, if the private file fails", () => {
-        const failing = {
-            ...io({ "/work/mine.json": '{"model":"x"}' }),
-            writePrivate: () => {
-                throw new Error("EACCES");
+    it("keeps the last of repeated settings, Dorothy's above all", () => {
+        written.length = 0;
+        const flags = dorothyFlags(
+            [
+                `--settings={"model":"haiku","effort":"low"}`,
+                "--settings",
+                "mine.json",
+                `--settings={"model":"sonnet","permissions":{"deny":["d"]}}`,
+            ],
+            {
+                settings: { permissions: { allow: ["a"] }, effort: "high" },
+                mcpConfig: null,
             },
-        };
-        expect(dorothyFlags(["--settings=mine.json"], ours, failing)).toEqual({
-            args: [
-                `--settings=${JSON.stringify(ours.settings)}`,
-                "--settings=mine.json",
-            ],
-            warnings: [
-                "a private settings file could not be written (EACCES); your --settings is passed on as given, and may override Dorothy's",
-            ],
-            files: [],
+            io({ "/work/mine.json": '{"model":"opus","theme":"dark"}' }),
+        );
+        expect(flags.args).toEqual(["--settings=/run/dorothy/s1.json"]);
+        expect(JSON.parse(written[0] as string)).toEqual({
+            model: "sonnet",
+            theme: "dark",
+            effort: "high",
+            permissions: { allow: ["a"], deny: ["d"] },
         });
     });
+
+    for (const args of [
+        ["--settings=mine.json"],
+        [
+            '--settings={"effort":"low"}',
+            "--settings",
+            "mine.json",
+            '--settings={"model":"sonnet"}',
+            "-p",
+            "hi",
+            "--",
+            "--settings=prompt-text",
+        ],
+    ]) {
+        it(`keeps user settings when the private file fails: ${args.length} args`, () => {
+            const failing = {
+                ...io({ "/work/mine.json": '{"model":"x"}' }),
+                writePrivate: () => {
+                    throw new Error("EACCES");
+                },
+            };
+            expect(dorothyFlags(args, ours, failing)).toEqual({
+                args,
+                warnings: [
+                    "a private settings file could not be written (EACCES); your --settings is passed on as given; Dorothy's settings could not be added",
+                ],
+                files: [],
+            });
+        });
+    }
 
     it("passes on settings it cannot read, warning that they may override hers", () => {
         expect(dorothyFlags(["--settings", "gone.json"], ours, io())).toEqual({
@@ -772,6 +980,103 @@ describe("dorothyFlags", () => {
         });
     });
 
+    for (const form of ["split", "equals"] as const) {
+        it(`keeps MCP file contents out of argv (${form} flag)`, () => {
+            const root = mkdtempSync(join(tmpdir(), "dorothy-mcp-argv-"));
+            try {
+                const path = join(root, "servers.json");
+                writeFileSync(
+                    path,
+                    JSON.stringify({
+                        mcpServers: {
+                            fixture: {
+                                command: "file-only-command",
+                                env: { FIXTURE_VALUE: "file-only-value" },
+                            },
+                        },
+                    }),
+                );
+                const user =
+                    form === "split"
+                        ? ["--mcp-config", path]
+                        : [`--mcp-config=${path}`];
+                const flags = dorothyFlags(
+                    [...user, "-p", "hi"],
+                    {
+                        settings: { permissions: { allow: ["a"] } },
+                        mcpConfig: {
+                            mcpServers: { dorothy: { type: "stdio" } },
+                        },
+                    },
+                    {
+                        cwd: root,
+                        read: (file) => readFileSync(file, "utf8"),
+                        writePrivate: privateWriter({ XDG_RUNTIME_DIR: root }),
+                    },
+                );
+                expect(flags.args.join(" ")).not.toContain("file-only-command");
+                expect(flags.args.join(" ")).not.toContain("file-only-value");
+                expect(flags.args).toEqual([
+                    '--settings={"permissions":{"allow":["a"]}}',
+                    '--mcp-config={"mcpServers":{"dorothy":{"type":"stdio"}}}',
+                    ...user,
+                    "-p",
+                    "hi",
+                ]);
+                expect(flags.files).toEqual([]);
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        });
+    }
+
+    it("passes each user MCP config once when the settings write fails", () => {
+        const root = mkdtempSync(join(tmpdir(), "dorothy-mcp-fallback-"));
+        try {
+            const settings = join(root, "settings.json");
+            const servers = join(root, "servers.json");
+            writeFileSync(settings, '{"model":"first"}');
+            writeFileSync(
+                servers,
+                '{"mcpServers":{"fixture":{"command":"file-only-command"}}}',
+            );
+            const user = [
+                "--settings",
+                settings,
+                "--mcp-config",
+                servers,
+                '--settings={"model":"last"}',
+                "--",
+                "--mcp-config=prompt-text",
+            ];
+            const flags = dorothyFlags(
+                user,
+                {
+                    settings: { permissions: { allow: ["a"] } },
+                    mcpConfig: { mcpServers: { dorothy: { type: "stdio" } } },
+                },
+                {
+                    cwd: root,
+                    read: (file) => readFileSync(file, "utf8"),
+                    writePrivate: () => {
+                        throw new Error("EACCES");
+                    },
+                },
+            );
+            expect(flags.args).toEqual([
+                '--mcp-config={"mcpServers":{"dorothy":{"type":"stdio"}}}',
+                ...user,
+            ]);
+            expect(flags.args.join(" ")).not.toContain("file-only-command");
+            expect(flags.files).toEqual([]);
+            expect(flags.warnings.join(" ")).toContain(
+                "Dorothy's settings could not be added",
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("merges objects key by key and joins arrays without repeats", () => {
         expect(
             mergeJson(
@@ -783,5 +1088,55 @@ describe("dorothyFlags", () => {
             b: { c: 1, d: 2 },
             e: 1,
         });
+    });
+});
+
+describe("spawnDetached", () => {
+    it("starts a process of its own session that outlives its caller's wait", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "dorothy-detached-"));
+        try {
+            const out = join(dir, "out.json");
+            const script = join(dir, "probe.ts");
+            writeFileSync(
+                script,
+                [
+                    'import { readFileSync, writeFileSync } from "node:fs";',
+                    'const stat = readFileSync("/proc/self/stat", "utf8");',
+                    "writeFileSync(",
+                    "    process.argv[2] as string,",
+                    "    JSON.stringify({ stat, arg: process.argv[3] }),",
+                    ");",
+                    "",
+                ].join("\n"),
+            );
+            spawnDetached([process.execPath, script, out, "--catch-up"], {});
+            let seen: { stat: string; arg: string } | null = null;
+            for (let tries = 0; tries < 200 && seen === null; tries += 1) {
+                try {
+                    seen = JSON.parse(readFileSync(out, "utf8"));
+                } catch {
+                    await Bun.sleep(25);
+                }
+            }
+            expect(seen?.arg).toBe("--catch-up");
+            // The session is the 6th field of /proc/<pid>/stat, past the
+            // command's name.
+            const session = (stat: string) =>
+                stat.slice(stat.lastIndexOf(")") + 2).split(" ")[3];
+            expect(session(seen?.stat ?? "")).not.toBe(
+                session(readFileSync("/proc/self/stat", "utf8")),
+            );
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it("does not throw for a program that cannot start, or for none", async () => {
+        expect(() =>
+            spawnDetached(["/nonexistent/dorothy-x"], {}),
+        ).not.toThrow();
+        expect(() => spawnDetached([], {})).not.toThrow();
+        // The failed start is an event, not an unhandled error.
+        await Bun.sleep(100);
     });
 });

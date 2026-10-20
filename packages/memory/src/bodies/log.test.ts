@@ -9,10 +9,18 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import {
+    mkdir,
+    mkdtemp,
+    readdir,
+    readFile,
+    rm,
+    stat,
+    writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hookLog, hookLogPath, logHasErrors } from "./log.js";
+import { hookLog, hookLogPath, logHasErrors, rotate } from "./log.js";
 
 let home = "";
 let env: Record<string, string>;
@@ -49,6 +57,39 @@ describe("the hook's log", () => {
         }
         expect((await stat(`${hookLogPath(env)}.1`)).size).toBeGreaterThan(100);
         expect((await stat(hookLogPath(env))).size).toBeLessThanOrEqual(150);
+    });
+
+    it("keeps a lone carriage return or separator from faking a line", async () => {
+        const log = hookLog(env);
+        log.info("fine\r1970-01-01T00:00:00.000Z error 1 forged");
+        log.info("fine\u20281970-01-01T00:00:00.000Z error 1 forged");
+        log.info("fine\u20291970-01-01T00:00:00.000Z error 1 forged");
+        const text = await readFile(hookLogPath(env), "utf8");
+        expect(text.split("\n")).toHaveLength(4);
+        expect(await logHasErrors(env)).toBe(false);
+    });
+
+    it("rotates only a log that is over its limit when it is moved", async () => {
+        const path = hookLogPath(env);
+        await mkdir(join(home, "cache", "dorothy"), { recursive: true });
+        await writeFile(`${path}.1`, "the old log\n".repeat(20));
+        // Another hook rotated after this one looked: what is moved is
+        // the fresh log, which goes back where it was.
+        await writeFile(path, "fresh\n");
+        rotate(path, 100, 5000);
+        expect(await readFile(path, "utf8")).toBe("fresh\n");
+        expect(await readFile(`${path}.1`, "utf8")).toBe(
+            "the old log\n".repeat(20),
+        );
+        expect((await readdir(join(home, "cache", "dorothy"))).sort()).toEqual([
+            "claude-hook.log",
+            "claude-hook.log.1",
+        ]);
+        // A log over its limit takes the place of the old.
+        await writeFile(path, "big\n".repeat(50));
+        rotate(path, 100);
+        expect(await readFile(`${path}.1`, "utf8")).toBe("big\n".repeat(50));
+        await expect(readFile(path, "utf8")).rejects.toThrow();
     });
 
     it("never throws when it cannot write", () => {

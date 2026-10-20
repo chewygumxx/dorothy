@@ -80,11 +80,42 @@ const COMMON = new Set([
     "dorothy",
 ]);
 
-const wordsOf = (text: string) =>
-    text
-        .toLowerCase()
-        .normalize("NFKC")
-        .split(/[^\p{L}\p{N}]+/u);
+const normalized = (text: string) => text.toLowerCase().normalize("NFKC");
+const wordsOf = (text: string) => normalized(text).split(/[^\p{L}\p{N}]+/u);
+
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+// Find a word with the scorer's normalization and boundaries, then map
+// its offset back to the original text. Search normalized prefixes at
+// grapheme boundaries to keep combining marks with their base. Normalize
+// each whole prefix: compatibility characters can compose across the
+// original graphemes, so their lengths cannot be added independently.
+export function firstTermAt(
+    text: string,
+    terms: readonly string[],
+): number | undefined {
+    for (const word of normalized(text).matchAll(/[\p{L}\p{N}]+/gu)) {
+        if (!terms.includes(word[0])) {
+            continue;
+        }
+        const ends = Array.from(
+            graphemes.segment(text),
+            (part) => part.index + part.segment.length,
+        );
+        let low = 0;
+        let high = ends.length - 1;
+        while (low < high) {
+            const middle = Math.floor((low + high) / 2);
+            if (normalized(text.slice(0, ends[middle])).length > word.index) {
+                high = middle;
+            } else {
+                low = middle + 1;
+            }
+        }
+        return low === 0 ? 0 : ends[low - 1];
+    }
+    return undefined;
+}
 
 export function termsOf(text: string): string[] {
     const terms = new Set<string>();

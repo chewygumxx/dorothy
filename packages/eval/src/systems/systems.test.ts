@@ -9,6 +9,7 @@
 //
 
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import type { ArchiveConversation } from "@dorothy/memory/evaluation";
 import { workEnv } from "../snapshot/snapshot.js";
 import { GARDEN, READER, snapshotFixture, TEA, tempRoot } from "../testing.js";
 import {
@@ -100,6 +101,67 @@ describe("items", () => {
         expect(text).toContain("green tea at four every afternoon");
         expect(text).toContain("Green tea at four, noted.");
         expect(passage(tea, ["tea"], 20).length).toBeLessThanOrEqual(20);
+    });
+});
+
+describe("passage", () => {
+    const longTurn = (text: string): ArchiveConversation => ({
+        id: "c:long",
+        phrase: "long",
+        project: null,
+        title: "Discussion",
+        tags: [],
+        firstAt: "2026-10-01T00:00:00Z",
+        lastAt: "2026-10-01T00:00:00Z",
+        turns: [{ n: 1, role: "user", at: "2026-10-01T00:00:00Z", text }],
+    });
+
+    it("excerpts a matching turn too long to fit, not drops it", () => {
+        const long = longTurn(
+            `My bicycle is crimson. ${"details ".repeat(1000)}`,
+        );
+        const text = passage(long, ["bicycle"], 300);
+        expect(text.length).toBeLessThanOrEqual(300);
+        expect(text).toStartWith(
+            "Discussion, 2026-10-01 to 2026-10-01\n[1] user",
+        );
+        expect(text).toContain("My bicycle is crimson.");
+    });
+
+    it("centres the excerpt on the match, wherever it lies", () => {
+        const long = longTurn(
+            `${"filler ".repeat(500)}my bicycle is crimson${" filler".repeat(500)}`,
+        );
+        const text = passage(long, ["bicycle"], 300);
+        expect(text.length).toBeLessThanOrEqual(300);
+        expect(text).toContain("my bicycle is crimson");
+    });
+
+    for (const [word, query, padding] of [
+        ["cafe\u0301", "café", "ﬃ filler "],
+        ["㍿", "株式会社", "ﬃ filler "],
+        ["cafe\u0301", "café", "\uffa1\uffc2 filler "],
+    ] as const) {
+        it(`keeps a normalized ${query} match after ${padding}`, () => {
+            // Normalization expands ligatures and composes halfwidth jamo,
+            // so its offsets cannot be used to slice the original turn.
+            const answer = `My ${word} order is espresso.`;
+            const long = longTurn(
+                `${padding.repeat(500)}${answer}${" filler".repeat(500)}`,
+            );
+            const terms = termsOf(query);
+            expect(scoreOf(long.turns[0]?.text ?? "", terms)).toBe(1);
+            const text = passage(long, terms, 300);
+            expect(text.length).toBeLessThanOrEqual(300);
+            expect(text).toContain(answer);
+        });
+    }
+
+    it("excerpts the start of a long first turn where none match", () => {
+        const long = longTurn(`Opening words. ${"padding ".repeat(1000)}`);
+        const text = passage(long, ["zebra"], 300);
+        expect(text.length).toBeLessThanOrEqual(300);
+        expect(text).toContain("Opening words.");
     });
 });
 

@@ -243,7 +243,11 @@ describe("applyTagging", () => {
             draws(),
         );
         expect(tagged.coined).toBe(0);
-        expect(tagged.dropped).toHaveLength(3);
+        expect(tagged.dropped).toEqual([
+            '"a;b" contains ;',
+            `"${"x".repeat(51)}" is 51 characters, over 50`,
+            "a tag's note is empty",
+        ]);
     });
 
     it("makes two coins of one label one concept", () => {
@@ -299,6 +303,56 @@ describe("applyTagging", () => {
             "k00000012",
             "k00000013",
             "k00000014",
+        ]);
+        expect(tagged.dropped).toEqual([]);
+    });
+
+    it("drops self and duplicate parents while keeping a valid parent", () => {
+        const tagged = applyTagging(
+            BASE,
+            output({
+                coined: [coin("new", { broader: ["new", "memory", "recall"] })],
+            }),
+            STAMP,
+            draws(),
+        );
+        expect(
+            (tagged.vocabulary.concepts.k000000a0 as Concept).broader,
+        ).toEqual([MEMORY]);
+        expect(tagged.dropped).toEqual(['broader "new"', 'broader "recall"']);
+    });
+
+    it("caps alternatives and resolves a new tag through an alternative", () => {
+        const tagged = applyTagging(
+            BASE,
+            output({
+                tags: ["alias"],
+                coined: [
+                    coin("new", {
+                        altLabel: [
+                            "misc",
+                            "a;b",
+                            "alias",
+                            "two",
+                            "three",
+                            "four",
+                            "five",
+                            "six",
+                        ],
+                    }),
+                ],
+            }),
+            STAMP,
+            draws(),
+        );
+        expect(
+            (tagged.vocabulary.concepts.k000000a0 as Concept).altLabel,
+        ).toEqual(["alias", "two", "three", "four", "five"]);
+        expect(tagged.tags).toEqual(["k000000a0"]);
+        expect(tagged.dropped).toEqual([
+            'alternative label "misc"',
+            'alternative label "a;b"',
+            'alternative label "six"',
         ]);
     });
 

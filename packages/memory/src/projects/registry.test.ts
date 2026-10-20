@@ -66,6 +66,18 @@ describe("parseRegistry", () => {
         }
     });
 
+    it("reads the form removed for a fact retired in the store", () => {
+        const kept = registry({
+            synced: {
+                [ROOT]: record({ "likes-tea": `removed:${HASH}` }),
+            },
+        });
+        expect(parseRegistry(JSON.stringify(kept))).toEqual({
+            kind: "ok",
+            registry: kept,
+        });
+    });
+
     it.each([
         ["no version", { projects: {} }],
         [

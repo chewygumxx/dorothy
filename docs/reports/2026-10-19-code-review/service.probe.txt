@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-code-review/service.probe.txt
+#
+
+// vim:set expandtab shiftwidth=4 filetype=typescript:
+// SPDX-License-Identifier: GPL-3.0-only
+// Review probe, temporary fixtures only.
+
+import { mkdtemp, mkdir, rm, readdir } from "node:fs/promises";
+import { join } from "node:path";
+const repo = "/home/chewygumxx/dev/_worktree/dorothy/codex-code-review";
+const { RecallIndex } = await import(`${repo}/packages/memory/src/recall/store.ts`);
+const { fakeEngine, knowledge } = await import(`${repo}/packages/memory/src/contract/testing.ts`);
+const { createContractServer } = await import(`${repo}/packages/memory/src/contract/tools.ts`);
+const { Client } = await import(`${repo}/packages/memory/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js`);
+const { InMemoryTransport } = await import(`${repo}/packages/memory/node_modules/@modelcontextprotocol/sdk/dist/esm/inMemory.js`);
+const { tokenStore } = await import(`${repo}/packages/memory/src/service/tokens.ts`);
+const { sendRecord } = await import(`${repo}/packages/memory/src/service/client.ts`);
+
+const root = await mkdtemp("/tmp/dorothy-review-service-");
+const index = RecallIndex.open(join(root, "index.sqlite"));
+const phrase = "bingo-overabundance-mazer-kasha";
+index.db.run("INSERT INTO conversations (phrase, t_size, t_ino, turns, first_at, last_at, project) VALUES (?, 0, 0, 10, 1, 1, NULL)", [phrase]);
+for (let n = 1; n <= 10; n++) index.db.run("INSERT INTO turns (phrase, n, role, at, text) VALUES (?, ?, 'user', 1, ?)", [phrase, n, `Turn ${n}`]);
+const other = "github.com/me/other";
+const server = createContractServer({
+    engine: fakeEngine({knowledge: [knowledge("secret", {body: "Other project confidential body"}, {kind: "project", id: other})]}),
+    index, store: {root, lock: index.lock, recorder: null}, project: "github.com/me/app", host: "codex", resolveProject: async value => value,
+});
+const [near, far] = InMemoryTransport.createLinkedPair();
+await server.connect(near);
+const client = new Client({name: "probe", version: "1.0.0"});
+await client.connect(far);
+const opened = await client.callTool({name: "open", arguments: {id: `c:${phrase}`, from: 5, through: 7}});
+console.log("open-range", JSON.parse(opened.content[0].text).window.map(turn => turn.turn));
+const brief = await client.callTool({name: "brief", arguments: {project: other}});
+console.log("brief-cross-project", {isError: brief.isError ?? false, leaksOtherBody: brief.content[0].text.includes("Other project confidential body")});
+const tokenPath = join(root, "tokens.json");
+const tokens = tokenStore(tokenPath);
+await tokens.add("existing");
+await Promise.all(Array.from({length: 5}, (_, i) => tokens.add(`device-${i}`)));
+console.log("concurrent-tokens", await tokens.devices());
+
+const env = {HOME: root, XDG_STATE_HOME: join(root, "state"), XDG_DATA_HOME: join(root,"data"), XDG_CONFIG_HOME: join(root,"config"), XDG_CACHE_HOME: join(root,"cache")};
+const pending = join(root, "state", "dorothy", "pending");
+await mkdir(pending, {recursive:true});
+const record = {host: "codex", session: "s1", events: [{kind:"user", sourceId:"a", at:"2026-10-18T09:30:00.000Z", text:"Hi"}]};
+await Bun.write(join(pending,"1-queued.json"), JSON.stringify(record));
+let calls = 0;
+const fakeFetch = async (_url, options) => {
+    calls++;
+    await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, calls === 1 ? 80 : 1000);
+        options.signal.addEventListener("abort", () => {clearTimeout(timer); reject(options.signal.reason);}, {once:true});
+    });
+    return Response.json({accepted:1, duplicates:0, through:"a"});
+};
+const started = Date.now();
+await sendRecord(record, {env, url:"http://127.0.0.1:1", token:null, fetch:fakeFetch, timeouts:{record:100}});
+console.log("record-deadline", {elapsed: Date.now()-started, configured:100, calls, remaining:(await readdir(pending)).length});
+await client.close();
+await server.close();
+index.close();
+await rm(root,{recursive:true,force:true});

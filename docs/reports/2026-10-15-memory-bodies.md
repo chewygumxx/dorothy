@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-15
-mtime: 2026-10-16
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Dorothy's memory in her bodies report
 description: >-
@@ -224,9 +224,9 @@ user's words.
 Each assistant line held one content block (15 `text`, 4 `tool_use`):
 the stand-in's message of text and two calls became three lines. Two
 assistant lines named the model `<synthetic>`, the "No response
-requested." Claude Code writes on a resume. Of the user lines, 14 held
-a string, 4 a `tool_result` each, one string was the
-`isCompactSummary` summary and two strings were `isMeta`, the
+requested." Claude Code writes on a resume. Of the user lines, 17 held
+a string and 4 a `tool_result` each; of the strings, one was the
+`isCompactSummary` summary and two were `isMeta`, the
 `<local-command-caveat>`. `/compact` was written as a user line of
 `<command-name>/compact</command-name>` markup and its output as one of
 `<local-command-stdout>`, as Task 4's `spoken` expects.
@@ -750,6 +750,11 @@ variables, prompts sent through Herdr.
   from both the fact and the conversation.
 
 ## Known limitations
+
+Launch notes, review proxies, Armor lookup, remember lines and request order.
+Closed by the roadmap sweep: see
+[the sweep report](./2026-10-19-roadmap-sweep.md). Remaining limits
+are recorded there.
 
 - The block is fixed for the launch: a fact written in another body
   during a long session reaches this one only through recall.

@@ -28,6 +28,7 @@ import { clusterTokens, seedTurns } from "../compaction/plan.js";
 import {
     type Claim,
     Compaction,
+    type Outgoing,
     type SaveResult,
     type Seed,
 } from "../compaction/session.js";
@@ -128,21 +129,17 @@ export function turnCommitter(
     history: Pick<MemoryHistory, "turn" | "warn">,
     path: string,
     flushed: () => Promise<void>,
-    done: number,
 ): { ended: () => void; settled: () => Promise<void> } {
-    let count = done;
     let chain: Promise<void> = Promise.resolve();
     return {
         ended: () => {
-            count += 1;
-            const turn = count;
             chain = chain.then(async () => {
                 try {
                     await flushed();
-                    await history.turn(path, turn);
+                    await history.turn(path);
                 } catch (error) {
                     history.warn(
-                        `history: couldn't commit turn ${turn} (${describeError(error)})`,
+                        `history: couldn't commit turn (${describeError(error)})`,
                     );
                 }
             });
@@ -303,6 +300,38 @@ export async function notesReady(
     return notes.kind === "unparseable"
         ? { ok: false, reason: `its notes can't be read (${notes.reason})` }
         : { ok: true };
+}
+
+// Before each compaction: the turns about to leave are the transcript's
+// turns of those numbers. Another chat writing to the conversation puts
+// its own turns between this chat's, so that this chat's turn 5 may be the
+// transcript's turn 7; a cluster saved for turns 5 and 6 would then
+// describe the wrong ones, and resume would drop the transcript's own.
+// Turns are only ever appended, so that they agree now means they always
+// will, however much is written after. Without a transcript nothing is
+// saved, and nothing is checked.
+export async function turnsAgree(
+    transcript: Pick<TranscriptWriter, "flushed"> | null,
+    path: string,
+    outgoing: Outgoing | null,
+): Promise<SaveResult> {
+    if (transcript === null || outgoing === null) {
+        return { ok: true };
+    }
+    // Everything this chat has sent is on disk before it is read.
+    await transcript.flushed();
+    const written = (await readTranscript(path)).turns;
+    for (const [at, turn] of outgoing.turns.entries()) {
+        const number = outgoing.from + at;
+        const theirs = written[number - 1];
+        if (theirs?.role !== turn.role || theirs.text !== turn.text) {
+            return {
+                ok: false,
+                reason: `turn ${number} here is not turn ${number} of its transcript, which another chat is writing to`,
+            };
+        }
+    }
+    return { ok: true };
 }
 
 // Compaction's save: the clusters and their cost go into the notes, unless
@@ -541,7 +570,7 @@ export async function openMemory({
     }
     const { history, costUsd, clusters } = resumed;
     const compactable = compactionAllowed(config, resumed, warnings);
-    const transcript = await openWriter(path, warnings);
+    const transcript = await openWriter(path, warnings, launched?.history.lock);
     const service =
         config.memory.enabled && index !== null
             ? await startService({
@@ -575,9 +604,9 @@ export async function openMemory({
     });
 
     const claims = index;
-    // Writes outside memory's service take the index's lock, or
-    // history's own without it.
-    const writeLock = claims?.lock ?? launched?.history.lock;
+    // Canonical writers prefer history's combined lock, falling back
+    // to the index when history is unavailable.
+    const writeLock = launched?.history.lock ?? claims?.lock;
     const channel = noticeChannel();
     // Chat syncs its project at its start and after each turn; with
     // memory off, or without a lock to sync under, it does not.
@@ -586,7 +615,7 @@ export async function openMemory({
             ? null
             : chatSyncer(cwd, writeLock, launched, channel, env);
     syncer?.run();
-    const committer = chatCommitter(launched, transcript, path, history);
+    const committer = chatCommitter(launched, transcript, path);
     const compaction = compactable
         ? chatCompaction({
               config,
@@ -596,6 +625,7 @@ export async function openMemory({
               call,
               dir,
               phrase,
+              path,
               writeLock,
               transcript,
               recorder: launched?.history.recorder ?? null,
@@ -644,9 +674,9 @@ export async function openMemory({
                     () => service?.stop(),
                     () => committer?.settled(),
                     () => syncer?.settled(),
+                    () => transcript?.close(),
                     () => launched?.close(),
                     () => index?.close(),
-                    () => transcript?.close(),
                 ]),
         },
     };
@@ -726,9 +756,10 @@ async function readResumed(
 async function openWriter(
     path: string,
     warnings: string[],
+    lock?: Lock,
 ): Promise<TranscriptWriter | null> {
     try {
-        return await TranscriptWriter.open(path);
+        return await TranscriptWriter.open(path, undefined, lock);
     } catch (error) {
         warnings.push(`transcript not saved: ${describeError(error)}`);
         return null;
@@ -819,6 +850,7 @@ function chatCompaction({
     call,
     dir,
     phrase,
+    path,
     writeLock,
     transcript,
     recorder,
@@ -832,6 +864,7 @@ function chatCompaction({
     call: StructuredCall;
     dir: string;
     phrase: string;
+    path: string;
     writeLock: Lock | undefined;
     transcript: TranscriptWriter | null;
     recorder: Recorder | null;
@@ -857,10 +890,13 @@ function chatCompaction({
             transcript: transcript !== null,
             recorder,
         }),
-        ready: () =>
-            transcript === null
-                ? Promise.resolve({ ok: true })
-                : notesReady(dir, phrase),
+        ready: async (outgoing) => {
+            if (transcript === null) {
+                return { ok: true };
+            }
+            const notes = await notesReady(dir, phrase);
+            return notes.ok ? turnsAgree(transcript, path, outgoing) : notes;
+        },
         record: async (entry) => {
             await transcript?.append({ kind: "compaction", ...entry });
         },
@@ -892,17 +928,11 @@ function chatCommitter(
     launched: LaunchedHistory | null,
     transcript: TranscriptWriter | null,
     path: string,
-    history: readonly ResumedTurn[],
 ): ReturnType<typeof turnCommitter> | null {
     if (launched === null || transcript === null) {
         return null;
     }
-    return turnCommitter(
-        launched.history,
-        path,
-        () => transcript.flushed(),
-        history.filter((turn) => turn.role === "user").length,
-    );
+    return turnCommitter(launched.history, path, () => transcript.flushed());
 }
 
 // At each turn's end: the turn committed, the project synced.

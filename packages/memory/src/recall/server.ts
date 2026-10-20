@@ -30,7 +30,7 @@ import {
 } from "./query.js";
 import { remember } from "./remember.js";
 import { indexPath, RecallIndex } from "./store.js";
-import { sessionPhrase, syncIndex } from "./sync.js";
+import { sessionPhrase, syncIndex, transcriptTurns } from "./sync.js";
 
 // The guidance on when to look things up lives here: it always reaches the
 // model with the tools.
@@ -120,6 +120,17 @@ export type RecallServerOptions = {
 const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
 
+// Runs the calls it is given one at a time, in the order given; a call
+// that rejects does not stop the ones after it.
+export function inSequence(): <T>(call: () => Promise<T>) => Promise<T> {
+    let queue: Promise<unknown> = Promise.resolve();
+    return (call) => {
+        const answered = queue.then(call);
+        queue = answered.catch(() => {});
+        return answered;
+    };
+}
+
 export function createRecallServer(options: RecallServerOptions): McpServer {
     const server = new McpServer({ name: SERVER_NAME, version: "1.0.0" });
     const now = options.now ?? Date.now;
@@ -131,12 +142,18 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
         const session = await options.liveSession();
         return session === null ? null : sessionPhrase(index, session);
     };
+    // Calls are answered in the order they arrived, so a search sent after
+    // a remember finds what it wrote.
+    const inOrder = inSequence();
     // Every call syncs first, so results are never stale. The sync holds the
-    // write lock across awaits, and MCP may deliver calls concurrently, so
-    // the query waits its turn in the index's queue rather than reading
-    // rows a sync for another call has half written. work must not call
-    // exclusive or syncIndex: that would wait on itself.
-    const answer = async (
+    // write lock across awaits, and the call waits its turn in the index's
+    // queue rather than reading rows a sync for another call has half
+    // written. work must not call exclusive or syncIndex: that would wait
+    // on itself.
+    const answer = (
+        work: (index: RecallIndex, exclude: string | null) => unknown,
+    ) => inOrder(() => answering(work));
+    const answering = async (
         work: (index: RecallIndex, exclude: string | null) => unknown,
     ) => {
         try {
@@ -170,9 +187,12 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
     const project = options.project ?? null;
     const root = options.facts ?? null;
     let versions: HistoryHandle | null | undefined;
-    // remember writes under the store's lock, which is the index's: it
-    // never runs inside exclusive, and the next query syncs what it wrote.
-    const write = async (
+    // remember uses history's combined lock, or the index's without it:
+    // it never runs inside exclusive; the next query syncs what it wrote.
+    const write = (
+        work: (store: FactStore, from: string | null) => Promise<unknown>,
+    ) => inOrder(() => writing(work));
+    const writing = async (
         work: (store: FactStore, from: string | null) => Promise<unknown>,
     ) => {
         try {
@@ -187,7 +207,7 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
             const result = await work(
                 {
                     root,
-                    lock: index.lock,
+                    lock: versions?.lock ?? index.lock,
                     recorder: versions?.recorder ?? null,
                     now: () => new Date(now()),
                 },
@@ -297,7 +317,24 @@ export function createRecallServer(options: RecallServerOptions): McpServer {
                 },
             },
             (input) =>
-                answer((index) => recollect(index, input, { phrase: live })),
+                answer(async (index) => {
+                    // A hidden chat's text is not in the index; she may still
+                    // reopen her own turns from its transcript.
+                    const hidden =
+                        (
+                            index.db
+                                .query(
+                                    "SELECT hidden FROM conversations WHERE phrase = ?",
+                                )
+                                .get(live) as { hidden: number } | null
+                        )?.hidden === 1;
+                    return recollect(index, input, {
+                        phrase: live,
+                        ...(hidden
+                            ? { kept: await transcriptTurns(options.dir, live) }
+                            : {}),
+                    });
+                }),
         );
     }
     if (root !== null) {
@@ -355,7 +392,11 @@ export async function runRecallServer(
         project: found?.id ?? null,
         openHistory: async (index) => {
             const { commandHistory } = await import("../history/commands.js");
-            return commandHistory({ env, remindMirror: false })(index);
+            return commandHistory({
+                env,
+                remindMirror: false,
+                pushOnClose: false,
+            })(index);
         },
     });
     const closed = new Promise<void>((resolve) => {

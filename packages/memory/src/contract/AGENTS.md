@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-18
-mtime: 2026-10-19
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: packages/memory/src/contract/AGENTS.md
 description: >-
@@ -27,13 +27,15 @@ gives back, and the service that speaks it. The spec is
 
 - `schemas.ts`: zod schemas of core's contract types, held to them by
   `satisfies`; `parseWith` throws a `ContractError` (`errors.ts`) of 400.
-- `block.ts`: the opening block, knowledge of the user, then of the
-  project, then conversations, packed into a host's budget; `frozen.ts`
-  keeps each session's, so `resume` gives it byte for byte.
+- `block.ts`: the opening block, confirmed knowledge of the user, then
+  of the project, then unconfirmed knowledge, fenced as claims, then
+  conversations, packed into a host's budget; `frozen.ts` keeps each
+  session's, so `resume` gives it byte for byte.
 - `recall.ts`: passages for a prompt, for the user's turn, `within`
   personal and its project's scopes (`recall/query.ts`'s option).
 - `record.ts`: records into the archive, each host session one
-  conversation, each event once by its `sourceId`, under the lock.
+  conversation, each event once by its `sourceId`, under the lock, a
+  torn tail cut off before an append (`cutTornTail`, `../transcript.ts`).
 - `remember.ts`: `remember` over knowledge ids, as `recall/remember.ts`
   guards it.
 - `tools.ts`: the four MCP tools, an unexpected error reading
@@ -41,11 +43,16 @@ gives back, and the service that speaks it. The spec is
 - `../engine/`: `MemoryEngine`, and the baseline over today's index,
   salience and reviewer.
 - `../hosts/`: host profiles, one JSON file a harness.
-- `../service/`: the HTTP service (`service.ts`, refusing what a web
-  page could send), device tokens (`tokens.ts`), the client
-  (`client.ts`), the stdio bridge (`bridge.ts`, its own entry point,
-  `"./bridge"`) and the CLI's runners (`run.ts`). `loopback.ts` tells
-  loopback addresses and URLs; `confine.ts` admits a transcript path.
+- `../service/`: the HTTP service (`service.ts`, its routes; `guard.ts`
+  refuses what a web page could send; `jobs.ts` extracts, consolidates
+  and exports in the background; `http.ts`, `recent.ts` are theirs),
+  device tokens (`tokens.ts`), the client (`client.ts`), the stdio
+  bridge (`bridge.ts`, its own entry point, `"./bridge"`) and the CLI's
+  runners (`run.ts`). `loopback.ts` tells loopback addresses and URLs;
+  `confine.ts` admits a transcript path. `direct.ts` is the client's
+  and the bridge's fetch, which reaches loopback and the addresses in
+  `[service] listen` over `node:http`, as Bun's fetch would take even
+  loopback through `HTTP_PROXY`.
   `recall/server.ts`, `tools.ts` and `../service/` alone import
   `@modelcontextprotocol/sdk`.
 
@@ -72,8 +79,23 @@ gives back, and the service that speaks it. The spec is
 - A request whose `Host` is not one the service listens on gets 421, so
   a client reaching it by another name keeps its records; the service
   warns once per name. A web page's `Origin` is refused with 403.
+- Knowledge is confirmed when the user wrote it or verified it
+  (`isConfirmed`, `../facts/file.ts`); a repository's files, which a
+  model may write, confirm nothing. The rest sits in the block's own
+  fenced section, below every confirmed piece for the budget, and
+  `search`, `open` and recall carry `UNCONFIRMED` on it.
+  Only `--verify`, the user's, adds a `verified` entry; a write by
+  anyone else drops it. Sync carries it in the exported file, bound to
+  its words by `wordsDigest`, and an import keeps it only for them.
 - Migration leaves a fact in `facts/`, with a warning, when its
-  `knowledge/` target exists or the file fails; it overwrites nothing.
+  `knowledge/` target exists or the file fails; it overwrites nothing,
+  and names what else it finds there.
+- A hook request's `project` is a project's id as the client makes it,
+  or a 400; the tools take an id or a path. `brief` keeps to the named
+  host's `blockBudget`, as the opening block does, and, like `open` and
+  `remember`, refuses (403) a project other than its connection's own.
+- With reviews off the service still takes idle conversations off its
+  list, and writes why to its log (`claude-hook.log`).
 
 ## The evaluation's door
 

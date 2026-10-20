@@ -20,7 +20,7 @@ import {
     type MemoryHit,
 } from "@dorothy/core";
 import type { FactType } from "../facts/file.js";
-import { dataRoot, listFacts, type Scope } from "../facts/store.js";
+import { dataRoot, listFacts } from "../facts/store.js";
 import { indexCatalogue } from "../memory/catalogue.js";
 import { rank } from "../memory/rank.js";
 import type { Reviewer } from "../memory/reviewer.js";
@@ -29,12 +29,13 @@ import { search } from "../recall/query.js";
 import type { RecallIndex } from "../recall/store.js";
 import { syncIndex } from "../recall/sync.js";
 import { transcriptDir } from "../transcript.js";
-import type {
-    EngineSearch,
-    EpisodeItem,
-    KnowledgeItem,
-    MemoryEngine,
-    RankRequest,
+import {
+    type EngineSearch,
+    type EpisodeItem,
+    type KnowledgeItem,
+    knowledgePath,
+    type MemoryEngine,
+    type RankRequest,
 } from "./engine.js";
 
 export type BaselineDeps = {
@@ -44,14 +45,11 @@ export type BaselineDeps = {
     // Reviews; null where no model is wired, and extraction does nothing.
     reviewer: Pick<Reviewer, "review"> | null;
     now?: () => number;
+    // Where what the catalogue could not read is said, once each.
+    warn?: (message: string) => void;
 };
 
 const TYPES: FactType[] = ["user", "feedback", "project", "reference"];
-
-export const knowledgePath = (scope: Scope, name: string) =>
-    scope.kind === "personal"
-        ? `personal/${name}`
-        : `projects/${scope.id}/${name}`;
 
 // The project a conversation belongs to; null for a personal one, or none
 // indexed by that phrase.
@@ -72,6 +70,7 @@ export function baselineEngine(deps: BaselineDeps): MemoryEngine {
     const vocabulary = vocabularyPath(deps.env);
     const projectOf = (phrase: string) =>
         conversationProject(deps.index, phrase);
+    const said = new Set<string>();
     const fresh = () => syncIndex(deps.index, dir, now(), vocabulary, root);
     return {
         index: fresh,
@@ -83,8 +82,9 @@ export function baselineEngine(deps: BaselineDeps): MemoryEngine {
                     : request.kind === "episodes"
                       ? "conversations"
                       : undefined;
-            const found = await deps.index.exclusive(() =>
-                search(
+            // Each conversation's project is read where its hit was found.
+            const found = await deps.index.exclusive(async () => {
+                const result = await search(
                     deps.index,
                     {
                         query: request.query,
@@ -103,8 +103,17 @@ export function baselineEngine(deps: BaselineDeps): MemoryEngine {
                                 ? undefined
                                 : request.within,
                     },
-                ),
-            );
+                );
+                return {
+                    ...result,
+                    projects: new Map(
+                        result.results.map((hit) => [
+                            hit.identifier,
+                            projectOf(hit.identifier),
+                        ]),
+                    ),
+                };
+            });
             const hits: MemoryHit[] = [];
             for (const hit of found.facts) {
                 if (hit.retired) {
@@ -120,10 +129,13 @@ export function baselineEngine(deps: BaselineDeps): MemoryEngine {
                     scope: hit.scope,
                     title: hit.title,
                     snippet: hit.snippet,
+                    ...(hit.unconfirmed === undefined
+                        ? {}
+                        : { unconfirmed: hit.unconfirmed }),
                 });
             }
             for (const hit of found.results) {
-                const scope = projectOf(hit.identifier) ?? "personal";
+                const scope = found.projects.get(hit.identifier) ?? "personal";
                 hits.push({
                     id: conversationId(hit.identifier),
                     kind: "episode",
@@ -171,6 +183,12 @@ export function baselineEngine(deps: BaselineDeps): MemoryEngine {
                 vocabulary,
                 root,
             ).load();
+            for (const message of loaded.warnings) {
+                if (!said.has(message)) {
+                    said.add(message);
+                    deps.warn?.(message);
+                }
+            }
             const items = rank(loaded.entries, {
                 now: now(),
                 halfLifeDays: deps.halfLifeDays,

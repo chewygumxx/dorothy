@@ -80,11 +80,15 @@ describe("versions", () => {
         ]);
     });
 
-    it("records a review with the vocabulary beside it", async () => {
+    it("records a review with the vocabulary it coined beside it", async () => {
         await transcript(LIVE, [user("Hi"), reply("Hello")]);
         const { versions, recorded } = fakeVersions();
         const { memory } = setup({
-            call: reviews({ ...NOTES, tags: [], coined: [] }).fn,
+            call: reviews({
+                ...NOTES,
+                tags: ["memory"],
+                coined: [{ prefLabel: "memory", scopeNote: "Remembering." }],
+            }).fn,
             versions,
             vocabulary: tagsPath(),
         });

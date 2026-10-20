@@ -34,5 +34,6 @@ describe("openRepo", () => {
 
     it("finds the binary on this machine", async () => {
         expect(await hasGitBinary()).toBe(true);
+        expect(await hasGitBinary({ PATH: "" })).toBe(false);
     });
 });

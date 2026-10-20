@@ -21,6 +21,22 @@ import { dir, useXdgDir } from "./open-testing.js";
 useXdgDir();
 
 describe("launchHistory", () => {
+    it("requires the supplied index lock before adoption", async () => {
+        const warnings: string[] = [];
+        const launched = await launchHistory({
+            config: DEFAULT_CONFIG,
+            index: {
+                lock: async () => {
+                    throw new Error("index busy");
+                },
+            },
+            warnings,
+            hook: null,
+        });
+        expect(launched).toBeNull();
+        expect(warnings.join("\n")).toContain("index busy");
+        expect(existsSync(join(dir, "dorothy", ".git", "HEAD"))).toBe(false);
+    });
     // A bare repository with git isolated, local to this file, which
     // may not import from history (the package graph keeps it out).
     const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null" };
@@ -139,6 +155,7 @@ describe("launchHistory", () => {
                 hook: null,
             }),
         ).toBeNull();
+        expect(existsSync(join(dir, "dorothy", ".git"))).toBe(false);
     });
 });
 

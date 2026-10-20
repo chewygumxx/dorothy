@@ -12,25 +12,41 @@ import { existsSync, statSync } from "node:fs";
 import {
     chmod,
     mkdir,
+    readdir,
     readFile,
+    readlink,
+    realpath,
     rename,
     rm,
     stat,
     utimes,
     writeFile,
 } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
-import { isDeepStrictEqual } from "node:util";
+import {
+    basename,
+    dirname,
+    isAbsolute,
+    join,
+    relative,
+    resolve,
+    sep,
+} from "node:path";
 import type { Env } from "@dorothy/core";
-import { handEdited, parseFact, renderFact } from "../facts/file.js";
+import { handEdited } from "../facts/file.js";
 import { migrateFacts } from "../facts/migrate.js";
+import {
+    clearPending,
+    hashOf,
+    type PendingWrites,
+    pendingWrites,
+} from "../facts/pending.js";
 import {
     type HistoryHandle,
     type Lock,
     type Recorder,
     writeAtomic,
 } from "../memory/sidecar.js";
-import { transcriptDir } from "../transcript.js";
+import { readTranscript, transcriptDir } from "../transcript.js";
 import { recoverFile, stamp } from "./heal.js";
 import { fileKind, lint } from "./lint.js";
 import { FileLock } from "./lock.js";
@@ -57,6 +73,35 @@ export const historyRoot = (env: Env = process.env) =>
 
 // How old an index.lock must be before history takes it for a crash's.
 const STALE_LOCK_MS = 60_000;
+const UNINSPECTED_LOCK_MS = 600_000;
+
+// Linux exposes a process's executable name and actual working directory.
+// A git counts if it runs in the data directory or any directory within.
+// A null result means the process table cannot be inspected.
+async function runningGit(root: string): Promise<boolean | null> {
+    let processes: string[];
+    try {
+        processes = await readdir("/proc");
+    } catch {
+        return null;
+    }
+    const directory = await realpath(root);
+    let unknown = false;
+    for (const pid of processes.filter((name) => /^\d+$/.test(name))) {
+        try {
+            if ((await readFile(`/proc/${pid}/comm`, "utf8")).trim() !== "git")
+                continue;
+            const cwd = await readlink(`/proc/${pid}/cwd`);
+            // Run in the data directory or below it, as git finds the
+            // repository from any directory within.
+            if (cwd === directory || cwd.startsWith(`${directory}/`))
+                return true;
+        } catch (error) {
+            if ((error as { code?: string }).code !== "ENOENT") unknown = true;
+        }
+    }
+    return unknown ? null : false;
+}
 
 // A hook carrying this line is Dorothy's to rewrite; one without it is the
 // user's, and never replaced.
@@ -76,6 +121,10 @@ export function hookScript(exec: string, script: string): string {
         "    echo 'dorothy: its entry script is gone; not linted' >&2",
         "    exit 0",
         "fi",
+        `if ! command -v ${quote(exec)} >/dev/null 2>&1; then`,
+        "    echo 'dorothy: its Bun executable is gone; not linted' >&2",
+        "    exit 0",
+        "fi",
         `exec ${quote(exec)} ${quote(script)} --check --staged`,
         "",
     ].join("\n");
@@ -85,6 +134,8 @@ export type HistoryOptions = {
     repo: MemoryRepo;
     lock: Lock;
     now?: () => Date;
+    // Platform process inspection: null when unavailable.
+    gitRunning?: (root: string) => Promise<boolean | null>;
     // Where warnings go; without it they wait for a subscriber.
     warn?: (message: string) => void;
     // The command the pre-commit hook runs Dorothy with.
@@ -100,11 +151,13 @@ export class MemoryHistory {
     readonly root: string;
     readonly lock: Lock;
     readonly #now: () => Date;
+    readonly #gitRunning: (root: string) => Promise<boolean | null>;
     readonly #warnTo: ((message: string) => void) | undefined;
     readonly #listeners = new Set<(notice: HistoryNotice) => void>();
     readonly #waiting: string[] = [];
     readonly #warned = new Set<string>();
     readonly #catchUp = new Set<string>();
+    readonly #unrecoverable = new Map<string, string>();
     #afterCommit: () => void = () => {};
 
     private constructor(options: HistoryOptions) {
@@ -122,6 +175,7 @@ export class MemoryHistory {
         this.lock = options.lock;
         this.#now = options.now ?? (() => new Date());
         this.#warnTo = options.warn;
+        this.#gitRunning = options.gitRunning ?? runningGit;
     }
 
     // Adopts the directory first when it holds no commits yet. Throws when
@@ -136,6 +190,7 @@ export class MemoryHistory {
                 await history.#adopt();
             }
             await keepPrivate(history.root);
+            await history.#ignoreTemps();
         });
         if (options.hook) {
             await history.#installHook(options.hook);
@@ -148,7 +203,7 @@ export class MemoryHistory {
         this.record(paths, message);
 
     // What memory sees of history; close is whoever opened it's.
-    handle(close: () => void = () => {}): HistoryHandle {
+    handle(close: () => void | Promise<void> = () => {}): HistoryHandle {
         return {
             recorder: this.recorder,
             lock: this.lock,
@@ -172,6 +227,7 @@ export class MemoryHistory {
         try {
             await this.#settle(new Set(named));
             await this.#commitChecked(named, message);
+            await this.#clearPending(named);
         } catch (error) {
             for (const path of named) {
                 this.#catchUp.add(path);
@@ -200,10 +256,19 @@ export class MemoryHistory {
     }
 
     // A turn of the live conversation, once its transcript is flushed.
-    turn(path: string, count: number): Promise<void> {
-        return this.lock(() =>
-            this.record([path], `turn: ${basename(path, ".jsonl")} #${count}`),
-        ).catch((error) => {
+    turn(path: string): Promise<void> {
+        return this.lock(async () => {
+            // Failed exchanges still added user events. Count the canonical
+            // transcript under the lock rather than only completed replies.
+            const read = await readTranscript(resolve(this.root, path));
+            const count = read.turns.filter(
+                (turn) => turn.role === "user",
+            ).length;
+            await this.record(
+                [path],
+                `turn: ${basename(path, ".jsonl")} #${count}`,
+            );
+        }).catch((error) => {
             this.warn(
                 `history: couldn't commit (${describeError(error)}); it will be committed with the next change`,
             );
@@ -237,8 +302,8 @@ export class MemoryHistory {
         });
     }
 
-    warn(message: string): void {
-        if (this.#warned.has(message)) {
+    warn(message: string, repeat = false): void {
+        if (!repeat && this.#warned.has(message)) {
             return;
         }
         this.#warned.add(message);
@@ -271,10 +336,11 @@ export class MemoryHistory {
     #relative(paths: readonly string[]): string[] {
         const named = new Set<string>();
         for (const path of paths) {
-            const inside = isAbsolute(path) ? relative(this.root, path) : path;
+            const inside = relative(this.root, resolve(this.root, path));
             if (
                 inside !== "" &&
-                !inside.startsWith("..") &&
+                inside !== ".." &&
+                !inside.startsWith(`..${sep}`) &&
                 !isAbsolute(inside)
             ) {
                 named.add(inside.split(sep).join("/"));
@@ -285,8 +351,8 @@ export class MemoryHistory {
 
     // A git that stopped mid-commit leaves .git/index.lock, and every
     // commit after fails on it. Under Dorothy's lock no git of hers is
-    // running, so one older than a minute is taken as a crash's; a git of
-    // the user's may hold one that long only while its editor is open.
+    // running. Inspect other Git processes after a minute, or wait ten
+    // minutes if inspection is unavailable. An active Git keeps its lock.
     async #clearStaleLock(): Promise<void> {
         const path = join(this.root, ".git", "index.lock");
         let changed: number;
@@ -296,6 +362,13 @@ export class MemoryHistory {
             return;
         }
         if (Date.now() - changed <= STALE_LOCK_MS) {
+            return;
+        }
+        const running = await this.#gitRunning(this.root);
+        if (
+            running === true ||
+            (running === null && Date.now() - changed <= UNINSPECTED_LOCK_MS)
+        ) {
             return;
         }
         await rm(path, { force: true });
@@ -322,6 +395,15 @@ export class MemoryHistory {
         }
     }
 
+    async #clearPending(paths: readonly string[]): Promise<void> {
+        const problem = await clearPending(this.root, paths);
+        if (problem !== null) {
+            this.warn(
+                `history: couldn't clear pending attribution (${problem})`,
+            );
+        }
+    }
+
     // Commits the paths that pass the lint; the rest are restored.
     async #commitChecked(
         paths: readonly string[],
@@ -344,21 +426,47 @@ export class MemoryHistory {
     // transcript that grew is a conversation's own turns, whoever wrote
     // them, never an outside change.
     async #settle(except: ReadonlySet<string>): Promise<void> {
+        const pending = await pendingWrites(this.root);
+        const committed: string[] = [];
+        let unsettled = false;
         if (this.#catchUp.size > 0) {
             const paths = [...this.#catchUp];
             await this.#commitChecked(paths, `catch-up: ${paths.join(", ")}`);
+            committed.push(...paths);
             this.#catchUp.clear();
         }
         for (const path of await this.repo.changed()) {
             if (except.has(path)) {
                 continue;
             }
-            if (fileKind(path) === "fact") {
-                await this.#canonicalise(path);
+            let problem: string | null;
+            try {
+                if (
+                    fileKind(path) === "transcript" &&
+                    existsSync(join(this.root, path)) &&
+                    (await stat(join(this.root, path))).size === 0 &&
+                    (await this.repo.show(path, "HEAD")) === null
+                )
+                    continue;
+                if (fileKind(path) === "fact")
+                    await this.#canonicalise(path, pending);
+                problem = await this.#problem(path);
+            } catch (error) {
+                this.warn(
+                    `history: couldn't read ${path} (${describeError(error)}); left for a later sweep`,
+                );
+                unsettled = true;
+                continue;
             }
-            const problem = await this.#problem(path);
             if (problem !== null) {
-                await this.#recover(path, problem);
+                try {
+                    await this.#recover(path, problem);
+                } catch (error) {
+                    this.warn(
+                        `history: couldn't restore ${path} (${describeError(error)})`,
+                    );
+                    unsettled = true;
+                }
                 continue;
             }
             await this.#commit(
@@ -367,7 +475,9 @@ export class MemoryHistory {
                     ? `turn: ${basename(path, ".jsonl")}`
                     : `outside: ${path}`,
             );
+            committed.push(path);
         }
+        if (!unsettled) await this.#clearPending(committed);
     }
 
     // A fact added or edited by hand is rewritten as Dorothy writes one,
@@ -375,7 +485,7 @@ export class MemoryHistory {
     // not UTF-8, or whose rewrite would fail the lint is left as it is
     // for the lint to restore and keep. A file that can't be read throws,
     // to be warned of, never taken for broken content.
-    async #canonicalise(path: string): Promise<void> {
+    async #canonicalise(path: string, pending: PendingWrites): Promise<void> {
         const full = join(this.root, path);
         if (!existsSync(full)) {
             return;
@@ -391,10 +501,18 @@ export class MemoryHistory {
             }
             throw error;
         }
-        const stem = basename(path, ".md");
-        if (await this.#dorothys(path, text, stem)) {
+        // Only the journal can establish her own write. When it is damaged,
+        // leave uncertain bytes and attribution alone, but still commit them.
+        if (pending.writes.get(path)?.has(hashOf(text))) {
             return;
         }
+        if (pending.problem !== null) {
+            this.warn(
+                `history: ${path}: ${pending.problem.message}; attribution unchanged`,
+            );
+            return;
+        }
+        const stem = basename(path, ".md");
         const canonical = handEdited(text, stem, this.#now());
         if (
             canonical !== null &&
@@ -405,45 +523,31 @@ export class MemoryHistory {
         }
     }
 
-    // Whether a changed fact is Dorothy's own uncommitted write, which a
-    // crash, a lost catch-up or a session with no history leaves behind:
-    // canonical to the byte, and either new or with a provenance other
-    // than the committed one's, as every write of hers sets a new time. A
-    // hand edit leaves the provenance as it was.
-    async #dorothys(
-        path: string,
-        text: string,
-        stem: string,
-    ): Promise<boolean> {
-        const read = parseFact(text, stem);
-        if (read.kind !== "ok" || renderFact(read.fact) !== text) {
-            return false;
-        }
-        const head = await this.repo.show(path, "HEAD");
-        if (head === null) {
-            return true;
-        }
-        const before = parseFact(new TextDecoder().decode(head), stem);
-        return (
-            before.kind !== "ok" ||
-            !isDeepStrictEqual(before.fact.provenance, read.fact.provenance)
-        );
-    }
-
     async #recover(path: string, reason: string): Promise<boolean> {
+        const full = join(this.root, path);
+        const bytes = existsSync(full)
+            ? hashOf(await readFile(full))
+            : "missing";
+        const version = (await this.repo.log(path, 1))[0]?.sha ?? "";
+        const fingerprint = `${bytes}:${version}`;
+        if (this.#unrecoverable.get(path) === fingerprint) return false;
+        const before = await this.repo.resolve(MAIN);
         const healed = await recoverFile(
             this.repo,
             this.root,
             path,
             this.#now(),
         );
-        this.#afterCommit();
+        if ((await this.repo.resolve(MAIN)) !== before) this.#afterCommit();
         if (healed.kind === "restored") {
+            this.#unrecoverable.delete(path);
             this.warn(
                 `Restored ${path} from ${healed.from.slice(0, 7)} (${localTime(healed.at).slice(0, 10)}); the broken copy is in broken/`,
+                true,
             );
             return true;
         }
+        this.#unrecoverable.set(path, fingerprint);
         this.warn(
             `history: ${path} is broken (${reason}) and has no good version; a copy is in broken/`,
         );
@@ -455,14 +559,13 @@ export class MemoryHistory {
             await this.repo.init();
         }
         await keepPrivate(this.root);
-        const ignore = join(this.root, ".gitignore");
-        if (!existsSync(ignore)) {
-            await writeFile(ignore, "*.tmp\n", { mode: 0o600 });
-        }
+        await this.#ignoreTemps();
         const kept: string[] = [];
         for (const path of await this.repo.changed()) {
             const full = join(this.root, path);
-            const problem = lint(path, await readFile(full), null);
+            const bytes = await readFile(full);
+            if (fileKind(path) === "transcript" && bytes.length === 0) continue;
+            const problem = lint(path, bytes, null);
             if (problem === null) {
                 kept.push(path);
                 continue;
@@ -489,6 +592,23 @@ export class MemoryHistory {
             );
         }
         await this.#commit(kept, `adopt: ${kept.length} files`);
+        await this.#clearPending(kept);
+    }
+
+    async #ignoreTemps(): Promise<void> {
+        const path = join(this.root, ".gitignore");
+        let current = "";
+        try {
+            current = await readFile(path, "utf8");
+        } catch (error) {
+            if ((error as { code?: string }).code !== "ENOENT") throw error;
+        }
+        if (!current.split("\n").some((line) => line.trim() === "*.tmp")) {
+            await writeAtomic(
+                path,
+                `${current}${current === "" || current.endsWith("\n") ? "" : "\n"}*.tmp\n`,
+            );
+        }
     }
 
     async #installHook({ exec, script }: HookCommand): Promise<void> {
@@ -522,9 +642,9 @@ export type OpenedHistory =
     | { ok: true; history: MemoryHistory; close(): void }
     | { ok: false; reason: string };
 
-// History under the index's lock when the index is open, otherwise under
-// a lock of its own in .git; not ok, with the reason, when it can't be
-// used at all.
+// Every history writer takes the common lock in .git, including writers
+// with the index. Its lock is taken first when available, so canonical
+// writes and the index update share a transaction as well.
 export async function openHistory({
     root,
     index,
@@ -546,10 +666,10 @@ export async function openHistory({
             root,
             engine === undefined ? {} : { engine },
         );
-        if (index === null) {
-            file = FileLock.open(join(root, ".git", "dorothy.lock"));
-        }
-        const lock = index?.lock ?? (file as FileLock).lock;
+        file = FileLock.open(join(root, ".git", "dorothy.lock"));
+        const shared = file.lock;
+        const lock: Lock =
+            index === null ? shared : (work) => index.lock(() => shared(work));
         for (const warning of await lock(() => migrateFacts(root))) {
             warn?.(warning);
         }

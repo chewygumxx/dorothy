@@ -8,6 +8,7 @@
 //
 //
 
+import { localDay as day } from "./list.js";
 import {
     type Author,
     type EditChanges,
@@ -90,8 +91,6 @@ export function wrap(
     }
     return lines;
 }
-
-const day = (at: string) => at.slice(0, 10);
 
 function owner(value: string | null, source: Provenance | undefined): string {
     if (value === null) {
@@ -187,6 +186,7 @@ export function parseEditView(
     text: string,
     shown: Sidecar | null,
     tags?: TagsContext,
+    renderedTags = tags,
 ): EditParse {
     const lines = viewLines(text);
     if (lines === null) {
@@ -197,11 +197,15 @@ export function parseEditView(
         return { kind: "error", reason: found };
     }
     const base = shown ?? EMPTY_SIDECAR;
+    const joined = abstractJoined(found, base);
+    if (joined !== null) {
+        return { kind: "error", reason: joined };
+    }
     const changes: EditChanges = {};
     const problem =
         textChanges(found, base, changes) ??
         flagChanges(found, base, changes) ??
-        tagsChange(found.get("Tags"), tags, base, changes);
+        tagsChange(found.get("Tags"), tags, base, changes, renderedTags);
     if (problem !== null) {
         return { kind: "error", reason: problem };
     }
@@ -233,6 +237,26 @@ function readFields(lines: readonly string[]): Map<string, string> | string {
     return new Map(
         [...found].map(([name, given]) => [name, normalise(given.join(" "))]),
     );
+}
+
+// Without its Abstract: line the abstract's text, which follows the
+// description, reads as part of it. When the description is now the old one
+// and the old abstract together, that is what happened, and saving it would
+// quietly make the description the user's.
+function abstractJoined(
+    found: ReadonlyMap<string, string>,
+    base: Sidecar,
+): string | null {
+    const description = found.get(LABELS.description);
+    if (
+        found.has(LABELS.abstract) ||
+        description === undefined ||
+        base.abstract === null ||
+        description !== normalise(`${base.description ?? ""} ${base.abstract}`)
+    ) {
+        return null;
+    }
+    return "the Abstract: line is gone, so the abstract's text joined the description; keep the Abstract: line, or delete the abstract's text along with it";
 }
 
 function strayLine(line: string): string {
@@ -293,6 +317,7 @@ function tagsChange(
     tags: TagsContext | undefined,
     base: Sidecar,
     changes: EditChanges,
+    rendered: TagsContext | undefined,
 ): string | null {
     if (given === undefined) {
         return null;
@@ -302,6 +327,20 @@ function tagsChange(
     }
     if (tags.kind === "broken") {
         return TAGS_BROKEN;
+    }
+    // An untouched line names what was rendered, even after a rename or
+    // deletion. An already lapsed fixed set returns only with another edit.
+    if (
+        rendered?.kind === "ok" &&
+        given === tagsText(rendered.vocabulary, base)
+    ) {
+        if (
+            given === "" &&
+            base.fields.tags?.by === "user" &&
+            Object.keys(changes).length > 0
+        )
+            changes.tags = null;
+        return null;
     }
     const ids = tagIds(given, tags.vocabulary);
     if (typeof ids === "string") {

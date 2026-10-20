@@ -43,6 +43,9 @@ describe("parseMemoryId", () => {
             "k:likes-tea",
             "k:personal/Likes",
             "k:projects/../likes-tea",
+            "k:projects/./likes-tea",
+            "k:projects/github.com/./me/likes-tea",
+            "k:projects/github.com/me/.",
             "k:personal/../../etc/passwd",
             "c:not-a-phrase",
             "x:personal/likes-tea",
@@ -62,5 +65,7 @@ describe("HOST_ID", () => {
         expect(HOST_ID.test("Claude")).toBe(false);
         expect(HOST_ID.test("a/b")).toBe(false);
         expect(HOST_ID.test("")).toBe(false);
+        expect(HOST_ID.test(`a${"b".repeat(39)}`)).toBe(true);
+        expect(HOST_ID.test(`a${"b".repeat(40)}`)).toBe(false);
     });
 });

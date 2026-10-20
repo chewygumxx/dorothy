@@ -11,6 +11,7 @@
 import { describe, expect, it } from "bun:test";
 import {
     existsSync,
+    mkdirSync,
     mkdtempSync,
     readFileSync,
     rmSync,
@@ -51,6 +52,23 @@ const OURS = { HOME: "/home/u", XDG_DATA_HOME: "/home/u/data", PATH: "/bin" };
 describe("reviewEnv", () => {
     it("drops the gateway, the launch and claude's own variables", () => {
         expect(reviewEnv(fromClaude())).toEqual(OURS);
+    });
+
+    it("takes the user's own base URL, which the launch passed on, as its own", () => {
+        const proxied = {
+            ...fromClaude(),
+            DOROTHY_ANTHROPIC_BASE_URL: "http://proxy.example/v1",
+        };
+        expect(reviewEnv(proxied)).toEqual({
+            ...OURS,
+            DOROTHY_ANTHROPIC_BASE_URL: "http://proxy.example/v1",
+            ANTHROPIC_BASE_URL: "http://proxy.example/v1",
+        });
+        // An empty one is none, and the gateway's is never kept.
+        expect(
+            reviewEnv({ ...fromClaude(), DOROTHY_ANTHROPIC_BASE_URL: "" })
+                .ANTHROPIC_BASE_URL,
+        ).toBeUndefined();
     });
 });
 
@@ -95,12 +113,52 @@ describe("runHook", () => {
         expect(await runHook({ kind: "hook" }, deps)).toBe(0);
         expect(seen.loaded).toEqual(["/d/.env", "/d/.env.keys"]);
         expect(env).toEqual({ ...OURS, CLAUDE_CODE_OAUTH_TOKEN: "dorothy's" });
+        // Loaded when a review asks, and once.
+        expect(seen.agents).toBe(0);
+        expect((await seen.deps?.agent())?.persona).toBe("You are Dorothy.");
+        await seen.deps?.agent();
         expect(seen.agents).toBe(1);
-        expect(seen.deps?.persona).toBe("You are Dorothy.");
         expect(seen.deps?.self).toEqual([
             "/bin/bun",
             "/d/packages/cli/src/index.ts",
         ]);
+    });
+
+    it("sends a review through the user's proxy, and tells memory the environment it was given", async () => {
+        const { env, seen, deps } = harness();
+        env.DOROTHY_ANTHROPIC_BASE_URL = "http://proxy.example/v1";
+        await runHook({ kind: "hook" }, deps);
+        // The SDK reads process.env, here env.
+        expect(env.ANTHROPIC_BASE_URL).toBe("http://proxy.example/v1");
+        // What memory spawns a catch-up in is what claude gave, which
+        // holds neither Dorothy's credentials nor the review's URL.
+        expect(seen.deps?.env).toMatchObject({
+            ANTHROPIC_BASE_URL: "http://127.0.0.1:4321",
+            DOROTHY_ANTHROPIC_BASE_URL: "http://proxy.example/v1",
+        });
+        expect(seen.deps?.env?.CLAUDE_CODE_OAUTH_TOKEN).toBe("claude's");
+    });
+
+    it("looks for Dotenvx Armor's session where the launch found it, before loading", async () => {
+        const { env, seen, deps } = harness();
+        env.XDG_CONFIG_HOME = "/claude/config";
+        env.DOROTHY_DOTENVX_CONFIG = "/launch/dotenvx";
+        const where: (string | undefined)[] = [];
+        deps.load = (_path, _keys, into) => {
+            where.push(into.DOTENVX_CONFIG);
+        };
+        await runHook({ kind: "hook" }, deps);
+        expect(where).toEqual(["/launch/dotenvx"]);
+        // A catch-up it starts is given the same.
+        expect(seen.deps?.env?.DOROTHY_DOTENVX_CONFIG).toBe("/launch/dotenvx");
+        // With none passed on, dotenvx looks where it would.
+        const bare = harness();
+        const bareWhere: (string | undefined)[] = [];
+        bare.deps.load = (_path, _keys, into) => {
+            bareWhere.push(into.DOTENVX_CONFIG);
+        };
+        await runHook({ kind: "hook" }, bare.deps);
+        expect(bareWhere).toEqual([undefined]);
     });
 
     it("leaves memory the launch and the directories claude gave", async () => {
@@ -113,15 +171,14 @@ describe("runHook", () => {
             DOROTHY_LAUNCH: LAUNCH,
             XDG_DATA_HOME: "/home/u/data",
         });
-        expect(seen.agents).toBe(1);
+        expect(seen.agents).toBe(0);
     });
 
     it("loads no agent to reread or dismiss, and refuses a review there", async () => {
         const { seen, deps } = harness();
         await runHook({ kind: "reread" }, deps);
         await runHook({ kind: "dismiss", session: SESSION }, deps);
-        expect(seen.agents).toBe(0);
-        const outcome = await seen.deps?.call({
+        const outcome = await (await seen.deps?.agent())?.call({
             what: "a review",
             system: "",
             prompt: "",
@@ -129,6 +186,7 @@ describe("runHook", () => {
             timeoutMs: 1,
         });
         expect(outcome?.ok).toBe(false);
+        expect(seen.agents).toBe(0);
     });
 
     it("still runs the hook when the agent cannot load, its reviews failing", async () => {
@@ -137,7 +195,7 @@ describe("runHook", () => {
             throw new Error("no sdk");
         };
         expect(await runHook({ kind: "hook" }, deps)).toBe(0);
-        const outcome = await seen.deps?.call({
+        const outcome = await (await seen.deps?.agent())?.call({
             what: "a review",
             system: "",
             prompt: "",
@@ -214,6 +272,28 @@ describe("a hook that goes wrong", () => {
             expect(logOf(cache)).toContain(
                 "the hook could not run (no memory)",
             );
+        });
+    });
+
+    it("rotates the fallback log as memory's does", async () => {
+        await withCache(async (env, cache) => {
+            const path = join(cache, "dorothy", "claude-hook.log");
+            mkdirSync(join(cache, "dorothy"), { recursive: true });
+            writeFileSync(path, "x".repeat(1_000_001));
+            await runHook(
+                { kind: "catch-up", launch: LAUNCH, session: null },
+                {
+                    env,
+                    root: "/d",
+                    load: () => null,
+                    memory: async () => {
+                        throw new Error("no memory");
+                    },
+                },
+            );
+            expect(readFileSync(`${path}.1`, "utf8")).toHaveLength(1_000_001);
+            expect(readFileSync(path, "utf8")).toContain("no memory");
+            expect(readFileSync(path, "utf8").split("\n")).toHaveLength(2);
         });
     });
 

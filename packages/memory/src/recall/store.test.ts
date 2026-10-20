@@ -10,9 +10,18 @@
 
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { closeSync, openSync, writeSync } from "node:fs";
+import {
+    chmod,
+    mkdir,
+    mkdtemp,
+    readFile,
+    rm,
+    stat,
+    writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { indexPath, RecallIndex, SCHEMA_VERSION, unusable } from "./store.js";
 
 let dir = "";
@@ -39,6 +48,11 @@ const insert = (index: RecallIndex, phrase: string) =>
         "INSERT INTO conversations (phrase, t_size, t_ino) VALUES (?, 0, 0)",
         [phrase],
     );
+
+// A persisted row survives only while the damaged file is left alone.
+// Read its bytes because damage makes the schema itself unqueryable.
+const SENTINEL = "recall-corruption-sentinel";
+const hasSentinel = async () => (await readFile(path)).includes(SENTINEL);
 
 describe("indexPath", () => {
     it("lives in the cache directory", () => {
@@ -100,10 +114,10 @@ describe("RecallIndex", () => {
         index.close();
     });
 
-    it("is at schema version 5, with clusters, vocabulary and facts tables", () => {
+    it("has the clusters, vocabulary and facts tables at the current version", () => {
         const index = RecallIndex.open(path);
         try {
-            expect(SCHEMA_VERSION).toBe(5);
+            expect(version(index)).toBe(SCHEMA_VERSION);
             const tables = (
                 index.db
                     .query(
@@ -144,11 +158,22 @@ describe("RecallIndex", () => {
         index.close();
     });
 
+    it("rebuilds a schema-7 index, which took a repository's knowledge as confirmed", async () => {
+        const old = RecallIndex.open(path);
+        insert(old, "a");
+        old.db.run("PRAGMA user_version = 7");
+        old.close();
+        const index = RecallIndex.open(path);
+        expect(version(index)).toBe(SCHEMA_VERSION);
+        expect(count(index)).toBe(0);
+        index.close();
+    });
+
     it("rebuilds an index of another version in place", async () => {
         const old = RecallIndex.open(path);
         insert(old, "a");
         old.db.run("CREATE TABLE extra (x)");
-        old.db.run("PRAGMA user_version = 7");
+        old.db.run("PRAGMA user_version = 6");
         old.close();
         const before = (await stat(path)).ino;
         const index = RecallIndex.open(path);
@@ -164,17 +189,19 @@ describe("RecallIndex", () => {
         index.close();
     });
 
-    const holdLock = (seconds: number) =>
+    // Holds the write lock until the file named release exists.
+    const holdLock = (release: string) =>
         Bun.spawn(
             [
                 process.execPath,
                 "-e",
                 `const { Database } = require("bun:sqlite");
+                 const { existsSync } = require("node:fs");
                  const db = new Database(${JSON.stringify(path)});
                  db.run("PRAGMA busy_timeout = 5000");
                  db.run("BEGIN IMMEDIATE");
                  console.log("locked");
-                 Bun.sleepSync(${seconds * 1000});
+                 while (!existsSync(${JSON.stringify(release)})) Bun.sleepSync(10);
                  db.run("COMMIT");`,
             ],
             { stdout: "pipe" },
@@ -184,25 +211,30 @@ describe("RecallIndex", () => {
         const first = RecallIndex.open(path);
         insert(first, "a");
         first.close();
-        const child = holdLock(0.6);
+        const release = join(dir, "release");
+        const child = holdLock(release);
         await child.stdout.getReader().read();
-        const start = performance.now();
-        const index = RecallIndex.open(path, 100);
-        expect(performance.now() - start).toBeLessThan(100);
+        // Were the open to wait for the lock, it would sit out the whole
+        // busy timeout and throw, with the child still holding it.
+        const index = RecallIndex.open(path, 5000);
+        expect(child.exitCode).toBeNull();
         expect(count(index)).toBe(1);
         index.close();
+        await writeFile(release, "");
         await child.exited;
     });
 
     it("leaves a file that needs migrating alone when the lock stays held", async () => {
         const first = RecallIndex.open(path);
         insert(first, "a");
-        first.db.run("PRAGMA user_version = 7");
+        first.db.run("PRAGMA user_version = 6");
         first.close();
         const before = (await stat(path)).ino;
-        const child = holdLock(0.6);
+        const release = join(dir, "release");
+        const child = holdLock(release);
         await child.stdout.getReader().read();
         expect(() => RecallIndex.open(path, 100)).toThrow();
+        await writeFile(release, "");
         await child.exited;
         expect((await stat(path)).ino).toBe(before);
         // Looked at without migrating it: the rows are still there.
@@ -211,6 +243,224 @@ describe("RecallIndex", () => {
             raw.query("SELECT count(*) AS n FROM conversations").get(),
         ).toEqual({ n: 1 });
         raw.close();
+    });
+
+    describe("a file that turns corrupt in use", () => {
+        const corruptError = (code = "SQLITE_CORRUPT") =>
+            Object.assign(new Error("database disk image is malformed"), {
+                code,
+            });
+        // Overwrites the schema page, as a bad disk or a stray write would.
+        const damage = (index: RecallIndex, bytes: Buffer) => {
+            index.db.run("PRAGMA wal_checkpoint(TRUNCATE)");
+            const fd = openSync(path, "r+");
+            writeSync(fd, bytes, 0, bytes.length, 100);
+            closeSync(fd);
+        };
+        // Another process with the index open and idle, until release.
+        const holder = (release: string) =>
+            Bun.spawn(
+                [
+                    process.execPath,
+                    "-e",
+                    `const { Database } = require("bun:sqlite");
+                     const { existsSync } = require("node:fs");
+                     const db = new Database(${JSON.stringify(path)});
+                     db.run("PRAGMA journal_mode = WAL");
+                     db.query("SELECT count(*) FROM conversations").get();
+                     console.log("holding");
+                     while (!existsSync(${JSON.stringify(release)})) Bun.sleepSync(10);`,
+                ],
+                { stdout: "pipe" },
+            );
+
+        it("is rebuilt in place when no other process holds it", async () => {
+            const index = RecallIndex.open(path);
+            insert(index, SENTINEL);
+            damage(index, Buffer.alloc(300, 0xff));
+            expect(await hasSentinel()).toBe(true);
+            const failure = await index
+                .exclusive(() => {
+                    throw corruptError();
+                })
+                .catch((error: unknown) => error);
+            expect(String(failure)).toContain(
+                "database disk image is malformed",
+            );
+            expect(String(failure)).toContain("rebuilt");
+            expect(await hasSentinel()).toBe(false);
+            expect(version(index)).toBe(SCHEMA_VERSION);
+            expect(count(index)).toBe(0);
+            // The next calls work on the new file.
+            await index.exclusive(() => insert(index, "b"));
+            expect(await index.claim("b", "me", 1000, 500)).toBe(true);
+            index.close();
+            const again = RecallIndex.open(path);
+            expect(count(again)).toBe(1);
+            again.close();
+        });
+
+        it("is left alone while another process holds it", async () => {
+            const index = RecallIndex.open(path);
+            insert(index, SENTINEL);
+            index.db.run("PRAGMA wal_checkpoint(TRUNCATE)");
+            const release = join(dir, "release");
+            const child = holder(release);
+            let failure: unknown;
+            try {
+                await child.stdout.getReader().read();
+                damage(index, Buffer.alloc(300, 0xff));
+                expect(await hasSentinel()).toBe(true);
+                failure = await index
+                    .exclusive(() => {
+                        throw corruptError();
+                    })
+                    .catch((error: unknown) => error);
+            } finally {
+                await writeFile(release, "");
+                await child.exited;
+            }
+            expect(String(failure)).toContain(
+                "database disk image is malformed",
+            );
+            expect(String(failure)).toContain("not rebuilt");
+            expect(await hasSentinel()).toBe(true);
+            // With the other process gone, the next failure rebuilds it.
+            const later = await index
+                .exclusive(() => {
+                    throw corruptError("SQLITE_CORRUPT_VTAB");
+                })
+                .catch((error: unknown) => error);
+            expect(String(later)).toContain("rebuilt");
+            expect(await hasSentinel()).toBe(false);
+            expect(count(index)).toBe(0);
+            index.close();
+        });
+
+        it("is left alone when it cannot be shown to be unshared", async () => {
+            const index = RecallIndex.open(path);
+            insert(index, "a");
+            index.db.run("PRAGMA wal_checkpoint(TRUNCATE)");
+            // A header SQLite cannot read says nothing of who has it open.
+            damage(index, Buffer.from("not a database at all, not even close"));
+            const fd = openSync(path, "r+");
+            writeSync(fd, Buffer.from("x".repeat(100)), 0, 100, 0);
+            closeSync(fd);
+            const before = (await stat(path)).ino;
+            const failure = await index
+                .exclusive(() => {
+                    throw corruptError("SQLITE_NOTADB");
+                })
+                .catch((error: unknown) => error);
+            expect(String(failure)).toContain("not rebuilt");
+            expect((await stat(path)).ino).toBe(before);
+            index.close();
+        });
+
+        it("is reported, not deleted, when deleting it fails", async () => {
+            const index = RecallIndex.open(path);
+            insert(index, "a");
+            damage(index, Buffer.alloc(300, 0xff));
+            const before = (await stat(path)).ino;
+            // A directory nothing can be removed from.
+            await chmod(dirname(path), 0o500);
+            try {
+                const failure = await index
+                    .exclusive(() => {
+                        throw corruptError();
+                    })
+                    .catch((error: unknown) => error);
+                expect(String(failure)).toContain("deleting it failed");
+            } finally {
+                await chmod(dirname(path), 0o700);
+            }
+            expect((await stat(path)).ino).toBe(before);
+            // Reopened as it was, failing as it did, not closed.
+            expect(() => index.db.query("SELECT 1").get()).not.toThrow(
+                /closed/i,
+            );
+            index.close();
+        });
+
+        it("does not rebuild for other failures", async () => {
+            const index = RecallIndex.open(path);
+            insert(index, "a");
+            const before = (await stat(path)).ino;
+            await expect(
+                index.exclusive(() => {
+                    throw Object.assign(new Error("full"), {
+                        code: "SQLITE_FULL",
+                    });
+                }),
+            ).rejects.toThrow("full");
+            expect((await stat(path)).ino).toBe(before);
+            expect(count(index)).toBe(1);
+            index.close();
+        });
+    });
+
+    describe("opening a file that is corrupt", () => {
+        const holder = (release: string) =>
+            Bun.spawn(
+                [
+                    process.execPath,
+                    "-e",
+                    `const { Database } = require("bun:sqlite");
+                     const { existsSync } = require("node:fs");
+                     const db = new Database(${JSON.stringify(path)});
+                     db.run("PRAGMA journal_mode = WAL");
+                     db.query("SELECT count(*) FROM conversations").get();
+                     console.log("holding");
+                     while (!existsSync(${JSON.stringify(release)})) Bun.sleepSync(10);`,
+                ],
+                { stdout: "pipe" },
+            );
+        const damageSchema = () => {
+            const fd = openSync(path, "r+");
+            writeSync(fd, Buffer.alloc(300, 0xff), 0, 300, 100);
+            closeSync(fd);
+        };
+        const made = () => {
+            const first = RecallIndex.open(path);
+            insert(first, SENTINEL);
+            first.db.run("PRAGMA wal_checkpoint(TRUNCATE)");
+            return first;
+        };
+
+        it("rebuilds it where no other process has it open", async () => {
+            made().close();
+            damageSchema();
+            expect(await hasSentinel()).toBe(true);
+            const index = RecallIndex.open(path);
+            expect(await hasSentinel()).toBe(false);
+            expect(version(index)).toBe(SCHEMA_VERSION);
+            expect(count(index)).toBe(0);
+            index.close();
+        });
+
+        it("is left alone while another process holds it", async () => {
+            const first = made();
+            const release = join(dir, "release");
+            const child = holder(release);
+            let failure: unknown;
+            const before = (await stat(path)).ino;
+            try {
+                await child.stdout.getReader().read();
+                first.close();
+                damageSchema();
+                try {
+                    RecallIndex.open(path);
+                } catch (error) {
+                    failure = error;
+                }
+            } finally {
+                await writeFile(release, "");
+                await child.exited;
+            }
+            expect(String(failure)).toContain("not rebuilt");
+            expect((await stat(path)).ino).toBe(before);
+            expect(await hasSentinel()).toBe(true);
+        });
     });
 
     it("keeps the index and its journal files private", async () => {

@@ -25,7 +25,12 @@ import {
 } from "./query.js";
 import { RecallIndex } from "./store.js";
 import { syncIndex } from "./sync.js";
-import { carrierCounts, keywordsOf, listedConcepts } from "./tags.js";
+import {
+    carrierCounts,
+    keywordsOf,
+    listedConcepts,
+    narrowerThan,
+} from "./tags.js";
 
 const phrase = (seed: number) =>
     newPhrase(() => Uint8Array.from([seed, 1, 2, 3, 4, 5, 6, 7]));
@@ -217,6 +222,31 @@ describe("listTags", () => {
             description: "About unused.",
             conversations: 0,
         });
+    });
+
+    it("treats a blank under filter as absent", () => {
+        expect(listTags(index, { under: "  " }, OPTIONS)).toEqual(
+            listTags(index, {}, OPTIONS),
+        );
+    });
+
+    it("excludes the root even if the cached hierarchy has a cycle", () => {
+        index.db.run("INSERT INTO broader (id, parent) VALUES (?, ?)", [
+            K.memory,
+            K.tagging,
+        ]);
+        expect([...narrowerThan(index, K.memory)]).toEqual([K.tagging]);
+    });
+
+    it("hides a concept carried only by the live conversation", async () => {
+        await conversation(LIVE, day(19), "now", { tags: [K.unused] });
+        const later = new Date(Date.now() + 5000);
+        await utimes(sidecarPath(dir, LIVE), later, later);
+        await sync();
+        expect(names(listTags(index, {}, OPTIONS))).not.toContain("unused");
+        expect(
+            refusal(() => listTags(index, { under: "unused" }, OPTIONS)),
+        ).toBe(`${NO_TAG}: unused.`);
     });
 
     it("lists what lies beneath a concept, named by any label", () => {

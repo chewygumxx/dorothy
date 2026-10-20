@@ -9,7 +9,7 @@
 //
 
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 // In code points, as JSON Schema's maxLength counts them.
@@ -76,15 +76,30 @@ export type Recording = {
 // What memory sees of history.
 export type HistoryHandle = {
     recorder: Recorder;
-    // The lock history commits under: the index's, or history's own.
+    // The common history lock, combined with the index when available.
     lock: Lock;
     // Commits or restores whatever changed while Dorothy was away.
     sweep(): Promise<void>;
     // Restores a file found broken; true when it was. Takes the lock.
     heal(path: string): Promise<boolean>;
-    close(): void;
+    close(): void | Promise<void>;
 };
-// For a command: history with the index's lock, or null when it is off.
+// Canonical writes take history's combined lock when available, else
+// the index's alone; none with neither.
+export const writeLock = (
+    index: { lock: Lock } | null,
+    versions: HistoryHandle | null,
+): Lock | undefined => versions?.lock ?? index?.lock;
+// A write's commit through history; none without it.
+export const recordingFor = (
+    versions: HistoryHandle | null,
+    message: string,
+    also: readonly string[] = [],
+): Recording | undefined =>
+    versions === null
+        ? undefined
+        : { recorder: versions.recorder, message, also };
+// For a command: history with its combined lock, or null when off.
 export type OpenHistory = (
     index: { lock: Lock } | null,
 ) => Promise<HistoryHandle | null>;
@@ -405,16 +420,24 @@ export async function readSidecar(
 }
 
 // No reader ever sees half a file: the text lands under a temporary name in
-// the same directory, then replaces the sidecar in one rename.
+// the same directory, then replaces the sidecar in one rename. With keep
+// it links the text into place instead, and fails with EEXIST rather than
+// replace what a racing writer made.
 export async function writeAtomic(
     path: string,
     text: string | Uint8Array,
+    { keep = false }: { keep?: boolean } = {},
 ): Promise<void> {
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
     const temporary = `${path}.${randomBytes(4).toString("hex")}.tmp`;
     try {
         await writeFile(temporary, text, { mode: 0o600, flag: "wx" });
-        await rename(temporary, path);
+        if (keep) {
+            await link(temporary, path);
+            await rm(temporary, { force: true });
+        } else {
+            await rename(temporary, path);
+        }
     } catch (error) {
         await rm(temporary, { force: true });
         throw error;
@@ -569,7 +592,7 @@ export function mergeReview(
     // Tags given are the conversation's from now on: hers are stamped,
     // and the user's set, pruned against the vocabulary, stays theirs.
     if (review.tags !== undefined) {
-        next.tags = [...review.tags];
+        next.tags = readTags(review.tags);
         if (base.fields.tags?.by !== "user") {
             next.fields.tags = {
                 by: "dorothy",
@@ -612,7 +635,7 @@ export function mergeEdit(
         delete next.fields.tags;
         next.reviewedThrough = 0;
     } else if (changes.tags !== undefined) {
-        next.tags = [...changes.tags];
+        next.tags = readTags(changes.tags);
         next.fields.tags = { by: "user", at };
     }
     if (changes.pinned !== undefined) {

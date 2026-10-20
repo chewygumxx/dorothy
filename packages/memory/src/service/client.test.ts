@@ -8,8 +8,9 @@
 //
 //
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import {
+    existsSync,
     mkdirSync,
     mkdtempSync,
     readdirSync,
@@ -23,9 +24,11 @@ import {
     ensureService,
     flushPending,
     requestBlock,
+    requestRecall,
     sendRecord,
 } from "./client.js";
 import { isLoopbackUrl } from "./loopback.js";
+import { runScript, trapProxy } from "./proxy-testing.js";
 
 const AT = "2026-10-18T09:30:00.000Z";
 const BLOCK = {
@@ -165,6 +168,34 @@ const ACCEPTED = { accepted: 1, duplicates: 0, through: "a" };
 const sessionOf = async (request: Request) =>
     ((await request.json()) as RecordRequest).session;
 
+describe("the client behind a user's proxy", () => {
+    it("reaches a loopback service directly, whatever the proxy variables say", async () => {
+        const trap = await trapProxy();
+        try {
+            const options = { env, url: up().url, token: null };
+            const out = await runScript(
+                [
+                    `import { ensureService, sendRecord } from ${JSON.stringify(join(import.meta.dir, "client.ts"))};`,
+                    `const options = ${JSON.stringify(options)};`,
+                    `const sent = await sendRecord(${JSON.stringify(record)}, options);`,
+                    "const ensured = await ensureService([], options);",
+                    "console.log(JSON.stringify([sent, ensured]));",
+                ].join("\n"),
+                { ...trap.env, HOME: home },
+                home,
+            );
+            expect(JSON.parse(out)).toEqual([
+                { accepted: 1, duplicates: 0, through: "a" },
+                true,
+            ]);
+            expect(seen).toEqual(["/v1/record", "/v1/health"]);
+            expect(trap.connections()).toBe(0);
+        } finally {
+            await trap.close();
+        }
+    });
+});
+
 describe("the queue of records", () => {
     it("drops a refused head, and sends the one behind it", async () => {
         wait("1-a", "2-b");
@@ -233,6 +264,134 @@ describe("the queue of records", () => {
         expect(await sendRecord(record, options)).toBeNull();
         expect(Date.now() - started).toBeLessThan(600);
         expect(pending()).toHaveLength(3);
+    });
+});
+
+describe("the client's promises", () => {
+    // An environment that fails on every read, as a broken one might.
+    const broken = new Proxy({} as Env, {
+        get() {
+            throw new Error("environment unreadable");
+        },
+    });
+
+    it("never throws, whatever it is given", async () => {
+        const request = {
+            host: "codex",
+            session: "s1",
+            reason: "startup" as const,
+        };
+        const options = { env: broken };
+        expect(await requestBlock(request, options)).toBeNull();
+        expect(
+            await requestRecall(
+                { host: "codex", session: "s1", prompt: "tea" },
+                options,
+            ),
+        ).toBeNull();
+        expect(await sendRecord(record, options)).toBeNull();
+    });
+
+    it("spends one record budget on a flush and a send together", async () => {
+        wait("1-a");
+        // A clock the test moves, and the time each request is given: the
+        // waiting record takes 150 of the 200, leaving 50 for the new one.
+        let clock = 1_800_000_000_000;
+        const now = spyOn(Date, "now").mockImplementation(() => clock);
+        const given: number[] = [];
+        const timeout = spyOn(AbortSignal, "timeout").mockImplementation(
+            (ms: number) => {
+                given.push(ms);
+                return new AbortController().signal;
+            },
+        );
+        let calls = 0;
+        const fetcher = (async () => {
+            calls += 1;
+            if (calls === 1) {
+                clock += 150;
+            }
+            return Response.json(ACCEPTED);
+        }) as unknown as typeof fetch;
+        try {
+            const sent = await sendRecord(record, {
+                env,
+                url: "http://127.0.0.1:1",
+                token: null,
+                fetch: fetcher,
+                timeouts: { record: 200 },
+            });
+            expect(sent).toEqual(ACCEPTED);
+        } finally {
+            now.mockRestore();
+            timeout.mockRestore();
+        }
+        expect(calls).toBe(2);
+        expect(given).toEqual([200, 50]);
+    });
+
+    it("sends nothing further once a flush has spent the budget", async () => {
+        wait("1-a");
+        let clock = 1_800_000_000_000;
+        const now = spyOn(Date, "now").mockImplementation(() => clock);
+        let calls = 0;
+        const fetcher = (async () => {
+            calls += 1;
+            clock += 250;
+            return Response.json(ACCEPTED);
+        }) as unknown as typeof fetch;
+        try {
+            const sent = await sendRecord(record, {
+                env,
+                url: "http://127.0.0.1:1",
+                token: null,
+                fetch: fetcher,
+                timeouts: { record: 200 },
+            });
+            expect(sent).toBeNull();
+        } finally {
+            now.mockRestore();
+        }
+        // The new record waits for the next call rather than overrun.
+        expect(calls).toBe(1);
+        expect(pending()).toHaveLength(1);
+    });
+
+    it("keeps records made in one millisecond in the order sent", async () => {
+        const now = spyOn(Date, "now").mockReturnValue(1_800_000_000_000);
+        try {
+            for (let at = 0; at < 30; at++) {
+                await sendRecord({ ...record, session: `n${at}` }, down());
+            }
+        } finally {
+            now.mockRestore();
+        }
+        expect(pending()).toHaveLength(30);
+        const sent: string[] = [];
+        const options = serve(async (request) => {
+            sent.push(await sessionOf(request));
+            return Response.json(ACCEPTED);
+        });
+        expect(
+            await flushPending({ ...options, timeouts: { record: 5000 } }),
+        ).toBe(0);
+        expect(sent).toEqual(Array.from({ length: 30 }, (_, at) => `n${at}`));
+    });
+
+    it("keeps a block apart for a host a path could name", async () => {
+        const request = {
+            host: "../../escape",
+            session: "s1",
+            reason: "startup" as const,
+        };
+        await requestBlock(request, up());
+        expect(existsSync(join(home, "state", "escape"))).toBe(false);
+        expect(
+            existsSync(
+                join(home, "state", "dorothy", "blocks", "..%2F..%2Fescape"),
+            ),
+        ).toBe(true);
+        expect((await requestBlock(request, down()))?.text).toBe(BLOCK.text);
     });
 });
 

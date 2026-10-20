@@ -10,8 +10,10 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
+    chmod,
     mkdir,
     mkdtemp,
+    readdir,
     readFile,
     rm,
     symlink,
@@ -29,10 +31,13 @@ import {
     moveFact,
     PERSONAL,
     parseTarget,
+    putFact,
+    readFactFile,
     retireFact,
     retireFacts,
     reviveFact,
     type Scope,
+    scopeDir,
     writeFact,
 } from "./store.js";
 
@@ -208,6 +213,93 @@ describe("writeFact", () => {
     });
 });
 
+describe("putFact", () => {
+    const fact = (body: string): Fact => ({
+        name: "likes-tea",
+        title: "Likes tea",
+        description: "Prefers tea.",
+        type: "user",
+        extra: {},
+        tags: [],
+        importance: null,
+        provenance: {
+            origin: "user",
+            by: "user",
+            at: NOW.toISOString(),
+            created: NOW.toISOString(),
+        },
+        retired: null,
+        body,
+    });
+
+    it("replaces a fact, or with keep leaves one already there", async () => {
+        await putFact(root, PERSONAL, fact("First."));
+        const path = factPath(root, PERSONAL, "likes-tea");
+        const first = await readFile(path, "utf8");
+        await expect(
+            putFact(root, PERSONAL, fact("Second."), { keep: true }),
+        ).rejects.toMatchObject({ code: "EEXIST" });
+        expect(await readFile(path, "utf8")).toBe(first);
+        await putFact(root, PERSONAL, fact("Second."));
+        expect(await readFile(path, "utf8")).toContain("Second.");
+        // Nothing is left beside it.
+        const dir = join(root, "knowledge", "personal");
+        expect((await readdir(dir)).sort()).toEqual(["likes-tea.md"]);
+    });
+
+    it("with keep writes a fact that is not there", async () => {
+        await putFact(root, PERSONAL, fact("First."), { keep: true });
+        expect(
+            await readFile(factPath(root, PERSONAL, "likes-tea"), "utf8"),
+        ).toContain("First.");
+    });
+});
+
+describe("a directory other than knowledge/", () => {
+    it("lists and names scopes under the one passed", async () => {
+        await writeFact(store(), input());
+        await writeFact(store(), input({ scope: PROJECT }));
+        const old = join(root, "facts");
+        const copy = async (scope: Scope) => {
+            const dir = scopeDir(root, scope, "facts");
+            await mkdir(dir, { recursive: true });
+            await writeFile(
+                join(dir, "likes-tea.md"),
+                await readFile(factPath(root, scope, "likes-tea")),
+            );
+        };
+        await copy(PERSONAL);
+        await copy(PROJECT);
+        expect(scopeDir(root, PERSONAL, "facts")).toBe(join(old, "personal"));
+        const listed = await factFiles(root, undefined, "facts");
+        expect(
+            listed.map(({ scope, name, path }) => ({
+                scope,
+                name,
+                path: path.slice(root.length + 1),
+            })),
+        ).toEqual([
+            {
+                scope: PERSONAL,
+                name: "likes-tea",
+                path: "facts/personal/likes-tea.md",
+            },
+            {
+                scope: PROJECT,
+                name: "likes-tea",
+                path: "facts/projects/github.com/chewygumxx/dorothy/likes-tea.md",
+            },
+        ]);
+        expect(await factFiles(root, PROJECT, "facts")).toHaveLength(1);
+        // Neither listing reads the other's directory.
+        expect(
+            (await factFiles(root)).every(({ path }) =>
+                path.startsWith(join(root, "knowledge")),
+            ),
+        ).toBe(true);
+    });
+});
+
 describe("moveFact", () => {
     it("moves a fact to another scope in one commit, provenance and all", async () => {
         await writeFact(store(), input());
@@ -316,6 +408,141 @@ describe("retiring", () => {
         expect(commits).toHaveLength(1);
         expect(commits[0]?.message).toBe(`retire: 2 facts from ${PHRASE}`);
         expect((await read(PERSONAL, "c")).retired).toBeNull();
+    });
+});
+
+describe("a failure part way", () => {
+    it("moves nothing when the source cannot be removed, and says so", async () => {
+        await writeFact(store(), input());
+        commits = [];
+        const personal = scopeDir(root, PERSONAL);
+        await chmod(personal, 0o500);
+        try {
+            const result = await moveFact(
+                store(),
+                { scope: PERSONAL, name: "likes-tea" },
+                PROJECT,
+            );
+            expect(result).toMatchObject({ kind: "failed" });
+            expect(result.kind === "failed" && result.reason).toContain(
+                "personal/likes-tea could not be removed",
+            );
+            expect(result.kind === "failed" && result.reason).toContain(
+                "nothing moved",
+            );
+        } finally {
+            await chmod(personal, 0o700);
+        }
+        expect(await factFiles(root, PROJECT)).toEqual([]);
+        expect((await read(PERSONAL, "likes-tea")).retired).toBeNull();
+        expect(commits).toEqual([]);
+    });
+
+    it.each([false, true])(
+        "names completed retirements when recording fails (partial: %s)",
+        async (partial) => {
+            await writeFact(store(), input({ name: "a", from: PHRASE }));
+            await writeFact(
+                store(),
+                input({ name: "b", from: PHRASE, scope: PROJECT }),
+            );
+            const directory = scopeDir(root, PROJECT);
+            if (partial) {
+                await chmod(directory, 0o500);
+            }
+            let result: Awaited<ReturnType<typeof retireFacts>>;
+            try {
+                result = await retireFacts(
+                    {
+                        ...store(),
+                        recorder: async () => {
+                            throw new Error("recorder unavailable");
+                        },
+                    },
+                    PHRASE,
+                    { by: "user", why: "Wrong." },
+                );
+            } finally {
+                await chmod(directory, 0o700);
+            }
+            expect(result).toMatchObject({
+                kind: "failed",
+                retired: partial
+                    ? ["personal/a"]
+                    : ["personal/a", "github.com/chewygumxx/dorothy/b"],
+            });
+            expect(result.kind === "failed" && result.reason).toContain(
+                "recorder unavailable",
+            );
+            if (partial) {
+                expect(result.kind === "failed" && result.reason).toContain(
+                    "EACCES",
+                );
+            }
+            expect((await read(PERSONAL, "a")).retired).not.toBeNull();
+            expect((await read(PROJECT, "b")).retired === null).toBe(partial);
+        },
+    );
+
+    it("records and names the facts retired before a write failed", async () => {
+        await writeFact(store(), input({ name: "a", from: PHRASE }));
+        await writeFact(
+            store(),
+            input({ name: "b", from: PHRASE, scope: PROJECT }),
+        );
+        commits = [];
+        // The personal fact is retired first; the project's cannot be.
+        const directory = scopeDir(root, PROJECT);
+        await chmod(directory, 0o500);
+        let result: Awaited<ReturnType<typeof retireFacts>>;
+        try {
+            result = await retireFacts(store(), PHRASE, {
+                by: "user",
+                why: "Wrong.",
+            });
+        } finally {
+            await chmod(directory, 0o700);
+        }
+        expect(result.kind).toBe("failed");
+        expect(result).toMatchObject({ retired: ["personal/a"] });
+        expect((await read(PERSONAL, "a")).retired).not.toBeNull();
+        expect((await read(PROJECT, "b")).retired).toBeNull();
+        expect(commits).toEqual([
+            {
+                paths: [factPath(root, PERSONAL, "a")],
+                message: `retire: 1 fact from ${PHRASE}`,
+            },
+        ]);
+    });
+});
+
+describe("a fact file it cannot read", () => {
+    it("is unreadable, not unparseable, and listed apart from the broken", async () => {
+        await writeFact(store(), input());
+        await writeFact(store(), input({ name: "other" }));
+        const locked = factPath(root, PERSONAL, "likes-tea");
+        await chmod(locked, 0o000);
+        try {
+            const read = await readFactFile(locked, "likes-tea");
+            expect(read.kind).toBe("unreadable");
+            const listed = await listFacts(root);
+            expect(listed.facts.map(({ fact }) => fact.name)).toEqual([
+                "other",
+            ]);
+            expect(listed.broken).toEqual([]);
+            expect(listed.unreadable).toHaveLength(1);
+            expect(listed.unreadable[0]?.path).toBe(locked);
+            const result = await retireFact(
+                store(),
+                { scope: PERSONAL, name: "likes-tea" },
+                { by: "user", why: "x" },
+            );
+            expect(result.kind === "failed" && result.reason).toStartWith(
+                "it cannot be read: ",
+            );
+        } finally {
+            await chmod(locked, 0o600);
+        }
     });
 });
 

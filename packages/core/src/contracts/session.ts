@@ -75,7 +75,9 @@ export type ConversationEvent =
     // What a background call for memory cost, such as compaction's.
     | { type: "memory-cost"; usd: number }
     // partial: the reply streamed so far, when the turn died mid-reply.
-    | { type: "error"; message: string; partial?: string };
+    // stats: what the turn cost, when the model answered with a failure
+    // that still carried its usage.
+    | { type: "error"; message: string; partial?: string; stats?: TurnStats };
 
 export interface ChatSession {
     subscribe(listener: (event: ConversationEvent) => void): () => void;
@@ -89,10 +91,21 @@ export interface ChatSession {
 // when quitting.
 export const CLOSE_GRACE_MS = 2000;
 
+// A call to remember read back from a transcript; offset, input and output
+// are those of the "remember" event it was shown as.
+export type ResumedRemember = {
+    ok: boolean;
+    offset: number;
+    input: unknown;
+    output: string;
+};
+
 // A turn read back from a transcript: a reply keeps the stats recorded after
-// it, what the chat had cost by then, and the lookups made while writing it.
+// it, what the chat had cost by then, and the lookups and remembers made
+// while writing it.
 export type ResumedTurn = Turn & {
     stats?: TurnStats;
     chatCostUsd?: number;
     lookups?: RecallEvent[];
+    remembers?: ResumedRemember[];
 };

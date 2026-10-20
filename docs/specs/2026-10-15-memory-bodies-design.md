@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-15
-mtime: 2026-10-16
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Dorothy's memory in her bodies design
 description: >-
@@ -217,11 +217,12 @@ compaction are unchanged.
 `launchClaude` gives `claude` a launch id, `DOROTHY_LAUNCH`, which hooks
 and MCP servers inherit, as the recording probe found, so no `--launch`
 flag is needed. It notes the launch, its start time and its directory
-under Dorothy's runtime directory, `$XDG_RUNTIME_DIR/dorothy/`, or the
-cache directory without one, in `launches/<launch>/`: `launch.json`,
+under `$XDG_STATE_HOME/dorothy/launches/<launch>/`: `launch.json`,
 written once by `dorothy --claude`, and `sessions/<session>.json`, one a
-session, written by its hooks, so no two processes rewrite one file.
-The merged settings files beside them are never scanned.
+session, written by its hooks. Each launch records its boot id where
+available; a note from another boot is stale regardless of its pid.
+A legacy runtime-directory note is read and caught up without migration.
+Merged settings remain private runtime files and are never scanned.
 
 Where the arguments start a new session, it passes `--session-id
 <uuid>` and notes that id too. They start one unless, before any `--`,
@@ -421,7 +422,12 @@ explicit path, never the working directory's, and calls the model with
 `ANTHROPIC_BASE_URL`, `ENABLE_TOOL_SEARCH`, `DOROTHY_LAUNCH` and every
 `CLAUDE_CODE_` and `CLAUDECODE` variable removed from the environment it
 inherited from `claude`, so a review never reaches the stopped gateway
-or the live session. The hook runs as `bun --no-env-file`, so the
+or the live session. The launch passes the user's original
+`ANTHROPIC_BASE_URL` as `DOROTHY_ANTHROPIC_BASE_URL`; hooks and both
+catch-ups restore it for reviews after removing the gateway URL. It also
+passes Dotenvx Armor's session directory as `DOROTHY_DOTENVX_CONFIG`, so
+reviews still decrypt the checkout's `.env` under another
+`XDG_CONFIG_HOME`. The hook runs as `bun --no-env-file`, so the
 project's `.env`, which Bun loads from the working directory and whose
 keys dotenvx would keep over Dorothy's, never reaches it; the recall
 server runs so too. dotenvx prints through the console even when quiet,
@@ -435,8 +441,10 @@ so.
 When `claude` exits, `dorothy --claude` starts one detached
 `dorothy --claude-hook --catch-up <launch>`, which records, syncs and
 reviews each session noted under the launch as `SessionEnd` would, and
-deletes the launch's notes. A `dorothy` killed before it can leaves
-them, and the next `dorothy --claude` catches up every launch whose
+deletes the launch's notes only when recording could acquire the store
+lock. A locked-out catch-up retains them for the next start. A `dorothy`
+killed before it can leaves them; the next `dorothy --claude` catches up
+every launch whose
 `claude` is no longer running. This covers a `Stop` that never ran,
 after an interrupt or an API error. A session noted by `--session-id`
 whose transcript has lines but for which no hook ran is recorded by the
@@ -475,8 +483,8 @@ New rows are marked.
 | Class            | What                                  | Where                                          |
 | ---------------- | ------------------------------------- | ---------------------------------------------- |
 | Canonical        | transcripts; events gain `sourceUuid` | `transcripts/<phrase>.jsonl`                   |
-| Derived          | the recall index, schema 5            | `$XDG_CACHE_HOME/dorothy/recall.sqlite`        |
-| Ephemeral (new)  | launches and their sessions           | `$XDG_RUNTIME_DIR/dorothy/launches/<launch>/`  |
+| Derived          | the recall index, schema 7            | `$XDG_CACHE_HOME/dorothy/recall.sqlite`        |
+| Durable state    | launches and their sessions           | `$XDG_STATE_HOME/dorothy/launches/<launch>/`   |
 | Log (new)        | the hook's warnings                   | `$XDG_CACHE_HOME/dorothy/claude-hook.log`      |
 | Kept aside (new) | unreadable lines, as they were        | `$XDG_STATE_HOME/dorothy/unread/`              |
 | Kept aside (new) | notices a hook leaves                 | `$XDG_STATE_HOME/dorothy/notices.jsonl`        |
@@ -651,8 +659,10 @@ Recording:
   from a page or a tool's output is `dorothy`'s, and her memory tools
   run without a prompt, so text injected through a page or a tool can
   reach a project's facts and, at the next sync, its repository,
-  uncommitted for the user to see in `git status`. Facts are kept out
-  of the block until Layers decides how `external` is told apart.
+  uncommitted for the user to see in `git status`. The contract puts
+  unconfirmed facts after confirmed knowledge in a fenced section,
+  marked as claims to weigh, never instructions, and marks them through
+  search, open and recall too. `--verify` confirms the user's choices.
 - **Rewound branches stay.** A conversation can hold a branch the user
   abandoned.
 - **The section is fixed for the launch.** A fact written in another
@@ -660,14 +670,11 @@ Recording:
 
 ## Later
 
-- **Layers and learning**: facts in the block, budgets and ranking in
-  one place, and reviews that write, correct and retire facts.
+- **The memory engine**: extraction, consolidation and learning beyond
+  the contract's opening block and shared budgets.
 - Codex, OpenCode and other clients behind the gateway, given the block
   and recall (Dorothy's Gateway).
 - Subagents' transcripts as conversations of their own.
-- Store gaps still open: snake-case memory files are skipped,
-  regenerating `MEMORY.md` replaces hook lines, and history keeps the
-  provenance an outside writer of canonical bytes claims.
 
 ## Out of scope
 

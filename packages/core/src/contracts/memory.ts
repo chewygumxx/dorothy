@@ -102,6 +102,8 @@ export type MemoryHit = {
     title: string;
     snippet: string;
     date?: string | undefined;
+    // Knowledge the user has not confirmed carries a warning.
+    unconfirmed?: string | undefined;
 };
 export type MemoryOpenInput = {
     id: string;

@@ -13,16 +13,24 @@
 // URL, the launch, and claude's own variables and sign-in. Memory keeps
 // that environment, to find the launch in it. Reviews run in
 // process.env, which the Agent SDK reads at each call: it loses those
-// variables before Dorothy's own .env is loaded by path from this
-// checkout, never the working directory's. A review is then billed to
-// her credentials, as chat's are, and never reaches the stopped gateway
-// or the live session.
+// variables, but for the user's own base URL, which the launch passed on
+// as DOROTHY_ANTHROPIC_BASE_URL, before Dorothy's own .env is loaded by
+// path from this checkout, never the working directory's, looking for
+// Dotenvx Armor's session where the launch found it. A review is
+// then billed to her credentials, as chat's are, and never reaches the
+// stopped gateway or the live session.
 
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { type Env, type StructuredCall, xdgDir } from "@dorothy/core";
 import type { HookDeps, HookLog, HookMode } from "@dorothy/memory/claude-hook";
 import { config } from "@dotenvx/dotenvx";
+import { useSession } from "./dotenvx-session.js";
+
+// The base URL the user's own launch had, which a review takes as its
+// ANTHROPIC_BASE_URL: claude's hooks lose theirs, and the one they are
+// given is the gateway's, which is stopped by the time a review runs.
+export const REVIEW_BASE_URL = "DOROTHY_ANTHROPIC_BASE_URL";
 
 // What a review must not inherit from claude, beside every CLAUDE_CODE_
 // variable.
@@ -37,17 +45,23 @@ const dropped = (name: string) =>
     REVIEW_DROPPED.includes(name) || name.startsWith("CLAUDE_CODE_");
 
 export function reviewEnv(env: Env): Env {
-    return Object.fromEntries(
-        Object.entries(env).filter(([name]) => !dropped(name)),
-    );
+    const review = { ...env };
+    stripClaude(review);
+    return review;
 }
 
-// reviewEnv in place, for process.env, which the Agent SDK reads.
+// reviewEnv in place, for process.env, which the Agent SDK reads; with
+// the user's own base URL, where their launch had one, as the base URL
+// of a proxy reviews must go through too.
 export function stripClaude(env: Env): void {
+    const proxy = env[REVIEW_BASE_URL];
     for (const name of Object.keys(env)) {
         if (dropped(name)) {
             delete env[name];
         }
+    }
+    if (proxy !== undefined && proxy !== "") {
+        env.ANTHROPIC_BASE_URL = proxy;
     }
 }
 
@@ -125,8 +139,13 @@ const refusing =
     (reason: string): StructuredCall =>
     async () => ({ ok: false, reason, costUsd: 0 });
 
+const FALLBACK_LOG_LIMIT = 1_000_000;
+
 // The hook's log, from memory; if memory cannot load, a bare append to
 // the same file, so that the failure still has somewhere to be said.
+// The fallback follows memory's bodies/log.ts: `rotate` for the limit and
+// the .1 file, `oneLine` for a message that is one line however it breaks.
+// Change them together.
 async function openLog(env: Env, deps: HookCliDeps): Promise<HookLog> {
     try {
         return (await (deps.memory ?? loadMemory)()).hookLog(env);
@@ -139,9 +158,17 @@ async function openLog(env: Env, deps: HookCliDeps): Promise<HookLog> {
         const write = (level: string) => (message: string) => {
             try {
                 mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+                // As memory's log rotates: past a megabyte to one .1 file.
+                try {
+                    if (statSync(path).size > FALLBACK_LOG_LIMIT) {
+                        renameSync(path, `${path}.1`);
+                    }
+                } catch {
+                    // No log yet.
+                }
                 appendFileSync(
                     path,
-                    `${new Date().toISOString()} ${level} ${process.pid} ${message.replaceAll(/\s*\n\s*/g, " ")}\n`,
+                    `${new Date().toISOString()} ${level} ${process.pid} ${message.replaceAll(/\s*[\n\r\u2028\u2029]\s*/g, " ")}\n`,
                     { mode: 0o600 },
                 );
             } catch {
@@ -185,13 +212,12 @@ async function runOnce(
 ): Promise<number> {
     const given: Env = { ...env };
     stripClaude(env);
+    useSession(env, given);
     await loadDorothyEnv(env, deps);
-    const agent = await reviewingAgent(mode, deps);
     const run = deps.run ?? (await (deps.memory ?? loadMemory)()).runClaudeHook;
     return run(mode, {
         env: given,
-        call: agent.call,
-        persona: agent.persona,
+        agent: reviewingAgent(mode, deps),
         // As --claude passes it: Bun would otherwise load the .env of the
         // directory the catch-up starts in, the user's project.
         self: deps.self ?? [
@@ -223,23 +249,27 @@ async function loadDorothyEnv(env: Env, deps: HookCliDeps): Promise<void> {
     }
 }
 
-// The agent for a hook or a catch-up, which review; the other modes
-// never do.
-async function reviewingAgent(
+// The agent for a hook or a catch-up, which review, loaded when the
+// first review asks and not before: a SessionEnd, which only hands its
+// session on, never does. The other modes never review.
+function reviewingAgent(
     mode: HookMode,
     deps: HookCliDeps,
-): Promise<Agent> {
+): () => Promise<Agent> {
     if (mode.kind !== "hook" && mode.kind !== "catch-up") {
-        return { call: refusing("reviews are not run here"), persona: "" };
+        return async () => ({
+            call: refusing("reviews are not run here"),
+            persona: "",
+        });
     }
-    try {
-        return await (deps.agent ?? loadAgent)();
-    } catch (error) {
-        return {
+    let loading: Promise<Agent> | undefined;
+    return () => {
+        loading ??= (deps.agent ?? loadAgent)().catch((error: unknown) => ({
             call: refusing(
                 `the agent could not load (${describeError(error)})`,
             ),
             persona: "",
-        };
-    }
+        }));
+        return loading;
+    };
 }

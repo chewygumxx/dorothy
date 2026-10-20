@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-15
-mtime: 2026-10-15
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Memory store implementation report
 description: >-
@@ -466,6 +466,11 @@ a7c1e68 docs: Report the follow-up fixes
 ```
 
 ## Known limitations
+
+The actionable store gaps, including preserved hooks and last-index cleanup.
+Closed by the roadmap sweep: see
+[the sweep report](./2026-10-19-roadmap-sweep.md). Remaining limits
+are recorded there.
 
 From the spec's known risks, those that remain:
 

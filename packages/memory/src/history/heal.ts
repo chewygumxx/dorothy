@@ -22,7 +22,7 @@ export type Healed =
           path: string;
           from: string;
           at: string;
-          broken: string;
+          broken: string | null;
       }
     | { kind: "unrecoverable"; path: string; broken: string };
 
@@ -60,7 +60,13 @@ export async function keepCopy(
     let copies: string[] = [];
     try {
         copies = (await readdir(join(root, folder)))
-            .filter((entry) => entry.startsWith(`${name}.`))
+            .filter(
+                (entry) =>
+                    entry.startsWith(`${name}.`) &&
+                    /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/.test(
+                        entry.slice(name.length + 1),
+                    ),
+            )
             .sort();
     } catch {
         // No copies yet.
@@ -118,6 +124,6 @@ export async function recoverFile(
         await repo.commit([broken], `broken: ${path} kept, no good version`);
         return { kind: "unrecoverable", path, broken };
     }
-    const broken = (await putBack(repo, root, path, good, now)) ?? "";
+    const broken = await putBack(repo, root, path, good, now);
     return { kind: "restored", path, from: good.sha, at: good.at, broken };
 }

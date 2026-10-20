@@ -194,6 +194,28 @@ describe("reduce", () => {
         expect(state.live).toBe("");
     });
 
+    it("counts the cost of a turn that failed", () => {
+        let state = reduce(streaming(), {
+            type: "event",
+            event: { type: "turn-end", reply: "a", interrupted: false, stats },
+        });
+        state = reduce(state, { type: "sent", text: "again" });
+        state = reduce(state, {
+            type: "event",
+            event: {
+                type: "error",
+                message: "boom",
+                stats: { ...stats, costUsd: 0.25 },
+            },
+        });
+        expect(state.costUsd).toBeCloseTo(0.251);
+        state = reduce(state, {
+            type: "event",
+            event: { type: "error", message: "again" },
+        });
+        expect(state.costUsd).toBeCloseTo(0.251);
+    });
+
     it("keeps only the last RAW_LIMIT raw messages, with stable ids", () => {
         let state = initialState([]);
         for (let i = 0; i < RAW_LIMIT + 5; i++) {
@@ -300,6 +322,33 @@ describe("lookupLine", () => {
         expect(lookupLine(false, tagged)).toEqual({
             text: "⌕ couldn't search tagged memory, tui",
         });
+    });
+
+    it("omits blank tag labels and an empty under filter", () => {
+        expect(
+            lookupLine(true, {
+                tool: "search",
+                query: "word",
+                tags: [" ", "memory", ""],
+                hits: 0,
+            }),
+        ).toEqual({ text: '⌕ searched "word" tagged memory · nothing found' });
+        expect(
+            lookupLine(true, { tool: "tags", under: "  ", hits: 0 }),
+        ).toEqual({ text: "⌕ listed tags · no tags" });
+    });
+
+    it("keeps empty search descriptions readable", () => {
+        const blank = {
+            tool: "search" as const,
+            query: "",
+            tags: [" ", ""],
+            hits: 0,
+        };
+        expect(lookupLine(true, blank)).toEqual({
+            text: "⌕ searched · nothing found",
+        });
+        expect(lookupLine(false, blank)).toEqual({ text: "⌕ couldn't search" });
     });
 
     it("says what tags were listed", () => {
@@ -607,6 +656,38 @@ describe("lookups in a resumed reply", () => {
                 chatCostUsd: 0.5,
                 continued: true,
             },
+        ]);
+    });
+
+    it("places a remember where it happened, among the lookups", () => {
+        const lines = initialState([
+            {
+                role: "assistant",
+                text: "One.\n\nTwo.",
+                remembers: [
+                    {
+                        ok: true,
+                        offset: 4,
+                        input: { action: "write", name: "tea" },
+                        output: '{"action":"written","id":"personal/tea"}',
+                    },
+                    {
+                        ok: false,
+                        offset: 10,
+                        input: { action: "retire", name: "coffee" },
+                        output: "No fact by that name.",
+                    },
+                ],
+            },
+        ]).lines;
+        expect(
+            lines.map((line) => [line.role, line.text, line.detail]),
+        ).toEqual([
+            ["dorothy", "One.", undefined],
+            ["lookup", "✎ remembered personal/tea", undefined],
+            ["dorothy", "Two.", undefined],
+            ["lookup", "✎ couldn't retire coffee", "No fact by that name."],
+            ["dorothy", "", undefined],
         ]);
     });
 

@@ -70,10 +70,15 @@ export const queued = (
     uuid: string,
     minute: number,
     prompt: unknown,
-    mode = "prompt",
+    // null leaves commandMode out, as an older Claude Code did.
+    mode: string | null = "prompt",
 ) =>
     base("attachment", uuid, minute, {
-        attachment: { type: "queued_command", prompt, commandMode: mode },
+        attachment: {
+            type: "queued_command",
+            prompt,
+            ...(mode === null ? {} : { commandMode: mode }),
+        },
     });
 
 // A bookkeeping line, as most of Claude Code's are: a type, no uuid.

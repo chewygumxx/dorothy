@@ -16,19 +16,19 @@ import {
     wrap,
 } from "./edit-view.js";
 import { EMPTY_SIDECAR, type Sidecar } from "./sidecar.js";
-import type { Vocabulary } from "./vocabulary.js";
+import type { Concept, Vocabulary } from "./vocabulary.js";
 
 const PHRASE = "bingo-overabundance-mazer-kasha";
-const AT = "2026-10-05T05:40:12.000Z";
+// Local midday on the day, so dates read the same in every time zone.
+const midday = (date: number) => new Date(2026, 9, date, 12).toISOString();
+const AT = midday(5);
 const sidecar: Sidecar = {
     ...EMPTY_SIDECAR,
     title: "Memory and metadata",
     description: "Designing how Dorothy remembers past conversations.",
     abstract:
         "The user, still building Dorothy's TUI, proposed tiered conversation metadata with titles, descriptions and abstracts that fade.",
-    titles: [
-        { title: "Hey there o/", at: "2026-10-04T05:01:00.000Z", by: "prompt" },
-    ],
+    titles: [{ title: "Hey there o/", at: midday(4), by: "prompt" }],
     fields: {
         title: {
             by: "dorothy",
@@ -42,11 +42,52 @@ const sidecar: Sidecar = {
             at: AT,
             throughTurn: 12,
         },
-        abstract: { by: "user", at: "2026-10-05T06:02:00.000Z" },
+        abstract: { by: "user", at: midday(5) },
     },
     reviewedThrough: 12,
 };
 const view = renderEditView(PHRASE, sidecar);
+
+// Times near midnight UTC fall on another day in a zone far ahead of it or
+// behind it.
+const ZONES = [
+    ["Pacific/Kiritimati", "2026-10-04T23:30:00.000Z", "2026-10-05"],
+    ["Etc/GMT+12", "2026-10-05T05:00:00.000Z", "2026-10-04"],
+] as const;
+
+function inZones(check: (at: string, day: string) => void): void {
+    const zone = process.env.TZ;
+    try {
+        for (const [tz, at, day] of ZONES) {
+            process.env.TZ = tz;
+            check(at, day);
+        }
+    } finally {
+        if (zone === undefined) {
+            delete process.env.TZ;
+        } else {
+            process.env.TZ = zone;
+        }
+    }
+}
+
+describe("renderEditView's dates", () => {
+    it("names the local day a time fell on", () => {
+        inZones((at, day) => {
+            const notes: Sidecar = {
+                ...sidecar,
+                titles: [{ title: "Old", at, by: "prompt" }],
+                fields: {
+                    ...sidecar.fields,
+                    abstract: { by: "user", at },
+                },
+            };
+            const text = renderEditView(PHRASE, notes);
+            expect(text).toContain(`# Abstract (yours, ${day})`);
+            expect(text).toContain(`#   Old (provisional, ${day})`);
+        });
+    });
+});
 
 describe("renderEditView", () => {
     it("renders the notes as a template", () => {
@@ -85,6 +126,14 @@ describe("renderEditView", () => {
 });
 
 describe("wrap", () => {
+    it("keeps Tags off the start of a wrapped paragraph", () => {
+        expect(wrap("one two Tags: memory", 7)).toEqual([
+            "one two Tags:",
+            "memory",
+        ]);
+        expect(wrap("Tags: memory", 7)).toEqual([" Tags:", "memory"]);
+    });
+
     it("never starts a line with a field name", () => {
         const lines = wrap(`${"word ".repeat(14)}Title: inside`);
         expect(lines.some((line) => line.startsWith("Title:"))).toBe(false);
@@ -139,6 +188,47 @@ describe("parseEditView", () => {
             .replace("Description:\nDesigning", "Description: Designing");
         expect(parseEditView(rewrapped, sidecar)).toEqual({
             kind: "unchanged",
+        });
+    });
+
+    describe("with the Abstract: line deleted", () => {
+        // Short enough that description and abstract together fit the limit.
+        const brief: Sidecar = {
+            ...sidecar,
+            description: "A description.",
+            abstract: "An abstract.",
+        };
+        const shown = renderEditView(PHRASE, brief);
+        const without = (text: string) => text.replace("Abstract:\n", "");
+
+        it("is refused when it joined the abstract to the description", () => {
+            const parsed = parseEditView(without(shown), brief);
+            expect(parsed.kind).toBe("error");
+            expect(parsed.kind === "error" && parsed.reason).toContain(
+                "keep the Abstract: line, or delete the abstract's text",
+            );
+            // With no description of its own, the abstract alone joins.
+            const bare = { ...brief, description: null };
+            const parsedBare = parseEditView(
+                without(renderEditView(PHRASE, bare)),
+                bare,
+            );
+            expect(parsedBare.kind).toBe("error");
+        });
+
+        it("is taken when the abstract's text went with it", () => {
+            const lines = shown.split("\n");
+            const at = lines.indexOf("Abstract:");
+            const gone = [...lines.slice(0, at - 1), ""].join("\n");
+            expect(parseEditView(gone, brief)).toEqual({ kind: "unchanged" });
+        });
+
+        it("is taken when the description really changed too", () => {
+            const edited = without(shown).replace("A description.", "Another.");
+            expect(parseEditView(edited, brief)).toEqual({
+                kind: "edit",
+                changes: { description: "Another. An abstract." },
+            });
         });
     });
 
@@ -306,6 +396,46 @@ describe("the Tags line", () => {
         expect(edited("Tags: memory;tui")).toEqual({ kind: "unchanged" });
     });
 
+    it.each(["renamed", "deleted"])(
+        "keeps a Tags line unchanged after its concept is %s",
+        (change) => {
+            const fresh: TagsContext = {
+                kind: "ok",
+                vocabulary: {
+                    ...vocabulary,
+                    concepts: {
+                        ...vocabulary.concepts,
+                        k00000001:
+                            change === "deleted"
+                                ? { deleted: AT, labels: ["memory", "recall"] }
+                                : {
+                                      ...(vocabulary.concepts
+                                          .k00000001 as Concept),
+                                      prefLabel: "remembering",
+                                  },
+                    },
+                },
+            };
+            expect(parseEditView(shown, tagged, fresh, ok)).toEqual({
+                kind: "unchanged",
+            });
+            expect(
+                parseEditView(
+                    shown.replace("Pinned: no", "Pinned: yes"),
+                    tagged,
+                    fresh,
+                    ok,
+                ),
+            ).toEqual({ kind: "edit", changes: { pinned: true } });
+        },
+    );
+
+    it("collapses alternative labels before applying the tag limit", () => {
+        expect(
+            edited("Tags: recall; memory; tui; recall; memory; tui"),
+        ).toEqual({ kind: "unchanged" });
+    });
+
     it("hands an emptied line back to Dorothy", () => {
         expect(edited("Tags:")).toEqual({
             kind: "edit",
@@ -321,9 +451,12 @@ describe("the Tags line", () => {
         };
         const view = renderEditView(PHRASE, gone, ok);
         expect(view).toContain("# Tags (empty)\nTags:\n");
-        expect(parseEditView(view, gone, ok)).toEqual({
+        expect(parseEditView(view, gone, ok)).toEqual({ kind: "unchanged" });
+        expect(
+            parseEditView(view.replace("Pinned: no", "Pinned: yes"), gone, ok),
+        ).toEqual({
             kind: "edit",
-            changes: { tags: null },
+            changes: { pinned: true, tags: null },
         });
         const hers: Sidecar = {
             ...gone,

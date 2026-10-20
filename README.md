@@ -1,6 +1,6 @@
 ---
 ctime: 2026-09-29
-mtime: 2026-10-19
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: "dorothy"
 description: "Conversational LLM interface"
@@ -139,6 +139,9 @@ bun run dev -- --tags              # her tags, as a tree
 bun run dev -- --edit-tags         # correct, merge or delete her tags
 ```
 
+`--tags` needs the recall index to count conversations; it reports an
+error if the index cannot be opened.
+
 A note you change with `--memory` is yours and she never overwrites it;
 empty it to hand it back. Reviews cost tokens, which the `memory-cost`
 statusline module shows.
@@ -227,9 +230,25 @@ bun run dev -- --facts                        # what she knows, by scope
 bun run dev -- --retire personal/<name>       # retire a fact
 bun run dev -- --retire --from <phrase>       # retire what a chat gave
 bun run dev -- --revive personal/<name>       # bring it back
+bun run dev -- --verify k:personal/<name>     # confirm what a model gave
 bun run dev -- --sync [<path>]                # sync a project with its repo
 bun run dev -- --projects                     # the projects she knows
 ```
+
+Knowledge is confirmed when you wrote it or verified it. What a model or
+a review wrote, an outside writer gave or a repository's files hold is
+not, since text from a page or a tool can reach it, and a model can
+write a repository's files. Your verification goes into the file sync
+exports, so another checkout or machine finds the piece confirmed while
+its words and title are as you verified them; one you wrote but never
+verified is not confirmed there, as a file does not say who wrote it.
+Each session's opening block puts unconfirmed knowledge in a section of
+its own, after all that is confirmed and ranked below all confirmed
+knowledge for the budget, as claims to weigh, never instructions;
+search, `open` and recall mark it the same way. `--verify` takes the id
+the block and `open` show, prints the title, description and body you
+are confirming, adds your `verified` entry and commits it to her history
+as yours; the piece is confirmed from the next session's block.
 
 Sync never commits: the files it writes are committed with your work.
 When a fact changed both in her store and in the repository, the
@@ -305,7 +324,8 @@ warning on stderr says if the gateway found no marker to replace.
 and her own tools reach: an opening block for each session, recall for
 a message, four MCP tools (`brief`, `search`, `open`, `remember`) and
 records of each session. It listens on `127.0.0.1:4774`; the first
-`--mcp` starts it if it is not running.
+`--mcp` starts it if it is not running. It runs the code it started
+with: after upgrading Dorothy, stop it and start it again.
 
 ```sh
 bun run dev -- --serve

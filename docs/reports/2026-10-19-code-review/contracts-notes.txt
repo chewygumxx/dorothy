@@ -1,0 +1,162 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-code-review/contracts-notes.txt
+#
+
+# Dorothy core, identity and agent review
+
+Revision: 7602316f9dd3e1d8a46f0b1b885162a759d4ea58.
+Read-only bounded pass. No tracked files edited, no model calls, no real
+user-data roots read or written by tests/probes. An untracked parent-owned
+docs/reports/2026-10-19-code-review.md was observed and left untouched.
+
+## Verified findings
+
+### P2: One-shot commands silently succeed on API and execution errors
+
+Location: packages/agent/src/one-shot.ts:34-40.
+
+When `dorothy <prompt>` receives a normal SDK result with is_error=true,
+runOneShot only handles text_delta events and ignores the error result.
+The catch block cannot help because the SDK communicates these failures as
+messages. It writes a final newline, leaves stderr empty and exits 0.
+This hides bad credentials, rate limits, overload and execution failures
+from both a terminal user and shell scripts consuming Dorothy's output.
+
+The installed SDK's sdk.d.ts:5853 documents success/is_error API errors
+and the execution-error result variants. Conversation's #failTurn already
+handles the same API behavior. packages/cli/src/index.ts:92-98 explicitly
+relies on runOneShot to set its failure exit code.
+
+Probe: /tmp/dorothy-review-oneshot.ts. It mocks only the SDK query export
+with two finite async generators, then calls the real runOneShot module
+and captures stdout, stderr and exitCode. No subprocess or API request.
+
+Observed:
+
+    [{"subtype":"success","stdout":"\n","stderr":"","exitCode":0},
+     {"subtype":"error_during_execution","stdout":"\n","stderr":"","exitCode":0}]
+
+First scripted result was success/is_error=true/result="Invalid API key";
+second was error_during_execution/is_error=true/errors=["Overloaded"].
+Handle result errors explicitly, printing the reason and setting exit 1.
+
+### P3: Failed chat turns lose their incurred cost
+
+Location: packages/agent/src/conversation.ts:401-406.
+
+A reply can finish a paid model/tool round and then fail a later request.
+The SDK error result still carries cumulative total_cost_usd. This branch
+passes that result into #failTurn, which emits only an error and partial
+text. #stats runs only on #endTurn, so no cost-bearing public event is
+emitted. App reconnects on the next submit and closes this Conversation,
+permanently dropping the failed turn's incurred spend from chat totals and
+transcript stats. This is an accounting/UI defect, not evidence of an
+incorrect provider bill.
+
+Caller evidence: packages/tui/src/state.ts:324-345 increments cost only on
+turn-end; :400-415 handles errors without cost; App.tsx:153-157 reconnects
+from disconnected state. SDKResultError in installed sdk.d.ts:5805 carries
+the same cumulative cost semantics as successful results.
+
+Probe: /tmp/dorothy-review-error-cost.ts. An injected query produces a
+partial text delta followed by error_during_execution, total_cost_usd=0.25.
+The real Conversation's public non-sdk events were exactly:
+
+    [{"type":"delta","text":"Checking..."},
+     {"type":"error","message":"network unavailable after tool round",
+      "partial":"Checking..."}]
+
+Preserve cost on the error contract, or emit a separate chat-cost event,
+then account for and record it on the consumer side.
+
+## Verification
+
+Ran with all four XDG homes explicitly redirected to /tmp:
+
+    env XDG_DATA_HOME=/tmp/dorothy-review-contracts-data \
+      XDG_CACHE_HOME=/tmp/dorothy-review-contracts-cache \
+      XDG_CONFIG_HOME=/tmp/dorothy-review-contracts-config \
+      XDG_STATE_HOME=/tmp/dorothy-review-contracts-state \
+      /home/chewygumxx/.local/share/mise/installs/bun/1.4.2/bin/bun \
+      test packages/core packages/identity packages/agent
+
+Initial sandbox run: 149 pass, 5 fail, all five at captureServer's listen
+with EPERM. Mandatory escalated rerun was approved: 154 pass, 0 fail,
+383 expect calls across 11 test files. Bun 1.4.2. The `bun` shim itself was
+blocked by untrusted mise.toml; direct installed Bun avoided trust changes.
+
+Ran each /tmp probe with the same env prefix and direct Bun executable;
+both exited 0 and printed the evidence above. No real SDK query called.
+
+## Coverage
+
+Read root AGENTS.md, package guides for core, identity and agent, and
+requesting-code-review/code-reviewer.md plus verification skill.
+
+All production modules in the assigned packages inspected:
+
+- core/src/config.ts
+- core/src/xdg.ts
+- core/src/session-id.ts
+- core/src/timers.ts
+- core/src/contracts/editor.ts
+- core/src/contracts/memory.ts
+- core/src/contracts/notices.ts
+- core/src/contracts/recall.ts
+- core/src/contracts/session.ts
+- core/src/contracts/start.ts
+- core/src/contracts/structured.ts
+- core/src/index.ts
+- core/src/types/niceware.d.ts
+- identity/src/identity.ts
+- identity/src/index.ts
+- agent/src/conversation.ts
+- agent/src/persona.ts
+- agent/src/structured.ts
+- agent/src/capture.ts
+- agent/src/one-shot.ts
+- agent/src/index.ts
+- package.json for each assigned package
+
+All assigned tests inspected and executed:
+
+- core/src/config.test.ts
+- core/src/xdg.test.ts
+- core/src/session-id.test.ts
+- core/src/contracts/memory.test.ts
+- core/src/contracts/recall.test.ts
+- core/src/contracts/start.test.ts
+- identity/src/identity.test.ts
+- agent/src/persona.test.ts
+- agent/src/conversation.test.ts
+- agent/src/structured.test.ts
+- agent/src/capture.test.ts
+
+Caller checks after reading their guides:
+
+- cli/src/index.ts
+- cli/src/run-tui.ts
+- tui/src/App.tsx (connect, event subscription, interrupt and submit)
+- tui/src/state.ts (turn-end and error reducer branches)
+- memory/src/compaction/session.ts (send, interrupt, close and attachment)
+- memory/src/memory/track.ts
+- installed SDK sdk.d.ts result lifecycle/cost/error contracts
+- root package.json and bunfig.toml
+
+## Deferred or unverified
+
+- No live provider integration or actual SDK subprocess behavior exercised.
+  SDK contracts and existing injected test producers support the findings.
+- Did not elevate duplicate start/send-after-close concerns: production
+  callers start each Conversation once and compaction guards closed sends.
+- Did not elevate shared DEFAULT_CONFIG nested references: searched current
+  callers and found no mutation that makes the shared fallback observable.
+- Did not elevate cancellation races that require an injected synchronous
+  query/timer to abort during setup; no production trigger established.
+- Did not evaluate provider-selection environment overrides in capture
+  against Bedrock/Vertex: requires a separate provider-configuration pass.
+- Broader memory, gateway, CLI and TUI review remains outside this pass.
+
+No behavior was dismissed solely because the spec was silent.

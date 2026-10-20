@@ -203,6 +203,8 @@ describe("earlierSection", () => {
     });
 });
 
-it("unescapes what escapeXml escaped, once", () => {
-    expect(unescapeXml(escapeXml("a & <b> &lt;"))).toBe("a & <b> &lt;");
+describe("unescapeXml", () => {
+    it("unescapes what escapeXml escaped, once", () => {
+        expect(unescapeXml(escapeXml("a & <b> &lt;"))).toBe("a & <b> &lt;");
+    });
 });
