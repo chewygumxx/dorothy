@@ -26,7 +26,14 @@ import {
     writeFile,
 } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { FACT_LIMITS, type Fact, nextOrigin } from "../facts/file.js";
+import {
+    FACT_LIMITS,
+    type Fact,
+    nextOrigin,
+    type Verification,
+    verificationsOf,
+    wordsDigest,
+} from "../facts/file.js";
 import {
     foreignAfter,
     listFacts,
@@ -589,8 +596,8 @@ async function retireFact(
 
 // The repository's version into the store, keeping what only the store
 // holds: tags, importance, when it was made, the keys and sources another
-// producer wrote. A verification stays only if the user made the write,
-// as it confirmed words this one replaces.
+// producer wrote. A verification stays only for the words it confirmed:
+// one the store held, or one the file carries, of these words' digest.
 async function importFact(
     name: string,
     theirs: ExportedFact,
@@ -598,8 +605,9 @@ async function importFact(
     sync: Sync,
 ): Promise<void> {
     const { at } = sync;
+    const { verified: carried = [], ...form } = theirs;
     const fact: Fact = {
-        ...theirs,
+        ...form,
         title: sync.titleFor(name, held),
         tags: held?.tags ?? [],
         importance: held?.importance ?? null,
@@ -618,13 +626,36 @@ async function importFact(
             ? {}
             : { otherSources: held.otherSources }),
     };
-    sync.written.push(await putFact(sync.root, sync.scope, fact));
+    const verified = verificationsFor(fact, held, carried);
+    const imported: Fact =
+        verified.length === 0
+            ? fact
+            : { ...fact, foreign: { ...fact.foreign, verified } };
+    sync.written.push(await putFact(sync.root, sync.scope, imported));
     sync.report.imported.push(name);
     const stem = sync.files.get(name);
     if (stem !== undefined && stem !== name) {
         sync.report.renamed.push({ file: `${stem}.md`, name });
     }
     sync.synced[name] = formHash(theirs);
+}
+
+// The verifications of an imported fact's words: the store's, if it held
+// the same words, and those the file carries for them, each once.
+function verificationsFor(
+    fact: Fact,
+    held: Fact | null,
+    carried: ExportedFact["verified"] & {},
+): Verification[] {
+    const digest = wordsDigest(fact);
+    const kept = new Map<string, Verification>();
+    const add = ({ by, at }: Verification) =>
+        kept.set(`${by} ${at}`, { by, at });
+    if (held !== null && wordsDigest(held) === digest) {
+        verificationsOf(held).forEach(add);
+    }
+    carried.filter((entry) => entry.digest === digest).forEach(add);
+    return [...kept.values()];
 }
 
 // Whether MEMORY.md is still the text it was read as, or still absent.

@@ -14,6 +14,7 @@
 // JSON.stringify. Read, every value is checked for its type, so a YAML
 // trap written by hand fails rather than being coerced.
 
+import { createHash } from "node:crypto";
 import { HOST_ID, isPhrase } from "@dorothy/core";
 import { parseDocument } from "yaml";
 import { CONCEPT_ID, characters, normalise } from "../memory/sidecar.js";
@@ -190,7 +191,7 @@ export function oneOf<T extends string>(
 }
 
 // The form Date#toISOString writes.
-const TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+export const TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 export function time(value: unknown, key: string): string {
     // The engine rolls 2026-02-31 over to March, so the day must come back.
@@ -784,6 +785,31 @@ export function verificationsOf(fact: Fact): Verification[] {
             entry.by.startsWith("human:") &&
             typeof entry.at === "string",
     );
+}
+
+// The words a verification confirms, as a digest: a fact's name, title,
+// description, type, metadata and body. A verification a repository's
+// file carries counts only for words of its digest.
+export function wordsDigest(
+    fact: Pick<
+        Fact,
+        "name" | "title" | "description" | "type" | "extra" | "body"
+    >,
+): string {
+    return createHash("sha256")
+        .update(
+            JSON.stringify([
+                fact.name,
+                fact.title,
+                fact.description,
+                fact.type,
+                Object.entries(fact.extra).sort(([a], [b]) =>
+                    a < b ? -1 : a > b ? 1 : 0,
+                ),
+                fact.body,
+            ]),
+        )
+        .digest("hex");
 }
 
 // Knowledge the user has confirmed: their own, or any they verified.

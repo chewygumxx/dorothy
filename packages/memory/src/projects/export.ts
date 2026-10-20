@@ -21,15 +21,24 @@ import {
     type Fact,
     folded,
     frontmatterOf,
+    hiddenCharacter,
+    isRecord,
     Problem,
     readCommon,
+    TIME,
+    type Verification,
+    verificationsOf,
+    wordsDigest,
 } from "../facts/file.js";
 import { normalise } from "../memory/sidecar.js";
 
+// A person's verification as a repository's file carries it, with the
+// digest of the words it confirmed (wordsDigest).
+export type CarriedVerification = Verification & { digest: string };
 export type ExportedFact = Pick<
     Fact,
     "name" | "description" | "type" | "extra" | "body"
->;
+> & { verified?: readonly CarriedVerification[] };
 export type ExportedRead =
     | { kind: "ok"; form: ExportedFact }
     | { kind: "unparseable"; reason: string };
@@ -44,13 +53,22 @@ export function nameOfStem(stem: string): string | null {
         : null;
 }
 
-export const exportedForm = (fact: Fact): ExportedFact => ({
-    name: fact.name,
-    description: fact.description,
-    type: fact.type,
-    extra: fact.extra,
-    body: fact.body,
-});
+// A fact's verifications travel with it, each bound to the words the
+// store holds, which a write by anyone but the user would have dropped.
+export function exportedForm(fact: Fact): ExportedFact {
+    const digest = wordsDigest(fact);
+    const verified = verificationsOf(fact)
+        .map(({ by, at }) => ({ by, at, digest }))
+        .filter(carried);
+    return {
+        name: fact.name,
+        description: fact.description,
+        type: fact.type,
+        extra: fact.extra,
+        body: fact.body,
+        ...(verified.length === 0 ? {} : { verified }),
+    };
+}
 
 export function renderExported(form: ExportedFact): string {
     return [
@@ -62,6 +80,14 @@ export function renderExported(form: ExportedFact): string {
         ...Object.entries(form.extra).map(
             ([key, value]) => `  ${key}: ${JSON.stringify(value)}`,
         ),
+        ...(form.verified === undefined || form.verified.length === 0
+            ? []
+            : [
+                  "verified:",
+                  ...form.verified.map(
+                      (entry) => `  - ${JSON.stringify(entry)}`,
+                  ),
+              ]),
         "---",
         "",
         form.body,
@@ -69,7 +95,29 @@ export function renderExported(form: ExportedFact): string {
     ].join("\n");
 }
 
-const EXPORTED_KEYS = ["name", "description", "metadata"];
+const EXPORTED_KEYS = ["name", "description", "metadata", "verified"];
+const CARRIED_KEYS = ["by", "at", "digest"];
+const DIGEST = /^[0-9a-f]{64}$/;
+
+const carried = (entry: unknown): entry is CarriedVerification =>
+    isRecord(entry) &&
+    Object.keys(entry).every((key) => CARRIED_KEYS.includes(key)) &&
+    typeof entry.by === "string" &&
+    /^human:\S+$/.test(entry.by) &&
+    hiddenCharacter(entry.by) === null &&
+    typeof entry.at === "string" &&
+    TIME.test(entry.at) &&
+    typeof entry.digest === "string" &&
+    DIGEST.test(entry.digest);
+
+// The verifications a file carries, each a person's with a digest;
+// anything else in the key fails the file.
+function readCarried(value: unknown): CarriedVerification[] {
+    if (!Array.isArray(value) || !value.every(carried)) {
+        throw new Problem("verified is not a list of the user's verifications");
+    }
+    return value.map(({ by, at, digest }) => ({ by, at, digest }));
+}
 
 // A file's stem is its fact's name or, in snake case, that name's; the
 // frontmatter may give either.
@@ -84,7 +132,14 @@ export function parseExported(source: string, stem: string): ExportedRead {
         }
         const name = nameOfStem(stem) ?? stem;
         const named = data.name === stem ? { ...data, name } : data;
-        return { kind: "ok", form: readCommon(named, body, name) };
+        const common = readCommon(named, body, name);
+        return {
+            kind: "ok",
+            form:
+                data.verified === undefined
+                    ? common
+                    : { ...common, verified: readCarried(data.verified) },
+        };
     } catch (error) {
         if (error instanceof Problem) {
             return { kind: "unparseable", reason: error.message };
@@ -96,8 +151,10 @@ export function parseExported(source: string, stem: string): ExportedRead {
 const byKey = ([a]: [string, unknown], [b]: [string, unknown]) =>
     a < b ? -1 : a > b ? 1 : 0;
 
-// Of the parsed form, so a file written another way hashes the same.
+// Of the parsed form, so a file written another way hashes the same; a
+// form without verifications hashes as before they travelled.
 export function formHash(form: ExportedFact): string {
+    const verified = form.verified ?? [];
     return createHash("sha256")
         .update(
             JSON.stringify([
@@ -106,6 +163,7 @@ export function formHash(form: ExportedFact): string {
                 form.type,
                 Object.entries(form.extra).sort(byKey),
                 form.body,
+                ...(verified.length === 0 ? [] : [verified]),
             ]),
         )
         .digest("hex");
