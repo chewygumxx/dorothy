@@ -372,6 +372,17 @@ export class RecallIndex {
         return this.#db;
     }
 
+    // The schema a newer Dorothy rebuilt this index for while it was open,
+    // which this one's writes then fail against; null while it is ours.
+    newerSchema(): number | null {
+        try {
+            const version = versionOf(this.#db);
+            return version > SCHEMA_VERSION ? version : null;
+        } catch {
+            return null;
+        }
+    }
+
     // A file SQLite says is not a database is deleted and made again: no
     // valid index can be open on it, and it holds nothing that cannot be
     // rebuilt. One it finds corrupt is rebuilt only where no other process

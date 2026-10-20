@@ -47,7 +47,7 @@ import { launchHistory } from "../memory/open.js";
 import { Reviewer } from "../memory/reviewer.js";
 import { vocabularyPath } from "../memory/vocabulary.js";
 import { identify } from "../projects/identify.js";
-import { indexPath, RecallIndex } from "../recall/store.js";
+import { indexPath, RecallIndex, SCHEMA_VERSION } from "../recall/store.js";
 import { transcriptDir } from "../transcript.js";
 import { claudeConfigDir, confineTranscript } from "./confine.js";
 import { guarded, type Handler } from "./guard.js";
@@ -134,6 +134,20 @@ export async function startService(
         first.stop(true);
         throw error;
     }
+    // A newer Dorothy rebuilds the index for its own schema under a
+    // service still running, whose writes then fail: the first failure
+    // after says why, once.
+    let saidNewer = false;
+    const failed = (message: string) => {
+        const newer = index.newerSchema();
+        if (newer !== null && !saidNewer) {
+            saidNewer = true;
+            warn(
+                `the recall index is schema ${newer}, newer than this service knows (${SCHEMA_VERSION}): a newer Dorothy is installed; restart the service with dorothy --serve`,
+            );
+        }
+        warn(message);
+    };
     const warnings: string[] = [];
     let launched: Awaited<ReturnType<typeof launchHistory>>;
     try {
@@ -397,7 +411,7 @@ export async function startService(
             route,
             tokens,
             loopback,
-            warn,
+            warn: failed,
         });
         const port = first.port ?? 0;
         for (const name of ["127.0.0.1", "localhost", "[::1]"]) {
@@ -425,7 +439,7 @@ export async function startService(
             store,
             idle,
             touched,
-            warn,
+            warn: failed,
             tickMs: options.tickMs,
             loadCatalogue:
                 reviewer === null

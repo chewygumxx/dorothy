@@ -8,6 +8,7 @@
 //
 //
 
+import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
     existsSync,
@@ -30,7 +31,7 @@ import { loadProfiles } from "../hosts/profiles.js";
 import { type Entry, indexCatalogue } from "../memory/catalogue.js";
 import { isStale } from "../memory/service.js";
 import { vocabularyPath } from "../memory/vocabulary.js";
-import { indexPath, RecallIndex } from "../recall/store.js";
+import { indexPath, RecallIndex, SCHEMA_VERSION } from "../recall/store.js";
 import { transcriptDir } from "../transcript.js";
 import {
     MAX_BODY,
@@ -184,6 +185,24 @@ describe("the memory service", () => {
             { authorization: `Bearer ${token}` },
         );
         expect(response.status).toBe(403);
+    });
+
+    it("says to restart it once a newer Dorothy has rebuilt the index", async () => {
+        await start();
+        // As a newer Dorothy's first open does: its own schema, in place.
+        const newer = new Database(indexPath(env));
+        newer.run("DROP TABLE conversations");
+        newer.run(`PRAGMA user_version = ${SCHEMA_VERSION + 1}`);
+        newer.close();
+        const record = {
+            host: "codex",
+            session: "s1",
+            events: [{ sourceId: "a", at: AT, kind: "user", text: "Hi" }],
+        };
+        expect((await post("/v1/record", record)).status).toBe(500);
+        expect((await post("/v1/record", record)).status).toBe(500);
+        const said = `the recall index is schema ${SCHEMA_VERSION + 1}, newer than this service knows (${SCHEMA_VERSION}): a newer Dorothy is installed; restart the service with dorothy --serve`;
+        expect(warned.filter((message) => message === said)).toHaveLength(1);
     });
 
     it("names a host with no profile", async () => {
