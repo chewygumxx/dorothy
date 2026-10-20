@@ -78,6 +78,8 @@ export async function runBridge(options: BridgeOptions): Promise<number> {
             target.searchParams.set("host", options.host);
         }
         remote = new StreamableHTTPClientTransport(target, {
+            // Direct to this machine's service, past the user's proxy.
+            fetch: client.fetch,
             requestInit: {
                 headers:
                     client.token === null

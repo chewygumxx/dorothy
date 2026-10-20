@@ -28,6 +28,7 @@ import {
     sendRecord,
 } from "./client.js";
 import { isLoopbackUrl } from "./loopback.js";
+import { runScript, trapProxy } from "./proxy-testing.js";
 
 const AT = "2026-10-18T09:30:00.000Z";
 const BLOCK = {
@@ -166,6 +167,34 @@ const wait = (...names: string[]) => {
 const ACCEPTED = { accepted: 1, duplicates: 0, through: "a" };
 const sessionOf = async (request: Request) =>
     ((await request.json()) as RecordRequest).session;
+
+describe("the client behind a user's proxy", () => {
+    it("reaches a loopback service directly, whatever the proxy variables say", async () => {
+        const trap = await trapProxy();
+        try {
+            const options = { env, url: up().url, token: null };
+            const out = await runScript(
+                [
+                    `import { ensureService, sendRecord } from ${JSON.stringify(join(import.meta.dir, "client.ts"))};`,
+                    `const options = ${JSON.stringify(options)};`,
+                    `const sent = await sendRecord(${JSON.stringify(record)}, options);`,
+                    "const ensured = await ensureService([], options);",
+                    "console.log(JSON.stringify([sent, ensured]));",
+                ].join("\n"),
+                { ...trap.env, HOME: home },
+                home,
+            );
+            expect(JSON.parse(out)).toEqual([
+                { accepted: 1, duplicates: 0, through: "a" },
+                true,
+            ]);
+            expect(seen).toEqual(["/v1/record", "/v1/health"]);
+            expect(trap.connections()).toBe(0);
+        } finally {
+            await trap.close();
+        }
+    });
+});
 
 describe("the queue of records", () => {
     it("drops a refused head, and sends the one behind it", async () => {

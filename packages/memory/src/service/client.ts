@@ -45,6 +45,7 @@ import {
     recallResponseSchema,
     recordResponseSchema,
 } from "../contract/schemas.js";
+import { type FetchLike, fetchFor } from "./direct.js";
 import { isLoopbackUrl } from "./loopback.js";
 
 export const DEFAULT_URL = `http://127.0.0.1:${SERVICE_PORT}`;
@@ -63,7 +64,8 @@ export type ClientOptions = {
     url?: string;
     // The device's token file by default; null sends none.
     token?: string | null;
-    fetch?: typeof fetch;
+    // fetchFor's by default: direct to this machine's service.
+    fetch?: FetchLike;
     // Shorter timeouts than TIMEOUTS, for tests.
     timeouts?: Partial<Record<keyof typeof TIMEOUTS, number>>;
 };
@@ -72,7 +74,7 @@ type Client = {
     env: Env;
     url: string;
     token: string | null;
-    fetch: typeof fetch;
+    fetch: FetchLike;
     timeouts: Record<keyof typeof TIMEOUTS, number>;
 };
 
@@ -100,16 +102,25 @@ async function readToken(env: Env): Promise<string | null> {
 
 export async function clientOf(options: ClientOptions = {}): Promise<Client> {
     const env = options.env ?? process.env;
+    const config = async () => (await readConfig(env)).config.service;
     const url =
         options.url ??
         env.DOROTHY_MEMORY_URL ??
-        `http://127.0.0.1:${(await readConfig(env)).config.service.port}`;
+        `http://127.0.0.1:${(await config()).port}`;
     return {
         env,
         url,
         token:
             options.token === undefined ? await readToken(env) : options.token,
-        fetch: options.fetch ?? fetch,
+        fetch:
+            options.fetch ??
+            fetchFor(
+                url,
+                // Loopback goes direct without reading the configuration.
+                URL.canParse(url) && !isLoopbackUrl(url)
+                    ? (await config()).listen
+                    : [],
+            ),
         timeouts: { ...TIMEOUTS, ...options.timeouts },
     };
 }

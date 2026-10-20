@@ -15,9 +15,11 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { DEFAULT_CONFIG, type Env } from "@dorothy/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { loadProfiles } from "../hosts/profiles.js";
 import { runBridge } from "./bridge.js";
+import { trapProxy } from "./proxy-testing.js";
 import { type RunningService, startService } from "./service.js";
 import { tokenStore } from "./tokens.js";
 
@@ -69,6 +71,32 @@ describe("runBridge", () => {
         expect(tools).toHaveLength(4);
         await client.close();
         expect(await bridged).toBe(0);
+    });
+
+    it("reaches a loopback service directly, whatever the proxy variables say", async () => {
+        const trap = await trapProxy();
+        const options = { env, url: running.url, token: null, cwd: home };
+        const transport = new StdioClientTransport({
+            command: process.execPath,
+            args: [
+                "-e",
+                [
+                    `import { runBridge } from ${JSON.stringify(join(import.meta.dir, "bridge.ts"))};`,
+                    `process.exit(await runBridge({ ...${JSON.stringify(options)}, serve: null }));`,
+                ].join("\n"),
+            ],
+            env: { PATH: process.env.PATH ?? "", HOME: home, ...trap.env },
+            cwd: home,
+        });
+        const client = new Client({ name: "host", version: "1.0.0" });
+        try {
+            await client.connect(transport);
+            expect((await client.listTools()).tools).toHaveLength(4);
+            expect(trap.connections()).toBe(0);
+        } finally {
+            await client.close();
+            await trap.close();
+        }
     });
 
     it("answers a request with an error when the service is down", async () => {

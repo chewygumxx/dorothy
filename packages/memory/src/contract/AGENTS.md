@@ -49,7 +49,10 @@ gives back, and the service that speaks it. The spec is
   device tokens (`tokens.ts`), the client (`client.ts`), the stdio
   bridge (`bridge.ts`, its own entry point, `"./bridge"`) and the CLI's
   runners (`run.ts`). `loopback.ts` tells loopback addresses and URLs;
-  `confine.ts` admits a transcript path.
+  `confine.ts` admits a transcript path. `direct.ts` is the client's
+  and the bridge's fetch, which reaches loopback and the addresses in
+  `[service] listen` over `node:http`, as Bun's fetch would take even
+  loopback through `HTTP_PROXY`.
   `recall/server.ts`, `tools.ts` and `../service/` alone import
   `@modelcontextprotocol/sdk`.
 
