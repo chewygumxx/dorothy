@@ -62,7 +62,7 @@ function time(record: Json): string {
     if (!Number.isFinite(value)) throw new Unreadable("invalid timestamp");
     return new Date(value).toISOString();
 }
-function blocks(value: unknown): string {
+function blocks(value: unknown, separator = "\n\n"): string {
     if (!Array.isArray(value)) throw new Unreadable("text without its blocks");
     return value
         .map((block) => {
@@ -74,12 +74,27 @@ function blocks(value: unknown): string {
             }
             return text(block.text, "a text block without its text");
         })
-        .join("\n\n");
+        .join(separator);
 }
 
-type Decoded = { line: number; event: RecordEvent };
+type Decoded =
+    | { line: number; event: RecordEvent }
+    | {
+          line: number;
+          call: {
+              answerKey: string;
+              name: string;
+              input: string;
+              at: string;
+              sourceId: string;
+          };
+      };
+export type CodexReadOptions = { ended?: boolean };
 
-export function readCodex(lines: readonly string[]): CodexRead {
+export function readCodex(
+    lines: readonly string[],
+    { ended = false }: CodexReadOptions = {},
+): CodexRead {
     const read: CodexRead = {
         session: null,
         cwd: null,
@@ -92,6 +107,9 @@ export function readCodex(lines: readonly string[]): CodexRead {
     };
     const known = new Set<string>();
     const decoded: Decoded[] = [];
+    // Only the valid prefix can supply answers. Nothing after a malformed
+    // record is allowed to acknowledge an earlier call.
+    const answers = new Map<string, string>();
     for (const [index, raw] of lines.entries()) {
         if (raw.trim() === "") continue;
         let type: string | null = null;
@@ -147,6 +165,48 @@ export function readCodex(lines: readonly string[]): CodexRead {
                         read.model = model;
                         continue;
                     }
+                    case "response_item/function_call":
+                    case "response_item/custom_tool_call": {
+                        const id = nonempty(
+                            payload.call_id,
+                            "a tool call without its id",
+                        );
+                        const name = nonempty(
+                            payload.name,
+                            "a tool call without its name",
+                        );
+                        const input = text(
+                            type === "response_item/function_call"
+                                ? payload.arguments
+                                : payload.input,
+                            "a tool call without its input",
+                        );
+                        decoded.push({
+                            line: index,
+                            call: {
+                                answerKey: `${type}_output/${id}`,
+                                name,
+                                input,
+                                at: time(record),
+                                sourceId: String(index + 1),
+                            },
+                        });
+                        continue;
+                    }
+                    case "response_item/function_call_output":
+                    case "response_item/custom_tool_call_output": {
+                        const id = nonempty(
+                            payload.call_id,
+                            "a tool output without its call id",
+                        );
+                        const output =
+                            typeof payload.output === "string"
+                                ? payload.output
+                                : blocks(payload.output, "\n");
+                        time(record);
+                        answers.set(`${type}/${id}`, output);
+                        continue;
+                    }
                     case "response_item/message": {
                         if (
                             payload.role === "system" ||
@@ -187,6 +247,23 @@ export function readCodex(lines: readonly string[]): CodexRead {
             break;
         }
     }
-    read.events = decoded.map((item) => item.event);
+    for (const item of decoded) {
+        if ("event" in item) {
+            read.events.push(item.event);
+            continue;
+        }
+        const { answerKey, ...call } = item.call;
+        const output = answers.get(answerKey);
+        if (output === undefined && !ended) {
+            read.pending = item.line;
+            break;
+        }
+        read.events.push({
+            kind: "tool",
+            ...call,
+            output: output ?? "",
+            ok: output !== undefined,
+        });
+    }
     return read;
 }

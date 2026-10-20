@@ -13,10 +13,12 @@ import { readCodex } from "./codex.js";
 import {
     at,
     bookkeeping,
+    call,
     context,
     line,
     message,
     meta,
+    output,
     SESSION,
 } from "./fixtures.js";
 
@@ -177,4 +179,162 @@ describe("readCodex", () => {
         expect(read.events).toEqual([]);
         expect(read.halt?.line).toBe(0);
     });
+});
+
+describe("Codex tool pairs", () => {
+    for (const family of ["function", "custom_tool"] as const) {
+        it(`pairs ${family} calls by id at the call's ordinal and timestamp`, () => {
+            const read = readCodex([
+                call(
+                    `${family}_call`,
+                    "first",
+                    "fixture-one",
+                    "first input",
+                    2,
+                ),
+                call(
+                    `${family}_call`,
+                    "second",
+                    "fixture-two",
+                    "second input",
+                    3,
+                ),
+                output(`${family}_call_output`, "second", "second output", 4),
+                output(
+                    `${family}_call_output`,
+                    "first",
+                    [
+                        { type: "input_text", text: "first output" },
+                        { type: "input_text", text: "continued" },
+                    ],
+                    5,
+                ),
+            ]);
+            expect(read.events).toEqual([
+                {
+                    kind: "tool",
+                    name: "fixture-one",
+                    input: "first input",
+                    output: "first output\ncontinued",
+                    ok: true,
+                    sourceId: "1",
+                    at: at(2),
+                },
+                {
+                    kind: "tool",
+                    name: "fixture-two",
+                    input: "second input",
+                    output: "second output",
+                    ok: true,
+                    sourceId: "2",
+                    at: at(3),
+                },
+            ]);
+            expect(read.halt).toBeNull();
+            expect(read.unknown).toEqual([]);
+            expect(read.pending).toBeNull();
+        });
+    }
+    it("waits at an unanswered call and resumes without changing source ids", () => {
+        const lines = [
+            message("user", "Before."),
+            call("function_call", "later", "fixture", '{"value":1}', 2),
+            message("assistant", "After.", 3),
+        ];
+        const first = readCodex(lines);
+        expect(first.events).toHaveLength(1);
+        expect(first.pending).toBe(1);
+        expect(first.halt).toBeNull();
+        const next = readCodex([
+            ...lines,
+            output("function_call_output", "later", "Done.", 4),
+        ]);
+        expect(next.events[0]).toEqual(first.events[0]);
+        expect(
+            next.events.map((event) => [event.kind, event.sourceId]),
+        ).toEqual([
+            ["user", "1"],
+            ["tool", "2"],
+            ["assistant", "3"],
+        ]);
+        expect(next.pending).toBeNull();
+    });
+    it("records an unanswered call as failed only when the session has ended", () => {
+        const read = readCodex(
+            [call("custom_tool_call", "missing", "fixture", "patch", 4)],
+            { ended: true },
+        );
+        expect(read.events).toEqual([
+            {
+                kind: "tool",
+                name: "fixture",
+                input: "patch",
+                output: "",
+                ok: false,
+                sourceId: "1",
+                at: at(4),
+            },
+        ]);
+        expect(read.pending).toBeNull();
+    });
+    it("does not pair across a malformed line or mix tool families", () => {
+        const waiting = call("function_call", "id", "fixture", "{}", 1);
+        const read = readCodex([
+            waiting,
+            "{",
+            output("function_call_output", "id", "Too late."),
+        ]);
+        expect(read.events).toEqual([]);
+        expect(read.halt?.line).toBe(1);
+        expect(read.pending).toBe(0);
+        expect(
+            readCodex([
+                waiting,
+                output("custom_tool_call_output", "id", "Wrong family."),
+            ]).events,
+        ).toEqual([]);
+    });
+    it("leaves an unmatched output as bookkeeping and validates it", () => {
+        const read = readCodex([
+            output("function_call_output", "unmatched", "Synthetic output."),
+            message("assistant", "Done."),
+        ]);
+        expect(read.events.map((event) => event.kind)).toEqual(["assistant"]);
+        expect(read.unknown).toEqual([]);
+        expect(read.halt).toBeNull();
+    });
+    for (const payload of [
+        { type: "function_call", name: "fixture", arguments: "{}" },
+        { type: "custom_tool_call", call_id: "id", input: "patch" },
+        {
+            type: "function_call",
+            call_id: "id",
+            name: "fixture",
+            arguments: {},
+        },
+        {
+            type: "custom_tool_call",
+            call_id: "id",
+            name: "fixture",
+            input: null,
+        },
+        { type: "function_call_output", output: "Synthetic." },
+        { type: "custom_tool_call_output", call_id: "id", output: 4 },
+        {
+            type: "function_call_output",
+            call_id: "id",
+            output: [{ type: "input_text" }],
+        },
+    ]) {
+        it(`halts at malformed ${payload.type} without leaking its contents`, () => {
+            const read = readCodex([
+                message("user", "Before."),
+                line("response_item", payload),
+                message("assistant", "After."),
+            ]);
+            expect(read.events).toHaveLength(1);
+            expect(read.halt?.line).toBe(1);
+            expect(read.halt?.reason).not.toContain("Synthetic.");
+        });
+    }
 });
