@@ -8,6 +8,7 @@
 //
 //
 
+import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
     mkdir,
@@ -28,6 +29,11 @@ import {
     meta,
     SESSION,
 } from "../recording/fixtures.js";
+import {
+    HERMES_SCHEMA,
+    hermesMessage,
+    hermesSession,
+} from "../recording/hermes-fixtures.js";
 import { transcriptDir } from "../transcript.js";
 import { runSweep, runSweepDismiss } from "./sweep-command.js";
 
@@ -170,6 +176,59 @@ describe("dorothy --sweep", () => {
         expect(out.join("")).toBe("codex: 0 events in 0 sessions (1 halted)\n");
         expect(await conversations()).toHaveLength(1);
         expect(await readRecord(env, other, "codex")).toBeNull();
+    });
+
+    it("rereads a Hermes halt by its session, in a database of others", async () => {
+        await settings(
+            '[history]\nenabled = false\n[recording]\nhosts = ["hermes"]\n',
+        );
+        const path = join(home, ".hermes", "state.db");
+        await mkdir(dirname(path), { recursive: true });
+        const db = new Database(path);
+        try {
+            db.exec(HERMES_SCHEMA);
+            hermesSession(db, "halted-session");
+            hermesMessage(db, 1, "user", "Synthetic question.", {
+                session: "halted-session",
+            });
+            hermesMessage(db, 2, "user", "\0json:{", {
+                session: "halted-session",
+            });
+            await runSweep({ ...io(), backfill: false, now: () => BEFORE });
+            expect(await halts(env, "hermes")).toMatchObject([
+                { session: "halted-session", host: "hermes", line: 2 },
+            ]);
+            expect(await conversations()).toHaveLength(1);
+            // Another session arrives, and the halt is mended.
+            hermesSession(db, "other-session");
+            hermesMessage(db, 3, "user", "Synthetic other.", {
+                session: "other-session",
+            });
+            out.length = 0;
+            err.length = 0;
+            expect(
+                await runSweep({ ...io(), backfill: false, reread: true }),
+            ).toBe(1);
+            expect(err.join("")).toContain(
+                "hermes halted-session still can't be read past row 2",
+            );
+            expect(await conversations()).toHaveLength(1);
+            expect(await readRecord(env, "other-session", "hermes")).toBeNull();
+            db.run("UPDATE messages SET content = ? WHERE id = 2", [
+                "Synthetic mended.",
+            ]);
+        } finally {
+            db.close();
+        }
+        out.length = 0;
+        err.length = 0;
+        expect(await runSweep({ ...io(), backfill: false, reread: true })).toBe(
+            0,
+        );
+        expect(out.join("")).toContain("read hermes halted-session to its end");
+        expect(await halts(env)).toEqual([]);
+        // The other session was never visited by a reread.
+        expect(await conversations()).toHaveLength(1);
     });
 
     it("has nothing to reread when nothing is kept", async () => {
