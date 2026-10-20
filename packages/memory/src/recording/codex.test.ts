@@ -667,3 +667,73 @@ describe("Codex repeated call ids", () => {
         expect(read.halt).toBeNull();
     });
 });
+
+describe("Codex metadata and halt boundaries", () => {
+    it("uses session_id when session metadata has no id", () => {
+        const read = readCodex([
+            line(
+                "session_meta",
+                { session_id: SESSION, cwd: "/fixture/fallback" },
+                7,
+            ),
+        ]);
+        expect(read.session).toBe(SESSION);
+        expect(read.cwd).toBe("/fixture/fallback");
+        expect(read.at).toBe(at(7));
+        expect(read.halt).toBeNull();
+    });
+    for (const family of ["function", "custom_tool"] as const) {
+        for (const record of [
+            call(`${family}_call`, "bad-time", "fixture", "input"),
+            output(`${family}_call_output`, "bad-time", "answer"),
+        ]) {
+            const tool = JSON.parse(record);
+            it(`halts at a bad timestamp on ${tool.payload.type}`, () => {
+                const before = message("user", "Before.");
+                const read = readCodex([
+                    before,
+                    JSON.stringify({
+                        ...tool,
+                        timestamp: "invalid fixture time",
+                    }),
+                    message("assistant", "After."),
+                ]);
+                expect(read.events).toEqual(readCodex([before]).events);
+                expect(read.halt).toEqual({
+                    line: 1,
+                    type: `response_item/${tool.payload.type}`,
+                    reason: "invalid timestamp",
+                });
+                expect(read.pending).toBeNull();
+            });
+        }
+    }
+    it("reports both the halt and an earlier pending call without consuming a later answer", () => {
+        const read = readCodex(
+            [
+                message("user", "Before."),
+                call("function_call", "waiting", "fixture", "input"),
+                JSON.stringify({
+                    timestamp: "invalid fixture time",
+                    type: "response_item",
+                    payload: {
+                        type: "function_call_output",
+                        call_id: "waiting",
+                        output: "Invalid answer.",
+                    },
+                }),
+                output("function_call_output", "waiting", "Beyond the halt."),
+            ],
+            { lineOffset: 10 },
+        );
+        expect(read.events).toEqual([
+            { kind: "user", text: "Before.", sourceId: "11", at: at(1) },
+        ]);
+        expect(read.pending).toBe(1);
+        expect(read.halt).toEqual({
+            line: 2,
+            type: "response_item/function_call_output",
+            reason: "invalid timestamp",
+        });
+    });
+});
