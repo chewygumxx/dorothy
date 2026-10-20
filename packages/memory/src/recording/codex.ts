@@ -26,7 +26,7 @@ export type CodexRead = {
     pending: number | null;
 };
 
-// Shapes seen in the probe, plus older Codex bookkeeping spellings.
+// Known bookkeeping and duplicate event-message envelopes.
 const BOOKKEEPING = new Set([
     "compacted",
     "token_usage_record",
@@ -41,9 +41,6 @@ const BOOKKEEPING = new Set([
     "event_msg/token_count",
     "event_msg/user_message",
     "event_msg/agent_message",
-    "event_msg/agent_reasoning",
-    "event_msg/turn_aborted",
-    "event_msg/context_compacted",
 ]);
 const NON_TEXT_BLOCKS = new Set([
     "input_file",

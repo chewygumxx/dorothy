@@ -552,3 +552,27 @@ describe("Codex non-text content", () => {
         }
     });
 });
+
+describe("Codex unobserved bookkeeping", () => {
+    for (const type of [
+        "agent_reasoning",
+        "turn_aborted",
+        "context_compacted",
+    ]) {
+        it(`reports ${type} once instead of assuming its shape`, () => {
+            const read = readCodex([
+                line("event_msg", { type }),
+                line("event_msg", { type }),
+                message("user", "After."),
+            ]);
+            expect(read.unknown).toEqual([
+                { line: 0, type: `event_msg/${type}` },
+            ]);
+            expect(read.halt).toBeNull();
+            expect(read.events[0]).toMatchObject({
+                sourceId: "3",
+                text: "After.",
+            });
+        });
+    }
+});
