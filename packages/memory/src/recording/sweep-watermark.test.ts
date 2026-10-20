@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { DEFAULT_CONFIG } from "@dorothy/core";
+import { userLine } from "../bodies/fixtures.js";
 import { fakeEngine } from "../contract/testing.js";
 import { noteRecorded, startJobs } from "../service/jobs.js";
 import { context, line, message, meta, SESSION } from "./fixtures.js";
@@ -95,10 +96,10 @@ describe("the watermark", () => {
             hermesSession(db);
             hermesMessage(db, 1, "user", "Synthetic question.");
         });
-        // Hermes joins a day on: its session, from 10:00, now precedes it.
+        // Hermes joins days on: its session, of the 20th, now precedes it.
         const result = await r.run({
             hosts: ["codex", "hermes"],
-            now: later(24),
+            now: () => new Date("2026-10-25T00:00:00.000Z"),
         });
         expect(result.map((each) => each.waiting)).toEqual([0, 1]);
     });
@@ -110,6 +111,69 @@ describe("the watermark", () => {
         });
         const [hermes] = await r.run({ hosts: ["hermes"] });
         expect(hermes).toMatchObject({ sessions: 1, waiting: 0 });
+    });
+});
+
+describe("a session whose mtime was refreshed", () => {
+    // A copy or restore makes an old session look new: the mark is judged
+    // by the events too. The first sweep is on the 24th; events are older.
+    const first = () => new Date("2026-10-24T00:00:00.000Z");
+    const fresh = -10 * 24 * HOUR;
+
+    it("waits for the backfill when every event precedes the mark", async () => {
+        await r.file(rollout("rollout-copied.jsonl"), speech, fresh);
+        const [codex] = await r.run({ hosts: ["codex"], now: first });
+        expect(codex).toMatchObject({ sessions: 0, waiting: 1, events: 0 });
+        expect(r.requests).toEqual([]);
+        // Remembered, so not read again by the next live sweep...
+        const [again] = await r.run({ hosts: ["codex"], now: first });
+        expect(again).toMatchObject({ skipped: 1, waiting: 0 });
+        // ...yet the backfill still records it.
+        const [filled] = await r.run({
+            hosts: ["codex"],
+            now: first,
+            backfill: true,
+        });
+        expect(filled).toMatchObject({ sessions: 1, events: 1 });
+    });
+
+    it("waits for the backfill in Claude Code too", async () => {
+        const path = join(
+            r.home,
+            ".claude/projects/-work",
+            "0f8fad5b-d9cb-469f-a165-70867728950e.jsonl",
+        );
+        await r.file(
+            path,
+            `${userLine("u1", 0, "Synthetic question.")}\n`,
+            fresh,
+        );
+        const [claude] = await r.run({ hosts: ["claude-code"], now: first });
+        expect(claude).toMatchObject({ sessions: 0, waiting: 1 });
+        expect(await r.conversations()).toEqual([]);
+        const [filled] = await r.run({
+            hosts: ["claude-code"],
+            now: first,
+            backfill: true,
+        });
+        expect(filled).toMatchObject({ sessions: 1, events: 1 });
+    });
+
+    it("records the whole session once one event follows the mark", async () => {
+        await r.file(
+            rollout("rollout-mixed.jsonl"),
+            text(
+                meta(),
+                context(),
+                message("user", "Synthetic question.", 1),
+                message("assistant", "Synthetic answer.", 2),
+            ),
+            fresh,
+        );
+        const live = new Date("2026-10-20T09:00:01.500Z");
+        // The mark falls between the session's two events (:01 and :02).
+        const [codex] = await r.run({ hosts: ["codex"], now: () => live });
+        expect(codex).toMatchObject({ sessions: 1, events: 2, waiting: 0 });
     });
 });
 

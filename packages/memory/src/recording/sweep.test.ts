@@ -395,7 +395,7 @@ describe("what is remembered and when", () => {
         });
         const young = only(await r.run({ hosts: ["hermes"] }), "hermes");
         expect(young.events).toBe(2);
-        const later = () => new Date(NOW.getTime() + 3 * HOUR);
+        const later = () => new Date("2026-10-21T00:00:00.000Z");
         const over = only(
             await r.run({ hosts: ["hermes"], now: later }),
             "hermes",

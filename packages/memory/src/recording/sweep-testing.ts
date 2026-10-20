@@ -39,7 +39,7 @@ import {
     sweep,
 } from "./sweep.js";
 
-export const NOW = new Date("2026-10-20T09:30:00.000Z");
+export const NOW = new Date("2026-10-14T08:00:00.000Z");
 export const HOUR = 3_600_000;
 
 export type Rig = {

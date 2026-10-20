@@ -20,6 +20,7 @@ import type {
     RecordRequest,
     RecordResponse,
 } from "@dorothy/core";
+import { readLines } from "../bodies/claude-code.js";
 import type { Recorded, SessionReport } from "../bodies/record.js";
 import {
     keepHalt,
@@ -276,9 +277,12 @@ async function sweepHost(sweeping: Sweeping, host: Host, result: HostSweep) {
         }
         let read: SourceRead | null;
         try {
-            read = await session.read(state.sessions[session.key], {
-                ended: isOver(sweeping, session),
-            });
+            // A backfill ignores what a live sweep remembered: that may
+            // have left the session waiting for it.
+            read = await session.read(
+                deps.backfill ? undefined : state.sessions[session.key],
+                { ended: isOver(sweeping, session) },
+            );
         } catch (error) {
             result.failed += 1;
             deps.log.error(
@@ -290,8 +294,22 @@ async function sweepHost(sweeping: Sweeping, host: Host, result: HostSweep) {
             result.skipped += 1;
             continue;
         }
-        await recordRead(sweeping, session, read, result);
+        await recordRead(sweeping, session, read, mark, result);
     }
+}
+
+// Outside a backfill, a session whose every event precedes the watermark
+// waits for it, whatever its mtime says: a copy or restore refreshes that.
+function waits(
+    deps: SweepDeps,
+    events: readonly { at: string }[],
+    mark: number,
+) {
+    return (
+        !deps.backfill &&
+        events.length > 0 &&
+        events.every((event) => Date.parse(event.at) < mark)
+    );
 }
 
 // A backfilled session, or one untouched for an hour, is over.
@@ -304,14 +322,20 @@ async function recordRead(
     sweeping: Sweeping,
     session: SourceSession,
     read: SourceRead,
+    mark: number,
     result: HostSweep,
 ) {
     const { deps, state } = sweeping;
     const { host } = session;
     const ended = isOver(sweeping, session);
     if (host === "claude-code" && read.kind === "file")
-        return recordClaudeRead(sweeping, session, read, ended, result);
+        return recordClaudeRead(sweeping, session, read, ended, mark, result);
     const found = view(read, ended, session.session ?? null);
+    if (waits(deps, found.events, mark)) {
+        result.waiting += 1;
+        rememberRead(state, session.key, read);
+        return;
+    }
     const id = found.session;
     const named = id ?? basename(session.path, ".jsonl");
     if (id === null && found.events.length > 0) {
@@ -453,9 +477,15 @@ async function recordClaudeRead(
     session: SourceSession,
     read: Extract<SourceRead, { kind: "file" }>,
     ended: boolean,
+    mark: number,
     result: HostSweep,
 ) {
     const { deps, state } = sweeping;
+    if (waits(deps, readLines(read.lines, { ended }).events, mark)) {
+        result.waiting += 1;
+        rememberRead(state, session.key, read);
+        return;
+    }
     const id = basename(session.path, ".jsonl");
     const cwd = firstCwd(read.lines);
     if (deps.isPrivate?.({ host: "claude-code", session: id, cwd }) ?? false) {
