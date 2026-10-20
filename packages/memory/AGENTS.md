@@ -19,11 +19,10 @@ tags:
 
 # packages/memory/AGENTS.md
 
-`@dorothy/memory` is Dorothy's memory database in all its parts:
-transcripts, the notes on each conversation, facts, recall, compaction,
-tags and history. It never imports the agent or a model provider's SDK:
-reviews and compaction take core's `StructuredCall` and their prompts as
-text (`MemoryPrompts`).
+`@dorothy/memory` holds transcripts, notes, facts, projects, recall,
+compaction, tags and history. It imports neither the agent nor a model
+provider's SDK: reviews and compaction take core's `StructuredCall`
+and prompts as text (`MemoryPrompts`).
 
 ## Entry points and imports
 
@@ -99,6 +98,7 @@ text (`MemoryPrompts`).
   `commands.ts` has `commandHistory`, history/restore/rollback/check and
   mirror/recover commands. Commands that advance main await a push on close;
   mirror keys use dotenvx's `set`. `lock.ts` is the common `FileLock`.
+- `recording/`: pure harness readers; [guide](./src/recording/AGENTS.md).
 - `sqlite-lock.ts`: `exclusiveLock`, a SQLite `BEGIN IMMEDIATE` lock.
 
 ## Invariants
