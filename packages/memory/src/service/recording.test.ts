@@ -10,6 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
+    appendFile,
     mkdir,
     mkdtemp,
     readdir,
@@ -29,7 +30,7 @@ import {
 } from "../bodies/fixtures.js";
 import { recordSession } from "../bodies/record.js";
 import { dataRoot, type FactStore } from "../facts/store.js";
-import type { Lock } from "../memory/sidecar.js";
+import { type Lock, sidecarPath } from "../memory/sidecar.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { syncIndex } from "../recall/sync.js";
 import {
@@ -210,6 +211,34 @@ describe("the sweep as the service binds it", () => {
                 .map((line) => JSON.parse(line).sourceUuid)
                 .filter(Boolean),
         ).toEqual(["u1", "a1", "u2"]);
+    });
+
+    it("continues the sweep after a broken sidecar and warns", async () => {
+        const path = await rollout("/synthetic", LIVE);
+        const { bound } = binding(EARLY);
+        await bound.run();
+        const phrase = bound.binding.sessions.get(`codex:${CODEX_SESSION}`);
+        if (!phrase) throw new Error("missing conversation");
+        await writeFile(sidecarPath(transcriptDir(env), phrase), "{not json");
+        await appendFile(path, `${message("user", "Synthetic more.", 3)}\n`);
+        await utimes(path, LIVE, LIVE);
+        const second = await rollout("/synthetic", LIVE, "rollout-two.jsonl");
+        await writeFile(
+            second,
+            (await readFile(second, "utf8")).replaceAll(
+                CODEX_SESSION,
+                "99999999-2222-4333-8444-555555555555",
+            ),
+        );
+        const result = codex(await bound.run());
+        expect(result).toMatchObject({ error: null, sessions: 2, events: 3 });
+        expect(
+            said.filter(
+                (message) =>
+                    message.startsWith("warn") &&
+                    message.includes("backfill mark"),
+            ),
+        ).toHaveLength(1);
     });
 
     it("queues a live conversation for extraction and its project for export", async () => {

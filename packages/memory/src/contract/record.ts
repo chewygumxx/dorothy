@@ -39,6 +39,7 @@ export type RecordDeps = {
     index: RecallIndex;
     recorder: Recorder | null;
     backfill?: boolean;
+    warn?: (message: string) => void;
     lock?: Lock;
     // Whether the request came over loopback.
     loopback: boolean;
@@ -209,6 +210,7 @@ export async function acceptRecord(
                 transcriptDir(deps.env),
                 phrase,
                 deps.backfill ?? false,
+                deps.warn,
             );
             // A writer killed mid-append left a line that would swallow
             // the first event written after it.

@@ -735,12 +735,17 @@ export async function setBackfilled(
     dir: string,
     phrase: string,
     backfilled: boolean,
+    warn?: (message: string) => void,
 ): Promise<string | null> {
     // The caller holds the common lock. Joining updateSidecar's process
     // queue could wait on an edit that is itself waiting for that lock.
     const read = await readSidecar(dir, phrase);
-    if (read.kind === "unparseable")
-        throw new Error(`backfill mark could not be saved: ${read.reason}`);
+    if (read.kind === "unparseable") {
+        warn?.(
+            `memory: backfill mark skipped for ${phrase}: notes cannot be read`,
+        );
+        return null;
+    }
     const current = read.kind === "ok" ? read.sidecar : EMPTY_SIDECAR;
     if ((current.backfilled ?? false) === backfilled) return null;
     const path = sidecarPath(dir, phrase);

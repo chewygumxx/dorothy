@@ -30,6 +30,7 @@ import {
 import {
     EMPTY_SIDECAR,
     setBackfilled,
+    sidecarPath,
     updateSidecar,
 } from "../memory/sidecar.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
@@ -95,6 +96,28 @@ const lines = () =>
         .map((line) => JSON.parse(line));
 
 describe("acceptRecord", () => {
+    for (const backfill of [false, true])
+        it(`records through an unparseable sidecar with backfill=${backfill}`, async () => {
+            const warnings: string[] = [];
+            const shared = deps({
+                backfill,
+                warn: (message) => warnings.push(message),
+            });
+            await acceptRecord(request([user("a")]), shared);
+            const path = sidecarPath(transcriptDir(env), PHRASE);
+            writeFileSync(path, "{not json");
+            expect(
+                await acceptRecord(request([user("b")]), shared),
+            ).toMatchObject({ accepted: 1 });
+            expect(readFileSync(path, "utf8")).toBe("{not json");
+            expect(warnings).toHaveLength(1);
+            expect(
+                lines()
+                    .filter((line) => line.kind === "user")
+                    .map((line) => line.sourceUuid),
+            ).toEqual(["a", "b"]);
+        });
+
     it("opens a conversation for a new session and appends its events", async () => {
         const result = await acceptRecord(
             request([

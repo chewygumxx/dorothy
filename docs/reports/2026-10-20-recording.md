@@ -400,3 +400,10 @@ directory, 3,116 passing, one existing skip, zero failures.
 The final fix report retains the individual RED and GREEN commands and
 outputs. No real backfill, model call, push or branch change was made.
 The user's backfill remains their call, after these fixes are verified.
+
+### Follow-up
+
+- N1: unparseable sidecars leave the canonical transcript writable. Both
+  recorders warn and skip the mark without changing the broken bytes;
+  a sweep continues to later sessions. Existing review and extraction
+  guards still pass over unreadable notes.

@@ -322,7 +322,12 @@ async function appendEvents(
 ): Promise<string> {
     const phrase = found ?? newPhrase();
     const path = join(dir, `${phrase}.jsonl`);
-    const marked = await setBackfilled(dir, phrase, deps.backfill ?? false);
+    const marked = await setBackfilled(
+        dir,
+        phrase,
+        deps.backfill ?? false,
+        (message) => deps.log.warn(message),
+    );
     const writer = await TranscriptWriter.open(path, now);
     try {
         if (!joined) {

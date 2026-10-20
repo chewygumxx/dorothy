@@ -81,6 +81,7 @@ export function sweepDeps(
                 index,
                 recorder: store.recorder,
                 backfill: backfilled,
+                warn: (message) => log.warn(message),
                 lock: store.lock,
                 loopback: true,
                 sync: binding.sync,

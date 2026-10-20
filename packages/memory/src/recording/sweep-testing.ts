@@ -133,6 +133,7 @@ export async function rig(): Promise<Rig> {
                         index,
                         recorder: null,
                         backfill,
+                        warn: log("warn"),
                         lock: index.lock,
                         loopback: true,
                         sync: () => syncIndex(index, transcriptDir(env)),

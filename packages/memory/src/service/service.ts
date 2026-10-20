@@ -354,6 +354,7 @@ export async function startService(
                     noteVersion(record.host, record.hostVersion);
                     const result = await acceptRecord(record, {
                         env,
+                        warn: (message) => log.warn(message),
                         index,
                         recorder,
                         lock: store.lock,
