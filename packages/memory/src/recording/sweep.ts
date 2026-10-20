@@ -20,7 +20,7 @@ import type {
     RecordRequest,
     RecordResponse,
 } from "@dorothy/core";
-import { readLines } from "../bodies/claude-code.js";
+import { type LinesRead, readLines } from "../bodies/claude-code.js";
 import type { Recorded, SessionReport } from "../bodies/record.js";
 import {
     keepHalt,
@@ -133,6 +133,7 @@ type View = {
         type: string | null;
         reason: string;
         rest: string[];
+        uuid?: string | null;
     } | null;
     unknown: { type: string; example: string }[];
     // A call unanswered holds the events after it.
@@ -329,19 +330,18 @@ async function recordRead(
     mark: number,
     result: HostSweep,
 ) {
-    const { deps, state } = sweeping;
+    const { deps } = sweeping;
     const { host } = session;
     const ended = isOver(sweeping, session);
     if (host === "claude-code" && read.kind === "file")
         return recordClaudeRead(sweeping, session, read, ended, mark, result);
     const found = view(read, ended, session.session ?? null);
-    if (waits(deps, found.events, mark)) {
-        result.waiting += 1;
-        rememberRead(state, session.key, read);
-        return;
-    }
     const id = found.session;
     const named = id ?? basename(session.path, ".jsonl");
+    if (waits(deps, found.events, mark)) {
+        result.waiting += 1;
+        return settle(sweeping, session, read, named, found, ended, result);
+    }
     if (id === null && found.events.length > 0) {
         result.failed += 1;
         deps.log.error(
@@ -385,19 +385,49 @@ async function recordRead(
             });
         }
     }
-    // A torn or raced read may stop in the middle of a record that is
-    // whole next time: it keeps nothing aside and is not remembered, nor
-    // is a halted read, nor one holding events behind an unanswered call.
+    await settle(sweeping, session, read, named, found, ended, result, {
+        phrase: response.phrase,
+        secret,
+    });
+}
+
+// What a read leaves behind once its events are dealt with: halts and new
+// types kept aside, then the read remembered, unless it is torn or raced,
+// halted, holds events behind an unanswered call before the session is
+// over, or its diagnostics could not be kept. A torn or raced read may
+// stop in the middle of a record that is whole next time: it keeps
+// nothing aside. A private session keeps nothing, and is remembered.
+async function settle(
+    sweeping: Sweeping,
+    session: SourceSession,
+    read: SourceRead,
+    named: string,
+    found: View,
+    ended: boolean,
+    result: HostSweep,
+    {
+        phrase = null,
+        secret = false,
+    }: { phrase?: string | null; secret?: boolean } = {},
+) {
+    const { deps, state } = sweeping;
     let kept = true;
     if (!secret && read.stable) {
         // A halt with nothing new to record still belongs to a conversation
         // the session may already have.
-        const phrase =
-            response.phrase ??
+        const conversation =
+            phrase ??
             (found.halt === null
                 ? null
-                : ((await deps.conversation?.(host, named)) ?? null));
-        kept = await keepAside(deps, session, named, found, phrase, result);
+                : ((await deps.conversation?.(session.host, named)) ?? null));
+        kept = await keepAside(
+            deps,
+            session,
+            named,
+            found,
+            conversation,
+            result,
+        );
     }
     const holding = !kept || found.halt !== null || (found.pending && !ended);
     if (secret || !holding) rememberRead(state, session.key, read);
@@ -439,7 +469,7 @@ async function keepAside(
         return kept;
     }
     result.halted += 1;
-    const { line, type, reason, rest } = found.halt;
+    const { line, type, reason, rest, uuid = null } = found.halt;
     try {
         const before = await readRecord(deps.env, named, host);
         await keepHalt(
@@ -453,7 +483,7 @@ async function keepAside(
                 since: null,
                 line,
                 type,
-                uuid: null,
+                uuid,
                 reason,
                 at: (deps.now?.() ?? new Date()).toISOString(),
             },
@@ -470,6 +500,36 @@ async function keepAside(
         `recording: ${host}: ${named} halted at ${unit(host)} ${line} (${type ?? "no type"}): ${reason}`,
     );
     return kept;
+}
+
+// What Claude Code's reader left over, as the other hosts' do: for a
+// session that waits, which the recorder never sees.
+function claudeView(
+    lines: readonly string[],
+    found: LinesRead,
+    session: string,
+): View {
+    return {
+        session,
+        cwd: null,
+        parent: null,
+        events: [],
+        halt:
+            found.halt === null
+                ? null
+                : {
+                      line: found.halt.line + 1,
+                      type: found.halt.type,
+                      reason: found.halt.reason,
+                      rest: lines.slice(found.halt.line),
+                      uuid: found.halt.uuid,
+                  },
+        unknown: found.unknown.map(({ line, type }) => ({
+            type,
+            example: lines[line] ?? "",
+        })),
+        pending: found.held,
+    };
 }
 
 // The directory a Claude Code session began in, from its first line to
@@ -498,12 +558,13 @@ async function recordClaudeRead(
     result: HostSweep,
 ) {
     const { deps, state } = sweeping;
-    if (waits(deps, readLines(read.lines, { ended }).events, mark)) {
-        result.waiting += 1;
-        rememberRead(state, session.key, read);
-        return;
-    }
     const id = basename(session.path, ".jsonl");
+    const lines = readLines(read.lines, { ended });
+    if (waits(deps, lines.events, mark)) {
+        result.waiting += 1;
+        const found = claudeView(read.lines, lines, id);
+        return settle(sweeping, session, read, id, found, ended, result);
+    }
     const cwd = firstCwd(read.lines);
     if (deps.isPrivate?.({ host: "claude-code", session: id, cwd }) ?? false) {
         result.private += 1;

@@ -9,14 +9,15 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DEFAULT_CONFIG } from "@dorothy/core";
-import { userLine } from "../bodies/fixtures.js";
+import { assistantLine, use, userLine } from "../bodies/fixtures.js";
+import { copyPath, readRecord } from "../bodies/unread.js";
 import { fakeEngine } from "../contract/testing.js";
 import { noteRecorded, startJobs } from "../service/jobs.js";
-import { context, line, message, meta, SESSION } from "./fixtures.js";
-import { hermesMessage, hermesSession } from "./hermes-fixtures.js";
+import { call, context, line, message, meta, SESSION } from "./fixtures.js";
+import { hermesCall, hermesMessage, hermesSession } from "./hermes-fixtures.js";
 import { sweepPath } from "./state.js";
 import type { SweepConversation } from "./sweep.js";
 import { HOUR, NOW, type Rig, rig } from "./sweep-testing.js";
@@ -174,6 +175,168 @@ describe("a session whose mtime was refreshed", () => {
         // The mark falls between the session's two events (:01 and :02).
         const [codex] = await r.run({ hosts: ["codex"], now: () => live });
         expect(codex).toMatchObject({ sessions: 1, events: 2, waiting: 0 });
+    });
+});
+
+describe("a waiting session whose read is incomplete", () => {
+    // The first sweep falls inside the session: its first event is old, a
+    // later one (or the call it waits on) is live. The reader may stop
+    // before that later one, so the old prefix alone must not settle it.
+    const codexMid = () => new Date("2026-10-20T09:00:01.500Z");
+    const hermesMid = () => new Date("2026-10-20T10:00:01.500Z");
+    const claudeMid = () => new Date("2026-10-15T09:00:30.000Z");
+    const touched = (iso: string) => NOW.getTime() - Date.parse(iso);
+    const bad = line(
+        "response_item",
+        { type: "message", role: "user", content: "not blocks" },
+        2,
+    );
+    const hints = async () =>
+        JSON.parse(await readFile(sweepPath(r.env), "utf8")).sessions;
+    const claudePath = () =>
+        join(r.home, ".claude/projects/-work", `${SESSION}.jsonl`);
+
+    it("keeps a Codex halt after an old event, and does not remember it", async () => {
+        await r.file(
+            rollout("rollout-halt.jsonl"),
+            text(meta(), context(), message("user", "Old.", 1), bad),
+            touched("2026-10-20T09:00:03.000Z"),
+        );
+        const [codex] = await r.run({ hosts: ["codex"], now: codexMid });
+        expect(codex).toMatchObject({ waiting: 1, halted: 1, sessions: 0 });
+        expect(await readRecord(r.env, SESSION, "codex")).toMatchObject({
+            line: 4,
+        });
+        expect(await hints()).toEqual({});
+    });
+
+    it("keeps a new type after an old event, and retries if it cannot be kept", async () => {
+        await r.file(
+            rollout("rollout-type.jsonl"),
+            text(
+                meta(),
+                context(),
+                message("user", "Old.", 1),
+                line("future_type", { x: 1 }, 2),
+            ),
+            touched("2026-10-20T09:00:03.000Z"),
+        );
+        await mkdir(join(r.home, "state/dorothy"), { recursive: true });
+        await writeFile(join(r.home, "state/dorothy/unread"), "in the way");
+        const [blocked] = await r.run({ hosts: ["codex"], now: codexMid });
+        expect(blocked).toMatchObject({ waiting: 1, sessions: 0 });
+        expect(await hints()).toEqual({});
+        await rm(join(r.home, "state/dorothy/unread"));
+        const [mended] = await r.run({ hosts: ["codex"], now: codexMid });
+        expect(mended).toMatchObject({ waiting: 1, skipped: 0 });
+        expect(
+            await readdir(join(r.home, "state/dorothy/unread/types")),
+        ).toHaveLength(1);
+        // Kept and complete, a waiting session is remembered at last.
+        expect(Object.keys(await hints())).toHaveLength(1);
+    });
+
+    it("holds a Codex call, then records the session once it is over", async () => {
+        await r.file(
+            rollout("rollout-call.jsonl"),
+            text(
+                meta(),
+                context(),
+                message("user", "Old.", 1),
+                call("function_call", "c1", "tool", "{}", 2),
+            ),
+            touched("2026-10-20T09:00:03.000Z"),
+        );
+        const [young] = await r.run({ hosts: ["codex"], now: codexMid });
+        expect(young).toMatchObject({ waiting: 1, sessions: 0 });
+        expect(await hints()).toEqual({});
+        const over = () => new Date(codexMid().getTime() + 2 * HOUR);
+        const [later] = await r.run({ hosts: ["codex"], now: over });
+        expect(later).toMatchObject({ sessions: 1, events: 2, waiting: 0 });
+    });
+
+    it("holds a Hermes call, then records the session once it is over", async () => {
+        await r.hermes((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "user", "Old.");
+            hermesMessage(db, 2, "assistant", null, {
+                calls: JSON.stringify([hermesCall("lost")]),
+            });
+            hermesMessage(db, 3, "assistant", "After.");
+        });
+        const [young] = await r.run({ hosts: ["hermes"], now: hermesMid });
+        expect(young).toMatchObject({ waiting: 1, sessions: 0 });
+        expect(await hints()).toEqual({});
+        const over = () => new Date(hermesMid().getTime() + 2 * HOUR);
+        const [later] = await r.run({ hosts: ["hermes"], now: over });
+        expect(later).toMatchObject({ sessions: 1, events: 3, waiting: 0 });
+    });
+
+    it("keeps a Hermes halt after an old event", async () => {
+        await r.hermes((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "user", "Old.");
+            hermesMessage(db, 2, "user", "\0json:{");
+        });
+        const [hermes] = await r.run({ hosts: ["hermes"], now: hermesMid });
+        expect(hermes).toMatchObject({ waiting: 1, halted: 1 });
+        expect(
+            await readRecord(r.env, "fixture-session", "hermes"),
+        ).toMatchObject({ line: 2 });
+        expect(await hints()).toEqual({});
+    });
+
+    it("holds a Claude call, then records the session once it is over", async () => {
+        await r.file(
+            claudePath(),
+            `${[
+                userLine("u1", 0, "Old."),
+                assistantLine("a1", 1, [use("t1", "Bash", {})]),
+            ].join("\n")}\n`,
+            touched("2026-10-15T09:01:30.000Z"),
+        );
+        const [young] = await r.run({ hosts: ["claude-code"], now: claudeMid });
+        expect(young).toMatchObject({ waiting: 1, sessions: 0 });
+        expect(await hints()).toEqual({});
+        const over = () => new Date(claudeMid().getTime() + 2 * HOUR);
+        const [later] = await r.run({ hosts: ["claude-code"], now: over });
+        expect(later).toMatchObject({ sessions: 1, waiting: 0 });
+        const [conversation] = await r.conversations();
+        expect(conversation?.map((event) => event.kind)).toEqual([
+            "session",
+            "user",
+            "tool",
+        ]);
+    });
+
+    it("keeps a Claude halt after an old event, and does not remember it", async () => {
+        await r.file(
+            claudePath(),
+            `${[userLine("u1", 0, "Old."), "{torn but whole"].join("\n")}\n`,
+            touched("2026-10-15T09:01:30.000Z"),
+        );
+        const [claude] = await r.run({
+            hosts: ["claude-code"],
+            now: claudeMid,
+        });
+        expect(claude).toMatchObject({ waiting: 1, halted: 1, sessions: 0 });
+        expect(await readRecord(r.env, SESSION)).toMatchObject({ line: 2 });
+        expect(await readFile(copyPath(r.env, SESSION), "utf8")).toBe(
+            "{torn but whole\n",
+        );
+        expect(await hints()).toEqual({});
+    });
+
+    it("keeps a Claude new type after an old event", async () => {
+        await r.file(
+            claudePath(),
+            `${[userLine("u1", 0, "Old."), JSON.stringify({ type: "future", sessionId: SESSION })].join("\n")}\n`,
+            touched("2026-10-15T09:01:30.000Z"),
+        );
+        await r.run({ hosts: ["claude-code"], now: claudeMid });
+        expect(
+            await readdir(join(r.home, "state/dorothy/unread/types")),
+        ).toHaveLength(1);
     });
 });
 
