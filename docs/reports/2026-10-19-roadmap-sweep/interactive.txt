@@ -1,0 +1,205 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-roadmap-sweep/interactive.txt
+
+Probe: Interactive dorothy --claude
+Date: 2026-10-20
+Claude Code: 2.1.300
+Bun: 1.4.2
+Herdr: 0.9.5
+Model: claude-haiku-5-5 (--model haiku; ANTHROPIC_MODEL=haiku for chat)
+Code under test: dc09077
+Verdict: PASS
+
+Commands (only our created tab was controlled):
+  test "${HERDR_ENV:-}" = 1
+  herdr --help
+  herdr tab
+  herdr pane
+  claude --version
+  bun --version
+  herdr --version
+  herdr tab create --label probe --cwd <checkout> --no-focus
+  herdr pane run w35:p8 \
+    "cd <probe-root>/interactive/cwd && python3 <probe-root>/probe.py \
+     interactive interactive --model haiku --tools '' --session-id <session>"
+  herdr pane send-text w35:p8 \
+    'Probe only: do not use tools or modify anything. Who are you? Answer in one short sentence.'
+  herdr pane send-keys w35:p8 enter
+  herdr pane read w35:p8 --source recent-unwrapped --lines 65
+  herdr pane send-text w35:p8 /exit
+  herdr pane send-keys w35:p8 enter
+
+The returned tab was w35:t7, its new pane w35:p8. Calls used these IDs,
+not another tab's focus. The identity prompt was accidentally submitted
+twice while checking terminal delivery. Both replies and their cost are
+counted; neither turn read files or used tools.
+
+Selected terminal output:
+ ▐▛███▛█   Claude Code v2.1.300
+▝▜██████▀  Haiku 5.5 · Claude Pro
+❯ Probe only: do not use tools or modify anything. Who are you? Answer in one short sentence.
+● I'm Dorothy, a warm and curious assistant here to help you with your work.
+✻ Cogitated for 1s · done Tue 20 Oct - 14:04:11
+❯ Probe only: do not use tools or modify anything. Who are you? Answer in one short sentence.
+● I'm Dorothy, an agentic assistant here to help you reach your goals.
+✻ Brewed for 1s · done Tue 20 Oct - 14:04:30
+
+Gateway observations:
+{"kind":"request","path":"/v1/messages","model":"claude-haiku-5-5","systemBlocks":0,"identity":false,"markerLeft":false,"rootGuide":false,"packageGuide":false,"memoryIndex":false,"memoryHook":false}
+{"kind":"request","path":"/v1/messages","model":"claude-haiku-5-5","systemBlocks":3,"identity":false,"markerLeft":false,"rootGuide":false,"packageGuide":false,"memoryIndex":false,"memoryHook":false}
+{"kind":"request","path":"/v1/messages","model":"claude-haiku-5-5","systemBlocks":4,"identity":true,"markerLeft":false,"rootGuide":false,"packageGuide":false,"memoryIndex":false,"memoryHook":false}
+{"kind":"request","path":"/v1/messages","model":"claude-haiku-5-5","systemBlocks":4,"identity":true,"markerLeft":false,"rootGuide":false,"packageGuide":false,"memoryIndex":false,"memoryHook":false}
+{"kind":"gateway-stats","injected":2,"drift":0}
+
+Main-request result: two four-block requests with identity=true,
+markerLeft=false; gateway injected=2, drift=0. Other startup requests were
+unmarked and passed through. Interactive behavior agrees with the earlier
+print-mode identity probe.
+Cost: two live user turns, including the duplicate setup question.
+
+Isolation and observation, shared by these six captures
+------------------------------------------------------
+ROOT was made with Python tempfile.mkdtemp(prefix="dorothy-task11-",
+                                        dir="/tmp").
+Under ROOT/<probe> we made data, state, cache, config and runtime roots.
+Every Dorothy invocation received all four XDG roots explicitly; runtime
+was also isolated. Claude's existing CLAUDE_CONFIG_DIR and login were kept.
+No login, user setting or project guidance was edited.
+Before every launch: env | grep CLAUDE_CODE_ (values masked); output: none.
+The helper also removes inherited CLAUDE_CODE_* variables and CLAUDECODE.
+The actual installed Claude and Bun binaries were used, bypassing mise
+shims once the temporary XDG roots hid mise's trust database.
+
+The observation helper invokes the production runClaude used by --claude.
+Its startGateway dependency uses the real gateway, with an additional
+loopback upstream observer forwarding to the real API using the user's
+normal login. The observer records booleans and counts, never headers,
+full prompts or credentials. A gateway injection proves its incoming main
+request carried the marker; the captured downstream system then proves
+that the gateway replaced it with Dorothy's identity.
+
+Normal --claude probes used this throwaway config:
+[memory]
+enabled = false
+[history]
+enabled = false
+This keeps recording, recall and model reviews out of an identity probe.
+It does not replace Claude Code's own configuration.
+
+Helper sources below are the final helpers used in this run. Absolute
+paths are normalized to <probe-root> and <checkout>; substitute the
+mkdtemp root and checkout before rerunning. The helpers use private files
+only for these probes' results and selected observations. UUIDs are
+redacted in the captures. No real key or account address is present.
+
+observe.ts (full observation helper):
+import { appendFileSync } from 'node:fs';
+import { runClaude } from '<checkout>/packages/cli/src/claude.ts';
+import { startGateway, MARKER } from '<checkout>/packages/gateway/src/index.ts';
+
+const root = '<probe-root>';
+const [mode, name, ...args] = process.argv.slice(2);
+const log = (value: unknown) => appendFileSync(`${root}/${name}.observations.jsonl`, JSON.stringify(value) + '\n');
+const base = new URL(process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com');
+const inspector = Bun.serve({hostname: '127.0.0.1', port: 0, idleTimeout: 0,
+    async fetch(request) {
+        const url = new URL(request.url);
+        const bytes = request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer();
+        if (bytes !== undefined && /\/v1\/messages(?:\/count_tokens)?$/.test(url.pathname)) {
+            try {
+                const body = JSON.parse(new TextDecoder().decode(bytes));
+                const text = JSON.stringify({system: body.system, messages: body.messages});
+                const systems = typeof body.system === 'string' ? [body.system] : (body.system ?? []).map((b: any) => b.text ?? '');
+                log({kind:'request', path:url.pathname, model:body.model,
+                    systemBlocks: systems.length,
+                    identity:systems.some((s: string) => s.includes('You are Dorothy,')),
+                    markerLeft:systems.some((s: string) => s.includes(MARKER)),
+                    rootGuide:text.includes('# AGENTS.md'),
+                    packageGuide:text.includes('# packages/tui/AGENTS.md'),
+                    memoryIndex:text.includes('./memory-priorities.md') && text.includes('./target-harnesses.md'),
+                    memoryHook:text.includes('Memory ranks compatibility, access, progressive disclosure, persistence')});
+            } catch { log({kind:'unparsed-request', path:url.pathname}); }
+        }
+        const headers = new Headers(request.headers);
+        headers.delete('host'); headers.delete('connection');
+        const target = new URL(url.pathname + url.search, base);
+        const reply = await fetch(target, {method:request.method, headers, body:bytes, signal:request.signal, redirect:'manual'});
+        const responseHeaders = new Headers(reply.headers);
+        responseHeaders.delete('content-encoding'); responseHeaders.delete('content-length'); responseHeaders.delete('transfer-encoding');
+        return new Response(reply.body, {status:reply.status, headers:responseHeaders});
+    }
+});
+try {
+    if (mode === 'dorothy') {
+        process.exitCode = await runClaude(args, {
+            env: process.env,
+            cwd: process.cwd(),
+            self:[process.execPath, '--no-env-file', '<checkout>/packages/cli/src/index.ts'],
+            startGateway() {
+                const gateway = startGateway({upstream:inspector.url.origin});
+                log({kind:'gateway-origin',port:new URL(gateway.url).port,inspectorPort:String(inspector.port)});
+                return {...gateway, stop() {log({kind:'gateway-stats', ...gateway.stats});gateway.stop();}};
+            },
+        });
+    } else {
+        const child = Bun.spawn(['claude', ...args], {env:{...process.env, ANTHROPIC_BASE_URL:inspector.url.origin}, stdin:'inherit',stdout:'inherit',stderr:'inherit'});
+        process.exitCode = await child.exited;
+    }
+} finally { inspector.stop(true); }
+
+probe.py (launch, environment and result helper):
+import os, json, re, subprocess, sys, uuid
+from pathlib import Path
+ROOT=Path('<probe-root>')
+REPO=Path('<checkout>')
+BUN='/home/chewygumxx/.local/share/mise/installs/bun/1.4.2/bin/bun'
+
+def env_for(name):
+    # Match the instructed pre-probe check, printing names rather than values.
+    check=subprocess.run("env | grep CLAUDE_CODE_ | sed 's/=.*/=<removed for probe>/'",shell=True,capture_output=True,text=True)
+    print('Parent CLAUDE_CODE_ check: '+(check.stdout.strip() or 'none'), flush=True)
+    env={k:v for k,v in os.environ.items() if not k.startswith('CLAUDE_CODE_') and not k.startswith('npm_') and k!='CLAUDECODE'}
+    for key,part in [('XDG_DATA_HOME','data'),('XDG_STATE_HOME','state'),('XDG_CACHE_HOME','cache'),('XDG_CONFIG_HOME','config'),('XDG_RUNTIME_DIR','runtime')]:
+        env[key]=str(ROOT/name/part)
+    env['CLAUDE_CONFIG_DIR']=os.environ.get('CLAUDE_CONFIG_DIR',str(Path.home()/'.claude'))
+    env['PATH']=str(Path(BUN).parent)+':/opt/claude-code/bin:/home/chewygumxx/.local/share/mise/installs/node/24/bin:'+env['PATH']
+    env.pop('FORCE_COLOR',None)
+    env['ANTHROPIC_MODEL']='haiku'
+    return env
+
+def scrub(text):
+    text=re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]','',text)
+    text=re.sub(r'[A-Za-z0-9_.+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', '<account-redacted>',text)
+    text=re.sub(r'sk-ant-[A-Za-z0-9_-]+','<credential-redacted>',text)
+    text=re.sub(r'(?i)(bearer\s+)[^\s"\']+',r'\1<credential-redacted>',text)
+    text=re.sub(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b','<session>',text)
+    return text.replace('\u2014','-')
+
+if __name__=='__main__':
+    mode,name,*args=sys.argv[1:]
+    env=env_for(name if name in ['package','memory','proxy','compaction'] else 'interactive')
+    if mode=='compaction':
+        env['DOTENVX_CONFIG']=os.environ.get('DOTENVX_CONFIG',str(Path(os.environ.get('XDG_CONFIG_HOME',str(Path.home()/'.config')))/'dotenvx'))
+        os.chdir(REPO)
+        os.execve(BUN,[BUN,'x','--no-install','dotenvx','run','--quiet','--',BUN,'--no-env-file',str(REPO/'packages/cli/src/index.ts')],env)
+    if mode=='interactive':
+        os.execve(BUN,[BUN,'--no-env-file',str(ROOT/'observe.ts'),'dorothy',name,*args],env)
+    cwd=REPO/'packages/tui/src' if name=='package' else REPO if name=='memory' else ROOT/'interactive/cwd'
+    command=[BUN,'--no-env-file',str(ROOT/'observe.ts'),mode,name,*args]
+    print('Starting probe '+name,flush=True)
+    result=subprocess.run(command,cwd=cwd,env=env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,timeout=150)
+    try:
+        data=json.loads(result.stdout)
+        if isinstance(data,list): data=next(d for d in reversed(data) if d.get('type')=='result')
+        summary={k:data.get(k) for k in ['type','subtype','is_error','result','total_cost_usd','num_turns','usage']}
+        if data.get('session_id'):
+            (ROOT/(name+'.session')).write_text(data['session_id'])
+        text=json.dumps(summary,ensure_ascii=False,indent=2)
+    except Exception:
+        text=result.stdout
+    (ROOT/(name+'.result.txt')).write_text(scrub(text)+'\nstderr: '+scrub(result.stderr)+'\nexit: '+str(result.returncode)+'\n')
+    print(scrub(text))
+    print('stderr: '+scrub(result.stderr))
+    print('exit: '+str(result.returncode))
+    sys.exit(result.returncode)
