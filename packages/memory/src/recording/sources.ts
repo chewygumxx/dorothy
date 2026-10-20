@@ -47,17 +47,17 @@ export function sameFingerprint(
     a: Fingerprint | undefined,
     b: Fingerprint,
 ): boolean {
-    if (a?.kind !== b.kind) return false;
+    if (a === undefined || a.kind !== b.kind) return false;
     if (a.kind === "rows" && b.kind === "rows")
         return a.maxId === b.maxId && a.count === b.count;
-    return (
-        a.kind === "file" &&
-        b.kind === "file" &&
-        a.size === b.size &&
-        a.mtime === b.mtime &&
-        a.inode === b.inode &&
-        a.device === b.device
-    );
+    if (a.kind === "file" && b.kind === "file")
+        return (
+            a.size === b.size &&
+            a.mtime === b.mtime &&
+            a.inode === b.inode &&
+            a.device === b.device
+        );
+    return false;
 }
 function absolute(path: string): string {
     if (!isAbsolute(path)) throw new RangeError("invalid recording root");
@@ -68,11 +68,23 @@ function hostRoot(env: Env, key: string, fallback: string): string {
     if (!env.HOME) throw new RangeError("missing recording root");
     return join(absolute(env.HOME), fallback);
 }
+const vanished = (error: unknown) =>
+    (error as NodeJS.ErrnoException).code === "ENOENT";
+// An entry removed between a listing and its use is skipped, never the
+// host: its session is either gone or listed again next sweep.
 async function existing(path: string): Promise<string | null> {
     try {
         return await realpath(path);
     } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+        if (vanished(error)) return null;
+        throw error;
+    }
+}
+async function entries(path: string) {
+    try {
+        return await readdir(path, { withFileTypes: true });
+    } catch (error) {
+        if (vanished(error)) return [];
         throw error;
     }
 }
@@ -91,7 +103,13 @@ async function readFileSession(
     path: string,
     previous?: Fingerprint,
 ): Promise<SourceRead | null> {
-    const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    let handle: Awaited<ReturnType<typeof open>>;
+    try {
+        handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    } catch (error) {
+        if (vanished(error)) return null;
+        throw error;
+    }
     try {
         const before = fileFingerprint(await handle.stat({ bigint: true }));
         if (sameFingerprint(previous, before)) return null;
@@ -114,14 +132,19 @@ async function readFileSession(
         await handle.close();
     }
 }
-async function fileSessions(
+export async function fileSessions(
     host: "claude-code" | "codex",
     paths: string[],
 ): Promise<SourceSession[]> {
     const result: SourceSession[] = [];
     for (const path of paths.sort()) {
-        const found = await stat(path, { bigint: true });
-        if (!found.isFile()) continue;
+        const found = await stat(path, { bigint: true }).catch(
+            (error: unknown) => {
+                if (vanished(error)) return null;
+                throw error;
+            },
+        );
+        if (found === null || !found.isFile()) continue;
         result.push({
             host,
             key: JSON.stringify([host, path]),
@@ -135,7 +158,7 @@ async function fileSessions(
 }
 async function rollouts(root: string): Promise<string[]> {
     const paths: string[] = [];
-    for (const entry of await readdir(root, { withFileTypes: true })) {
+    for (const entry of await entries(root)) {
         const path = join(root, entry.name);
         if (entry.isDirectory()) paths.push(...(await rollouts(path)));
         else if (
@@ -162,14 +185,10 @@ export function claudeSource(env: Env, dirs: readonly string[] = []): Source {
             }
             const paths: string[] = [];
             for (const root of projects)
-                for (const project of await readdir(root, {
-                    withFileTypes: true,
-                })) {
+                for (const project of await entries(root)) {
                     if (!project.isDirectory()) continue;
                     const dir = join(root, project.name);
-                    for (const entry of await readdir(dir, {
-                        withFileTypes: true,
-                    }))
+                    for (const entry of await entries(dir))
                         if (
                             entry.isFile() &&
                             entry.name.endsWith(".jsonl") &&
@@ -234,12 +253,12 @@ async function readHermesSession(
     previous?: Fingerprint,
 ): Promise<SourceRead | null> {
     const before = rowSummaries(path, session)[0];
-    if (!before) throw new Error("Hermes session is no longer available");
+    if (!before) return null;
     const fingerprint = rowsFingerprint(before);
     if (sameFingerprint(previous, fingerprint)) return null;
     // A physical max is a change hint, never the reader's source-id floor.
     const read = readHermes(path, 0, session)[0];
-    if (!read) throw new Error("Hermes session is no longer available");
+    if (!read) return null;
     const after = rowSummaries(path, session)[0];
     return {
         kind: "hermes",

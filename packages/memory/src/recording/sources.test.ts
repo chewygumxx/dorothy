@@ -36,6 +36,7 @@ import {
 import {
     claudeSource,
     codexSource,
+    fileSessions,
     hermesSource,
     type SourceSession,
 } from "./sources.js";
@@ -411,5 +412,46 @@ describe("recording Hermes observations", () => {
         env = { HERMES_HOME: join(root, "explicit-hermes") };
         const path = await hermesFixture((db) => hermesSession(db));
         expect(only(await hermesSource(env).list()).path).toBe(path);
+    });
+    it("reads a Hermes session deleted since the listing as nothing", async () => {
+        const path = await hermesFixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "user", "Synthetic speech.");
+        });
+        const session = only(await hermesSource(env).list());
+        const writer = new Database(path);
+        try {
+            writer.run("DELETE FROM messages");
+            writer.run("DELETE FROM sessions");
+        } finally {
+            writer.close();
+        }
+        expect(await session.read()).toBeNull();
+    });
+});
+
+describe("recording vanishing entries", () => {
+    it("reads a file removed since the listing as nothing", async () => {
+        const path = await file(
+            join(root, ".codex/sessions/rollout-gone.jsonl"),
+            `${meta()}\n`,
+        );
+        const session = only(await codexSource(env).list());
+        await rm(path);
+        expect(await session.read()).toBeNull();
+    });
+    it("skips a listed path that is gone, not the whole listing", async () => {
+        const kept = await file(join(root, "kept.jsonl"));
+        const sessions = await fileSessions("codex", [
+            join(root, "gone.jsonl"),
+            kept,
+        ]);
+        expect(sessions.map((session) => session.path)).toEqual([kept]);
+    });
+    it("still fails on an error other than a vanished entry", async () => {
+        const kept = await file(join(root, "kept.jsonl"));
+        await expect(
+            fileSessions("codex", [`${kept}/under-a-file`]),
+        ).rejects.toThrow();
     });
 });
