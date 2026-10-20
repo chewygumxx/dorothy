@@ -697,3 +697,64 @@ describe("--serve and --mcp", () => {
         }
     });
 });
+
+describe("--sweep", () => {
+    it("sweeps once, or backfills the backlog, or reads again", () => {
+        expect(parseArgs(["--sweep"], false)).toEqual({
+            kind: "sweep",
+            backfill: false,
+            reread: false,
+        });
+        expect(parseArgs(["--sweep", "--backfill"], false)).toEqual({
+            kind: "sweep",
+            backfill: true,
+            reread: false,
+        });
+        expect(parseArgs(["--sweep", "--reread"], false)).toEqual({
+            kind: "sweep",
+            backfill: false,
+            reread: true,
+        });
+    });
+
+    it("dismisses a halt of a harness, named by host and session", () => {
+        expect(
+            parseArgs(["--sweep", "--dismiss", "codex", "a b"], false),
+        ).toEqual({ kind: "sweep-dismiss", host: "codex", session: "a b" });
+        expect(
+            parseArgs(["--sweep", "--dismiss", "hermes", "-x"], false).kind,
+        ).toBe("usage");
+        expect(
+            parseArgs(["--sweep", "--dismiss", "hermes", "--", "-x"], false),
+        ).toEqual({ kind: "sweep-dismiss", host: "hermes", session: "-x" });
+    });
+
+    it("refuses what it does not take", () => {
+        for (const argv of [
+            ["--sweep", "now"],
+            ["--sweep", "--backfill", "--reread"],
+            ["--sweep", "--dismiss"],
+            ["--sweep", "--dismiss", "codex"],
+            ["--sweep", "--dismiss", "codex", ""],
+            ["--sweep", "--dismiss", "codex", "a", "b"],
+            ["--sweep", "--dismiss", "emacs", "a"],
+            ["--sweep", "--dismiss", "claude-code", "a"],
+            ["--sweep", "--dismiss", "codex", "a", "--backfill"],
+            ["--sweep", "--dismiss", "codex", "a", "--reread"],
+            ["--sweep", "--backfill", "--backfill"],
+            ["--backfill"],
+        ]) {
+            expect({ argv, kind: parseArgs(argv, false).kind }).toEqual({
+                argv,
+                kind: "usage",
+            });
+        }
+    });
+
+    it("is in --help, with --backfill", () => {
+        expect(USAGE).toContain("dorothy --sweep");
+        expect(USAGE).toContain("--backfill");
+        expect(USAGE).toContain("--reread");
+        expect(USAGE).toContain("--dismiss <host> <session>");
+    });
+});

@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-15
-mtime: 2026-10-20
+mtime: 2026-10-21
 spdx: GPL-3.0-only
 title: packages/memory/src/bodies/AGENTS.md
 description: >-
@@ -64,7 +64,12 @@ reader, the store and reviews alone. The CLI loads both lazily.
   the notices a hook leaves for the next start (`notices.jsonl`);
   `startNotices` for both bodies, which tells a type once by a
   `.told` marker made only if none is there, and `unreadReport` for
-  `--check`.
+  `--check`. A record's `host` (Claude Code where absent) names another
+  harness, whose files take `<host>-<hash of the id>`; atomic `logged/`
+  markers tell each halt or missing-session error once. Resolving or
+  dismissing a halt removes its marker; a dismissed standing halt stays
+  quiet, and a later recurrence is logged anew. `--reread` and
+  `--dismiss` stay Claude Code's.
 - `log.ts`: the hook's log, `$XDG_CACHE_HOME/dorothy/claude-hook.log`,
   a message to one line however it breaks, rotated past 1 MB to one
   `.1` file (`rotate` moves it aside first, so a log another hook
@@ -73,7 +78,8 @@ reader, the store and reviews alone. The CLI loads both lazily.
   chat's rule (`afterStop`); a `SessionEnd` notes its session and hands
   it to a detached catch-up; a catch-up does what `SessionEnd` would
   for each session of a launch (`afterEnd`), then removes its notes;
-  `--reread` and `--dismiss` resolve or silence a halt. Reviews run
+  `--reread` and `--dismiss` resolve or silence a halt; rereads retain
+  the backfill provenance kept with it. Reviews run
   through `memory/reviewer.ts`'s `Reviewer`, as chat's do, under the
   index's claims, with an agent asked for (`HookDeps.agent`) when one
   runs. The detached catch-up starts in the environment `claude` gave

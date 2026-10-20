@@ -14,13 +14,26 @@ import {
     existsSync,
     mkdirSync,
     mkdtempSync,
+    readdirSync,
     readFileSync,
     rmSync,
     writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Env, RecordEvent, RecordRequest } from "@dorothy/core";
+import {
+    type Env,
+    newPhrase,
+    type RecordEvent,
+    type RecordRequest,
+} from "@dorothy/core";
+import {
+    EMPTY_SIDECAR,
+    readSidecar,
+    setBackfilled,
+    sidecarPath,
+    updateSidecar,
+} from "../memory/sidecar.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { syncIndex } from "../recall/sync.js";
 import {
@@ -84,6 +97,49 @@ const lines = () =>
         .map((line) => JSON.parse(line));
 
 describe("acceptRecord", () => {
+    for (const backfill of [false, true])
+        it(`records through an unparseable sidecar with backfill=${backfill}`, async () => {
+            const warnings: string[] = [];
+            const shared = deps({
+                backfill,
+                warn: (message) => warnings.push(message),
+            });
+            await acceptRecord(request([user("a")]), shared);
+            const path = sidecarPath(transcriptDir(env), PHRASE);
+            writeFileSync(path, "{not json");
+            expect(
+                await acceptRecord(request([user("b")]), shared),
+            ).toMatchObject({ accepted: 1 });
+            expect(readFileSync(path, "utf8")).toBe("{not json");
+            expect(warnings).toHaveLength(1);
+            expect(
+                lines()
+                    .filter((line) => line.kind === "user")
+                    .map((line) => line.sourceUuid),
+            ).toEqual(["a", "b"]);
+        });
+
+    for (const initiallyBackfilled of [false, true])
+        it(`keeps prior review eligibility during backfill, marked=${initiallyBackfilled}`, async () => {
+            await acceptRecord(
+                request([user("a")]),
+                deps({ backfill: initiallyBackfilled }),
+            );
+            expect(
+                await acceptRecord(
+                    request([user("a"), user("b")]),
+                    deps({
+                        backfill: true,
+                        sync: () => syncIndex(index, transcriptDir(env)),
+                    }),
+                ),
+            ).toMatchObject({ accepted: 1 });
+            const read = await readSidecar(transcriptDir(env), PHRASE);
+            expect(read.kind === "ok" && read.sidecar.backfilled === true).toBe(
+                initiallyBackfilled,
+            );
+        });
+
     it("opens a conversation for a new session and appends its events", async () => {
         const result = await acceptRecord(
             request([
@@ -146,6 +202,87 @@ describe("acceptRecord", () => {
                 .filter((line) => line.kind === "user")
                 .map((line) => line.sourceUuid),
         ).toEqual(["a", "b", "c"]);
+    });
+
+    for (const host of ["codex", "hermes"])
+        it(`serialises new ${host} sessions across index connections`, async () => {
+            const other = RecallIndex.open(indexPath(env));
+            // Order SQLite work as separate processes waiting on the store
+            // lock would: a synchronous BUSY wait cannot yield this event loop.
+            let queue: Promise<unknown> = Promise.resolve();
+            const ordered = <T>(work: () => Promise<T>): Promise<T> => {
+                const next = queue.then(work);
+                queue = next.catch(() => {});
+                return next;
+            };
+            let synced = 0;
+            const gate = Promise.withResolvers<void>();
+            const bothSynced = async (connection: RecallIndex) => {
+                await ordered(() => syncIndex(connection, transcriptDir(env)));
+                if (++synced === 2) gate.resolve();
+                await gate.promise;
+            };
+            try {
+                const record = { ...request([user("a")]), host };
+                const results = await Promise.all([
+                    acceptRecord(
+                        record,
+                        deps({
+                            sync: () => bothSynced(index),
+                            lock: (work) => ordered(() => index.lock(work)),
+                        }),
+                    ),
+                    acceptRecord(
+                        record,
+                        deps({
+                            index: other,
+                            sync: () => bothSynced(other),
+                            phrase: newPhrase,
+                            lock: (work) => ordered(() => other.lock(work)),
+                        }),
+                    ),
+                ]);
+                expect(
+                    results.reduce((sum, result) => sum + result.accepted, 0),
+                ).toBe(1);
+                expect(
+                    readdirSync(transcriptDir(env)).filter((name) =>
+                        name.endsWith(".jsonl"),
+                    ),
+                ).toHaveLength(1);
+            } finally {
+                other.close();
+            }
+        });
+
+    it("marks a backfill under the lock while another sidecar edit waits", async () => {
+        const pending: Promise<unknown>[] = [];
+        try {
+            await index.lock(async () => {
+                pending.push(
+                    updateSidecar(
+                        transcriptDir(env),
+                        PHRASE,
+                        (current) => ({
+                            ...(current ?? EMPTY_SIDECAR),
+                            title: "Synthetic.",
+                        }),
+                        index.lock,
+                    ),
+                );
+                const marked = setBackfilled(transcriptDir(env), PHRASE, true);
+                pending.push(marked);
+                const completed = await Promise.race([
+                    marked.then(() => true),
+                    new Promise<boolean>((resolve) =>
+                        setTimeout(() => resolve(false), 1000),
+                    ),
+                ]);
+                expect(completed).toBe(true);
+            });
+        } finally {
+            await Promise.allSettled(pending);
+        }
     });
 
     describe("reading only what was appended", () => {

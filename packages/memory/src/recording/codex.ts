@@ -1,0 +1,332 @@
+// vim:set expandtab shiftwidth=4 filetype=typescript:
+// SPDX-License-Identifier: GPL-3.0-only
+
+//
+//
+// ~chewygumxx/dorothy.git
+// ::: :/packages/memory/src/recording/codex.ts
+//
+//
+
+// Pure rollout decoding. The contract's record path scrubs and trims
+// tool text when these events are written. No host store is opened here.
+import type { RecordEvent } from "@dorothy/core";
+
+type Json = Record<string, unknown>;
+export type CodexHalt = { line: number; type: string | null; reason: string };
+export type CodexRead = {
+    session: string | null;
+    cwd: string | null;
+    model: string | null;
+    at: string | null;
+    events: RecordEvent[];
+    halt: CodexHalt | null;
+    unknown: { line: number; type: string }[];
+    // Zero-based index in the supplied lines of an unanswered call.
+    pending: number | null;
+};
+
+// Known bookkeeping and duplicate event-message envelopes.
+const BOOKKEEPING = new Set([
+    "compacted",
+    "token_usage_record",
+    "world_state",
+    "inter_agent_communication_metadata",
+    "response_item/reasoning",
+    "response_item/agent_message",
+    "event_msg/item_completed",
+    "event_msg/task_started",
+    "event_msg/task_complete",
+    "event_msg/thread_settings_applied",
+    "event_msg/token_count",
+    "event_msg/user_message",
+    "event_msg/agent_message",
+]);
+const NON_TEXT_BLOCKS = new Set([
+    "input_file",
+    "input_audio",
+    "refusal",
+    "reasoning_text",
+    "summary_text",
+    "encrypted_content",
+]);
+class Unreadable extends Error {}
+const object = (value: unknown): value is Json =>
+    value !== null && typeof value === "object" && !Array.isArray(value);
+const text = (value: unknown, reason: string): string => {
+    if (typeof value !== "string") throw new Unreadable(reason);
+    return value;
+};
+const nonempty = (value: unknown, reason: string) => {
+    const result = text(value, reason);
+    if (result.trim() === "") throw new Unreadable(reason);
+    return result;
+};
+function time(record: Json): string {
+    const value = Date.parse(text(record.timestamp, "no timestamp"));
+    if (!Number.isFinite(value)) throw new Unreadable("invalid timestamp");
+    return new Date(value).toISOString();
+}
+// Codex puts environment and repository instructions in the user role.
+// client_authored is false on ordinary speech too; use the wrappers.
+function userText(value: string): string | null {
+    let rest = value;
+    for (;;) {
+        const start = rest.trimStart();
+        const endTag = start.startsWith("<environment_context>")
+            ? "</environment_context>"
+            : start.startsWith("# AGENTS.md instructions") ||
+                start.startsWith("<INSTRUCTIONS>")
+              ? "</INSTRUCTIONS>"
+              : null;
+        if (endTag === null) return rest;
+        const end = start.indexOf(endTag);
+        if (end < 0) return null;
+        rest = start.slice(end + endTag.length).trimStart();
+        if (rest === "") return null;
+    }
+}
+function blocks(
+    value: unknown,
+    separator = "\n\n",
+    spoken: (value: string) => string | null = (value) => value,
+): string {
+    if (!Array.isArray(value)) throw new Unreadable("text without its blocks");
+    return value
+        .map((block) => {
+            if (!object(block) || typeof block.type !== "string")
+                throw new Unreadable("an unsupported text block");
+            if (block.type === "input_image") return "[image]";
+            if (NON_TEXT_BLOCKS.has(block.type)) return null;
+            if (block.type === "input_text" || block.type === "output_text")
+                return spoken(
+                    text(block.text, "a text block without its text"),
+                );
+            throw new Unreadable("an unsupported text block");
+        })
+        .filter((part): part is string => part !== null)
+        .join(separator);
+}
+
+type Decoded =
+    | { line: number; event: RecordEvent }
+    | {
+          line: number;
+          call: {
+              answerKey: string;
+              name: string;
+              input: string;
+              at: string;
+              sourceId: string;
+          };
+      };
+export type CodexReadOptions = {
+    ended?: boolean;
+    // Physical lines preceding an appended slice; default is a full rollout.
+    lineOffset?: number;
+};
+
+type AnswerQueue = { outputs: string[]; next: number };
+type DecodeState = {
+    read: CodexRead;
+    decoded: Decoded[];
+    answers: Map<string, AnswerQueue>;
+};
+type MappedRecord = {
+    record: Json;
+    payload: Json;
+    type: string;
+    line: number;
+    sourceId: string;
+};
+type Decoder = (item: MappedRecord, state: DecodeState) => void;
+
+const decodeSession: Decoder = ({ record, payload }, { read }) => {
+    const session = nonempty(payload.id ?? payload.session_id, "no session id");
+    if (read.session !== null && read.session !== session)
+        throw new Unreadable("a different session id");
+    const at = time(record);
+    const cwd =
+        payload.cwd === undefined
+            ? null
+            : nonempty(payload.cwd, "no working directory");
+    read.session = session;
+    read.at ??= at;
+    read.cwd ??= cwd;
+};
+const decodeContext: Decoder = ({ record, payload }, { read }) => {
+    const cwd = nonempty(payload.cwd, "no working directory");
+    const model = nonempty(payload.model, "no model");
+    time(record);
+    read.cwd = cwd;
+    read.model = model;
+};
+const decodeCall: Decoder = (
+    { record, payload, type, line, sourceId },
+    { decoded },
+) => {
+    const id = nonempty(payload.call_id, "a tool call without its id");
+    const name = nonempty(payload.name, "a tool call without its name");
+    const input = text(
+        type === "response_item/function_call"
+            ? payload.arguments
+            : payload.input,
+        "a tool call without its input",
+    );
+    decoded.push({
+        line,
+        call: {
+            answerKey: `${type}_output/${id}`,
+            name,
+            input,
+            at: time(record),
+            sourceId,
+        },
+    });
+};
+const decodeOutput: Decoder = ({ record, payload, type }, { answers }) => {
+    const id = nonempty(payload.call_id, "a tool output without its call id");
+    const output =
+        typeof payload.output === "string"
+            ? payload.output
+            : blocks(payload.output, "\n");
+    time(record);
+    const key = `${type}/${id}`;
+    const queue = answers.get(key);
+    if (queue) queue.outputs.push(output);
+    else answers.set(key, { outputs: [output], next: 0 });
+};
+const decodeMessage: Decoder = (
+    { record, payload, line, sourceId },
+    { decoded },
+) => {
+    if (payload.role === "system" || payload.role === "developer") return;
+    if (payload.role !== "user" && payload.role !== "assistant")
+        throw new Unreadable("an unsupported message role");
+    const said = blocks(
+        payload.content,
+        "\n\n",
+        payload.role === "user" ? userText : undefined,
+    );
+    const at = time(record);
+    if (said.trim() !== "")
+        decoded.push({
+            line,
+            event: {
+                kind: payload.role,
+                text: said,
+                sourceId,
+                at,
+                ...(payload.role === "assistant" ? { interrupted: false } : {}),
+            },
+        });
+};
+const DECODERS = new Map<string, Decoder>([
+    ["session_meta", decodeSession],
+    ["turn_context", decodeContext],
+    ["response_item/message", decodeMessage],
+    ["response_item/function_call", decodeCall],
+    ["response_item/custom_tool_call", decodeCall],
+    ["response_item/function_call_output", decodeOutput],
+    ["response_item/custom_tool_call_output", decodeOutput],
+]);
+
+export function readCodex(
+    lines: readonly string[],
+    { ended = false, lineOffset = 0 }: CodexReadOptions = {},
+): CodexRead {
+    if (
+        lineOffset < 0 ||
+        !Number.isSafeInteger(lineOffset) ||
+        !Number.isSafeInteger(lineOffset + lines.length)
+    ) {
+        throw new RangeError("invalid line offset");
+    }
+    const read: CodexRead = {
+        session: null,
+        cwd: null,
+        model: null,
+        at: null,
+        events: [],
+        halt: null,
+        unknown: [],
+        pending: null,
+    };
+    const known = new Set<string>();
+    const decoded: Decoded[] = [];
+    // Only the valid prefix can supply answers. Nothing after a malformed
+    // record is allowed to acknowledge an earlier call.
+    const answers = new Map<string, AnswerQueue>();
+    const state = { read, decoded, answers };
+    for (const [index, raw] of lines.entries()) {
+        if (raw.trim() === "") continue;
+        let type: string | null = null;
+        try {
+            let record: unknown;
+            try {
+                record = JSON.parse(raw);
+            } catch {
+                throw new Unreadable("not JSON");
+            }
+            if (!object(record)) throw new Unreadable("not a JSON object");
+            type = nonempty(record.type, "no type");
+            if (
+                [
+                    "session_meta",
+                    "turn_context",
+                    "response_item",
+                    "event_msg",
+                ].includes(type)
+            ) {
+                if (!object(record.payload))
+                    throw new Unreadable("no payload object");
+                const payload = record.payload;
+                if (type === "response_item" || type === "event_msg") {
+                    type += `/${nonempty(payload.type, "no payload type")}`;
+                }
+                const decoder = DECODERS.get(type);
+                if (decoder) {
+                    decoder(
+                        {
+                            record,
+                            payload,
+                            type,
+                            line: index,
+                            sourceId: String(lineOffset + index + 1),
+                        },
+                        state,
+                    );
+                    continue;
+                }
+            }
+            if (!BOOKKEEPING.has(type) && !known.has(type)) {
+                read.unknown.push({ line: index, type });
+                known.add(type);
+            }
+        } catch (error) {
+            if (!(error instanceof Unreadable)) throw error;
+            read.halt = { line: index, type, reason: error.message };
+            break;
+        }
+    }
+    for (const item of decoded) {
+        if ("event" in item) {
+            read.events.push(item.event);
+            continue;
+        }
+        const { answerKey, ...call } = item.call;
+        const queue = answers.get(answerKey);
+        const output = queue?.outputs[queue.next++];
+        if (output === undefined && !ended) {
+            read.pending = item.line;
+            break;
+        }
+        read.events.push({
+            kind: "tool",
+            ...call,
+            output: output ?? "",
+            ok: output !== undefined,
+        });
+    }
+    return read;
+}

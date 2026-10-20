@@ -21,7 +21,7 @@ import {
     type RecordResponse,
 } from "@dorothy/core";
 import { recordedUuids } from "../bodies/record.js";
-import type { Lock, Recorder } from "../memory/sidecar.js";
+import { type Lock, type Recorder, setBackfilled } from "../memory/sidecar.js";
 import type { RecallIndex } from "../recall/store.js";
 import { sessionPhrase } from "../recall/sync.js";
 import {
@@ -29,6 +29,7 @@ import {
     type TranscriptEntry,
     TranscriptWriter,
     toolEntry,
+    transcriptDir,
     transcriptPath,
 } from "../transcript.js";
 import { ContractError } from "./errors.js";
@@ -37,6 +38,8 @@ export type RecordDeps = {
     env: Env;
     index: RecallIndex;
     recorder: Recorder | null;
+    backfill?: boolean;
+    warn?: (message: string) => void;
     lock?: Lock;
     // Whether the request came over loopback.
     loopback: boolean;
@@ -203,6 +206,12 @@ export async function acceptRecord(
             }
         }
         if (fresh.length > 0) {
+            const marked = await setBackfilled(
+                transcriptDir(deps.env),
+                phrase,
+                deps.backfill ?? false,
+                { warn: deps.warn, starting },
+            );
             // A writer killed mid-append left a line that would swallow
             // the first event written after it.
             if (await cutTornTail(path)) {
@@ -243,7 +252,16 @@ export async function acceptRecord(
             } finally {
                 await writer.close();
             }
-            await deps.recorder?.([path], `turn: ${phrase} (${request.host})`);
+            // Publish under the same lock as creation. Another process
+            // may have synced before this file existed, then waited here.
+            deps.index.db.run(
+                "INSERT OR IGNORE INTO conversation_sessions (session, phrase) VALUES (?, ?)",
+                [key, phrase],
+            );
+            await deps.recorder?.(
+                marked === null ? [path] : [path, marked],
+                `turn: ${phrase} (${request.host})`,
+            );
         }
         for (const id of seen) {
             held?.add(id);

@@ -20,13 +20,23 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Env, newPhrase } from "@dorothy/core";
-import type { HistoryHandle, Lock } from "../memory/sidecar.js";
+import {
+    type HistoryHandle,
+    type Lock,
+    setBackfilled,
+} from "../memory/sidecar.js";
 import type { RecallIndex } from "../recall/store.js";
 import { sessionPhrase } from "../recall/sync.js";
 import { cutTornTail, TranscriptWriter, transcriptDir } from "../transcript.js";
 import { type LinesRead, readLines } from "./claude-code.js";
 import type { HookLog } from "./log.js";
-import { keepHalt, keepNewType, resolveHalt } from "./unread.js";
+import {
+    claimLog,
+    keepHalt,
+    keepNewType,
+    readRecord,
+    resolveHalt,
+} from "./unread.js";
 
 export type SessionReport = {
     session: string;
@@ -47,6 +57,7 @@ export type RecordDeps = {
     log: HookLog;
     // The project of the launch's directory, for the session event.
     project: string | null;
+    backfill?: boolean;
     now?: () => Date;
 };
 
@@ -58,8 +69,11 @@ export type Recorded =
           // The bytes of Claude Code's transcript read.
           size: number;
           halted: boolean;
+          newHalt?: boolean;
+          // Lines from a call not yet answered are held back.
+          held: boolean;
       }
-    | { kind: "nothing"; size: number }
+    | { kind: "nothing"; size: number; held: boolean; newHalt?: boolean }
     | { kind: "missing"; reason: string }
     | { kind: "unlocked" };
 
@@ -184,9 +198,20 @@ export async function recordSession(
             read.events.length > 0
                 ? await appendEvents(read, found, joined, recording)
                 : found;
-        await noteHalt(read.halt, lines, from, phrase, recording);
+        const newHalt = await noteHalt(
+            read.halt,
+            lines,
+            from,
+            phrase,
+            recording,
+        );
         if (phrase === null) {
-            return { kind: "nothing", size };
+            return {
+                kind: "nothing",
+                size,
+                held: read.held,
+                ...(newHalt ? { newHalt: true } : {}),
+            };
         }
         if (read.events.length > 0) {
             deps.log.info(
@@ -199,6 +224,8 @@ export async function recordSession(
             appended: read.events.length,
             size,
             halted: read.halt !== null,
+            ...(newHalt ? { newHalt: true } : {}),
+            held: read.held,
         };
     });
 }
@@ -314,6 +341,10 @@ async function appendEvents(
 ): Promise<string> {
     const phrase = found ?? newPhrase();
     const path = join(dir, `${phrase}.jsonl`);
+    const marked = await setBackfilled(dir, phrase, deps.backfill ?? false, {
+        warn: (message) => deps.log.warn(message),
+        starting: found === null,
+    });
     const writer = await TranscriptWriter.open(path, now);
     try {
         if (!joined) {
@@ -345,7 +376,10 @@ async function appendEvents(
     } finally {
         await writer.close();
     }
-    await deps.versions?.recorder([path], `turn: ${phrase} (claude-code)`);
+    await deps.versions?.recorder(
+        marked === null ? [path] : [path, marked],
+        `turn: ${phrase} (claude-code)`,
+    );
     return phrase;
 }
 
@@ -358,7 +392,7 @@ async function noteHalt(
     from: number,
     phrase: string | null,
     { report, deps, now }: Recording,
-): Promise<void> {
+): Promise<boolean> {
     if (halt === null) {
         try {
             await resolveHalt(deps.env, report.session);
@@ -367,15 +401,18 @@ async function noteHalt(
                 `session ${report.session}: a halt kept before can't be cleared (${describeError(error)})`,
             );
         }
-        return;
+        return false;
     }
     const line = from + halt.line;
+    let tell = true;
     try {
+        const before = await readRecord(deps.env, report.session);
         await keepHalt(
             deps.env,
             {
                 session: report.session,
                 conversation: phrase,
+                backfilled: deps.backfill ?? false,
                 transcript: report.transcript,
                 dir: report.dir,
                 since: report.since,
@@ -387,12 +424,23 @@ async function noteHalt(
             },
             lines.slice(line),
         );
+        tell =
+            !(before?.dismissed && before.line === line + 1) &&
+            (await claimLog(deps.env, [
+                "halt",
+                "claude-code",
+                report.session,
+                String(line + 1),
+                halt.reason,
+            ]));
     } catch (error) {
         deps.log.warn(
             `session ${report.session}: its halt can't be kept (${describeError(error)})`,
         );
     }
-    deps.log.error(
-        `session ${report.session}: halted at line ${line + 1} (${halt.type ?? "no type"}, ${halt.uuid ?? "no uuid"}): ${halt.reason}`,
-    );
+    if (tell)
+        deps.log.error(
+            `session ${report.session}: halted at line ${line + 1} (${halt.type ?? "no type"}, ${halt.uuid ?? "no uuid"}): ${halt.reason}`,
+        );
+    return tell;
 }

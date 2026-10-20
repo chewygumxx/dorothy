@@ -52,9 +52,10 @@ import { transcriptDir } from "../transcript.js";
 import { claudeConfigDir, confineTranscript } from "./confine.js";
 import { guarded, type Handler } from "./guard.js";
 import { bodyOf, describeError, json, MAX_BODY } from "./http.js";
-import { startJobs } from "./jobs.js";
+import { noteRecorded, startJobs } from "./jobs.js";
 import { isLoopback } from "./loopback.js";
 import { Recent } from "./recent.js";
+import { sweepBinding } from "./recording.js";
 import type { TokenStore } from "./tokens.js";
 
 export { isLoopback, MAX_BODY };
@@ -88,6 +89,9 @@ export type ServiceOptions = {
     maxTranscript?: number;
     // How often idle conversations are looked at; for tests.
     tickMs?: number;
+    // How often the hosts are swept; config.recording.sweepSeconds by
+    // default, for tests.
+    sweepMs?: number;
 };
 
 export type RunningService = {
@@ -205,6 +209,8 @@ export async function startService(
         const held = new Recent<string, Held>(MAX_HELD);
         // Conversations recorded and not yet extracted, by their last record.
         const idle = new Map<string, number>();
+        // Conversations a backfill recorded, which no review reads.
+        const backfilled = new Set<string>();
         // Projects recorded since the last export.
         const touched = new Set<string>();
         const log = hookLog(env);
@@ -283,7 +289,7 @@ export async function startService(
             );
             switch (found.kind) {
                 case "recorded":
-                    idle.set(found.phrase, Date.now());
+                    noteRecorded({ idle, backfilled }, found.phrase, false);
                     return {
                         accepted: found.appended,
                         duplicates: 0,
@@ -348,6 +354,7 @@ export async function startService(
                     noteVersion(record.host, record.hostVersion);
                     const result = await acceptRecord(record, {
                         env,
+                        warn: (message) => log.warn(message),
                         index,
                         recorder,
                         lock: store.lock,
@@ -362,7 +369,7 @@ export async function startService(
                         sessionKey(record.host, record.session),
                     );
                     if (phrase !== undefined && result.accepted > 0) {
-                        idle.set(phrase, Date.now());
+                        noteRecorded({ idle, backfilled }, phrase, false);
                     }
                     if (record.project !== undefined) {
                         touched.add(record.project);
@@ -433,14 +440,46 @@ export async function startService(
         }
         open(handle);
 
+        // Other harnesses' sessions, swept at the start and on an interval;
+        // none unless `[recording] hosts` names some.
+        const sweeping =
+            config.recording.hosts.length === 0
+                ? null
+                : sweepBinding({
+                      env,
+                      hosts: config.recording.hosts,
+                      claudeDirs,
+                      store,
+                      index,
+                      versions: launched?.history.handle() ?? null,
+                      sync: () => engine.index(),
+                      sessions,
+                      held,
+                      idle,
+                      backfilled,
+                      touched,
+                      log,
+                      now,
+                  });
         const jobs = startJobs({
             config,
             engine,
             store,
             idle,
+            backfilled,
             touched,
+            info: (message) => log.info(message),
             warn: failed,
             tickMs: options.tickMs,
+            sweep:
+                sweeping === null
+                    ? null
+                    : {
+                          run: () => sweeping.run(),
+                          everyMs:
+                              options.sweepMs ??
+                              config.recording.sweepSeconds * 1000,
+                      },
             loadCatalogue:
                 reviewer === null
                     ? null
@@ -461,7 +500,7 @@ export async function startService(
             ports: servers.map((server) => server.port ?? 0),
             waiting: () => idle.size,
             async stop() {
-                jobs.stop();
+                await jobs.stop();
                 for (const server of servers) {
                     server.stop(true);
                 }

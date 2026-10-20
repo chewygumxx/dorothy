@@ -11,8 +11,10 @@
 // The service's background work: conversations idle long enough are
 // extracted from, and what extraction and consolidation propose is
 // written as a write by the store's rules; recorded projects are
-// consolidated and exported to their repositories now and then.
+// consolidated and exported to their repositories now and then; other
+// harnesses' sessions are swept at the start and on an interval.
 
+import { join } from "node:path";
 import { type Config, knowledgeId } from "@dorothy/core";
 import type { Proposal } from "../engine/engine.js";
 import { knowledgePath, type MemoryEngine } from "../engine/engine.js";
@@ -24,9 +26,12 @@ import {
     type Scope,
     writeFact,
 } from "../facts/store.js";
+import { readSidecar } from "../memory/sidecar.js";
 import { projectsPath, readRegistry } from "../projects/registry.js";
 import { syncProject } from "../projects/sync.js";
 import { guardFor } from "../recall/remember.js";
+import { sweepSummary } from "../recording/report.js";
+import type { HostSweep } from "../recording/sweep.js";
 import { describeError } from "./http.js";
 
 const TICK_MS = 15_000;
@@ -38,17 +43,43 @@ export type JobsDeps = {
     store: FactStore;
     // Conversations recorded and not yet extracted, by their last record.
     idle: Map<string, number>;
+    // Conversations a backfill recorded, not extracted while they stay so:
+    // each would cost a paid review. One that reaches idle is dropped from
+    // it. A live record takes a conversation out (`noteRecorded`).
+    backfilled: Set<string>;
     // Projects recorded since the last export.
     touched: Set<string>;
     // Reads the catalogue for the reviewer, which only reviews need.
     loadCatalogue: (() => Promise<void>) | null;
     warn: (message: string) => void;
+    // Said once a sweep, with its counts.
+    info?: ((message: string) => void) | undefined;
+    // One sweep over the hosts, run at the start and every `everyMs`,
+    // never two at once; none leaves the hosts alone.
+    sweep?: { run: () => Promise<HostSweep[]>; everyMs: number } | null;
     // How often idle conversations are looked at; for tests.
     tickMs?: number | undefined;
 };
 
-export function startJobs(deps: JobsDeps): { stop(): void } {
-    const { config, engine, store, idle, touched, warn } = deps;
+// A record of `phrase`: a live one queues it for extraction, and frees it
+// of a backfill's mark; a backfill's marks it, unless a live record
+// already queued it.
+export function noteRecorded(
+    { idle, backfilled }: Pick<JobsDeps, "idle" | "backfilled">,
+    phrase: string,
+    backfill: boolean,
+    now: number = Date.now(),
+): void {
+    if (!backfill) {
+        backfilled.delete(phrase);
+        idle.set(phrase, now);
+    } else if (!idle.has(phrase)) {
+        backfilled.add(phrase);
+    }
+}
+
+export function startJobs(deps: JobsDeps): { stop(): Promise<void> } {
+    const { config, engine, store, idle, backfilled, touched, warn } = deps;
     const { root, lock, recorder } = store;
     // An engine's proposal, validated as a write: one naming no project,
     // or refused, is dropped and said.
@@ -106,13 +137,25 @@ export function startJobs(deps: JobsDeps): { stop(): void } {
             const due = [...idle]
                 .filter(([, at]) => Date.now() - at >= wait)
                 .map(([phrase]) => phrase);
+            const extract = due.filter((phrase) => !backfilled.has(phrase));
+            for (const phrase of due)
+                if (backfilled.has(phrase)) idle.delete(phrase);
             // Without reviews the engine extracts nothing; only the
             // reviewer reads the catalogue.
-            if (due.length > 0) {
+            if (extract.length > 0) {
                 await deps.loadCatalogue?.();
             }
-            for (const phrase of due) {
+            for (const phrase of extract) {
+                const read = await readSidecar(
+                    join(root, "transcripts"),
+                    phrase,
+                );
                 idle.delete(phrase);
+                if (
+                    read.kind === "unparseable" ||
+                    (read.kind === "ok" && read.sidecar.backfilled)
+                )
+                    continue;
                 const proposals = await engine.extract(
                     phrase,
                     extraction.signal,
@@ -173,11 +216,49 @@ export function startJobs(deps: JobsDeps): { stop(): void } {
         }
     }, EXPORT_MS);
 
+    // Sweeps: the next waits for the one under way, which stop() awaits.
+    let sweeping: Promise<void> | null = null;
+    const sweepOnce = () => {
+        const { sweep } = deps;
+        if (sweep == null || sweeping !== null) {
+            return;
+        }
+        const done = (async () => {
+            try {
+                const results = await sweep.run();
+                if (
+                    results.some(
+                        (result) =>
+                            result.events > 0 ||
+                            result.sessions > 0 ||
+                            result.halted > 0 ||
+                            result.failed > 0 ||
+                            result.error !== null,
+                    )
+                )
+                    deps.info?.(sweepSummary(results));
+            } catch (error) {
+                warn(`recording: sweep failed: ${describeError(error)}`);
+            }
+        })();
+        sweeping = done;
+        void done.then(() => {
+            sweeping = null;
+        });
+    };
+    const sweepTimer =
+        deps.sweep == null ? null : setInterval(sweepOnce, deps.sweep.everyMs);
+    sweepOnce();
+
     return {
-        stop() {
+        async stop() {
             clearInterval(tick);
             clearInterval(exporting);
+            if (sweepTimer !== null) {
+                clearInterval(sweepTimer);
+            }
             extraction.abort();
+            await sweeping;
         },
     };
 }

@@ -42,6 +42,7 @@ describe("readLines", () => {
         expect(read.model).toBe("claude-opus-5-5");
         expect(read.sessions).toEqual([SESSION]);
         expect(read.halt).toBeNull();
+        expect(read.held).toBe(false);
     });
 
     it("maps several blocks in a line in order, and keeps no thinking", () => {
@@ -172,6 +173,8 @@ describe("readLines", () => {
             assistantLine("a2", 2, [text("Later.")]),
         ];
         expect(entries(lines)).toEqual([{ kind: "user", text: "go" }]);
+        expect(readLines(lines).held).toBe(true);
+        expect(readLines(lines, { ended: true }).held).toBe(false);
         expect(entries(lines, { ended: true })).toEqual([
             { kind: "user", text: "go" },
             { kind: "assistant", text: "Running.", interrupted: false },

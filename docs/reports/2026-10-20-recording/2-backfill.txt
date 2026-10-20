@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-20-recording/2-backfill.txt
+
+Probe: A backfill records the waiting sessions, once
+Date: 2026-10-20
+Bun: 1.4.2
+Code under test: 99be6c0
+Verdict: PASS
+
+Setup: that of 1-sweep.txt, the same root after its sweep.
+
+Command:
+  bun run dev -- --sweep --backfill
+
+Output:
+  claude-code: 1240 events in 20 sessions
+  codex: 1293 events in 7 sessions
+
+Exit status: 0. Time: 1.01 s for the 48 MB copied.
+Conversations made: 27 (20 claude-code, 7 codex), one a session.
+Halts: 0 (no unread directory, no notice). Unknown types: 0.
+Standard error held only Bun's echo of the command.
+
+Shape of what was kept, record kinds by name and count alone, over the
+27 transcripts: session 27, user 106, assistant 520, tool 1907; events
+2,533 in all, equal to the two hosts' counts summed.
+
+Run again at once:
+  bun run dev -- --sweep --backfill
+  claude-code: 0 events in 0 sessions
+  codex: 0 events in 0 sessions
+Time: 0.66 s. The transcripts stayed 27: a sweep is idempotent.

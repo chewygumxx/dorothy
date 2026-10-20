@@ -1,6 +1,6 @@
 ---
 ctime: 2026-09-29
-mtime: 2026-10-20
+mtime: 2026-10-21
 spdx: GPL-3.0-only
 title: "dorothy"
 description: "Conversational LLM interface"
@@ -365,6 +365,48 @@ list it too:
 [service]
 claude-dirs = ["/home/me/.config/claude-2"]
 ```
+
+### Recording other harnesses
+
+Her memory can also take in the sessions your other harnesses keep:
+Claude Code, Codex and Hermes Agent, read from their own stores, which
+are only read, never written. Name the ones to record in `config.toml`;
+none is recorded by default:
+
+```toml
+[recording]
+hosts = ["claude-code", "codex"]  # claude-code, codex, hermes
+sweep-seconds = 300               # between sweeps, 10 to 86400
+```
+
+The service sweeps those hosts when it starts and then every
+`sweep-seconds`, and logs a line of counts each time. A store moves with
+its harness's own variable where it has one (`CLAUDE_CONFIG_DIR`,
+`CODEX_HOME`, `HERMES_HOME`); another Claude Code account is listed in
+`[service] claude-dirs`. Each session becomes one conversation, each
+event recorded once, and the service extracts knowledge from it once it
+has been idle. A session whose directory is a git repository joins that
+project; one without a directory is personal.
+
+The first sweep of a host notes its time. The service records whole, and
+queues for extraction, any session with events after it, so a large live
+backlog is reviewed, each review a model call. Sessions whose events all
+precede it wait, and `--sweep --backfill` records them. Conversations it
+creates are marked durably so that no knowledge is extracted from them;
+ones already recorded live keep their review eligibility. A live append
+clears a backfill mark. Without the service,
+`--sweep` runs one sweep and prints a host and a count a line:
+
+```sh
+bun run dev -- --sweep               # sweep once
+bun run dev -- --sweep --backfill    # record the backlog too
+```
+
+A session that cannot be read is recorded up to the record that failed,
+the rest is kept aside, and the next start tells of it. `--sweep
+--reread` reads such sessions again and says which now read to the end;
+`--sweep --dismiss <host> <session>` stops the notice. Claude Code's own
+are `--claude-hook --reread` and `--dismiss <session>`.
 
 Her knowledge lives in `knowledge/` in the data directory, one Markdown
 file each in the [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md),

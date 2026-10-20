@@ -19,7 +19,12 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { HistoryHandle, Lock } from "../memory/sidecar.js";
+import {
+    type HistoryHandle,
+    type Lock,
+    readSidecar,
+    sidecarPath,
+} from "../memory/sidecar.js";
 import { RecallIndex } from "../recall/store.js";
 import { sessionPhrase } from "../recall/sync.js";
 import { transcriptDir } from "../transcript.js";
@@ -40,7 +45,7 @@ import {
     recordSession,
     type SessionReport,
 } from "./record.js";
-import { copyPath, readRecord, unreadDir } from "./unread.js";
+import { copyPath, dismissHalt, readRecord, unreadDir } from "./unread.js";
 
 // Runs work one at a time, as the index's lock does across processes.
 function serial(): Lock {
@@ -327,6 +332,71 @@ describe("recordSession", () => {
         );
     });
 
+    for (const backfill of [false, true])
+        it(`records through a broken Claude sidecar with backfill=${backfill}`, async () => {
+            const warnings: string[] = [];
+            const recording = deps({
+                backfill,
+                log: {
+                    info() {},
+                    error() {},
+                    warn: (message) => warnings.push(message),
+                },
+            });
+            await write([userLine("u1", 0, "Synthetic.")]);
+            const first = await recordSession(report(), recording);
+            if (first.kind !== "recorded") throw new Error(first.kind);
+            const path = sidecarPath(transcriptDir(env), first.phrase);
+            await writeFile(path, "{not json");
+            await add([userLine("u2", 1, "Synthetic more.")]);
+            expect(await recordSession(report(), recording)).toMatchObject({
+                appended: 1,
+            });
+            expect(await readFile(path, "utf8")).toBe("{not json");
+            expect(warnings).toHaveLength(1);
+        });
+
+    for (const initiallyBackfilled of [false, true])
+        it(`keeps Claude review eligibility during backfill, marked=${initiallyBackfilled}`, async () => {
+            await write([userLine("u1", 0, "Synthetic.")]);
+            const first = await recordSession(
+                report(),
+                deps({ backfill: initiallyBackfilled }),
+            );
+            if (first.kind !== "recorded") throw new Error(first.kind);
+            await add([userLine("u2", 1, "Synthetic more.")]);
+            expect(
+                await recordSession(report(), deps({ backfill: true })),
+            ).toMatchObject({ appended: 1 });
+            const read = await readSidecar(transcriptDir(env), first.phrase);
+            expect(read.kind === "ok" && read.sidecar.backfilled === true).toBe(
+                initiallyBackfilled,
+            );
+        });
+
+    it("says it holds lines behind a call not yet answered", async () => {
+        await write([
+            userLine("u1", 0, "go"),
+            assistantLine("a1", 1, [use("t1", "Bash", { command: "ls" })]),
+        ]);
+        expect(await recordSession(report(), deps())).toMatchObject({
+            kind: "recorded",
+            appended: 1,
+            held: true,
+        });
+        expect(
+            await recordSession(report({ ended: true }), deps()),
+        ).toMatchObject({ kind: "recorded", appended: 1, held: false });
+    });
+
+    it("says it holds, though nothing was recorded", async () => {
+        await write([assistantLine("a1", 1, [use("t1", "Bash", {})])]);
+        expect(await recordSession(report(), deps())).toMatchObject({
+            kind: "nothing",
+            held: true,
+        });
+    });
+
     it("halts at a line it cannot read, keeps the rest aside, and resolves once read", async () => {
         await write([
             userLine("u1", 0, "fine"),
@@ -356,6 +426,26 @@ describe("recordSession", () => {
         const read = await recordSession(report(), deps());
         expect(read).toMatchObject({ appended: 2, halted: false });
         expect(await readRecord(env, SESSION)).toBeNull();
+    });
+
+    it("logs each Claude halt once, including after dismissal", async () => {
+        const errors: string[] = [];
+        const recording = deps({
+            log: {
+                info() {},
+                warn() {},
+                error: (message) => errors.push(message),
+            },
+        });
+        await write(["{bad first line"]);
+        await recordSession(report(), recording);
+        await recordSession(report(), recording);
+        await dismissHalt(env, SESSION);
+        await recordSession(report(), recording);
+        expect(errors).toHaveLength(1);
+        await write([userLine("u1", 0, "Synthetic."), "{bad next line"]);
+        await recordSession(report(), recording);
+        expect(errors).toHaveLength(2);
     });
 
     it("keeps one example of a new type, and reads on", async () => {
@@ -454,6 +544,7 @@ describe("recordSession", () => {
         ).toMatchObject({ kind: "missing" });
         expect(await recordSession(report(), deps())).toEqual({
             kind: "nothing",
+            held: false,
             size: Buffer.byteLength(`${meta("mode")}\n`),
         });
     });

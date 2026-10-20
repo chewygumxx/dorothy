@@ -21,3 +21,5 @@
   Built for and tested against Claude Code, Codex, OpenClaw and Hermes
 - [Codex full send](./codex-full-send.md)
   Approve every Codex prompt; Codex runs never-ask, full access
+- [Trust to proceed](./trust-to-proceed.md)
+  Carry on with agreed next steps unasked; report what was done

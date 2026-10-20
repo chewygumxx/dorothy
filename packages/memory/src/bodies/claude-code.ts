@@ -75,6 +75,9 @@ export type LinesRead = {
     sessions: string[];
     halt: Halt | null;
     unknown: Unknown[];
+    // Reading stopped at a call not yet answered, holding the lines from it
+    // on until its answer arrives or the session ends.
+    held: boolean;
 };
 export type ReadOptions = {
     // The session is over: a call never answered is recorded failed,
@@ -262,6 +265,7 @@ export function readLines(
             sessions: [],
             halt: null,
             unknown: [],
+            held: false,
         },
         results: resultsIn(parsed),
         ended,
@@ -279,6 +283,7 @@ export function readLines(
             if (!readLine(line, index, type, reading)) {
                 // The line is read again with its answer: none of it now.
                 read.events.length = mark;
+                read.held = true;
                 break;
             }
         } catch (error) {

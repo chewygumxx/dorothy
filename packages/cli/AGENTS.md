@@ -113,9 +113,9 @@ lazy.
 - `index.ts` also runs `--serve` (memory's service through
   `@dorothy/memory/service`, with reviews from the agent, Claude Code's
   variables dropped and Dorothy's `.env` loaded by path from this
-  checkout; off, and said, if either fails), its `--token-add` and
-  `--token-revoke`, and `--mcp`, memory's stdio bridge
-  (`@dorothy/memory/bridge`), which starts `--serve` as
+  checkout; off, and said, if either fails), its token commands,
+  `--sweep` (`runSweep`, `runSweepDismiss`) and `--mcp`, memory's stdio
+  bridge (`@dorothy/memory/bridge`), which starts `--serve` as
   `bun --no-env-file` when none answers.
 - `recall-launch.ts`: `recallLaunch` launches this program again as the
   recall server, leaving out the conversation it serves and, with

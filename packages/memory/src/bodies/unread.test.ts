@@ -22,6 +22,7 @@ import { join } from "node:path";
 import { hookLog } from "./log.js";
 import {
     addNotice,
+    claimLog,
     copyPath,
     dismissHalt,
     halts,
@@ -99,6 +100,32 @@ describe("lines kept aside", () => {
         expect(await startNotices(env)).toEqual([]);
         await keepHalt(env, halt(9), ["{worse"]);
         expect(await startNotices(env)).toHaveLength(1);
+    });
+
+    for (const host of ["claude-code", "codex", "hermes"])
+        for (const action of ["resolve", "dismiss"])
+            it(`cleans only the ${host} halt log claim on ${action}`, async () => {
+                const record = { ...halt(), host };
+                const key = ["halt", host, S1, "7", record.reason];
+                await keepHalt(env, record, ["{bad"]);
+                expect(await claimLog(env, key)).toBe(true);
+                await claimLog(env, ["missing-session", "unrelated"]);
+                if (action === "resolve") await resolveHalt(env, S1, host);
+                else await dismissHalt(env, S1, host);
+                expect(
+                    await readdir(join(unreadDir(env), "logged")),
+                ).toHaveLength(1);
+                expect(await claimLog(env, key)).toBe(true);
+                expect(
+                    await claimLog(env, ["missing-session", "unrelated"]),
+                ).toBe(false);
+            });
+
+    it("cleans the previous halt log claim when the halt moves", async () => {
+        await keepHalt(env, halt(7), ["{bad"]);
+        await claimLog(env, ["halt", "claude-code", S1, "7", halt().reason]);
+        await keepHalt(env, halt(9), ["{bad next"]);
+        expect(await readdir(join(unreadDir(env), "logged"))).toEqual([]);
     });
 
     it("goes once resolved", async () => {
@@ -183,5 +210,82 @@ describe("lines kept aside", () => {
             `unread: ${S1} (a-b-c-d), line 7: a user line without its content`,
         );
         expect(report.at(-1)).toContain("claude-hook.log holds errors");
+    });
+
+    describe("another host's session", () => {
+        it("tells a type it wrote once, under the host's name", async () => {
+            await keepNewType(env, "codex/future_type", '{"type":"x"}');
+            const [told, ...more] = await startNotices(env);
+            expect(more).toEqual([]);
+            expect(told).toContain("codex_future_type-");
+            expect(told).not.toContain("Claude Code");
+            expect(await startNotices(env)).toEqual([]);
+        });
+
+        const HERMES = "20261020_101500_fixture";
+        const other = (host = "hermes", session = HERMES) => ({
+            ...halt(3),
+            host,
+            session,
+            transcript: "/h/state.db",
+        });
+
+        it("is kept under a name made of its host and a hash, not its id", async () => {
+            const copy = await keepHalt(env, other(), ["row 3"]);
+            expect(copy).not.toContain(HERMES);
+            expect(copy.startsWith(join(unreadDir(env), "hermes-"))).toBe(true);
+            expect(copy).toBe(copyPath(env, HERMES, "hermes"));
+            expect(await readFile(copy, "utf8")).toBe("row 3\n");
+            expect(await readRecord(env, HERMES, "hermes")).toMatchObject({
+                host: "hermes",
+                session: HERMES,
+            });
+            expect(await readRecord(env, HERMES)).toBeNull();
+        });
+
+        it("never collides with a Claude Code session of the same id", async () => {
+            await keepHalt(env, halt(), ["{bad"]);
+            await keepHalt(env, other("codex", S1), ["{bad too"]);
+            expect(await readFile(copyPath(env, S1), "utf8")).toBe("{bad\n");
+            expect(await readFile(copyPath(env, S1, "codex"), "utf8")).toBe(
+                "{bad too\n",
+            );
+            expect(await halts(env)).toHaveLength(2);
+            expect(await halts(env, "claude-code")).toHaveLength(1);
+            expect(await halts(env, "codex")).toHaveLength(1);
+        });
+
+        it("is told with its host, and with the sweep's commands", async () => {
+            await keepHalt(env, other("codex", S1), ["{bad"]);
+            const [told] = await startNotices(env);
+            expect(told).toContain("a Codex session");
+            expect(told).toContain("past line 3");
+            expect(told).not.toContain("--claude-hook");
+            expect(told).toContain("dorothy --sweep --reread tries again");
+            expect(told).toContain(`--sweep --dismiss codex ${S1} stops`);
+        });
+
+        it("quotes an id a shell would split in the command it offers", async () => {
+            await keepHalt(env, other("hermes", "a b'c"), ["row 3"]);
+            const [told] = await startNotices(env);
+            expect(told).toContain(
+                `--sweep --dismiss hermes 'a b'\\''c' stops`,
+            );
+        });
+
+        it("is dismissed and resolved by host", async () => {
+            await keepHalt(env, other(), ["row 3"]);
+            expect(await dismissHalt(env, HERMES)).toBe(false);
+            expect(await dismissHalt(env, HERMES, "hermes")).toBe(true);
+            expect(await startNotices(env)).toEqual([]);
+            await resolveHalt(env, HERMES, "hermes");
+            expect(await halts(env)).toEqual([]);
+            expect(await readdir(unreadDir(env))).toEqual([]);
+        });
+
+        it("is reported for --check", async () => {
+            await keepHalt(env, other(), ["row 3"]);
+            expect((await unreadReport(env))[0]).toContain("hermes");
+        });
     });
 });

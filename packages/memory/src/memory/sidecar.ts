@@ -119,6 +119,8 @@ export type Sidecar = {
     fields: Partial<Record<Owned, Provenance>>;
     // The turn count Dorothy's last review covered; 0 for never.
     reviewedThrough: number;
+    // Backfilled history waits for a live record before any paid review.
+    backfilled?: boolean;
     // What successful reviews and compactions cost, each.
     reviewCostUsd: number;
     compactionCostUsd: number;
@@ -387,6 +389,7 @@ export function parseSidecar(
     };
     sidecar.rev = isCount(data.rev) ? data.rev : 0;
     readNotes(data, sidecar);
+    if (data.backfilled === true) sidecar.backfilled = true;
     sidecar.pinned = data.pinned === true;
     sidecar.hidden = data.hidden === true;
     sidecar.reviewedThrough = isCount(data.reviewedThrough)
@@ -692,6 +695,7 @@ export function appendClusters(
 // After n failures in a row, no review until min(2^(n-1) hours, 7 days)
 // after the last.
 export function reviewDue(sidecar: Sidecar | null, now: number): boolean {
+    if (sidecar?.backfilled) return false;
     const failures = sidecar?.failures;
     if (failures === null || failures === undefined) {
         return true;
@@ -723,4 +727,40 @@ export function untagged(sidecar: Sidecar | null): boolean {
         sidecar.reviewedThrough > 0 &&
         sidecar.fields.tags === undefined
     );
+}
+
+// Called under the recording lock, before fresh events are appended. A
+// backfill mark survives restarts; only an actual live append clears it.
+export async function setBackfilled(
+    dir: string,
+    phrase: string,
+    backfilled: boolean,
+    {
+        warn,
+        starting = true,
+    }: {
+        warn?: ((message: string) => void) | undefined;
+        starting?: boolean;
+    } = {},
+): Promise<string | null> {
+    // The caller holds the common lock. Joining updateSidecar's process
+    // queue could wait on an edit that is itself waiting for that lock.
+    const read = await readSidecar(dir, phrase);
+    if (read.kind === "unparseable") {
+        warn?.(
+            `memory: backfill mark skipped for ${phrase}: notes cannot be read`,
+        );
+        return null;
+    }
+    const current = read.kind === "ok" ? read.sidecar : EMPTY_SIDECAR;
+    // A backfill may extend an existing live conversation, but may not
+    // take its future reviews away. Already-marked conversations stay so.
+    if (backfilled && !starting && !current.backfilled) return null;
+    if ((current.backfilled ?? false) === backfilled) return null;
+    const path = sidecarPath(dir, phrase);
+    await writeAtomic(
+        path,
+        `${JSON.stringify({ ...current, rev: current.rev + 1, backfilled }, null, 2)}\n`,
+    );
+    return path;
 }

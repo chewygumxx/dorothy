@@ -315,6 +315,7 @@ async function holding(
 async function stepsFor(
     held: Held,
     report: Omit<SessionReport, "ended">,
+    backfill = false,
 ): Promise<Steps> {
     const { env, log, index, versions, deps, now } = held;
     const dir = transcriptDir(env);
@@ -325,7 +326,7 @@ async function stepsFor(
         record: async (ended) => {
             const recorded = await recordSession(
                 { ...report, ended },
-                { env, index, versions, log, project, now },
+                { env, index, versions, log, project, now, backfill },
             );
             if (recorded.kind === "missing") {
                 log.warn(
@@ -579,7 +580,7 @@ async function reread(
     out: Output,
     err: Output,
 ): Promise<number> {
-    const records = await halts(env);
+    const records = await halts(env, "claude-code");
     if (records.length === 0) {
         out.write("dorothy: no unreadable lines are kept\n");
         return 0;
@@ -611,12 +612,18 @@ async function rereadOne(
 ): Promise<boolean> {
     const there =
         ((await stat(record.transcript).catch(() => null))?.size ?? 0) > 0;
-    const steps = await stepsFor(held, {
-        session: record.session,
-        transcript: there ? record.transcript : copyPath(env, record.session),
-        dir: record.dir,
-        since: record.since,
-    });
+    const steps = await stepsFor(
+        held,
+        {
+            session: record.session,
+            transcript: there
+                ? record.transcript
+                : copyPath(env, record.session),
+            dir: record.dir,
+            since: record.since,
+        },
+        record.backfilled ?? false,
+    );
     // A session no launch holds is over: a call never answered is
     // recorded failed, not waited for.
     const recorded = await steps.record(
@@ -629,7 +636,7 @@ async function rereadOne(
         }
         return true;
     }
-    const now = (await halts(env)).find(
+    const now = (await halts(env, "claude-code")).find(
         (one) => one.session === record.session,
     );
     err.write(

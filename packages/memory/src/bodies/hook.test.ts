@@ -15,12 +15,15 @@ import {
     readdir,
     readFile,
     rm,
+    utimes,
     writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { StructuredCall } from "@dorothy/core";
+import { readSidecar, reviewDue } from "../memory/sidecar.js";
 import { indexPath } from "../recall/store.js";
+import { runSweep } from "../service/sweep-command.js";
 import { transcriptDir } from "../transcript.js";
 import {
     assistantLine,
@@ -72,7 +75,7 @@ function steps(script: {
     const fake: Steps = {
         record: async (ended) => {
             calls.push(`record${ended ? " ended" : ""}`);
-            return records.shift() ?? { kind: "nothing", size: 0 };
+            return records.shift() ?? { kind: "nothing", size: 0, held: false };
         },
         sync: async () => {
             calls.push("sync");
@@ -106,6 +109,7 @@ const recorded = (size = 10): Recorded => ({
     appended: 1,
     size,
     halted: false,
+    held: false,
 });
 
 describe("afterStop", () => {
@@ -675,6 +679,50 @@ describe("runClaudeHook", () => {
         );
         expect(log).not.toContain("the title is empty");
     });
+
+    for (const prefix of [[], [userLine("u1", 1, "Synthetic before.")]])
+        it(`keeps a Claude backfill suppressed after hook reread with ${prefix.length} earlier events`, async () => {
+            env.CLAUDE_CONFIG_DIR = join(home, "claude");
+            await mkdir(join(home, "config/dorothy"), { recursive: true });
+            await writeFile(
+                join(home, "config/dorothy/config.toml"),
+                '[history]\nenabled = false\n[recording]\nhosts = ["claude-code"]\n',
+            );
+            await writeFile(claude, `${[...prefix, "{bad"].join("\n")}\n`);
+            const old = new Date("2026-10-19T00:00:00.000Z");
+            await utimes(claude, old, old);
+            await runSweep({
+                env,
+                out,
+                err: out,
+                backfill: true,
+                now: () => new Date("2026-10-21T00:00:00.000Z"),
+            });
+            expect(await readRecord(env, SESSION)).toMatchObject({
+                backfilled: true,
+            });
+            await writeFile(
+                claude,
+                `${[...prefix, userLine("u2", 3, "Synthetic recovered.")].join("\n")}\n`,
+            );
+            expect(await runClaudeHook({ kind: "reread" }, deps(""))).toBe(0);
+            expect(await readRecord(env, SESSION)).toBeNull();
+            const [file] = await conversations();
+            if (!file) throw new Error("missing conversation");
+            const read = await readSidecar(
+                transcriptDir(env),
+                file.slice(0, -6),
+            );
+            expect(read).toMatchObject({
+                kind: "ok",
+                sidecar: { backfilled: true },
+            });
+            if (read.kind !== "ok") throw new Error(read.kind);
+            expect(reviewDue(read.sidecar, Date.parse("2026-10-22"))).toBe(
+                false,
+            );
+            expect(reviews).toEqual([]);
+        });
 
     it("reads a halted session again once it can, and dismisses one", async () => {
         await writeFile(claude, `${userLine("u1", 1, "hello")}\n{bad\n`);

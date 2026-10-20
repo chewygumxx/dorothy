@@ -72,8 +72,8 @@ options declared and described for `--help`, its failures as
   commands that rewrite it do so through `updateQuestions`, which reads,
   changes and writes it under a lock file beside it, held by pid; the
   same lock, as `underLock`, serves `generated.json`.
-- `questions/mine.ts`: lookup questions from her appraised reads, and
-  the `mine` command.
+- `questions/mine.ts`: lookup questions from her appraised reads (a
+  backfilled session has none), and the `mine` command.
 - `questions/generate.ts`: samples, prompts and checks for drafting
   each type; `questions/generate-command.ts`: the `generate` command,
   which merges each call's drafts into the question file as they

@@ -229,6 +229,14 @@ const RUNNERS: Runners = {
         const { runTokenRevoke } = await service();
         return runTokenRevoke(mode.device);
     },
+    sweep: async (mode) => {
+        const { runSweep } = await service();
+        return runSweep({ backfill: mode.backfill, reread: mode.reread });
+    },
+    "sweep-dismiss": async (mode) => {
+        const { runSweepDismiss } = await service();
+        return runSweepDismiss(mode.host, mode.session);
+    },
     mcp: async (mode) => {
         const { runBridge } = await import("@dorothy/memory/bridge");
         return runBridge({

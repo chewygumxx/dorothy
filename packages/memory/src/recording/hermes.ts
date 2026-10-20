@@ -1,0 +1,584 @@
+// vim:set expandtab shiftwidth=4 filetype=typescript:
+// SPDX-License-Identifier: GPL-3.0-only
+
+//
+//
+// ~chewygumxx/dorothy.git
+// ::: :/packages/memory/src/recording/hermes.ts
+//
+//
+
+import { Database } from "bun:sqlite";
+import type { RecordEvent } from "@dorothy/core";
+
+export type HermesRead = {
+    session: string | null;
+    parent: string | null;
+    source: string | null;
+    cwd: string | null;
+    model: string | null;
+    at: string | null;
+    events: RecordEvent[];
+    halt: { id: number | null; type: string | null; reason: string } | null;
+    unknown: { id: number; type: string }[];
+    pending: number | null;
+};
+
+type Json = Record<string, unknown>;
+class Unreadable extends Error {}
+const object = (value: unknown): value is Json =>
+    value !== null && typeof value === "object" && !Array.isArray(value);
+function text(value: unknown, reason: string): string {
+    if (typeof value !== "string") throw new Unreadable(reason);
+    return value;
+}
+function nonempty(value: unknown, reason: string): string {
+    const result = text(value, reason);
+    if (!result.trim()) throw new Unreadable(reason);
+    return result;
+}
+function timestamp(value: unknown): string {
+    if (typeof value !== "number" || !Number.isFinite(value))
+        throw new Unreadable("invalid timestamp");
+    const date = new Date(value * 1000);
+    if (!Number.isFinite(date.getTime()))
+        throw new Unreadable("invalid timestamp");
+    return date.toISOString();
+}
+function json(value: string, reason: string): unknown {
+    try {
+        return JSON.parse(value);
+    } catch {
+        throw new Unreadable(reason);
+    }
+}
+// Hermes's own synthetic-user markers, not inferred from user content.
+// agent/context_compressor.py and agent/memory_manager.py own these.
+const HOST_PREFIXES = [
+    "[System:",
+    "[CONTEXT",
+    "[PRIOR CONTEXT",
+    "[IMPORTANT: Background",
+    "[Your active task list",
+    "[Planning state preserved",
+    "[ASYNC DELEGATION",
+    "[OUT-OF-BAND",
+    "Cronjob Response:",
+];
+const MERGED = "[END OF PRIOR CONTEXT \u2014 COMPACTION SUMMARY BELOW]";
+const SUMMARY_END =
+    "--- END OF CONTEXT SUMMARY \u2014 respond to the message below, not the summary above ---";
+const MEMORY_NOTE =
+    "[System note: The following is recalled memory context, NOT new user input.";
+function hasSummary(value: unknown): value is string {
+    return (
+        typeof value === "string" &&
+        (value.includes("[CONTEXT") ||
+            value.includes("[PRIOR CONTEXT") ||
+            value.includes(MERGED))
+    );
+}
+function humanText(value: string): string | null {
+    let said = "";
+    let from = 0;
+    let fenced = false;
+    for (const match of value.matchAll(/<\s*(\/?)\s*memory-context\s*>/gi)) {
+        if (!fenced) said += value.slice(from, match.index);
+        fenced = match[1] !== "/";
+        from = match.index + match[0].length;
+    }
+    if (!fenced) said += value.slice(from);
+    said = said.trim();
+    if (said.startsWith(MEMORY_NOTE)) {
+        const end = said.indexOf("]");
+        said = end < 0 ? "" : said.slice(end + 1).trim();
+    }
+    const merged = said.indexOf(MERGED);
+    if (merged >= 0 && hasSummary(said.slice(merged + MERGED.length))) {
+        const end = said.indexOf(SUMMARY_END, merged);
+        const after =
+            end < 0 ? "" : said.slice(end + SUMMARY_END.length).trim();
+        said = [said.slice(0, merged).trim(), after]
+            .filter(Boolean)
+            .join("\n\n");
+    } else if (
+        said.startsWith("[CONTEXT") ||
+        said.startsWith("[PRIOR CONTEXT")
+    ) {
+        const end = said.indexOf(SUMMARY_END);
+        said = end < 0 ? "" : said.slice(end + SUMMARY_END.length).trim();
+    }
+    return !said || HOST_PREFIXES.some((prefix) => said.startsWith(prefix))
+        ? null
+        : said;
+}
+
+function content(
+    value: unknown,
+    spoken: (value: string) => string | null = (value) => value,
+): string {
+    if (value === null) return "";
+    const stored = text(value, "content is not text");
+    let decoded = stored.startsWith("\0json:")
+        ? json(stored.slice(6), "invalid content JSON")
+        : stored;
+    if (
+        object(decoded) &&
+        decoded._multimodal === true &&
+        Array.isArray(decoded.content)
+    )
+        decoded = decoded.text_summary ?? decoded.content;
+    if (typeof decoded === "string") return spoken(decoded) ?? "";
+    if (!Array.isArray(decoded))
+        throw new Unreadable("unsupported structured content");
+    return decoded
+        .map((block) => {
+            if (!object(block) || typeof block.type !== "string")
+                throw new Unreadable("a content block without its type");
+            if (["image", "image_url", "input_image"].includes(block.type))
+                return "[image]";
+            if (["text", "input_text", "output_text"].includes(block.type))
+                return spoken(
+                    text(block.text, "a text block without its text"),
+                );
+            throw new Unreadable("an unsupported content block");
+        })
+        .filter((part): part is string => part !== null)
+        .join("\n\n");
+}
+type ToolCall = {
+    id: string;
+    uid: string | null;
+    message: number;
+    // Nth use of this id within its message, from zero.
+    occurrence: number;
+    name: string;
+    input: string;
+    answered: boolean;
+    // Where the call was made, for recording it failed if never answered.
+    origin: { sourceId: number; at: string; emit: boolean } | null;
+};
+function callId(...values: unknown[]): string {
+    for (const value of values) {
+        if (typeof value === "string" && value.trim())
+            return value.trim().split("|", 1)[0]?.trim() || value.trim();
+    }
+    throw new Unreadable("a tool call without its id");
+}
+function calls(
+    row: Json,
+    id: number,
+): { calls: ToolCall[]; unknown: string[] } {
+    const result: { calls: ToolCall[]; unknown: string[] } = {
+        calls: [],
+        unknown: [],
+    };
+    if (row.tool_calls === null) return result;
+    const values = json(
+        text(row.tool_calls, "tool calls are not text"),
+        "invalid tool calls JSON",
+    );
+    if (!Array.isArray(values))
+        throw new Unreadable("tool calls are not an array");
+    const uids =
+        row.tool_call_uids === null
+            ? {}
+            : json(
+                  text(row.tool_call_uids, "tool call uids are not text"),
+                  "invalid tool call uids JSON",
+              );
+    if (
+        !object(uids) ||
+        Object.values(uids).some((uid) =>
+            Array.isArray(uid)
+                ? uid.length === 0 ||
+                  uid.some(
+                      (value) => typeof value !== "string" || !value.trim(),
+                  )
+                : typeof uid !== "string" || !uid.trim(),
+        )
+    )
+        throw new Unreadable("invalid tool call uids");
+    const occurrences = new Map<string, number>();
+    for (const value of values) {
+        if (!object(value)) throw new Unreadable("a malformed tool call");
+        const type = nonempty(value.type, "a tool call without its type");
+        if (type !== "function") {
+            result.unknown.push(`tool_call/${type}`);
+            continue;
+        }
+        const key = callId(value.call_id, value.id);
+        if (!object(value.function))
+            throw new Unreadable("a tool call without its function");
+        const occurrence = occurrences.get(key) ?? 0;
+        occurrences.set(key, occurrence + 1);
+        const entry = uids[key];
+        const uid = Array.isArray(entry) ? entry[occurrence] : entry;
+        if (Array.isArray(entry) && uid === undefined)
+            throw new Unreadable("incomplete tool call uids");
+        result.calls.push({
+            id: key,
+            uid: typeof uid === "string" ? uid : null,
+            message: id,
+            occurrence,
+            name: nonempty(value.function.name, "a tool call without its name"),
+            input: text(
+                value.function.arguments,
+                "a tool call without its input",
+            ),
+            answered: false,
+            origin: null,
+        });
+    }
+    return result;
+}
+
+// A failed call's source id: its message, its provider id percent-encoded
+// (so it holds no colon) and, past the first use, the use's number. No two
+// calls share one, whatever characters the provider's id holds.
+function failureId(message: number, call: ToolCall): string {
+    const id = encodeURIComponent(call.id);
+    return call.occurrence > 0
+        ? `${message}:${id}:${call.occurrence}`
+        : `${message}:${id}`;
+}
+
+function absorbedUids(value: unknown): string[] {
+    if (value === null) return [];
+    const uids = json(
+        text(value, "absorbed message uids are not text"),
+        "invalid absorbed message uids JSON",
+    );
+    if (
+        !Array.isArray(uids) ||
+        uids.some((uid) => typeof uid !== "string" || !uid.trim())
+    )
+        throw new Unreadable("invalid absorbed message uids");
+    return [...new Set<string>(uids)];
+}
+function parentHoldings(rows: Json[]): Set<string> {
+    const held = new Set<string>();
+    for (const row of rows) {
+        if (typeof row.message_uid === "string" && row.message_uid.trim())
+            held.add(row.message_uid);
+        try {
+            for (const uid of absorbedUids(row.absorbed_message_uids))
+                held.add(uid);
+        } catch (error) {
+            if (!(error instanceof Unreadable)) throw error;
+            // An invalid witness asserts no extra ownership. The parent
+            // decoder reports its own malformed visible row as a halt.
+        }
+    }
+    return held;
+}
+
+type ToolQueue = { calls: ToolCall[]; next: number };
+type Decoded = { physical: number; event: RecordEvent };
+function sourceIds(rows: Json[]): Map<string, number> {
+    const ids = new Map<string, number>();
+    for (const row of rows) {
+        if (
+            typeof row.message_uid === "string" &&
+            row.message_uid.trim() &&
+            typeof row.id === "number" &&
+            Number.isSafeInteger(row.id) &&
+            row.id > 0
+        )
+            ids.set(
+                row.message_uid,
+                Math.min(ids.get(row.message_uid) ?? row.id, row.id),
+            );
+    }
+    return ids;
+}
+type DecodeState = {
+    read: HermesRead;
+    decoded: Decoded[];
+    since: number;
+    pending: ToolCall[];
+    byId: Map<string, ToolCall>;
+    byUid: Map<string, ToolQueue>;
+    known: Set<string>;
+};
+function decodeTool(
+    row: Json,
+    id: number,
+    sourceId: number,
+    { decoded, since, byId, byUid }: DecodeState,
+    emit: boolean,
+) {
+    const key = callId(row.tool_call_id);
+    const output = content(row.content);
+    const at = timestamp(row.timestamp);
+    const uid =
+        row.tool_call_uid === null
+            ? null
+            : nonempty(row.tool_call_uid, "invalid tool result uid");
+    const queue = uid === null ? undefined : byUid.get(uid);
+    const call = uid === null ? byId.get(key) : queue?.calls[queue.next];
+    if (call && call.id === key && !call.answered) {
+        call.answered = true;
+        if (queue) queue.next++;
+        if (emit && sourceId > since)
+            decoded.push({
+                physical: id,
+                event: {
+                    kind: "tool",
+                    name: call.name,
+                    input: call.input,
+                    output,
+                    ok: true,
+                    sourceId: String(sourceId),
+                    at,
+                },
+            });
+        return true;
+    }
+    return false;
+}
+function decodeSpeech(
+    row: Json,
+    id: number,
+    sourceId: number,
+    type: "user" | "assistant",
+    { read, decoded, since, pending, byId, byUid, known }: DecodeState,
+    emit: boolean,
+) {
+    const said = content(row.content, type === "user" ? humanText : undefined);
+    const at = timestamp(row.timestamp);
+    if (type === "assistant") {
+        const decoded = calls(row, id);
+        for (const call of decoded.calls) {
+            call.origin = { sourceId, at, emit };
+            pending.push(call);
+            byId.set(call.id, call);
+            if (call.uid !== null) {
+                const queue = byUid.get(call.uid);
+                if (queue) queue.calls.push(call);
+                else byUid.set(call.uid, { calls: [call], next: 0 });
+            }
+        }
+        for (const unknown of decoded.unknown) {
+            if (!known.has(unknown)) {
+                read.unknown.push({ id, type: unknown });
+                known.add(unknown);
+            }
+        }
+    } else {
+        byId.clear();
+        byUid.clear();
+    }
+    if (emit && sourceId > since && said.trim())
+        decoded.push({
+            physical: id,
+            event: {
+                kind: type,
+                text: said,
+                sourceId: String(sourceId),
+                at,
+                ...(type === "assistant" ? { interrupted: false } : {}),
+            },
+        });
+    return said.trim() !== "";
+}
+
+function decodeSession(
+    session: Json,
+    rows: Json[],
+    since: number,
+    parentUids: ReadonlySet<string>,
+    ids: ReadonlyMap<string, number>,
+    ended: boolean,
+): HermesRead {
+    const read: HermesRead = {
+        session: null,
+        parent: null,
+        source: null,
+        cwd: null,
+        model: null,
+        at: null,
+        events: [],
+        halt: null,
+        unknown: [],
+        pending: null,
+    };
+    const decoded: Decoded[] = [];
+    const pending: ToolCall[] = [];
+    const byId = new Map<string, ToolCall>();
+    const byUid = new Map<string, ToolQueue>();
+    let id: number | null = null;
+    let type: string | null = "session";
+    try {
+        read.session = nonempty(session.id, "no session id");
+        read.parent =
+            session.parent_session_id === null
+                ? null
+                : nonempty(session.parent_session_id, "invalid parent session");
+        read.source = nonempty(session.source, "no session source");
+        read.cwd =
+            session.cwd === null
+                ? null
+                : nonempty(session.cwd, "invalid working directory");
+        read.model =
+            session.model === null
+                ? null
+                : nonempty(session.model, "invalid model");
+        read.at = timestamp(session.started_at);
+        const known = new Set<string>();
+        const state = { read, decoded, since, pending, byId, byUid, known };
+        const held = new Set(parentUids);
+        for (const [uid, first] of ids) if (first <= since) held.add(uid);
+        const seenMessages = new Set<string>();
+        for (const row of rows) {
+            if (row.active !== 1 && row.compacted !== 1) continue;
+            id =
+                typeof row.id === "number" &&
+                Number.isSafeInteger(row.id) &&
+                row.id > 0
+                    ? row.id
+                    : null;
+            type = null;
+            if (id === null) throw new Unreadable("invalid message id");
+            type = nonempty(row.role, "no message role");
+            if (type === "system" || type === "developer") continue;
+            if (type !== "user" && type !== "assistant" && type !== "tool") {
+                if (!known.has(type)) {
+                    read.unknown.push({ id, type });
+                    known.add(type);
+                }
+                continue;
+            }
+            if (row.display_metadata !== null) {
+                const display = json(
+                    text(row.display_metadata, "display metadata is not text"),
+                    "invalid display metadata JSON",
+                );
+                if (!object(display))
+                    throw new Unreadable("display metadata is not an object");
+                if (display.model_only === true) continue;
+            }
+            if (type === "user") {
+                if (row._compressed_summary === 1 && !hasSummary(row.content))
+                    continue;
+                if (
+                    row.display_kind !== null &&
+                    row.display_kind !== "steer" &&
+                    !(
+                        row.display_kind === "hidden" &&
+                        row._compressed_summary === 1
+                    )
+                )
+                    continue;
+            }
+            const messageUid =
+                row.message_uid === null
+                    ? null
+                    : nonempty(row.message_uid, "invalid message uid");
+            const absorbed = absorbedUids(row.absorbed_message_uids);
+            if (messageUid !== null) {
+                if (seenMessages.has(messageUid)) continue;
+                seenMessages.add(messageUid);
+            }
+            const sourceId =
+                messageUid === null ? id : (ids.get(messageUid) ?? id);
+            const members =
+                messageUid === null ? absorbed : [messageUid, ...absorbed];
+            const emit = !members.some((uid) => held.has(uid));
+            const before = decoded.length;
+            const isEvent =
+                type === "tool"
+                    ? decodeTool(row, id, sourceId, state, emit)
+                    : decodeSpeech(row, id, sourceId, type, state, emit);
+            if (isEvent && (sourceId <= since || decoded.length > before))
+                for (const uid of members) held.add(uid);
+        }
+    } catch (error) {
+        if (!(error instanceof Unreadable)) throw error;
+        read.halt = { id, type, reason: error.message };
+    }
+    // A session over answers no more: its unanswered calls are recorded
+    // failed, by the call's own message, and release what follows. No
+    // release past a halt, which may hide the answer.
+    if (ended && read.halt === null)
+        for (const call of pending) {
+            const { origin } = call;
+            if (call.answered || origin === null) continue;
+            call.answered = true;
+            if (origin.emit && origin.sourceId > since)
+                decoded.push({
+                    physical: call.message,
+                    event: {
+                        kind: "tool",
+                        name: call.name,
+                        input: call.input,
+                        output: "",
+                        ok: false,
+                        sourceId: failureId(origin.sourceId, call),
+                        at: origin.at,
+                    },
+                });
+        }
+    decoded.sort((a, b) => a.physical - b.physical);
+    read.pending = pending.find((call) => !call.answered)?.message ?? null;
+    const through = read.pending;
+    read.events = decoded
+        .filter((item) => through === null || item.physical <= through)
+        .map((item) => item.event);
+    return read;
+}
+
+// The only I/O edge: the supplied path is always opened read-only. The
+// session decoder receives rows alone; this never opens a Dorothy store.
+export function readHermes(
+    db: string,
+    since = 0,
+    session?: string,
+    { ended = false }: { ended?: boolean } = {},
+): HermesRead[] {
+    if (!Number.isSafeInteger(since) || since < 0)
+        throw new RangeError("invalid message cursor");
+    const reader = new Database(db, { readonly: true, create: false });
+    try {
+        const sessions = reader
+            .query<Json, [string | null, string | null]>(
+                `SELECT id, parent_session_id, source, cwd, model, started_at
+                 FROM sessions WHERE (? IS NULL OR id = ?) ORDER BY id`,
+            )
+            .all(session ?? null, session ?? null);
+        const messages = reader.query<Json, [string]>(
+            `SELECT id, role, content, timestamp, tool_calls, tool_call_id,
+                    tool_call_uids, tool_call_uid, active, compacted,
+                    _compressed_summary, display_kind, display_metadata, message_uid,
+                    absorbed_message_uids
+             FROM messages WHERE session_id = ? AND (active = 1 OR compacted = 1)
+             ORDER BY id`,
+        );
+        const identities = reader.query<Json, [string]>(
+            "SELECT message_uid, MIN(id) AS id FROM messages WHERE session_id = ? GROUP BY message_uid",
+        );
+        const parentMessages = reader.query<Json, [string]>(
+            "SELECT message_uid, absorbed_message_uids FROM messages WHERE session_id = ?",
+        );
+        return sessions.map((session) =>
+            decodeSession(
+                session,
+                typeof session.id === "string" ? messages.all(session.id) : [],
+                since,
+                parentHoldings(
+                    typeof session.parent_session_id === "string"
+                        ? parentMessages.all(session.parent_session_id)
+                        : [],
+                ),
+                sourceIds(
+                    typeof session.id === "string"
+                        ? identities.all(session.id)
+                        : [],
+                ),
+                ended,
+            ),
+        );
+    } finally {
+        reader.close();
+    }
+}

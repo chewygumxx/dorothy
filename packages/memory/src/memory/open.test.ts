@@ -11,7 +11,7 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
     configPath,
     type SessionStart,
@@ -21,13 +21,18 @@ import {
 } from "@dorothy/core";
 import { stateDir } from "../bodies/state.js";
 import { addNotice } from "../bodies/unread.js";
+import { acceptRecord } from "../contract/record.js";
 import { dataRoot, putFact } from "../facts/store.js";
 import { projectsPath } from "../projects/registry.js";
+import { indexPath, RecallIndex } from "../recall/store.js";
+import { syncIndex } from "../recall/sync.js";
 import { transcriptDir, transcriptPath } from "../transcript.js";
+import { indexCatalogue } from "./catalogue.js";
 import { FakeSession } from "./fake-session.js";
 import { type MemoryPrompts, openMemory } from "./open.js";
-
 import { dir, useXdgDir } from "./open-testing.js";
+import { isStale } from "./service.js";
+import { readSidecar } from "./sidecar.js";
 
 useXdgDir();
 
@@ -140,6 +145,95 @@ describe("openMemory", () => {
             );
         }
     });
+
+    for (const host of ["codex", "hermes"])
+        it(`clears a swept ${host} backfill mark only after a resumed chat appends turns`, async () => {
+            const isolated = {
+                ...env,
+                HOME: dir,
+                XDG_RUNTIME_DIR: join(dir, "run"),
+            };
+            await mkdir(dirname(configPath(isolated)), { recursive: true });
+            await writeFile(
+                configPath(isolated),
+                "[history]\nenabled = false\n",
+            );
+            const phrase = "tumble-orchid-vapor-lantern";
+            const seed = RecallIndex.open(indexPath(isolated));
+            try {
+                await acceptRecord(
+                    {
+                        host,
+                        session: "synthetic",
+                        events: [
+                            {
+                                kind: "user",
+                                text: "Synthetic before.",
+                                sourceId: "1",
+                                at: "2026-10-20T09:00:00.000Z",
+                            },
+                        ],
+                    },
+                    {
+                        env: isolated,
+                        index: seed,
+                        recorder: null,
+                        loopback: true,
+                        sync: () => syncIndex(seed, transcriptDir(isolated)),
+                        claudeTranscript: null,
+                        sessions: new Map(),
+                        phrase: () => phrase,
+                        backfill: true,
+                    },
+                );
+            } finally {
+                seed.close();
+            }
+            const open = async (inner: FakeSession) => {
+                const opened = await openMemory({
+                    resume: phrase,
+                    call: quiet,
+                    prompts,
+                    connect: () => inner,
+                    recallLaunch: () => ({ command: "x", args: [] }),
+                    env: isolated,
+                });
+                if (!opened.ok) throw new Error(opened.message);
+                return opened.memory;
+            };
+            const idle = new FakeSession();
+            const untouched = await open(idle);
+            untouched.createSession(untouched.history);
+            idle.emit({
+                type: "ready",
+                model: "synthetic",
+                sdkSessionId: "idle",
+            });
+            await untouched.close();
+            expect(
+                await readSidecar(transcriptDir(isolated), phrase),
+            ).toMatchObject({ kind: "ok", sidecar: { backfilled: true } });
+            const active = await open(new FakeSession());
+            active.createSession(active.history).send("Synthetic live turn.");
+            await active.close();
+            const read = await readSidecar(transcriptDir(isolated), phrase);
+            expect(read.kind === "ok" && read.sidecar.backfilled === true).toBe(
+                false,
+            );
+            const index = RecallIndex.open(indexPath(isolated));
+            try {
+                const { entries } = await indexCatalogue(
+                    index,
+                    transcriptDir(isolated),
+                ).load();
+                const entry = entries.find((entry) => entry.phrase === phrase);
+                if (!entry) throw new Error("missing resumed conversation");
+                expect(entry.turns).toBe(2);
+                expect(isStale(entry, Date.now(), true)).toBe(true);
+            } finally {
+                index.close();
+            }
+        });
 
     it("refuses to resume a Claude Code conversation", async () => {
         const phrase = "tumble-orchid-vapor-lantern";

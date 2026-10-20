@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-20
+mtime: 2026-10-21
 spdx: GPL-3.0-only
 title: packages/memory/AGENTS.md
 description: >-
@@ -19,11 +19,10 @@ tags:
 
 # packages/memory/AGENTS.md
 
-`@dorothy/memory` is Dorothy's memory database in all its parts:
-transcripts, the notes on each conversation, facts, recall, compaction,
-tags and history. It never imports the agent or a model provider's SDK:
-reviews and compaction take core's `StructuredCall` and their prompts as
-text (`MemoryPrompts`).
+`@dorothy/memory` holds transcripts, notes, facts, projects, recall,
+compaction, tags and history. It imports neither the agent nor a model
+provider's SDK: reviews and compaction take core's `StructuredCall`
+and prompts as text (`MemoryPrompts`).
 
 ## Entry points and imports
 
@@ -41,7 +40,7 @@ text (`MemoryPrompts`).
 - `transcript.ts`: private JSONL under `$XDG_DATA_HOME/dorothy/`.
   Sessions name their `source`, events their `sourceUuid`. Tool text is
   scrubbed (`scrub.ts`) and trimmed to 2,000 characters a side. Chat's
-  appends share history's lock with restores, through `TranscriptWriter`.
+  appends and backfill unmarks share `TranscriptWriter`'s common lock.
 - `memory/open.ts`: `openMemory` opens a chat's memory and returns its
   `createSession(turns)`, whose sessions are compacting, tracked by memory
   and recorded by `sessionRecorder` (`record.ts`). Each starts from the
@@ -52,9 +51,9 @@ text (`MemoryPrompts`).
   `catalogue.ts`'s `indexCatalogue` loads each conversation's sidecar,
   visits and reads from the index for `openMemory`, `previewStart` and `--list`.
 - `memory/sidecar.ts`: the notes, kept in `<phrase>.meta.json` beside the
-  transcript. `service.ts`'s `MemoryService` builds the memory block each
-  session starts with, frozen for the session, and schedules reviews
-  (`scheduler.ts`; `reviewer.ts`, also the hooks'), never blocking chat.
+  transcript, including a durable backfill mark cleared by live appends.
+  `service.ts`'s `MemoryService` freezes each session's block and schedules
+  reviews (`scheduler.ts`; `reviewer.ts`, also the hooks'), never blocking chat.
   `track.ts`'s `trackMemory` decorates the `ChatSession`, so `App` sees
   only notices. `rank.ts`, `block.ts`, `edit-view.ts` and `list.ts` are
   pure; `commands.ts` has `--list`, `--memory`, `--tags`, `--edit-tags`.
@@ -84,21 +83,22 @@ text (`MemoryPrompts`).
   `hard`, before the next message), `compact()` splits the turns before
   the verbatim tail into topical clusters with an abstract each; read
   [its own guide](./src/compaction/AGENTS.md).
-- `history/`: the data directory as a git repository. `MemoryRepo`
-  (`repo.ts`) has two engines, the git binary run isolated from the
-  user's configuration (`binary.ts`) and isomorphic-git (`iso.ts`), chosen
-  once per process (`open.ts`). `MemoryHistory` (`history.ts`) commits
-  each logical change, sweeps up outside changes first, and restores a
-  file that fails `lint.ts` (`heal.ts`), keeping its bytes under
-  `broken/`. The lint knows facts and `projects.json`. The sweep keeps a
-  fact as hers if `facts/pending.ts` noted its hash. A damaged journal warns,
-  commits without changing attribution, then repairs; outside edits are user's.
-  `mirror.ts` seals new commits as AES-256-GCM bundles (`seal.ts`) on the
-  orphan branch `sealed` and pushes it to the remote
-  `mirror` under `DOROTHY_MIRROR_KEY`; `--recover` rebuilds from it.
-  `commands.ts` has `commandHistory`, history/restore/rollback/check and
+- `history/`: the data directory as a git repository. `MemoryRepo` (`repo.ts`)
+  has two engines, the git binary run isolated from the user's configuration
+  (`binary.ts`) and isomorphic-git (`iso.ts`), chosen once per process
+  (`open.ts`). `MemoryHistory` (`history.ts`) commits each logical change,
+  sweeps up outside changes first, and restores a file that fails `lint.ts`
+  (`heal.ts`), keeping its bytes under `broken/`. The lint knows facts and
+  `projects.json`. The sweep keeps a fact as hers if `facts/pending.ts` noted
+  its hash. A damaged journal warns, commits without changing attribution, then
+  repairs; outside edits are user's. `mirror.ts` seals new commits as
+  AES-256-GCM bundles (`seal.ts`) on the orphan branch `sealed` and pushes it
+  to the remote `mirror` under `DOROTHY_MIRROR_KEY`; `--recover` rebuilds from
+  it. `commands.ts` has `commandHistory`, history/restore/rollback/check and
   mirror/recover commands. Commands that advance main await a push on close;
   mirror keys use dotenvx's `set`. `lock.ts` is the common `FileLock`.
+- `recording/`: readers and the sweep, [guide](./src/recording/AGENTS.md);
+  `service/` binds it, [guide](./src/service/AGENTS.md).
 - `sqlite-lock.ts`: `exclusiveLock`, a SQLite `BEGIN IMMEDIATE` lock.
 
 ## Invariants
@@ -119,7 +119,7 @@ text (`MemoryPrompts`).
   commits each turn once the transcript is flushed.
 - The memory block charges the earlier turns' abstracts first.
 - `recollect` is served only with `--recollect`, for a chat with clusters.
-- At catalogue load, concepts carried only by hidden chats are omitted.
+- Hidden chats carry no catalogue concepts; backfills get no paid review.
 - Nothing deletes a fact: one retired stays indexed, searchable and in
   history. Its origin is set by the code that writes it, never read
   from its text, and only the user raises it.

@@ -45,6 +45,7 @@ describe("parseConfig", () => {
                 compaction: DEFAULT_CONFIG.compaction,
                 history: DEFAULT_CONFIG.history,
                 service: DEFAULT_CONFIG.service,
+                recording: DEFAULT_CONFIG.recording,
             },
             warnings: [],
         });
@@ -106,6 +107,63 @@ describe("parseConfig", () => {
         expect(config.service.claudeDirs).toEqual([]);
         expect(warnings).toEqual([
             'config.toml: service.claude-dirs must be a list of absolute paths, such as "/home/me/.config/claude"',
+        ]);
+    });
+
+    it("records no host by default, sweeping every 300 seconds", () => {
+        expect(parseConfig("").config.recording).toEqual({
+            hosts: [],
+            sweepSeconds: 300,
+        });
+    });
+
+    it("reads [recording]", () => {
+        const { config, warnings } = parseConfig(
+            '[recording]\nhosts = ["codex", "claude-code", "codex"]\nsweep-seconds = 60\n',
+        );
+        expect(warnings).toEqual([]);
+        expect(config.recording).toEqual({
+            hosts: ["codex", "claude-code"],
+            sweepSeconds: 60,
+        });
+    });
+
+    it("warns of a host it does not record and keeps none", () => {
+        const { config, warnings } = parseConfig(
+            '[recording]\nhosts = ["codex", "emacs"]\n',
+        );
+        expect(config.recording.hosts).toEqual([]);
+        expect(warnings).toEqual([
+            "config.toml: recording.hosts must be a list of hosts from claude-code, codex, hermes",
+        ]);
+    });
+
+    it("warns of hosts that are no list", () => {
+        const { config, warnings } = parseConfig(
+            '[recording]\nhosts = "codex"\n',
+        );
+        expect(config.recording.hosts).toEqual([]);
+        expect(warnings).toHaveLength(1);
+    });
+
+    it("keeps sweep-seconds from 10 to 86400", () => {
+        for (const bad of ["9", "86401", "1.5", '"60"']) {
+            const { config, warnings } = parseConfig(
+                `[recording]\nsweep-seconds = ${bad}\n`,
+            );
+            expect(config.recording.sweepSeconds).toBe(300);
+            expect(warnings).toEqual([
+                "config.toml: recording.sweep-seconds must be a whole number from 10 to 86400",
+            ]);
+        }
+    });
+
+    it("warns of an unknown recording key and of a recording that is no table", () => {
+        expect(parseConfig("[recording]\nsweep = 1\n").warnings).toEqual([
+            "config.toml: unknown key recording.sweep",
+        ]);
+        expect(parseConfig("recording = 1\n").warnings).toEqual([
+            "config.toml: recording is not a table",
         ]);
     });
 
