@@ -244,6 +244,7 @@ function decodeSession(session: Json, rows: Json[], since: number): HermesRead {
                 : nonempty(session.model, "invalid model");
         read.at = timestamp(session.started_at);
         const known = new Set<string>();
+        const seenMessages = new Set<string>();
         for (const row of rows) {
             if (row.active !== 1 && row.compacted !== 1) continue;
             id =
@@ -284,6 +285,14 @@ function decodeSession(session: Json, rows: Json[], since: number): HermesRead {
                     )
                 )
                     continue;
+            }
+            const messageUid =
+                row.message_uid === null
+                    ? null
+                    : nonempty(row.message_uid, "invalid message uid");
+            if (messageUid !== null) {
+                if (seenMessages.has(messageUid)) continue;
+                seenMessages.add(messageUid);
             }
             if (type === "tool") {
                 const key = callId(row.tool_call_id);
@@ -372,7 +381,7 @@ export function readHermes(db: string, since = 0): HermesRead[] {
         const messages = reader.query<Json, [string]>(
             `SELECT id, role, content, timestamp, tool_calls, tool_call_id,
                     tool_call_uids, tool_call_uid, active, compacted,
-                    _compressed_summary, display_kind, display_metadata
+                    _compressed_summary, display_kind, display_metadata, message_uid
              FROM messages WHERE session_id = ? ORDER BY id`,
         );
         return sessions.map((session) =>

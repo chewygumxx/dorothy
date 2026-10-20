@@ -864,3 +864,42 @@ describe("readHermes stored shapes", () => {
         });
     }
 });
+
+describe("readHermes compaction copies", () => {
+    it("keeps the first message id when compaction copies a durable message uid", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "user", "Original words.", {
+                active: 0,
+                compacted: 1,
+            });
+            hermesMessage(db, 2, "user", "Original words.", { second: 1 });
+            db.run("UPDATE messages SET message_uid = 'fixture-uid'");
+        });
+        expect(readHermes(path, 0)[0]?.events).toEqual([
+            {
+                kind: "user",
+                text: "Original words.",
+                sourceId: "1",
+                at: hermesAt(1),
+            },
+        ]);
+        expect(readHermes(path, 1)[0]?.events).toEqual([]);
+    });
+    it("keeps identical real turns with different durable uids", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "user", "Repeated words.");
+            hermesMessage(db, 2, "user", "Repeated words.", { second: 1 });
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-first' WHERE id = 1",
+            );
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-second' WHERE id = 2",
+            );
+        });
+        expect(
+            readHermes(path, 0)[0]?.events.map((event) => event.sourceId),
+        ).toEqual(["1", "2"]);
+    });
+});
