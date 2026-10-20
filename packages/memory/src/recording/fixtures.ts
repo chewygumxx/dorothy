@@ -117,3 +117,9 @@ export const userBlocks = (texts: string[], second = 1) =>
         },
         second,
     );
+
+// Responses input_image is a typed block, not a text block.
+export const inputImage = {
+    type: "input_image",
+    image_url: "https://fixture.invalid/image.png",
+};

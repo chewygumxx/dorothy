@@ -17,6 +17,7 @@ import {
     context,
     hostEnvironment,
     hostInstructions,
+    inputImage,
     line,
     message,
     meta,
@@ -459,5 +460,95 @@ describe("Codex injected user context", () => {
                 ]),
             ]).events,
         ).toEqual([]);
+    });
+});
+
+describe("Codex non-text content", () => {
+    it("keeps an image-only user turn without reading its image", () => {
+        const read = readCodex([
+            line("response_item", {
+                type: "message",
+                role: "user",
+                content: [inputImage],
+            }),
+        ]);
+        expect(read.events).toEqual([
+            { kind: "user", text: "[image]", sourceId: "1", at: at(0) },
+        ]);
+        expect(read.halt).toBeNull();
+    });
+    it("keeps text and image placeholders in block order", () => {
+        const read = readCodex([
+            line("response_item", {
+                type: "message",
+                role: "assistant",
+                content: [
+                    { type: "output_text", text: "First." },
+                    inputImage,
+                    { type: "refusal", refusal: "Synthetic refusal." },
+                    { type: "output_text", text: "Last." },
+                ],
+            }),
+        ]);
+        expect(read.events[0]).toMatchObject({
+            kind: "assistant",
+            text: "First.\n\n[image]\n\nLast.",
+        });
+        expect(read.halt).toBeNull();
+    });
+    it("keeps image markers in tool output block arrays", () => {
+        const read = readCodex([
+            call("function_call", "image", "fixture", "{}"),
+            output("function_call_output", "image", [inputImage]),
+        ]);
+        expect(read.events[0]).toMatchObject({
+            kind: "tool",
+            output: "[image]",
+            ok: true,
+        });
+        expect(read.halt).toBeNull();
+    });
+    for (const block of [
+        {
+            type: "input_file",
+            filename: "fixture.txt",
+            file_data: "Synthetic file.",
+        },
+        {
+            type: "input_audio",
+            input_audio: { data: "synthetic", format: "wav" },
+        },
+        { type: "refusal", refusal: "Synthetic refusal." },
+        { type: "reasoning_text", text: "Synthetic reasoning." },
+        { type: "summary_text", text: "Synthetic summary." },
+        { type: "encrypted_content", encrypted_content: "synthetic" },
+    ]) {
+        it(`passes known ${block.type} blocks without recording their content`, () => {
+            const read = readCodex([
+                line("response_item", {
+                    type: "message",
+                    role: "user",
+                    content: [block],
+                }),
+                message("user", "After."),
+            ]);
+            expect(read.events).toEqual([
+                { kind: "user", text: "After.", sourceId: "2", at: at(1) },
+            ]);
+            expect(read.halt).toBeNull();
+        });
+    }
+    it("still halts on an unknown or missing block tag", () => {
+        for (const block of [{ type: "future_content" }, {}, { type: "" }]) {
+            const read = readCodex([
+                line("response_item", {
+                    type: "message",
+                    role: "user",
+                    content: [block],
+                }),
+            ]);
+            expect(read.halt?.line).toBe(0);
+            expect(read.events).toEqual([]);
+        }
     });
 });

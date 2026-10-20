@@ -45,6 +45,14 @@ const BOOKKEEPING = new Set([
     "event_msg/turn_aborted",
     "event_msg/context_compacted",
 ]);
+const NON_TEXT_BLOCKS = new Set([
+    "input_file",
+    "input_audio",
+    "refusal",
+    "reasoning_text",
+    "summary_text",
+    "encrypted_content",
+]);
 class Unreadable extends Error {}
 const object = (value: unknown): value is Json =>
     value !== null && typeof value === "object" && !Array.isArray(value);
@@ -89,14 +97,15 @@ function blocks(
     if (!Array.isArray(value)) throw new Unreadable("text without its blocks");
     return value
         .map((block) => {
-            if (
-                !object(block) ||
-                typeof block.type !== "string" ||
-                !["input_text", "output_text"].includes(block.type)
-            ) {
+            if (!object(block) || typeof block.type !== "string")
                 throw new Unreadable("an unsupported text block");
-            }
-            return spoken(text(block.text, "a text block without its text"));
+            if (block.type === "input_image") return "[image]";
+            if (NON_TEXT_BLOCKS.has(block.type)) return null;
+            if (block.type === "input_text" || block.type === "output_text")
+                return spoken(
+                    text(block.text, "a text block without its text"),
+                );
+            throw new Unreadable("an unsupported text block");
         })
         .filter((part): part is string => part !== null)
         .join(separator);
