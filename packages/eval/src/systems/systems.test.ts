@@ -137,6 +137,25 @@ describe("passage", () => {
         expect(text).toContain("my bicycle is crimson");
     });
 
+    for (const [word, query] of [
+        ["cafe\u0301", "café"],
+        ["㍿", "株式会社"],
+    ] as const) {
+        it(`keeps a normalized ${query} match at its original offset`, () => {
+            // Ligatures expand under NFKC, so a normalized offset cannot
+            // be used to slice the original turn.
+            const answer = `My ${word} order is espresso.`;
+            const long = longTurn(
+                `${"ﬃ filler ".repeat(500)}${answer}${" filler".repeat(500)}`,
+            );
+            const terms = termsOf(query);
+            expect(scoreOf(long.turns[0]?.text ?? "", terms)).toBe(1);
+            const text = passage(long, terms, 300);
+            expect(text.length).toBeLessThanOrEqual(300);
+            expect(text).toContain(answer);
+        });
+    }
+
     it("excerpts the start of a long first turn where none match", () => {
         const long = longTurn(`Opening words. ${"padding ".repeat(1000)}`);
         const text = passage(long, ["zebra"], 300);

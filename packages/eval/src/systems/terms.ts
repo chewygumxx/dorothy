@@ -80,11 +80,33 @@ const COMMON = new Set([
     "dorothy",
 ]);
 
-const wordsOf = (text: string) =>
-    text
-        .toLowerCase()
-        .normalize("NFKC")
-        .split(/[^\p{L}\p{N}]+/u);
+const normalized = (text: string) => text.toLowerCase().normalize("NFKC");
+const wordsOf = (text: string) => normalized(text).split(/[^\p{L}\p{N}]+/u);
+
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+// Find a word with the scorer's normalization and boundaries, then map
+// its offset back to the original text. A grapheme keeps combining marks
+// with their base; its normalized length includes compatibility
+// expansions, so neither kind of change shifts the original excerpt.
+export function firstTermAt(
+    text: string,
+    terms: readonly string[],
+): number | undefined {
+    for (const word of normalized(text).matchAll(/[\p{L}\p{N}]+/gu)) {
+        if (!terms.includes(word[0])) {
+            continue;
+        }
+        let end = 0;
+        for (const part of graphemes.segment(text)) {
+            end += normalized(part.segment).length;
+            if (end > word.index) {
+                return part.index;
+            }
+        }
+    }
+    return undefined;
+}
 
 export function termsOf(text: string): string[] {
     const terms = new Set<string>();

@@ -19,7 +19,7 @@ import {
     type ArchiveTurn,
     openArchive,
 } from "@dorothy/memory/evaluation";
-import { scoreOf } from "./terms.js";
+import { firstTermAt, scoreOf } from "./terms.js";
 
 export type Corpus = {
     archive: Archive;
@@ -145,12 +145,10 @@ function excerpt(
     if (room <= 0) {
         return clip(conversationText(conversation, []), chars);
     }
-    const hit = [...turn.text.matchAll(/[\p{L}\p{N}]+/gu)].find((word) =>
-        terms.includes(word[0].toLowerCase().normalize("NFKC")),
-    );
+    const hit = firstTermAt(turn.text, terms);
     const end = Math.min(
         turn.text.length,
-        Math.max(0, (hit?.index ?? 0) - Math.floor(room / 4)) + room,
+        Math.max(0, (hit ?? 0) - Math.floor(room / 4)) + room,
     );
     const start = Math.max(0, end - room);
     const text = `${start > 0 ? ELLIPSIS : ""}${turn.text.slice(start, end)}${end < turn.text.length ? ELLIPSIS : ""}`;
