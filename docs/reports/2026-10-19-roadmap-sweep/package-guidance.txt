@@ -60,7 +60,7 @@ Model result:
     "fallback_credit": null
   }
 }
-stderr: 
+stderr:
 exit: 0
 
 rootGuide=true and packageGuide=true were computed from the actual first
