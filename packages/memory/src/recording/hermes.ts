@@ -214,6 +214,76 @@ function calls(
     return result;
 }
 
+type DecodeState = {
+    read: HermesRead;
+    since: number;
+    pending: ToolCall[];
+    byId: Map<string, ToolCall>;
+    byUid: Map<string, ToolCall>;
+    known: Set<string>;
+};
+function decodeTool(
+    row: Json,
+    id: number,
+    { read, since, byId, byUid }: DecodeState,
+) {
+    const key = callId(row.tool_call_id);
+    const output = content(row.content);
+    const at = timestamp(row.timestamp);
+    const uid =
+        row.tool_call_uid === null
+            ? null
+            : nonempty(row.tool_call_uid, "invalid tool result uid");
+    const call = uid === null ? byId.get(key) : byUid.get(uid);
+    if (call && call.id === key && !call.answered) {
+        call.answered = true;
+        if (id > since)
+            read.events.push({
+                kind: "tool",
+                name: call.name,
+                input: call.input,
+                output,
+                ok: true,
+                sourceId: String(id),
+                at,
+            });
+    }
+}
+function decodeSpeech(
+    row: Json,
+    id: number,
+    type: "user" | "assistant",
+    { read, since, pending, byId, byUid, known }: DecodeState,
+) {
+    const said = content(row.content, type === "user" ? humanText : undefined);
+    const at = timestamp(row.timestamp);
+    if (type === "assistant") {
+        const decoded = calls(row, id);
+        for (const call of decoded.calls) {
+            pending.push(call);
+            byId.set(call.id, call);
+            if (call.uid !== null) byUid.set(call.uid, call);
+        }
+        for (const unknown of decoded.unknown) {
+            if (!known.has(unknown)) {
+                read.unknown.push({ id, type: unknown });
+                known.add(unknown);
+            }
+        }
+    } else {
+        byId.clear();
+        byUid.clear();
+    }
+    if (id > since && said.trim())
+        read.events.push({
+            kind: type,
+            text: said,
+            sourceId: String(id),
+            at,
+            ...(type === "assistant" ? { interrupted: false } : {}),
+        });
+}
+
 function decodeSession(session: Json, rows: Json[], since: number): HermesRead {
     const read: HermesRead = {
         session: null,
@@ -244,6 +314,7 @@ function decodeSession(session: Json, rows: Json[], since: number): HermesRead {
                 : nonempty(session.model, "invalid model");
         read.at = timestamp(session.started_at);
         const known = new Set<string>();
+        const state = { read, since, pending, byId, byUid, known };
         const seenMessages = new Set<string>();
         for (const row of rows) {
             if (row.active !== 1 && row.compacted !== 1) continue;
@@ -294,63 +365,8 @@ function decodeSession(session: Json, rows: Json[], since: number): HermesRead {
                 if (seenMessages.has(messageUid)) continue;
                 seenMessages.add(messageUid);
             }
-            if (type === "tool") {
-                const key = callId(row.tool_call_id);
-                const output = content(row.content);
-                const at = timestamp(row.timestamp);
-                const uid =
-                    row.tool_call_uid === null
-                        ? null
-                        : nonempty(
-                              row.tool_call_uid,
-                              "invalid tool result uid",
-                          );
-                const call = uid === null ? byId.get(key) : byUid.get(uid);
-                if (call && call.id === key && !call.answered) {
-                    call.answered = true;
-                    if (id > since)
-                        read.events.push({
-                            kind: "tool",
-                            name: call.name,
-                            input: call.input,
-                            output,
-                            ok: true,
-                            sourceId: String(id),
-                            at,
-                        });
-                }
-                continue;
-            }
-            const said = content(
-                row.content,
-                type === "user" ? humanText : undefined,
-            );
-            const at = timestamp(row.timestamp);
-            if (type === "assistant") {
-                const decoded = calls(row, id);
-                for (const call of decoded.calls) {
-                    pending.push(call);
-                    byId.set(call.id, call);
-                    if (call.uid !== null) byUid.set(call.uid, call);
-                }
-                for (const unknown of decoded.unknown) {
-                    if (!known.has(unknown)) {
-                        read.unknown.push({ id, type: unknown });
-                        known.add(unknown);
-                    }
-                }
-            } else {
-                byId.clear();
-                byUid.clear();
-            }
-            if (id > since && said.trim())
-                read.events.push({
-                    kind: type,
-                    text: said,
-                    sourceId: String(id),
-                    at,
-                    ...(type === "assistant" ? { interrupted: false } : {}),
-                });
+            if (type === "tool") decodeTool(row, id, state);
+            else decodeSpeech(row, id, type, state);
         }
     } catch (error) {
         if (!(error instanceof Unreadable)) throw error;
