@@ -394,6 +394,7 @@ async function noteHalt(
             {
                 session: report.session,
                 conversation: phrase,
+                backfilled: deps.backfill ?? false,
                 transcript: report.transcript,
                 dir: report.dir,
                 since: report.since,

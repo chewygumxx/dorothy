@@ -407,3 +407,7 @@ The user's backfill remains their call, after these fixes are verified.
   recorders warn and skip the mark without changing the broken bytes;
   a sweep continues to later sessions. Existing review and extraction
   guards still pass over unreadable notes.
+- N2: Claude halts retain backfill provenance too. The actual hook
+  reread command passes it to the recorder, preserving suppression both
+  when the backfill made a conversation and when it halted before any
+  event. No paid review becomes due merely because the halt was repaired.

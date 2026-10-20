@@ -76,7 +76,8 @@ reader, the store and reviews alone. The CLI loads both lazily.
   chat's rule (`afterStop`); a `SessionEnd` notes its session and hands
   it to a detached catch-up; a catch-up does what `SessionEnd` would
   for each session of a launch (`afterEnd`), then removes its notes;
-  `--reread` and `--dismiss` resolve or silence a halt. Reviews run
+  `--reread` and `--dismiss` resolve or silence a halt; rereads retain
+  the backfill provenance kept with it. Reviews run
   through `memory/reviewer.ts`'s `Reviewer`, as chat's do, under the
   index's claims, with an agent asked for (`HookDeps.agent`) when one
   runs. The detached catch-up starts in the environment `claude` gave
