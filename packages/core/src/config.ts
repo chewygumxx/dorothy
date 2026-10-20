@@ -62,6 +62,15 @@ export type ServiceConfig = {
     // whose projects directories hold transcripts a record may name.
     claudeDirs: string[];
 };
+// The harnesses whose sessions the sweep can record.
+export const RECORDING_HOSTS = ["claude-code", "codex", "hermes"] as const;
+export type RecordingHost = (typeof RECORDING_HOSTS)[number];
+export type RecordingConfig = {
+    // The harnesses swept; none by default.
+    hosts: RecordingHost[];
+    // Seconds between the service's sweeps.
+    sweepSeconds: number;
+};
 export type Config = {
     statusline: LineConfig;
     replyStats: LineConfig;
@@ -69,6 +78,7 @@ export type Config = {
     compaction: CompactionConfig;
     history: HistoryConfig;
     service: ServiceConfig;
+    recording: RecordingConfig;
 };
 
 // More would let a statusline crowd out the reply; five keeps the smallest
@@ -124,6 +134,10 @@ export const DEFAULT_CONFIG: Config = {
         port: 4774,
         listen: [],
         claudeDirs: [],
+    },
+    recording: {
+        hosts: [],
+        sweepSeconds: 300,
     },
 };
 
@@ -340,6 +354,30 @@ const parseService = (value: unknown, warnings: string[]): ServiceConfig =>
         warnings,
     );
 
+const recordingHosts = (key: string): FieldSpec<RecordingHost[]> => ({
+    key,
+    read: (field) =>
+        Array.isArray(field) &&
+        field.every((each) =>
+            (RECORDING_HOSTS as readonly unknown[]).includes(each),
+        )
+            ? [...new Set(field as RecordingHost[])]
+            : undefined,
+    expected: `a list of hosts from ${RECORDING_HOSTS.join(", ")}`,
+});
+
+const parseRecording = (value: unknown, warnings: string[]): RecordingConfig =>
+    parseTable(
+        "recording",
+        value,
+        DEFAULT_CONFIG.recording,
+        {
+            hosts: recordingHosts("hosts"),
+            sweepSeconds: whole("sweep-seconds", 10, 86400),
+        },
+        warnings,
+    );
+
 // The thresholds only make sense together: compacting must leave a tail
 // smaller than what set it off, below the point that holds a message.
 function parseCompaction(value: unknown, warnings: string[]): CompactionConfig {
@@ -416,6 +454,8 @@ export function parseConfig(text: string): {
             config.history = parseHistory(value, warnings);
         } else if (key === "service") {
             config.service = parseService(value, warnings);
+        } else if (key === "recording") {
+            config.recording = parseRecording(value, warnings);
         } else {
             warnings.push(`config.toml: unknown key ${key}`);
         }
