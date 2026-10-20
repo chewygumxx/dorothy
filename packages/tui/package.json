@@ -10,7 +10,7 @@
         "@dorothy/core": "workspace:*",
         "ink": "^7.1.1",
         "lowlight": "^3.3.0",
-        "marked": "^18.0.14",
+        "marked": "^18.1.1",
         "react": "^19.2.0",
         "string-width": "^8.3.0"
     },
