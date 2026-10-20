@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-15
-mtime: 2026-10-15
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Dorothy's identity design
 description: >-
@@ -156,7 +156,11 @@ goes to `claude` untouched; `--dev` does not apply to it.
    keeps only the last `--append-system-prompt`, so a user's own (the
    last, spaced or with `=`, before any `--`) is taken out of their
    arguments and goes in the same flag, before the marker.
-   `ENABLE_TOOL_SEARCH` keeps a value the user set. From a package
+   `ENABLE_TOOL_SEARCH` keeps a value the user set. With any HTTP, HTTPS
+   or ALL proxy variable set, in either case, the gateway host joins both
+   `NO_PROXY` and `no_proxy`, preserving the union of existing exclusions
+   and all proxy URLs. The parent environment stays unchanged.
+   From a package
    script (`bun run dev -- --claude`), which runs in Dorothy's checkout
    with `node_modules/.bin` entries first on `PATH`, `claude` gets the
    directory the script was run from (`npm_config_local_prefix`), the

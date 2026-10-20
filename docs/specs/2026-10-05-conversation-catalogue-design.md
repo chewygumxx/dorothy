@@ -184,10 +184,10 @@ Emptying a field in the edit view sets it to `null` and hands it back.
   applies only its own field changes. A review landing while the user edits
   therefore merges with the edit; where both touched a field, the user wins
   under the precedence rule. Within one process, writes to a sidecar take
-  turns, so their reads and writes never interleave. Across processes (a
-  `--memory` save while a TUI reviews the same conversation) there is no
-  lock: a write landing between the other's read and its `rename` is lost.
-  The window is a few milliseconds, not the time spent in the editor.
+  turns, so their reads and writes never interleave. Across processes,
+  writers share the index's write lock, then history's `dorothy.lock`
+  when available. Reading, merging and replacing the sidecar stay inside
+  that lock; time spent in the editor stays outside it.
 - **An unparseable sidecar is never written.** It is reported as a warning,
   its conversation is treated as having no metadata, and reviews and the
   provisional title skip it until the user fixes or deletes it.
@@ -455,8 +455,9 @@ Parsing, in `edit-view.ts`:
   or `Hidden` not `yes` or `no`) reopens the editor with `# error: <reason>`
   at the top and the text as saved; a reopened template carries one
   `# error:` line.
-- Comment dates are the UTC day. When wrapping a paragraph, a word starting
-  with `#` or a field name never starts a line.
+- Comment dates are the local day of the stored UTC timestamp. When
+  wrapping a paragraph, a word starting with `#` or a field name never
+  starts a line.
 - A byte-order mark the editor adds at the start is ignored.
 - Saving the template unchanged, or emptying the file, exits without writing.
 - With no sidecar yet, the template has empty fields and saving creates one.
@@ -544,29 +545,16 @@ Memory never stops Dorothy from chatting.
 
 ## Known limitations
 
-Found in review and left as they are; each is a candidate for a later
-sub-project rather than a defect against this spec.
+The following limits remain after the roadmap sweep. Reviews whose
+fields all belong to the user skip the model, failures back off, claims
+exclude simultaneous reviews, writes share the store lock and old
+temporary files are reaped. The CLI supplies core's `Editor` dependency.
 
-- **Reviews the user has made pointless.** A conversation whose three notes
-  the user owns is still reviewed, and paid for, whenever it is stale, though
-  only `reviewedThrough` changes.
-- **Reviews that always fail.** A conversation Dorothy cannot review (one too
-  long for the model, say) fails, and is paid for, at every idle and every
-  launch, taking a catch-up slot each time. There is no back-off.
-- **Cost against chatting.** A review reads the whole transcript, so it can
-  cost more than the turn it follows; with the default 60 seconds, a user who
-  pauses between messages pays for a review after most exchanges. The cost is
-  shown in `memory-cost`.
-- **Two TUIs at once.** Catch-up in one may review the conversation live in
-  the other: wasted cost, not lost data.
-- **Hiding is per conversation.** A hidden conversation leaves the block, but
-  other conversations' notes may still mention it, for instance one where
-  Dorothy recited her memory.
-- **Cross-process writes** are not locked (see Writes).
-- **Leftover temporary files** from a crash mid-write are never removed; the
-  catalogue ignores them.
-- **Layering.** `src/memory/commands.ts` imports the `$EDITOR` runner from
-  `src/tui/external-editor.ts`, which has no React or SDK imports.
+- **Cost against chatting.** A review reads the whole transcript, so it
+  can cost more than the turn it follows. Its cost is shown in
+  `memory-cost`; changing that policy needs its own design.
+- **Hiding is per conversation.** A hidden conversation leaves the block,
+  but other conversations' notes may still mention it.
 
 ## Out of scope
 

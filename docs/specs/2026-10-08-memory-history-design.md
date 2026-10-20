@@ -541,7 +541,9 @@ tests shut out the user's git configuration as production does.
 - **A crash between a write and its commit** leaves the change uncommitted
   until the next launch, which commits it as `outside:` rather than as
   Dorothy's. So does another process's failed commit, since its catch-up
-  paths live only in its memory.
+  paths live only in its memory. Facts are the exception: the store's
+  pending hash journal preserves attribution across a crash; an
+  unavailable journal never promotes a fact to the user or confirmed.
 - **isomorphic-git cannot push over ssh or to a path.** Without the binary,
   only an `https://` mirror is pushed.
 - **Losing the key loses the mirror.** It is generated once and kept only

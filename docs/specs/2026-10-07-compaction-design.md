@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-07
-mtime: 2026-10-07
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Compaction design
 description: "Design spec for compacting a long conversation into clusters"
@@ -245,6 +245,12 @@ back to the result's.
   seconds until it is granted or the TUI quits.
 
 ### The outgoing turns
+
+Before a model call, the outgoing local turns must equal the canonical
+transcript turns at those numbers. A concurrent chat whose private turn
+numbers differ turns compaction off until its next launch, with a
+warning and no model spend. Agreement holds under append-only recording;
+claims alone do not reconcile two chats' local histories.
 
 Walking back from the newest turn, turns are kept while their estimated
 total fits `tail`. The latest exchange, the user's last message and

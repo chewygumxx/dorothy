@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-06
-mtime: 2026-10-06
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Recall design
 description: "Design spec for Dorothy's second memory: looking things up"
@@ -185,6 +185,15 @@ Sync brings the index up to date with the transcript directory, in one
 - **A sidecar** is re-read through `readSidecar` when its mtime differs from
   `s_mtime`, so notes are normalised and checked as everywhere else. Its
   notes, `hidden` flag and appraisals are copied into the index.
+- **Hidden turn text** is removed from the cache, while turn counts,
+  visits, reads and notes remain. Showing a conversation re-reads its
+  transcript. Recollecting a hidden live chat reads its own transcript,
+  matching whole lowercased words without stemming.
+- **Corrupt indexes** are rebuilt only while a SQLite exclusive probe
+  proves no other connection holds the file. Without that proof, a
+  `SQLITE_CORRUPT` failure leaves it intact and reports "not rebuilt".
+  `SQLITE_NOTADB` at open is replaced; mid-use it proves no sole holder.
+  A busy migration still waits at most five seconds before failing.
 - **Leftover temporary files** (`*.meta.json.*.tmp`) older than an hour are
   removed.
 
@@ -460,14 +469,16 @@ The catalogue spec's Known limitations that the index makes cheap to fix:
   review timeout plus 30 seconds. A conversation another process has claimed
   is skipped. The claim is deleted when the review ends.
 - **Cross-process writes.** `updateSidecar` takes an optional lock. Every
-  writer (reviews, provisional titles, `--memory`) passes the index's, which
-  runs the read, change and rename inside `BEGIN IMMEDIATE`; SQLite releases
-  it if the process dies. Without an index, writes go unlocked as before.
+  writer uses history's combined lock when available, taking the index
+  first and then `dorothy.lock`; without history it uses the index alone.
+  The read, change and rename stay inside the lock. With neither lock
+  available, the caller's existing failure policy applies.
 - **Leftover temporary files** are removed by sync.
 
-Unchanged, and still listed in the catalogue spec: review cost against chat
-cost, hiding per conversation, the `commands.ts` layering, and the edit
-view's paragraph quirks.
+Unchanged, and still listed in the catalogue spec: review cost against
+chat cost and hiding per conversation. The CLI now passes core's Editor
+contract; retry error lines are stripped anywhere, and removing only the
+Abstract header reopens the editor instead of joining paragraphs.
 
 ## Configuration
 

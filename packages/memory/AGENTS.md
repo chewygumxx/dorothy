@@ -119,7 +119,7 @@ text (`MemoryPrompts`).
   commits each turn once the transcript is flushed.
 - The memory block charges the earlier turns' abstracts first.
 - `recollect` is served only with `--recollect`, for a chat with clusters.
-- A concept only hidden conversations carry is never shown to her.
+- At catalogue load, concepts carried only by hidden chats are omitted.
 - Nothing deletes a fact: one retired stays indexed, searchable and in
   history. Its origin is set by the code that writes it, never read
   from its text, and only the user raises it.

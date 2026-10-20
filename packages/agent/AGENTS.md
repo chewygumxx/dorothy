@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-15
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: packages/agent/AGENTS.md
 description: >-
@@ -75,8 +75,8 @@ never prune it as unused.
   after each user turn (working directory, platform, model, date). The
   persona has the model treat those as incidental and not volunteer its
   provenance.
-- The CLI's own compaction is off; a `compact_boundary` message is
-  reported as a warning, as an error would end the turn on screen.
+- The CLI's own compaction is off; `compact_boundary` and failed
+  compaction status messages warn without ending the turn on screen.
 - Reconnecting seeds a new session with the turns held in memory, and
   `--resume` with the transcript's.
 

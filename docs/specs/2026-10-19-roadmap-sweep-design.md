@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-19
-mtime: 2026-10-19
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: The roadmap sweep design
 description: >-
@@ -57,7 +57,7 @@ spec points at them rather than repeating them.
 7. **The tags' deferred findings**:
    [the tags file](../deferred/2026-10-08_tags-deferred.md).
 8. **Compaction, recall and the catalogue**:
-   [the compaction test gaps](../deferred/2026-10-07_compaction-test-gaps.md),
+   [the compaction test gaps, now closed](../reports/2026-10-19-roadmap-sweep.md#task-8-compaction-recall-and-catalogue),
    compactions the CLI fails being watched, and the recall report's and
    catalogue spec's limits that code can close.
 9. **Tooling**: undeclared dependencies checked, every headed file's

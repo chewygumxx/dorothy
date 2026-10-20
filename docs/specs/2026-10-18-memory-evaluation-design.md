@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-18
-mtime: 2026-10-19
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Dorothy's memory evaluation design
 description: >-
@@ -397,7 +397,12 @@ in its query alone is not seen), the budget and the snapshot's counts.
   given with it. It refuses a snapshot taken at another time, or answer
   and judge models or base URLs other than the run's, and says to start
   a new run; a `run.json` written before base URLs were kept is held to
-  its models alone.
+  its models alone. Each run also saves a digest per question of its
+  type, question, gold answer, sorted evidence, exclusion, date, project
+  and older-answer note. Resume refuses a removed, rejected or changed
+  question, or any absent saved definition, before changing records;
+  those older runs need a new run. New accepted questions and changes
+  to source metadata alone do not invalidate the saved selection.
   It asks again a record with a failure: whole where its retrieval or
   answer failed, and where its answer was paid for, only the judgements
   it lacks, reusing that answer, so no answer is paid for twice. Where
@@ -441,8 +446,11 @@ types small; a difference under the type's count's resolution, two
 questions' worth of the smaller count, is marked as such. The
 comparison covers the systems both runs hold, and strict accuracy
 alone; the adoption rule is printed, not decided. Two runs of different
-snapshots or questions are compared with a warning, as the noise mark
-then means little.
+snapshots or questions are compared with a warning, including a changed
+saved definition under the same id, as the noise mark then means little.
+A retrieved turn too long for its passage is excerpted around its first
+matching word using the scorer's lowercase/NFKC normalization, while
+retaining the original text and its offsets within the character cap.
 
 ## Failures
 
