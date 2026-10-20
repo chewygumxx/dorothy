@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-18
-mtime: 2026-10-18
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Dorothy's memory contract implementation
 description: >-
@@ -401,6 +401,11 @@ Migration and Failures sections do not yet say what the migration and
 the client now do.
 
 ## Final review
+
+Closed items from the final review and per-task deferred lists are
+recorded by the roadmap sweep: see
+[the sweep report](./2026-10-19-roadmap-sweep.md#task-2-service).
+The sweep's Deferred section records its remaining limits.
 
 A review of the whole branch, `3141323..47fe8a6`, found it ready with
 fixes. Its four important findings, and how each was settled:

@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-15
-mtime: 2026-10-15
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Dorothy's identity implementation report
 description: >-
@@ -282,6 +282,11 @@ variables unset and `--resume <id>` in place of `-c`, and only the
 test runs' own transcripts were removed, by hand.
 
 ## Known limitations
+
+Forks, interactive sessions and the HTTP proxy probe.
+Closed by the roadmap sweep: see
+[the sweep report](./2026-10-19-roadmap-sweep.md). Remaining limits
+are recorded there.
 
 - **Forks** were not observed: a fork needs a model reply, which the
   probes' stand-in never gives. If a fork drops the marker it runs as

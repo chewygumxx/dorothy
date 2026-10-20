@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-08
-mtime: 2026-10-08
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Tags implementation report
 description: "How tags were built: deviations from the spec, what review changed, every commit and what is left"
@@ -193,6 +193,10 @@ This report and the deferred doc follow.
     open.
 
 ## Known limitations
+
+The two editor behaviours and test gaps were closed by the roadmap
+sweep: see [the sweep report](./2026-10-19-roadmap-sweep.md#task-7-tags).
+The catalogue snapshot and vocabulary limits below remain.
 
 None blocks merge.
 

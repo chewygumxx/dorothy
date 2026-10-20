@@ -46,13 +46,16 @@ Final verification for the tree committed with this report:
 failing. Markdown, em dash and header lint were also run explicitly.
 The skip is the existing code-simplification skill-link test. No test
 flake occurred in Task 12. The existing informational Biome suggestion
-in `memory/reviewer.test.ts` remains.
+in `memory/reviewer.test.ts` remains. Header verification also reports
+existing exempt memory entries and historical probe artifacts as warnings;
+none is out of sync and the required-header tests pass.
 
 ## Tasks
 
 Ranges exclude their left endpoint and include their right endpoint.
 Task 4's range also contains the three review-document imports above.
-Task 12's record and documentation commits follow its two small fixes.
+Task 12's HEAD denotes the final documentation commit completing this
+record, whose exact range is also in the local Task 12 handoff report.
 
 | Task | Subject | Commits | Implementer |
 | --- | --- | --- | --- |
@@ -67,12 +70,13 @@ Task 12's record and documentation commits follow its two small fixes.
 | 9 | Tooling | `cc061f2..f956e2c` | Claude |
 | 10 | Code review | `f956e2c..dc09077` | Both |
 | 11 | Probes | `dc09077..8883ac8` | Codex |
-| 12 | Record | `8883ac8..a626151`, record | Codex |
+| 12 | Record | `8883ac8..HEAD` | Codex |
 
 Claude Opus implemented Task 1, Claude Sonnet Tasks 2-4 and 8-9. Task 5
 began with Claude and its fixes used Codex; Task 10 likewise began with
 Claude and its two fix rounds used Codex. Task 12's final docs commits
-complete the range after its two small fixes.
+complete the range after its two small fixes. Tasks 1-4, 6-9 and 11 had
+one fix round each; Tasks 5 and 10 had two. Task 12 awaits its review.
 
 ## Rulings
 

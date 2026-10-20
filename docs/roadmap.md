@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-10-19
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -78,7 +78,11 @@ findings; merged in #69. The evaluation:
 [spec](./specs/2026-10-18-memory-evaluation-design.md),
 [plan](./plans/2026-10-18-memory-evaluation.md),
 [report](./reports/2026-10-18-memory-evaluation.md), whose deferred
-findings were all addressed; merged in #71 and #72.
+findings were all addressed; merged in #71 and #72. The roadmap sweep:
+[spec](./specs/2026-10-19-roadmap-sweep-design.md),
+[plan](./plans/2026-10-19-roadmap-sweep.md),
+[report](./reports/2026-10-19-roadmap-sweep.md), including the
+[repository code review](./reports/2026-10-19-code-review.md).
 
 The contract opened four more pieces, each with its own spec: the
 evaluation, which measures her memory against the field and chooses the
@@ -101,13 +105,13 @@ bespoke is built: research on
 tooling names rulesync, Hindsight's adapters and Letta's transcript
 parser.
 
-Before delivery, two pieces make it safe for all four: knowledge told
-apart by its source before it reaches the opening block, since
-`remember` runs without a prompt and the block takes every piece of
-knowledge, so text injected through a page or a tool would reach every
-later session; and the service's loose ends from the contract's final
-review, as OpenClaw and Hermes take a block of 4000 characters that
-`brief` does not yet keep to.
+The sweep closed the two safety pieces before delivery: unconfirmed
+knowledge is fenced and marked throughout recall, with `--verify` for
+the user, and the service clamps its block to each host's budget. It
+also closed the actionable deferred findings and code-review defects,
+then ran the six live probes. The report carries the remaining limits;
+the owner's evaluation run and the other harnesses' recording still
+lead the work ahead.
 
 - **Status**: Store, Bodies, Contract and Evaluation Built; the First
   Run and Recording Next, then the Engine, then Delivery
@@ -120,8 +124,8 @@ review, as OpenClaw and Hermes take a block of 4000 characters that
   engine's spec may first ask for adapters to the field's systems.
   With the harnesses chosen, recording for Codex, OpenClaw and Hermes
   waits on no number and goes beside the run, which needs the owner's
-  time. Delivery comes last, after the two pieces that make it safe,
-  and once the engine it delivers is chosen.
+  time. Delivery comes last, once the engine it delivers is chosen;
+  the sweep has closed its two preceding safety pieces.
 
 ### Model Providers
 
@@ -242,12 +246,9 @@ Links between conversations and semantic search beside FTS5.
 
 Found but not scheduled, each with its source.
 
-- Sweeps of deferred findings:
-  [memory history](./deferred/2026-10-08_memory-history-deferred.md),
-  [tags](./deferred/2026-10-08_tags-deferred.md),
-  [compaction test gaps](./deferred/2026-10-07_compaction-test-gaps.md),
-  [memory bodies](./deferred/2026-10-16_memory-bodies-deferred.md) and
-  the [memory contract](./reports/2026-10-18-memory-contract.md)'s.
+- The sweep's remaining [deferred minors and limits](./reports/2026-10-19-roadmap-sweep.md#deferred),
+  including bridge timer cleanup, failure diagnostics, transcript-cache
+  assumptions, catalogue snapshot visibility and recovery edge cases.
 - The evaluation's later systems and checks: adapters for Hindsight,
   OpenViking, EverOS, Honcho and an improved Dorothy; an agentic mode
   driving the MCP tools; LongMemEval-S as a public anchor; a corrected
@@ -256,48 +257,33 @@ Found but not scheduled, each with its source.
   Later).
 - The contract's later work: her commands writing through the service;
   OKF's `index.md` and `log.md` for `knowledge/`; encryption at rest;
-  `superseded_by`, and a command by which the user confirms a piece of
-  knowledge; a project without an `origin` being one across machines;
+  `superseded_by`; a project without an `origin` being one across machines;
   and a user beyond one (memory contract spec, Later and Known risks).
-- Launch notes kept in the state directory rather than the runtime one,
-  so a launch killed by a crash or a power-off is still caught up after
-  a reboot (memory bodies report).
-- Reviews from Claude Code's hooks through a user's own proxy, passed as
-  a variable of Dorothy's own, since the hook drops
-  `ANTHROPIC_BASE_URL` (memory bodies report).
 - Subagents' transcripts as conversations of their own, and a forked
   session linked to the conversation it forked from (memory bodies
   spec, Later; report).
-- Turn times stored in UTC while `dateCreated` and the `after` and
-  `before` filters use the local date (memory bodies, delivery's hand
-  check).
-- The recording's rough edges: a branch the user rewinds from stays; a
-  session's plain `claude` turns are recorded as hers once it is resumed
-  in her launch; reviews fail under another `XDG_CONFIG_HOME`; a resumed
-  chat does not redraw its `remember` lines; and the recall server
-  answers out of order (memory bodies report).
-- The store's open gaps: snake-case memory files skipped, regenerating
-  `MEMORY.md` replacing hook lines, and history keeping the provenance
-  an outside writer claims; a `--fact` editor like `--memory`; and the
-  minors its reviews set aside, in scrub, the fact file, sync and the
-  commands (memory store and bodies specs, Later; the store's report,
-  Known gaps).
+- The recording's remaining rough edges: a branch the user rewinds from
+  stays, and a session's plain `claude` turns are recorded as hers once
+  it is resumed in her launch (memory bodies report).
+- The store's remaining gaps: a `--fact` editor like `--memory`, retired
+  facts and sync records kept indefinitely, repository-wins conflicts,
+  stale checkouts and the scrubber's shape-based limits (the store's
+  report and the sweep's retained-behaviour record).
 - Forgetting a conversation, which must reach history and the mirror
   (memory history spec, Later).
 - Consolidating sealed bundles, and more than one mirror (memory history
   spec, Later).
-- History's own later work: a first seal built outside the lock, a fixed
-  committer date on the sealed branch, commands' commits pushed without
-  waiting for a chat, and history that grows without bound (memory
-  history deferred findings, Later work).
-- Compaction's gaps: the CLI's failed compactions unwatched, the seed's
-  size estimated rather than measured, and a `/compact` command, edited
-  abstracts and regrouped clusters (compaction report and spec).
+- History grows without bound; pruning needs its own design (memory
+  history spec, Known limitations).
+- Compaction's remaining limits: the seed's size estimated rather than
+  measured, a launch waiting behind another TUI's claim, a `/compact`
+  command, edited abstracts and regrouped clusters (compaction report
+  and spec).
 - The catalogue's and recall's remaining limits: a review can cost more
   than the turn it follows, a hidden conversation may still be named in
-  others' notes, a corrupted index is not rebuilt by itself, and hidden
-  conversations' text stays in the cache index (catalogue spec, recall
-  report).
+  others' notes, and corrupt-index recovery cannot proceed without
+  sole-holder proof, including a TUI with its recall server open
+  (catalogue spec and sweep report).
 - The vocabulary's limits, for maintenance to weigh: labels compare
   without case, deleted concepts' tombstones accumulate, a recap chat is
   tagged with the topics it recalls, and a renamed concept's old label
@@ -306,41 +292,20 @@ Found but not scheduled, each with its source.
   Dorothy approves (the maintenance design's approach C).
 - A provisional title from a cheap model, editing memory from inside the
   TUI, and memory in one-shot mode (catalogue spec, Out of scope).
-- Memory's commands taking their dependencies injected more widely: the
-  CLI passes the history commands none, so each falls back to the
-  process's environment, streams and entry script (workspace modularity).
 - A single binary with `bun build --compile` from `cli` (workspace
   modularity spec, Later).
 - Splitting `memory` along its subdirectories, should it outgrow one
   package (workspace modularity spec, Later).
-- Enabling Biome's `noUndeclaredDependencies`, or an equivalent check, so
-  that a package cannot import something only the root declares: the
-  isolated linker leaves the root's declarations visible to every package
-  (workspace modularity, final review).
-- Ink's kitty keyboard query, `[?0u`, reaching the input draft under
-  Herdr, and `--memory` and `--edit-tags` loading all of `tui` for its
-  editor, which a `./editor` entry point would spare (workspace
-  modularity report).
 - The TUI's deferred features: undo, rendering while streaming, OSC 8
   links, a theme, and configuration reloaded live (TUI chat, input
   editor, Markdown replies and status line specs, Out of scope).
 - Dorothy's own tool loop, should serving behind clients fall short
   (agentic asset refactor).
-- Checking that every file of a headed type carries the house header, not
-  only that existing headers are in sync (agentic asset refactor).
 - `repo-memory` preferring `.agents/memory/` upstream, so other
   repositories can move their memory too (agentic asset refactor).
-- herdr pinned like superpowers, as it follows its upstream's default
-  branch; and the two probes left: a session started inside a package,
-  and a fresh session reading `.agents/memory/MEMORY.md` (agentic asset
-  refactor report).
 - An OpenAI-protocol adapter for the gateway, and a `--codex` launcher
   beside `--claude`, which delivery to Codex may call for; `--opencode`
   waits, as OpenCode is not a target (identity spec, Later).
-- Checking that Claude Code's forks keep the identity marker, which the
-  probes could not observe without a model reply, that interactive
-  sessions behave as `-p` did, and that a user's `HTTP_PROXY` leaves the
-  loopback gateway alone (Dorothy's identity).
 - Probing how open models from featherless.ai or OpenRouter do behind
   Claude Code's prompt and tool schemas, before fallback leans on them
   (objectives).
@@ -471,3 +436,9 @@ In order of completion.
   source and the service's loose ends move out of Candidates to go
   before delivery. Turn times in UTC stay, as the evaluation reads every
   date in UTC alike, and `--opencode` waits.
+- 2026-10-20: The roadmap sweep closed the knowledge fence and service
+  safety work before delivery, the actionable deferred findings and all
+  22 code-review findings, and completed the six live probes. Candidates
+  lose the closed work and keep the sweep's deferred minors and design
+  limits. The owner's evaluation run and recording for Codex, OpenClaw
+  and Hermes remain next; the engine and delivery still follow them.

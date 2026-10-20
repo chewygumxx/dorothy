@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-18
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Agentic asset refactor probes
 description: >-
@@ -160,6 +160,11 @@ They are identical, so the two measurements ran under the same user
 settings. Codex: not installed.
 
 ## Known limitations
+
+The fresh-session memory-loading probe.
+Closed by the roadmap sweep: see
+[the sweep report](./2026-10-19-roadmap-sweep.md). Remaining limits
+are recorded there.
 
 - **One prompt per directory.** A few hundred tokens either way are
   noise, and the root's and the package's unequal totals before the

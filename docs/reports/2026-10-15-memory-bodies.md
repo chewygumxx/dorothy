@@ -751,6 +751,11 @@ variables, prompts sent through Herdr.
 
 ## Known limitations
 
+Launch notes, review proxies, Armor lookup, remember lines and request order.
+Closed by the roadmap sweep: see
+[the sweep report](./2026-10-19-roadmap-sweep.md). Remaining limits
+are recorded there.
+
 - The block is fixed for the launch: a fact written in another body
   during a long session reaches this one only through recall.
 - Facts reach the block only with Layers; until then she finds them

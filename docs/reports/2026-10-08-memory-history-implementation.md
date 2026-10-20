@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-08
-mtime: 2026-10-08
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Memory history implementation report
 description: "How memory history was built: deviations from the spec, what review changed, every commit and what is left"
@@ -303,6 +303,11 @@ This report's update follows.
     while a mirror was set. Fixed in `13bc9ea`.
 
 ## Known limitations
+
+The HTTPS test gap and six parked behaviours.
+Closed by the roadmap sweep: see
+[the sweep report](./2026-10-19-roadmap-sweep.md). Remaining limits
+are recorded there.
 
 None blocks merge.
 

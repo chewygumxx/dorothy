@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-19
-mtime: 2026-10-19
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: The roadmap sweep implementation plan
 description: >-
@@ -215,8 +215,8 @@ Source: `docs/deferred/2026-10-08_tags-deferred.md`.
 
 ### Task 8: compaction, recall and the catalogue
 
-Sources: `docs/deferred/2026-10-07_compaction-test-gaps.md`, the
-compaction report's Known limitations, the recall report's Known
+Sources: the [compaction test gaps, now closed](../reports/2026-10-19-roadmap-sweep.md#task-8-compaction-recall-and-catalogue),
+the compaction report's Known limitations, the recall report's Known
 limitations and the catalogue spec's Known limitations.
 
 - [ ] The test gaps file's "Highest value" first item and "By task"

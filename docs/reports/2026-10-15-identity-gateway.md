@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-15
-mtime: 2026-10-15
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: Dorothy's identity probes
 description: >-
@@ -134,6 +134,9 @@ in the plan mode the user's settings start it in:
 No run printed a drift warning.
 
 ## Limits
+
+Closed by the roadmap sweep: see
+[the sweep report](./2026-10-19-roadmap-sweep.md#probes).
 
 - Forks were not probed: a fork needs a model reply, which the stand-in
   never gives.
