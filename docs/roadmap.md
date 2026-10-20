@@ -82,23 +82,29 @@ findings were all addressed; merged in #71 and #72. The roadmap sweep:
 [spec](./specs/2026-10-19-roadmap-sweep-design.md),
 [plan](./plans/2026-10-19-roadmap-sweep.md),
 [report](./reports/2026-10-19-roadmap-sweep.md), including the
-[repository code review](./reports/2026-10-19-code-review.md).
+[repository code review](./reports/2026-10-19-code-review.md). Recording:
+[spec](./specs/2026-10-20-recording-design.md),
+[plan](./plans/2026-10-20-recording.md),
+[report](./reports/2026-10-20-recording.md).
 
 The contract opened four more pieces, each with its own spec: the
 evaluation, which measures her memory against the field and chooses the
 engine; recording each harness's sessions; the engine; and delivery into
 the harnesses chosen. The evaluation is built as `@dorothy/eval` but not
-yet run: the owner reviews its generated questions, then runs her
+yet run: the owner generates and reviews its questions, then runs her
 memory beside the lexical baseline and full context, with models named
-in `eval.toml`.
+in `eval.toml`. Recording is built too: her service sweeps the sessions
+of Claude Code, Codex and Hermes, and `dorothy --sweep --backfill`
+records what they already hold, with no review apiece.
 
 The harnesses she is provided for and tested against are Claude Code,
 Codex, OpenClaw and Hermes Agent, as the user chose. Claude Code is
 recorded already; Codex offers hooks and its rollout files, and
 OpenClaw and Hermes a memory plugin each, in a slot that takes one
-provider, as the contract's host profiles record. The recording and
-delivery specs settle how her persona reaches each (generated files,
-the proxy or both) and how each one's sessions reach her memory.
+provider, as the contract's host profiles record. Recording reads the
+sessions of Claude Code, Codex and Hermes; OpenClaw's waits for its
+install. The delivery spec settles how her persona reaches each
+(generated files, the proxy or both).
 Existing tools, such as rulesync, are researched before anything
 bespoke is built: research on
 [cross-harness](./reports/2026-10-18-protocol-diversity/cross-harness.md)
@@ -109,26 +115,29 @@ The sweep closed the two safety pieces before delivery: unconfirmed
 knowledge is fenced and marked throughout recall, with `--verify` for
 the user, and the service clamps its block to each host's budget. It
 also closed the actionable deferred findings and code-review defects,
-then ran the six live probes. The report carries the remaining limits;
-the owner's evaluation run and the other harnesses' recording still
+then ran the six live probes. The report carries the remaining limits.
+Recording is built; the user's backfill, then the owner's first run, now
 lead the work ahead.
 
-- **Status**: Store, Bodies, Contract and Evaluation Built; Recording
-  Next, then the First Run, the Engine and Delivery
+- **Status**: Store, Bodies, Contract, Evaluation and Recording Built;
+  the User's Backfill Next, then the First Run with generated and
+  reviewed questions, the Engine and Delivery
 - **Required**: Requisites Fulfilled
 - **Rationale**: Wherever she goes, her memory follows with her. The
   contract gives every harness one service and every engine one
   interface, and the evaluation can now measure her memory, which the
   user judges weak. A first retrieval run on her data (2026-10-20) found
-  10 conversations and one question to mine: she records only sessions
+  10 conversations and one question to mine: she recorded only sessions
   begun through `dorothy --claude`, while the user's Claude Code holds
-  some 970 sessions and Codex a few. Recording therefore comes first,
-  for Claude Code, Codex, OpenClaw and Hermes, with a backfill of the
-  sessions each already holds, recorded without a paid review apiece.
-  The first run follows on that corpus, and the engine's spec chooses on
-  its numbers; should they leave the choice open, it may first ask for
-  adapters to the field's systems. Delivery comes last, once the engine
-  it delivers is chosen; the sweep has closed its two safety pieces.
+  some 970 sessions and Codex a few. Recording now reads Claude Code,
+  Codex and Hermes, and its probe on 27 copied sessions recorded 2,533
+  events once each. The user's backfill of the real sessions is next,
+  and their call. Mining yields no question from backfilled sessions,
+  so the first run follows with questions generated and reviewed by the
+  owner, and the engine's spec chooses on its numbers; should they leave
+  the choice open, it may first ask for adapters to the field's systems.
+  Delivery comes last, once the engine it delivers is chosen; the sweep
+  has closed its two safety pieces.
 
 ### Model Providers
 
@@ -266,6 +275,9 @@ Found but not scheduled, each with its source.
 - Subagents' transcripts as conversations of their own, and a forked
   session linked to the conversation it forked from (memory bodies
   spec, Later; report).
+- OpenClaw's reader, once it is installed and probed (recording spec,
+  Later; report). Hermes's reader has met no real session yet, only its
+  source's schema.
 - The recording's remaining rough edges: a branch the user rewinds from
   stays, and a session's plain `claude` turns are recorded as hers once
   it is resumed in her launch (memory bodies report).
@@ -454,3 +466,9 @@ In order of completion.
   measure: 10 conversations, against some 970 Claude Code sessions she
   never recorded. Recording, with a backfill of existing sessions, moves
   ahead of the first run.
+- 2026-10-20: Recording is built: readers for Codex and Hermes, a sweep
+  of their stores and Claude Code's, `dorothy --sweep --backfill`, and a
+  probe on 27 copied sessions. Dorothy's Memory goes on with the user's
+  backfill of the real sessions, then the first run on questions
+  generated and reviewed, as mining finds none in backfilled sessions;
+  the engine and delivery follow. Candidates gain OpenClaw's reader.
