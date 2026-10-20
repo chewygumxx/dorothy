@@ -367,24 +367,29 @@ describe("bun run eval -- run", () => {
             expect((await resume()).status).toBe(0);
         });
 
-        it("was kept by a run that kept no definitions, by its id alone", async () => {
-            const { id, resume } = await begun();
-            const path = join(work, "runs", id, "run.json");
-            const { definitions: _, ...old } = JSON.parse(
-                readFileSync(path, "utf8"),
-            );
-            writeFileSync(path, JSON.stringify(old));
-            await edit((all) =>
-                all.map((each) =>
-                    each.id === GARDEN_ID
-                        ? { ...each, answer: "Plot thirteen." }
-                        : each,
-                ),
-            );
-            expect((await resume()).status).toBe(0);
-            await edit((all) => all.filter((each) => each.id !== GARDEN_ID));
-            expect((await resume()).status).toBe(1);
-        });
+        for (const missing of ["all", "one"] as const) {
+            it(`has ${missing} saved definitions missing`, async () => {
+                const { id, resume } = await begun();
+                const path = join(work, "runs", id, "run.json");
+                const info = JSON.parse(readFileSync(path, "utf8"));
+                if (missing === "all") {
+                    delete info.definitions;
+                } else {
+                    delete info.definitions[GARDEN_ID];
+                }
+                writeFileSync(path, JSON.stringify(info));
+                const records = readFileSync(recordsPath(work, id), "utf8");
+                const metadata = readFileSync(path, "utf8");
+                const { status, err } = await resume();
+                expect(status).toBe(1);
+                expect(err).toContain("missing question definitions");
+                expect(err).toContain("start a new run");
+                expect(readFileSync(recordsPath(work, id), "utf8")).toBe(
+                    records,
+                );
+                expect(readFileSync(path, "utf8")).toBe(metadata);
+            });
+        }
     });
 
     it("resumes a run that recorded no base URL, whatever they are now", async () => {

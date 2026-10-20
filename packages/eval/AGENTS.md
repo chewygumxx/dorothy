@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-19
-mtime: 2026-10-19
+mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: packages/eval/AGENTS.md
 description: >-
@@ -99,7 +99,8 @@ options declared and described for `--help`, its failures as
   stopped, asking a failed record again (a paid answer only for the
   judgements it lacks) and refusing a changed snapshot, model or base
   URL, or a question removed or edited since the run began (its
-  `definitions` in `run.json`, a digest of each, gold answer included);
+  `definitions` in `run.json`, a digest of each, gold answer included).
+  A run without every saved definition cannot be resumed;
   `run/command.ts`: the `run` command.
 - `report/`: `summarise`, the Markdown report and `compareOf`, and the
   `compare` command with `writeRunReport`.

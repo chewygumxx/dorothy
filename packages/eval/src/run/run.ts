@@ -115,8 +115,8 @@ export function newRunInfo(
 // A resumed run goes on with the questions, snapshot, models and
 // providers it began with: a record of another corpus, model or
 // definition would make run.json untrue. A run that kept no base URLs is
-// held to its models alone, and one that kept no definitions to its
-// question ids.
+// held to its models alone. Without every definition, a run cannot be
+// checked and must be started anew.
 export function checkResumable(
     info: RunInfo,
     config: EvalConfig,
@@ -154,14 +154,22 @@ export function checkResumable(
 // defined: one removed, rejected or edited would be skipped, or asked
 // and judged by another gold answer, in a run reported as one.
 function checkQuestions(info: RunInfo, accepted: readonly Question[]): void {
+    const definitions = info.definitions;
+    if (
+        definitions === undefined ||
+        info.questionIds.some((id) => !Object.hasOwn(definitions, id))
+    ) {
+        throw new UsageError(
+            `run ${info.id} has missing question definitions; start a new run`,
+        );
+    }
     const now = new Map(accepted.map((question) => [question.id, question]));
     const problems = info.questionIds.flatMap((id) => {
         const question = now.get(id);
         if (question === undefined) {
             return [`${id}: no longer in the accepted questions`];
         }
-        const began = info.definitions?.[id];
-        return began !== undefined && began !== definitionOf(question)
+        return definitions[id] !== definitionOf(question)
             ? [`${id}: changed since the run began`]
             : [];
     });
