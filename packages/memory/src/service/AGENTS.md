@@ -33,8 +33,9 @@ This guide holds what binds [the sweep](../recording/AGENTS.md) to a store.
   (`recording/report.ts`); `stop()` awaits one under way.
 - `sweep-command.ts`: `runSweep`, for `dorothy --sweep`, opens the index and
   history as a hook does and prints a host and a count a line;
-  `--backfill` records the backlog; `--reread` sweeps the hosts that kept a
-  halt and says which read to the end; `runSweepDismiss` stops a notice.
+  `--backfill` records the backlog; `--reread` reads the halted sessions
+  alone, whatever is set, and says which read to the end;
+  `runSweepDismiss` stops a notice.
 
 ## Invariants
 

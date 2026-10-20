@@ -132,7 +132,7 @@ and prompts as text (`MemoryPrompts`).
 - Pass every root, key and environment in; tests keep to temporary
   directories (`history/testing.ts` has `tempRoot` and `TEST_ENV`).
 - Git tests isolate config; local HTTPS uses git http-backend and OpenSSL.
-  One contract test runs against both history engines, and across them.
+- One contract test runs against both history engines, and across them.
 - `memory/fake-session.ts` fakes a `ChatSession`; `*-testing.ts` share fixtures.
 
 ## See also
