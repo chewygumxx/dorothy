@@ -11,7 +11,7 @@
 import { describe, expect, it } from "bun:test";
 import { DEFAULT_CONFIG } from "@dorothy/core";
 import { fakeEngine } from "../contract/testing.js";
-import { startJobs } from "./jobs.js";
+import { noteRecorded, startJobs } from "./jobs.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -79,5 +79,44 @@ describe("extraction of idle conversations", () => {
         }
         expect(engine.calls).toEqual([]);
         expect(idle.size).toBe(0);
+    });
+    it("extracts a backfilled conversation once it gains live turns", async () => {
+        const engine = fakeEngine();
+        const idle = new Map<string, number>();
+        const backfilled = new Set<string>();
+        noteRecorded({ idle, backfilled }, "old-one", true, 0);
+        expect(backfilled.has("old-one")).toBe(true);
+        expect(idle.size).toBe(0);
+        noteRecorded({ idle, backfilled }, "old-one", false, 0);
+        expect(backfilled.size).toBe(0);
+        expect([...idle.keys()]).toEqual(["old-one"]);
+        const jobs = startJobs({
+            config: {
+                ...DEFAULT_CONFIG,
+                memory: { ...DEFAULT_CONFIG.memory, idleSeconds: 0 },
+            },
+            engine,
+            store: { root: "/unused", lock: (work) => work(), recorder: null },
+            idle,
+            backfilled,
+            touched: new Set(),
+            loadCatalogue: null,
+            warn: () => {},
+            tickMs: 5,
+        });
+        try {
+            for (let tries = 0; idle.size > 0 && tries < 100; tries++)
+                await sleep(5);
+        } finally {
+            jobs.stop();
+        }
+        expect(engine.calls).toEqual(["extract old-one"]);
+    });
+    it("does not hold back a live conversation a backfill reaches", () => {
+        const idle = new Map([["live-one", 5]]);
+        const backfilled = new Set<string>();
+        noteRecorded({ idle, backfilled }, "live-one", true, 9);
+        expect(backfilled.size).toBe(0);
+        expect(idle.get("live-one")).toBe(5);
     });
 });

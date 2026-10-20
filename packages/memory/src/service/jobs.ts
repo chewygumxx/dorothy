@@ -38,8 +38,9 @@ export type JobsDeps = {
     store: FactStore;
     // Conversations recorded and not yet extracted, by their last record.
     idle: Map<string, number>;
-    // Conversations a backfill recorded, never extracted: they would cost
-    // a paid review apiece. One that reaches idle is dropped from it.
+    // Conversations a backfill recorded, not extracted while they stay so:
+    // each would cost a paid review. One that reaches idle is dropped from
+    // it. A live record takes a conversation out (`noteRecorded`).
     backfilled: Set<string>;
     // Projects recorded since the last export.
     touched: Set<string>;
@@ -49,6 +50,23 @@ export type JobsDeps = {
     // How often idle conversations are looked at; for tests.
     tickMs?: number | undefined;
 };
+
+// A record of `phrase`: a live one queues it for extraction, and frees it
+// of a backfill's mark; a backfill's marks it, unless a live record
+// already queued it.
+export function noteRecorded(
+    { idle, backfilled }: Pick<JobsDeps, "idle" | "backfilled">,
+    phrase: string,
+    backfill: boolean,
+    now: number = Date.now(),
+): void {
+    if (!backfill) {
+        backfilled.delete(phrase);
+        idle.set(phrase, now);
+    } else if (!idle.has(phrase)) {
+        backfilled.add(phrase);
+    }
+}
 
 export function startJobs(deps: JobsDeps): { stop(): void } {
     const { config, engine, store, idle, backfilled, touched, warn } = deps;

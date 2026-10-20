@@ -13,7 +13,7 @@ import { readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { DEFAULT_CONFIG } from "@dorothy/core";
 import { fakeEngine } from "../contract/testing.js";
-import { startJobs } from "../service/jobs.js";
+import { noteRecorded, startJobs } from "../service/jobs.js";
 import { context, line, message, meta, SESSION } from "./fixtures.js";
 import { hermesMessage, hermesSession } from "./hermes-fixtures.js";
 import { sweepPath } from "./state.js";
@@ -153,8 +153,7 @@ describe("the backfill", () => {
         const backfilled = new Set<string>();
         const onRecorded = (c: SweepConversation) => {
             r.recorded.push(c);
-            if (c.backfilled) backfilled.add(c.phrase);
-            else idle.set(c.phrase, 0);
+            noteRecorded({ idle, backfilled }, c.phrase, c.backfilled, 0);
         };
         await r.run({ hosts: ["codex"], backfill: true, onRecorded });
         await r.run({ hosts: ["hermes"], onRecorded });
@@ -188,6 +187,30 @@ describe("the backfill", () => {
             engine.calls.filter((call) => call.startsWith("extract")),
         ).toEqual([`extract ${live}`]);
         expect(backfilled.size).toBe(1);
+    });
+});
+
+describe("a backfilled conversation that goes live", () => {
+    it("is extracted once a live sweep adds to it", async () => {
+        const path = await r.file(
+            rollout("rollout-old.jsonl"),
+            speech,
+            5 * HOUR,
+        );
+        const idle = new Map<string, number>();
+        const backfilled = new Set<string>();
+        const onRecorded = (c: SweepConversation) => {
+            r.recorded.push(c);
+            noteRecorded({ idle, backfilled }, c.phrase, c.backfilled, 0);
+        };
+        await r.run({ hosts: ["codex"] });
+        await r.run({ hosts: ["codex"], backfill: true, onRecorded });
+        const phrase = r.recorded[0]?.phrase;
+        expect(backfilled.has(phrase ?? "")).toBe(true);
+        await r.append(path, text(message("assistant", "Synthetic live.", 2)));
+        await r.run({ hosts: ["codex"], onRecorded });
+        expect(backfilled.size).toBe(0);
+        expect([...idle.keys()]).toEqual([phrase ?? ""]);
     });
 });
 
