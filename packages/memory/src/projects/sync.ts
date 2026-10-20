@@ -458,7 +458,11 @@ type Sync = {
 
 // The title and creation time of a fact adopted from the repository.
 type Adoption = {
-    titleFor: (name: string, held: Fact | null) => string;
+    titleFor: (
+        name: string,
+        held: Fact | null,
+        carried: string | null,
+    ) => string;
     createdFor: (name: string) => string;
 };
 
@@ -477,12 +481,14 @@ function adoption(repo: RepoSide, now: Date): Adoption {
             new Date(
                 now.getTime() + Math.max(0, order.indexOf(name)),
             ).toISOString(),
-        // The index's entry, else the store's title, else the name.
-        titleFor: (name, held) => {
+        // The index's entry, else the title a verification carried, else
+        // the store's, else the name.
+        titleFor: (name, held, carried) => {
             const title = normalise(repo.titles.get(stemOf(name)) ?? "");
             return title !== "" && characters(title) <= FACT_LIMITS.title
                 ? title
-                : (held?.title ??
+                : (carried ??
+                      held?.title ??
                       [...name].slice(0, FACT_LIMITS.title).join(""));
         },
     };
@@ -609,7 +615,7 @@ async function importFact(
     const { verified: carried = [], ...form } = theirs;
     const fact: Fact = {
         ...form,
-        title: sync.titleFor(name, held),
+        title: sync.titleFor(name, held, carriedTitle(form, carried)),
         tags: held?.tags ?? [],
         importance: held?.importance ?? null,
         provenance: {
@@ -639,6 +645,20 @@ async function importFact(
         sync.report.renamed.push({ file: `${stem}.md`, name });
     }
     sync.synced[name] = formHash(theirs);
+}
+
+// The title a carried verification confirmed with these words, for a fact
+// the index does not name.
+function carriedTitle(
+    form: Omit<ExportedFact, "verified">,
+    carried: readonly CarriedVerification[],
+): string | null {
+    return (
+        carried.find(
+            (entry) =>
+                wordsDigest({ ...form, title: entry.title }) === entry.digest,
+        )?.title ?? null
+    );
 }
 
 // The verifications of an imported fact's words: the store's, if it held

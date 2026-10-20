@@ -30,11 +30,15 @@ import {
     verificationsOf,
     wordsDigest,
 } from "../facts/file.js";
-import { normalise } from "../memory/sidecar.js";
+import { characters, normalise } from "../memory/sidecar.js";
 
 // A person's verification as a repository's file carries it, with the
-// digest of the words it confirmed (wordsDigest).
-export type CarriedVerification = Verification & { digest: string };
+// title it confirmed, which the file does not otherwise hold, and the
+// digest of the words, title included (wordsDigest).
+export type CarriedVerification = Verification & {
+    title: string;
+    digest: string;
+};
 export type ExportedFact = Pick<
     Fact,
     "name" | "description" | "type" | "extra" | "body"
@@ -58,7 +62,7 @@ export function nameOfStem(stem: string): string | null {
 export function exportedForm(fact: Fact): ExportedFact {
     const digest = wordsDigest(fact);
     const verified = verificationsOf(fact)
-        .map(({ by, at }) => ({ by, at, digest }))
+        .map(({ by, at }) => ({ by, at, title: fact.title, digest }))
         .filter(carried);
     return {
         name: fact.name,
@@ -96,7 +100,7 @@ export function renderExported(form: ExportedFact): string {
 }
 
 const EXPORTED_KEYS = ["name", "description", "metadata", "verified"];
-const CARRIED_KEYS = ["by", "at", "digest"];
+const CARRIED_KEYS = ["by", "at", "title", "digest"];
 const DIGEST = /^[0-9a-f]{64}$/;
 
 const carried = (entry: unknown): entry is CarriedVerification =>
@@ -107,6 +111,11 @@ const carried = (entry: unknown): entry is CarriedVerification =>
     hiddenCharacter(entry.by) === null &&
     typeof entry.at === "string" &&
     TIME.test(entry.at) &&
+    typeof entry.title === "string" &&
+    entry.title !== "" &&
+    normalise(entry.title) === entry.title &&
+    characters(entry.title) <= FACT_LIMITS.title &&
+    hiddenCharacter(entry.title) === null &&
     typeof entry.digest === "string" &&
     DIGEST.test(entry.digest);
 
@@ -116,7 +125,12 @@ function readCarried(value: unknown): CarriedVerification[] {
     if (!Array.isArray(value) || !value.every(carried)) {
         throw new Problem("verified is not a list of the user's verifications");
     }
-    return value.map(({ by, at, digest }) => ({ by, at, digest }));
+    return value.map(({ by, at, title, digest }) => ({
+        by,
+        at,
+        title,
+        digest,
+    }));
 }
 
 // A file's stem is its fact's name or, in snake case, that name's; the

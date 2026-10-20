@@ -1485,6 +1485,27 @@ describe("syncProject and confirmation", () => {
         expect(await confirmed()).toEqual([false]);
     });
 
+    it("keeps a carried verification where the index has no entry for it", async () => {
+        await putFact(
+            data,
+            SCOPE,
+            storeFact("a", {
+                title: "Uses Bun",
+                foreign: { verified: VERIFIED },
+            }),
+        );
+        await sync();
+        // An index sync leaves alone, as a hand keeps one: no entry for a.
+        await putRepo("MEMORY.md", "# Notes\n\nKept by hand.\n");
+        const file = await readFile(memory("a.md"), "utf8");
+        data = join(base, "fresh");
+        expect(moved(await sync())).toEqual({ ...NOTHING, imported: ["a"] });
+        expect((await facts())[0]?.title).toBe("Uses Bun");
+        expect(await confirmed()).toEqual([true]);
+        expect(moved(await sync())).toEqual(NOTHING);
+        expect(await readFile(memory("a.md"), "utf8")).toBe(file);
+    });
+
     it("keeps the store's verification when an import brings back its words", async () => {
         await putFact(data, SCOPE, verified());
         await sync();

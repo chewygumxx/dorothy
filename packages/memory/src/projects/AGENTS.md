@@ -68,8 +68,10 @@ memory directory, `.agents/memory/` by default.
   foreign keys and other sources. Its origin is `repo`, which confirms
   nothing. A verification stays only for the words it confirmed: one
   the store held for the same words, or one the file carries
-  (`verified`, each entry with the `wordsDigest` of its words, which
-  the export writes), so changed words or a renamed title drop it.
+  (`verified`, each entry with the title it confirmed and the
+  `wordsDigest` of its words, which the export writes), so changed
+  words or a renamed title drop it. Where the index has no entry for
+  the fact, its title is the one a matching entry carries.
 - A form without verifications hashes as it always has, so records made
   before verifications travelled stay valid.
 - A fact retired in the store has the form removed from the repository

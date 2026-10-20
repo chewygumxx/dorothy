@@ -141,6 +141,7 @@ describe("parseExported", () => {
 const VERIFIED = {
     by: "human:owner",
     at: "2026-10-20T09:30:00.000Z",
+    title: "Force colour",
     digest: "a".repeat(64),
 };
 
@@ -180,6 +181,18 @@ describe("a verification in the exported form", () => {
         [
             "a hidden character, escaped",
             `verified: [${JSON.stringify(VERIFIED).replace("owner", "ow\\u200bner")}]`,
+        ],
+        [
+            "no title",
+            `verified: [${JSON.stringify({ ...VERIFIED, title: undefined })}]`,
+        ],
+        [
+            "a title too long",
+            `verified: [${JSON.stringify({ ...VERIFIED, title: "x".repeat(61) })}]`,
+        ],
+        [
+            "a title not normalised",
+            `verified: [${JSON.stringify({ ...VERIFIED, title: " Force  colour" })}]`,
         ],
     ])("refuses %s", (_, line) => {
         expect(

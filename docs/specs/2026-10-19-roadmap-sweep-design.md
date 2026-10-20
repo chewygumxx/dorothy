@@ -127,11 +127,12 @@ knowledge. The user chose to fence it rather than drop it or leave it.
   facts, returned by a checkout or adopted by a fresh data directory,
   and Claude Code's auto memory.
 - A verification travels with a project's fact: its exported file
-  carries each `verified` entry with a digest of the words it
-  confirmed (name, title, description, type, metadata and body). An
-  import keeps an entry whose digest matches the words imported, or one
-  the store held for the same words. Changed words drop it, as any
-  write but the user's does in the store.
+  carries each `verified` entry with the title it confirmed and a
+  digest of the words (name, title, description, type, metadata and
+  body). An import keeps an entry whose digest matches the words
+  imported, or one the store held for the same words, and takes the
+  carried title where `MEMORY.md` has no entry for the fact. Changed
+  words drop it, as any write but the user's does in the store.
 - The block renders confirmed knowledge as it does today, then
   unconfirmed knowledge in its own section, after all confirmed
   knowledge and ranked below it for the budget, introduced as notes a
