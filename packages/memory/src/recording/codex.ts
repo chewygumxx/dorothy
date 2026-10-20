@@ -126,6 +126,111 @@ export type CodexReadOptions = {
     lineOffset?: number;
 };
 
+type AnswerQueue = { outputs: string[]; next: number };
+type DecodeState = {
+    read: CodexRead;
+    decoded: Decoded[];
+    answers: Map<string, AnswerQueue>;
+};
+type MappedRecord = {
+    record: Json;
+    payload: Json;
+    type: string;
+    line: number;
+    sourceId: string;
+};
+type Decoder = (item: MappedRecord, state: DecodeState) => void;
+
+const decodeSession: Decoder = ({ record, payload }, { read }) => {
+    const session = nonempty(payload.id ?? payload.session_id, "no session id");
+    if (read.session !== null && read.session !== session)
+        throw new Unreadable("a different session id");
+    const at = time(record);
+    const cwd =
+        payload.cwd === undefined
+            ? null
+            : nonempty(payload.cwd, "no working directory");
+    read.session = session;
+    read.at ??= at;
+    read.cwd ??= cwd;
+};
+const decodeContext: Decoder = ({ record, payload }, { read }) => {
+    const cwd = nonempty(payload.cwd, "no working directory");
+    const model = nonempty(payload.model, "no model");
+    time(record);
+    read.cwd = cwd;
+    read.model = model;
+};
+const decodeCall: Decoder = (
+    { record, payload, type, line, sourceId },
+    { decoded },
+) => {
+    const id = nonempty(payload.call_id, "a tool call without its id");
+    const name = nonempty(payload.name, "a tool call without its name");
+    const input = text(
+        type === "response_item/function_call"
+            ? payload.arguments
+            : payload.input,
+        "a tool call without its input",
+    );
+    decoded.push({
+        line,
+        call: {
+            answerKey: `${type}_output/${id}`,
+            name,
+            input,
+            at: time(record),
+            sourceId,
+        },
+    });
+};
+const decodeOutput: Decoder = ({ record, payload, type }, { answers }) => {
+    const id = nonempty(payload.call_id, "a tool output without its call id");
+    const output =
+        typeof payload.output === "string"
+            ? payload.output
+            : blocks(payload.output, "\n");
+    time(record);
+    const key = `${type}/${id}`;
+    const queue = answers.get(key);
+    if (queue) queue.outputs.push(output);
+    else answers.set(key, { outputs: [output], next: 0 });
+};
+const decodeMessage: Decoder = (
+    { record, payload, line, sourceId },
+    { decoded },
+) => {
+    if (payload.role === "system" || payload.role === "developer") return;
+    if (payload.role !== "user" && payload.role !== "assistant")
+        throw new Unreadable("an unsupported message role");
+    const said = blocks(
+        payload.content,
+        "\n\n",
+        payload.role === "user" ? userText : undefined,
+    );
+    const at = time(record);
+    if (said.trim() !== "")
+        decoded.push({
+            line,
+            event: {
+                kind: payload.role,
+                text: said,
+                sourceId,
+                at,
+                ...(payload.role === "assistant" ? { interrupted: false } : {}),
+            },
+        });
+};
+const DECODERS = new Map<string, Decoder>([
+    ["session_meta", decodeSession],
+    ["turn_context", decodeContext],
+    ["response_item/message", decodeMessage],
+    ["response_item/function_call", decodeCall],
+    ["response_item/custom_tool_call", decodeCall],
+    ["response_item/function_call_output", decodeOutput],
+    ["response_item/custom_tool_call_output", decodeOutput],
+]);
+
 export function readCodex(
     lines: readonly string[],
     { ended = false, lineOffset = 0 }: CodexReadOptions = {},
@@ -151,7 +256,8 @@ export function readCodex(
     const decoded: Decoded[] = [];
     // Only the valid prefix can supply answers. Nothing after a malformed
     // record is allowed to acknowledge an earlier call.
-    const answers = new Map<string, { outputs: string[]; next: number }>();
+    const answers = new Map<string, AnswerQueue>();
+    const state = { read, decoded, answers };
     for (const [index, raw] of lines.entries()) {
         if (raw.trim() === "") continue;
         let type: string | null = null;
@@ -178,112 +284,19 @@ export function readCodex(
                 if (type === "response_item" || type === "event_msg") {
                     type += `/${nonempty(payload.type, "no payload type")}`;
                 }
-                switch (type) {
-                    case "session_meta": {
-                        const session = nonempty(
-                            payload.id ?? payload.session_id,
-                            "no session id",
-                        );
-                        if (read.session !== null && read.session !== session)
-                            throw new Unreadable("a different session id");
-                        const at = time(record);
-                        const cwd =
-                            payload.cwd === undefined
-                                ? null
-                                : nonempty(payload.cwd, "no working directory");
-                        read.session = session;
-                        read.at ??= at;
-                        read.cwd ??= cwd;
-                        continue;
-                    }
-                    case "turn_context": {
-                        const cwd = nonempty(
-                            payload.cwd,
-                            "no working directory",
-                        );
-                        const model = nonempty(payload.model, "no model");
-                        time(record);
-                        read.cwd = cwd;
-                        read.model = model;
-                        continue;
-                    }
-                    case "response_item/function_call":
-                    case "response_item/custom_tool_call": {
-                        const id = nonempty(
-                            payload.call_id,
-                            "a tool call without its id",
-                        );
-                        const name = nonempty(
-                            payload.name,
-                            "a tool call without its name",
-                        );
-                        const input = text(
-                            type === "response_item/function_call"
-                                ? payload.arguments
-                                : payload.input,
-                            "a tool call without its input",
-                        );
-                        decoded.push({
+                const decoder = DECODERS.get(type);
+                if (decoder) {
+                    decoder(
+                        {
+                            record,
+                            payload,
+                            type,
                             line: index,
-                            call: {
-                                answerKey: `${type}_output/${id}`,
-                                name,
-                                input,
-                                at: time(record),
-                                sourceId: String(lineOffset + index + 1),
-                            },
-                        });
-                        continue;
-                    }
-                    case "response_item/function_call_output":
-                    case "response_item/custom_tool_call_output": {
-                        const id = nonempty(
-                            payload.call_id,
-                            "a tool output without its call id",
-                        );
-                        const output =
-                            typeof payload.output === "string"
-                                ? payload.output
-                                : blocks(payload.output, "\n");
-                        time(record);
-                        const key = `${type}/${id}`;
-                        const queue = answers.get(key);
-                        if (queue) queue.outputs.push(output);
-                        else answers.set(key, { outputs: [output], next: 0 });
-                        continue;
-                    }
-                    case "response_item/message": {
-                        if (
-                            payload.role === "system" ||
-                            payload.role === "developer"
-                        )
-                            continue;
-                        if (
-                            payload.role !== "user" &&
-                            payload.role !== "assistant"
-                        )
-                            throw new Unreadable("an unsupported message role");
-                        const said = blocks(
-                            payload.content,
-                            "\n\n",
-                            payload.role === "user" ? userText : undefined,
-                        );
-                        const at = time(record);
-                        if (said.trim() !== "")
-                            decoded.push({
-                                line: index,
-                                event: {
-                                    kind: payload.role,
-                                    text: said,
-                                    sourceId: String(lineOffset + index + 1),
-                                    at,
-                                    ...(payload.role === "assistant"
-                                        ? { interrupted: false }
-                                        : {}),
-                                },
-                            });
-                        continue;
-                    }
+                            sourceId: String(lineOffset + index + 1),
+                        },
+                        state,
+                    );
+                    continue;
                 }
             }
             if (!BOOKKEEPING.has(type) && !known.has(type)) {
