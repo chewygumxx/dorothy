@@ -416,3 +416,8 @@ The user's backfill remains their call, after these fixes are verified.
   backfill adds turns, even after extraction emptied the service's idle
   map. Sweep callbacks report the durable eligibility, not command mode;
   the README and recording guide state this narrowed ruling.
+- N4: only newly logged halts contribute to a sweep's halted count.
+  Standing halts remain unremembered and are reread, while the service's
+  counts-line filter stays quiet. Claude's recorder reports a new halt
+  separately from its persistent halted state, preserving acknowledgement
+  and hook reread behavior.

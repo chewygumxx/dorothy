@@ -377,7 +377,7 @@ describe("dorothy --sweep", () => {
         expect(await runSweep({ ...io(), backfill: false, reread: true })).toBe(
             1,
         );
-        expect(out.join("")).toBe("codex: 0 events in 0 sessions (1 halted)\n");
+        expect(out.join("")).toBe("codex: 0 events in 0 sessions\n");
         expect(await conversations()).toHaveLength(1);
         expect(await readRecord(env, other, "codex")).toBeNull();
     });

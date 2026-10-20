@@ -12,6 +12,10 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+    SESSION as CLAUDE_SESSION,
+    userLine as claudeUser,
+} from "../bodies/fixtures.js";
+import {
     copyPath,
     readRecord,
     startNotices,
@@ -586,7 +590,7 @@ describe("a session that halts", () => {
         await r.run({ hosts: ["codex"] });
         r.requests.length = 0;
         const again = only(await r.run({ hosts: ["codex"] }), "codex");
-        expect(again).toMatchObject({ halted: 1, skipped: 0, events: 0 });
+        expect(again).toMatchObject({ halted: 0, skipped: 0, events: 0 });
         expect(r.requests).toHaveLength(1);
         expect(r.logs.filter((log) => log.includes("halted"))).toHaveLength(1);
     });
@@ -605,6 +609,59 @@ describe("a session that halts", () => {
         const hints = JSON.parse(await readFile(sweepPath(r.env), "utf8"));
         expect(Object.keys(hints.sessions)).toHaveLength(1);
     });
+
+    for (const host of ["claude-code", "codex", "hermes"] as const)
+        it(`counts a standing ${host} halt only when first logged`, async () => {
+            if (host === "claude-code")
+                await r.file(
+                    join(
+                        r.home,
+                        ".claude/projects/-work",
+                        `${CLAUDE_SESSION}.jsonl`,
+                    ),
+                    text(claudeUser("u1", 0, "Synthetic."), "{bad"),
+                    0,
+                );
+            else if (host === "codex")
+                await r.file(
+                    rollout(),
+                    text(
+                        ...speech,
+                        line(
+                            "response_item",
+                            {
+                                type: "message",
+                                role: "user",
+                                content: "not blocks",
+                            },
+                            3,
+                        ),
+                    ),
+                    0,
+                );
+            else
+                await r.hermes((db) => {
+                    hermesSession(db);
+                    hermesMessage(db, 1, "user", "Synthetic.");
+                    hermesMessage(db, 2, "user", "\0json:{");
+                });
+            expect((await r.run({ hosts: [host] }))[0]).toMatchObject({
+                halted: 1,
+            });
+            expect((await r.run({ hosts: [host] }))[0]).toMatchObject({
+                halted: 0,
+                events: 0,
+                skipped: 0,
+            });
+            expect((await r.run({ hosts: [host] }))[0]).toMatchObject({
+                halted: 0,
+                events: 0,
+                skipped: 0,
+            });
+            expect(
+                r.logs.filter((log) => log.includes("halted at")),
+            ).toHaveLength(1);
+        });
 
     it("keeps a Hermes halt by its row, filed under its host", async () => {
         await r.hermes((db) => {

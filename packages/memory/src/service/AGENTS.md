@@ -31,7 +31,7 @@ This guide holds what binds [the sweep](../recording/AGENTS.md) to a store.
   the index, then looks the session up), `isPrivate` and `onRecorded`.
 - `jobs.ts`: `startJobs` also runs `sweep` at the start and every
   `[recording] sweep-seconds`, one at a time, a line of counts to the log
-  (`recording/report.ts`) only for records, halts or failures; `stop()`
+  (`recording/report.ts`) only for records, newly told halts or failures; `stop()`
   awaits one under way.
 - `sweep-command.ts`: `runSweep`, for `dorothy --sweep`, opens the index and
   history as a hook does and prints a host and a count a line;

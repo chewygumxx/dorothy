@@ -63,10 +63,11 @@ export type Recorded =
           // The bytes of Claude Code's transcript read.
           size: number;
           halted: boolean;
+          newHalt?: boolean;
           // Lines from a call not yet answered are held back.
           held: boolean;
       }
-    | { kind: "nothing"; size: number; held: boolean }
+    | { kind: "nothing"; size: number; held: boolean; newHalt?: boolean }
     | { kind: "missing"; reason: string }
     | { kind: "unlocked" };
 
@@ -191,9 +192,20 @@ export async function recordSession(
             read.events.length > 0
                 ? await appendEvents(read, found, joined, recording)
                 : found;
-        await noteHalt(read.halt, lines, from, phrase, recording);
+        const newHalt = await noteHalt(
+            read.halt,
+            lines,
+            from,
+            phrase,
+            recording,
+        );
         if (phrase === null) {
-            return { kind: "nothing", size, held: read.held };
+            return {
+                kind: "nothing",
+                size,
+                held: read.held,
+                ...(newHalt ? { newHalt: true } : {}),
+            };
         }
         if (read.events.length > 0) {
             deps.log.info(
@@ -206,6 +218,7 @@ export async function recordSession(
             appended: read.events.length,
             size,
             halted: read.halt !== null,
+            ...(newHalt ? { newHalt: true } : {}),
             held: read.held,
         };
     });
@@ -373,7 +386,7 @@ async function noteHalt(
     from: number,
     phrase: string | null,
     { report, deps, now }: Recording,
-): Promise<void> {
+): Promise<boolean> {
     if (halt === null) {
         try {
             await resolveHalt(deps.env, report.session);
@@ -382,7 +395,7 @@ async function noteHalt(
                 `session ${report.session}: a halt kept before can't be cleared (${describeError(error)})`,
             );
         }
-        return;
+        return false;
     }
     const line = from + halt.line;
     let tell = true;
@@ -420,4 +433,5 @@ async function noteHalt(
         deps.log.error(
             `session ${report.session}: halted at line ${line + 1} (${halt.type ?? "no type"}, ${halt.uuid ?? "no uuid"}): ${halt.reason}`,
         );
+    return tell;
 }

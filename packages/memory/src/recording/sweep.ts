@@ -121,7 +121,7 @@ export type HostSweep = {
     // Older than the watermark: they wait for the backfill.
     waiting: number;
     private: number;
-    // Sessions read up to a record that could not be read.
+    // New halts told during this sweep; standing halts stay unremembered.
     halted: number;
     // Sessions that could not be read at all.
     failed: number;
@@ -543,7 +543,6 @@ async function keepAside(
         }
         return kept;
     }
-    result.halted += 1;
     const { line, type, reason, rest, uuid = null } = found.halt;
     try {
         await keepHalt(
@@ -580,6 +579,7 @@ async function keepAside(
             `recording: ${host}: ${named}: its halt can't be kept (${describe(error)})`,
         );
     }
+    result.halted += 1;
     deps.log.error(
         `recording: ${host}: ${named} halted at ${unit(host)} ${line} (${type ?? "no type"}): ${reason}`,
     );
@@ -675,8 +675,9 @@ async function recordClaudeRead(
             return;
         case "nothing":
             // A halt on the first line leaves a record and no conversation.
-            if ((await readRecord(deps.env, id)) !== null) result.halted += 1;
-            else if (!recorded.held || ended)
+            if ((await readRecord(deps.env, id)) !== null) {
+                if (recorded.newHalt) result.halted += 1;
+            } else if (!recorded.held || ended)
                 rememberRead(state, session.key, read);
             return;
         case "recorded": {
@@ -693,8 +694,9 @@ async function recordClaudeRead(
                 });
             }
             // Lines held behind a call wait for its answer, or the end.
-            if (recorded.halted) result.halted += 1;
-            else if (!recorded.held || ended)
+            if (recorded.halted) {
+                if (recorded.newHalt) result.halted += 1;
+            } else if (!recorded.held || ended)
                 rememberRead(state, session.key, read);
         }
     }
