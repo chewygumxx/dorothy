@@ -40,9 +40,9 @@ readers never open a Dorothy store.
   for the legacy optional `since`; stable event ids are not monotonic.
 - `sources.ts`: `claudeSource`, `codexSource`, `hermesSource`; each
   lists descriptors with a key, path, time, fingerprint and `read()`.
-- `state.ts`: private `sweep.json`, validated version 1, host watermarks
-  and per-key fingerprints. `loadSweepState` warns and starts fresh on
-  missing, unreadable or invalid data; `saveSweepState` replaces whole.
+- `state.ts`: private `sweep.json`, validated version 1, per-key skip
+  fingerprints alone. `loadSweepState` warns and starts fresh on missing,
+  unreadable or invalid data; `saveSweepState` replaces whole.
 - `hermes-fixtures.ts`: installed Hermes v31 `sessions`/`messages` table
   DDL and synthetic row builders. Writers create only temporary fixtures.
 - `fixtures.ts`: synthetic text in observed record shapes. No real
@@ -145,6 +145,6 @@ print only types, keys and nesting, with dynamic map keys masked.
   A changed read carries a fingerprint and `stable`. Raced or torn
   reads cannot be remembered. Only call `rememberRead` after archive
   acceptance and saved unread diagnostics; failed archive writes retry.
-- `hostWatermark` retains each host's first supplied time. Files are
-  written atomically as 0600 under a 0700 state directory. Losing this
-  cache costs a whole reread; archive sourceId dedupe decides what is new.
+- The file is written atomically as 0600 under a 0700 state directory.
+  Losing it costs a whole reread; archive sourceId dedupe decides what
+  is new. Watermarks live in the data directory, never here.

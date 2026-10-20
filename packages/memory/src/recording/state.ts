@@ -16,13 +16,11 @@ import type { Fingerprint, Host, SourceRead } from "./sources.js";
 
 export type SweepState = {
     v: 1;
-    watermarks: Partial<Record<Host, string>>;
     sessions: Record<string, Fingerprint>;
 };
 export function emptySweepState(): SweepState {
     return {
         v: 1,
-        watermarks: Object.create(null),
         sessions: Object.create(null),
     };
 }
@@ -32,7 +30,6 @@ export function sweepPath(env: Env): string {
     return join(stateDir(env), "sweep.json");
 }
 type Json = Record<string, unknown>;
-const HOSTS = new Set(["claude-code", "codex", "hermes"]);
 const object = (value: unknown): value is Json =>
     value !== null && typeof value === "object" && !Array.isArray(value);
 const exact = (value: Json, keys: string[]) =>
@@ -40,11 +37,6 @@ const exact = (value: Json, keys: string[]) =>
     keys.every((key) => Object.hasOwn(value, key));
 const natural = (value: unknown) =>
     typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-function iso(value: unknown): value is string {
-    if (typeof value !== "string") return false;
-    const time = Date.parse(value);
-    return Number.isFinite(time) && new Date(time).toISOString() === value;
-}
 function fingerprint(value: unknown): value is Fingerprint {
     if (!object(value)) return false;
     if (value.kind === "rows")
@@ -68,20 +60,12 @@ function fingerprint(value: unknown): value is Fingerprint {
 function normalize(value: unknown): SweepState | null {
     if (
         !object(value) ||
-        !exact(value, ["v", "watermarks", "sessions"]) ||
+        !exact(value, ["v", "sessions"]) ||
         value.v !== 1 ||
-        !object(value.watermarks) ||
         !object(value.sessions)
     )
         return null;
-    if (
-        Object.entries(value.watermarks).some(
-            ([host, at]) => !HOSTS.has(host) || !iso(at),
-        )
-    )
-        return null;
     const state = emptySweepState();
-    Object.assign(state.watermarks, value.watermarks);
     for (const [key, stamp] of Object.entries(value.sessions)) {
         if (!key || !fingerprint(stamp)) return null;
         Object.defineProperty(state.sessions, key, {
@@ -121,18 +105,6 @@ export async function saveSweepState(
     await privateDir(dirname(path));
     await writePrivate(path, `${JSON.stringify(checked)}\n`);
 }
-export function hostWatermark(
-    state: SweepState,
-    host: Host,
-    at: string,
-): string {
-    if (!HOSTS.has(host) || !iso(at))
-        throw new RangeError("invalid sweep watermark");
-    const existing = state.watermarks[host];
-    if (existing !== undefined) return existing;
-    state.watermarks[host] = at;
-    return at;
-}
 // Call only after the archive accepted this read (and unread diagnostics
 // were saved). Fingerprints are skip hints, never evidence of ownership.
 export function rememberRead(
@@ -150,4 +122,21 @@ export function rememberRead(
         configurable: true,
     });
     return true;
+}
+// Drops the hints of a host's sessions its listing no longer names, so the
+// file does not grow with every session a host has ever held.
+export function forgetMissing(
+    state: SweepState,
+    host: Host,
+    listed: ReadonlySet<string>,
+): void {
+    for (const key of Object.keys(state.sessions)) {
+        let owner: unknown;
+        try {
+            owner = (JSON.parse(key) as unknown[])[0];
+        } catch {
+            continue;
+        }
+        if (owner === host && !listed.has(key)) delete state.sessions[key];
+    }
 }
