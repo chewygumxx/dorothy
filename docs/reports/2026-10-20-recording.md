@@ -60,7 +60,7 @@ Task 4's range holds its four fix rounds.
 | 4 | The sweep | `800bf11..7e61b81` | Claude |
 | 5 | Service, CLI, configuration | `7e61b81..99be6c0` | Claude |
 | 6 | The probe | `99be6c0..8f357e9` | Claude |
-| 7 | The record | `8f357e9..` this report | Claude |
+| 7 | The record | `8f357e9..b324af2` | Claude |
 
 Claude Sonnet implemented Tasks 4 to 7 and the fix rounds of Tasks 4 and
 5; a fresh Claude Opus took Task 4's fourth round. Tasks 1 and 2 had one
