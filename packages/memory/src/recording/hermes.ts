@@ -185,11 +185,17 @@ function calls(
               );
     if (
         !object(uids) ||
-        Object.values(uids).some(
-            (uid) => typeof uid !== "string" || !uid.trim(),
+        Object.values(uids).some((uid) =>
+            Array.isArray(uid)
+                ? uid.length === 0 ||
+                  uid.some(
+                      (value) => typeof value !== "string" || !value.trim(),
+                  )
+                : typeof uid !== "string" || !uid.trim(),
         )
     )
         throw new Unreadable("invalid tool call uids");
+    const occurrences = new Map<string, number>();
     for (const value of values) {
         if (!object(value)) throw new Unreadable("a malformed tool call");
         const type = nonempty(value.type, "a tool call without its type");
@@ -200,9 +206,15 @@ function calls(
         const key = callId(value.call_id, value.id);
         if (!object(value.function))
             throw new Unreadable("a tool call without its function");
+        const occurrence = occurrences.get(key) ?? 0;
+        occurrences.set(key, occurrence + 1);
+        const entry = uids[key];
+        const uid = Array.isArray(entry) ? entry[occurrence] : entry;
+        if (Array.isArray(entry) && uid === undefined)
+            throw new Unreadable("incomplete tool call uids");
         result.calls.push({
             id: key,
-            uid: typeof uids[key] === "string" ? uids[key] : null,
+            uid: typeof uid === "string" ? uid : null,
             message: id,
             name: nonempty(value.function.name, "a tool call without its name"),
             input: text(
@@ -245,6 +257,7 @@ function parentHoldings(rows: Json[]): Set<string> {
     return held;
 }
 
+type ToolQueue = { calls: ToolCall[]; next: number };
 type Decoded = { physical: number; event: RecordEvent };
 function sourceIds(rows: Json[]): Map<string, number> {
     const ids = new Map<string, number>();
@@ -269,7 +282,7 @@ type DecodeState = {
     since: number;
     pending: ToolCall[];
     byId: Map<string, ToolCall>;
-    byUid: Map<string, ToolCall>;
+    byUid: Map<string, ToolQueue>;
     known: Set<string>;
 };
 function decodeTool(
@@ -286,9 +299,11 @@ function decodeTool(
         row.tool_call_uid === null
             ? null
             : nonempty(row.tool_call_uid, "invalid tool result uid");
-    const call = uid === null ? byId.get(key) : byUid.get(uid);
+    const queue = uid === null ? undefined : byUid.get(uid);
+    const call = uid === null ? byId.get(key) : queue?.calls[queue.next];
     if (call && call.id === key && !call.answered) {
         call.answered = true;
+        if (queue) queue.next++;
         if (emit && sourceId > since)
             decoded.push({
                 physical: id,
@@ -321,7 +336,11 @@ function decodeSpeech(
         for (const call of decoded.calls) {
             pending.push(call);
             byId.set(call.id, call);
-            if (call.uid !== null) byUid.set(call.uid, call);
+            if (call.uid !== null) {
+                const queue = byUid.get(call.uid);
+                if (queue) queue.calls.push(call);
+                else byUid.set(call.uid, { calls: [call], next: 0 });
+            }
         }
         for (const unknown of decoded.unknown) {
             if (!known.has(unknown)) {
@@ -368,7 +387,7 @@ function decodeSession(
     const decoded: Decoded[] = [];
     const pending: ToolCall[] = [];
     const byId = new Map<string, ToolCall>();
-    const byUid = new Map<string, ToolCall>();
+    const byUid = new Map<string, ToolQueue>();
     let id: number | null = null;
     let type: string | null = "session";
     try {

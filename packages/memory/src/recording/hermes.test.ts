@@ -1332,3 +1332,78 @@ describe("readHermes parent merge witnesses", () => {
         );
     });
 });
+
+describe("readHermes merged tool uid lists", () => {
+    for (const [name, uids] of [
+        ["distinct folded occurrences", ["fixture-one", "fixture-two"]],
+        ["a shared response uid", ["fixture-shared", "fixture-shared"]],
+    ] as const) {
+        it(`pairs ${name} in call order without losing a pending call`, async () => {
+            const path = await fixture((db) => {
+                hermesSession(db);
+                hermesMessage(db, 1, "assistant", null, {
+                    calls: JSON.stringify([
+                        hermesCall("repeated", "fixture", "first input"),
+                        hermesCall("repeated", "fixture", "second input"),
+                    ]),
+                });
+                db.run(
+                    "UPDATE messages SET message_uid = 'fixture-first', absorbed_message_uids = ?, tool_call_uids = ? WHERE id = 1",
+                    ['["fixture-second"]', JSON.stringify({ repeated: uids })],
+                );
+                hermesMessage(db, 3, "tool", "First answer.", {
+                    callId: "repeated",
+                });
+                hermesMessage(db, 4, "tool", "Second answer.", {
+                    callId: "repeated",
+                });
+                db.run("UPDATE messages SET tool_call_uid = ? WHERE id = 3", [
+                    uids[0],
+                ]);
+                db.run("UPDATE messages SET tool_call_uid = ? WHERE id = 4", [
+                    uids[1],
+                ]);
+            });
+            const [read] = readHermes(path, 0);
+            expect(read?.events).toEqual([
+                {
+                    kind: "tool",
+                    name: "fixture",
+                    input: "first input",
+                    output: "First answer.",
+                    ok: true,
+                    sourceId: "3",
+                    at: hermesAt(3),
+                },
+                {
+                    kind: "tool",
+                    name: "fixture",
+                    input: "second input",
+                    output: "Second answer.",
+                    ok: true,
+                    sourceId: "4",
+                    at: hermesAt(4),
+                },
+            ]);
+            expect(read?.pending).toBeNull();
+            expect(read?.halt).toBeNull();
+        });
+    }
+    it("halts an incomplete occurrence list before emitting the assistant row", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "assistant", "Uncommitted prose.", {
+                calls: JSON.stringify([
+                    hermesCall("repeated"),
+                    hermesCall("repeated"),
+                ]),
+            });
+            db.run("UPDATE messages SET tool_call_uids = ? WHERE id = 1", [
+                '{"repeated":["fixture-only-one"]}',
+            ]);
+        });
+        const [read] = readHermes(path, 0);
+        expect(read?.events).toEqual([]);
+        expect(read?.halt).toMatchObject({ id: 1, type: "assistant" });
+    });
+});
