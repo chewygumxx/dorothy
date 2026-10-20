@@ -4,8 +4,8 @@ mtime: 2026-10-20
 spdx: GPL-3.0-only
 title: packages/memory/src/recording/AGENTS.md
 description: >-
-  Readers for external harness sessions, their synthetic fixtures and
-  the contracts the later sweep consumes.
+  Harness readers, sources, synthetic fixtures and the sweep's private
+  change hints and watermarks.
 tags:
   - agents
 ---
@@ -32,11 +32,17 @@ readers never open a Dorothy store.
   `turn_context` gives the working directory and model. Separate decoders
   validate session, context, message, call and output records before the
   ordered emission pass pairs calls inside the valid prefix.
-- `hermes.ts`: `readHermes(dbPath, since = 0)` opens Hermes SQLite
-  read-only and returns one `HermesRead` per session, in session-id order.
+- `hermes.ts`: `readHermes(dbPath, since = 0, session?)` opens SQLite
+  read-only; optional session selection happens before payload fetching.
   Each has `session`, `parent`, `source`, `cwd`, `model`, `at`, `events`,
-  `halt`, `unknown` and `pending`. Only emitted events are filtered by `since`;
-  decode earlier rows too, for call correlation and stable identities.
+  `halt`, `unknown` and `pending`. SQL filters invisible payloads but
+  retains all-row uid minima and call context. Sources always use zero
+  for the legacy optional `since`; stable event ids are not monotonic.
+- `sources.ts`: `claudeSource`, `codexSource`, `hermesSource`; each
+  lists descriptors with a key, path, time, fingerprint and `read()`.
+- `state.ts`: private `sweep.json`, validated version 1, host watermarks
+  and per-key fingerprints. `loadSweepState` warns and starts fresh on
+  missing, unreadable or invalid data; `saveSweepState` replaces whole.
 - `hermes-fixtures.ts`: installed Hermes v31 `sessions`/`messages` table
   DDL and synthetic row builders. Writers create only temporary fixtures.
 - `fixtures.ts`: synthetic text in observed record shapes. No real
@@ -80,7 +86,6 @@ readers never open a Dorothy store.
   `source` and `origin_json` describe transport/routing, never a fallback
   to this process's directory. No recorded cwd means a personal session.
 - Messages are decoded by integer id, never by timestamp (Unix seconds).
-  `since` is an exclusive global message-id floor for emitted events.
   A malformed mapped row halts only its session, preserving the prefix;
   `halt.id` names the bad row, or is null for metadata or an invalid id.
   Unknown roles and tool types are retained once with their first `id`.
@@ -121,19 +126,25 @@ readers never open a Dorothy store.
 
 ## Tests
 
-`codex.test.ts` uses synthetic in-memory lines; `hermes.test.ts` builds
-SQLite fixtures under `mkdtemp` roots and removes them after each test.
-Never open a real harness store in a test. Shape inspection outside tests
-prints record discriminators, keys and nesting, with dynamic map keys
-masked.
+Tests use synthetic lines and temporary SQLite/filesystem roots, removed
+after each test. Never open a real harness store in a test. Shape probes
+print only types, keys and nesting, with dynamic map keys masked.
 
-## Later
+## Sources and sweep state
 
-`event_msg/item_completed` carries `exit_code` and `status` keys. A future
-reader could use those for execution outcomes if its `id` can be linked
-to the response item's `call_id`; that linkage is not established here.
-
-For Hermes, Task 3's source should apply `since` before decoding wherever
-possible. Preserve the all-row uid minimum and the call context needed
-by later results; a physical query cursor and a stable event id serve
-different purposes. The current reader still decodes earlier rows.
+- Every root comes from an injected `Env`; missing HOME never falls
+  through to the process home. Claude covers its default account and
+  all `claude-dirs` accounts' projects, excluding subagent paths.
+- An unchanged file matches size, nanosecond mtime, inode and device;
+  Hermes matches maximum physical row id and row count, including
+  invisible rows. These are equality hints, never event cursors.
+- Changed sessions are read whole, files at `lineOffset: 0`. No byte or
+  maximum-sourceId cursor is persisted. Shrink, replacement, rewrites
+  and torn tails therefore preserve the reader's entire context.
+- `read(previous?)` refreshes observations; null means unchanged.
+  A changed read carries a fingerprint and `stable`. Raced or torn
+  reads cannot be remembered. Only call `rememberRead` after archive
+  acceptance and saved unread diagnostics; failed archive writes retry.
+- `hostWatermark` retains each host's first supplied time. Files are
+  written atomically as 0600 under a 0700 state directory. Losing this
+  cache costs a whole reread; archive sourceId dedupe decides what is new.
