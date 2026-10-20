@@ -1,0 +1,175 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# ~chewygumxx/dorothy.git
+# ::: :/docs/reports/2026-10-19-roadmap-sweep/compaction.txt
+
+Probe: One live compaction split into multiple topical clusters
+Date: 2026-10-20
+Claude Code: 2.1.300
+Bun: 1.4.2
+Herdr: 0.9.5
+Model: claude-haiku-5-5 (--model haiku; ANTHROPIC_MODEL=haiku for chat)
+Code under test: dc09077
+Verdict: PASS
+
+Commands:
+  herdr pane run w35:p8 \
+    "cd <checkout> && python3 <probe-root>/probe.py compaction compaction"
+The launcher checks and clears parent CLAUDE_CODE_* variables, supplies
+all temporary Dorothy roots, sets ANTHROPIC_MODEL=haiku, and runs:
+  bunx --no-install dotenvx run --quiet -- \
+    bun --no-env-file <checkout>/packages/cli/src/index.ts
+DOTENVX_CONFIG preserves the user's existing dotenvx session directory
+while Dorothy's XDG_CONFIG_HOME points at the temporary config. Secrets
+come from the encrypted repository .env and are never printed.
+
+Throwaway config.toml:
+[memory]
+enabled = false
+recall = true
+idle-seconds = 20
+catch-up = 0
+[compaction]
+soft = 2000
+hard = 50000
+tail = 500
+[history]
+enabled = false
+
+Memory reviews are off; recall and compaction are independent and on.
+The high hard threshold lets multiple topics accumulate before the next
+20-second idle. The low soft threshold and 500-token tail make the first
+two topics leave together; a call is capped at soft-tail (1500 tokens).
+
+Each topic was sent once with herdr pane send-text, then send-keys enter;
+replies were checked with pane read before sending the next topic:
+1. Topic 1, lighthouses: explain Fresnel lenses and keepers in about 400
+   words. This is a disposable conversation probe; do not save facts.
+2. Topic 2, sourdough: explain starter feeding and fermentation in about
+   300 words. Keep this topic separate from lighthouses; this is
+   disposable probe data.
+3. Topic 3, astronomy: explain why the Moon has phases in about 300
+   words. Keep it separate from bread and lighthouses; this is disposable
+   probe data.
+After the third reply, waited for the idle compaction in the owned tab.
+
+Selected terminal output:
+^[[?0u───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────you      Topic 1, lighthouses: explain Fresnel lenses and keepers in about 400 words. This is a disposable conversation probe; do not save facts.
+2 in · 2420 cache write · 1063 out · ttft 2.9s · 7.2s · $0.0012 · chat $0.0012
+you      Topic 2, sourdough: explain starter feeding and fermentation in about 300 words. Keep this topic separate from lighthouses; this is disposable probe data.
+2 in · 2420 cache read · 1144 cache write · 718 out · ttft 1.1s · 4.6s · $0.0006 · chat $0.0018
+you      Topic 3, astronomy: explain why the Moon has phases in about 300 words. Keep it separate from bread and lighthouses; this is disposable probe data.
+2 in · 3564 cache read · 798 cache write · 607 out · ttft 4.5s · 4.5s · $0.0005 · chat $0.0023
+compacted turns 1-4 into 2 clusters
+chat $0.0023 · memory $0.0013 · $0.0005 · 2 in · 607 out · ttft 4.5s · 4.5s
+dorothy · cutlery-idea-binned-callously · claude-haiku-5-5 · sdk <session> · ready
+
+Sidecar and transcript evidence (only probe data):
+{
+  "phrase": "cutlery-idea-binned-callously",
+  "clusters": [
+    {
+      "from": 1,
+      "through": 2,
+      "abstract": "The user asked for about 400 words on lighthouses: Fresnel lenses and keepers. They called it a disposable conversation probe and said not to save facts. I explained that Augustin-Jean Fresnel's stepped, prismatic-ring lens (around 1822) was thinner and lighter than earlier thick lenses and focused lamp light toward the horizon. The first one was at Cordouan in 1823. I covered the lens orders from first to sixth, the rotating clockwork that gave each light its flash signature, and the keepers' daily work: trimming lamps, polishing, winding the clockwork, and keeping weather logs. I also covered their isolated shifts, repairs, and rescues, and the automation of most lights in the twentieth century. Nothing was left open.",
+      "at": "2026-10-20T03:08:31.451Z",
+      "model": "claude-haiku-5-5"
+    },
+    {
+      "from": 3,
+      "through": 4,
+      "abstract": "The user asked for about 300 words on sourdough starter feeding and fermentation. They said this was a separate, disposable probe and to keep it apart from the lighthouse topic. I explained that a starter is a living culture of wild yeasts and lactic acid bacteria that needs regular feeding. I gave an example routine of discarding part and feeding equal weights of flour and water, and noted how the starter-to-flour ratio and flour type change the timing and tang. I covered temperature effects (roughly doubling in four to six hours at 24 to 27 degrees Celsius), signs of peak readiness, and how yeast gas and bacterial acids shape bread fermentation. Nothing was left open.",
+      "at": "2026-10-20T03:08:31.451Z",
+      "model": "claude-haiku-5-5"
+    }
+  ],
+  "compactions": [
+    {
+      "v": 1,
+      "kind": "compaction",
+      "at": "2026-10-20T03:08:31.457Z",
+      "through": 4,
+      "clusters": 2
+    }
+  ],
+  "sessions": [
+    {
+      "resumed": false,
+      "model": "claude-haiku-5-5"
+    }
+  ],
+  "turns": [
+    {
+      "role": "user",
+      "characters": 136
+    },
+    {
+      "role": "assistant",
+      "characters": 2395
+    },
+    {
+      "role": "user",
+      "characters": 154
+    },
+    {
+      "role": "assistant",
+      "characters": 1976
+    },
+    {
+      "role": "user",
+      "characters": 147
+    },
+    {
+      "role": "assistant",
+      "characters": 1830
+    }
+  ]
+}
+Both clusters have the same compaction timestamp. The single transcript
+compaction event says through=4, clusters=2: this is one call split into
+two topical clusters, rather than separate calls each making one cluster.
+The latest astronomy exchange remains verbatim.
+
+Closed the TUI with herdr pane send-keys w35:p8 ctrl+c and waited for its
+shell prompt. Checked the resumed seed through the local capture server:
+  python3 <probe-root>/dump.py
+Underlying command, with the same temporary roots and credentials wrapper:
+  bun --no-env-file <checkout>/packages/cli/src/index.ts \
+    --dump-context --resume cutlery-idea-binned-callously
+Output (booleans selected from the dump, no full prompt retained):
+{
+  "exit": 0,
+  "earlier": true,
+  "cluster1": true,
+  "cluster2": true,
+  "tailContainsTopic3": true,
+  "tailContainsTopic1": false,
+  "tailContainsTopic2": false,
+  "recollectOffered": true,
+  "stderr": "",
+  "remoteModelCalls": 0
+}
+
+Then closed only the created tab:
+  herdr tab close w35:t7
+  exit: 0
+
+Cost: three live chat turns plus one structured compaction invocation.
+Displayed chat cost 0.0023 USD and compaction cost 0.0013 USD (rounded).
+The resumed dump made zero remote model calls.
+
+Local seed-check helper:
+import json,os,subprocess
+from pathlib import Path
+from probe import ROOT,REPO,BUN,env_for,scrub
+meta=next((ROOT/'compaction/data/dorothy/transcripts').glob('*.meta.json'))
+phrase=meta.name.replace('.meta.json','')
+env=env_for('compaction')
+env['DOTENVX_CONFIG']=os.environ.get('DOTENVX_CONFIG',str(Path(os.environ.get('XDG_CONFIG_HOME',str(Path.home()/'.config')))/'dotenvx'))
+result=subprocess.run([BUN,'x','--no-install','dotenvx','run','--quiet','--',BUN,'--no-env-file',str(REPO/'packages/cli/src/index.ts'),'--dump-context','--resume',phrase],cwd=REPO,env=env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,timeout=60)
+body=json.loads(result.stdout)
+system=body.get('system',[])
+text=system if isinstance(system,str) else '\n'.join(b.get('text','') for b in system)
+history=text.split('The conversation so far, which you are continuing:',1)[-1]
+summary={'exit':result.returncode,'earlier': '<earlier>' in text,'cluster1':'turns="1-2"' in text,'cluster2':'turns="3-4"' in text,'tailContainsTopic3':'Topic 3, astronomy' in history,'tailContainsTopic1':'Topic 1, lighthouses' in history,'tailContainsTopic2':'Topic 2, sourdough' in history,'recollectOffered':any('recollect' in v.get('name','') for v in body.get('tools',[])),'stderr':scrub(result.stderr),'remoteModelCalls':0}
+output=json.dumps(summary,indent=2)
+(ROOT/'compaction.seed.txt').write_text(output+'\n');print(output)
