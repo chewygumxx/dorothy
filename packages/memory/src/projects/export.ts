@@ -61,7 +61,7 @@ export function nameOfStem(stem: string): string | null {
 // store holds, which a write by anyone but the user would have dropped.
 export function exportedForm(fact: Fact): ExportedFact {
     const digest = wordsDigest(fact);
-    const verified = verificationsOf(fact)
+    const verified = inOrder(verificationsOf(fact))
         .map(({ by, at }) => ({ by, at, title: fact.title, digest }))
         .filter(carried);
     return {
@@ -102,6 +102,15 @@ export function renderExported(form: ExportedFact): string {
 const EXPORTED_KEYS = ["name", "description", "metadata", "verified"];
 const CARRIED_KEYS = ["by", "at", "title", "digest"];
 const DIGEST = /^[0-9a-f]{64}$/;
+
+// Verifications by time, then by who made them, so every machine writes
+// one list in one order.
+export const inOrder = <T extends Verification>(entries: readonly T[]): T[] =>
+    [...entries].sort(
+        (a, b) =>
+            (a.at < b.at ? -1 : a.at > b.at ? 1 : 0) ||
+            (a.by < b.by ? -1 : a.by > b.by ? 1 : 0),
+    );
 
 const carried = (entry: unknown): entry is CarriedVerification =>
     isRecord(entry) &&

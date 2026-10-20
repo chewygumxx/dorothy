@@ -53,6 +53,7 @@ import {
     formHash,
     indexHooks,
     indexTitles,
+    inOrder,
     isGeneratedIndex,
     nameOfStem,
     parseExported,
@@ -662,7 +663,8 @@ function carriedTitle(
 }
 
 // The verifications of an imported fact's words: the store's, if it held
-// the same words, and those the file carries for them, each once.
+// the same words, and those the file carries for them, each once, in one
+// order on every machine.
 function verificationsFor(
     fact: Fact,
     held: Fact | null,
@@ -676,7 +678,7 @@ function verificationsFor(
         verificationsOf(held).forEach(add);
     }
     carried.filter((entry) => entry.digest === digest).forEach(add);
-    return [...kept.values()];
+    return inOrder([...kept.values()]);
 }
 
 // Whether MEMORY.md is still the text it was read as, or still absent.

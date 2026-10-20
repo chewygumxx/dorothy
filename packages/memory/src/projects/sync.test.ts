@@ -1506,6 +1506,37 @@ describe("syncProject and confirmation", () => {
         expect(await readFile(memory("a.md"), "utf8")).toBe(file);
     });
 
+    const OWNER = { by: "human:owner", at: "2026-10-15T09:30:00.000Z" };
+    const ALICE = { by: "human:alice", at: "2026-10-16T09:30:00.000Z" };
+    it.each([
+        ["the store's later", ALICE, OWNER],
+        ["the file's later", OWNER, ALICE],
+    ])("orders verifications by time, %s", async (_, stored, filed) => {
+        await putFact(
+            data,
+            SCOPE,
+            storeFact("a", { foreign: { verified: [stored] } }),
+        );
+        await sync();
+        // Another machine verified the same words, and committed first.
+        const text = await readFile(memory("a.md"), "utf8");
+        await putRepo(
+            "a.md",
+            text.replace(
+                `"by":"${stored.by}","at":"${stored.at}"`,
+                `"by":"${filed.by}","at":"${filed.at}"`,
+            ),
+        );
+        expect(moved(await sync())).toEqual({ ...NOTHING, imported: ["a"] });
+        expect((await facts())[0]?.foreign?.verified).toEqual([OWNER, ALICE]);
+        await sync();
+        const written = await readFile(memory("a.md"), "utf8");
+        expect(written.indexOf(OWNER.by)).toBeLessThan(
+            written.indexOf(ALICE.by),
+        );
+        expect(moved(await sync())).toEqual(NOTHING);
+    });
+
     it("keeps the store's verification when an import brings back its words", async () => {
         await putFact(data, SCOPE, verified());
         await sync();
