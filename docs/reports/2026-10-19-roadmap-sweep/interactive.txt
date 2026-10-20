@@ -37,7 +37,7 @@ counted; neither turn read files or used tools.
 
 Selected terminal output:
  ▐▛███▛█   Claude Code v2.1.300
-▝▜██████▀  Haiku 5.5 · Claude Pro
+Haiku 5.5
 ❯ Probe only: do not use tools or modify anything. Who are you? Answer in one short sentence.
 ● I'm Dorothy, a warm and curious assistant here to help you with your work.
 ✻ Cogitated for 1s · done Tue 20 Oct - 14:04:11
@@ -88,8 +88,8 @@ This keeps recording, recall and model reviews out of an identity probe.
 It does not replace Claude Code's own configuration.
 
 Helper sources below are the final helpers used in this run. Absolute
-paths are normalized to <probe-root> and <checkout>; substitute the
-mkdtemp root and checkout before rerunning. The helpers use private files
+paths are normalized to <probe-root>, <checkout> and <home>; substitute
+the mkdtemp root, checkout and home before rerunning. The helpers use files
 only for these probes' results and selected observations. UUIDs are
 redacted in the captures. No real key or account address is present.
 
@@ -153,7 +153,7 @@ import os, json, re, subprocess, sys, uuid
 from pathlib import Path
 ROOT=Path('<probe-root>')
 REPO=Path('<checkout>')
-BUN='/home/chewygumxx/.local/share/mise/installs/bun/1.4.2/bin/bun'
+BUN='<home>/.local/share/mise/installs/bun/1.4.2/bin/bun'
 
 def env_for(name):
     # Match the instructed pre-probe check, printing names rather than values.
@@ -163,7 +163,7 @@ def env_for(name):
     for key,part in [('XDG_DATA_HOME','data'),('XDG_STATE_HOME','state'),('XDG_CACHE_HOME','cache'),('XDG_CONFIG_HOME','config'),('XDG_RUNTIME_DIR','runtime')]:
         env[key]=str(ROOT/name/part)
     env['CLAUDE_CONFIG_DIR']=os.environ.get('CLAUDE_CONFIG_DIR',str(Path.home()/'.claude'))
-    env['PATH']=str(Path(BUN).parent)+':/opt/claude-code/bin:/home/chewygumxx/.local/share/mise/installs/node/24/bin:'+env['PATH']
+    env['PATH']=str(Path(BUN).parent)+':/opt/claude-code/bin:<home>/.local/share/mise/installs/node/24/bin:'+env['PATH']
     env.pop('FORCE_COLOR',None)
     env['ANTHROPIC_MODEL']='haiku'
     return env
