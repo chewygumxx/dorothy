@@ -72,6 +72,75 @@ function content(value: unknown): string {
         })
         .join("\n\n");
 }
+type ToolCall = {
+    id: string;
+    uid: string | null;
+    message: number;
+    name: string;
+    input: string;
+    answered: boolean;
+};
+function callId(...values: unknown[]): string {
+    for (const value of values) {
+        if (typeof value === "string" && value.trim())
+            return value.trim().split("|", 1)[0]?.trim() || value.trim();
+    }
+    throw new Unreadable("a tool call without its id");
+}
+function calls(
+    row: Json,
+    id: number,
+): { calls: ToolCall[]; unknown: string[] } {
+    const result: { calls: ToolCall[]; unknown: string[] } = {
+        calls: [],
+        unknown: [],
+    };
+    if (row.tool_calls === null) return result;
+    const values = json(
+        text(row.tool_calls, "tool calls are not text"),
+        "invalid tool calls JSON",
+    );
+    if (!Array.isArray(values))
+        throw new Unreadable("tool calls are not an array");
+    const uids =
+        row.tool_call_uids === null
+            ? {}
+            : json(
+                  text(row.tool_call_uids, "tool call uids are not text"),
+                  "invalid tool call uids JSON",
+              );
+    if (
+        !object(uids) ||
+        Object.values(uids).some(
+            (uid) => typeof uid !== "string" || !uid.trim(),
+        )
+    )
+        throw new Unreadable("invalid tool call uids");
+    for (const value of values) {
+        if (!object(value)) throw new Unreadable("a malformed tool call");
+        const type = nonempty(value.type, "a tool call without its type");
+        if (type !== "function") {
+            result.unknown.push(`tool_call/${type}`);
+            continue;
+        }
+        const key = callId(value.call_id, value.id);
+        if (!object(value.function))
+            throw new Unreadable("a tool call without its function");
+        result.calls.push({
+            id: key,
+            uid: typeof uids[key] === "string" ? uids[key] : null,
+            message: id,
+            name: nonempty(value.function.name, "a tool call without its name"),
+            input: text(
+                value.function.arguments,
+                "a tool call without its input",
+            ),
+            answered: false,
+        });
+    }
+    return result;
+}
+
 function decodeSession(session: Json, rows: Json[], since: number): HermesRead {
     const read: HermesRead = {
         session: null,
@@ -84,6 +153,9 @@ function decodeSession(session: Json, rows: Json[], since: number): HermesRead {
         unknown: [],
         pending: null,
     };
+    const pending: ToolCall[] = [];
+    const byId = new Map<string, ToolCall>();
+    const byUid = new Map<string, ToolCall>();
     let id: number | null = null;
     let type: string | null = "session";
     try {
@@ -110,6 +182,33 @@ function decodeSession(session: Json, rows: Json[], since: number): HermesRead {
             if (id === null) throw new Unreadable("invalid message id");
             type = nonempty(row.role, "no message role");
             if (type === "system" || type === "developer") continue;
+            if (type === "tool") {
+                const key = callId(row.tool_call_id);
+                const output = content(row.content);
+                const at = timestamp(row.timestamp);
+                const uid =
+                    row.tool_call_uid === null
+                        ? null
+                        : nonempty(
+                              row.tool_call_uid,
+                              "invalid tool result uid",
+                          );
+                const call = uid === null ? byId.get(key) : byUid.get(uid);
+                if (call && call.id === key && !call.answered) {
+                    call.answered = true;
+                    if (id > since)
+                        read.events.push({
+                            kind: "tool",
+                            name: call.name,
+                            input: call.input,
+                            output,
+                            ok: true,
+                            sourceId: String(id),
+                            at,
+                        });
+                }
+                continue;
+            }
             if (type !== "user" && type !== "assistant") {
                 if (!known.has(type)) {
                     read.unknown.push({ id, type });
@@ -119,6 +218,23 @@ function decodeSession(session: Json, rows: Json[], since: number): HermesRead {
             }
             const said = content(row.content);
             const at = timestamp(row.timestamp);
+            if (type === "assistant") {
+                const decoded = calls(row, id);
+                for (const call of decoded.calls) {
+                    pending.push(call);
+                    byId.set(call.id, call);
+                    if (call.uid !== null) byUid.set(call.uid, call);
+                }
+                for (const unknown of decoded.unknown) {
+                    if (!known.has(unknown)) {
+                        read.unknown.push({ id, type: unknown });
+                        known.add(unknown);
+                    }
+                }
+            } else {
+                byId.clear();
+                byUid.clear();
+            }
             if (id > since && said.trim())
                 read.events.push({
                     kind: type,
@@ -131,6 +247,13 @@ function decodeSession(session: Json, rows: Json[], since: number): HermesRead {
     } catch (error) {
         if (!(error instanceof Unreadable)) throw error;
         read.halt = { id, type, reason: error.message };
+    }
+    read.pending = pending.find((call) => !call.answered)?.message ?? null;
+    if (read.pending !== null) {
+        const through = read.pending;
+        read.events = read.events.filter(
+            (event) => Number(event.sourceId) <= through,
+        );
     }
     return read;
 }

@@ -17,6 +17,7 @@ import { readHermes } from "./hermes.js";
 import {
     HERMES_SCHEMA,
     hermesAt,
+    hermesCall,
     hermesContent,
     hermesMessage,
     hermesSession,
@@ -212,6 +213,281 @@ describe("readHermes messages", () => {
             expect(() => readHermes("/synthetic/absent.db", since)).toThrow(
                 "invalid message cursor",
             );
+        });
+    }
+});
+
+describe("readHermes tools", () => {
+    it("records every result of a multi-call assistant row with unique message ids", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "user", "Do two things.");
+            hermesMessage(db, 2, "assistant", "Starting.", {
+                calls: JSON.stringify([
+                    hermesCall("first", "fixture-one", '{"value":1}'),
+                    hermesCall("second", "fixture-two", "second input"),
+                ]),
+            });
+            hermesMessage(db, 3, "tool", "Second output.", {
+                callId: "second",
+            });
+            hermesMessage(
+                db,
+                4,
+                "tool",
+                hermesContent([{ type: "text", text: "First output." }]),
+                { callId: "first" },
+            );
+        });
+        const [read] = readHermes(path, 0);
+        expect(read?.events).toEqual([
+            {
+                kind: "user",
+                text: "Do two things.",
+                sourceId: "1",
+                at: hermesAt(1),
+            },
+            {
+                kind: "assistant",
+                text: "Starting.",
+                sourceId: "2",
+                at: hermesAt(2),
+                interrupted: false,
+            },
+            {
+                kind: "tool",
+                name: "fixture-two",
+                input: "second input",
+                output: "Second output.",
+                ok: true,
+                sourceId: "3",
+                at: hermesAt(3),
+            },
+            {
+                kind: "tool",
+                name: "fixture-one",
+                input: '{"value":1}',
+                output: "First output.",
+                ok: true,
+                sourceId: "4",
+                at: hermesAt(4),
+            },
+        ]);
+        expect(read?.pending).toBeNull();
+        expect(read?.unknown).toEqual([]);
+    });
+    it("pairs a later result with a call before since, and treats ok as answered", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "assistant", null, {
+                calls: JSON.stringify([hermesCall("call")]),
+            });
+            hermesMessage(
+                db,
+                2,
+                "tool",
+                '{"error":"Synthetic tool failure."}',
+                { callId: "call" },
+            );
+        });
+        expect(readHermes(path, 1)[0]?.events).toEqual([
+            {
+                kind: "tool",
+                name: "fixture",
+                input: "{}",
+                output: '{"error":"Synthetic tool failure."}',
+                ok: true,
+                sourceId: "2",
+                at: hermesAt(2),
+            },
+        ]);
+    });
+    it("holds later events at an unanswered call and resolves it on replay", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "assistant", "Starting.", {
+                calls: JSON.stringify([hermesCall("later")]),
+            });
+            hermesMessage(db, 2, "assistant", "After.");
+        });
+        const [waiting] = readHermes(path, 0);
+        expect(waiting?.events).toEqual([
+            {
+                kind: "assistant",
+                text: "Starting.",
+                sourceId: "1",
+                at: hermesAt(1),
+                interrupted: false,
+            },
+        ]);
+        expect(waiting?.pending).toBe(1);
+        const writer = new Database(path);
+        try {
+            hermesMessage(writer, 3, "tool", "Done.", { callId: "later" });
+        } finally {
+            writer.close();
+        }
+        const [answered] = readHermes(path, 1);
+        expect(answered?.pending).toBeNull();
+        expect(
+            answered?.events.map((event) => [event.kind, event.sourceId]),
+        ).toEqual([
+            ["assistant", "2"],
+            ["tool", "3"],
+        ]);
+    });
+    it("uses call_id before id and strips a bridge response-item suffix", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "assistant", null, {
+                calls: JSON.stringify([
+                    {
+                        ...hermesCall("wrong"),
+                        call_id: " right |response_item_fixture",
+                    },
+                ]),
+            });
+            hermesMessage(db, 2, "tool", "Done.", { callId: "right" });
+        });
+        expect(readHermes(path, 0)[0]?.events[0]).toMatchObject({
+            kind: "tool",
+            output: "Done.",
+            sourceId: "2",
+        });
+    });
+    it("uses durable occurrence uids to pair reused ids even when results arrive out of order", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "assistant", null, {
+                calls: JSON.stringify([
+                    hermesCall("same", "fixture-one", "one"),
+                ]),
+            });
+            hermesMessage(db, 2, "assistant", null, {
+                calls: JSON.stringify([
+                    hermesCall("same", "fixture-two", "two"),
+                ]),
+            });
+            db.run("UPDATE messages SET tool_call_uids = ? WHERE id = 1", [
+                JSON.stringify({ same: "uid-one" }),
+            ]);
+            db.run("UPDATE messages SET tool_call_uids = ? WHERE id = 2", [
+                JSON.stringify({ same: "uid-two" }),
+            ]);
+            hermesMessage(db, 3, "tool", "Two.", { callId: "same" });
+            hermesMessage(db, 4, "tool", "One.", { callId: "same" });
+            db.run(
+                "UPDATE messages SET tool_call_uid = 'uid-two' WHERE id = 3",
+            );
+            db.run(
+                "UPDATE messages SET tool_call_uid = 'uid-one' WHERE id = 4",
+            );
+        });
+        const [read] = readHermes(path, 0);
+        expect(
+            read?.events.map((event) =>
+                event.kind === "tool" ? [event.input, event.output] : null,
+            ),
+        ).toEqual([
+            ["two", "Two."],
+            ["one", "One."],
+        ]);
+        expect(read?.pending).toBeNull();
+    });
+    it("does not fall back to a provider id when a result has a different durable uid", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "assistant", null, {
+                calls: JSON.stringify([hermesCall("same")]),
+            });
+            db.run("UPDATE messages SET tool_call_uids = ? WHERE id = 1", [
+                JSON.stringify({ same: "uid-one" }),
+            ]);
+            hermesMessage(db, 2, "tool", "Wrong occurrence.", {
+                callId: "same",
+            });
+            db.run(
+                "UPDATE messages SET tool_call_uid = 'uid-other' WHERE id = 2",
+            );
+        });
+        const [read] = readHermes(path, 0);
+        expect(read?.events).toEqual([]);
+        expect(read?.pending).toBe(1);
+    });
+    it("never pairs a result across a user turn or another session", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db, "fixture-session");
+            hermesSession(db, "other-session");
+            hermesMessage(db, 1, "assistant", null, {
+                calls: JSON.stringify([hermesCall("same")]),
+            });
+            hermesMessage(db, 2, "user", "Next turn.");
+            hermesMessage(db, 3, "tool", "Wrong turn.", { callId: "same" });
+            hermesMessage(db, 4, "tool", "Wrong session.", {
+                callId: "same",
+                session: "other-session",
+            });
+        });
+        const reads = readHermes(path, 0);
+        expect(reads.flatMap((read) => read.events)).toEqual([]);
+        expect(reads[0]?.pending).toBe(1);
+        expect(reads[1]?.pending).toBeNull();
+    });
+    it("validates orphan results but does not invent their input or execution outcome", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "tool", "Orphan answer.", {
+                callId: "missing",
+            });
+            hermesMessage(db, 2, "user", "After.");
+        });
+        const [read] = readHermes(path, 0);
+        expect(read?.events).toEqual([
+            { kind: "user", text: "After.", sourceId: "2", at: hermesAt(2) },
+        ]);
+        expect(read?.unknown).toEqual([]);
+        expect(read?.halt).toBeNull();
+    });
+    for (const calls of [
+        "{",
+        "{}",
+        "[null]",
+        JSON.stringify([
+            {
+                type: "function",
+                function: { name: "fixture", arguments: "{}" },
+            },
+        ]),
+        JSON.stringify([
+            { id: "call", type: "function", function: { arguments: "{}" } },
+        ]),
+        JSON.stringify([
+            {
+                id: "call",
+                type: "function",
+                function: { name: "fixture", arguments: {} },
+            },
+        ]),
+    ]) {
+        it("halts atomically at malformed assistant tool calls", async () => {
+            const path = await fixture((db) => {
+                hermesSession(db);
+                hermesMessage(db, 1, "user", "Before.");
+                hermesMessage(db, 2, "assistant", "Uncommitted prose.", {
+                    calls,
+                });
+                hermesMessage(db, 3, "assistant", "Beyond the halt.");
+            });
+            const [read] = readHermes(path, 0);
+            expect(read?.events).toEqual([
+                {
+                    kind: "user",
+                    text: "Before.",
+                    sourceId: "1",
+                    at: hermesAt(1),
+                },
+            ]);
+            expect(read?.halt).toMatchObject({ id: 2, type: "assistant" });
         });
     }
 });
