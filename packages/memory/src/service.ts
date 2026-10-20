@@ -9,7 +9,8 @@
 //
 
 // The memory service and what the CLI runs of it: --serve and its
-// device tokens. The --mcp bridge has an entry point of its own, so a
+// device tokens, and --sweep. The --mcp bridge has an entry point of its own, so a
 // process a host launches each session loads none of this.
 
 export { runService, runTokenAdd, runTokenRevoke } from "./service/run.js";
+export { runSweep, runSweepDismiss } from "./service/sweep-command.js";
