@@ -788,9 +788,38 @@ function launchEnv(
         // A launch this one runs inside is not this one's.
         delete launchEnv.DOROTHY_LAUNCH;
     }
+    bypassGatewayProxy(launchEnv, url);
     withReviewBaseUrl(launchEnv, env);
     passSession(launchEnv, env);
     return launchEnv;
+}
+
+// Claude talks to our loopback server directly, even when the user's
+// external traffic needs a proxy. Clients differ on the variable's case:
+// keep the exclusions from both, and give both the same complete list.
+function bypassGatewayProxy(env: Env, gateway: string): void {
+    const proxies = [
+        "HTTP_PROXY",
+        "http_proxy",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+    ];
+    if (!proxies.some((name) => env[name])) {
+        return;
+    }
+    const hosts = [
+        env.NO_PROXY ?? "",
+        env.no_proxy ?? "",
+        new URL(gateway).hostname,
+    ]
+        .join(",")
+        .split(",")
+        .map((host) => host.trim())
+        .filter(Boolean);
+    env.NO_PROXY = [...new Set(hosts)].join(",");
+    env.no_proxy = env.NO_PROXY;
 }
 
 // The user's own base URL, taken from env, as the one reviews use; none

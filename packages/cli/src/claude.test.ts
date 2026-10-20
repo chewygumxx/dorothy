@@ -161,6 +161,43 @@ describe("runClaude", () => {
         expect(calls.err).toBe("");
     });
 
+    for (const proxy of [
+        "HTTP_PROXY",
+        "http_proxy",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+    ]) {
+        it(`bypasses the loopback gateway with ${proxy}`, async () => {
+            const { calls, deps } = harness();
+            deps.env = { ...deps.env, [proxy]: "http://127.0.0.1:1234" };
+            await runClaude(["-p", "hi"], deps);
+            expect(calls.env[proxy]).toBe("http://127.0.0.1:1234");
+            expect(calls.env.NO_PROXY).toBe("127.0.0.1");
+            expect(calls.env.no_proxy).toBe("127.0.0.1");
+            expect(deps.env.NO_PROXY).toBeUndefined();
+            expect(deps.env.no_proxy).toBeUndefined();
+        });
+    }
+
+    it("keeps both proxy bypass lists when adding the gateway", async () => {
+        const { calls, deps } = harness();
+        deps.env = {
+            ...deps.env,
+            HTTP_PROXY: "http://127.0.0.1:1234",
+            NO_PROXY: "example.test, .corp.test",
+            no_proxy: "localhost,example.test",
+        };
+        await runClaude(["-p", "hi"], deps);
+        expect(calls.env.NO_PROXY).toBe(
+            "example.test,.corp.test,localhost,127.0.0.1",
+        );
+        expect(calls.env.no_proxy).toBe(calls.env.NO_PROXY);
+        expect(deps.env.NO_PROXY).toBe("example.test, .corp.test");
+        expect(deps.env.no_proxy).toBe("localhost,example.test");
+    });
+
     it("chains onto the user's own base URL", async () => {
         const { calls, deps } = harness();
         deps.env = { ...deps.env, ANTHROPIC_BASE_URL: "http://proxy/x" };
