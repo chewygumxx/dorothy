@@ -13,7 +13,7 @@ import {
     parseArgs as parseOptions,
 } from "node:util";
 import type { PersonaMode } from "@dorothy/agent";
-import { HOST_ID, isPhrase, isUuid } from "@dorothy/core";
+import { HOST_ID, isPhrase, isUuid, RECORDING_HOSTS } from "@dorothy/core";
 import type { HookMode } from "@dorothy/memory/claude-hook";
 
 export type Mode =
@@ -51,6 +51,8 @@ export type Mode =
     | { kind: "serve" }
     | { kind: "token-add"; device: string }
     | { kind: "token-revoke"; device: string }
+    | { kind: "sweep"; backfill: boolean; reread: boolean }
+    | { kind: "sweep-dismiss"; host: string; session: string }
     | { kind: "mcp"; host: string | null }
     | { kind: "claude-hook"; hook: HookMode }
     | { kind: "claude"; args: string[] }
@@ -86,6 +88,13 @@ export const USAGE = [
     "       dorothy --serve            her memory service, until stopped",
     "       dorothy --serve --token-add | --token-revoke <device>",
     "                                  give or withdraw a device's token",
+    "       dorothy --sweep [--backfill]",
+    "                                  record the sessions of [recording]",
+    "                                  hosts once; --backfill, the backlog",
+    "                                  from before, for no extraction",
+    "       dorothy --sweep --reread   read again what a sweep could not",
+    "       dorothy --sweep --dismiss <host> <session>",
+    "                                  stop telling of what it could not",
     "       dorothy --mcp [--host <host>]",
     "                                  her memory over MCP (stdio), through",
     "                                  the service, for the host named",
@@ -148,6 +157,7 @@ const COMMANDS: Record<string, Command> = {
     "--projects": noArguments("--projects", { kind: "projects" }),
     "--recall-server": parseRecallServer,
     "--serve": parseServe,
+    "--sweep": parseSweep,
     "--mcp": parseMcp,
     "--claude-hook": parseHook,
     "--dump-context": parseDump,
@@ -379,6 +389,45 @@ function parseServe(rest: readonly string[]): Mode {
             : { kind: "token-revoke", device: revoke };
     }
     return { kind: "serve" };
+}
+
+const SWEEP_USAGE =
+    "--sweep takes [--backfill], --reread or --dismiss <host> <session>";
+
+function parseSweep(rest: readonly string[]): Mode {
+    const parsed = options(rest, {
+        backfill: { type: "boolean", multiple: true },
+        reread: { type: "boolean", multiple: true },
+        dismiss: { type: "string", multiple: true },
+    });
+    if (parsed === null) {
+        return usage(SWEEP_USAGE);
+    }
+    const { backfill = [], reread = [], dismiss = [] } = parsed.values;
+    const [host, ...extra] = dismiss;
+    const [session, ...more] = parsed.positionals;
+    if (backfill.length > 1 || reread.length > 1 || extra.length > 0) {
+        return usage(SWEEP_USAGE);
+    }
+    if (host !== undefined) {
+        return backfill.length === 0 &&
+            reread.length === 0 &&
+            host !== "claude-code" &&
+            (RECORDING_HOSTS as readonly string[]).includes(host) &&
+            session !== undefined &&
+            session !== "" &&
+            more.length === 0
+            ? { kind: "sweep-dismiss", host, session }
+            : usage(SWEEP_USAGE);
+    }
+    return parsed.positionals.length === 0 &&
+        (backfill.length === 0 || reread.length === 0)
+        ? {
+              kind: "sweep",
+              backfill: backfill.length > 0,
+              reread: reread.length > 0,
+          }
+        : usage(SWEEP_USAGE);
 }
 
 const MCP_USAGE = "--mcp takes [--host <host>], a host as its profile names it";
