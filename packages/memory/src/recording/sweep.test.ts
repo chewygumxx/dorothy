@@ -420,6 +420,33 @@ describe("what is remembered and when", () => {
         ).toMatchObject({ skipped: 1, events: 0 });
     });
 
+    it("archives each occurrence of a repeated Hermes call once it fails", async () => {
+        await r.hermes((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "assistant", "Synthetic start.", {
+                calls: JSON.stringify([
+                    hermesCall("repeated", "run", '{"n":1}'),
+                    hermesCall("repeated", "run", '{"n":2}'),
+                ]),
+            });
+            db.run("UPDATE messages SET tool_call_uids = ? WHERE id = 1", [
+                JSON.stringify({ repeated: ["uid-one", "uid-two"] }),
+            ]);
+        });
+        await r.run({ hosts: ["hermes"], backfill: true });
+        await r.run({ hosts: ["hermes"], backfill: true });
+        const [conversation] = await r.conversations();
+        const tools = conversation?.filter((event) => event.kind === "tool");
+        expect(tools?.map((event) => event.sourceUuid)).toEqual([
+            "1:repeated",
+            "1:repeated:1",
+        ]);
+        expect(tools?.map((event) => event.input)).toEqual([
+            '{"n":1}',
+            '{"n":2}',
+        ]);
+    });
+
     it("pairs a call with its output when it arrives", async () => {
         const path = await r.file(
             rollout(),

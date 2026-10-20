@@ -150,6 +150,8 @@ type ToolCall = {
     id: string;
     uid: string | null;
     message: number;
+    // Nth use of this id within its message, from zero.
+    occurrence: number;
     name: string;
     input: string;
     answered: boolean;
@@ -218,6 +220,7 @@ function calls(
             id: key,
             uid: typeof uid === "string" ? uid : null,
             message: id,
+            occurrence,
             name: nonempty(value.function.name, "a tool call without its name"),
             input: text(
                 value.function.arguments,
@@ -501,7 +504,7 @@ function decodeSession(
                         input: call.input,
                         output: "",
                         ok: false,
-                        sourceId: `${origin.sourceId}:${call.id}`,
+                        sourceId: `${origin.sourceId}:${call.id}${call.occurrence > 0 ? `:${call.occurrence}` : ""}`,
                         at: origin.at,
                     },
                 });

@@ -455,6 +455,44 @@ describe("readHermes tools", () => {
             },
         ]);
     });
+    for (const [name, uids] of [
+        ["no uids", null],
+        ["an occurrence list", { repeated: ["uid-one", "uid-two"] }],
+        ["one uid shared by both", { repeated: "uid-shared" }],
+    ] as const) {
+        it(`gives each occurrence of a repeated call its own failure id, with ${name}`, async () => {
+            const path = await fixture((db) => {
+                hermesSession(db);
+                hermesMessage(db, 1, "assistant", null, {
+                    calls: JSON.stringify([
+                        hermesCall("repeated", "run", '{"n":1}'),
+                        hermesCall("repeated", "run", '{"n":2}'),
+                        hermesCall("other"),
+                    ]),
+                });
+                if (uids !== null)
+                    db.run(
+                        "UPDATE messages SET tool_call_uids = ? WHERE id = 1",
+                        [JSON.stringify(uids)],
+                    );
+            });
+            const [read] = readHermes(path, 0, undefined, { ended: true });
+            const failed = read?.events.filter(
+                (event) => event.kind === "tool",
+            );
+            expect(failed?.map((event) => event.sourceId)).toEqual([
+                "1:repeated",
+                "1:repeated:1",
+                "1:other",
+            ]);
+            expect(
+                failed?.map((event) => event.kind === "tool" && event.input),
+            ).toEqual(['{"n":1}', '{"n":2}', "{}"]);
+            // Replay-stable: the same ids on another read.
+            const [again] = readHermes(path, 0, undefined, { ended: true });
+            expect(again?.events).toEqual(read?.events);
+        });
+    }
     it("keeps an unanswered call pending after a halt even when the session has ended", async () => {
         const path = await fixture((db) => {
             hermesSession(db);

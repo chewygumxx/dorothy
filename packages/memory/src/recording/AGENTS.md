@@ -93,8 +93,8 @@ readers never open a Dorothy store.
 - `pending` is the earliest unanswered assistant row's id, holding
   later events; its own speech can emit. Replay retains earlier rows,
   so an answer after `since` can find its call. With `ended` and no halt
-  the call is recorded failed (source id `<row>:<call id>`), releasing
-  the rest; else it stays pending.
+  the call is recorded failed (source id `<row>:<id>[:n]`, n the repeat),
+  releasing the rest; else it stays pending.
 - A uid's source id is its lowest physical row id in that session,
   including rewind rows (`active=0, compacted=0`). Decode only visible
   rows (`active=1` or `compacted=1`); an entirely invisible uid emits
@@ -137,10 +137,10 @@ Tests use synthetic lines and temporary roots; never open a real store.
 - `sweep` takes the contract's `record`, Claude's `recordClaude`
   (`bodies/record.ts`, continuing `dorothy --claude`'s conversation) and
   `conversation`. A session waits for the backfill when its mtime or all
-  its events precede the host's watermark. A backfill ignores hints and
-  marks its conversations in `onRecorded`; `noteRecorded` (`jobs.ts`)
-  unmarks one a live record reaches. `isPrivate` sessions send only
-  `private: true`.
+  its events precede the watermark, yet keeps its diagnostics. A
+  backfill ignores hints and marks its conversations in `onRecorded`;
+  `noteRecorded` (`jobs.ts`) unmarks one a live record reaches.
+  `isPrivate` sessions send only `private: true`.
 - Remember a read (`rememberRead`) only after the archive took it and
   unread diagnostics are saved. Never a halted or unstable read, one
   whose type was not kept, nor one holding lines behind an unanswered
