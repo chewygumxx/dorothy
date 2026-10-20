@@ -228,12 +228,22 @@ describe("lines kept aside", () => {
             expect(await halts(env, "codex")).toHaveLength(1);
         });
 
-        it("is told with its host, and without Claude Code's commands", async () => {
+        it("is told with its host, and with the sweep's commands", async () => {
             await keepHalt(env, other("codex", S1), ["{bad"]);
             const [told] = await startNotices(env);
             expect(told).toContain("a Codex session");
             expect(told).toContain("past line 3");
             expect(told).not.toContain("--claude-hook");
+            expect(told).toContain("dorothy --sweep --reread tries again");
+            expect(told).toContain(`--sweep --dismiss codex ${S1} stops`);
+        });
+
+        it("quotes an id a shell would split in the command it offers", async () => {
+            await keepHalt(env, other("hermes", "a b'c"), ["row 3"]);
+            const [told] = await startNotices(env);
+            expect(told).toContain(
+                `--sweep --dismiss hermes 'a b'\\''c' stops`,
+            );
         });
 
         it("is dismissed and resolved by host", async () => {

@@ -232,6 +232,11 @@ export async function addNotice(
     );
 }
 
+// A word as a POSIX shell takes it whole.
+const shellWord = (word: string) =>
+    /^[A-Za-z0-9_.:@%+=,-]+$/.test(word)
+        ? word
+        : `'${word.replaceAll("'", `'\\''`)}'`;
 const HOSTS: Record<string, string> = { codex: "Codex", hermes: "Hermes" };
 // What a halt's number counts: Hermes keeps rows, the rest lines.
 export const unit = (host: string | undefined) =>
@@ -239,7 +244,7 @@ export const unit = (host: string | undefined) =>
 const haltNotice = (env: Env, record: UnreadRecord) =>
     hostOf(record) === CLAUDE
         ? claudeNotice(env, record)
-        : `memory: a ${HOSTS[hostOf(record)] ?? hostOf(record)} session (${record.session}) could not be read past ${unit(record.host)} ${record.line} (${record.reason}); the rest is kept in ${copyPath(env, record.session, hostOf(record))}. The sweep reads it again`;
+        : `memory: a ${HOSTS[hostOf(record)] ?? hostOf(record)} session (${record.session}) could not be read past ${unit(record.host)} ${record.line} (${record.reason}); the rest is kept in ${copyPath(env, record.session, hostOf(record))}. dorothy --sweep --reread tries again; --sweep --dismiss ${hostOf(record)} ${shellWord(record.session)} stops this notice`;
 const claudeNotice = (env: Env, record: UnreadRecord) =>
     `memory: a Claude Code session (${record.session}) could not be read past line ${record.line} (${record.reason}); the rest is kept in ${copyPath(env, record.session)}. dorothy --claude-hook --reread tries again; --dismiss ${record.session} stops this notice`;
 
