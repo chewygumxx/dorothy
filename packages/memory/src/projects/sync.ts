@@ -47,6 +47,7 @@ import {
     type Recorder,
 } from "../memory/sidecar.js";
 import {
+    type CarriedVerification,
     type ExportedFact,
     exportedForm,
     formHash,
@@ -645,7 +646,7 @@ async function importFact(
 function verificationsFor(
     fact: Fact,
     held: Fact | null,
-    carried: ExportedFact["verified"] & {},
+    carried: readonly CarriedVerification[],
 ): Verification[] {
     const digest = wordsDigest(fact);
     const kept = new Map<string, Verification>();
