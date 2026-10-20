@@ -11,7 +11,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { copyPath, readRecord } from "../bodies/unread.js";
+import {
+    copyPath,
+    readRecord,
+    startNotices,
+    unreadReport,
+} from "../bodies/unread.js";
 import {
     call,
     context,
@@ -500,12 +505,62 @@ describe("a session that halts", () => {
             hermesMessage(db, 3, "user", "Synthetic after.");
         });
         const result = only(await r.run({ hosts: ["hermes"] }), "hermes");
-        expect(result.halted).toBe(1);
+        expect(result).toMatchObject({ halted: 1, events: 1 });
         expect(
             await readRecord(r.env, "fixture-session", "hermes"),
         ).toMatchObject({
             host: "hermes",
             session: "fixture-session",
+            line: 2,
+        });
+        const [told] = await startNotices(r.env);
+        expect(told).toContain("past row 2");
+        expect(told).not.toContain("past line");
+        expect(r.logs.join("\n")).toContain("halted at row 2");
+        expect((await unreadReport(r.env))[0]).toContain("row 2");
+    });
+
+    it("does not remember a read whose unknown type could not be kept aside", async () => {
+        await r.file(
+            rollout(),
+            text(...speech, line("future_type", { x: 1 }, 3)),
+            0,
+        );
+        // A file where the directory should be: nothing can be kept.
+        await mkdir(join(r.home, "state/dorothy"), { recursive: true });
+        await writeFile(join(r.home, "state/dorothy/unread"), "in the way");
+        const first = only(await r.run({ hosts: ["codex"] }), "codex");
+        expect(first).toMatchObject({ sessions: 1, events: 2, error: null });
+        expect(r.logs.some((log) => log.includes("can't be kept"))).toBe(true);
+        const hints = JSON.parse(await readFile(sweepPath(r.env), "utf8"));
+        expect(hints.sessions).toEqual({});
+        // Mended, it is read again and kept at last.
+        await rm(join(r.home, "state/dorothy/unread"));
+        expect(only(await r.run({ hosts: ["codex"] }), "codex").skipped).toBe(
+            0,
+        );
+        expect(
+            await readdir(join(r.home, "state/dorothy/unread/types")),
+        ).toHaveLength(1);
+    });
+
+    it("finds the conversation a halted read with no events belongs to", async () => {
+        const bad = line(
+            "response_item",
+            { type: "message", role: "user", content: "not blocks" },
+            1,
+        );
+        const path = await r.file(rollout(), text(...speech), 0);
+        await r.run({ hosts: ["codex"] });
+        const [recorded] = await r.conversations();
+        const phrase = recorded?.[0]?.phrase;
+        expect(phrase).toBeString();
+        // Replaced by a file that halts at its first record.
+        await r.file(path, text(meta(), bad), 0);
+        const halted = only(await r.run({ hosts: ["codex"] }), "codex");
+        expect(halted).toMatchObject({ halted: 1, events: 0 });
+        expect(await readRecord(r.env, SESSION, "codex")).toMatchObject({
+            conversation: phrase,
         });
     });
 

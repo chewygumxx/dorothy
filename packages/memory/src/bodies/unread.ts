@@ -233,10 +233,13 @@ export async function addNotice(
 }
 
 const HOSTS: Record<string, string> = { codex: "Codex", hermes: "Hermes" };
+// What a halt's number counts: Hermes keeps rows, the rest lines.
+export const unit = (host: string | undefined) =>
+    host === "hermes" ? "row" : "line";
 const haltNotice = (env: Env, record: UnreadRecord) =>
     hostOf(record) === CLAUDE
         ? claudeNotice(env, record)
-        : `memory: a ${HOSTS[hostOf(record)] ?? hostOf(record)} session (${record.session}) could not be read past line ${record.line} (${record.reason}); the rest is kept in ${copyPath(env, record.session, hostOf(record))}. The sweep reads it again`;
+        : `memory: a ${HOSTS[hostOf(record)] ?? hostOf(record)} session (${record.session}) could not be read past ${unit(record.host)} ${record.line} (${record.reason}); the rest is kept in ${copyPath(env, record.session, hostOf(record))}. The sweep reads it again`;
 const claudeNotice = (env: Env, record: UnreadRecord) =>
     `memory: a Claude Code session (${record.session}) could not be read past line ${record.line} (${record.reason}); the rest is kept in ${copyPath(env, record.session)}. dorothy --claude-hook --reread tries again; --dismiss ${record.session} stops this notice`;
 
@@ -321,7 +324,7 @@ export async function startNotices(env: Env): Promise<string[]> {
 export async function unreadReport(env: Env): Promise<string[]> {
     const lines = (await halts(env)).map(
         (record) =>
-            `unread: ${hostOf(record) === CLAUDE ? "" : `${hostOf(record)} `}${record.session} (${record.conversation ?? "no conversation yet"}), line ${record.line}: ${record.reason}; kept in ${copyPath(env, record.session, hostOf(record))}${record.dismissed ? " (dismissed)" : ""}`,
+            `unread: ${hostOf(record) === CLAUDE ? "" : `${hostOf(record)} `}${record.session} (${record.conversation ?? "no conversation yet"}), ${unit(record.host)} ${record.line}: ${record.reason}; kept in ${copyPath(env, record.session, hostOf(record))}${record.dismissed ? " (dismissed)" : ""}`,
     );
     const types = await keptTypes(env);
     if (types.length > 0) {

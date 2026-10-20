@@ -29,7 +29,7 @@ import { recordSession } from "../bodies/record.js";
 import { acceptRecord, sessionKey } from "../contract/record.js";
 import { dataRoot, type FactStore } from "../facts/store.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
-import { syncIndex } from "../recall/sync.js";
+import { sessionPhrase, syncIndex } from "../recall/sync.js";
 import { transcriptDir } from "../transcript.js";
 import { HERMES_SCHEMA } from "./hermes-fixtures.js";
 import {
@@ -145,6 +145,10 @@ export async function rig(): Promise<Rig> {
                                 sessionKey(request.host, request.session),
                             ) ?? null,
                     };
+                },
+                conversation: async (host, session) => {
+                    await syncIndex(index, transcriptDir(env));
+                    return sessionPhrase(index, sessionKey(host, session));
                 },
                 recordClaude: claude,
                 ...options,

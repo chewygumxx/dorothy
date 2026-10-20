@@ -27,6 +27,7 @@ import {
     keepNewType,
     readRecord,
     resolveHalt,
+    unit,
 } from "../bodies/unread.js";
 import type { FactStore } from "../facts/store.js";
 import { identify } from "../projects/identify.js";
@@ -93,6 +94,9 @@ export type SweepDeps = {
         cwd: string | null;
     }) => boolean;
     onRecorded?: (conversation: SweepConversation) => void;
+    // The conversation a session already has, if any, up to date with the
+    // archive.
+    conversation?: (host: Host, session: string) => Promise<string | null>;
     // Tests' stores.
     sources?: Partial<Record<Host, Source>>;
     now?: () => Date;
@@ -384,9 +388,18 @@ async function recordRead(
     // A torn or raced read may stop in the middle of a record that is
     // whole next time: it keeps nothing aside and is not remembered, nor
     // is a halted read, nor one holding events behind an unanswered call.
-    if (!secret && read.stable)
-        await keepAside(deps, session, named, found, response.phrase, result);
-    const holding = found.halt !== null || (found.pending && !ended);
+    let kept = true;
+    if (!secret && read.stable) {
+        // A halt with nothing new to record still belongs to a conversation
+        // the session may already have.
+        const phrase =
+            response.phrase ??
+            (found.halt === null
+                ? null
+                : ((await deps.conversation?.(host, named)) ?? null));
+        kept = await keepAside(deps, session, named, found, phrase, result);
+    }
+    const holding = !kept || found.halt !== null || (found.pending && !ended);
     if (secret || !holding) rememberRead(state, session.key, read);
 }
 
@@ -397,8 +410,9 @@ async function keepAside(
     found: View,
     phrase: string | null,
     result: HostSweep,
-) {
+): Promise<boolean> {
     const { host } = session;
+    let kept = true;
     for (const { type, example } of found.unknown) {
         try {
             if (await keepNewType(deps.env, type, example)) {
@@ -407,6 +421,8 @@ async function keepAside(
                 );
             }
         } catch (error) {
+            // Not remembered, so it is read, and kept, again.
+            kept = false;
             deps.log.warn(
                 `recording: ${host}: a record of a new type, ${type}, can't be kept (${describe(error)})`,
             );
@@ -420,7 +436,7 @@ async function keepAside(
                 `recording: ${host}: ${named}: a halt kept before can't be cleared (${describe(error)})`,
             );
         }
-        return;
+        return kept;
     }
     result.halted += 1;
     const { line, type, reason, rest } = found.halt;
@@ -444,15 +460,16 @@ async function keepAside(
             rest,
         );
         // Told when it is new, not at every sweep.
-        if (before?.line === line) return;
+        if (before?.line === line) return kept;
     } catch (error) {
         deps.log.warn(
             `recording: ${host}: ${named}: its halt can't be kept (${describe(error)})`,
         );
     }
     deps.log.error(
-        `recording: ${host}: ${named} halted at ${line} (${type ?? "no type"}): ${reason}`,
+        `recording: ${host}: ${named} halted at ${unit(host)} ${line} (${type ?? "no type"}): ${reason}`,
     );
+    return kept;
 }
 
 // The directory a Claude Code session began in, from its first line to
