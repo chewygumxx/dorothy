@@ -25,6 +25,11 @@ const CASES: [string, string][] = [
     ["token: ghp_abcdefghijklmnopqrstuvwxyz0123", "token: [secret]"],
     ["key sk-ant-api03-abcdefghij", "key [secret]"],
     ["AKIAABCDEFGHIJKLMNOP", "[secret]"],
+    // A device token, as dorothy --serve --token-add prints it.
+    [
+        "$ dorothy --serve --token-add laptop\ndmt_-Xq9_aB3vT0kLm2NpQ7rS8uV1wY4zC6eF5gH0jK-_\n",
+        "$ dorothy --serve --token-add laptop\n[secret]\n",
+    ],
     [
         "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----",
         "[secret]",

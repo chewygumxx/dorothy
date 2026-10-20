@@ -46,9 +46,9 @@ function redactScheme(
         ? `${header ?? ""}${scheme} ${SECRET}`
         : whole;
 }
-// The prefixes providers give their keys.
+// The prefixes providers give their keys, and Dorothy's device tokens.
 const PREFIXED =
-    /\b(?:sk-ant-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,})/g;
+    /\b(?:dmt_[A-Za-z0-9_-]{40,}|sk-ant-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,})/g;
 // key=value or key: value, quoted or not, where the key names a secret.
 // A value that is a scheme was handled above. A quoted value's first
 // character is matched here and the rest by quotedEnd: a repeated group
