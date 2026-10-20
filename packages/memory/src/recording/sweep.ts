@@ -97,6 +97,8 @@ export type SweepDeps = {
     // The conversation a session already has, if any, up to date with the
     // archive.
     conversation?: (host: Host, session: string) => Promise<string | null>;
+    // Visit only the sessions this accepts (a reread of halted ones).
+    only?: (session: SourceSession) => boolean;
     // Tests' stores.
     sources?: Partial<Record<Host, Source>>;
     now?: () => Date;
@@ -300,6 +302,7 @@ async function sweepHost(sweeping: Sweeping, host: Host, result: HostSweep) {
     const listed = await sourceOf(deps, host).list();
     forgetMissing(state, host, new Set(listed.map((session) => session.key)));
     for (const session of listed) {
+        if (deps.only?.(session) === false) continue;
         const at = session.at === null ? Number.NaN : Date.parse(session.at);
         if (!deps.backfill && at < mark) {
             result.waiting += 1;

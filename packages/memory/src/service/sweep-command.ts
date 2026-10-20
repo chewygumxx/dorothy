@@ -10,8 +10,8 @@
 
 // dorothy --sweep: one sweep in the foreground, for a user without the
 // service, printing a host and a count a line; --backfill records the
-// backlog; --reread reads again what other harnesses' sessions could not
-// be; --dismiss stops telling of one.
+// backlog; --reread reads again, and only, what other harnesses' sessions
+// could not be; --dismiss stops telling of one.
 
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -24,6 +24,7 @@ import { vocabularyPath } from "../memory/vocabulary.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { syncIndex } from "../recall/sync.js";
 import { hostLines } from "../recording/report.js";
+import type { SourceSession } from "../recording/sources.js";
 import { transcriptDir } from "../transcript.js";
 import { sweepBinding } from "./recording.js";
 
@@ -122,7 +123,11 @@ export async function runSweep({
             },
             ...(now === undefined ? {} : { now }),
         });
-        const results = await sweeping.run({ backfill });
+        // A reread visits the halted sessions and no other.
+        const results = await sweeping.run({
+            backfill,
+            ...(reread ? { only: haltedAmong(kept) } : {}),
+        });
         for (const text of hostLines(results)) {
             out.write(`${text}\n`);
         }
@@ -146,6 +151,19 @@ const otherHalts = async (env: Env) =>
             ? []
             : [{ ...record, host: record.host }],
     );
+
+// Whether a listed session is one a halt was kept for: its transcript, and
+// its id where the listing names one (Hermes keeps all in one database).
+const haltedAmong =
+    (kept: readonly { host: string; session: string; transcript: string }[]) =>
+    (listed: SourceSession) =>
+        kept.some(
+            (record) =>
+                record.host === listed.host &&
+                record.transcript === listed.path &&
+                (listed.session === undefined ||
+                    listed.session === record.session),
+        );
 
 // What became of each halt a reread went to: how many are kept still.
 async function rereadReport(

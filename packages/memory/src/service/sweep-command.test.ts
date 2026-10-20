@@ -110,7 +110,7 @@ describe("dorothy --sweep", () => {
             await runSweep({ ...io(), backfill: false, now: () => BEFORE }),
         ).toBe(0);
         expect(out.join("")).toBe(
-            "codex: 2 events in 1 sessions\nhermes: 0 events in 0 sessions\n",
+            "codex: 2 events in 1 session\nhermes: 0 events in 0 sessions\n",
         );
         expect(await conversations()).toHaveLength(1);
     });
@@ -126,7 +126,7 @@ describe("dorothy --sweep", () => {
         expect(
             await runSweep({ ...io(), backfill: true, now: () => AFTER }),
         ).toBe(0);
-        expect(out.join("")).toBe("codex: 2 events in 1 sessions\n");
+        expect(out.join("")).toBe("codex: 2 events in 1 session\n");
         expect(await conversations()).toHaveLength(1);
     });
 
@@ -148,6 +148,28 @@ describe("dorothy --sweep", () => {
         );
         expect(out.join("")).toContain(`read codex ${SESSION} to its end`);
         expect(await halts(env)).toEqual([]);
+    });
+
+    it("rereads the halted sessions alone, records no other, whatever is set", async () => {
+        await rollout([...speech, unknownBlock], FRESH);
+        await runSweep({ ...io(), backfill: false, now: () => BEFORE });
+        expect(await conversations()).toHaveLength(1);
+        // A new session, and the host no longer set.
+        const other = "99999999-2222-4333-8444-555555555555";
+        await rollout(
+            speech.map((each) => each.replaceAll(SESSION, other)),
+            FRESH,
+            "two.jsonl",
+        );
+        await settings("[history]\nenabled = false\n");
+        out.length = 0;
+        err.length = 0;
+        expect(await runSweep({ ...io(), backfill: false, reread: true })).toBe(
+            1,
+        );
+        expect(out.join("")).toBe("codex: 0 events in 0 sessions (1 halted)\n");
+        expect(await conversations()).toHaveLength(1);
+        expect(await readRecord(env, other, "codex")).toBeNull();
     });
 
     it("has nothing to reread when nothing is kept", async () => {

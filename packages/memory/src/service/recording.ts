@@ -51,11 +51,16 @@ export type SweepBinding = {
     now?: () => Date;
 };
 
-export function sweepDeps(binding: SweepBinding, backfill: boolean): SweepDeps {
+export function sweepDeps(
+    binding: SweepBinding,
+    backfill: boolean,
+    only?: SweepDeps["only"],
+): SweepDeps {
     const { env, index, store, sessions, log } = binding;
     return {
         hosts: binding.hosts,
         backfill,
+        ...(only === undefined ? {} : { only }),
         env,
         store,
         claudeDirs: binding.claudeDirs,
@@ -109,10 +114,14 @@ export function sweepDeps(binding: SweepBinding, backfill: boolean): SweepDeps {
 
 export function sweepBinding(binding: SweepBinding): {
     binding: SweepBinding;
-    run(options?: { backfill?: boolean }): Promise<HostSweep[]>;
+    run(options?: {
+        backfill?: boolean;
+        only?: SweepDeps["only"];
+    }): Promise<HostSweep[]>;
 } {
     return {
         binding,
-        run: ({ backfill = false } = {}) => sweep(sweepDeps(binding, backfill)),
+        run: ({ backfill = false, only } = {}) =>
+            sweep(sweepDeps(binding, backfill, only)),
     };
 }
