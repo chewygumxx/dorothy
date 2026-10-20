@@ -292,6 +292,10 @@ Found but not scheduled, each with its source.
   Dorothy approves (the maintenance design's approach C).
 - A provisional title from a cheap model, editing memory from inside the
   TUI, and memory in one-shot mode (catalogue spec, Out of scope).
+- Memory's commands keeping no process defaults of their own: the CLI
+  now passes the history commands' environment, streams and entry
+  script, but memory still falls back to the process's (workspace
+  modularity; the sweep's record, Deferred).
 - A single binary with `bun build --compile` from `cli` (workspace
   modularity spec, Later).
 - Splitting `memory` along its subdirectories, should it outgrow one

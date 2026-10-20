@@ -42,20 +42,21 @@ throwaway roots, fake models and loopback servers. Task 11 alone used
 the real API through the user's login, with its cost counted below.
 
 Final verification for the tree committed with this report:
-`bun run check` passes, with 2723 tests passing, one skipped and none
-failing. Markdown, em dash and header lint were also run explicitly.
-The skip is the existing code-simplification skill-link test. No test
-flake occurred in Task 12. The existing informational Biome suggestion
-in `memory/reviewer.test.ts` remains. Header verification also reports
-existing exempt memory entries and historical probe artifacts as warnings;
-none is out of sync and the required-header tests pass.
+`bun run check` passes after the final fix wave, with 2756 tests
+passing, one skipped and none failing, its XDG roots in a temporary
+directory. The skip is the existing code-simplification skill-link
+test. No test flaked in Task 12 or the final fix wave. The existing
+informational Biome suggestion in `memory/reviewer.test.ts` remains.
+Header verification also reports existing exempt memory entries and
+historical probe artifacts as warnings; none is out of sync and the
+required-header tests pass.
 
 ## Tasks
 
 Ranges exclude their left endpoint and include their right endpoint.
 Task 4's range also contains the three review-document imports above.
-Task 12's HEAD denotes the final documentation commit completing this
-record, whose exact range is also in the local Task 12 handoff report.
+The final fix wave's range ends at its last code commit; the commit
+that brings this record up to date with it follows.
 
 | Task | Subject | Commits | Implementer |
 | --- | --- | --- | --- |
@@ -70,13 +71,17 @@ record, whose exact range is also in the local Task 12 handoff report.
 | 9 | Tooling | `cc061f2..f956e2c` | Claude |
 | 10 | Code review | `f956e2c..dc09077` | Both |
 | 11 | Probes | `dc09077..8883ac8` | Codex |
-| 12 | Record | `8883ac8..HEAD` | Codex |
+| 12 | Record | `8883ac8..5eb5448` | Codex |
+| Final | Review fixes | `5eb5448..3522844` | Claude |
 
 Claude Opus implemented Task 1, Claude Sonnet Tasks 2-4 and 8-9. Task 5
 began with Claude and its fixes used Codex; Task 10 likewise began with
 Claude and its two fix rounds used Codex. Task 12's final docs commits
 complete the range after its two small fixes. Tasks 1-4, 6-9 and 11 had
-one fix round each; Tasks 5 and 10 had two. Task 12 awaits its review.
+one fix round each; Tasks 5 and 10 had two. Task 12 was reviewed and
+approved. The whole-branch review then found a Critical, two Important
+and six Minor findings, closed by the
+[final fix wave](#the-final-fix-wave) on Claude Opus.
 
 ## Rulings
 
@@ -154,6 +159,16 @@ the consequence below is this report's assessment, not a new ruling.
     absolute `autoMemoryDirectory` into local settings (`e5e52be`). Cost
     if wrong: a local setting is managed on install; other keys must
     survive. Task 12 refuses linked `.claude` directories (`fe53e0f`).
+21. Codex ran with its approval policy set to never ask and full
+    access, the user's choice, from Task 5's first fix round; a watcher
+    approved its prompts, and it was restarted to take the setting.
+    Cost if wrong: Codex's commands ran unprompted in this checkout,
+    with reviews as the net.
+22. Confirmed means the user wrote it or ran `dorothy --verify` on it,
+    as the user ruled on 2026-10-20 after the final review. Origin
+    `repo` confirms nothing, and a verification travels with its words
+    through sync. Cost if wrong: a piece the user wrote but never
+    verified is unconfirmed on another machine.
 
 ## Task 1: unconfirmed knowledge
 
@@ -575,7 +590,7 @@ terminal remnant (`e5e1a55`); proxy-guide wording was made conditional
 
 ## Probes
 
-All captures live in [the evidence directory][link-2]
+All captures live in [the evidence directory](./2026-10-19-roadmap-sweep/)
 and include commands, versions, selected scrubbed output and costs.
 Native Claude Code was 2.1.300, Agent SDK 0.3.302 bundled 2.1.302, Bun
 1.4.2 and Herdr 0.9.5. All calls used Haiku 5.5 and throwaway Dorothy
@@ -634,6 +649,48 @@ The agent guide now names failed compaction statuses; memory's hidden
 concept invariant is qualified by catalogue load to match Task 7's
 ruling. No probe was repeated and no new model cost was incurred.
 
+## The final fix wave
+
+The whole-branch review at `5eb5448` judged the branch ready to merge
+with fixes. Its findings were fixed test-first, each failing before its
+fix, in throwaway roots.
+
+- **C1 and I1, confirmation:** an import set a fact's origin to `repo`,
+  which confirmed it, so a model's fact came back confirmed when an
+  older export returned or a fresh data directory adopted it, and
+  Claude Code's auto memory in `.agents/memory/` counted as the
+  repository's. The user ruled (Ruling 22): only the user's own writing
+  or their verification confirms (`fa62ace`), with the recall index at
+  schema 8 so no schema-7 row keeps the old answer. A verification
+  travels in the exported file with a digest of the words and title it
+  confirmed, and an import keeps it only for those words (`c7d9345`).
+  Both reproductions now end unconfirmed; a verified piece survives an
+  export and import unchanged. Specs, guides and README follow
+  (`9b0ce23`).
+- **I2, the proxy:** Bun's fetch took the client's and the bridge's
+  loopback requests through `HTTP_PROXY`, and has no per-request way
+  out. Both now reach loopback and `[service] listen` addresses over
+  `node:http`, leaving the environment alone (`245edf8`). The tests run
+  in a child process, as Bun keeps a proxy once it has seen one, behind
+  a listener that sees no connection.
+- **M1:** `--verify` prints the title, description and body it
+  confirmed (`2fdb80a`).
+- **M2:** a git run from a directory within the data directory keeps
+  its index lock (`f47c11c`).
+- **M3:** `dmt_` device tokens are scrubbed (`deb26fe`).
+- **M4:** a service started before an upgrade keeps running its old
+  code. Restart the service after upgrading: stop it and start it
+  again, with `dorothy --serve` or the next `--mcp`; a second
+  `--serve` cannot bind beside the first, so it restarts nothing. Once
+  a newer Dorothy has rebuilt the index, the old service's first
+  failure says so (`6e7c1e9`, `3522844`), but only from this version
+  on: a service older than it cannot.
+- **M5:** recorded under Deferred, unchanged.
+- **M6 and Task 12's minors:** this record's range, review state,
+  rulings 21 and 22, evidence link and Task 2 cache source were
+  corrected; memory's own process defaults are a Candidate again and
+  under Deferred.
+
 ## Deferred
 
 Every controller-ledger "minor (deferred)" line is retained here,
@@ -648,7 +705,9 @@ blocker; this is the final review's queue.
   later corrections; the fix paragraph and this report supersede those labels.
 - **Task 2:** Held-file delta cache misses an in-place rewrite at the same
   inode and size; transcripts are append-only. Earlier changed bytes with
-  greater size can also evade the cache.
+  greater size can also evade the cache: `heldIn` (`contract/record.ts`)
+  resumes at the last size whenever the inode is the same, the file has
+  not shrunk and the last read ended a line.
 - **Task 3:** "Was not recorded" repeats on each locked-out retry,
   deliberately describing each failed attempt.
 - **Task 3:** The unhooked notice can be skipped if recording fails inside an
@@ -669,6 +728,13 @@ blocker; this is the final review's queue.
   ineffective as root.
 - **Task 8:** ERROR_LINES can leave a blank line for a CRLF error line.
 - **Task 10:** None open.
+- **Task 12:** Memory's own commands still default to the process's
+  environment, streams and entry script when given none; the CLI now
+  passes them, so this is a fallback, not a gap.
+- **Final fix wave:** Sync exports model-written bodies as they are, and
+  `lint:md` and `lint:emdash` cover `.agents/memory/`, so an export into
+  this checkout of a fact with an em dash or a body line over 80
+  characters fails `bun run check` until the file is edited.
 
 Other retained limits are collected here so partial closures are clear:
 
@@ -721,4 +787,3 @@ The remaining source files are
 future design work, rather than listing closed defects again.
 
 [link-1]: ../deferred/2026-10-16_memory-bodies-deferred.md
-[link-2]: ./2026-10-19-roadmap-sweep/interactive.txt
