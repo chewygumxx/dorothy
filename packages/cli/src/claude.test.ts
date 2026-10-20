@@ -860,24 +860,35 @@ describe("dorothyFlags", () => {
         });
     });
 
-    it("passes a file on as given, saying so, if the private file fails", () => {
-        const failing = {
-            ...io({ "/work/mine.json": '{"model":"x"}' }),
-            writePrivate: () => {
-                throw new Error("EACCES");
-            },
-        };
-        expect(dorothyFlags(["--settings=mine.json"], ours, failing)).toEqual({
-            args: [
-                `--settings=${JSON.stringify(ours.settings)}`,
-                "--settings=mine.json",
-            ],
-            warnings: [
-                "a private settings file could not be written (EACCES); your --settings is passed on as given, and may override Dorothy's",
-            ],
-            files: [],
+    for (const args of [
+        ["--settings=mine.json"],
+        [
+            '--settings={"effort":"low"}',
+            "--settings",
+            "mine.json",
+            '--settings={"model":"sonnet"}',
+            "-p",
+            "hi",
+            "--",
+            "--settings=prompt-text",
+        ],
+    ]) {
+        it(`keeps user settings when the private file fails: ${args.length} args`, () => {
+            const failing = {
+                ...io({ "/work/mine.json": '{"model":"x"}' }),
+                writePrivate: () => {
+                    throw new Error("EACCES");
+                },
+            };
+            expect(dorothyFlags(args, ours, failing)).toEqual({
+                args,
+                warnings: [
+                    "a private settings file could not be written (EACCES); your --settings is passed on as given; Dorothy's settings could not be added",
+                ],
+                files: [],
+            });
         });
-    });
+    }
 
     it("passes on settings it cannot read, warning that they may override hers", () => {
         expect(dorothyFlags(["--settings", "gone.json"], ours, io())).toEqual({

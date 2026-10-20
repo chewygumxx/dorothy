@@ -68,7 +68,9 @@ lazy.
   world-readable, so the merge goes to a private file (mode 0600, in
   `$XDG_RUNTIME_DIR/dorothy` or a 0700 `dorothy-<uid>` under the temporary
   directory; `privateWriter`) passed by path, removed by `Launch.cleanup`
-  when `claude` exits; inline JSON stays inline.
+  when `claude` exits; inline JSON stays inline. If the private write
+  fails, the user's original arguments are kept and a warning says
+  Dorothy's settings could not be added.
   With `[memory] enabled` it also notes the launch (`DOROTHY_LAUNCH`),
   passes `Stop` and `SessionEnd` hooks running `dorothy --claude-hook`
   (`hookSettings`) and, for a new session, `--session-id`

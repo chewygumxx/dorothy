@@ -372,20 +372,22 @@ export function dorothyFlags(
     },
 ): { args: string[]; warnings: string[]; files: string[] } {
     const merged = mergeTheirs(args, flags, { cwd, read });
-    const front = frontFlags(merged, flags, writePrivate);
+    const front = frontFlags(merged, writePrivate);
     return {
-        args: [...front.args, ...merged.rest, ...front.passedOn],
+        args: [...front.args, ...front.rest],
         warnings: [...merged.warnings, ...front.warnings],
         files: front.files,
     };
 }
 
 // Dorothy's flags with the user's own merged in, and the user's arguments
-// left: theirs where it could not be read, with a warning. filed holds
-// each flag whose value was a file, as the user gave it.
+// left: theirs where it could not be read, with a warning. Keep the
+// original arguments for a failed private write, including inline
+// settings and their order relative to files and --.
 type Merged = {
     values: Record<string, Json | null>;
-    filed: string[][];
+    hasFile: boolean;
+    original: readonly string[];
     rest: string[];
     warnings: string[];
 };
@@ -401,7 +403,7 @@ function mergeTheirs(
     };
     // Each flag's values from the user, the last above the earlier ones.
     const users: Record<string, Json> = {};
-    const filed: string[][] = [];
+    let hasFile = false;
     const rest: string[] = [];
     const warnings: string[] = [];
     for (let index = 0; index < args.length; index += 1) {
@@ -429,46 +431,44 @@ function mergeTheirs(
         }
         users[flag] = mergeJson(users[flag] ?? {}, theirs as Json);
         if (!isInline(value)) {
-            filed.push(given);
+            hasFile = true;
         }
     }
     const values = { ...dorothy };
     for (const [flag, theirs] of Object.entries(users)) {
         values[flag] = mergeJson(theirs, dorothy[flag] as Json);
     }
-    return { values, filed, rest, warnings };
+    return { values, hasFile, original: args, rest, warnings };
 }
 
 // Dorothy's flags as claude takes them. What the user's --settings files
 // held may be secret (an env block of tokens), and argv is readable by
 // other users: a merge that includes a file goes to a private file,
 // passed by path. Without one the secrets stay with the user's own
-// flags, passed on as given, and Dorothy's settings go in alone.
+// flags, passed on as given, and Dorothy's settings cannot be added.
 type Front = {
     args: string[];
-    passedOn: string[];
+    rest: readonly string[];
     warnings: string[];
     files: string[];
 };
 
 function frontFlags(
-    { values, filed }: Merged,
-    flags: DorothyFlags,
+    { values, hasFile, original, rest }: Merged,
     writePrivate: (text: string) => string,
 ): Front {
-    const front: Front = { args: [], passedOn: [], warnings: [], files: [] };
+    const front: Front = { args: [], rest, warnings: [], files: [] };
     const settings = values[SETTINGS] ?? null;
-    if (settings !== null && filed.length > 0) {
+    if (settings !== null && hasFile) {
         const written = writeSettings(settings, writePrivate);
         if ("path" in written) {
             front.files.push(written.path);
             front.args.push(`${SETTINGS}=${written.path}`);
         } else {
-            front.passedOn.push(...filed.flat());
+            front.rest = original;
             front.warnings.push(
-                `a private settings file could not be written (${written.problem}); your --settings is passed on as given, and may override Dorothy's`,
+                `a private settings file could not be written (${written.problem}); your --settings is passed on as given; Dorothy's settings could not be added`,
             );
-            front.args.push(jsonFlag(SETTINGS, flags.settings));
         }
     } else if (settings !== null) {
         front.args.push(jsonFlag(SETTINGS, settings));
