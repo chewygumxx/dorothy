@@ -13,6 +13,7 @@
 
 import { Database } from "bun:sqlite";
 import {
+    appendFile,
     mkdir,
     mkdtemp,
     readdir,
@@ -48,11 +49,15 @@ export type Rig = {
     index: RecallIndex;
     recorded: SweepConversation[];
     requests: RecordRequest[];
+    // Claude Code's recorder as the service binds it, for the hooks' path.
+    claude: SweepDeps["recordClaude"];
     logs: string[];
     commits: string[];
     // Run a sweep as a service just started would: no process memory.
     run(options?: Partial<SweepDeps>): Promise<HostSweep[]>;
+    // Writes a file as last touched `age` ms before NOW: real clocks vary.
     file(path: string, text: string, age?: number): Promise<string>;
+    append(path: string, text: string, age?: number): Promise<void>;
     hermes(seed: (db: Database) => void): Promise<string>;
     // The conversations on disk, each as its parsed events.
     conversations(): Promise<Record<string, unknown>[][]>;
@@ -82,8 +87,23 @@ export async function rig(): Promise<Rig> {
     const logs: string[] = [];
     const log = (level: string) => (message: string) =>
         logs.push(`${level} ${message}`);
+    const claude: SweepDeps["recordClaude"] = (report, project) =>
+        recordSession(report, {
+            env,
+            index,
+            versions: {
+                recorder: store.recorder as never,
+                lock: index.lock,
+                sweep: async () => {},
+                heal: async () => false,
+                close: () => {},
+            },
+            log: { info() {}, warn: log("warn"), error: log("error") },
+            project,
+        });
     const rig: Rig = {
         home,
+        claude,
         env,
         store,
         index,
@@ -126,24 +146,7 @@ export async function rig(): Promise<Rig> {
                             ) ?? null,
                     };
                 },
-                recordClaude: (report, project) =>
-                    recordSession(report, {
-                        env,
-                        index,
-                        versions: {
-                            recorder: store.recorder as never,
-                            lock: index.lock,
-                            sweep: async () => {},
-                            heal: async () => false,
-                            close: () => {},
-                        },
-                        log: {
-                            info() {},
-                            warn: log("warn"),
-                            error: log("error"),
-                        },
-                        project,
-                    }),
+                recordClaude: claude,
                 ...options,
             });
         },
@@ -153,6 +156,11 @@ export async function rig(): Promise<Rig> {
             const when = new Date(NOW.getTime() - age);
             await utimes(path, when, when);
             return path;
+        },
+        async append(path, text, age = 0) {
+            await appendFile(path, text);
+            const when = new Date(NOW.getTime() - age);
+            await utimes(path, when, when);
         },
         async hermes(seed) {
             const path = join(home, ".hermes", "state.db");

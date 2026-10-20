@@ -9,14 +9,7 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import {
-    appendFile,
-    mkdir,
-    readdir,
-    readFile,
-    rm,
-    writeFile,
-} from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { copyPath, readRecord } from "../bodies/unread.js";
 import {
@@ -128,10 +121,7 @@ describe("sweeping hosts that send events", () => {
     it("reads an appended session whole and stores only what is new", async () => {
         const path = await r.file(rollout(), text(...speech), 0);
         await r.run({ hosts: ["codex"] });
-        await appendFile(
-            path,
-            text(message("user", "Synthetic follow-up.", 5)),
-        );
+        await r.append(path, text(message("user", "Synthetic follow-up.", 5)));
         const again = only(await r.run({ hosts: ["codex"] }), "codex");
         expect(again).toMatchObject({ sessions: 1, events: 1 });
         expect(r.requests.at(-1)?.events).toHaveLength(3);
@@ -405,7 +395,7 @@ describe("what is remembered and when", () => {
             0,
         );
         expect(only(await r.run({ hosts: ["codex"] }), "codex").events).toBe(0);
-        await appendFile(
+        await r.append(
             path,
             text(output("function_call_output", "c1", "Synthetic result.", 3)),
         );
@@ -459,9 +449,10 @@ describe("a session that halts", () => {
     it("resolves once the session reads to its end", async () => {
         const path = await r.file(rollout(), text(...speech, bad), 0);
         await r.run({ hosts: ["codex"] });
-        await writeFile(
+        await r.file(
             path,
             text(...speech, message("user", "Synthetic repaired.", 3)),
+            0,
         );
         const fixed = only(await r.run({ hosts: ["codex"] }), "codex");
         expect(fixed).toMatchObject({ halted: 0, events: 1 });
@@ -494,10 +485,7 @@ describe("a session that halts", () => {
             0,
         );
         await r.run({ hosts: ["codex"] });
-        await appendFile(
-            rollout(),
-            text(message("user", "Synthetic more.", 6)),
-        );
+        await r.append(rollout(), text(message("user", "Synthetic more.", 6)));
         await r.run({ hosts: ["codex"] });
         const types = await readdir(join(r.home, "state/dorothy/unread/types"));
         expect(types).toHaveLength(1);

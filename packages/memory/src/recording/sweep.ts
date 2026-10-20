@@ -303,6 +303,8 @@ async function recordRead(
     const at = session.at === null ? Number.NaN : Date.parse(session.at);
     const ended =
         deps.backfill || sweeping.started.getTime() - at >= ENDED_AFTER_MS;
+    if (host === "claude-code" && read.kind === "file")
+        return recordClaudeRead(sweeping, session, read, ended, result);
     const found = view(read, ended, session.session ?? null);
     const id = found.session;
     const named = id ?? basename(session.path, ".jsonl");
@@ -421,4 +423,77 @@ async function keepAside(
     deps.log.error(
         `recording: ${host}: ${named} halted at ${line} (${type ?? "no type"}): ${reason}`,
     );
+}
+
+// The directory a Claude Code session began in, from its first line to
+// name one.
+function firstCwd(lines: readonly string[]): string | null {
+    for (const line of lines.slice(0, 200)) {
+        try {
+            const cwd = (JSON.parse(line) as { cwd?: unknown } | null)?.cwd;
+            if (typeof cwd === "string" && cwd !== "") return cwd;
+        } catch {
+            // A line that is not JSON names no directory.
+        }
+    }
+    return null;
+}
+
+// Claude Code's sessions go through its own recorder, which finds the
+// conversation a session continues (`dorothy --claude`'s hooks may have
+// begun it) and appends the lines not yet recorded, once each.
+async function recordClaudeRead(
+    sweeping: Sweeping,
+    session: SourceSession,
+    read: Extract<SourceRead, { kind: "file" }>,
+    ended: boolean,
+    result: HostSweep,
+) {
+    const { deps, state } = sweeping;
+    const id = basename(session.path, ".jsonl");
+    const cwd = firstCwd(read.lines);
+    if (deps.isPrivate?.({ host: "claude-code", session: id, cwd }) ?? false) {
+        result.private += 1;
+        rememberRead(state, session.key, read);
+        return;
+    }
+    const project = await projectOf(sweeping, cwd);
+    const recorded = await deps.recordClaude(
+        {
+            session: id,
+            transcript: session.path,
+            dir: dirname(session.path),
+            since: null,
+            ended,
+        },
+        project,
+    );
+    switch (recorded.kind) {
+        case "unlocked":
+            throw new Error("the store could not be locked");
+        case "missing":
+            result.skipped += 1;
+            return;
+        case "nothing":
+            // A halt on the first line leaves a record and no conversation.
+            if ((await readRecord(deps.env, id)) !== null) result.halted += 1;
+            else rememberRead(state, session.key, read);
+            return;
+        case "recorded": {
+            if (recorded.appended > 0) {
+                result.sessions += 1;
+                result.events += recorded.appended;
+                deps.onRecorded?.({
+                    host: "claude-code",
+                    session: id,
+                    phrase: recorded.phrase,
+                    project,
+                    accepted: recorded.appended,
+                    backfilled: deps.backfill,
+                });
+            }
+            if (recorded.halted) result.halted += 1;
+            else rememberRead(state, session.key, read);
+        }
+    }
 }

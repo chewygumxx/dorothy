@@ -72,13 +72,11 @@ describe("the watermark", () => {
     it("records a session with events after it whole, old ones too", async () => {
         const path = await r.file(rollout("rollout-live.jsonl"), speech, HOUR);
         await r.run({ hosts: ["codex"] });
-        const { appendFile, utimes } = await import("node:fs/promises");
-        await appendFile(
+        await r.append(
             path,
             text(message("assistant", "Synthetic answer.", 2)),
         );
-        await utimes(path, later(1)(), later(1)());
-        const [codex] = await r.run({ hosts: ["codex"], now: later(1) });
+        const [codex] = await r.run({ hosts: ["codex"] });
         expect(codex).toMatchObject({ sessions: 1, events: 2, waiting: 0 });
     });
 
