@@ -290,7 +290,7 @@ export async function startNotices(env: Env): Promise<string[]> {
     const fresh = await untoldTypes(env);
     if (fresh.length > 0) {
         told.push(
-            `memory: Claude Code wrote lines of a type Dorothy does not know (${fresh.join(", ")}); they were passed over, and an example of each is kept in ${typesDir(env)}`,
+            `memory: a harness wrote records of a type Dorothy does not know (${fresh.join(", ")}); they were passed over, and an example of each is kept in ${typesDir(env)}`,
         );
     }
     // Taken away first, so a notice added meanwhile waits for the next.

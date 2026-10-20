@@ -186,6 +186,15 @@ describe("lines kept aside", () => {
     });
 
     describe("another host's session", () => {
+        it("tells a type it wrote once, under the host's name", async () => {
+            await keepNewType(env, "codex/future_type", '{"type":"x"}');
+            const [told, ...more] = await startNotices(env);
+            expect(more).toEqual([]);
+            expect(told).toContain("codex_future_type-");
+            expect(told).not.toContain("Claude Code");
+            expect(await startNotices(env)).toEqual([]);
+        });
+
         const HERMES = "20261020_101500_fixture";
         const other = (host = "hermes", session = HERMES) => ({
             ...halt(3),
