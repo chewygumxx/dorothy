@@ -10,6 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
+    existsSync,
     mkdirSync,
     mkdtempSync,
     readdirSync,
@@ -59,56 +60,86 @@ describe("tokenStore", () => {
         expect(await tokens.verify(made[5] as string)).toBe("f");
     });
 
-    // Each process adds its device, but swaps the file in only once the
-    // gate is open, having noted that it is ready: were the changes not
-    // serialised, all would read the file before any wrote it.
+    // Hold the first writer after its read, until all other children
+    // have attempted the lock (or, without it, reached their writes).
+    // Startup speed never decides when the first writer is released.
     it("loses no device when separate processes change it at once", async () => {
         const names = ["a", "b", "c"];
-        const gate = join(dir, "gate");
-        mkdirSync(join(dir, "ready"));
+        for (const stage of ["started", "attempted", "renaming"]) {
+            mkdirSync(join(dir, stage));
+        }
         const script = `const { existsSync, writeFileSync } = require("node:fs");
             const { rename } = require("node:fs/promises");
+            const { Database } = require("bun:sqlite");
             const { tokenStore } = await import(process.argv[1]);
-            const [, , path, name, gate, ready] = process.argv;
+            const [, , path, name, dir] = process.argv;
+            const mark = (stage) => writeFileSync(dir + "/" + stage + "/" + name, "");
+            const wait = async (gate) => {
+                while (!existsSync(dir + "/" + gate)) await Bun.sleep(5);
+            };
+            const run = Database.prototype.run;
+            Database.prototype.run = function(sql, ...args) {
+                if (sql === "BEGIN IMMEDIATE") mark("attempted");
+                return run.call(this, sql, ...args);
+            };
             const store = tokenStore(path, () => new Date(), {
                 rename: async (from, to) => {
-                    writeFileSync(ready + "/" + name, "");
-                    while (!existsSync(gate)) await Bun.sleep(5);
+                    mark("renaming");
+                    await wait("release");
                     await rename(from, to);
                 },
             });
+            mark("started");
+            await wait("start-" + name);
             await store.add(name);`;
-        const children = names.map((name) =>
-            Bun.spawn(
-                [
-                    process.execPath,
-                    "--no-env-file",
-                    "-e",
-                    script,
-                    join(import.meta.dir, "tokens.ts"),
-                    path,
-                    name,
-                    gate,
-                    join(dir, "ready"),
-                ],
-                { stdout: "inherit", stderr: "inherit" },
-            ),
-        );
-        // Unserialised, every child is ready at once; serialised, only the
-        // first is, and the rest wait on it.
-        const until = Date.now() + 800;
-        while (
-            readdirSync(join(dir, "ready")).length < names.length &&
-            Date.now() < until
-        ) {
-            await Bun.sleep(10);
+        const children: Bun.Subprocess[] = [];
+        const allAt = (stage: string) =>
+            names.every((name) => existsSync(join(dir, stage, name)));
+        const waitFor = async (ready: () => boolean) => {
+            while (!ready()) {
+                if (children.some((child) => child.exitCode !== null)) {
+                    throw new Error("a token writer exited before its barrier");
+                }
+                await Bun.sleep(5);
+            }
+        };
+        try {
+            for (const name of names) {
+                children.push(
+                    Bun.spawn(
+                        [
+                            process.execPath,
+                            "--no-env-file",
+                            "-e",
+                            script,
+                            join(import.meta.dir, "tokens.ts"),
+                            path,
+                            name,
+                            dir,
+                        ],
+                        { stdout: "inherit", stderr: "inherit" },
+                    ),
+                );
+            }
+            await waitFor(() => allAt("started"));
+            writeFileSync(join(dir, "start-a"), "");
+            await waitFor(() => existsSync(join(dir, "renaming", "a")));
+            for (const name of names.slice(1)) {
+                writeFileSync(join(dir, `start-${name}`), "");
+            }
+            await waitFor(() => allAt("attempted") || allAt("renaming"));
+            writeFileSync(join(dir, "release"), "");
+            expect(
+                await Promise.all(children.map((child) => child.exited)),
+            ).toEqual([0, 0, 0]);
+            expect(await tokens.devices()).toEqual(names);
+        } finally {
+            for (const child of children) {
+                child.kill();
+            }
+            await Promise.all(children.map((child) => child.exited));
         }
-        writeFileSync(gate, "");
-        expect(
-            await Promise.all(children.map((child) => child.exited)),
-        ).toEqual([0, 0, 0]);
-        expect(await tokens.devices()).toEqual(names);
-    });
+    }, 15_000);
 
     it("leaves no temporary file where the swap fails", async () => {
         const failing = tokenStore(path, () => new Date(), {
