@@ -55,7 +55,7 @@ replies were checked with pane read before sending the next topic:
 After the third reply, waited for the idle compaction in the owned tab.
 
 Selected terminal output:
-^[[?0u───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────you      Topic 1, lighthouses: explain Fresnel lenses and keepers in about 400 words. This is a disposable conversation probe; do not save facts.
+you      Topic 1, lighthouses: explain Fresnel lenses and keepers in about 400 words. This is a disposable conversation probe; do not save facts.
 2 in · 2420 cache write · 1063 out · ttft 2.9s · 7.2s · $0.0012 · chat $0.0012
 you      Topic 2, sourdough: explain starter feeding and fermentation in about 300 words. Keep this topic separate from lighthouses; this is disposable probe data.
 2 in · 2420 cache read · 1144 cache write · 718 out · ttft 1.1s · 4.6s · $0.0006 · chat $0.0018
