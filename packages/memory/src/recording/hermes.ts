@@ -215,6 +215,36 @@ function calls(
     return result;
 }
 
+function absorbedUids(value: unknown): string[] {
+    if (value === null) return [];
+    const uids = json(
+        text(value, "absorbed message uids are not text"),
+        "invalid absorbed message uids JSON",
+    );
+    if (
+        !Array.isArray(uids) ||
+        uids.some((uid) => typeof uid !== "string" || !uid.trim())
+    )
+        throw new Unreadable("invalid absorbed message uids");
+    return [...new Set<string>(uids)];
+}
+function parentHoldings(rows: Json[]): Set<string> {
+    const held = new Set<string>();
+    for (const row of rows) {
+        if (typeof row.message_uid === "string" && row.message_uid.trim())
+            held.add(row.message_uid);
+        try {
+            for (const uid of absorbedUids(row.absorbed_message_uids))
+                held.add(uid);
+        } catch (error) {
+            if (!(error instanceof Unreadable)) throw error;
+            // An invalid witness asserts no extra ownership. The parent
+            // decoder reports its own malformed visible row as a halt.
+        }
+    }
+    return held;
+}
+
 type Decoded = { physical: number; event: RecordEvent };
 function sourceIds(rows: Json[]): Map<string, number> {
     const ids = new Map<string, number>();
@@ -272,7 +302,9 @@ function decodeTool(
                     at,
                 },
             });
+        return true;
     }
+    return false;
 }
 function decodeSpeech(
     row: Json,
@@ -312,6 +344,7 @@ function decodeSpeech(
                 ...(type === "assistant" ? { interrupted: false } : {}),
             },
         });
+    return said.trim() !== "";
 }
 
 function decodeSession(
@@ -357,6 +390,8 @@ function decodeSession(
         const known = new Set<string>();
         const state = { read, decoded, since, pending, byId, byUid, known };
         const ids = sourceIds(rows);
+        const held = new Set(parentUids);
+        for (const [uid, first] of ids) if (first <= since) held.add(uid);
         const seenMessages = new Set<string>();
         for (const row of rows) {
             if (row.active !== 1 && row.compacted !== 1) continue;
@@ -403,15 +438,23 @@ function decodeSession(
                 row.message_uid === null
                     ? null
                     : nonempty(row.message_uid, "invalid message uid");
+            const absorbed = absorbedUids(row.absorbed_message_uids);
             if (messageUid !== null) {
                 if (seenMessages.has(messageUid)) continue;
                 seenMessages.add(messageUid);
             }
             const sourceId =
                 messageUid === null ? id : (ids.get(messageUid) ?? id);
-            const emit = messageUid === null || !parentUids.has(messageUid);
-            if (type === "tool") decodeTool(row, id, sourceId, state, emit);
-            else decodeSpeech(row, id, sourceId, type, state, emit);
+            const members =
+                messageUid === null ? absorbed : [messageUid, ...absorbed];
+            const emit = !members.some((uid) => held.has(uid));
+            const before = decoded.length;
+            const isEvent =
+                type === "tool"
+                    ? decodeTool(row, id, sourceId, state, emit)
+                    : decodeSpeech(row, id, sourceId, type, state, emit);
+            if (isEvent && (sourceId <= since || decoded.length > before))
+                for (const uid of members) held.add(uid);
         }
     } catch (error) {
         if (!(error instanceof Unreadable)) throw error;
@@ -440,26 +483,21 @@ export function readHermes(db: string, since = 0): HermesRead[] {
         const messages = reader.query<Json, [string]>(
             `SELECT id, role, content, timestamp, tool_calls, tool_call_id,
                     tool_call_uids, tool_call_uid, active, compacted,
-                    _compressed_summary, display_kind, display_metadata, message_uid
+                    _compressed_summary, display_kind, display_metadata, message_uid,
+                    absorbed_message_uids
              FROM messages WHERE session_id = ? ORDER BY id`,
         );
         const parentMessages = reader.query<Json, [string]>(
-            "SELECT DISTINCT message_uid FROM messages WHERE session_id = ? AND message_uid IS NOT NULL",
+            "SELECT message_uid, absorbed_message_uids FROM messages WHERE session_id = ?",
         );
         return sessions.map((session) =>
             decodeSession(
                 session,
                 typeof session.id === "string" ? messages.all(session.id) : [],
                 since,
-                new Set(
+                parentHoldings(
                     typeof session.parent_session_id === "string"
-                        ? parentMessages
-                              .all(session.parent_session_id)
-                              .flatMap((row) =>
-                                  typeof row.message_uid === "string"
-                                      ? [row.message_uid]
-                                      : [],
-                              )
+                        ? parentMessages.all(session.parent_session_id)
                         : [],
                 ),
             ),

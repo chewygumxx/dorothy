@@ -1157,3 +1157,178 @@ describe("readHermes compression children", () => {
         expect(read?.halt).toMatchObject({ id: null, type: "session" });
     });
 });
+
+describe("readHermes absorbed message uids", () => {
+    const carrier =
+        "[CONTEXT SUMMARY]: Synthetic handoff.\n--- END OF CONTEXT SUMMARY \u2014 respond to the message below, not the summary above ---\nActual speech.";
+    it("does not re-emit an original through a new carrier uid that absorbed it", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "user", "Actual speech.");
+            hermesMessage(db, 4, "user", carrier, {
+                summary: 1,
+                display: "hidden",
+            });
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-original' WHERE id = 1",
+            );
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-carrier', absorbed_message_uids = ? WHERE id = 4",
+                ['["fixture-original"]'],
+            );
+        });
+        expect(readHermes(path, 0)[0]?.events).toEqual([
+            {
+                kind: "user",
+                text: "Actual speech.",
+                sourceId: "1",
+                at: hermesAt(1),
+            },
+        ]);
+        expect(readHermes(path, 1)[0]?.events).toEqual([]);
+    });
+    it("recognizes originals swept before they acquired rewind flags", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "user", "Actual speech.", { active: 0 });
+            hermesMessage(db, 4, "user", carrier, {
+                summary: 1,
+                display: "hidden",
+            });
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-original' WHERE id = 1",
+            );
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-carrier', absorbed_message_uids = ? WHERE id = 4",
+                ['["fixture-original"]'],
+            );
+        });
+        expect(readHermes(path, 1)[0]?.events).toEqual([]);
+        expect(readHermes(path, 0)[0]?.events).toEqual([
+            {
+                kind: "user",
+                text: "Actual speech.",
+                sourceId: "4",
+                at: hermesAt(4),
+            },
+        ]);
+    });
+    it("holds every constituent after emitting a fresh merge, including on a later read", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db);
+            hermesMessage(db, 1, "user", "First.\n\nSecond.");
+            hermesMessage(db, 5, "user", "Second.");
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-first', absorbed_message_uids = ? WHERE id = 1",
+                ['["fixture-second","fixture-second"]'],
+            );
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-second' WHERE id = 5",
+            );
+        });
+        expect(readHermes(path, 0)[0]?.events).toEqual([
+            {
+                kind: "user",
+                text: "First.\n\nSecond.",
+                sourceId: "1",
+                at: hermesAt(1),
+            },
+        ]);
+        expect(readHermes(path, 1)[0]?.events).toEqual([]);
+    });
+    it("does not emit a child carrier for a uid its parent holds", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db, "parent");
+            hermesSession(db, "child");
+            db.run(
+                "UPDATE sessions SET parent_session_id = 'parent' WHERE id = 'child'",
+            );
+            hermesMessage(db, 1, "user", "Actual speech.", {
+                session: "parent",
+            });
+            hermesMessage(db, 5, "user", carrier, {
+                session: "child",
+                summary: 1,
+                display: "hidden",
+            });
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-original' WHERE id = 1",
+            );
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-carrier', absorbed_message_uids = ? WHERE id = 5",
+                ['["fixture-original"]'],
+            );
+        });
+        const child = readHermes(path, 0).find(
+            (read) => read.session === "child",
+        );
+        expect(child?.parent).toBe("parent");
+        expect(child?.events).toEqual([]);
+    });
+    for (const [name, value] of [
+        ["JSON", "{"],
+        ["object", "{}"],
+        ["nonstring uid", "[42]"],
+        ["empty uid", '[""]'],
+    ] as const) {
+        it(`halts at malformed absorbed ${name} without dropping its valid prefix`, async () => {
+            const path = await fixture((db) => {
+                hermesSession(db);
+                hermesMessage(db, 1, "user", "Before.");
+                hermesMessage(db, 2, "user", "Invalid merge.");
+                db.run(
+                    "UPDATE messages SET absorbed_message_uids = ? WHERE id = 2",
+                    [value],
+                );
+                hermesMessage(db, 3, "user", "Beyond halt.");
+            });
+            const [read] = readHermes(path, 0);
+            expect(read?.events).toEqual([
+                {
+                    kind: "user",
+                    text: "Before.",
+                    sourceId: "1",
+                    at: hermesAt(1),
+                },
+            ]);
+            expect(read?.halt).toMatchObject({ id: 2, type: "user" });
+        });
+    }
+});
+
+describe("readHermes parent merge witnesses", () => {
+    it("treats a parent's emitted merge constituents as held in its child", async () => {
+        const path = await fixture((db) => {
+            hermesSession(db, "parent");
+            hermesSession(db, "child");
+            db.run(
+                "UPDATE sessions SET parent_session_id = 'parent' WHERE id = 'child'",
+            );
+            hermesMessage(db, 1, "user", "First.\n\nSecond.", {
+                session: "parent",
+            });
+            hermesMessage(db, 4, "user", "Second.", { session: "child" });
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-first', absorbed_message_uids = ? WHERE id = 1",
+                ['["fixture-second"]'],
+            );
+            db.run(
+                "UPDATE messages SET message_uid = 'fixture-second' WHERE id = 4",
+            );
+        });
+        const reads = readHermes(path, 0);
+        expect(reads.find((read) => read.session === "child")?.events).toEqual(
+            [],
+        );
+        expect(reads.find((read) => read.session === "parent")?.events).toEqual(
+            [
+                {
+                    kind: "user",
+                    text: "First.\n\nSecond.",
+                    sourceId: "1",
+                    at: hermesAt(1),
+                },
+            ],
+        );
+    });
+});

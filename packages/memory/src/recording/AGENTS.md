@@ -98,6 +98,12 @@ readers never open a Dorothy store.
   rows (`active=1` or `compacted=1`); an entirely invisible uid emits
   nothing. Compare `since` with that stable id. Pending and halt still
   use physical positions, so a later copied event cannot bypass a gap.
+- `absorbed_message_uids` lists a merge's other constituents; the
+  survivor keeps its first constituent's uid. Suppress composites that
+  share an already held uid. A newly emitted merge holds all its members,
+  including on cursor replay; the parent also holds its merge members.
+  Correlation still decodes suppressed copies; no string matching splits
+  or merges speech, and malformed visible witnesses halt that session.
 - Legacy copies can acquire fresh random uids from Hermes's insert
   trigger and cannot be linked to their originals; such stores can
   yield duplicate events. Never merge on text. Rows without uids retain
