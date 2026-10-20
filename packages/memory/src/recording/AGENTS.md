@@ -26,27 +26,25 @@ readers never open a Dorothy store.
 
 ## Files
 
-- `codex.ts`: `readCodex(lines, options?)`, Codex rollout JSONL. It returns
-  `session`, `cwd`, `model`, `at`, `events`, `halt`, `unknown` and `pending`.
-  Session metadata gives the id and start time; the latest valid
-  `turn_context` gives the working directory and model. Separate decoders
-  validate session, context, message, call and output records before the
-  ordered emission pass pairs calls inside the valid prefix.
+- `codex.ts`: `readCodex(lines, options?)` reads rollout JSONL into
+  `session`, `cwd`, `model`, `at`, `events`, `halt`, `unknown`, `pending`.
+  Session metadata gives the id; the latest valid `turn_context`, the
+  directory and model. Decoders validate each record before an ordered
+  pass pairs calls inside the valid prefix.
 - `hermes.ts`: `readHermes(dbPath, since = 0, session?)` opens SQLite
-  read-only; optional session selection happens before payload fetching.
-  Each has `session`, `parent`, `source`, `cwd`, `model`, `at`, `events`,
-  `halt`, `unknown` and `pending`. SQL filters invisible payloads but
-  retains all-row uid minima and call context. Sources always use zero
-  for the legacy optional `since`; stable event ids are not monotonic.
+  read-only, selecting a session before fetching payloads. Each read has
+  `session`, `parent`, `source`, `cwd`, `model`, `at`, `events`, `halt`,
+  `unknown`, `pending`. `since` floors stable source ids, exclusively;
+  sources pass zero: those ids are not monotonic.
 - `sources.ts`: `claudeSource`, `codexSource`, `hermesSource`; each
   lists descriptors with a key, path, time, fingerprint and `read()`.
-- `state.ts`: private `sweep.json`, validated version 1, per-key skip
-  fingerprints alone. `loadSweepState` warns and starts fresh on missing,
-  unreadable or invalid data; `saveSweepState` replaces whole.
-- `hermes-fixtures.ts`: installed Hermes v31 `sessions`/`messages` table
-  DDL and synthetic row builders. Writers create only temporary fixtures.
-- `fixtures.ts`: synthetic text in observed record shapes. No real
-  session id, message, tool input/output, credential or account address.
+- `state.ts`: private `sweep.json`, version 1, per-key skip fingerprints
+  alone; `loadSweepState` warns and starts fresh on missing or invalid.
+- `watermark.ts`: a host's first sweep time, in the data directory's
+  `recording.json`, committed to history, never in `sweep.json`.
+- `sweep.ts`: `sweep(deps)`, one pass over the hosts; read below.
+- `fixtures.ts`, `hermes-fixtures.ts`, `sweep-testing.ts`: synthetic
+  records, Hermes v31 tables, and the sweep's rig. Nothing from a real store.
 
 ## Invariants
 
@@ -111,40 +109,42 @@ readers never open a Dorothy store.
   including on cursor replay; the parent also holds its merge members.
   Correlation still decodes suppressed copies; no string matching splits
   or merges speech, and malformed visible witnesses halt that session.
-- Legacy copies can acquire fresh random uids from Hermes's insert
-  trigger and cannot be linked to their originals; such stores can
-  yield duplicate events. Never merge on text. Rows without uids retain
-  their physical ids; distinct uids stay distinct even for equal text.
+- Legacy copies can get fresh random uids from Hermes's insert trigger
+  and cannot be linked to originals: such stores can yield duplicates.
+  Never merge on text. Rows without uids keep their physical ids.
 - Keep original compacted rows; omit inactive rewind rows, model-only
-  composites, synthetic display rows and standalone compression handoffs.
-  Read `content`, never `api_content`; remove user-role host wrappers and
-  memory fences, keeping actual speech around a compression handoff.
-  Assistant text and raw tool strings are not passed through that filter.
+  composites, synthetic display rows and compression handoffs. Read
+  `content`, never `api_content`; strip user-role host wrappers and
+  memory fences, keeping speech. Assistant text and tool strings skip that.
 - Sentinel `\0json:` content decodes once. Plain JSON-looking prose stays
   prose; typed image blocks become `[image]`, known multimodal envelopes
   yield their text summary. Malformed text or unknown block types halt.
 
 ## Tests
 
-Tests use synthetic lines and temporary SQLite/filesystem roots, removed
-after each test. Never open a real harness store in a test. Shape probes
-print only types, keys and nesting, with dynamic map keys masked.
+Tests use synthetic lines and temporary roots, removed after each test.
+Never open a real harness store. Shape probes print only types and keys.
 
-## Sources and sweep state
+## Sources and the sweep
 
 - Every root comes from an injected `Env`; missing HOME never falls
   through to the process home. Claude covers its default account and
   all `claude-dirs` accounts' projects, excluding subagent paths.
 - An unchanged file matches size, nanosecond mtime, inode and device;
   Hermes matches maximum physical row id and row count, including
-  invisible rows. These are equality hints, never event cursors.
-- Changed sessions are read whole, files at `lineOffset: 0`. No byte or
-  maximum-sourceId cursor is persisted. Shrink, replacement, rewrites
-  and torn tails therefore preserve the reader's entire context.
-- `read(previous?)` refreshes observations; null means unchanged.
-  A changed read carries a fingerprint and `stable`. Raced or torn
-  reads cannot be remembered. Only call `rememberRead` after archive
-  acceptance and saved unread diagnostics; failed archive writes retry.
-- The file is written atomically as 0600 under a 0700 state directory.
-  Losing it costs a whole reread; archive sourceId dedupe decides what
-  is new. Watermarks live in the data directory, never here.
+  invisible rows, but not an in-place UPDATE: a known limit. These are
+  equality hints, never event cursors; archive sourceId dedupe decides
+  what is new, so losing `sweep.json` costs a whole reread only.
+- Changed sessions are read whole, files at `lineOffset: 0`.
+  `read(previous?)` returns null for unchanged or vanished; a vanished
+  entry skips, never its host.
+- `sweep` takes the contract's `record` and Claude's `recordClaude`
+  (`bodies/record.ts`, so `dorothy --claude`'s conversation continues).
+  A session older than its host's watermark waits for the backfill,
+  which marks its conversations through `onRecorded`; `jobs.ts` never
+  extracts those. `isPrivate` sessions send `private: true`, nothing else.
+- Remember a read (`rememberRead`) only after the archive took it and
+  unread diagnostics are saved. Never a halted or unstable read, nor one
+  held behind an unanswered call until an hour old or backfilled.
+- A halt keeps its rest in `bodies/unread.ts` under its host. A record
+  failure stops that host, not others; an unreadable session is counted.

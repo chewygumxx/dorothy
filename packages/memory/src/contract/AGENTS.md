@@ -44,8 +44,9 @@ gives back, and the service that speaks it. The spec is
   salience and reviewer.
 - `../hosts/`: host profiles, one JSON file a harness.
 - `../service/`: the HTTP service (`service.ts`, its routes; `guard.ts`
-  refuses what a web page could send; `jobs.ts` extracts, consolidates
-  and exports in the background; `http.ts`, `recent.ts` are theirs),
+  refuses what a web page could send; `jobs.ts` extracts (never a
+  backfilled conversation), consolidates and exports in the background;
+  `http.ts`, `recent.ts` are theirs),
   device tokens (`tokens.ts`), the client (`client.ts`), the stdio
   bridge (`bridge.ts`, its own entry point, `"./bridge"`) and the CLI's
   runners (`run.ts`). `loopback.ts` tells loopback addresses and URLs;
