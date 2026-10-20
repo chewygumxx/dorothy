@@ -38,6 +38,9 @@ export type JobsDeps = {
     store: FactStore;
     // Conversations recorded and not yet extracted, by their last record.
     idle: Map<string, number>;
+    // Conversations a backfill recorded, never extracted: they would cost
+    // a paid review apiece. One that reaches idle is dropped from it.
+    backfilled: Set<string>;
     // Projects recorded since the last export.
     touched: Set<string>;
     // Reads the catalogue for the reviewer, which only reviews need.
@@ -48,7 +51,7 @@ export type JobsDeps = {
 };
 
 export function startJobs(deps: JobsDeps): { stop(): void } {
-    const { config, engine, store, idle, touched, warn } = deps;
+    const { config, engine, store, idle, backfilled, touched, warn } = deps;
     const { root, lock, recorder } = store;
     // An engine's proposal, validated as a write: one naming no project,
     // or refused, is dropped and said.
@@ -106,12 +109,15 @@ export function startJobs(deps: JobsDeps): { stop(): void } {
             const due = [...idle]
                 .filter(([, at]) => Date.now() - at >= wait)
                 .map(([phrase]) => phrase);
+            const extract = due.filter((phrase) => !backfilled.has(phrase));
+            for (const phrase of due)
+                if (backfilled.has(phrase)) idle.delete(phrase);
             // Without reviews the engine extracts nothing; only the
             // reviewer reads the catalogue.
-            if (due.length > 0) {
+            if (extract.length > 0) {
                 await deps.loadCatalogue?.();
             }
-            for (const phrase of due) {
+            for (const phrase of extract) {
                 idle.delete(phrase);
                 const proposals = await engine.extract(
                     phrase,

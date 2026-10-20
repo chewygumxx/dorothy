@@ -205,6 +205,8 @@ export async function startService(
         const held = new Recent<string, Held>(MAX_HELD);
         // Conversations recorded and not yet extracted, by their last record.
         const idle = new Map<string, number>();
+        // Conversations a backfill recorded, which no review reads.
+        const backfilled = new Set<string>();
         // Projects recorded since the last export.
         const touched = new Set<string>();
         const log = hookLog(env);
@@ -438,6 +440,7 @@ export async function startService(
             engine,
             store,
             idle,
+            backfilled,
             touched,
             warn: failed,
             tickMs: options.tickMs,
