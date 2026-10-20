@@ -65,6 +65,7 @@ import {
     type Lock,
     type Recorder,
     readSidecar,
+    setBackfilled,
     updateSidecar,
 } from "./sidecar.js";
 import { type MemoryHooks, trackMemory } from "./track.js";
@@ -570,7 +571,11 @@ export async function openMemory({
     }
     const { history, costUsd, clusters } = resumed;
     const compactable = compactionAllowed(config, resumed, warnings);
-    const transcript = await openWriter(path, warnings, launched?.history.lock);
+    const transcript = await openWriter(
+        path,
+        warnings,
+        launched?.history.lock ?? index?.lock,
+    );
     const service =
         config.memory.enabled && index !== null
             ? await startService({
@@ -646,6 +651,11 @@ export async function openMemory({
         resumed: history.length > 0,
         project,
         channel,
+        clearBackfill: () =>
+            setBackfilled(dir, phrase, false, {
+                starting: false,
+                warn: (message) => channel.warn(message),
+            }),
     });
     const make = sessionMaker({
         compaction,
@@ -957,19 +967,30 @@ function chatRecorder(
         resumed,
         project,
         channel,
+        clearBackfill,
     }: {
         phrase: string;
         promptHash: string;
         resumed: boolean;
         project: string | null;
         channel: ReturnType<typeof noticeChannel>;
+        clearBackfill: () => Promise<unknown>;
     },
 ): ReturnType<typeof sessionRecorder> | null {
     if (transcript === null) {
         return null;
     }
     return sessionRecorder({
-        sink: transcript,
+        sink: {
+            append: (entry) =>
+                transcript.append(
+                    entry,
+                    {},
+                    entry.kind === "user" || entry.kind === "assistant"
+                        ? clearBackfill
+                        : undefined,
+                ),
+        },
         phrase,
         promptHash,
         resumed,

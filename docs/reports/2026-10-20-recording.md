@@ -421,3 +421,8 @@ The user's backfill remains their call, after these fixes are verified.
   counts-line filter stays quiet. Claude's recorder reports a new halt
   separately from its persistent halted state, preserving acknowledgement
   and hook reread behavior.
+- N5: resuming a swept Codex or Hermes conversation in chat clears its
+  mark after a user or assistant event is written, under the transcript
+  lock and flush queue. Opening a chat or recording only its ready event
+  leaves the mark intact. Actual openMemory resumes restore catalogue
+  review eligibility, including when history is off.

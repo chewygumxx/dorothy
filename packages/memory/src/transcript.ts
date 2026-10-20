@@ -567,7 +567,12 @@ export class TranscriptWriter {
 
     // Appends are chained so un-awaited calls still land in call order, and a
     // failed write does not block the ones after it.
-    append(entry: TranscriptEntry, stamp: Stamp = {}): Promise<void> {
+    append(
+        entry: TranscriptEntry,
+        stamp: Stamp = {},
+        // An append's metadata change, under the same lock and flush queue.
+        after?: () => Promise<unknown>,
+    ): Promise<void> {
         const { kind, ...fields } = entry;
         const event = {
             v: 1,
@@ -582,6 +587,7 @@ export class TranscriptWriter {
         const append = async () => {
             await this.#follow();
             await this.#handle.appendFile(line, "utf8");
+            await after?.();
         };
         const write = this.#pending.then(() =>
             this.#lock === undefined ? append() : this.#lock(append),

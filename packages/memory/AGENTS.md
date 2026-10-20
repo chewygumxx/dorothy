@@ -40,7 +40,7 @@ and prompts as text (`MemoryPrompts`).
 - `transcript.ts`: private JSONL under `$XDG_DATA_HOME/dorothy/`.
   Sessions name their `source`, events their `sourceUuid`. Tool text is
   scrubbed (`scrub.ts`) and trimmed to 2,000 characters a side. Chat's
-  appends share history's lock with restores, through `TranscriptWriter`.
+  appends and backfill unmarks share `TranscriptWriter`'s common lock.
 - `memory/open.ts`: `openMemory` opens a chat's memory and returns its
   `createSession(turns)`, whose sessions are compacting, tracked by memory
   and recorded by `sessionRecorder` (`record.ts`). Each starts from the
