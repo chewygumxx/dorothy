@@ -12,7 +12,7 @@
         "@chewygumxx/biome-config": "^1.0.0",
         "@chewygumxx/commitlint-config": "^1.1.0",
         "@chewygumxx/cz-commitlint": "^1.0.2",
-        "@chewygumxx/markdownlint-cli2-config": "^1.0.1",
+        "@chewygumxx/markdownlint-cli2-config": "^1.1.0",
         "@chewygumxx/remark-preset": "^1.0.3",
         "@chewygumxx/yamllint-config": "^1.0.0",
         "@commitlint/cli": "^21.2.2",
@@ -161,7 +161,7 @@
 
     "@chewygumxx/cz-commitlint": ["@chewygumxx/cz-commitlint@1.0.2", "", { "dependencies": { "@commitlint/cz-commitlint": "^21.2.3", "@commitlint/load": "^21.2.3", "@commitlint/types": "^21.2.3" }, "peerDependencies": { "commitizen": "^4.3.2", "inquirer": "^9.0.0 || ^10.0.0 || ^11.0.0 || ^12.0.0" } }, "sha512-MkyoPNHLA8JOQMJakC+s6XamOpYJBkp6EUQyFch4lDDWBC9WTBxAq1c7ZQIQNr8j46yrwliQIgfAFE0V3o77SA=="],
 
-    "@chewygumxx/markdownlint-cli2-config": ["@chewygumxx/markdownlint-cli2-config@1.0.1", "", { "peerDependencies": { "markdownlint-cli2": "^0.23.3" } }, "sha512-DDzLMon209zg/S4T4we7+h+mWso28SM0VdE8E0mB9O/bWTOigSNTDYxcl4Y2gVsS5/XZFLm6vPkHwSd8p3TwKQ=="],
+    "@chewygumxx/markdownlint-cli2-config": ["@chewygumxx/markdownlint-cli2-config@1.1.0", "", { "peerDependencies": { "markdownlint-cli2": "^0.23.3" } }, "sha512-kkHjZ6IeCumPU0J3xECzdA6sGrq8eJTlLtMgTq+uiZTdolWFbwK6j1NCd3VC+W1JefC+2YGYpvmC7Vm9rioTFg=="],
 
     "@chewygumxx/remark-preset": ["@chewygumxx/remark-preset@1.0.3", "", { "dependencies": { "remark-frontmatter": "^5.0.0", "remark-gfm": "^4.0.1", "remark-lint-maximum-line-length": "^4.1.1", "remark-lint-no-undefined-references": "^5.0.2", "remark-preset-lint-consistent": "^6.0.1", "remark-preset-lint-recommended": "^7.0.1" }, "peerDependencies": { "remark-cli": "^12.0.1" } }, "sha512-DVM+17zzlQIFjYaQQcJXzOyPq/cFFTkX56sSsDBLgWulpdXgPqACiyt03x3zId2YqrY7E7Hqdv/D2+2CWW1s7w=="],
 
