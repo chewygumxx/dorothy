@@ -101,3 +101,19 @@ export const bookkeeping = [
         "token_count",
     ].map((type) => line("event_msg", { type })),
 ];
+
+// Host context uses user-role input_text blocks without client_authored.
+export const hostEnvironment =
+    "<environment_context>\nSynthetic environment details.\n</environment_context>";
+export const hostInstructions =
+    "# AGENTS.md instructions for /fixture/project\n<INSTRUCTIONS>\nSynthetic repository rules.\n</INSTRUCTIONS>";
+export const userBlocks = (texts: string[], second = 1) =>
+    line(
+        "response_item",
+        {
+            type: "message",
+            role: "user",
+            content: texts.map((text) => ({ type: "input_text", text })),
+        },
+        second,
+    );

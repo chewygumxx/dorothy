@@ -15,11 +15,14 @@ import {
     bookkeeping,
     call,
     context,
+    hostEnvironment,
+    hostInstructions,
     line,
     message,
     meta,
     output,
     SESSION,
+    userBlocks,
 } from "./fixtures.js";
 
 describe("readCodex", () => {
@@ -374,4 +377,87 @@ describe("Codex tool pairs", () => {
             expect(read.halt?.reason).not.toContain("Synthetic.");
         });
     }
+});
+
+describe("Codex injected user context", () => {
+    for (const [name, block] of [
+        ["environment", hostEnvironment],
+        ["AGENTS instructions", hostInstructions],
+        [
+            "instruction wrapper",
+            "<INSTRUCTIONS>\nSynthetic rules.\n</INSTRUCTIONS>",
+        ],
+    ] as const) {
+        it(`omits host ${name} without changing later source ids`, () => {
+            const read = readCodex([
+                userBlocks([`  ${block}`]),
+                message("user", "A real fixture prompt."),
+            ]);
+            expect(read.events).toEqual([
+                {
+                    kind: "user",
+                    text: "A real fixture prompt.",
+                    sourceId: "2",
+                    at: at(1),
+                },
+            ]);
+            expect(read.halt).toBeNull();
+        });
+    }
+    it("omits both context blocks while retaining speech in a mixed message", () => {
+        const read = readCodex([
+            userBlocks([
+                hostInstructions,
+                hostEnvironment,
+                "Keep these fixture words.",
+            ]),
+        ]);
+        expect(read.events).toEqual([
+            {
+                kind: "user",
+                text: "Keep these fixture words.",
+                sourceId: "1",
+                at: at(1),
+            },
+        ]);
+    });
+    it("retains speech after a closed context wrapper in the same block", () => {
+        const read = readCodex([
+            userBlocks([`${hostEnvironment}\nWhat is moss?`]),
+        ]);
+        expect(read.events[0]).toMatchObject({
+            kind: "user",
+            text: "What is moss?",
+        });
+    });
+    it("keeps ordinary client-authored-false messages and quoted markers", () => {
+        const record = JSON.parse(
+            message(
+                "user",
+                "Discuss <environment_context> and # AGENTS.md instructions as text.",
+            ),
+        );
+        record.metadata = { client_authored: false };
+        const read = readCodex([
+            JSON.stringify(record),
+            message("assistant", hostEnvironment),
+        ]);
+        expect(read.events.map((event) => event.kind)).toEqual([
+            "user",
+            "assistant",
+        ]);
+        expect(read.events[0]).toMatchObject({
+            text: "Discuss <environment_context> and # AGENTS.md instructions as text.",
+        });
+        expect(read.events[1]).toMatchObject({ text: hostEnvironment });
+    });
+    it("does not record an incomplete host wrapper as user speech", () => {
+        expect(
+            readCodex([
+                userBlocks([
+                    "<environment_context>\nSynthetic partial context.",
+                ]),
+            ]).events,
+        ).toEqual([]);
+    });
 });

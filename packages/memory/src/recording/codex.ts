@@ -62,7 +62,30 @@ function time(record: Json): string {
     if (!Number.isFinite(value)) throw new Unreadable("invalid timestamp");
     return new Date(value).toISOString();
 }
-function blocks(value: unknown, separator = "\n\n"): string {
+// Codex puts environment and repository instructions in the user role.
+// client_authored is false on ordinary speech too; use the wrappers.
+function userText(value: string): string | null {
+    let rest = value;
+    for (;;) {
+        const start = rest.trimStart();
+        const endTag = start.startsWith("<environment_context>")
+            ? "</environment_context>"
+            : start.startsWith("# AGENTS.md instructions") ||
+                start.startsWith("<INSTRUCTIONS>")
+              ? "</INSTRUCTIONS>"
+              : null;
+        if (endTag === null) return rest;
+        const end = start.indexOf(endTag);
+        if (end < 0) return null;
+        rest = start.slice(end + endTag.length).trimStart();
+        if (rest === "") return null;
+    }
+}
+function blocks(
+    value: unknown,
+    separator = "\n\n",
+    spoken: (value: string) => string | null = (value) => value,
+): string {
     if (!Array.isArray(value)) throw new Unreadable("text without its blocks");
     return value
         .map((block) => {
@@ -73,8 +96,9 @@ function blocks(value: unknown, separator = "\n\n"): string {
             ) {
                 throw new Unreadable("an unsupported text block");
             }
-            return text(block.text, "a text block without its text");
+            return spoken(text(block.text, "a text block without its text"));
         })
+        .filter((part): part is string => part !== null)
         .join(separator);
 }
 
@@ -230,7 +254,11 @@ export function readCodex(
                             payload.role !== "assistant"
                         )
                             throw new Unreadable("an unsupported message role");
-                        const said = blocks(payload.content);
+                        const said = blocks(
+                            payload.content,
+                            "\n\n",
+                            payload.role === "user" ? userText : undefined,
+                        );
                         const at = time(record);
                         if (said.trim() !== "")
                             decoded.push({
