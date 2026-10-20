@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-20
-mtime: 2026-10-20
+mtime: 2026-10-21
 spdx: GPL-3.0-only
 title: packages/memory/src/recording/AGENTS.md
 description: >-
@@ -104,8 +104,8 @@ readers never open a Dorothy store; tests use temporary roots.
   use physical positions, so a later copied event cannot bypass a gap.
 - `absorbed_message_uids` lists a merge's other constituents; the
   survivor keeps its first constituent's uid. Suppress composites that
-  share an already held uid. A newly emitted merge holds all its members,
-  including on cursor replay; the parent also holds its merge members.
+  share an already held uid: an unswept constituent's text is then never
+  recorded. Emitted merges and parents hold all members on cursor replay.
   Correlation still decodes suppressed copies; no string matching splits
   or merges speech, and malformed visible witnesses halt that session.
 - Legacy copies can get fresh random uids from Hermes's insert trigger
