@@ -11,6 +11,7 @@
 import { describe, expect, it } from "bun:test";
 import { DEFAULT_CONFIG } from "@dorothy/core";
 import { fakeEngine } from "../contract/testing.js";
+import type { HostSweep } from "../recording/sweep.js";
 import { noteRecorded, startJobs } from "./jobs.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -118,5 +119,119 @@ describe("extraction of idle conversations", () => {
         noteRecorded({ idle, backfilled }, "live-one", true, 9);
         expect(backfilled.size).toBe(0);
         expect(idle.get("live-one")).toBe(5);
+    });
+});
+
+const swept = (host: HostSweep["host"], events: number): HostSweep => ({
+    host,
+    sessions: 1,
+    events,
+    skipped: 0,
+    waiting: 0,
+    private: 0,
+    halted: 0,
+    failed: 0,
+    error: null,
+});
+
+describe("the sweep", () => {
+    const start = (
+        sweep: () => Promise<HostSweep[]>,
+        said: { info: string[]; warn: string[] },
+        everyMs = 10_000,
+    ) =>
+        startJobs({
+            config: DEFAULT_CONFIG,
+            engine: fakeEngine(),
+            store: { root: "/unused", lock: (work) => work(), recorder: null },
+            idle: new Map(),
+            backfilled: new Set(),
+            touched: new Set(),
+            loadCatalogue: null,
+            info: (message) => said.info.push(message),
+            warn: (message) => said.warn.push(message),
+            tickMs: 1000,
+            sweep: { run: sweep, everyMs },
+        });
+
+    it("runs at start and on its interval, and logs a line each time", async () => {
+        const said = { info: [] as string[], warn: [] as string[] };
+        let count = 0;
+        const jobs = start(async () => [swept("codex", ++count)], said, 10);
+        try {
+            for (let tries = 0; said.info.length < 3 && tries < 200; tries++)
+                await sleep(5);
+        } finally {
+            await jobs.stop();
+        }
+        expect(said.info.slice(0, 3)).toEqual([
+            "recording: swept codex: 1 events in 1 sessions",
+            "recording: swept codex: 2 events in 1 sessions",
+            "recording: swept codex: 3 events in 1 sessions",
+        ]);
+        expect(said.warn).toEqual([]);
+    });
+
+    it("never runs two at once", async () => {
+        const said = { info: [] as string[], warn: [] as string[] };
+        let running = 0;
+        let most = 0;
+        let count = 0;
+        const jobs = start(
+            async () => {
+                running += 1;
+                most = Math.max(most, running);
+                await sleep(30);
+                running -= 1;
+                return [swept("codex", ++count)];
+            },
+            said,
+            5,
+        );
+        try {
+            for (let tries = 0; count < 3 && tries < 200; tries++)
+                await sleep(5);
+        } finally {
+            await jobs.stop();
+        }
+        expect(count).toBeGreaterThanOrEqual(3);
+        expect(most).toBe(1);
+    });
+
+    it("says a sweep that fails, and sweeps again", async () => {
+        const said = { info: [] as string[], warn: [] as string[] };
+        let count = 0;
+        const jobs = start(
+            async () => {
+                count += 1;
+                if (count === 1) throw new Error("injected");
+                return [swept("hermes", 0)];
+            },
+            said,
+            10,
+        );
+        try {
+            for (let tries = 0; said.info.length < 1 && tries < 200; tries++)
+                await sleep(5);
+        } finally {
+            await jobs.stop();
+        }
+        expect(said.warn).toEqual(["recording: sweep failed: injected"]);
+        expect(said.info[0]).toBe(
+            "recording: swept hermes: 0 events in 1 sessions",
+        );
+    });
+
+    it("waits for a sweep under way when stopped", async () => {
+        const said = { info: [] as string[], warn: [] as string[] };
+        let finished = false;
+        const jobs = start(async () => {
+            await sleep(40);
+            finished = true;
+            return [];
+        }, said);
+        await sleep(5);
+        await jobs.stop();
+        expect(finished).toBe(true);
     });
 });

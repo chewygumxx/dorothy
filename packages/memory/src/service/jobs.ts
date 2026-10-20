@@ -11,7 +11,8 @@
 // The service's background work: conversations idle long enough are
 // extracted from, and what extraction and consolidation propose is
 // written as a write by the store's rules; recorded projects are
-// consolidated and exported to their repositories now and then.
+// consolidated and exported to their repositories now and then; other
+// harnesses' sessions are swept at the start and on an interval.
 
 import { type Config, knowledgeId } from "@dorothy/core";
 import type { Proposal } from "../engine/engine.js";
@@ -27,6 +28,8 @@ import {
 import { projectsPath, readRegistry } from "../projects/registry.js";
 import { syncProject } from "../projects/sync.js";
 import { guardFor } from "../recall/remember.js";
+import { sweepSummary } from "../recording/report.js";
+import type { HostSweep } from "../recording/sweep.js";
 import { describeError } from "./http.js";
 
 const TICK_MS = 15_000;
@@ -47,6 +50,11 @@ export type JobsDeps = {
     // Reads the catalogue for the reviewer, which only reviews need.
     loadCatalogue: (() => Promise<void>) | null;
     warn: (message: string) => void;
+    // Said once a sweep, with its counts.
+    info?: ((message: string) => void) | undefined;
+    // One sweep over the hosts, run at the start and every `everyMs`,
+    // never two at once; none leaves the hosts alone.
+    sweep?: { run: () => Promise<HostSweep[]>; everyMs: number } | null;
     // How often idle conversations are looked at; for tests.
     tickMs?: number | undefined;
 };
@@ -68,7 +76,7 @@ export function noteRecorded(
     }
 }
 
-export function startJobs(deps: JobsDeps): { stop(): void } {
+export function startJobs(deps: JobsDeps): { stop(): Promise<void> } {
     const { config, engine, store, idle, backfilled, touched, warn } = deps;
     const { root, lock, recorder } = store;
     // An engine's proposal, validated as a write: one naming no project,
@@ -197,11 +205,38 @@ export function startJobs(deps: JobsDeps): { stop(): void } {
         }
     }, EXPORT_MS);
 
+    // Sweeps: the next waits for the one under way, which stop() awaits.
+    let sweeping: Promise<void> | null = null;
+    const sweepOnce = () => {
+        const { sweep } = deps;
+        if (sweep == null || sweeping !== null) {
+            return;
+        }
+        const done = (async () => {
+            try {
+                deps.info?.(sweepSummary(await sweep.run()));
+            } catch (error) {
+                warn(`recording: sweep failed: ${describeError(error)}`);
+            }
+        })();
+        sweeping = done;
+        void done.then(() => {
+            sweeping = null;
+        });
+    };
+    const sweepTimer =
+        deps.sweep == null ? null : setInterval(sweepOnce, deps.sweep.everyMs);
+    sweepOnce();
+
     return {
-        stop() {
+        async stop() {
             clearInterval(tick);
             clearInterval(exporting);
+            if (sweepTimer !== null) {
+                clearInterval(sweepTimer);
+            }
             extraction.abort();
+            await sweeping;
         },
     };
 }
