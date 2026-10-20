@@ -136,15 +136,15 @@ Tests use synthetic lines and temporary roots; never open a real store.
   null for unchanged or vanished: a vanished entry skips, not its host.
 - `sweep` takes the contract's `record`, Claude's `recordClaude`
   (`bodies/record.ts`, continuing `dorothy --claude`'s conversation) and
-  `conversation`. A session waits for the backfill when its mtime or all
-  its events precede the watermark, yet keeps its diagnostics. A
-  backfill ignores hints and marks its conversations in `onRecorded`;
-  `noteRecorded` (`jobs.ts`) unmarks one a live record reaches.
-  `isPrivate` sessions send only `private: true`.
-- Remember a read (`rememberRead`) only after the archive took it and
-  unread diagnostics are saved. Never a halted or unstable read, one
-  whose type was not kept, nor one holding lines behind an unanswered
-  call (Claude's `held`, others' `pending`) until `ended`: backfilled, or
-  untouched an hour.
-- A halt keeps its rest in `bodies/unread.ts` under its host (Hermes
-  counts rows). A record failure stops that host, not others.
+  `conversation`. A session waits for the backfill when its mtime or all its
+  events precede the watermark, yet keeps its diagnostics. A backfill ignores
+  hints and marks its conversations in `onRecorded`; `noteRecorded`
+  (`jobs.ts`) unmarks one a live record reaches. `isPrivate` sessions send
+  only `private: true`; one with no identity cannot be judged: a halt keeps
+  only its key and line or row, and no new type.
+- Remember a read (`rememberRead`) only after the archive took it and unread
+  diagnostics are saved. Never a halted or unstable read, one whose type was not
+  kept, nor one holding lines behind an unanswered call (Claude's `held`,
+  others' `pending`) until `ended`: backfilled, or untouched an hour.
+- A halt keeps its rest in `bodies/unread.ts` under its host (Hermes counts
+  rows). A record failure stops that host, not others.

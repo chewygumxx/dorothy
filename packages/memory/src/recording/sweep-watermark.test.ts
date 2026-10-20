@@ -16,7 +16,7 @@ import { assistantLine, use, userLine } from "../bodies/fixtures.js";
 import { copyPath, readRecord } from "../bodies/unread.js";
 import { fakeEngine } from "../contract/testing.js";
 import { noteRecorded, startJobs } from "../service/jobs.js";
-import { call, context, line, message, meta, SESSION } from "./fixtures.js";
+import { at, call, context, line, message, meta, SESSION } from "./fixtures.js";
 import { hermesCall, hermesMessage, hermesSession } from "./hermes-fixtures.js";
 import { sweepPath } from "./state.js";
 import type { SweepConversation } from "./sweep.js";
@@ -425,6 +425,185 @@ describe("a private session that also waits", () => {
         expect(claude).toMatchObject({ private: 1, halted: 0, sessions: 0 });
         await nothingKept();
         expect(await r.conversations()).toEqual([]);
+    });
+});
+
+describe("a session whose identity is unresolved", () => {
+    // Its privacy cannot be decided, so none of its content is kept: a
+    // halt is kept as a pointer alone, and no new type's example.
+    const CANARY = "SYNTHETIC_UNNAMED_CANARY";
+    const asked: string[] = [];
+    const isPrivate = ({ session }: { session: string }) => {
+        asked.push(session);
+        return true;
+    };
+    beforeEach(() => {
+        asked.length = 0;
+    });
+    const files = async (dir: string): Promise<string[]> => {
+        const found: string[] = [];
+        for (const entry of await readdir(dir, { withFileTypes: true })) {
+            const path = join(dir, entry.name);
+            if (entry.isDirectory()) found.push(...(await files(path)));
+            else found.push(path);
+        }
+        return found;
+    };
+    const noCanary = async () => {
+        for (const path of await files(join(r.home, "state")))
+            expect(await readFile(path, "utf8")).not.toContain(CANARY);
+    };
+    const noTypes = async () =>
+        expect(
+            await readdir(join(r.home, "state/dorothy/unread")),
+        ).not.toContain("types");
+
+    it("keeps only a pointer to a Codex halt in its metadata", async () => {
+        const path = await r.file(
+            rollout("rollout-unnamed.jsonl"),
+            text(
+                line("session_meta", {
+                    id: null,
+                    cwd: "/fixture/project",
+                    timestamp: at(0),
+                }),
+                context(),
+                message("user", CANARY, 1),
+                line("future_type", { note: CANARY }, 2),
+            ),
+            0,
+        );
+        const [codex] = await r.run({ hosts: ["codex"], isPrivate });
+        expect(asked).toEqual([]);
+        expect(codex).toMatchObject({ private: 0, halted: 1, sessions: 0 });
+        await noCanary();
+        await noTypes();
+        expect(
+            await readRecord(r.env, "rollout-unnamed", "codex"),
+        ).toMatchObject({
+            host: "codex",
+            session: "rollout-unnamed",
+            conversation: null,
+            transcript: path,
+            line: 1,
+            type: null,
+            uuid: null,
+        });
+        expect(
+            await readFile(copyPath(r.env, "rollout-unnamed", "codex"), "utf8"),
+        ).toBe(
+            `${JSON.stringify({ key: JSON.stringify(["codex", path]), line: 1 })}\n`,
+        );
+        expect(r.requests).toEqual([]);
+    });
+
+    it("keeps only a pointer to a waiting Codex halt", async () => {
+        const path = await r.file(
+            rollout("rollout-unnamed.jsonl"),
+            text(
+                context(),
+                message("user", "Old.", 1),
+                line(
+                    "response_item",
+                    { type: "message", role: "user", content: CANARY },
+                    2,
+                ),
+                line("future_type", { note: CANARY }, 3),
+            ),
+            NOW.getTime() - Date.parse("2026-10-20T09:00:04.000Z"),
+        );
+        const [codex] = await r.run({
+            hosts: ["codex"],
+            now: () => new Date("2026-10-20T09:00:01.500Z"),
+            isPrivate,
+        });
+        expect(asked).toEqual([]);
+        expect(codex).toMatchObject({ waiting: 1, halted: 1, sessions: 0 });
+        await noCanary();
+        await noTypes();
+        expect(
+            await readRecord(r.env, "rollout-unnamed", "codex"),
+        ).toMatchObject({ line: 3, type: null, transcript: path });
+        expect(
+            await readFile(copyPath(r.env, "rollout-unnamed", "codex"), "utf8"),
+        ).toBe(
+            `${JSON.stringify({ key: JSON.stringify(["codex", path]), line: 3 })}\n`,
+        );
+    });
+
+    it("keeps only a pointer to a Hermes halt", async () => {
+        const path = join(r.home, ".hermes/state.db");
+        const key = JSON.stringify(["hermes", path, null]);
+        const [hermes] = await r.run({
+            hosts: ["hermes"],
+            isPrivate,
+            sources: {
+                hermes: {
+                    host: "hermes",
+                    list: async () => [
+                        {
+                            host: "hermes",
+                            key,
+                            path,
+                            fingerprint: { kind: "rows", maxId: 3, count: 3 },
+                            at: NOW.toISOString(),
+                            read: async () => ({
+                                kind: "hermes",
+                                fingerprint: {
+                                    kind: "rows",
+                                    maxId: 3,
+                                    count: 3,
+                                },
+                                stable: true,
+                                read: {
+                                    session: null,
+                                    parent: null,
+                                    source: null,
+                                    cwd: null,
+                                    model: null,
+                                    at: null,
+                                    events: [],
+                                    halt: {
+                                        id: 3,
+                                        type: `role-${CANARY}`,
+                                        reason: "no session id",
+                                    },
+                                    unknown: [
+                                        { id: 2, type: `role-${CANARY}` },
+                                    ],
+                                    pending: null,
+                                },
+                            }),
+                        },
+                    ],
+                },
+            },
+        });
+        expect(asked).toEqual([]);
+        expect(hermes).toMatchObject({ private: 0, halted: 1, sessions: 0 });
+        await noCanary();
+        await noTypes();
+        expect(await readRecord(r.env, "state.db", "hermes")).toMatchObject({
+            host: "hermes",
+            transcript: path,
+            line: 3,
+            type: null,
+        });
+        expect(
+            await readFile(copyPath(r.env, "state.db", "hermes"), "utf8"),
+        ).toBe(`${JSON.stringify({ key, row: 3 })}\n`);
+    });
+
+    it("never arises for Claude Code, named by its transcript", async () => {
+        await r.file(
+            join(r.home, ".claude/projects/-work", `${SESSION}.jsonl`),
+            `${[`{torn ${CANARY}`, JSON.stringify({ note: CANARY })].join("\n")}\n`,
+            0,
+        );
+        const [claude] = await r.run({ hosts: ["claude-code"], isPrivate });
+        expect(asked).toEqual([SESSION]);
+        expect(claude).toMatchObject({ private: 1, halted: 0 });
+        await noCanary();
     });
 });
 

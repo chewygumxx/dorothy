@@ -190,6 +190,31 @@ function view(read: SourceRead, ended: boolean, fallback: string | null): View {
     };
 }
 
+// A session whose identity is unresolved has no privacy to decide, so
+// none of its content is kept: a halt is told by where it is alone (its
+// source's key and line or row), and a new type is passed over unkept.
+function pointerOnly(found: View, session: SourceSession): View {
+    const halt = found.halt;
+    return {
+        ...found,
+        unknown: [],
+        halt:
+            halt === null
+                ? null
+                : {
+                      line: halt.line,
+                      type: null,
+                      reason: halt.reason,
+                      rest: [
+                          JSON.stringify({
+                              key: session.key,
+                              [unit(session.host)]: halt.line,
+                          }),
+                      ],
+                  },
+    };
+}
+
 type Sweeping = {
     deps: SweepDeps;
     state: SweepState;
@@ -335,8 +360,9 @@ async function recordRead(
     const ended = isOver(sweeping, session);
     if (host === "claude-code" && read.kind === "file")
         return recordClaudeRead(sweeping, session, read, ended, mark, result);
-    const found = view(read, ended, session.session ?? null);
-    const id = found.session;
+    const viewed = view(read, ended, session.session ?? null);
+    const id = viewed.session;
+    const found = id === null ? pointerOnly(viewed, session) : viewed;
     const named = id ?? basename(session.path, ".jsonl");
     if (
         id === null &&
@@ -349,7 +375,8 @@ async function recordRead(
         );
         return;
     }
-    // Privacy first: a private session keeps nothing, not even aside.
+    // Privacy first: a private session keeps nothing, not even aside; one
+    // with no identity cannot be judged, and keeps pointers alone.
     const secret =
         id !== null &&
         (deps.isPrivate?.({ host, session: id, cwd: found.cwd }) ?? false);
@@ -421,7 +448,7 @@ async function settle(
         // the session may already have.
         const conversation =
             phrase ??
-            (found.halt === null
+            (found.halt === null || found.session === null
                 ? null
                 : ((await deps.conversation?.(session.host, named)) ?? null));
         kept = await keepAside(
