@@ -392,7 +392,8 @@ The first sweep of a host notes its time. The service records whole, and
 queues for extraction, any session with events after it, so a large live
 backlog is reviewed, each review a model call. Sessions whose events all
 precede it wait, and `--sweep --backfill` records them: whatever the hosts
-hold, marked so that no knowledge is extracted from it. Without the service,
+hold, marked durably so that no knowledge is extracted from it. A live
+append clears the mark. Without the service,
 `--sweep` runs one sweep and prints a host and a count a line:
 
 ```sh

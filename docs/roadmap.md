@@ -95,7 +95,8 @@ yet run: the owner generates and reviews its questions, then runs her
 memory beside the lexical baseline and full context, with models named
 in `eval.toml`. Recording is built too: her service sweeps the sessions
 of Claude Code, Codex and Hermes, and `dorothy --sweep --backfill`
-records what they already hold, with no review apiece.
+records what they already hold, with a durable mark preventing a review
+apiece until a live append.
 
 The harnesses she is provided for and tested against are Claude Code,
 Codex, OpenClaw and Hermes Agent, as the user chose. Claude Code is

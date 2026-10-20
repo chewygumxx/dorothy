@@ -20,8 +20,20 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { Env } from "@dorothy/core";
+import { DEFAULT_CONFIG, type Env, newPhrase } from "@dorothy/core";
+import {
+    assistantLine,
+    SESSION as CLAUDE_SESSION,
+    text as claudeText,
+    userLine,
+} from "../bodies/fixtures.js";
 import { halts, readRecord } from "../bodies/unread.js";
+import { fakeEngine } from "../contract/testing.js";
+import { indexCatalogue } from "../memory/catalogue.js";
+import { Reviewer } from "../memory/reviewer.js";
+import { isStale, MemoryService } from "../memory/service.js";
+import { NOTES, reviews, settle, until } from "../memory/service-testing.js";
+import { indexPath, RecallIndex } from "../recall/store.js";
 import {
     context,
     line,
@@ -35,6 +47,7 @@ import {
     hermesSession,
 } from "../recording/hermes-fixtures.js";
 import { transcriptDir } from "../transcript.js";
+import { startJobs } from "./jobs.js";
 import { runSweep, runSweepDismiss } from "./sweep-command.js";
 
 // Events of 2026-10-20 at nine.
@@ -100,6 +113,127 @@ afterEach(async () => {
 });
 
 describe("dorothy --sweep", () => {
+    for (const host of ["codex", "claude-code"] as const)
+        it(`keeps a ${host} foreground backfill out of catch-up and reviews it after a live turn`, async () => {
+            await settings(
+                `[history]\nenabled = false\n[recording]\nhosts = ["${host}"]\n`,
+            );
+            const initial =
+                host === "codex"
+                    ? speech
+                    : [
+                          userLine("u1", 0, "Synthetic question."),
+                          assistantLine("a1", 1, [
+                              claudeText("Synthetic answer."),
+                          ]),
+                      ];
+            const path =
+                host === "codex"
+                    ? await rollout(initial, STALE)
+                    : join(
+                          home,
+                          ".claude/projects/-work",
+                          `${CLAUDE_SESSION}.jsonl`,
+                      );
+            if (host === "claude-code") {
+                await mkdir(dirname(path), { recursive: true });
+                await writeFile(path, `${initial.join("\n")}\n`);
+                await utimes(path, STALE, STALE);
+            }
+            await runSweep({ ...io(), backfill: true, now: () => AFTER });
+            const index = RecallIndex.open(indexPath(env));
+            const query = reviews(NOTES, NOTES);
+            const catalogue = indexCatalogue(index, transcriptDir(env));
+            const launch = async () => {
+                const { entries } = await catalogue.load();
+                const memory = new MemoryService({
+                    dir: transcriptDir(env),
+                    phrase: newPhrase(),
+                    history: [],
+                    config: DEFAULT_CONFIG.memory,
+                    entries,
+                    flushed: null,
+                    index,
+                    vocabulary: null,
+                    call: query.fn,
+                    persona: "Synthetic.",
+                    now: () => AFTER,
+                });
+                memory.ready();
+                return memory;
+            };
+            try {
+                const { entries } = await catalogue.load();
+                expect(entries).toHaveLength(1);
+                const [entry] = entries;
+                if (!entry) throw new Error("missing backfill");
+                expect(isStale(entry, AFTER.getTime(), true)).toBe(false);
+                const first = await launch();
+                await settle();
+                await first.stop();
+                expect(query.calls).toHaveLength(0);
+                // The shared reviewer is also the hooks' review path.
+                const reviewer = new Reviewer({
+                    dir: transcriptDir(env),
+                    config: DEFAULT_CONFIG.memory,
+                    index,
+                    vocabulary: null,
+                    versions: null,
+                    call: query.fn,
+                    persona: "Synthetic.",
+                    now: () => AFTER,
+                    entries: () => entries,
+                    warn: () => {},
+                    cost: () => {},
+                });
+                await reviewer.review(
+                    entry.phrase,
+                    new AbortController().signal,
+                );
+                expect(query.calls).toHaveLength(0);
+                const engine = fakeEngine();
+                const jobs = startJobs({
+                    config: {
+                        ...DEFAULT_CONFIG,
+                        memory: { ...DEFAULT_CONFIG.memory, idleSeconds: 0 },
+                    },
+                    engine,
+                    store: {
+                        root: join(home, "data/dorothy"),
+                        lock: index.lock,
+                        recorder: null,
+                    },
+                    idle: new Map([[entry.phrase, 0]]),
+                    backfilled: new Set(),
+                    touched: new Set(),
+                    loadCatalogue: null,
+                    warn: () => {},
+                    tickMs: 5,
+                });
+                await settle();
+                await jobs.stop();
+                expect(engine.calls).toEqual([]);
+                const resumed =
+                    host === "codex"
+                        ? message("user", "Synthetic resumed.", 172800)
+                        : userLine("u2", 2, "Synthetic resumed.", {
+                              timestamp: "2026-10-22T00:00:00.000Z",
+                          });
+                await writeFile(path, `${[...initial, resumed].join("\n")}\n`);
+                await utimes(path, FRESH, FRESH);
+                await runSweep({ ...io(), backfill: false, now: () => AFTER });
+                const second = await launch();
+                try {
+                    await until(() => query.calls.length > 0);
+                } finally {
+                    await second.stop();
+                }
+                expect(query.calls).toHaveLength(1);
+            } finally {
+                index.close();
+            }
+        });
+
     it("says what to set when no host is", async () => {
         await settings("[history]\nenabled = false\n");
         expect(await runSweep({ ...io(), backfill: false })).toBe(1);

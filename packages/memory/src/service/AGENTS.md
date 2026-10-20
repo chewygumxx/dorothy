@@ -49,8 +49,9 @@ This guide holds what binds [the sweep](../recording/AGENTS.md) to a store.
   there when its reader joins.
 - `onRecorded` calls `noteRecorded`: a backfilled phrase joins the
   backfilled set, a live one is queued for extraction and unmarked; the
-  project joins `touched`. A foreground sweep binds maps nothing reads: its
-  conversations are reviewed by the next launch's catch-up.
+  project joins `touched`. Recorders also persist a sidecar mark under
+  the lock. Every reviewer and extraction reads it, across processes;
+  only a live append clears it, including after a foreground sweep.
 - A halted session of a harness besides Claude Code is told with
   `dorothy --sweep --reread` and `--sweep --dismiss <host> <session>`;
   Claude Code's keep `--claude-hook --reread` and `--dismiss`.

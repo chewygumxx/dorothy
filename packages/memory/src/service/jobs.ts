@@ -14,6 +14,7 @@
 // consolidated and exported to their repositories now and then; other
 // harnesses' sessions are swept at the start and on an interval.
 
+import { join } from "node:path";
 import { type Config, knowledgeId } from "@dorothy/core";
 import type { Proposal } from "../engine/engine.js";
 import { knowledgePath, type MemoryEngine } from "../engine/engine.js";
@@ -25,6 +26,7 @@ import {
     type Scope,
     writeFact,
 } from "../facts/store.js";
+import { readSidecar } from "../memory/sidecar.js";
 import { projectsPath, readRegistry } from "../projects/registry.js";
 import { syncProject } from "../projects/sync.js";
 import { guardFor } from "../recall/remember.js";
@@ -144,7 +146,16 @@ export function startJobs(deps: JobsDeps): { stop(): Promise<void> } {
                 await deps.loadCatalogue?.();
             }
             for (const phrase of extract) {
+                const read = await readSidecar(
+                    join(root, "transcripts"),
+                    phrase,
+                );
                 idle.delete(phrase);
+                if (
+                    read.kind === "unparseable" ||
+                    (read.kind === "ok" && read.sidecar.backfilled)
+                )
+                    continue;
                 const proposals = await engine.extract(
                     phrase,
                     extraction.signal,

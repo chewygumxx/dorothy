@@ -75,6 +75,7 @@ export function sweepDeps(
                 env,
                 index,
                 recorder: store.recorder,
+                backfill,
                 lock: store.lock,
                 loopback: true,
                 sync: binding.sync,
@@ -97,6 +98,7 @@ export function sweepDeps(
                 versions: binding.versions,
                 log,
                 project,
+                backfill,
                 ...(binding.now === undefined ? {} : { now: binding.now }),
             }),
         conversation: async (host, session) => {

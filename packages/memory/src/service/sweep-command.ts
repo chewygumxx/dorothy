@@ -106,7 +106,8 @@ export async function runSweep({
             sessions: new Map(),
             held: new Map(),
             // Nothing extracts from what a foreground sweep records: the
-            // next launch's catch-up reviews it, as it does any.
+            // next launch's catch-up reviews live ones; durable backfill
+            // marks keep the backlog out of every reviewer.
             idle: new Map(),
             backfilled: new Set(),
             touched: new Set(),

@@ -51,9 +51,9 @@ and prompts as text (`MemoryPrompts`).
   `catalogue.ts`'s `indexCatalogue` loads each conversation's sidecar,
   visits and reads from the index for `openMemory`, `previewStart` and `--list`.
 - `memory/sidecar.ts`: the notes, kept in `<phrase>.meta.json` beside the
-  transcript. `service.ts`'s `MemoryService` builds the memory block each
-  session starts with, frozen for the session, and schedules reviews
-  (`scheduler.ts`; `reviewer.ts`, also the hooks'), never blocking chat.
+  transcript, including a durable backfill mark cleared by live appends.
+  `service.ts`'s `MemoryService` freezes each session's block and schedules
+  reviews (`scheduler.ts`; `reviewer.ts`, also the hooks'), never blocking chat.
   `track.ts`'s `trackMemory` decorates the `ChatSession`, so `App` sees
   only notices. `rank.ts`, `block.ts`, `edit-view.ts` and `list.ts` are
   pure; `commands.ts` has `--list`, `--memory`, `--tags`, `--edit-tags`.
@@ -119,7 +119,7 @@ and prompts as text (`MemoryPrompts`).
   commits each turn once the transcript is flushed.
 - The memory block charges the earlier turns' abstracts first.
 - `recollect` is served only with `--recollect`, for a chat with clusters.
-- At catalogue load, concepts carried only by hidden chats are omitted.
+- Hidden chats carry no catalogue concepts; backfills get no paid review.
 - Nothing deletes a fact: one retired stays indexed, searchable and in
   history. Its origin is set by the code that writes it, never read
   from its text, and only the user raises it.

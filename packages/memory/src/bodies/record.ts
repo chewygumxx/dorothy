@@ -20,7 +20,11 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Env, newPhrase } from "@dorothy/core";
-import type { HistoryHandle, Lock } from "../memory/sidecar.js";
+import {
+    type HistoryHandle,
+    type Lock,
+    setBackfilled,
+} from "../memory/sidecar.js";
 import type { RecallIndex } from "../recall/store.js";
 import { sessionPhrase } from "../recall/sync.js";
 import { cutTornTail, TranscriptWriter, transcriptDir } from "../transcript.js";
@@ -47,6 +51,7 @@ export type RecordDeps = {
     log: HookLog;
     // The project of the launch's directory, for the session event.
     project: string | null;
+    backfill?: boolean;
     now?: () => Date;
 };
 
@@ -317,6 +322,7 @@ async function appendEvents(
 ): Promise<string> {
     const phrase = found ?? newPhrase();
     const path = join(dir, `${phrase}.jsonl`);
+    const marked = await setBackfilled(dir, phrase, deps.backfill ?? false);
     const writer = await TranscriptWriter.open(path, now);
     try {
         if (!joined) {
@@ -348,7 +354,10 @@ async function appendEvents(
     } finally {
         await writer.close();
     }
-    await deps.versions?.recorder([path], `turn: ${phrase} (claude-code)`);
+    await deps.versions?.recorder(
+        marked === null ? [path] : [path, marked],
+        `turn: ${phrase} (claude-code)`,
+    );
     return phrase;
 }
 

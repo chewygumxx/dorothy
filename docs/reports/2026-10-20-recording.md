@@ -300,7 +300,8 @@ by name.
   `mine` made 0 questions, and a retrieval-only run stopped with "no
   accepted questions", exit 1, rather than reporting zero. `mine` reads
   her own `open` calls whose reads her review judged useful, and a
-  backfilled session holds none and is never reviewed, by design.
+  backfilled session holds none. The final fix below makes its no-review
+  mark durable; a later live append clears it.
   Questions over such sessions need `generate` and `review`, which name a
   model. Recall was not measured.
 
