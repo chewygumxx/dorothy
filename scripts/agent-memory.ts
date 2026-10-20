@@ -13,8 +13,14 @@
 // `prepare` runs this on every install, from the checkout's own path, so
 // no one sets it by hand.
 
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+    existsSync,
+    mkdirSync,
+    readFileSync,
+    renameSync,
+    writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 
 type Settings = Record<string, unknown>;
 
@@ -28,13 +34,9 @@ export const withMemoryDirectory = (
     autoMemoryDirectory: join(root, ".agents", "memory"),
 });
 
-// The local settings a file holds, an empty file holding none. Anything
-// but a JSON object names the file and how to recover, as an install that
-// fails on it otherwise says nothing of where.
+// The local settings a file holds. Anything but a JSON object names the
+// file and how to recover; the caller warns and leaves its bytes alone.
 export const parseSettings = (text: string, path: string): Settings => {
-    if (text.trim() === "") {
-        return {};
-    }
     try {
         const parsed: unknown = JSON.parse(text);
         if (
@@ -57,7 +59,7 @@ export const parseSettings = (text: string, path: string): Settings => {
 // (status 128) there is nothing to commit it to.
 const ignoredByGit = (path: string): boolean =>
     Bun.spawnSync(["git", "check-ignore", "-q", "--", path], {
-        cwd: join(path, ".."),
+        cwd: dirname(dirname(path)),
     }).exitCode !== 1;
 
 // Writes the setting into the checkout's settings.local.json: never into
@@ -71,13 +73,21 @@ export const pointMemoryDirectory = (
     if (!isIgnored(path)) {
         throw new Error(`${path} is not gitignored, so it is left alone`);
     }
-    const settings = existsSync(path)
-        ? parseSettings(readFileSync(path, "utf8"), path)
-        : {};
+    let settings: Settings = {};
+    if (existsSync(path)) {
+        const text = readFileSync(path, "utf8");
+        try {
+            settings = parseSettings(text, path);
+        } catch (error) {
+            console.warn(`agent-memory: warning: ${(error as Error).message}`);
+            return;
+        }
+    }
     const next = withMemoryDirectory(settings, root);
     if (next.autoMemoryDirectory === settings.autoMemoryDirectory) {
         return;
     }
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     const temporary = `${path}.${process.pid}.tmp`;
     writeFileSync(temporary, `${JSON.stringify(next, null, 2)}\n`, {
         mode: 0o600,

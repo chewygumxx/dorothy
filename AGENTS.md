@@ -39,8 +39,8 @@ declares, as Bun's isolated linker fails an undeclared or internal import.
 - `bun run check`: everything CI runs, ending with the tests;
   `bun run test` runs the tests alone.
 - `bun run dev`: the CLI from source.
-- `bun run skills`: fetches the remote skills a fresh checkout lacks;
-  `bun install` links the rest.
+- `bun run skills` fetches remote skills; `bun install` links the rest
+  and points Claude's local settings at this checkout's `.agents/memory`.
 - After removing a `@dorothy` dependency, reinstall from clean to see the
   boundary: `rm -rf node_modules packages/*/node_modules && bun install`.
 
