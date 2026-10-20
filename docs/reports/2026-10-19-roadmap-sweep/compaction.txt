@@ -4,7 +4,9 @@
 
 Probe: One live compaction split into multiple topical clusters
 Date: 2026-10-20
-Claude Code: 2.1.300
+Claude Code on PATH: 2.1.300
+Chat Agent SDK: 0.3.302
+Bundled Claude Code used by chat and seed dump: 2.1.302
 Bun: 1.4.2
 Herdr: 0.9.5
 Model: claude-haiku-5-5 (--model haiku; ANTHROPIC_MODEL=haiku for chat)
