@@ -76,13 +76,14 @@ gives back, and the service that speaks it. The spec is
 - A request whose `Host` is not one the service listens on gets 421, so
   a client reaching it by another name keeps its records; the service
   warns once per name. A web page's `Origin` is refused with 403.
-- Knowledge is confirmed when the user or a repository wrote it, or
-  the user verified it (`isConfirmed`, `../facts/file.ts`); the rest
-  sits in the block's own fenced section, below every confirmed piece
-  for the budget, and `search`, `open` and recall carry `UNCONFIRMED`
-  on it.
+- Knowledge is confirmed when the user wrote it or verified it
+  (`isConfirmed`, `../facts/file.ts`); a repository's files, which a
+  model may write, confirm nothing. The rest sits in the block's own
+  fenced section, below every confirmed piece for the budget, and
+  `search`, `open` and recall carry `UNCONFIRMED` on it.
   Only `--verify`, the user's, adds a `verified` entry; a write by
-  anyone else drops it.
+  anyone else drops it. Sync carries it in the exported file, bound to
+  its words by `wordsDigest`, and an import keeps it only for them.
 - Migration leaves a fact in `facts/`, with a warning, when its
   `knowledge/` target exists or the file fails; it overwrites nothing,
   and names what else it finds there.

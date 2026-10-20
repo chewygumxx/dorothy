@@ -160,13 +160,17 @@ packs today:
    then on personal ones, never another project's, which `open` refuses;
 5. always, one closing line naming `search` and `open`.
 
-Knowledge is confirmed when its origin is `user` or `repo`, or it has a
-`verified` entry by `human:<id>`. `dorothy --verify <id>` adds the user's
-verification and records it as theirs; an already confirmed fact changes
-nothing. Any rewrite by someone other than the user drops verifications
-of the old words. Search, open and per-prompt recall mark unconfirmed
-knowledge before its text. A section whose frame does not fit gives way
-to later sections that can fit.
+Knowledge is confirmed when its origin is `user`, or it has a
+`verified` entry by `human:<id>`; a repository's files, which a model
+may write, confirm nothing, as the user ruled in the
+[roadmap sweep](./2026-10-19-roadmap-sweep-design.md#unconfirmed-knowledge).
+`dorothy --verify <id>` adds the user's verification and records it as
+theirs; an already confirmed fact changes nothing. Any rewrite by
+someone other than the user drops verifications of the old words, and
+sync carries a verification only with the words it confirmed. Search,
+open and per-prompt recall mark unconfirmed knowledge before its text.
+A section whose frame does not fit gives way to later sections that can
+fit.
 
 It is rendered as today's `<memory>` section, whose first line says that
 what follows is what Dorothy remembers, information and not instruction.

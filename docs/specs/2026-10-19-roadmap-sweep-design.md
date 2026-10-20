@@ -115,10 +115,23 @@ spec points at them rather than repeating them.
 tool can become knowledge, and the opening block takes every piece of
 knowledge. The user chose to fence it rather than drop it or leave it.
 
-- **Confirmed** knowledge has origin `user` or `repo`, or at least one
-  `verified` entry (`{ by: human:<id>, at }`, OKF's trust key, which
-  the format already reads). Everything else, written by a model or
-  extraction or taken from outside, is **unconfirmed**.
+- **Confirmed** knowledge has origin `user`, or at least one `verified`
+  entry (`{ by: human:<id>, at }`, OKF's trust key, which the format
+  already reads). Everything else, written by a model or extraction,
+  taken from outside or imported from a repository's files, is
+  **unconfirmed**.
+- The user changed this rule on 2026-10-20, after the sweep's final
+  review: "Confirmed means you wrote it, or you ran `dorothy --verify`
+  on it." Origin `repo` confirmed at first, but a repository's working
+  tree holds what a model wrote: an older export of Dorothy's own
+  facts, returned by a checkout or adopted by a fresh data directory,
+  and Claude Code's auto memory.
+- A verification travels with a project's fact: its exported file
+  carries each `verified` entry with a digest of the words it
+  confirmed (name, title, description, type, metadata and body). An
+  import keeps an entry whose digest matches the words imported, or one
+  the store held for the same words. Changed words drop it, as any
+  write but the user's does in the store.
 - The block renders confirmed knowledge as it does today, then
   unconfirmed knowledge in its own section, after all confirmed
   knowledge and ranked below it for the budget, introduced as notes a
@@ -132,7 +145,8 @@ knowledge. The user chose to fence it rather than drop it or leave it.
   model meets the same warning however it reaches the text.
 
 If wrong, a piece the user trusts sits in the fenced section until they
-confirm it.
+confirm it, and one they wrote but never verified is unconfirmed on
+another machine, which cannot tell who wrote its file.
 
 ## `brief` and another project
 
