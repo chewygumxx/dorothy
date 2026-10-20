@@ -225,7 +225,18 @@ export function startJobs(deps: JobsDeps): { stop(): Promise<void> } {
         }
         const done = (async () => {
             try {
-                deps.info?.(sweepSummary(await sweep.run()));
+                const results = await sweep.run();
+                if (
+                    results.some(
+                        (result) =>
+                            result.events > 0 ||
+                            result.sessions > 0 ||
+                            result.halted > 0 ||
+                            result.failed > 0 ||
+                            result.error !== null,
+                    )
+                )
+                    deps.info?.(sweepSummary(results));
             } catch (error) {
                 warn(`recording: sweep failed: ${describeError(error)}`);
             }

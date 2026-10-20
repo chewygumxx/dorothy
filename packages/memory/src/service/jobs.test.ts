@@ -172,6 +172,54 @@ describe("the sweep", () => {
         expect(said.warn).toEqual([]);
     });
 
+    it("keeps unchanged and waiting sweep counts out of the log", async () => {
+        const said = { info: [] as string[], warn: [] as string[] };
+        let count = 0;
+        const jobs = start(
+            async () => {
+                count++;
+                return [
+                    {
+                        ...swept("codex", 0),
+                        sessions: 0,
+                        waiting: 970,
+                        skipped: 20,
+                    },
+                ];
+            },
+            said,
+            5,
+        );
+        try {
+            for (let tries = 0; count < 3 && tries < 100; tries++)
+                await sleep(5);
+        } finally {
+            await jobs.stop();
+        }
+        expect(count).toBeGreaterThanOrEqual(3);
+        expect(said.info).toEqual([]);
+    });
+
+    for (const kind of ["halted", "failed"] as const)
+        it(`logs a sweep with ${kind} sessions but no events`, async () => {
+            const said = { info: [] as string[], warn: [] as string[] };
+            const jobs = start(
+                async () => [{ ...swept("codex", 0), sessions: 0, [kind]: 1 }],
+                said,
+            );
+            try {
+                for (
+                    let tries = 0;
+                    said.info.length === 0 && tries < 100;
+                    tries++
+                )
+                    await sleep(5);
+            } finally {
+                await jobs.stop();
+            }
+            expect(said.info).toHaveLength(1);
+        });
+
     it("never runs two at once", async () => {
         const said = { info: [] as string[], warn: [] as string[] };
         let running = 0;
