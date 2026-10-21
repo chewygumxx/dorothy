@@ -72,17 +72,33 @@ export function stripClaude(env: Env): void {
 // The checkout this program runs from: three up from packages/cli/src.
 export const checkoutRoot = resolve(import.meta.dir, "..", "..", "..");
 
+export type CheckoutSecretsDeps = {
+    root?: string;
+    load?: (path: string, into: Env) => Promise<SecretsCode | null>;
+};
+
+// One policy for checkout selection and code-only failures at every entry.
+export async function loadCheckoutSecrets(
+    env: Env,
+    deps: CheckoutSecretsDeps = {},
+): Promise<SecretsCode | null> {
+    try {
+        return await (deps.load ?? loadSecrets)(
+            join(deps.root ?? checkoutRoot, "secrets.json"),
+            env,
+        );
+    } catch {
+        return "SOPS_FAILED";
+    }
+}
+
 type Agent = { call: StructuredCall; persona: string };
 
-export type HookCliDeps = {
+export type HookCliDeps = CheckoutSecretsDeps & {
     // process.env: claude's environment, which reviews read at each call.
     env?: Env;
-    // The checkout whose secrets.json is loaded.
-    root?: string;
     // This program as a command, for the detached catch-up.
     self?: readonly string[];
-    // Returns the code of a failure to load, if it had one.
-    load?: (path: string, into: Env) => Promise<SecretsCode | null>;
     agent?: () => Promise<Agent>;
     run?: (mode: HookMode, deps: HookDeps) => Promise<number>;
     // Memory's hook entry point, imported once it is needed.
@@ -197,16 +213,7 @@ async function runOnce(
 // Dorothy's secrets, by path from this checkout. Without her credentials a
 // review fails, and says so in the log.
 async function loadDorothyEnv(env: Env, deps: HookCliDeps): Promise<void> {
-    const root = deps.root ?? checkoutRoot;
-    let failure: SecretsCode | null;
-    try {
-        failure = await (deps.load ?? loadSecrets)(
-            join(root, "secrets.json"),
-            env,
-        );
-    } catch {
-        failure = "SOPS_FAILED";
-    }
+    const failure = await loadCheckoutSecrets(env, deps);
     if (failure) {
         (await openLog(env, deps)).warn(
             `Dorothy's secrets.json could not be loaded (${failure})`,

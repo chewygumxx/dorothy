@@ -142,22 +142,17 @@ describe("runHook", () => {
 
     it("keeps the launch's age key path despite another config directory", async () => {
         const { env, seen, deps } = harness();
-        const root = mkdtempSync(join(tmpdir(), "dorothy-hook-key-"));
-        try {
-            const key = join(root, "keys.txt");
-            env.XDG_CONFIG_HOME = join(root, "claude-config");
-            env.SOPS_AGE_KEY_FILE = key;
-            const where: (string | undefined)[] = [];
-            deps.load = async (_path, into) => {
-                where.push(into.SOPS_AGE_KEY_FILE);
-                return null;
-            };
-            await runHook({ kind: "hook" }, deps);
-            expect(where).toEqual([key]);
-            expect(seen.deps?.env?.SOPS_AGE_KEY_FILE).toBe(key);
-        } finally {
-            rmSync(root, { recursive: true, force: true });
-        }
+        const key = "/launch/sops/keys.txt";
+        env.XDG_CONFIG_HOME = "/claude/config";
+        env.SOPS_AGE_KEY_FILE = key;
+        const where: (string | undefined)[] = [];
+        deps.load = async (_path, into) => {
+            where.push(into.SOPS_AGE_KEY_FILE);
+            return null;
+        };
+        await runHook({ kind: "hook" }, deps);
+        expect(where).toEqual([key]);
+        expect(seen.deps?.env?.SOPS_AGE_KEY_FILE).toBe(key);
     });
 
     it("leaves memory the launch and the directories claude gave", async () => {

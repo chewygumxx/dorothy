@@ -36,7 +36,6 @@ import {
     runClaude,
     spawnDetached,
 } from "./claude.js";
-import { loadCredentials } from "./index.js";
 
 let testHome: string;
 beforeEach(() => {
@@ -250,7 +249,7 @@ describe("runClaude", () => {
         }
     });
 
-    it("passes a newly loaded variable to the real Claude child", async () => {
+    it("passes an explicit environment addition to the real Claude child", async () => {
         const dir = mkdtempSync(join(tmpdir(), "dorothy-runtime-env-"));
         try {
             const program = join(dir, "claude-probe");
@@ -261,15 +260,7 @@ describe("runClaude", () => {
             );
             const { deps } = harness();
             deps.env = { HOME: dir, PATH: "/bin" };
-            await loadCredentials({
-                root: dir,
-                env: deps.env,
-                load: async (_path, into) => {
-                    await Bun.sleep(5);
-                    into.DOROTHY_RUNTIME_PROBE = "loaded";
-                    return null;
-                },
-            });
+            deps.env.DOROTHY_RUNTIME_PROBE = "loaded";
             deps.which = () => program;
             // Exercise spawnInherited itself, rather than a fake spawner.
             delete deps.spawn;

@@ -8,17 +8,16 @@
 //
 //
 
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import {
-    type Env,
-    loadSecrets,
-    type SecretsCode,
-    type StructuredCall,
-} from "@dorothy/core";
+import type { Env, StructuredCall } from "@dorothy/core";
 import { ambient } from "./ambient.js";
 import { type Mode, parseArgs, USAGE } from "./args.js";
-import { checkoutRoot } from "./claude-hook.js";
+import {
+    type CheckoutSecretsDeps,
+    loadCheckoutSecrets,
+    stripClaude,
+} from "./claude-hook.js";
 
 // What runs each mode, and the code it exits with; nothing where it set
 // its own. Each loads its packages as it runs, so a mode pays only for
@@ -47,6 +46,10 @@ const selfServe = () => [
     "--serve",
 ];
 
+const writeError = (text: string): void => {
+    process.stderr.write(text);
+};
+
 // Reviews for the service: Claude Code's variables dropped first, as a
 // service --mcp starts inside her Claude Code would inherit its gateway,
 // which dies with the session; then Dorothy's secrets by path from this
@@ -58,24 +61,11 @@ export async function reviewAgent(
     | { review: { call: StructuredCall; persona: string } }
     | { review: null; noReviews: string }
 > {
-    const write =
-        deps.write ??
-        ((text: string) => {
-            process.stderr.write(text);
-        });
+    const write = deps.write ?? writeError;
     try {
-        const { stripClaude } = await import("./claude-hook.js");
         const env = deps.env ?? process.env;
         stripClaude(env);
-        let failure: SecretsCode | null;
-        try {
-            failure = await (deps.load ?? loadSecrets)(
-                join(deps.root ?? checkoutRoot, "secrets.json"),
-                env,
-            );
-        } catch {
-            failure = "SOPS_FAILED";
-        }
+        const failure = await loadCheckoutSecrets(env, deps);
         if (failure !== null) {
             throw new Error(`secrets.json did not load (${failure})`);
         }
@@ -92,10 +82,8 @@ export async function reviewAgent(
     }
 }
 
-export type CredentialDeps = {
-    root?: string;
+export type CredentialDeps = CheckoutSecretsDeps & {
     env?: Env;
-    load?: (path: string, into: Env) => Promise<SecretsCode | null>;
     write?: (text: string) => void;
 };
 
@@ -104,22 +92,11 @@ export type CredentialDeps = {
 export async function loadCredentials(
     deps: CredentialDeps = {},
 ): Promise<void> {
-    let failure: SecretsCode | null;
-    try {
-        failure = await (deps.load ?? loadSecrets)(
-            join(deps.root ?? checkoutRoot, "secrets.json"),
-            deps.env ?? process.env,
-        );
-    } catch {
-        failure = "SOPS_FAILED";
-    }
+    const failure = await loadCheckoutSecrets(deps.env ?? process.env, deps);
     if (failure !== null) {
-        (
-            deps.write ??
-            ((text: string) => {
-                process.stderr.write(text);
-            })
-        )(`dorothy: secrets not loaded (${failure})\n`);
+        (deps.write ?? writeError)(
+            `dorothy: secrets not loaded (${failure})\n`,
+        );
     }
 }
 

@@ -35,9 +35,8 @@ lazy.
 
 ## Files
 
-- `index.ts`: the entry guard, which runs the mode `parseArgs` gives
-  from `RUNNERS`, each runner returning its exit code, or nothing where
-  it set its own (`runOneShot`).
+- `index.ts`: runs the mode `parseArgs` gives from `RUNNERS`, returning
+  its exit code, or nothing where it set its own (`runOneShot`).
 - `ambient.ts`: `ambient`, the process's environment, streams and entry
   script, passed to memory's history commands.
 - `args.ts`: the flags (`parseArgs`, `USAGE`) and the modes they give:
@@ -79,9 +78,9 @@ lazy.
   `DOROTHY_ANTHROPIC_BASE_URL` from the user's `ANTHROPIC_BASE_URL`, and
   `SOPS_AGE_KEY_FILE` from the explicit path or the existing default age
   key under the configuration directory (`sops-key.ts`), without reading
-  it. `runClaude` runs it for `--claude`,
-  forwards `SIGTERM` and `SIGHUP`, ignores `SIGINT` (the terminal sends
-  it to `claude` too), and exits with `claude`'s code. This program runs
+  it. `runClaude` forwards `SIGTERM` and `SIGHUP`, ignores `SIGINT`
+  (the terminal sends it to `claude` too), and exits with `claude`'s code.
+  This program runs
   again as `bun --no-env-file`, so a project's `.env` never reaches a
   hook, a catch-up or the recall server. Before `claude` starts it
   starts a detached catch-up of each launch a killed `dorothy` left
@@ -103,8 +102,8 @@ lazy.
   `ENABLE_TOOL_SEARCH`, `DOROTHY_LAUNCH`, `CLAUDECODE` and every
   `CLAUDE_CODE_` variable (`reviewEnv`), but for the user's own base
   URL, which the launch passes on as `DOROTHY_ANTHROPIC_BASE_URL` and
-  reviews take as `ANTHROPIC_BASE_URL`; then core's `loadSecrets` is
-  awaited on this checkout's `secrets.json`. `SOPS_AGE_KEY_FILE`, passed
+  reviews take as `ANTHROPIC_BASE_URL`; `loadCheckoutSecrets` awaits
+  core's loader on this checkout's `secrets.json`. `SOPS_AGE_KEY_FILE`, passed
   by the launch, keeps the key discoverable if Claude Code changes its
   config directory. Failure is logged by code alone, and the agent loads
   when a review asks. Memory gets the original launch environment for
@@ -134,7 +133,7 @@ lazy.
 - `--claude` loads no secrets: Claude Code signs in as the user does.
   `--claude-hook` loads this checkout's `secrets.json` for reviews once
   Claude Code's variables are gone, never the working directory's.
-- `@dotenvx/dotenvx` stays declared for Task 4; no CLI reader uses it.
+- `@dotenvx/dotenvx` remains declared until its removal; no CLI reader uses it.
 - The CLI passes `ambient()` to memory's history commands, and
   `commandHistory(...)` of it to memory's commands, the fact and
   project commands among them, and `editInEditor` (from
@@ -148,3 +147,4 @@ model. Loader seams are async and key-path tests use temp files.
 ## See also
 
 - [Workspace modularity spec](../../docs/specs/2026-10-09-workspace-modularity-design.md)
+- [Workspace modularity report](../../docs/reports/2026-10-09-workspace-modularity.md)
