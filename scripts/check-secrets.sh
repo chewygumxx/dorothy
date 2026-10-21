@@ -89,7 +89,7 @@ case "${1:---tracked}" in
         exit "$status"
         ;;
     --staged | --tracked)
-        script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+        script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
         if [ "${1:---tracked}" = --staged ]; then
             git diff --cached --name-only --diff-filter=ACMR -z |
                 xargs -0 -r sh "$script_dir/check-secrets.sh" --check staged
