@@ -31,7 +31,6 @@
         "@chewygumxx/remark-preset": "^1.0.3",
         "@chewygumxx/yamllint-config": "^1.0.0",
         "@commitlint/cli": "^21.2.2",
-        "@dotenvx/dotenvx": "^2.38.0",
         "@types/bun": "^1.4.2",
         "commitizen": "^4.3.2",
         "husky": "^9.1.7",
@@ -43,7 +42,7 @@
         "sync-header-metadata": "2.4.2"
     },
     "scripts": {
-        "check": "bun run typecheck && bun run format:check && bun run lint && bun run lint:md && bun run lint:yaml && bun run lint:env && bun run lint:emdash && bun run lint:header && bun run test",
+        "check": "bun run typecheck && bun run format:check && bun run lint && bun run lint:md && bun run lint:yaml && bun run lint:secrets && bun run lint:emdash && bun run lint:header && bun run test",
         "commit": "cz",
         "dev": "bun packages/cli/src/index.ts",
         "eval": "bun packages/eval/src/main.ts",
@@ -53,7 +52,7 @@
         "format:yaml": "git ls-files -z '*.yaml' '*.yml' | xargs -0 -r prettier --write --log-level warn",
         "lint": "git ls-files -z -co --exclude-standard | xargs -0 -r biome lint --files-ignore-unknown=true --no-errors-on-unmatched",
         "lint:emdash": "git grep -nIP --untracked '\\x{2014}'; test $? -eq 1",
-        "lint:env": "git ls-files -z -- ':(glob)**/.env*' ':(glob)**/*.env' | xargs -0 -r -n1 sh -c 'dotenvx protect --git-file \"$1\" <\"$1\" >/dev/null' sh",
+        "lint:secrets": "sh scripts/check-secrets.sh --tracked",
         "lint:header": "sync-header-metadata",
         "lint:md": "git ls-files -z '*.md' | xargs -0 remark --frail --quiet --no-stdout && git ls-files -z '*.md' | xargs -0 -r markdownlint-cli2",
         "lint:yaml": "git ls-files -z '*.yaml' '*.yml' | xargs -0 -r prettier --check && git ls-files -z '*.yaml' '*.yml' | YAMLLINT_CONFIG_FILE=node_modules/@chewygumxx/yamllint-config/config.yaml xargs -0 -r yamllint --strict",
