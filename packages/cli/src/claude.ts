@@ -535,6 +535,7 @@ export function userShell(env: Env): { env: Env; cwd?: string } {
     return cwd === undefined ? { env: shell } : { env: shell, cwd };
 }
 
+// Bun otherwise uses its startup environment, losing runtime credentials.
 const spawnInherited = (cmd: string[], env: Env, cwd?: string): Spawned =>
     Bun.spawn(cmd, {
         env,

@@ -19,9 +19,8 @@ tags:
 
 # packages/cli/AGENTS.md
 
-`@dorothy/cli` is the `dorothy` program. It is run, not imported: it
-exports nothing, and depends on every other package but `identity`,
-wiring memory, the agent, the TUI and the gateway together.
+`@dorothy/cli` is the `dorothy` program, with no public entry points.
+It wires every other package but `identity` together.
 
 ## Entry points and imports
 
@@ -104,16 +103,16 @@ lazy.
   `ENABLE_TOOL_SEARCH`, `DOROTHY_LAUNCH`, `CLAUDECODE` and every
   `CLAUDE_CODE_` variable (`reviewEnv`), but for the user's own base
   URL, which the launch passes on as `DOROTHY_ANTHROPIC_BASE_URL` and
-  reviews take as `ANTHROPIC_BASE_URL`; then Dorothy's `.env` is loaded
-  by path from this checkout (`loadDotenv`), with `DOTENVX_CONFIG` set
-  from `DOROTHY_DOTENVX_CONFIG` so that a `claude` with another
-  `XDG_CONFIG_HOME` still finds Armor's session, the console silenced
-  around the load and a failure logged by its code alone, and the agent
-  loaded when a review asks. A hook and a catch-up log whatever fails,
-  through memory's `hookLog`, and always exit 0.
+  reviews take as `ANTHROPIC_BASE_URL`; then core's `loadSecrets` is
+  awaited on this checkout's `secrets.json`. `SOPS_AGE_KEY_FILE`, passed
+  by the launch, keeps the key discoverable if Claude Code changes its
+  config directory. Failure is logged by code alone, and the agent loads
+  when a review asks. Memory gets the original launch environment for
+  catch-up; the agent gets the stripped environment with loaded secrets.
+  Hooks and catch-up log failures through memory's `hookLog` and exit 0.
 - `index.ts` also runs `--serve` (memory's service through
   `@dorothy/memory/service`, with reviews from the agent, Claude Code's
-  variables dropped and Dorothy's `.env` loaded by path from this
+  variables dropped and Dorothy's `secrets.json` loaded by path from this
   checkout; off, and said, if either fails), its token commands,
   `--sweep` (`runSweep`, `runSweepDismiss`) and `--mcp`, memory's stdio
   bridge (`@dorothy/memory/bridge`), which starts `--serve` as
@@ -125,16 +124,17 @@ lazy.
 ## Invariants
 
 - Auth comes from `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` in
-  `.env`; the entry guard calls dotenvx's `config()` to decrypt it with
-  the private key from Dotenvx Armor or a gitignored `.env.keys`.
-- `--claude` loads no `.env`: `claude` signs in as the user's own Claude
-  Code does, and memory is read without credentials. `--claude-hook`
-  loads the checkout's `.env` by path for reviews, once `claude`'s
-  variables are gone, never the working directory's.
-- `@dotenvx/dotenvx` is declared here, by `memory`, whose history commands
-  save the mirror's key with its `set`, and in the root's development
-  dependencies, which the root's `lint:env` script and the pre-commit
-  hook need.
+  `secrets.json`, decrypted by core's async `loadSecrets` through sops.
+  The age key lives outside the checkout; keep a backup of it.
+  `forTheModel`, mirror and recover await `loadCredentials`. A failed
+  load warns on stderr with its code and lets the mode continue.
+- Every spawned process receives an explicit environment built after
+  loading: Bun's implicit environment misses runtime additions.
+  The Agent SDK's per-call environment also reaches its recall server.
+- `--claude` loads no secrets: Claude Code signs in as the user does.
+  `--claude-hook` loads this checkout's `secrets.json` for reviews once
+  Claude Code's variables are gone, never the working directory's.
+- `@dotenvx/dotenvx` stays declared for Task 4; no CLI reader uses it.
 - The CLI passes `ambient()` to memory's history commands, and
   `commandHistory(...)` of it to memory's commands, the fact and
   project commands among them, and `editInEditor` (from
@@ -142,10 +142,9 @@ lazy.
 
 ## Tests
 
-Pass every root and environment in; no test decrypts the real `.env` or
-starts a model.
+Pass every root and environment in; decrypt no real secrets and start no
+model. Loader seams are async and key-path tests use temp files.
 
 ## See also
 
 - [Workspace modularity spec](../../docs/specs/2026-10-09-workspace-modularity-design.md)
-- [Workspace modularity report](../../docs/reports/2026-10-09-workspace-modularity.md)

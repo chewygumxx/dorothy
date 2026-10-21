@@ -10,10 +10,15 @@
 
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { StructuredCall } from "@dorothy/core";
-import { config } from "@dotenvx/dotenvx";
+import {
+    type Env,
+    loadSecrets,
+    type SecretsCode,
+    type StructuredCall,
+} from "@dorothy/core";
 import { ambient } from "./ambient.js";
 import { type Mode, parseArgs, USAGE } from "./args.js";
+import { checkoutRoot } from "./claude-hook.js";
 
 // What runs each mode, and the code it exits with; nothing where it set
 // its own. Each loads its packages as it runs, so a mode pays only for
@@ -44,50 +49,91 @@ const selfServe = () => [
 
 // Reviews for the service: Claude Code's variables dropped first, as a
 // service --mcp starts inside her Claude Code would inherit its gateway,
-// which dies with the session; then Dorothy's .env by path from this
+// which dies with the session; then Dorothy's secrets by path from this
 // checkout, then the agent. Off, and said, when either fails; the
 // service keeps the reason in its log, as its stderr may be ignored.
-async function reviewAgent(): Promise<
+export async function reviewAgent(
+    deps: CredentialDeps = {},
+): Promise<
     | { review: { call: StructuredCall; persona: string } }
     | { review: null; noReviews: string }
 > {
+    const write =
+        deps.write ??
+        ((text: string) => {
+            process.stderr.write(text);
+        });
     try {
-        const { checkoutRoot, loadDotenv, stripClaude } = await import(
-            "./claude-hook.js"
-        );
-        stripClaude(process.env);
-        const failure = loadDotenv(
-            join(checkoutRoot, ".env"),
-            join(checkoutRoot, ".env.keys"),
-            process.env,
-        );
+        const { stripClaude } = await import("./claude-hook.js");
+        const env = deps.env ?? process.env;
+        stripClaude(env);
+        let failure: SecretsCode | null;
+        try {
+            failure = await (deps.load ?? loadSecrets)(
+                join(deps.root ?? checkoutRoot, "secrets.json"),
+                env,
+            );
+        } catch {
+            failure = "SOPS_FAILED";
+        }
         if (failure !== null) {
-            throw new Error(`.env did not load (${failure})`);
+            throw new Error(`secrets.json did not load (${failure})`);
         }
         const { prepareCliHome, structuredCall, systemPrompt } = await import(
             "@dorothy/agent"
         );
         prepareCliHome();
-        return {
-            review: { call: structuredCall(), persona: systemPrompt },
-        };
+        return { review: { call: structuredCall(), persona: systemPrompt } };
     } catch (error) {
         const noReviews =
             error instanceof Error ? error.message : String(error);
-        process.stderr.write(`dorothy: reviews are off: ${noReviews}\n`);
+        write(`dorothy: reviews are off: ${noReviews}\n`);
         return { review: null, noReviews };
     }
 }
 
-// Credentials are decrypted only for the modes that need them.
-// quiet: dotenvx would otherwise log to stdout, over the TUI.
-const loadCredentials = () => config({ quiet: true });
+export type CredentialDeps = {
+    root?: string;
+    env?: Env;
+    load?: (path: string, into: Env) => Promise<SecretsCode | null>;
+    write?: (text: string) => void;
+};
+
+// Decrypt only for modes that need credentials. A failed load warns by
+// code and leaves the mode to report its missing credential as before.
+export async function loadCredentials(
+    deps: CredentialDeps = {},
+): Promise<void> {
+    let failure: SecretsCode | null;
+    try {
+        failure = await (deps.load ?? loadSecrets)(
+            join(deps.root ?? checkoutRoot, "secrets.json"),
+            deps.env ?? process.env,
+        );
+    } catch {
+        failure = "SOPS_FAILED";
+    }
+    if (failure !== null) {
+        (
+            deps.write ??
+            ((text: string) => {
+                process.stderr.write(text);
+            })
+        )(`dorothy: secrets not loaded (${failure})\n`);
+    }
+}
 
 // The modes that talk to the model, which alone pay for the Agent SDK.
-async function forTheModel(): Promise<void> {
-    loadCredentials();
-    const { prepareCliHome } = await import("@dorothy/agent");
-    prepareCliHome();
+export async function forTheModel(
+    deps: CredentialDeps & { prepare?: () => Promise<void> } = {},
+): Promise<void> {
+    await loadCredentials(deps);
+    if (deps.prepare !== undefined) {
+        await deps.prepare();
+    } else {
+        const { prepareCliHome } = await import("@dorothy/agent");
+        prepareCliHome();
+    }
 }
 
 const RUNNERS: Runners = {
@@ -164,12 +210,12 @@ const RUNNERS: Runners = {
         return runCheck({ ...ambient(), staged: mode.staged });
     },
     mirror: async (mode) => {
-        loadCredentials();
+        await loadCredentials();
         const { runMirror } = await commands();
         return runMirror(mode.url, ambient());
     },
     recover: async (mode) => {
-        loadCredentials();
+        await loadCredentials();
         const { runRecover } = await commands();
         return runRecover(mode.url, ambient());
     },
@@ -246,7 +292,7 @@ const RUNNERS: Runners = {
         });
     },
     "claude-hook": async (mode) => {
-        // No credentials: the hook loads Dorothy's .env by path, once
+        // No credentials: the hook loads Dorothy's secrets by path, once
         // claude's variables are gone (claude-hook.ts).
         const { runHook } = await import("./claude-hook.js");
         const code = await runHook(mode.hook);

@@ -8,7 +8,7 @@
 //
 //
 
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { EventEmitter } from "node:events";
 import {
     existsSync,
@@ -36,6 +36,15 @@ import {
     runClaude,
     spawnDetached,
 } from "./claude.js";
+import { loadCredentials } from "./index.js";
+
+let testHome: string;
+beforeEach(() => {
+    testHome = mkdtempSync(join(tmpdir(), "dorothy-claude-home-"));
+});
+afterEach(() => {
+    rmSync(testHome, { recursive: true, force: true });
+});
 
 const LAUNCH = "6c84fb90-12c4-11e1-840d-7b25c5ee775a";
 const SESSION = "0f8fad5b-d9cb-469f-a165-70867728950e";
@@ -72,7 +81,7 @@ function harness(exit: number | Promise<number> = 0, memoryOn = false) {
         memory: { ...DEFAULT_CONFIG.memory, enabled, recall },
     });
     const deps: ClaudeDeps = {
-        env: { PATH: "/bin", HOME: "/home/u" },
+        env: { PATH: "/bin", HOME: testHome },
         which: (command, { PATH }) =>
             command === "claude" && PATH === "/bin" ? "/bin/claude" : null,
         startGateway: ({ upstream, section }) => {
@@ -152,7 +161,7 @@ describe("runClaude", () => {
         ]);
         expect(calls.env).toEqual({
             PATH: "/bin",
-            HOME: "/home/u",
+            HOME: testHome,
             ANTHROPIC_BASE_URL: "http://127.0.0.1:4321",
             ENABLE_TOOL_SEARCH: "1",
         });
@@ -241,6 +250,35 @@ describe("runClaude", () => {
         }
     });
 
+    it("passes a newly loaded variable to the real Claude child", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "dorothy-runtime-env-"));
+        try {
+            const program = join(dir, "claude-probe");
+            writeFileSync(
+                program,
+                '#!/bin/sh\n[ "$DOROTHY_RUNTIME_PROBE" = loaded ]\n',
+                { mode: 0o700 },
+            );
+            const { deps } = harness();
+            deps.env = { HOME: dir, PATH: "/bin" };
+            await loadCredentials({
+                root: dir,
+                env: deps.env,
+                load: async (_path, into) => {
+                    await Bun.sleep(5);
+                    into.DOROTHY_RUNTIME_PROBE = "loaded";
+                    return null;
+                },
+            });
+            deps.which = () => program;
+            // Exercise spawnInherited itself, rather than a fake spawner.
+            delete deps.spawn;
+            expect(await runClaude([], deps)).toBe(0);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
     it("exits as claude did, a signal's code included", async () => {
         expect(await runClaude([], harness(3).deps)).toBe(3);
         // A real child killed by TERM, in claude's place.
@@ -262,7 +300,7 @@ describe("runClaude", () => {
         deps.which = (_, { PATH }) =>
             PATH === "/bin:/opt/tool/node_modules/.bin" ? "/bin/claude" : null;
         deps.env = {
-            HOME: "/home/u",
+            HOME: testHome,
             PATH: [
                 "/tmp/bun-node-1",
                 "/repo/docs/node_modules/.bin",
@@ -277,7 +315,7 @@ describe("runClaude", () => {
         expect(await runClaude([], deps)).toBe(0);
         expect(calls.cwd).toBe("/repo/docs");
         expect(calls.env).toEqual({
-            HOME: "/home/u",
+            HOME: testHome,
             PATH: "/bin:/opt/tool/node_modules/.bin",
             ANTHROPIC_BASE_URL: "http://127.0.0.1:4321",
             ENABLE_TOOL_SEARCH: "1",
@@ -286,7 +324,7 @@ describe("runClaude", () => {
 
     it("says so, and exits 127, when claude is not on PATH", async () => {
         const { calls, deps } = harness();
-        deps.env = { PATH: "/nowhere" };
+        deps.env = { PATH: "/nowhere", HOME: testHome };
         expect(await runClaude([], deps)).toBe(127);
         expect(calls.err).toBe("dorothy: claude is not on PATH\n");
         expect(calls.cmd).toEqual([]);
@@ -504,7 +542,7 @@ describe("dorothy --claude records her sessions", () => {
                 started: "2026-10-15T09:00:00.000Z",
                 dir: "/work",
                 session: SESSION,
-                claude: "/home/u/.claude",
+                claude: join(testHome, ".claude"),
             },
         ]);
         expect(calls.env.DOROTHY_LAUNCH).toBe(LAUNCH);
@@ -564,7 +602,7 @@ describe("dorothy --claude records her sessions", () => {
         expect(calls.spawned).toHaveLength(2);
         for (const env of calls.spawnedEnv) {
             expect(env.DOROTHY_ANTHROPIC_BASE_URL).toBe("http://proxy/x");
-            expect(env.HOME).toBe("/home/u");
+            expect(env.HOME).toBe(testHome);
         }
         // With no proxy of the user's, an outer launch's is not passed on.
         const bare = harness(0, true);

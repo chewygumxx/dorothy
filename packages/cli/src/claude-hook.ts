@@ -14,18 +14,22 @@
 // that environment, to find the launch in it. Reviews run in
 // process.env, which the Agent SDK reads at each call: it loses those
 // variables, but for the user's own base URL, which the launch passed on
-// as DOROTHY_ANTHROPIC_BASE_URL, before Dorothy's own .env is loaded by
-// path from this checkout, never the working directory's, looking for
-// Dotenvx Armor's session where the launch found it. A review is
-// then billed to her credentials, as chat's are, and never reaches the
+// as DOROTHY_ANTHROPIC_BASE_URL, before Dorothy's secrets are loaded by
+// path from this checkout, never the working directory's. The launch
+// passes SOPS_AGE_KEY_FILE so another config directory cannot hide it.
+// A review is billed to her credentials, as chat's are, and never reaches the
 // stopped gateway or the live session.
 
 import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { type Env, type StructuredCall, xdgDir } from "@dorothy/core";
+import {
+    type Env,
+    loadSecrets,
+    type SecretsCode,
+    type StructuredCall,
+    xdgDir,
+} from "@dorothy/core";
 import type { HookDeps, HookLog, HookMode } from "@dorothy/memory/claude-hook";
-import { config } from "@dotenvx/dotenvx";
-import { useSession } from "./dotenvx-session.js";
 
 // The base URL the user's own launch had, which a review takes as its
 // ANTHROPIC_BASE_URL: claude's hooks lose theirs, and the one they are
@@ -68,54 +72,17 @@ export function stripClaude(env: Env): void {
 // The checkout this program runs from: three up from packages/cli/src.
 export const checkoutRoot = resolve(import.meta.dir, "..", "..", "..");
 
-// A .env, by its path and its keys file's, into an environment. A
-// variable already set is kept, as the entry guard's config() keeps it.
-// A hook owns no terminal and dotenvx prints its errors, some with a
-// key's first characters, through console even when quiet: so nothing it
-// prints is let out, and its failure comes back as a code alone.
-export function loadDotenv(
-    path: string,
-    keys: string,
-    into: Env,
-): string | null {
-    const { error: logError, log, warn, info } = console;
-    const silent = () => {};
-    console.error = console.log = console.warn = console.info = silent;
-    try {
-        const { error } = config({
-            path,
-            envKeysFile: keys,
-            processEnv: into as Record<string, string>,
-            quiet: true,
-            ignore: ["MISSING_ENV_FILE"],
-        });
-        return error === undefined ? null : failureName(error);
-    } finally {
-        Object.assign(console, { error: logError, log, warn, info });
-    }
-}
-
-// Only a code or a name, never a message, which may hold key characters.
-function failureName(error: unknown): string {
-    const { code, name } = (error ?? {}) as { code?: unknown; name?: unknown };
-    return typeof code === "string"
-        ? code
-        : typeof name === "string"
-          ? name
-          : "an unknown error";
-}
-
 type Agent = { call: StructuredCall; persona: string };
 
 export type HookCliDeps = {
     // process.env: claude's environment, which reviews read at each call.
     env?: Env;
-    // The checkout whose .env is loaded.
+    // The checkout whose secrets.json is loaded.
     root?: string;
     // This program as a command, for the detached catch-up.
     self?: readonly string[];
     // Returns the code of a failure to load, if it had one.
-    load?: (path: string, keys: string, into: Env) => string | null | undefined;
+    load?: (path: string, into: Env) => Promise<SecretsCode | null>;
     agent?: () => Promise<Agent>;
     run?: (mode: HookMode, deps: HookDeps) => Promise<number>;
     // Memory's hook entry point, imported once it is needed.
@@ -212,7 +179,6 @@ async function runOnce(
 ): Promise<number> {
     const given: Env = { ...env };
     stripClaude(env);
-    useSession(env, given);
     await loadDorothyEnv(env, deps);
     const run = deps.run ?? (await (deps.memory ?? loadMemory)()).runClaudeHook;
     return run(mode, {
@@ -228,23 +194,22 @@ async function runOnce(
     });
 }
 
-// Dorothy's .env, by path from this checkout. Without her credentials a
+// Dorothy's secrets, by path from this checkout. Without her credentials a
 // review fails, and says so in the log.
 async function loadDorothyEnv(env: Env, deps: HookCliDeps): Promise<void> {
     const root = deps.root ?? checkoutRoot;
-    let failure: string | null | undefined;
+    let failure: SecretsCode | null;
     try {
-        failure = (deps.load ?? loadDotenv)(
-            join(root, ".env"),
-            join(root, ".env.keys"),
+        failure = await (deps.load ?? loadSecrets)(
+            join(root, "secrets.json"),
             env,
         );
-    } catch (error) {
-        failure = failureName(error);
+    } catch {
+        failure = "SOPS_FAILED";
     }
     if (failure) {
         (await openLog(env, deps)).warn(
-            `Dorothy's .env could not be loaded (${failure})`,
+            `Dorothy's secrets.json could not be loaded (${failure})`,
         );
     }
 }
