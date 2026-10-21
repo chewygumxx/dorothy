@@ -8,13 +8,7 @@
 //
 //
 
-import {
-    type Command,
-    intOf,
-    loadModelSecrets,
-    stringOf,
-    workOf,
-} from "../command.js";
+import { type Command, intOf, stringOf, workOf } from "../command.js";
 import { UsageError } from "../errors.js";
 import { Models } from "../models/client.js";
 import {
@@ -24,6 +18,7 @@ import {
     vendorOf,
 } from "../models/config.js";
 import { readQuestions } from "../questions/file.js";
+import { loadModelSecrets } from "../secrets.js";
 import { readSnapshot, workEnv } from "../snapshot/snapshot.js";
 import { openCorpus } from "../systems/corpus.js";
 import { SYSTEM_NAMES } from "../systems/system.js";
@@ -163,9 +158,9 @@ export const runCommand: Command = {
         }
         let models: Models | null = null;
         if (!info.retrievalOnly) {
-            await loadModelSecrets(io);
             const answer = requireRole(config, "answer");
             const judge = requireRole(config, "judge");
+            await loadModelSecrets(io);
             if (vendorOf(answer.model) === vendorOf(judge.model)) {
                 io.err(
                     `eval: the judge (${judge.model}) is of the answering model's vendor; a model of another family judges more fairly\n`,

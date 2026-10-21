@@ -10,11 +10,12 @@
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type Command, intOf, loadModelSecrets, workOf } from "../command.js";
+import { type Command, intOf, workOf } from "../command.js";
 import { UsageError } from "../errors.js";
 import { writeAtomic } from "../files.js";
 import { Models } from "../models/client.js";
 import { readEvalConfig, requireRole } from "../models/config.js";
+import { loadModelSecrets } from "../secrets.js";
 import { readSnapshot, workEnv } from "../snapshot/snapshot.js";
 import { openCorpus } from "../systems/corpus.js";
 import {

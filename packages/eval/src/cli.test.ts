@@ -284,6 +284,28 @@ describe("evaluation secrets", () => {
         },
     );
 
+    it.each(["answer", "judge"])(
+        "rejects a missing %s role before decrypting",
+        async (missing) => {
+            const work = await workWithModels();
+            const kept = missing === "answer" ? "judge" : "answer";
+            writeFileSync(
+                configPath(work),
+                `[models.${kept}]\nbase-url = "http://127.0.0.1:9/v1"\nmodel = "${kept}/model"\n`,
+            );
+            const { io, err } = fakeIo({ env: { HOME: temp.root } });
+            let loads = 0;
+            io.loadSecrets = async () => {
+                loads++;
+                return "SOPS_FAILED";
+            };
+            expect(await runCli(argsFor("run", work), io)).toBe(1);
+            expect(loads).toBe(0);
+            expect(err.join("")).toContain(`[models.${missing}]`);
+            expect(err.join("").includes("secrets not loaded")).toBe(false);
+        },
+    );
+
     it("reports an unexpected loader exception by code alone", async () => {
         const work = await workWithModels();
         const { io, err } = fakeIo({ env: { HOME: temp.root } });
