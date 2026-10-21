@@ -90,6 +90,14 @@ describe("the watermark", () => {
         expect(codex).toMatchObject({ waiting: 1, sessions: 0 });
     });
 
+    it("counts a backfilled session as no longer waiting", async () => {
+        await r.file(rollout("rollout-old.jsonl"), speech, HOUR);
+        await r.run({ hosts: ["codex"] });
+        await r.run({ hosts: ["codex"], backfill: true });
+        const [codex] = await r.run({ hosts: ["codex"], now: later(3) });
+        expect(codex).toMatchObject({ waiting: 0, skipped: 1, sessions: 0 });
+    });
+
     it("is kept per host", async () => {
         await r.file(rollout("rollout-one.jsonl"), speech, 0);
         await r.run({ hosts: ["codex"] });

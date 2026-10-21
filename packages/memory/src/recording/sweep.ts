@@ -323,7 +323,11 @@ async function sweepHost(sweeping: Sweeping, host: Host, result: HostSweep) {
             const at =
                 session.at === null ? Number.NaN : Date.parse(session.at);
             if (!deps.backfill && deps.only === undefined && at < mark) {
-                result.waiting += 1;
+                // Only a backfill reads a session last touched before the
+                // mark, so one it remembers is recorded, not waiting.
+                if (state.sessions[session.key] === undefined)
+                    result.waiting += 1;
+                else result.skipped += 1;
                 continue;
             }
             let read: SourceRead | null;
