@@ -29,9 +29,8 @@ bun = true
 linker = "isolated"
 
 #
-# dotenvx owns .env (see packages/cli/src/index.ts): its values are
-# encrypted, and Bun would otherwise preload the raw ciphertext into
-# process.env, which dotenvx then declines to overwrite.
+# Core loads sops-encrypted secrets.json. Bun must not preload a .env
+# from the working directory into Dorothy's environment.
 #
 
 [env]

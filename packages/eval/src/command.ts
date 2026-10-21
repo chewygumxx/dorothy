@@ -12,11 +12,13 @@
 // it, and the options' readers.
 
 import { resolve } from "node:path";
-import type { Env } from "@dorothy/core";
+import type { Env, SecretsCode } from "@dorothy/core";
 import { UsageError } from "./errors.js";
 
 export type Io = {
     env: Env;
+    // Required even in tests, so a fake terminal cannot read real secrets.
+    loadSecrets(path: string, into: Env): Promise<SecretsCode | null>;
     out(text: string): void;
     err(text: string): void;
     // A line typed at the terminal; null at the end of its input.

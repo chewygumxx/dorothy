@@ -18,6 +18,7 @@ import {
     vendorOf,
 } from "../models/config.js";
 import { readQuestions } from "../questions/file.js";
+import { loadModelSecrets } from "../secrets.js";
 import { readSnapshot, workEnv } from "../snapshot/snapshot.js";
 import { openCorpus } from "../systems/corpus.js";
 import { SYSTEM_NAMES } from "../systems/system.js";
@@ -159,6 +160,7 @@ export const runCommand: Command = {
         if (!info.retrievalOnly) {
             const answer = requireRole(config, "answer");
             const judge = requireRole(config, "judge");
+            await loadModelSecrets(io);
             if (vendorOf(answer.model) === vendorOf(judge.model)) {
                 io.err(
                     `eval: the judge (${judge.model}) is of the answering model's vendor; a model of another family judges more fairly\n`,

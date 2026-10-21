@@ -24,7 +24,6 @@ import type { HookDeps, HookMode } from "@dorothy/memory/claude-hook";
 import {
     checkoutRoot,
     type HookCliDeps,
-    loadDotenv,
     reviewEnv,
     runHook,
 } from "./claude-hook.js";
@@ -90,10 +89,12 @@ describe("runHook", () => {
             env,
             root: "/d",
             self: ["/bin/bun", "/d/packages/cli/src/index.ts"],
-            // As dotenvx does: a variable already set is kept.
-            load: (path, keys, into) => {
-                seen.loaded.push(path, keys);
+            // A variable already set is kept.
+            load: async (path, into) => {
+                await Bun.sleep(5);
+                seen.loaded.push(path);
                 into.CLAUDE_CODE_OAUTH_TOKEN ??= "dorothy's";
+                return null;
             },
             agent: async () => {
                 seen.agents += 1;
@@ -108,10 +109,10 @@ describe("runHook", () => {
         return { env, seen, deps };
     }
 
-    it("reviews on Dorothy's own .env, loaded by path once claude's variables are gone", async () => {
+    it("awaits Dorothy's secrets by checkout path once claude's variables are gone", async () => {
         const { env, seen, deps } = harness();
         expect(await runHook({ kind: "hook" }, deps)).toBe(0);
-        expect(seen.loaded).toEqual(["/d/.env", "/d/.env.keys"]);
+        expect(seen.loaded).toEqual(["/d/secrets.json"]);
         expect(env).toEqual({ ...OURS, CLAUDE_CODE_OAUTH_TOKEN: "dorothy's" });
         // Loaded when a review asks, and once.
         expect(seen.agents).toBe(0);
@@ -139,26 +140,19 @@ describe("runHook", () => {
         expect(seen.deps?.env?.CLAUDE_CODE_OAUTH_TOKEN).toBe("claude's");
     });
 
-    it("looks for Dotenvx Armor's session where the launch found it, before loading", async () => {
+    it("keeps the launch's age key path despite another config directory", async () => {
         const { env, seen, deps } = harness();
+        const key = "/launch/sops/keys.txt";
         env.XDG_CONFIG_HOME = "/claude/config";
-        env.DOROTHY_DOTENVX_CONFIG = "/launch/dotenvx";
+        env.SOPS_AGE_KEY_FILE = key;
         const where: (string | undefined)[] = [];
-        deps.load = (_path, _keys, into) => {
-            where.push(into.DOTENVX_CONFIG);
+        deps.load = async (_path, into) => {
+            where.push(into.SOPS_AGE_KEY_FILE);
+            return null;
         };
         await runHook({ kind: "hook" }, deps);
-        expect(where).toEqual(["/launch/dotenvx"]);
-        // A catch-up it starts is given the same.
-        expect(seen.deps?.env?.DOROTHY_DOTENVX_CONFIG).toBe("/launch/dotenvx");
-        // With none passed on, dotenvx looks where it would.
-        const bare = harness();
-        const bareWhere: (string | undefined)[] = [];
-        bare.deps.load = (_path, _keys, into) => {
-            bareWhere.push(into.DOTENVX_CONFIG);
-        };
-        await runHook({ kind: "hook" }, bare.deps);
-        expect(bareWhere).toEqual([undefined]);
+        expect(where).toEqual([key]);
+        expect(seen.deps?.env?.SOPS_AGE_KEY_FILE).toBe(key);
     });
 
     it("leaves memory the launch and the directories claude gave", async () => {
@@ -231,7 +225,7 @@ describe("a hook that goes wrong", () => {
                 {
                     env,
                     root: "/d",
-                    load: () => null,
+                    load: async () => null,
                     agent: async () => ({
                         call: async () => ({
                             ok: false,
@@ -259,7 +253,7 @@ describe("a hook that goes wrong", () => {
                 {
                     env,
                     root: "/d",
-                    load: () => null,
+                    load: async () => null,
                     agent: async () => {
                         throw new Error("no sdk");
                     },
@@ -285,7 +279,7 @@ describe("a hook that goes wrong", () => {
                 {
                     env,
                     root: "/d",
-                    load: () => null,
+                    load: async () => null,
                     memory: async () => {
                         throw new Error("no memory");
                     },
@@ -303,7 +297,7 @@ describe("a hook that goes wrong", () => {
             {
                 env: fromClaude(),
                 root: "/d",
-                load: () => null,
+                load: async () => null,
                 run: async () => {
                     throw new Error("boom");
                 },
@@ -312,92 +306,50 @@ describe("a hook that goes wrong", () => {
         await expect(run).rejects.toThrow("boom");
     });
 
-    it("logs a .env that cannot be decrypted by its code, and prints nothing", async () => {
+    it("logs an async secrets failure by code without printing diagnostics", async () => {
         await withCache(async (env, cache) => {
-            const dir = mkdtempSync(join(tmpdir(), "dorothy-dotenv-"));
-            const printed: string[] = [];
-            const spy = (...args: unknown[]) =>
-                void printed.push(args.join(" "));
-            const { error, log, warn, info } = console;
-            const stderrWrite = process.stderr.write;
-            const stdoutWrite = process.stdout.write;
-            try {
-                writeFileSync(
-                    join(dir, ".env"),
-                    'DOTENV_PUBLIC_KEY="03abc"\nSECRET="encrypted:BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"\n',
-                );
-                writeFileSync(
-                    join(dir, ".env.keys"),
-                    'DOTENV_PRIVATE_KEY="0123456789abcdef0123456789abcdef"\n',
-                );
-                Object.assign(console, {
-                    error: spy,
-                    log: spy,
-                    warn: spy,
-                    info: spy,
-                });
-                const capture = ((text: unknown) => {
-                    printed.push(String(text));
-                    return true;
-                }) as typeof process.stderr.write;
-                process.stderr.write = capture;
-                process.stdout.write = capture;
-                const code = await runHook(
-                    { kind: "hook" },
-                    {
-                        env,
-                        root: dir,
-                        agent: async () => ({
-                            call: async () => ({
-                                ok: false,
-                                reason: "x",
-                                costUsd: 0,
-                            }),
-                            persona: "",
-                        }),
-                        run: async () => 0,
+            const code = await runHook(
+                { kind: "hook" },
+                {
+                    env,
+                    root: cache,
+                    load: async () => {
+                        await Bun.sleep(5);
+                        return "SOPS_FAILED";
                     },
-                );
-                expect(code).toBe(0);
-            } finally {
-                Object.assign(console, { error, log, warn, info });
-                process.stderr.write = stderrWrite;
-                process.stdout.write = stdoutWrite;
-                rmSync(dir, { recursive: true, force: true });
-            }
-            expect(printed).toEqual([]);
-            const text = logOf(cache);
-            expect(text).toContain(
-                "Dorothy's .env could not be loaded (DECRYPTION_FAILED)",
+                    run: async () => 0,
+                },
             );
-            expect(text).not.toContain("0123456");
-            expect(console.error).toBe(error);
+            expect(code).toBe(0);
+            expect(logOf(cache)).toMatch(
+                / warn \d+ Dorothy's secrets.json could not be loaded \(SOPS_FAILED\)/,
+            );
+        });
+    });
+
+    it("turns a thrown loader diagnostic into a safe code", async () => {
+        await withCache(async (env, cache) => {
+            await runHook(
+                { kind: "hook" },
+                {
+                    env,
+                    root: cache,
+                    load: async () => {
+                        throw new Error("untrusted diagnostic");
+                    },
+                    run: async () => 0,
+                },
+            );
+            const text = logOf(cache);
+            expect(text.includes("untrusted diagnostic")).toBe(false);
+            expect(text).toContain(
+                "Dorothy's secrets.json could not be loaded (SOPS_FAILED)",
+            );
         });
     });
 });
 
-describe("loadDotenv", () => {
-    it("reads a .env by its path into the environment given, keeping what is set", () => {
-        const dir = mkdtempSync(join(tmpdir(), "dorothy-dotenv-"));
-        try {
-            writeFileSync(
-                join(dir, ".env"),
-                "DOROTHY_PROBE=from-checkout\nDOROTHY_KEPT=from-checkout\n",
-            );
-            const into: Env = { DOROTHY_KEPT: "already" };
-            loadDotenv(join(dir, ".env"), join(dir, ".env.keys"), into);
-            expect(into).toMatchObject({
-                DOROTHY_PROBE: "from-checkout",
-                DOROTHY_KEPT: "already",
-            });
-            expect(process.env.DOROTHY_PROBE).toBeUndefined();
-            // A checkout without a .env loads nothing, and says nothing.
-            loadDotenv(join(dir, "none.env"), join(dir, ".env.keys"), into);
-        } finally {
-            rmSync(dir, { recursive: true, force: true });
-        }
-    });
-
+describe("the hook entry", () => {
     it("knows this checkout", () => {
         expect(
             existsSync(

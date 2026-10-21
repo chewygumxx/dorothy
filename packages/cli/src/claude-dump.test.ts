@@ -8,11 +8,22 @@
 //
 //
 
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { captureServer } from "@dorothy/agent";
 import { type Config, DEFAULT_CONFIG } from "@dorothy/core";
 import { MARKER, startGateway } from "@dorothy/gateway";
 import { type ClaudeDumpDeps, runClaudeDump } from "./claude-dump.js";
+
+let testHome: string;
+beforeEach(() => {
+    testHome = mkdtempSync(join(tmpdir(), "dorothy-dump-home-"));
+});
+afterEach(() => {
+    rmSync(testHome, { recursive: true, force: true });
+});
 
 // A capture whose bodies the fake claude below sends straight in.
 function fakeCapture() {
@@ -54,7 +65,7 @@ function harness(send: unknown[] = [{ system: "S" }]) {
         memory: { ...DEFAULT_CONFIG.memory, enabled: true, recall: true },
     };
     const deps: ClaudeDumpDeps = {
-        env: { PATH: "/bin" },
+        env: { PATH: "/bin", HOME: testHome },
         which: () => "/bin/claude",
         capture: () => capture,
         startGateway: ({ upstream, section }) => {
@@ -247,7 +258,7 @@ describe("runClaudeDump", () => {
         let out = "";
         let err = "";
         const code = await runClaudeDump([], "Who are you?", {
-            env: { PATH: process.env.PATH },
+            env: { PATH: process.env.PATH, HOME: testHome },
             config: async () => ({
                 config: {
                     ...DEFAULT_CONFIG,

@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-18
+mtime: 2026-10-21
 spdx: GPL-3.0-only
 title: packages/core/AGENTS.md
 description: >-
@@ -46,6 +46,12 @@ below. It declares `niceware` alone, and never imports another
   and search and open over facts.
 - `contracts/memory.ts`: the memory contract's types, ids and constants,
   which `memory` gives zod schemas.
+- `secrets.ts`: `loadSecrets` reads sops-encrypted JSON into an injected
+  environment, preserving nonempty values. `saveSecret` sends values on
+  stdin, uses the adjacent `.sops.yaml` when creating a private file,
+  and updates existing files with `sops set`. Failures carry codes alone.
+  Names needing escapes or brackets in sops paths fail before any write.
+  Both take a runner; the default closes unused stdin and discards stderr.
 - `config.ts`: `config.toml` (`readConfig`, `parseConfig`).
 - `xdg.ts`: the XDG directories (`xdgDir`), the state directory among
   them.

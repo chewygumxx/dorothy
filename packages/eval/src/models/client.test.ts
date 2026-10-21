@@ -56,7 +56,7 @@ describe("Models", () => {
         const { url, requests } = serve(() => ({ content: "Hi." }));
         const models = new Models(configOf(url, "EVAL_KEY"), { env: {} });
         await expect(models.complete("answer", ask)).rejects.toThrow(
-            "EVAL_KEY is not set: set it with `bunx dotenvx set EVAL_KEY`, then run under `bunx dotenvx run --`",
+            "EVAL_KEY is not set: add it with `sops edit secrets.json`",
         );
         expect(requests).toHaveLength(0);
     });
@@ -224,7 +224,7 @@ describe("Models", () => {
         const { url } = serve(() => ({ content: "Hi." }));
         const models = new Models(configOf(url, "Eval_Key"), { env: {} });
         await expect(models.complete("answer", ask)).rejects.toThrow(
-            "Eval_Key is not set: set it with `bunx dotenvx set Eval_Key`",
+            "Eval_Key is not set: add it with `sops edit secrets.json`",
         );
     });
 

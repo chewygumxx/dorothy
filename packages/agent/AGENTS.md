@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-20
+mtime: 2026-10-21
 spdx: GPL-3.0-only
 title: packages/agent/AGENTS.md
 description: >-
@@ -70,7 +70,7 @@ never prune it as unused.
   (`$XDG_CACHE_HOME/dorothy/claude`, 0700, made by `prepareCliHome`) as
   both `CLAUDE_CONFIG_DIR` and `cwd`, with
   `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` and `DISABLE_COMPACT=1`. It is a
-  function because dotenvx loads the credentials after import.
+  function because core loads the sops secrets after import.
 - The CLI still prepends its identity line and appends a system message
   after each user turn (working directory, platform, model, date). The
   persona has the model treat those as incidental and not volunteer its

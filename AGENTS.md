@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-20
+mtime: 2026-10-21
 spdx: GPL-3.0-only
 title: AGENTS.md
 description: >-
@@ -49,10 +49,10 @@ declares, as Bun's isolated linker fails an undeclared or internal import.
 - Work on a branch, in the main checkout or in a worktree.
 - Tests and probes never touch real user data (`$XDG_DATA_HOME/dorothy`,
   `$XDG_CACHE_HOME/dorothy`): every root, key and environment is passed in.
-- `.env` is committed encrypted by dotenvx: set values only with
-  `dotenvx set`, and never print a secret or put one in a command line or
-  URL. `bunfig.toml` keeps Bun from loading `.env` itself
-  (`[env] file = false`); the pre-commit hook rejects a plaintext value.
+- Sops encrypts `secrets.json` with age (`~/.config/sops/age/keys.txt`).
+  Back up the key off this machine. Edit only with `sops edit secrets.json`
+  or core's `saveSecret`; never print values or put them in argv or URLs.
+  `bunfig.toml` skips `.env`; pre-commit rejects plaintext values.
 - Confirm with the user before pushing, opening a pull request or changing
   repository settings, which change only through `.repo-metadata.jsonc`,
   never `gh repo edit`.

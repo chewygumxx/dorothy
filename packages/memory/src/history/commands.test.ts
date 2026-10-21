@@ -91,7 +91,8 @@ const options = () => ({
     engine: "git" as const,
     hook: null,
     now: () => NOW,
-    // Tests never reach dotenvx's set, which would write the real .env.
+    checkoutRoot: home,
+    // Inject the saver so tests never write checkout secrets.
     setSecret: async () => {
         throw new Error("tests never save secrets");
     },
@@ -292,17 +293,6 @@ it("checks standalone transcript syntax when history is off", async () => {
     write(TRANSCRIPT, event("changed"));
     put(home, "dorothy/config.toml", "[history]\nenabled = false\n");
     expect(await runCheck(options())).toBe(0);
-});
-
-it("distinguishes an encrypted mirror value from malformed base64", async () => {
-    expect(
-        await runMirror(await bareRepo(), {
-            ...options(),
-            env: { ...env, DOROTHY_MIRROR_KEY: "encrypted:fixture" },
-        }),
-    ).toBe(1);
-    expect(err.text).toContain("still encrypted");
-    expect(err.text).not.toContain("not 32 bytes");
 });
 
 it("refuses an empty mirror argument without treating it as cwd", async () => {
@@ -686,6 +676,105 @@ describe("runMirror", () => {
         );
     });
 
+    it.each(["SOPS_MISSING", "SOPS_FAILED", "SECRETS_INVALID"] as const)(
+        "never creates a key after a %s load failure",
+        async (secretsFailure) => {
+            put(home, ".sops.yaml", "creation_rules: []\n");
+            let saved = 0;
+            expect(
+                await runMirror(await bareRepo(), {
+                    ...options(),
+                    secretsFailure,
+                    setSecret: async () => {
+                        saved++;
+                    },
+                }),
+            ).toBe(1);
+            expect(saved).toBe(0);
+            expect(err.text).toContain(secretsFailure);
+            expect(await repo().remote("mirror")).toBeNull();
+            expect(await repo().sealedNames()).toEqual([]);
+            expect(out.text).not.toContain("Made DOROTHY_MIRROR_KEY");
+        },
+    );
+
+    it("can use an exported key even if the secrets load failed", async () => {
+        expect(
+            await runMirror(await bareRepo(), {
+                ...options(),
+                secretsFailure: "SOPS_FAILED",
+                env: { ...env, DOROTHY_MIRROR_KEY: newKey() },
+            }),
+        ).toBe(0);
+    });
+
+    it("saves a new key in the checkout when invoked from another project", async () => {
+        const checkout = tempRoot();
+        const elsewhere = tempRoot();
+        const keyPath = join(checkout, "age.txt");
+        const isolated = { ...env, SOPS_AGE_KEY_FILE: keyPath };
+        expect(
+            Bun.spawnSync(["age-keygen", "-o", keyPath], {
+                env: isolated,
+                stdout: "ignore",
+                stderr: "ignore",
+            }).exitCode,
+        ).toBe(0);
+        const recipient = Bun.spawnSync(["age-keygen", "-y", keyPath], {
+            env: isolated,
+            stdout: "pipe",
+            stderr: "ignore",
+        });
+        expect(recipient.exitCode).toBe(0);
+        put(
+            checkout,
+            ".sops.yaml",
+            `creation_rules:\n  - age: ${recipient.stdout.toString().trim()}\n`,
+        );
+        const child = Bun.spawnSync(
+            [
+                process.execPath,
+                "--eval",
+                `
+            const { runMirror } = await import(process.env.COMMANDS_MODULE);
+            process.exitCode = await runMirror(process.env.MIRROR_TARGET, {
+                checkoutRoot: process.env.CHECKOUT_ROOT, engine: "git", hook: null,
+            });
+            `,
+            ],
+            {
+                cwd: elsewhere,
+                env: {
+                    ...isolated,
+                    COMMANDS_MODULE: new URL("./commands.ts", import.meta.url)
+                        .href,
+                    CHECKOUT_ROOT: checkout,
+                    MIRROR_TARGET: await bareRepo(),
+                },
+                stdout: "ignore",
+                stderr: "ignore",
+            },
+        );
+        expect(child.exitCode).toBe(0);
+        const file = join(checkout, "secrets.json");
+        expect(existsSync(file)).toBe(true);
+        expect(existsSync(join(elsewhere, "secrets.json"))).toBe(false);
+        const decrypted = Bun.spawnSync(
+            ["sops", "decrypt", "--input-type", "json", file],
+            {
+                env: isolated,
+                stdout: "pipe",
+                stderr: "ignore",
+            },
+        );
+        expect(decrypted.exitCode).toBe(0);
+        expect(
+            parseKey(
+                JSON.parse(decrypted.stdout.toString()).DOROTHY_MIRROR_KEY,
+            ) !== null,
+        ).toBe(true);
+    });
+
     it("sets a mirror, makes a key when there is none, and pushes", async () => {
         write("tags.json", vocabulary(1));
         const bare = await bareRepo();
@@ -693,14 +782,25 @@ describe("runMirror", () => {
         const setSecret = async (name: string, value: string) => {
             saved.push([name, value]);
         };
-        // Where the key is saved: a .env the entry guard reads.
+        // Where the key is saved: secrets.json beside its recipient rule.
         const checkout = tempRoot();
-        put(checkout, ".env", "");
+        put(checkout, ".sops.yaml", "creation_rules: []\n");
         expect(
-            await runMirror(bare, { ...options(), setSecret, cwd: checkout }),
+            await runMirror(bare, {
+                ...options(),
+                setSecret,
+                checkoutRoot: checkout,
+                cwd: tempRoot(),
+            }),
         ).toBe(0);
         expect(saved.map(([name]) => name)).toEqual(["DOROTHY_MIRROR_KEY"]);
-        expect(out.text).toContain("Made DOROTHY_MIRROR_KEY");
+        expect(out.text).toContain(
+            "Made DOROTHY_MIRROR_KEY and saved it in secrets.json",
+        );
+        expect(out.text).toContain(
+            "sops decrypt --extract '[\"DOROTHY_MIRROR_KEY\"]' secrets.json",
+        );
+        expect(out.text.includes(saved[0]?.[1] ?? "")).toBe(false);
         expect(out.text).toContain(`Pushed to ${bare}\n`);
         expect(out.text).not.toContain("stored at");
         out = capture();
@@ -794,13 +894,18 @@ describe("runMirror", () => {
         expect(await repo().remote("mirror")).toBeNull();
     });
 
-    it("makes a key only beside a .env, changing nothing otherwise", async () => {
+    it("requires .sops.yaml even when a legacy .env exists", async () => {
         write("tags.json", vocabulary(1));
         const bare = await bareRepo();
         let saved = 0;
+        const checkout = tempRoot();
+        put(checkout, ".env", "");
+        const elsewhere = tempRoot();
+        put(elsewhere, ".sops.yaml", "creation_rules: []\n");
         const code = await runMirror(bare, {
             ...options(),
-            cwd: tempRoot(),
+            checkoutRoot: checkout,
+            cwd: elsewhere,
             setSecret: async () => {
                 saved += 1;
             },
@@ -808,7 +913,7 @@ describe("runMirror", () => {
         expect(code).toBe(1);
         expect(saved).toBe(0);
         expect(err.text).toMatch(
-            /^dorothy: there is no \.env in \S+ to keep DOROTHY_MIRROR_KEY in; run --mirror from the checkout whose \.env holds Dorothy's credentials\. Nothing was changed\n$/,
+            /^dorothy: there is no \.sops\.yaml in \S+ to encrypt DOROTHY_MIRROR_KEY; the Dorothy checkout must hold \.sops\.yaml\. Nothing was changed\n$/,
         );
         expect(await repo().remote("mirror")).toBeNull();
     });
@@ -824,7 +929,7 @@ describe("runMirror", () => {
         write("tags.json", vocabulary(2));
         const sealed = await repo().sealedNames();
         const checkout = tempRoot();
-        put(checkout, ".env", "");
+        put(checkout, ".sops.yaml", "creation_rules: []\n");
         let saved = 0;
         const setSecret = async () => {
             saved += 1;
@@ -836,12 +941,12 @@ describe("runMirror", () => {
             await runMirror(other, {
                 ...options(),
                 err,
-                cwd: checkout,
+                checkoutRoot: checkout,
                 setSecret,
             }),
         ).toBe(1);
         expect(err.text).toBe(
-            "dorothy: DOROTHY_MIRROR_KEY is not set, and the bundles already sealed need the key they were sealed with; set that one with dotenvx set. Nothing was changed\n",
+            "dorothy: DOROTHY_MIRROR_KEY is not set, and the bundles already sealed need the key they were sealed with; set that one with sops edit secrets.json. Nothing was changed\n",
         );
 
         err = capture();
@@ -850,7 +955,7 @@ describe("runMirror", () => {
                 ...options(),
                 err,
                 env: { ...env, DOROTHY_MIRROR_KEY: newKey() },
-                cwd: checkout,
+                checkoutRoot: checkout,
                 setSecret,
             }),
         ).toBe(1);

@@ -46,6 +46,7 @@ export function fakeIo(
         err,
         io: {
             env: options.env ?? {},
+            loadSecrets: async () => null,
             out: (text) => out.push(text),
             err: (text) => err.push(text),
             ask: async (prompt) => {

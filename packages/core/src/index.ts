@@ -19,6 +19,7 @@ export * from "./contracts/recall.js";
 export * from "./contracts/session.js";
 export * from "./contracts/start.js";
 export * from "./contracts/structured.js";
+export * from "./secrets.js";
 export * from "./session-id.js";
 export * from "./timers.js";
 export * from "./xdg.js";

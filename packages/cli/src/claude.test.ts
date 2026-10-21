@@ -8,10 +8,11 @@
 //
 //
 
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { EventEmitter } from "node:events";
 import {
     existsSync,
+    mkdirSync,
     mkdtempSync,
     readdirSync,
     readFileSync,
@@ -35,6 +36,14 @@ import {
     runClaude,
     spawnDetached,
 } from "./claude.js";
+
+let testHome: string;
+beforeEach(() => {
+    testHome = mkdtempSync(join(tmpdir(), "dorothy-claude-home-"));
+});
+afterEach(() => {
+    rmSync(testHome, { recursive: true, force: true });
+});
 
 const LAUNCH = "6c84fb90-12c4-11e1-840d-7b25c5ee775a";
 const SESSION = "0f8fad5b-d9cb-469f-a165-70867728950e";
@@ -71,7 +80,7 @@ function harness(exit: number | Promise<number> = 0, memoryOn = false) {
         memory: { ...DEFAULT_CONFIG.memory, enabled, recall },
     });
     const deps: ClaudeDeps = {
-        env: { PATH: "/bin", HOME: "/home/u" },
+        env: { PATH: "/bin", HOME: testHome },
         which: (command, { PATH }) =>
             command === "claude" && PATH === "/bin" ? "/bin/claude" : null,
         startGateway: ({ upstream, section }) => {
@@ -151,7 +160,7 @@ describe("runClaude", () => {
         ]);
         expect(calls.env).toEqual({
             PATH: "/bin",
-            HOME: "/home/u",
+            HOME: testHome,
             ANTHROPIC_BASE_URL: "http://127.0.0.1:4321",
             ENABLE_TOOL_SEARCH: "1",
         });
@@ -225,22 +234,37 @@ describe("runClaude", () => {
         expect("DOROTHY_ANTHROPIC_BASE_URL" in empty.calls.env).toBe(false);
     });
 
-    it("passes the directory of Dotenvx Armor's session on to the hook, and no other", async () => {
-        const dir = mkdtempSync(join(tmpdir(), "dorothy-armor-"));
+    it("passes the age key path to claude and its hooks", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "dorothy-sops-launch-"));
         try {
-            writeFileSync(join(dir, ".env"), "SESSION=held\n");
+            const key = join(dir, ".config", "sops", "age", "keys.txt");
+            mkdirSync(join(dir, ".config", "sops", "age"), { recursive: true });
+            writeFileSync(key, "synthetic placeholder");
             const { calls, deps } = harness();
-            deps.env = { ...deps.env, DOTENVX_CONFIG: dir };
+            deps.env = { ...deps.env, HOME: dir };
             await runClaude([], deps);
-            expect(calls.env.DOROTHY_DOTENVX_CONFIG).toBe(dir);
-            // Where none is found, an outer launch's is not passed on.
-            const bare = harness();
-            bare.deps.env = {
-                ...bare.deps.env,
-                DOROTHY_DOTENVX_CONFIG: "/outer/dotenvx",
-            };
-            await runClaude([], bare.deps);
-            expect("DOROTHY_DOTENVX_CONFIG" in bare.calls.env).toBe(false);
+            expect(calls.env.SOPS_AGE_KEY_FILE).toBe(key);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it("passes an explicit environment addition to the real Claude child", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "dorothy-runtime-env-"));
+        try {
+            const program = join(dir, "claude-probe");
+            writeFileSync(
+                program,
+                '#!/bin/sh\n[ "$DOROTHY_RUNTIME_PROBE" = loaded ]\n',
+                { mode: 0o700 },
+            );
+            const { deps } = harness();
+            deps.env = { HOME: dir, PATH: "/bin" };
+            deps.env.DOROTHY_RUNTIME_PROBE = "loaded";
+            deps.which = () => program;
+            // Exercise spawnInherited itself, rather than a fake spawner.
+            delete deps.spawn;
+            expect(await runClaude([], deps)).toBe(0);
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }
@@ -267,7 +291,7 @@ describe("runClaude", () => {
         deps.which = (_, { PATH }) =>
             PATH === "/bin:/opt/tool/node_modules/.bin" ? "/bin/claude" : null;
         deps.env = {
-            HOME: "/home/u",
+            HOME: testHome,
             PATH: [
                 "/tmp/bun-node-1",
                 "/repo/docs/node_modules/.bin",
@@ -282,7 +306,7 @@ describe("runClaude", () => {
         expect(await runClaude([], deps)).toBe(0);
         expect(calls.cwd).toBe("/repo/docs");
         expect(calls.env).toEqual({
-            HOME: "/home/u",
+            HOME: testHome,
             PATH: "/bin:/opt/tool/node_modules/.bin",
             ANTHROPIC_BASE_URL: "http://127.0.0.1:4321",
             ENABLE_TOOL_SEARCH: "1",
@@ -291,7 +315,7 @@ describe("runClaude", () => {
 
     it("says so, and exits 127, when claude is not on PATH", async () => {
         const { calls, deps } = harness();
-        deps.env = { PATH: "/nowhere" };
+        deps.env = { PATH: "/nowhere", HOME: testHome };
         expect(await runClaude([], deps)).toBe(127);
         expect(calls.err).toBe("dorothy: claude is not on PATH\n");
         expect(calls.cmd).toEqual([]);
@@ -509,7 +533,7 @@ describe("dorothy --claude records her sessions", () => {
                 started: "2026-10-15T09:00:00.000Z",
                 dir: "/work",
                 session: SESSION,
-                claude: "/home/u/.claude",
+                claude: join(testHome, ".claude"),
             },
         ]);
         expect(calls.env.DOROTHY_LAUNCH).toBe(LAUNCH);
@@ -569,7 +593,7 @@ describe("dorothy --claude records her sessions", () => {
         expect(calls.spawned).toHaveLength(2);
         for (const env of calls.spawnedEnv) {
             expect(env.DOROTHY_ANTHROPIC_BASE_URL).toBe("http://proxy/x");
-            expect(env.HOME).toBe("/home/u");
+            expect(env.HOME).toBe(testHome);
         }
         // With no proxy of the user's, an outer launch's is not passed on.
         const bare = harness(0, true);
@@ -583,16 +607,19 @@ describe("dorothy --claude records her sessions", () => {
         ).toBe(false);
     });
 
-    it("starts its catch-ups where the hook finds Armor's session too", async () => {
-        const dir = mkdtempSync(join(tmpdir(), "dorothy-armor-"));
+    it("starts stale and current catch-ups with the age key path", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "dorothy-sops-catchup-"));
         try {
-            writeFileSync(join(dir, ".env"), "SESSION=held\n");
-            const { calls, deps } = harness(0, true);
-            deps.env = { ...deps.env, DOTENVX_CONFIG: dir };
+            const key = join(dir, ".config", "sops", "age", "keys.txt");
+            mkdirSync(join(dir, ".config", "sops", "age"), { recursive: true });
+            writeFileSync(key, "synthetic placeholder");
+            const { calls, deps, memory } = harness(0, true);
+            deps.env = { ...deps.env, HOME: dir };
+            memory.stale = [OTHER];
             await runClaude([], deps);
-            expect(calls.spawnedEnv.length).toBeGreaterThan(0);
+            expect(calls.spawnedEnv.length).toBe(2);
             for (const env of calls.spawnedEnv) {
-                expect(env.DOROTHY_DOTENVX_CONFIG).toBe(dir);
+                expect(env.SOPS_AGE_KEY_FILE).toBe(key);
             }
         } finally {
             rmSync(dir, { recursive: true, force: true });

@@ -11,6 +11,7 @@
 // bun run eval: the process around runCli, with the real terminal.
 
 import { createInterface, type Interface } from "node:readline/promises";
+import { loadSecrets } from "@dorothy/core";
 import { runCli } from "./cli.js";
 import { openEditor } from "./editor.js";
 
@@ -38,6 +39,7 @@ const edit = async (path: string) => openEditor(path, process.env);
 
 process.exitCode = await runCli(process.argv.slice(2), {
     env: process.env,
+    loadSecrets,
     out: (text) => process.stdout.write(text),
     err: (text) => process.stderr.write(text),
     ask,

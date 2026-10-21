@@ -483,3 +483,6 @@ In order of completion.
   copies of all their sessions passed: 302 Claude Code sessions, not
   some 970, as the rest are subagents' transcripts, and 7 Codex. A plain
   sweep after a backfill no longer counts its sessions as waiting.
+- 2026-10-21: Dorothy's secrets move from dotenvx, whose key the paid
+  Dotenvx Armor held, to `secrets.json`, encrypted by sops to an age
+  key outside the checkout; dotenvx is removed.

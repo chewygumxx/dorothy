@@ -14,7 +14,6 @@
     },
     "dependencies": {
         "@dorothy/core": "workspace:*",
-        "@dotenvx/dotenvx": "^2.38.0",
         "@modelcontextprotocol/sdk": "^1.32.1",
         "isomorphic-git": "1.43.1",
         "yaml": "2.9.1",

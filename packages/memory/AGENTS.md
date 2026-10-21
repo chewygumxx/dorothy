@@ -96,7 +96,7 @@ and prompts as text (`MemoryPrompts`).
   to the remote `mirror` under `DOROTHY_MIRROR_KEY`; `--recover` rebuilds from
   it. `commands.ts` has `commandHistory`, history/restore/rollback/check and
   mirror/recover commands. Commands that advance main await a push on close;
-  mirror keys use dotenvx's `set`. `lock.ts` is the common `FileLock`.
+  mirror keys use sops in `secrets.json`. `lock.ts` is the common `FileLock`.
 - `recording/`: readers and the sweep, [guide](./src/recording/AGENTS.md);
   `service/` binds it, [guide](./src/service/AGENTS.md).
 - `sqlite-lock.ts`: `exclusiveLock`, a SQLite `BEGIN IMMEDIATE` lock.

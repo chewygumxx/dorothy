@@ -15,6 +15,7 @@ import { UsageError } from "../errors.js";
 import { writeAtomic } from "../files.js";
 import { Models } from "../models/client.js";
 import { readEvalConfig, requireRole } from "../models/config.js";
+import { loadModelSecrets } from "../secrets.js";
 import { readSnapshot, workEnv } from "../snapshot/snapshot.js";
 import { openCorpus } from "../systems/corpus.js";
 import {
@@ -134,6 +135,7 @@ export const generateCommand: Command = {
         await readGenerations(work);
         const config = await readEvalConfig(work);
         const role = requireRole(config, "generate");
+        await loadModelSecrets(io);
         const models = new Models(config, {
             env: io.env,
             maxCalls:

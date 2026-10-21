@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-20
+mtime: 2026-10-21
 spdx: GPL-3.0-only
 title: packages/cli/AGENTS.md
 description: >-
@@ -78,10 +78,11 @@ lazy.
   stands, `-r<id>` counts, and a free-text flag's value is no flag);
   the block leaves out a session resumed by id. It sets
   `DOROTHY_ANTHROPIC_BASE_URL` from the user's `ANTHROPIC_BASE_URL`, and
-  `DOROTHY_DOTENVX_CONFIG` from the directory of Dotenvx Armor's session
-  it finds (`dotenvx-session.ts`). `runClaude` runs it for `--claude`,
-  forwards `SIGTERM` and `SIGHUP`, ignores `SIGINT` (the terminal sends
-  it to `claude` too), and exits with `claude`'s code. This program runs
+  `SOPS_AGE_KEY_FILE` from the explicit path or the existing default age
+  key under the configuration directory (`sops-key.ts`), without reading
+  it. `runClaude` runs it for `--claude`, forwards `SIGTERM` and `SIGHUP`,
+  ignores `SIGINT` (the terminal sends it to `claude` too), and exits with
+  `claude`'s code. This program runs
   again as `bun --no-env-file`, so a project's `.env` never reaches a
   hook, a catch-up or the recall server. Before `claude` starts it
   starts a detached catch-up of each launch a killed `dorothy` left
@@ -103,16 +104,16 @@ lazy.
   `ENABLE_TOOL_SEARCH`, `DOROTHY_LAUNCH`, `CLAUDECODE` and every
   `CLAUDE_CODE_` variable (`reviewEnv`), but for the user's own base
   URL, which the launch passes on as `DOROTHY_ANTHROPIC_BASE_URL` and
-  reviews take as `ANTHROPIC_BASE_URL`; then Dorothy's `.env` is loaded
-  by path from this checkout (`loadDotenv`), with `DOTENVX_CONFIG` set
-  from `DOROTHY_DOTENVX_CONFIG` so that a `claude` with another
-  `XDG_CONFIG_HOME` still finds Armor's session, the console silenced
-  around the load and a failure logged by its code alone, and the agent
-  loaded when a review asks. A hook and a catch-up log whatever fails,
-  through memory's `hookLog`, and always exit 0.
+  reviews take as `ANTHROPIC_BASE_URL`; `loadCheckoutSecrets` awaits
+  core's loader on this checkout's `secrets.json`. `SOPS_AGE_KEY_FILE`, passed
+  by the launch, keeps the key discoverable if Claude Code changes its
+  config directory. Failure is logged by code alone, and the agent loads
+  when a review asks. Memory gets the original launch environment for
+  catch-up; the agent gets the stripped environment with loaded secrets.
+  Hooks and catch-up log failures through memory's `hookLog` and exit 0.
 - `index.ts` also runs `--serve` (memory's service through
   `@dorothy/memory/service`, with reviews from the agent, Claude Code's
-  variables dropped and Dorothy's `.env` loaded by path from this
+  variables dropped and Dorothy's `secrets.json` loaded by path from this
   checkout; off, and said, if either fails), its token commands,
   `--sweep` (`runSweep`, `runSweepDismiss`) and `--mcp`, memory's stdio
   bridge (`@dorothy/memory/bridge`), which starts `--serve` as
@@ -124,16 +125,15 @@ lazy.
 ## Invariants
 
 - Auth comes from `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` in
-  `.env`; the entry guard calls dotenvx's `config()` to decrypt it with
-  the private key from Dotenvx Armor or a gitignored `.env.keys`.
-- `--claude` loads no `.env`: `claude` signs in as the user's own Claude
+  `secrets.json`, decrypted by core's async `loadSecrets` through sops.
+  `forTheModel`, mirror and recover await `loadCredentials`. A failed
+  load warns by code; mirror refuses to create a key after a failed load.
+- Children needing loaded secrets receive explicit environments after
+  loading; the Agent SDK's per-call environment reaches its recall server.
+- `--claude` loads no secrets: `claude` signs in as the user's own Claude
   Code does, and memory is read without credentials. `--claude-hook`
-  loads the checkout's `.env` by path for reviews, once `claude`'s
+  loads the checkout's `secrets.json` by path for reviews, once `claude`'s
   variables are gone, never the working directory's.
-- `@dotenvx/dotenvx` is declared here, by `memory`, whose history commands
-  save the mirror's key with its `set`, and in the root's development
-  dependencies, which the root's `lint:env` script and the pre-commit
-  hook need.
 - The CLI passes `ambient()` to memory's history commands, and
   `commandHistory(...)` of it to memory's commands, the fact and
   project commands among them, and `editInEditor` (from
@@ -141,8 +141,8 @@ lazy.
 
 ## Tests
 
-Pass every root and environment in; no test decrypts the real `.env` or
-starts a model.
+Pass every root and environment in; no test decrypts the real
+`secrets.json` or starts a model.
 
 ## See also
 
