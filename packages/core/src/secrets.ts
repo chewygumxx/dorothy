@@ -23,6 +23,8 @@ export type SecretsRun = (
 
 async function runSops(args: string[], input?: string) {
     const child = Bun.spawn(["sops", ...args], {
+        // Project-scoped mise shims need the checkout's tool configuration.
+        cwd: import.meta.dir,
         stdin: input === undefined ? "ignore" : new Blob([input]),
         stdout: "pipe",
         stderr: "ignore",
@@ -62,8 +64,9 @@ export async function loadSecrets(
     into: Env,
     run: SecretsRun = runSops,
 ): Promise<SecretsCode | null> {
+    const file = resolve(path);
     try {
-        if (!(await exists(path))) return null;
+        if (!(await exists(file))) return null;
     } catch {
         return "SOPS_FAILED";
     }
@@ -76,7 +79,7 @@ export async function loadSecrets(
             "json",
             "--output-type",
             "json",
-            resolve(path),
+            file,
         ]);
     } catch (error) {
         return failureCode(error);

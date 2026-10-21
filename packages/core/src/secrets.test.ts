@@ -26,9 +26,11 @@ async function capture(
     args: string[],
     env: Env,
     input?: string,
+    cwd?: string,
 ): Promise<{ exitCode: number; stdout: string }> {
     const child = Bun.spawn(args, {
         env,
+        cwd,
         stdin: input === undefined ? "ignore" : new Blob([input]),
         stdout: "pipe",
         stderr: "ignore",
@@ -93,7 +95,7 @@ async function seed(value: unknown): Promise<void> {
 }
 
 // Only safe status and key names leave this process, never decrypted values.
-async function loadInChild(childEnv: Env) {
+async function loadInChild(childEnv: Env, cwd?: string, file = path) {
     const child = Bun.spawn(
         [
             process.execPath,
@@ -109,8 +111,9 @@ async function loadInChild(childEnv: Env) {
             env: {
                 ...childEnv,
                 SECRETS_MODULE: new URL("./index.ts", import.meta.url).href,
-                SECRETS_PATH: path,
+                SECRETS_PATH: file,
             },
+            cwd,
             stdin: "ignore",
             stdout: "pipe",
             stderr: "pipe",
@@ -124,6 +127,23 @@ async function loadInChild(childEnv: Env) {
     expect(exitCode).toBe(0);
     expect(stderr.length).toBe(0);
     return JSON.parse(stdout) as { code: string | null; names: string[] };
+}
+
+// Model a project-scoped PATH shim, then delegate to the real sops binary.
+async function projectShim(): Promise<Env> {
+    const bin = join(dir, "bin");
+    await mkdir(bin);
+    await writeFile(
+        join(bin, "sops"),
+        '#!/bin/sh\n[ "$PWD" = "$SOPS_CHECKOUT_CWD" ] || exit 7\nexec "$SOPS_BINARY" "$@"\n',
+        { mode: 0o700 },
+    );
+    return {
+        ...env,
+        PATH: `${bin}:${env.PATH}`,
+        SOPS_BINARY: Bun.which("sops") ?? "",
+        SOPS_CHECKOUT_CWD: import.meta.dir,
+    };
 }
 
 describe("loadSecrets", () => {
@@ -157,6 +177,16 @@ describe("loadSecrets", () => {
     it("loads with the default PATH runner in an isolated process", async () => {
         await seed({ FIRST: "synthetic-first" });
         expect(await loadInChild(env)).toEqual({
+            code: null,
+            names: ["FIRST"],
+        });
+    });
+
+    it("loads a caller-relative file outside the checkout through a project shim", async () => {
+        await seed({ FIRST: "synthetic-first" });
+        expect(
+            await loadInChild(await projectShim(), dir, "secrets.json"),
+        ).toEqual({
             code: null,
             names: ["FIRST"],
         });
@@ -390,6 +420,36 @@ describe("saveSecret", () => {
         );
         expect(child.exitCode).toBe(0);
         expect(JSON.parse(child.stdout)).toEqual({ code: null, matches: true });
+    });
+
+    it("creates and updates a caller-relative file outside the checkout", async () => {
+        const child = await capture(
+            [
+                process.execPath,
+                "--eval",
+                `
+                const { saveSecret, loadSecrets } = await import(process.env.SECRETS_MODULE);
+                await saveSecret("secrets.json", "FIRST", process.env.SYNTHETIC_VALUE);
+                await saveSecret("secrets.json", "FIRST", process.env.SYNTHETIC_REPLACEMENT);
+                const into = {};
+                const code = await loadSecrets("secrets.json", into);
+                process.stdout.write(JSON.stringify({
+                    code, matches: into.FIRST === process.env.SYNTHETIC_REPLACEMENT,
+                }));
+            `,
+            ],
+            {
+                ...(await projectShim()),
+                SECRETS_MODULE: new URL("./index.ts", import.meta.url).href,
+                SYNTHETIC_VALUE: "synthetic-first",
+                SYNTHETIC_REPLACEMENT: "synthetic-replacement",
+            },
+            undefined,
+            dir,
+        );
+        expect(child.exitCode).toBe(0);
+        expect(JSON.parse(child.stdout)).toEqual({ code: null, matches: true });
+        expect((await stat(path)).mode & 0o777).toBe(0o600);
     });
 
     it("refuses to overwrite a file created while encryption was running", async () => {
