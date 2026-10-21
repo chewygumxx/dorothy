@@ -70,7 +70,14 @@ export async function loadSecrets(
 
     let result: Awaited<ReturnType<SecretsRun>>;
     try {
-        result = await run(["decrypt", "--output-type", "json", resolve(path)]);
+        result = await run([
+            "decrypt",
+            "--input-type",
+            "json",
+            "--output-type",
+            "json",
+            resolve(path),
+        ]);
     } catch (error) {
         return failureCode(error);
     }

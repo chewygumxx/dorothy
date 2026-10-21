@@ -140,6 +140,20 @@ describe("loadSecrets", () => {
         expect(into.EMPTY === "").toBe(true);
     });
 
+    it("declares JSON input to sops regardless of the filename extension", async () => {
+        await seed({ FIRST: "synthetic-first" });
+        const binaryName = join(dir, "encrypted.bin");
+        await writeFile(binaryName, await readFile(path));
+        const into: Env = {};
+        expect(
+            await loadSecrets(binaryName, into, (args, input) => {
+                expect(args[args.indexOf("--input-type") + 1]).toBe("json");
+                return run(args, input);
+            }),
+        ).toBeNull();
+        expect(into.FIRST === "synthetic-first").toBe(true);
+    });
+
     it("loads with the default PATH runner in an isolated process", async () => {
         await seed({ FIRST: "synthetic-first" });
         expect(await loadInChild(env)).toEqual({
