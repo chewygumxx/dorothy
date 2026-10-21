@@ -19,8 +19,9 @@ tags:
 
 # packages/cli/AGENTS.md
 
-`@dorothy/cli` is the `dorothy` program, with no public entry points.
-It wires every other package but `identity` together.
+`@dorothy/cli` is the `dorothy` program. It is run, not imported: it
+exports nothing, and depends on every other package but `identity`,
+wiring memory, the agent, the TUI and the gateway together.
 
 ## Entry points and imports
 
@@ -35,8 +36,9 @@ lazy.
 
 ## Files
 
-- `index.ts`: runs the mode `parseArgs` gives from `RUNNERS`, returning
-  its exit code, or nothing where it set its own (`runOneShot`).
+- `index.ts`: the entry guard, which runs the mode `parseArgs` gives
+  from `RUNNERS`, each runner returning its exit code, or nothing where
+  it set its own (`runOneShot`).
 - `ambient.ts`: `ambient`, the process's environment, streams and entry
   script, passed to memory's history commands.
 - `args.ts`: the flags (`parseArgs`, `USAGE`) and the modes they give:
@@ -78,9 +80,9 @@ lazy.
   `DOROTHY_ANTHROPIC_BASE_URL` from the user's `ANTHROPIC_BASE_URL`, and
   `SOPS_AGE_KEY_FILE` from the explicit path or the existing default age
   key under the configuration directory (`sops-key.ts`), without reading
-  it. `runClaude` forwards `SIGTERM` and `SIGHUP`, ignores `SIGINT`
-  (the terminal sends it to `claude` too), and exits with `claude`'s code.
-  This program runs
+  it. `runClaude` runs it for `--claude`, forwards `SIGTERM` and `SIGHUP`,
+  ignores `SIGINT` (the terminal sends it to `claude` too), and exits with
+  `claude`'s code. This program runs
   again as `bun --no-env-file`, so a project's `.env` never reaches a
   hook, a catch-up or the recall server. Before `claude` starts it
   starts a detached catch-up of each launch a killed `dorothy` left
@@ -124,15 +126,14 @@ lazy.
 
 - Auth comes from `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` in
   `secrets.json`, decrypted by core's async `loadSecrets` through sops.
-  Back up `~/.config/sops/age/keys.txt` off this machine.
   `forTheModel`, mirror and recover await `loadCredentials`. A failed
-  load warns on stderr with its code and lets the mode continue.
-- Every spawned process receives an explicit environment built after
-  loading: Bun's implicit environment misses runtime additions.
-  The Agent SDK's per-call environment also reaches its recall server.
-- `--claude` loads no secrets: Claude Code signs in as the user does.
-  `--claude-hook` loads this checkout's `secrets.json` for reviews once
-  Claude Code's variables are gone, never the working directory's.
+  load warns by code; mirror refuses to create a key after a failed load.
+- Children needing loaded secrets receive explicit environments after
+  loading; the Agent SDK's per-call environment reaches its recall server.
+- `--claude` loads no secrets: `claude` signs in as the user's own Claude
+  Code does, and memory is read without credentials. `--claude-hook`
+  loads the checkout's `secrets.json` by path for reviews, once `claude`'s
+  variables are gone, never the working directory's.
 - The CLI passes `ambient()` to memory's history commands, and
   `commandHistory(...)` of it to memory's commands, the fact and
   project commands among them, and `editInEditor` (from
@@ -140,8 +141,8 @@ lazy.
 
 ## Tests
 
-Pass every root and environment in; decrypt no real secrets and start no
-model. Loader seams are async and key-path tests use temp files.
+Pass every root and environment in; no test decrypts the real
+`secrets.json` or starts a model.
 
 ## See also
 

@@ -48,8 +48,9 @@ bun install
 
 `secrets.json` is committed, encrypted with
 [sops](https://github.com/getsops/sops) to the age key in
-`~/.config/sops/age/keys.txt`. Dorothy loads it when a command needs
-credentials, keeping any nonempty value already set in the environment.
+`$XDG_CONFIG_HOME/sops/age/keys.txt` (default `~/.config/sops/age/keys.txt`).
+Dorothy loads it when a command needs credentials, keeping any nonempty
+value already set in the environment.
 Use sops's editor to set either credential as a JSON string:
 
 - `ANTHROPIC_API_KEY`: pay-per-token API credits.
@@ -60,9 +61,9 @@ Use sops's editor to set either credential as a JSON string:
 sops edit secrets.json
 ```
 
-Back up `~/.config/sops/age/keys.txt` somewhere off this machine: without
-it, `secrets.json` cannot be read. Never commit the age key. Sops also
-accepts another key-file path through `SOPS_AGE_KEY_FILE`.
+Back up that age-key file somewhere off this machine: without it,
+`secrets.json` cannot be read. Never commit the age key. Sops also accepts
+another key-file path through `SOPS_AGE_KEY_FILE`.
 
 A new machine needs its own age key. Add its public recipient to
 `.sops.yaml`, then, on a machine that can already decrypt the file, run:
@@ -272,13 +273,14 @@ repository's version is kept, and hers stays in her history.
 
 The history is pushed to a mirror off this machine, encrypted. The
 mirror must exist first: a private repository on a host, or for a local
-one `git init --bare /path/to/memory.git`. Then set it with `--mirror`,
-run from this checkout: a mirror path is taken from where you run the
-command. It must hold `.sops.yaml` when `--mirror` makes
-`DOROTHY_MIRROR_KEY`, saved in `secrets.json` through sops. A key is made
-only when none is set: it never replaces one, or makes one after bundles
-have been sealed. Commit `secrets.json` afterwards; its values are
-encrypted. Keep a copy of the mirror key elsewhere, obtained with:
+one `git init --bare /path/to/memory.git`. Then set it with `--mirror`:
+a mirror path is taken from where you run the command. Dorothy's checkout
+must hold `.sops.yaml` when `--mirror` makes `DOROTHY_MIRROR_KEY`, saved in
+that checkout's `secrets.json` through sops. A key is made only when none
+is set and secrets loaded successfully: it never replaces one, or makes
+one after bundles have been sealed. Commit the checkout's `secrets.json`
+afterwards; its values are encrypted. Keep a copy of the mirror key
+elsewhere, obtained from Dorothy's checkout with:
 
 ```sh
 sops decrypt --extract '["DOROTHY_MIRROR_KEY"]' secrets.json

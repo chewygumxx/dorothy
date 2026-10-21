@@ -63,8 +63,7 @@ options declared and described for `--help`, its failures as
 - `command.ts`: `Io`, `Command` and the options' readers.
 - `secrets.ts`: `loadModelSecrets` awaits core's loader on the checkout's
   `secrets.json` before paid model calls, with code-only warnings. Tests
-  inject `Io.loadSecrets`. Sops uses the age key outside the checkout,
-  `~/.config/sops/age/keys.txt`; back it up off this machine.
+  inject `Io.loadSecrets`.
 - `snapshot/`: `takeSnapshot`, which refuses a work directory in the
   checkout (found by the package's place, not by `.git`) or a sibling
   worktree, follows a

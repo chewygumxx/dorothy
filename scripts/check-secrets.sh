@@ -36,6 +36,7 @@ check_file() {
             ;;
     esac
 
+    # --tracked rejects deleted tracked files; --staged skips staged deletions.
     if [ "$mode" = staged ]; then
         git cat-file -e ":$1" >/dev/null 2>&1 || {
             reject "$1" 'cannot read staged content'
