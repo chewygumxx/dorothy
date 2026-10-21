@@ -12,7 +12,12 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import { type Env, readConfig, saveSecret } from "@dorothy/core";
+import {
+    type Env,
+    readConfig,
+    type SecretsCode,
+    saveSecret,
+} from "@dorothy/core";
 import { unreadReport } from "../bodies/unread.js";
 import { type Lock, type OpenHistory, writeAtomic } from "../memory/sidecar.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
@@ -680,15 +685,19 @@ export async function runMirror(
     url: string | null,
     options: CommandOptions & {
         setSecret?: (name: string, value: string) => Promise<void>;
+        // The checkout whose secrets the CLI loaded, independent of cwd.
+        checkoutRoot?: string;
+        secretsFailure?: SecretsCode | null;
     } = {},
 ): Promise<number> {
     const {
         env = process.env,
         out = process.stdout,
         err = process.stderr,
-        cwd = process.cwd(),
+        checkoutRoot = resolve(import.meta.dir, "../../../.."),
+        secretsFailure = null,
         setSecret = (name, value) =>
-            saveSecret(join(cwd, "secrets.json"), name, value),
+            saveSecret(join(checkoutRoot, "secrets.json"), name, value),
     } = options;
     const target = url === null ? null : mirrorUrl(url, options);
     if (url !== null && target === null) {
@@ -706,7 +715,7 @@ export async function runMirror(
                 const problem = await keyProblem(
                     env.DOROTHY_MIRROR_KEY,
                     repo,
-                    cwd,
+                    checkoutRoot,
                     false,
                 );
                 if (problem !== null) {
@@ -717,7 +726,13 @@ export async function runMirror(
             return await showMirror(repo, out);
         }
         const existing = env.DOROTHY_MIRROR_KEY;
-        const problem = await keyProblem(existing, repo, cwd);
+        if (!existing && secretsFailure !== null) {
+            err.write(
+                `dorothy: secrets not loaded (${secretsFailure}); refusing to make DOROTHY_MIRROR_KEY. Nothing was changed\n`,
+            );
+            return 1;
+        }
+        const problem = await keyProblem(existing, repo, checkoutRoot);
         if (problem !== null) {
             err.write(`dorothy: ${problem}\n`);
             return 1;
@@ -771,16 +786,13 @@ async function showMirror(repo: MemoryRepo, out: Output): Promise<number> {
 // Why the mirror's key can't seal, so that no mirror is set; null when it
 // can, or when one can be made. Bundles sealed under a key are lost with
 // it: one already set is never replaced, even one that does not read. A
-// bundle sealed under another key would stop every recovery there; a key
-// is made only where the entry guard will read it.
+// bundle sealed under another key would stop every recovery there.
 async function keyProblem(
     existing: string | undefined,
     repo: MemoryRepo,
-    cwd: string,
+    checkoutRoot: string,
     makingKey = true,
 ): Promise<string | null> {
-    if (existing?.startsWith("encrypted:"))
-        return "DOROTHY_MIRROR_KEY is still encrypted; load the decrypted environment before setting the mirror. Nothing was changed";
     const key = parseKey(existing);
     if (existing !== undefined && existing !== "" && key === null) {
         return "DOROTHY_MIRROR_KEY is set but is not 32 bytes of base64; it is left as it is, and no mirror is set";
@@ -795,9 +807,9 @@ async function keyProblem(
     if ((await repo.sealedNames()).length > 0) {
         return "DOROTHY_MIRROR_KEY is not set, and the bundles already sealed need the key they were sealed with; set that one with sops edit secrets.json. Nothing was changed";
     }
-    return !makingKey || existsSync(join(cwd, ".sops.yaml"))
+    return !makingKey || existsSync(join(checkoutRoot, ".sops.yaml"))
         ? null
-        : `there is no .sops.yaml in ${cwd} to encrypt DOROTHY_MIRROR_KEY; run --mirror from the checkout that holds .sops.yaml. Nothing was changed`;
+        : `there is no .sops.yaml in ${checkoutRoot} to encrypt DOROTHY_MIRROR_KEY; the Dorothy checkout must hold .sops.yaml. Nothing was changed`;
 }
 
 // A new mirror key, saved through core without putting its value in argv.

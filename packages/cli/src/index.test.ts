@@ -80,7 +80,7 @@ describe("CLI secrets", () => {
 
     it("warns safely if a credential loader unexpectedly throws", async () => {
         const err: string[] = [];
-        await loadCredentials({
+        const failure = await loadCredentials({
             root,
             env: { HOME: root },
             load: async () => {
@@ -90,6 +90,7 @@ describe("CLI secrets", () => {
                 err.push(text);
             },
         });
+        expect(failure).toBe("SOPS_FAILED");
         expect(err).toEqual(["dorothy: secrets not loaded (SOPS_FAILED)\n"]);
     });
 

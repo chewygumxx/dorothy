@@ -10,11 +10,12 @@
 
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { Env, StructuredCall } from "@dorothy/core";
+import type { Env, SecretsCode, StructuredCall } from "@dorothy/core";
 import { ambient } from "./ambient.js";
 import { type Mode, parseArgs, USAGE } from "./args.js";
 import {
     type CheckoutSecretsDeps,
+    checkoutRoot,
     loadCheckoutSecrets,
     stripClaude,
 } from "./claude-hook.js";
@@ -91,13 +92,14 @@ export type CredentialDeps = CheckoutSecretsDeps & {
 // code and leaves the mode to report its missing credential as before.
 export async function loadCredentials(
     deps: CredentialDeps = {},
-): Promise<void> {
+): Promise<SecretsCode | null> {
     const failure = await loadCheckoutSecrets(deps.env ?? process.env, deps);
     if (failure !== null) {
         (deps.write ?? writeError)(
             `dorothy: secrets not loaded (${failure})\n`,
         );
     }
+    return failure;
 }
 
 // The modes that talk to the model, which alone pay for the Agent SDK.
@@ -187,9 +189,13 @@ const RUNNERS: Runners = {
         return runCheck({ ...ambient(), staged: mode.staged });
     },
     mirror: async (mode) => {
-        await loadCredentials();
+        const secretsFailure = await loadCredentials();
         const { runMirror } = await commands();
-        return runMirror(mode.url, ambient());
+        return runMirror(mode.url, {
+            ...ambient(),
+            checkoutRoot,
+            secretsFailure,
+        });
     },
     recover: async (mode) => {
         await loadCredentials();
