@@ -9,10 +9,17 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+    mkdir,
+    mkdtemp,
+    readFile,
+    rm,
+    stat,
+    writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadSecrets, type SecretsRun } from "./index.js";
+import { loadSecrets, type SecretsRun, saveSecret } from "./index.js";
 import type { Env } from "./xdg.js";
 
 async function capture(
@@ -262,5 +269,175 @@ describe("loadSecrets", () => {
                 "synthetic-string",
         ).toBe(true);
         expect(Object.getPrototypeOf(into)).toBe(Object.prototype);
+    });
+});
+
+describe("saveSecret", () => {
+    it.each(
+        ['quote"name', "slash\\name", "nested[branch]", "line\nname"].map(
+            (name) => ({ name }),
+        ),
+    )(
+        "rejects ambiguous sops key names before any write (case %#)",
+        async ({ name }) => {
+            await expect(
+                saveSecret(path, name, "synthetic-first", run),
+            ).rejects.toThrow(/^SECRETS_INVALID$/);
+            expect(await Bun.file(path).exists()).toBe(false);
+            await seed({ KEEP: "synthetic-kept" });
+            const before = await readFile(path, "utf8");
+            await expect(
+                saveSecret(path, name, "synthetic-first", run),
+            ).rejects.toThrow(/^SECRETS_INVALID$/);
+            expect((await readFile(path, "utf8")) === before).toBe(true);
+        },
+    );
+
+    it("creates encrypted JSON privately using the adjacent recipient rule", async () => {
+        await saveSecret(path, "FIRST", "synthetic-first", run);
+        expect((await stat(path)).mode & 0o777).toBe(0o600);
+        const encrypted = await readFile(path, "utf8");
+        expect(encrypted.includes("synthetic-first")).toBe(false);
+        expect(JSON.parse(encrypted).FIRST.startsWith("ENC[")).toBe(true);
+        const into: Env = {};
+        expect(await loadSecrets(path, into, run)).toBeNull();
+        expect(into.FIRST === "synthetic-first").toBe(true);
+    });
+
+    it("changes one value and adds another while keeping the rest", async () => {
+        await seed({ FIRST: "synthetic-first", SECOND: "synthetic-second" });
+        let inputs = 0;
+        const guardedRun: SecretsRun = (args, input) => {
+            // The payload travels only through stdin, never the process list.
+            expect(args.some((arg) => arg.includes("synthetic-"))).toBe(false);
+            if (input !== undefined) inputs++;
+            return run(args, input);
+        };
+        await saveSecret(path, "FIRST", "synthetic-replacement", guardedRun);
+        await saveSecret(path, "THIRD", "synthetic-third", guardedRun);
+        expect(inputs).toBe(2);
+        const into: Env = {};
+        expect(await loadSecrets(path, into, run)).toBeNull();
+        expect(into.FIRST === "synthetic-replacement").toBe(true);
+        expect(into.SECOND === "synthetic-second").toBe(true);
+        expect(into.THIRD === "synthetic-third").toBe(true);
+        expect((await stat(path)).mode & 0o777).toBe(0o600);
+    });
+
+    it("JSON-encodes a multiline value on stdin", async () => {
+        await seed({ KEEP: "synthetic-kept" });
+        const name = "MULTILINE";
+        const value = 'synthetic-"value"\nwith\\slashes';
+        await saveSecret(path, name, value, run);
+        const into: Env = {};
+        expect(await loadSecrets(path, into, run)).toBeNull();
+        expect(into[name] === value).toBe(true);
+        expect(into.KEEP === "synthetic-kept").toBe(true);
+        expect(Object.keys(into).sort()).toEqual(["KEEP", name].sort());
+    });
+
+    it("passes a new map through stdin with no value on argv", async () => {
+        await saveSecret(path, "FIRST", "synthetic-first", (args, input) => {
+            expect(args.some((arg) => arg.includes("synthetic-first"))).toBe(
+                false,
+            );
+            expect(input === '{"FIRST":"synthetic-first"}').toBe(true);
+            return run(args, input);
+        });
+        const into: Env = {};
+        expect(await loadSecrets(path, into, run)).toBeNull();
+        expect(into.FIRST === "synthetic-first").toBe(true);
+    });
+
+    it("uses the default runner to create and update with an isolated env", async () => {
+        const child = await capture(
+            [
+                process.execPath,
+                "--eval",
+                `
+                const { saveSecret, loadSecrets } = await import(process.env.SECRETS_MODULE);
+                const path = process.env.SECRETS_PATH;
+                await saveSecret(path, "FIRST", process.env.SYNTHETIC_VALUE);
+                await saveSecret(path, "FIRST", process.env.SYNTHETIC_REPLACEMENT);
+                const into = {};
+                const code = await loadSecrets(path, into);
+                process.stdout.write(JSON.stringify({
+                    code, matches: into.FIRST === process.env.SYNTHETIC_REPLACEMENT,
+                }));
+            `,
+            ],
+            {
+                ...env,
+                SECRETS_MODULE: new URL("./index.ts", import.meta.url).href,
+                SECRETS_PATH: path,
+                SYNTHETIC_VALUE: "synthetic-first",
+                SYNTHETIC_REPLACEMENT: "synthetic-replacement",
+            },
+        );
+        expect(child.exitCode).toBe(0);
+        expect(JSON.parse(child.stdout)).toEqual({ code: null, matches: true });
+    });
+
+    it("refuses to overwrite a file created while encryption was running", async () => {
+        const competing = "another writer's encrypted file";
+        await expect(
+            saveSecret(
+                path,
+                "FIRST",
+                "synthetic-first",
+                async (args, input) => {
+                    const result = await run(args, input);
+                    await writeFile(path, competing, { mode: 0o600 });
+                    return result;
+                },
+            ),
+        ).rejects.toThrow(/^SOPS_FAILED$/);
+        expect((await readFile(path, "utf8")) === competing).toBe(true);
+    });
+
+    it("throws only SOPS_MISSING for a missing binary and creates nothing", async () => {
+        await expect(
+            saveSecret(path, "FIRST", "synthetic-first", async () => {
+                throw Object.assign(new Error("untrusted diagnostic"), {
+                    code: "ENOENT",
+                });
+            }),
+        ).rejects.toThrow(/^SOPS_MISSING$/);
+        expect(await Bun.file(path).exists()).toBe(false);
+    });
+
+    it("throws only SOPS_FAILED for a wrong key, keeping the existing file", async () => {
+        await seed({ FIRST: "synthetic-first" });
+        const before = await readFile(path, "utf8");
+        const otherKey = join(dir, "other-key.txt");
+        expect(
+            (await capture(["age-keygen", "-o", otherKey], env)).exitCode,
+        ).toBe(0);
+        await expect(
+            saveSecret(path, "FIRST", "synthetic-replacement", (args, input) =>
+                capture(
+                    ["sops", ...args],
+                    { ...env, SOPS_AGE_KEY_FILE: otherKey },
+                    input,
+                ),
+            ),
+        ).rejects.toThrow(/^SOPS_FAILED$/);
+        expect((await readFile(path, "utf8")) === before).toBe(true);
+    });
+
+    it("does not create a file if encryption fails", async () => {
+        await rm(join(dir, ".sops.yaml"));
+        await expect(
+            saveSecret(path, "FIRST", "synthetic-first", run),
+        ).rejects.toThrow(/^SOPS_FAILED$/);
+        expect(await Bun.file(path).exists()).toBe(false);
+    });
+
+    it("does not expose a runner's thrown diagnostic", async () => {
+        await expect(
+            saveSecret(path, "FIRST", "synthetic-first", async () => {
+                throw new Error("untrusted diagnostic");
+            }),
+        ).rejects.toThrow(/^SOPS_FAILED$/);
     });
 });

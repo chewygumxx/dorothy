@@ -8,8 +8,8 @@
 //
 //
 
-import { stat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { stat, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import type { Env } from "./xdg.js";
 
 export type SecretsCode = "SOPS_MISSING" | "SOPS_FAILED" | "SECRETS_INVALID";
@@ -113,4 +113,62 @@ export async function loadSecrets(
         return "SOPS_FAILED";
     }
     return null;
+}
+
+export async function saveSecret(
+    path: string,
+    name: string,
+    value: string,
+    run: SecretsRun = runSops,
+): Promise<void> {
+    // Sops set paths are not JSON strings: escapes are kept literally and
+    // brackets split branches. Reject names that cannot round-trip there.
+    if (
+        JSON.stringify(name) !== `"${name}"` ||
+        name.includes("[") ||
+        name.includes("]")
+    ) {
+        throw new Error("SECRETS_INVALID");
+    }
+    const file = resolve(path);
+    let present: boolean;
+    try {
+        present = await exists(file);
+    } catch {
+        throw new Error("SOPS_FAILED");
+    }
+
+    let result: Awaited<ReturnType<SecretsRun>>;
+    try {
+        result = present
+            ? await run(
+                  ["set", "--value-stdin", file, JSON.stringify([name])],
+                  JSON.stringify(value),
+              )
+            : await run(
+                  [
+                      "--config",
+                      join(dirname(file), ".sops.yaml"),
+                      "encrypt",
+                      "--input-type",
+                      "json",
+                      "--output-type",
+                      "json",
+                      "--filename-override",
+                      file,
+                  ],
+                  JSON.stringify({ [name]: value }),
+              );
+    } catch (error) {
+        throw new Error(failureCode(error));
+    }
+    if (result.exitCode !== 0) throw new Error("SOPS_FAILED");
+    if (!present) {
+        try {
+            // Do not clobber a file another writer created during encryption.
+            await writeFile(file, result.stdout, { mode: 0o600, flag: "wx" });
+        } catch {
+            throw new Error("SOPS_FAILED");
+        }
+    }
 }
