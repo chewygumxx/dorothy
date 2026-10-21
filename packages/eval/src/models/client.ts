@@ -148,7 +148,7 @@ export class Models {
         const key = this.options.env[found.key];
         if (key === undefined || key === "") {
             throw new UsageError(
-                `${found.key} is not set: set it with \`bunx dotenvx set ${found.key}\`, then run under \`bunx dotenvx run --\``,
+                `${found.key} is not set: add it with \`sops edit secrets.json\``,
             );
         }
         this.#keys.add(key);

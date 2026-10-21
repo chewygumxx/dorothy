@@ -11,12 +11,14 @@
 // What every command meets: the terminal, passed in so tests can play
 // it, and the options' readers.
 
-import { resolve } from "node:path";
-import type { Env } from "@dorothy/core";
+import { join, resolve } from "node:path";
+import type { Env, SecretsCode } from "@dorothy/core";
 import { UsageError } from "./errors.js";
 
 export type Io = {
     env: Env;
+    // Required even in tests, so a fake terminal cannot read real secrets.
+    loadSecrets(path: string, into: Env): Promise<SecretsCode | null>;
     out(text: string): void;
     err(text: string): void;
     // A line typed at the terminal; null at the end of its input.
@@ -24,6 +26,22 @@ export type Io = {
     // Opens the editor on a file and waits for it to close.
     edit(path: string): Promise<void>;
 };
+// The package's checkout, independent of the work or shell directory.
+const checkoutRoot = resolve(import.meta.dir, "..", "..", "..");
+
+export async function loadModelSecrets(io: Io): Promise<void> {
+    let failure: SecretsCode | null;
+    try {
+        failure = await io.loadSecrets(
+            join(checkoutRoot, "secrets.json"),
+            io.env,
+        );
+    } catch {
+        failure = "SOPS_FAILED";
+    }
+    if (failure !== null) io.err(`eval: secrets not loaded (${failure})\n`);
+}
+
 // Each option as parseArgs takes it, with a line for --help.
 export type Options = Record<
     string,

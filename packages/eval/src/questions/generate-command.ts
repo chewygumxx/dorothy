@@ -10,7 +10,7 @@
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type Command, intOf, workOf } from "../command.js";
+import { type Command, intOf, loadModelSecrets, workOf } from "../command.js";
 import { UsageError } from "../errors.js";
 import { writeAtomic } from "../files.js";
 import { Models } from "../models/client.js";
@@ -134,6 +134,7 @@ export const generateCommand: Command = {
         await readGenerations(work);
         const config = await readEvalConfig(work);
         const role = requireRole(config, "generate");
+        await loadModelSecrets(io);
         const models = new Models(config, {
             env: io.env,
             maxCalls:

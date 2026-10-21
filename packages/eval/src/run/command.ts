@@ -8,7 +8,13 @@
 //
 //
 
-import { type Command, intOf, stringOf, workOf } from "../command.js";
+import {
+    type Command,
+    intOf,
+    loadModelSecrets,
+    stringOf,
+    workOf,
+} from "../command.js";
 import { UsageError } from "../errors.js";
 import { Models } from "../models/client.js";
 import {
@@ -157,6 +163,7 @@ export const runCommand: Command = {
         }
         let models: Models | null = null;
         if (!info.retrievalOnly) {
+            await loadModelSecrets(io);
             const answer = requireRole(config, "answer");
             const judge = requireRole(config, "judge");
             if (vendorOf(answer.model) === vendorOf(judge.model)) {

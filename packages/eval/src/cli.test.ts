@@ -9,10 +9,21 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { symlinkSync } from "node:fs";
+import { symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { SecretsCode } from "@dorothy/core";
 import { COMMANDS, runCli } from "./cli.js";
-import { fakeIo, tempRoot, writeFixtureData } from "./testing.js";
+import { configPath } from "./models/config.js";
+import { writeQuestions } from "./questions/file.js";
+import {
+    extraQuestion,
+    fakeIo,
+    snapshotFixture,
+    stubConfig,
+    stubModels,
+    tempRoot,
+    writeFixtureData,
+} from "./testing.js";
 
 let temp: ReturnType<typeof tempRoot>;
 beforeEach(() => {
@@ -150,5 +161,181 @@ describe("bun run eval", () => {
         expect(out.join("")).toBe(
             `copied 4 conversations and 3 knowledge files from ${data}\n  skipped 1 symbolic link below the top, not followed\n`,
         );
+    });
+});
+
+describe("evaluation secrets", () => {
+    let stub: ReturnType<typeof stubModels> | null = null;
+    afterEach(() => {
+        stub?.stop();
+        stub = null;
+    });
+
+    async function workWithModels(): Promise<string> {
+        const work = await snapshotFixture(temp.root);
+        stub = stubModels((request) => {
+            if (request.body.model === "generate/model") {
+                const prompt = JSON.stringify(request.body.messages);
+                const id = /<item id=\\"([^\\]+)\\">/.exec(prompt)?.[1] ?? "";
+                return {
+                    json: {
+                        questions: [
+                            {
+                                question: "What did I say there?",
+                                answer: "Something.",
+                                evidence: [id],
+                                older: "",
+                            },
+                        ],
+                    },
+                };
+            }
+            return request.body.response_format === undefined
+                ? { content: "Plot twelve." }
+                : { json: { reasoning: "Checked.", score: true } };
+        });
+        writeFileSync(configPath(work), stubConfig(stub.url, "EVAL_TEST_KEY"));
+        await writeQuestions(work, [
+            {
+                ...extraQuestion("Which plot is my allotment?"),
+                status: "accepted",
+            },
+        ]);
+        return work;
+    }
+
+    const argsFor = (command: string, work: string) =>
+        command === "generate"
+            ? [
+                  command,
+                  "--work",
+                  work,
+                  "--count",
+                  "1",
+                  "--type",
+                  "single-session=1",
+                  "--seed",
+                  "5",
+              ]
+            : [
+                  command,
+                  "--work",
+                  work,
+                  "--systems",
+                  "lexical",
+                  "--concurrency",
+                  "1",
+              ];
+
+    it.each(["generate", "run"])(
+        "awaits checkout secrets before %s calls a model",
+        async (command) => {
+            const work = await workWithModels();
+            const { io, err, out } = fakeIo({ env: { HOME: temp.root } });
+            let loaded = 0;
+            io.loadSecrets = async (path, into) => {
+                expect(path).toBe(
+                    new URL("../../../secrets.json", import.meta.url).pathname,
+                );
+                expect(into).toBe(io.env);
+                await Bun.sleep(5);
+                into.EVAL_TEST_KEY = "synthetic-eval-key";
+                loaded++;
+                return null;
+            };
+            expect(await runCli(argsFor(command, work), io)).toBe(0);
+            expect(loaded).toBe(1);
+            expect((stub?.requests.length ?? 0) > 0).toBe(true);
+            expect(
+                stub?.requests.every(
+                    (request) =>
+                        request.authorization === "Bearer synthetic-eval-key",
+                ),
+            ).toBe(true);
+            expect(
+                [...out, ...err].join("").includes("synthetic-eval-key"),
+            ).toBe(false);
+            expect(err).toEqual([]);
+        },
+    );
+
+    it.each(
+        ["generate", "run"].flatMap((command) =>
+            (
+                [
+                    "SOPS_MISSING",
+                    "SOPS_FAILED",
+                    "SECRETS_INVALID",
+                ] as SecretsCode[]
+            ).map((code) => ({ command, code })),
+        ),
+    )(
+        "warns by code and continues to missing-key validation (case %#)",
+        async ({ command, code }) => {
+            const work = await workWithModels();
+            const { io, err } = fakeIo({ env: { HOME: temp.root } });
+            io.loadSecrets = async () => code;
+            expect(await runCli(argsFor(command, work), io)).toBe(1);
+            expect(err).toEqual([
+                `eval: secrets not loaded (${code})\n`,
+                "eval: EVAL_TEST_KEY is not set: add it with `sops edit secrets.json`\n",
+            ]);
+            expect(stub?.requests.length).toBe(0);
+        },
+    );
+
+    it("reports an unexpected loader exception by code alone", async () => {
+        const work = await workWithModels();
+        const { io, err } = fakeIo({ env: { HOME: temp.root } });
+        io.loadSecrets = async () => {
+            throw new Error("untrusted diagnostic");
+        };
+        expect(await runCli(argsFor("generate", work), io)).toBe(1);
+        expect(err[0]).toBe("eval: secrets not loaded (SOPS_FAILED)\n");
+        expect(err.join("").includes("untrusted diagnostic")).toBe(false);
+        expect(stub?.requests.length).toBe(0);
+    });
+
+    it.each(
+        [
+            ["run", "--retrieval-only"],
+            ["run", "--dry-run"],
+            ["generate", "--dry-run"],
+            ["mine"],
+        ].map((command) => ({ command })),
+    )(
+        "loads no secrets for a command that asks no model (case %#)",
+        async ({ command }) => {
+            const work = await workWithModels();
+            const { io } = fakeIo({ env: { HOME: temp.root } });
+            let loaded = 0;
+            io.loadSecrets = async () => {
+                loaded++;
+                return "SOPS_FAILED";
+            };
+            expect(await runCli([...command, "--work", work], io)).toBe(0);
+            expect(loaded).toBe(0);
+            expect(stub?.requests.length).toBe(0);
+        },
+    );
+
+    it("loads no secrets when resuming a retrieval-only run without the flag", async () => {
+        const work = await workWithModels();
+        const { io, out } = fakeIo({ env: { HOME: temp.root } });
+        let loaded = 0;
+        io.loadSecrets = async () => {
+            loaded++;
+            return "SOPS_FAILED";
+        };
+        expect(
+            await runCli(["run", "--work", work, "--retrieval-only"], io),
+        ).toBe(0);
+        const id = /run ([0-9A-Za-z-]+):/.exec(out.join(""))?.[1] ?? "";
+        expect(id.length > 0).toBe(true);
+        expect(await runCli(["run", "--work", work, "--resume", id], io)).toBe(
+            0,
+        );
+        expect(loaded).toBe(0);
+        expect(stub?.requests.length).toBe(0);
     });
 });
