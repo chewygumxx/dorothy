@@ -117,8 +117,9 @@ knowledge is fenced and marked throughout recall, with `--verify` for
 the user, and the service clamps its block to each host's budget. It
 also closed the actionable deferred findings and code-review defects,
 then ran the six live probes. The report carries the remaining limits.
-Recording's final fixes close the backfill cost and reread defects;
-verify them before the user's backfill, then the owner's first run.
+Recording's final fixes close the backfill cost and reread defects; a
+full-scale dry run on copies of the user's sessions (2026-10-21)
+verified them before the user's backfill, then the owner's first run.
 
 - **Status**: Store, Bodies, Contract, Evaluation and Recording Built;
   the User's Backfill Next, then the First Run with generated and
@@ -130,15 +131,15 @@ verify them before the user's backfill, then the owner's first run.
   user judges weak. A first retrieval run on her data (2026-10-20) found
   10 conversations and one question to mine: she recorded only sessions
   begun through `dorothy --claude`, while the user's Claude Code holds
-  some 970 sessions and Codex a few. Recording now reads Claude Code,
-  Codex and Hermes, and its probe on 27 copied sessions recorded 2,533
-  events once each. The user's backfill of the real sessions is next,
-  and their call. Mining yields no question from backfilled sessions,
-  so the first run follows with questions generated and reviewed by the
-  owner, and the engine's spec chooses on its numbers; should they leave
-  the choice open, it may first ask for adapters to the field's systems.
-  Delivery comes last, once the engine it delivers is chosen; the sweep
-  has closed its two safety pieces.
+  302 sessions and Codex 7. Recording now reads Claude Code, Codex and
+  Hermes, and a dry run on copies of them all recorded 305
+  conversations, 36,926 events, in 29 s. The user's backfill of the real
+  sessions is next, and their call. Mining yields no question from
+  backfilled sessions, so the first run follows with questions generated
+  and reviewed by the owner, and the engine's spec chooses on its
+  numbers; should they leave the choice open, it may first ask for
+  adapters to the field's systems. Delivery comes last, once the engine
+  it delivers is chosen; the sweep has closed its two safety pieces.
 
 ### Model Providers
 
@@ -478,3 +479,7 @@ In order of completion.
   backfill of the real sessions, then the first run on questions
   generated and reviewed, as mining finds none in backfilled sessions;
   the engine and delivery follow. Candidates gain OpenClaw's reader.
+- 2026-10-21: A dry run of the user's backfill and first run's steps on
+  copies of all their sessions passed: 302 Claude Code sessions, not
+  some 970, as the rest are subagents' transcripts, and 7 Codex. A plain
+  sweep after a backfill no longer counts its sessions as waiting.
