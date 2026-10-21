@@ -12,6 +12,7 @@ import { describe, expect, it } from "bun:test";
 import { EventEmitter } from "node:events";
 import {
     existsSync,
+    mkdirSync,
     mkdtempSync,
     readdirSync,
     readFileSync,
@@ -225,22 +226,16 @@ describe("runClaude", () => {
         expect("DOROTHY_ANTHROPIC_BASE_URL" in empty.calls.env).toBe(false);
     });
 
-    it("passes the directory of Dotenvx Armor's session on to the hook, and no other", async () => {
-        const dir = mkdtempSync(join(tmpdir(), "dorothy-armor-"));
+    it("passes the age key path to claude and its hooks", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "dorothy-sops-launch-"));
         try {
-            writeFileSync(join(dir, ".env"), "SESSION=held\n");
+            const key = join(dir, ".config", "sops", "age", "keys.txt");
+            mkdirSync(join(dir, ".config", "sops", "age"), { recursive: true });
+            writeFileSync(key, "synthetic placeholder");
             const { calls, deps } = harness();
-            deps.env = { ...deps.env, DOTENVX_CONFIG: dir };
+            deps.env = { ...deps.env, HOME: dir };
             await runClaude([], deps);
-            expect(calls.env.DOROTHY_DOTENVX_CONFIG).toBe(dir);
-            // Where none is found, an outer launch's is not passed on.
-            const bare = harness();
-            bare.deps.env = {
-                ...bare.deps.env,
-                DOROTHY_DOTENVX_CONFIG: "/outer/dotenvx",
-            };
-            await runClaude([], bare.deps);
-            expect("DOROTHY_DOTENVX_CONFIG" in bare.calls.env).toBe(false);
+            expect(calls.env.SOPS_AGE_KEY_FILE).toBe(key);
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }
@@ -583,16 +578,19 @@ describe("dorothy --claude records her sessions", () => {
         ).toBe(false);
     });
 
-    it("starts its catch-ups where the hook finds Armor's session too", async () => {
-        const dir = mkdtempSync(join(tmpdir(), "dorothy-armor-"));
+    it("starts stale and current catch-ups with the age key path", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "dorothy-sops-catchup-"));
         try {
-            writeFileSync(join(dir, ".env"), "SESSION=held\n");
-            const { calls, deps } = harness(0, true);
-            deps.env = { ...deps.env, DOTENVX_CONFIG: dir };
+            const key = join(dir, ".config", "sops", "age", "keys.txt");
+            mkdirSync(join(dir, ".config", "sops", "age"), { recursive: true });
+            writeFileSync(key, "synthetic placeholder");
+            const { calls, deps, memory } = harness(0, true);
+            deps.env = { ...deps.env, HOME: dir };
+            memory.stale = [OTHER];
             await runClaude([], deps);
-            expect(calls.spawnedEnv.length).toBeGreaterThan(0);
+            expect(calls.spawnedEnv.length).toBe(2);
             for (const env of calls.spawnedEnv) {
-                expect(env.DOROTHY_DOTENVX_CONFIG).toBe(dir);
+                expect(env.SOPS_AGE_KEY_FILE).toBe(key);
             }
         } finally {
             rmSync(dir, { recursive: true, force: true });

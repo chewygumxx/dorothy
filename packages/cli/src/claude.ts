@@ -35,7 +35,7 @@ import {
 } from "@dorothy/gateway";
 // A type, erased: the CLI still loads memory lazily.
 import type { LaunchNote } from "@dorothy/memory";
-import { passSession } from "./dotenvx-session.js";
+import { passSopsKey } from "./sops-key.js";
 
 export type Spawned = {
     exited: Promise<number>;
@@ -279,7 +279,7 @@ export const claudeConfigDir = (env: Env) =>
 // was started with, so bun run dev records too. Claude Code runs hooks
 // and servers in the user's project, whose .env Bun would load into
 // their environment, a key of the project's among it, kept over
-// Dorothy's by dotenvx: --no-env-file, for the recall server too.
+// Dorothy's: --no-env-file, for the recall server too.
 const selfCommand = () => [
     process.execPath,
     "--no-env-file",
@@ -546,7 +546,7 @@ const spawnInherited = (cmd: string[], env: Env, cwd?: string): Spawned =>
 
 // The user's own Claude Code, with Dorothy as its main agent: the gateway
 // replaces the marker appended to its system prompt with her identity.
-// Dorothy's .env is not loaded; claude signs in as it always does.
+// Dorothy's secrets are not loaded; claude signs in as it always does.
 export type Launch = {
     cmd: string[];
     env: Env;
@@ -765,7 +765,7 @@ function launchSettings(
 // The environment claude runs in: the user's shell's, pointed at the
 // gateway. The user's own base URL, which claude's hooks lose, goes on
 // as DOROTHY_ANTHROPIC_BASE_URL for the reviews of the hook, and the
-// directory of Dotenvx Armor's session as DOROTHY_DOTENVX_CONFIG.
+// path of the age key as SOPS_AGE_KEY_FILE.
 function launchEnv(
     shellEnv: Env,
     env: Env,
@@ -790,7 +790,7 @@ function launchEnv(
     }
     bypassGatewayProxy(launchEnv, url);
     withReviewBaseUrl(launchEnv, env);
-    passSession(launchEnv, env);
+    passSopsKey(launchEnv, env);
     return launchEnv;
 }
 
@@ -875,8 +875,8 @@ export async function runClaude(
     } = deps;
     // Its reviews go through the user's own proxy, which the hook finds
     // in DOROTHY_ANTHROPIC_BASE_URL, as it does in a launch's, and find
-    // Armor's session in DOROTHY_DOTENVX_CONFIG.
-    const catchUpEnv = passSession(withReviewBaseUrl({ ...env }, env), env);
+    // the age key through SOPS_AGE_KEY_FILE.
+    const catchUpEnv = passSopsKey(withReviewBaseUrl({ ...env }, env), env);
     const catchUp = (launch: string) =>
         detach([...self, "--claude-hook", "--catch-up", launch], catchUpEnv);
     // Launches whose dorothy was killed before its catch-up, with memory

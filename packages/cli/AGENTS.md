@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-20
+mtime: 2026-10-21
 spdx: GPL-3.0-only
 title: packages/cli/AGENTS.md
 description: >-
@@ -78,8 +78,9 @@ lazy.
   stands, `-r<id>` counts, and a free-text flag's value is no flag);
   the block leaves out a session resumed by id. It sets
   `DOROTHY_ANTHROPIC_BASE_URL` from the user's `ANTHROPIC_BASE_URL`, and
-  `DOROTHY_DOTENVX_CONFIG` from the directory of Dotenvx Armor's session
-  it finds (`dotenvx-session.ts`). `runClaude` runs it for `--claude`,
+  `SOPS_AGE_KEY_FILE` from the explicit path or the existing default age
+  key under the configuration directory (`sops-key.ts`), without reading
+  it. `runClaude` runs it for `--claude`,
   forwards `SIGTERM` and `SIGHUP`, ignores `SIGINT` (the terminal sends
   it to `claude` too), and exits with `claude`'s code. This program runs
   again as `bun --no-env-file`, so a project's `.env` never reaches a
