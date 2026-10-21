@@ -445,3 +445,28 @@ Follow-up fixes: `bf90a04` (N1), `5b54eaa` (N2), `58ce48d` (N3),
 verification passed `bun run check` under temporary XDG roots: 3,143
 passed, one existing skip, zero failures. Individual RED/GREEN commands
 and outputs are in the ignored final fix report.
+
+## Full-scale dry run
+
+On 2026-10-21, at `a4ba11e`, the user's steps were run on copies of all
+their sessions in a throwaway root, with `env -i`, before they ran them.
+The copies were made with `cp -a`; both Claude Code accounts were named
+in `[service] claude-dirs`, since `~/.claude` does not exist and
+`CLAUDE_CONFIG_DIR` names one account only. History was on.
+
+- The sweep lists 302 Claude Code sessions, not some 970: the rest of
+  the 989 transcripts are subagents', which stay out by design. Codex
+  holds 7. A first sweep left all 309 waiting, in 4.5 s.
+- The backfill recorded 35,520 events in 298 Claude Code sessions and
+  1,406 in 7 Codex, 305 conversations, all marked backfilled, in 29 s
+  and 72 MB, with no halt. Three sessions held no conversation (meta
+  lines alone); the fourth was the session then live, held as M1 says.
+- A second backfill recorded nothing, in 9.9 s. A plain sweep then said
+  302 were waiting for the backfill: it counted sessions older than the
+  watermark unread. It now counts one the sweep state remembers as
+  skipped (`816ba05`).
+- The evaluation's snapshot took the 305 conversations, `mine` made no
+  questions, as found before, and `generate` against a local fake
+  model, with no spend, drafted 20 of 30. Preference questions found no
+  material, as the backfill makes no knowledge. `review` accepted one,
+  and a retrieval-only run reported on it.
