@@ -198,7 +198,7 @@ export class Mirror {
             const key = this.#options.key();
             if (key === null) {
                 warn(
-                    "history: the mirror needs DOROTHY_MIRROR_KEY (32 bytes, base64) in .env; set it with dotenvx set",
+                    "history: the mirror needs DOROTHY_MIRROR_KEY (32 bytes, base64) in secrets.json; set it with sops edit secrets.json",
                 );
                 return { kind: "no-key" };
             }

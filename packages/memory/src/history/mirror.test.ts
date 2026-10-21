@@ -383,7 +383,7 @@ describe("Mirror", () => {
         const keyless = mirrorOf(repo, { key: null });
         expect(await keyless.mirror.push()).toEqual({ kind: "no-key" });
         expect(keyless.warnings).toEqual([
-            "history: the mirror needs DOROTHY_MIRROR_KEY (32 bytes, base64) in .env; set it with dotenvx set",
+            "history: the mirror needs DOROTHY_MIRROR_KEY (32 bytes, base64) in secrets.json; set it with sops edit secrets.json",
         ]);
         expect(await repo.sealedNames()).toEqual([]);
     });
