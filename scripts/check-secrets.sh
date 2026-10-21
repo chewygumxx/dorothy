@@ -30,10 +30,10 @@ read_content() {
 
 check_file() {
     case "${1##*/}" in
-        .env | .env.* | *.env)
-            reject "$1" 'env file names are prohibited'
-            return 1
-            ;;
+    .env | .env.* | *.env)
+        reject "$1" 'env file names are prohibited'
+        return 1
+        ;;
     esac
 
     # --tracked rejects deleted tracked files; --staged skips staged deletions.
@@ -48,18 +48,18 @@ check_file() {
     fi
 
     case "${1##*/}" in
-        secrets.json)
-            if ! read_content "$1" | jq -e -s '
+    secrets.json)
+        if ! read_content "$1" | jq -e -s '
                 length == 1 and (.[0] |
                     type == "object" and (.sops | type == "object") and
                     all(to_entries[];
                         .key == "sops" or
                         (.value | type == "string" and startswith("ENC["))))
             ' >/dev/null 2>&1; then
-                reject "$1" 'encrypted JSON with a top-level sops object is required'
-                return 1
-            fi
-            ;;
+            reject "$1" 'encrypted JSON with a top-level sops object is required'
+            return 1
+        fi
+        ;;
     esac
 
     # Match a key shape, not prose that merely names its prefix.
@@ -79,27 +79,27 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 fi
 
 case "${1:---tracked}" in
-    --check)
-        mode=$2
-        shift 2
-        status=0
-        for file do
-            check_file "$file" || status=1
-        done
-        exit "$status"
-        ;;
-    --staged | --tracked)
-        script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-        if [ "${1:---tracked}" = --staged ]; then
-            git diff --cached --name-only --diff-filter=ACMR -z |
-                xargs -0 -r sh "$script_dir/check-secrets.sh" --check staged
-        else
-            git ls-files -z |
-                xargs -0 -r sh "$script_dir/check-secrets.sh" --check tracked
-        fi
-        ;;
-    *)
-        reject '<arguments>' 'use --staged or --tracked'
-        exit 1
-        ;;
+--check)
+    mode=$2
+    shift 2
+    status=0
+    for file; do
+        check_file "$file" || status=1
+    done
+    exit "$status"
+    ;;
+--staged | --tracked)
+    script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+    if [ "${1:---tracked}" = --staged ]; then
+        git diff --cached --name-only --diff-filter=ACMR -z |
+            xargs -0 -r sh "$script_dir/check-secrets.sh" --check staged
+    else
+        git ls-files -z |
+            xargs -0 -r sh "$script_dir/check-secrets.sh" --check tracked
+    fi
+    ;;
+*)
+    reject '<arguments>' 'use --staged or --tracked'
+    exit 1
+    ;;
 esac
