@@ -1,0 +1,16 @@
+# vim:set expandtab shiftwidth=4 filetype=yaml foldlevel=3:
+# SPDX-License-Identifier: GPL-3.0-only
+
+#
+#
+# ~chewygumxx/dorothy.git
+# ::: :/.sops.yaml
+#
+#
+
+# sops encrypts secrets.json to these age recipients; each holds the
+# private half in ~/.config/sops/age/keys.txt.
+# https://getsops.io/docs/
+creation_rules:
+    - path_regex: (^|/)secrets\.json$
+      age: age1c2u90auft2qgu5cyf358pqq2jk89s847lhy465836tjqycvnwpasj6td9w
