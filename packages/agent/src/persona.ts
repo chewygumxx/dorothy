@@ -170,7 +170,7 @@ export function cliHome(env: Env = process.env): string {
 // files. From the user's config directory it takes the signed-in account,
 // and tells Dorothy the user's email address; from the working directory's
 // repository, its auto-memory, git status and worktree instructions. Applied
-// at each call, after dotenvx has loaded the credentials into process.env.
+// at each call, after core has loaded the sops secrets into process.env.
 // Compaction is Dorothy's own, in the compaction module: DISABLE_COMPACT
 // switches the CLI's off, automatic and /compact alike.
 export function cliOptions(

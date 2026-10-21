@@ -30,7 +30,8 @@ iteration moves to Anthropic's Messages API.
 - Bun >=1.4
 - Either an Anthropic API key or a Claude Pro/Max subscription
 
-[mise](https://mise.jdx.dev) supplies a matching Bun version from `mise.toml`:
+[mise](https://mise.jdx.dev) supplies Bun, sops, age and jq from
+`mise.toml`:
 
 ```sh
 mise trust
@@ -45,18 +46,33 @@ bun install
 
 ## Authentication
 
-`.env` is committed, encrypted with [dotenvx](https://dotenvx.com), and
-decrypted at startup with the private key from Dotenvx Armor (or a gitignored
-`.env.keys`). Set one of the two variables `.env.example` documents, never as
-plaintext:
+`secrets.json` is committed, encrypted with
+[sops](https://github.com/getsops/sops) to the age key in
+`~/.config/sops/age/keys.txt`. Dorothy loads it when a command needs
+credentials, keeping any nonempty value already set in the environment.
+Use sops's editor to set either credential as a JSON string:
 
 - `ANTHROPIC_API_KEY`: pay-per-token API credits.
 - `CLAUDE_CODE_OAUTH_TOKEN`: a Claude Pro/Max subscription token, minted by
   running `claude setup-token`.
 
 ```sh
-bunx dotenvx set CLAUDE_CODE_OAUTH_TOKEN <token>
+sops edit secrets.json
 ```
+
+Back up `~/.config/sops/age/keys.txt` somewhere off this machine: without
+it, `secrets.json` cannot be read. Never commit the age key. Sops also
+accepts another key-file path through `SOPS_AGE_KEY_FILE`.
+
+A new machine needs its own age key. Add its public recipient to
+`.sops.yaml`, then, on a machine that can already decrypt the file, run:
+
+```sh
+sops updatekeys secrets.json
+```
+
+Commit the updated `.sops.yaml` and `secrets.json` so the new machine's
+key can decrypt them. Back up its age key too.
 
 ## Usage
 
@@ -258,20 +274,25 @@ The history is pushed to a mirror off this machine, encrypted. The
 mirror must exist first: a private repository on a host, or for a local
 one `git init --bare /path/to/memory.git`. Then set it with `--mirror`,
 run from this checkout: a mirror path is taken from where you run the
-command, and `--mirror` makes `DOROTHY_MIRROR_KEY` and saves it with
-dotenvx in the `.env` there, only when none is set (it never replaces
-one that is, and never makes one once bundles have been sealed). Commit
-`.env` afterwards (the key in it is encrypted), and keep a copy of the
-key elsewhere (`dotenvx get DOROTHY_MIRROR_KEY`): without it the mirror
-cannot be read. `--mirror` with no argument shows the mirror's status.
-Until a mirror is set, each launch reminds you. A push is tried at each
-launch. An `https://` mirror is pushed with the token in
-`DOROTHY_MIRROR_TOKEN`, under git and the built-in implementation alike;
-for GitHub, a fine-grained token for the mirror's repository alone, with
-read and write access to its contents. Set it with
-`bunx dotenvx set DOROTHY_MIRROR_TOKEN <token>`. Without a token, git
-uses your own credential helpers, and the built-in implementation, which
-pushes only over `https://`, cannot push.
+command. It must hold `.sops.yaml` when `--mirror` makes
+`DOROTHY_MIRROR_KEY`, saved in `secrets.json` through sops. A key is made
+only when none is set: it never replaces one, or makes one after bundles
+have been sealed. Commit `secrets.json` afterwards; its values are
+encrypted. Keep a copy of the mirror key elsewhere, obtained with:
+
+```sh
+sops decrypt --extract '["DOROTHY_MIRROR_KEY"]' secrets.json
+```
+
+Without that key the mirror cannot be read. `--mirror` with no argument
+shows its status. Until a mirror is set, each launch reminds you, and a
+push is tried at each launch. An `https://` mirror is pushed with the
+token in `DOROTHY_MIRROR_TOKEN`, under git and the built-in implementation
+alike. For GitHub, use a fine-grained token for the mirror's repository
+alone, with read and write access to its contents. Set
+`DOROTHY_MIRROR_TOKEN` with `sops edit secrets.json`. Without a token,
+git uses your own credential helpers; the built-in implementation,
+which pushes only over `https://`, cannot push.
 
 ```toml
 [history]
@@ -302,7 +323,7 @@ It starts a gateway on a local port and points Claude Code at it with
 `ANTHROPIC_BASE_URL`, passing your own as the gateway's upstream. The
 gateway adds Dorothy's identity to the main thread's requests and forwards
 everything else untouched; subagents stay Claude Code's own. Claude Code
-signs in as it always does: `--claude` reads none of Dorothy's `.env`.
+signs in as it always does: `--claude` reads none of Dorothy's `secrets.json`.
 
 To see what it sends, `--claude --dump-context` prints, as JSON, the first
 request Claude Code makes, with the gateway's rewrite applied. Arguments
@@ -449,14 +470,14 @@ model = "google/gemini-2.5-flash"
 key = "OPENROUTER_API_KEY"
 ```
 
-Set the key with `bunx dotenvx set OPENROUTER_API_KEY`, and run under
-`bunx dotenvx run --`, so it is read from the encrypted `.env`:
+Set `OPENROUTER_API_KEY` with `sops edit secrets.json`. The commands load
+this checkout's `secrets.json` before calling a model, with no wrapper:
 
 ```sh
-bunx dotenvx run -- bun run eval -- generate --work ~/eval --count 300
+bun run eval -- generate --work ~/eval --count 300
 bun run eval -- review --work ~/eval   # accept, edit or reject each
 bun run eval -- run --work ~/eval --dry-run
-bunx dotenvx run -- bun run eval -- run --work ~/eval
+bun run eval -- run --work ~/eval
 bun run eval -- compare --work ~/eval <run> <run>
 ```
 

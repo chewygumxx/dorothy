@@ -124,7 +124,7 @@ lazy.
 
 - Auth comes from `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` in
   `secrets.json`, decrypted by core's async `loadSecrets` through sops.
-  The age key lives outside the checkout; keep a backup of it.
+  Back up `~/.config/sops/age/keys.txt` off this machine.
   `forTheModel`, mirror and recover await `loadCredentials`. A failed
   load warns on stderr with its code and lets the mode continue.
 - Every spawned process receives an explicit environment built after
@@ -133,7 +133,6 @@ lazy.
 - `--claude` loads no secrets: Claude Code signs in as the user does.
   `--claude-hook` loads this checkout's `secrets.json` for reviews once
   Claude Code's variables are gone, never the working directory's.
-- `@dotenvx/dotenvx` remains declared until its removal; no CLI reader uses it.
 - The CLI passes `ambient()` to memory's history commands, and
   `commandHistory(...)` of it to memory's commands, the fact and
   project commands among them, and `editInEditor` (from

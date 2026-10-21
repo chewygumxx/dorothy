@@ -60,6 +60,8 @@ below. It declares `niceware` alone, and never imports another
 
 ## Invariants
 
+- Secrets live in `secrets.json`, encrypted by sops; the age key is
+  `~/.config/sops/age/keys.txt`. Back it up off this machine.
 - Contracts are structural and free of SDK types, so no consumer of a
   session needs the SDK.
 - A function that reads or writes the filesystem takes its directory or

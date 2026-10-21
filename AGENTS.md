@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-20
+mtime: 2026-10-21
 spdx: GPL-3.0-only
 title: AGENTS.md
 description: >-
@@ -49,29 +49,28 @@ declares, as Bun's isolated linker fails an undeclared or internal import.
 - Work on a branch, in the main checkout or in a worktree.
 - Tests and probes never touch real user data (`$XDG_DATA_HOME/dorothy`,
   `$XDG_CACHE_HOME/dorothy`): every root, key and environment is passed in.
-- `.env` is committed encrypted by dotenvx: set values only with
-  `dotenvx set`, and never print a secret or put one in a command line or
-  URL. `bunfig.toml` keeps Bun from loading `.env` itself
-  (`[env] file = false`); the pre-commit hook rejects a plaintext value.
+- Secrets live in `secrets.json`, encrypted by sops to the age key in
+  `~/.config/sops/age/keys.txt`. Change them only with
+  `sops edit secrets.json` or core's `saveSecret`. Never print one or put
+  one in a command line or URL. `bunfig.toml` keeps Bun from loading a
+  `.env`; the pre-commit hook rejects a plaintext value.
 - Confirm with the user before pushing, opening a pull request or changing
   repository settings, which change only through `.repo-metadata.jsonc`,
   never `gh repo edit`.
-- New subsystems stay independent of any model provider's SDK, speaking
-  standard protocols, with SDK types at a thin edge.
+- New subsystems use standard protocols, independent of provider SDKs,
+  whose types stay at a thin edge.
 - Declare in this repository every agentic asset and utility it employs;
   never leave one to a user's own settings or a hand-made step.
-- Every new file carries the house header, copied from a sibling;
-  `lint:header` syncs headers, `header.test.ts` fails a missing one.
+- Every new file carries a sibling's house header; `lint:header` syncs it,
+  and `header.test.ts` fails a missing one.
 - A change to a package's architecture updates its `AGENTS.md` in the
   same branch.
 
 ## Commits
 
-Commit granularly as you work, in Conventional Commits: one line where
-that suffices, a body where the change needs context. No agent trailers.
-Scopes are the package names, `config`, `claude` and `api`; agent assets
-take the `ai` type. commitlint enforces the form and the pre-commit hook
-rejects em dashes.
+Commit granularly in Conventional Commits, with a body where context helps.
+No agent trailers. Scopes: package names, `config`, `claude` and `api`;
+agent assets use `ai`. Commitlint checks form; pre-commit rejects em dashes.
 
 ## Process
 

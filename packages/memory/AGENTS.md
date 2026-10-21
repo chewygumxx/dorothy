@@ -96,7 +96,7 @@ and prompts as text (`MemoryPrompts`).
   to the remote `mirror` under `DOROTHY_MIRROR_KEY`; `--recover` rebuilds from
   it. `commands.ts` has `commandHistory`, history/restore/rollback/check and
   mirror/recover commands. Commands that advance main await a push on close;
-  mirror keys use dotenvx's `set`. `lock.ts` is the common `FileLock`.
+  keys use core's `saveSecret` in `secrets.json`; `lock.ts`: `FileLock`.
 - `recording/`: readers and the sweep, [guide](./src/recording/AGENTS.md);
   `service/` binds it, [guide](./src/service/AGENTS.md).
 - `sqlite-lock.ts`: `exclusiveLock`, a SQLite `BEGIN IMMEDIATE` lock.
@@ -111,10 +111,9 @@ and prompts as text (`MemoryPrompts`).
   commits inside it, and healing takes it, so only outside it.
 - `updateSidecar`'s change may be async, so coining a concept inside its
   lock means two runs never coin one label twice.
-- The notes never import history; only `openMemory` wires the two.
-  Writers take a `Recording` through `updateSidecar` and
-  `updateVocabulary`, the service a `HistoryHandle`, and the commands an
-  `OpenHistory`, which the CLI passes from `commandHistory()`.
+- Notes never import history; `openMemory` wires them. Writers take a
+  `Recording` via `updateSidecar` and `updateVocabulary`, the service a
+  `HistoryHandle`; CLI commands take `OpenHistory` from `commandHistory()`.
 - `openMemory` opens the index and history before it reads anything, and
   commits each turn once the transcript is flushed.
 - The memory block charges the earlier turns' abstracts first.
@@ -124,6 +123,7 @@ and prompts as text (`MemoryPrompts`).
   history. Its origin is set by the code that writes it, never read
   from its text, and only the user raises it.
 - A key that does not open the newest sealed bundle seals nothing.
+  Back up `~/.config/sops/age/keys.txt` off this machine.
 - The vocabulary path is always passed (`vocabularyPath()`), never derived
   from the transcripts directory.
 
