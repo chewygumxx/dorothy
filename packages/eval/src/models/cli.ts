@@ -9,7 +9,8 @@
 //
 
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtempSync, rmSync } from "node:fs";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Env } from "@dorothy/core";
@@ -52,14 +53,56 @@ export type CliReply = {
 export class CliFailure extends Error {}
 class CliUnavailable extends UsageError {}
 const files: CliFiles = {
-    temp: () => mkdtemp(join(tmpdir(), "dorothy-eval-model-")),
+    temp: async () => mkdtempSync(join(tmpdir(), "dorothy-eval-model-")),
     write: (path, text, mode) => writeFile(path, text, { mode }),
     read: (path) => readFile(path, "utf8"),
     remove: (path) => rm(path, { recursive: true, force: true }),
 };
 
-const run: CliRunner = (request) =>
-    new Promise((resolve, reject) => {
+const liveGroups = new Set<number>();
+const liveAttempts = new Set<() => Promise<void>>();
+let stopping = false;
+const EXIT_CODES = { SIGINT: 130, SIGTERM: 143, SIGHUP: 129 } as const;
+const signalGroup = (group: number, signal: NodeJS.Signals) => {
+    try {
+        process.kill(-group, signal);
+    } catch {
+        // The group may already have exited.
+    }
+};
+function stop(signal: keyof typeof EXIT_CODES): void {
+    if (stopping) return;
+    stopping = true;
+    // Retain the groups and cleanups even if an attempt settles on TERM.
+    const groups = [...liveGroups];
+    const cleanups = [...liveAttempts];
+    for (const group of groups) signalGroup(group, "SIGTERM");
+    setTimeout(() => {
+        for (const group of groups) signalGroup(group, "SIGKILL");
+        void Promise.allSettled(
+            cleanups.map((cleanup) => Promise.resolve().then(cleanup)),
+        ).then(() => process.exit(EXIT_CODES[signal]));
+    }, 100);
+}
+const handlers = {
+    SIGINT: () => stop("SIGINT"),
+    SIGTERM: () => stop("SIGTERM"),
+    SIGHUP: () => stop("SIGHUP"),
+};
+const watchSignals = () => {
+    for (const signal of Object.keys(handlers) as (keyof typeof handlers)[]) {
+        process.on(signal, handlers[signal]);
+    }
+};
+const unwatchSignals = () => {
+    for (const signal of Object.keys(handlers) as (keyof typeof handlers)[]) {
+        process.off(signal, handlers[signal]);
+    }
+};
+
+const run: CliRunner = (request) => {
+    let group: number | undefined;
+    return new Promise<CliResult>((resolve, reject) => {
         const child = spawn(request.command, request.args, {
             cwd: request.cwd,
             env: request.env,
@@ -67,26 +110,23 @@ const run: CliRunner = (request) =>
             // Progress and failures may quote snapshot text. Never retain it.
             stdio: ["pipe", "pipe", "ignore"],
         });
+        group = child.pid;
+        if (group !== undefined) liveGroups.add(group);
         let stdout = "";
         let exitCode: number | null = null;
         let timedOut = false;
-        const signalGroup = (signal: NodeJS.Signals) => {
-            if (child.pid === undefined) return;
-            try {
-                process.kill(-child.pid, signal);
-            } catch {
-                // The group may already have exited.
-            }
+        const signalChildGroup = (signal: NodeJS.Signals) => {
+            if (group !== undefined) signalGroup(group, signal);
         };
         const timer = setTimeout(() => {
             timedOut = true;
-            signalGroup("SIGTERM");
+            signalChildGroup("SIGTERM");
             // A wrapper's descendants may still hold the pipe. Stop reading
             // at the deadline, regardless of when those descriptors close.
             child.stdout.destroy();
             child.stdin.destroy();
             setTimeout(() => {
-                signalGroup("SIGKILL");
+                signalChildGroup("SIGKILL");
                 resolve({ exitCode, stdout: "", timedOut: true });
             }, 100);
         }, request.timeoutMs);
@@ -112,7 +152,10 @@ const run: CliRunner = (request) =>
             }
         });
         child.stdin.end(request.stdin);
+    }).finally(() => {
+        if (group !== undefined) liveGroups.delete(group);
     });
+};
 
 const record = (value: unknown): Record<string, unknown> => {
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -149,6 +192,14 @@ export async function cliAttempt(
     const io = options.cliFiles ?? files;
     let directory: string | undefined;
     let exitCode: number | null = null;
+    if (stopping) throw new CliUnavailable("evaluation interrupted");
+    const cleanupOnSignal = async () => {
+        if (directory === undefined) return;
+        if (io === files) rmSync(directory, { recursive: true, force: true });
+        else await io.remove(directory);
+    };
+    if (liveAttempts.size === 0) watchSignals();
+    liveAttempts.add(cleanupOnSignal);
     const failed = (reason: string) =>
         new CliFailure(
             `${config.via} exited with code ${exitCode ?? "unknown"}: ${reason}`,
@@ -223,6 +274,7 @@ export async function cliAttempt(
             }
             args.push("-");
         }
+        if (stopping) throw new CliUnavailable("evaluation interrupted");
         let result: CliResult;
         try {
             result = await (options.runner ?? run)({
@@ -306,5 +358,7 @@ export async function cliAttempt(
                 // Best effort, including synchronous filesystem failures.
             }
         }
+        liveAttempts.delete(cleanupOnSignal);
+        if (liveAttempts.size === 0 && !stopping) unwatchSignals();
     }
 }

@@ -489,3 +489,23 @@ it.each(["ENOENT", "EACCES"])(
         }
     },
 );
+
+it.each([0, 17])(
+    "installs signal handlers only while a CLI attempt is live (exit %s)",
+    async (exitCode) => {
+        const signals = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+        const before = signals.map((signal) => process.listenerCount(signal));
+        let during: number[] = [];
+        const fake = fakeCli(() => {
+            during = signals.map((signal) => process.listenerCount(signal));
+            return { exitCode, stdout: claudeReply() };
+        });
+        await cliAttempt(claude, messages, schema, { env, ...fake }).catch(
+            () => {},
+        );
+        expect(during).toEqual(before.map((count) => count + 1));
+        expect(signals.map((signal) => process.listenerCount(signal))).toEqual(
+            before,
+        );
+    },
+);
