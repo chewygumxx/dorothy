@@ -501,7 +501,10 @@ Only API roles accept `base-url` and `key`, which names an environment
 variable. CLI roles take `model`; Codex also takes `effort`, defaulting
 to `"medium"` rather than your Codex setting. Its values are `"none"`,
 `"minimal"`, `"low"`, `"medium"`, `"high"` and `"xhigh"`, subject to the
-model's support. `effort` on another route is an error.
+model's support. `effort` on another route is an error. Any role takes
+`timeout-seconds`, from 1 to 3600, the time one attempt may take before
+it fails; 120 where unset. A slow judge, such as Codex at high effort,
+wants more: a timed-out call counts as a miss.
 
 Claude uses a fresh `CLAUDE_CONFIG_DIR`. `--setting-sources ""` disables
 settings sources, `--strict-mcp-config` limits MCP to explicitly supplied

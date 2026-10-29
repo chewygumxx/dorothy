@@ -433,7 +433,8 @@ export async function cliAttempt(
                         : messages
                               .map((message) => message.content)
                               .join("\n\n"),
-                timeoutMs: options.timeoutMs ?? 120_000,
+                timeoutMs:
+                    options.timeoutMs ?? (config.timeoutSeconds ?? 120) * 1000,
             });
         } catch (error) {
             const code = codeOf(error);

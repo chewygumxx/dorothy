@@ -232,7 +232,9 @@ export class Models {
                     },
                 ],
                 maxRetries: 0,
-                timeout: this.options.timeoutMs ?? 120_000,
+                timeout:
+                    this.options.timeoutMs ??
+                    (found.timeoutSeconds ?? 120) * 1000,
                 configuration: {
                     baseURL: found.baseUrl,
                     // The client wants a key; a server without one is sent
