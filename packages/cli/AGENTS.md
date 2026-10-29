@@ -115,8 +115,9 @@ lazy.
 - `review-backfill.ts`: `runBackfillReview`, for `--review-backfill`, runs
   memory's `runReviewBackfill` on the agent `reviewAgent` gives (Claude Code's
   variables dropped, this checkout's secrets), so reviews use the Claude
-  plan's token. It prints `<phrase>: <outcome>` a conversation, then a total,
-  and exits 1 if none was reviewed or marked and one failed.
+  plan's token where `secrets.json` holds it. It prints `<phrase>: <outcome>`
+  a conversation, then a total, and exits 1 if none was reviewed or marked
+  and one failed, or if a failed call stopped the batch, which it says.
 - `recall-launch.ts`: `recallLaunch` launches this program again as the
   recall server, leaving out the conversation it serves and, with
   `--project`, naming the directory chat started in.

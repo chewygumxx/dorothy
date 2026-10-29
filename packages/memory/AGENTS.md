@@ -57,8 +57,8 @@ and prompts as text (`MemoryPrompts`).
   chat. `track.ts`'s `trackMemory` decorates the `ChatSession`, so `App` sees
   only notices. `rank.ts`, `block.ts`, `edit-view.ts` and `list.ts` are
   pure; `commands.ts` has `--list`, `--memory`, `--tags`, `--edit-tags`.
-- `memory/review-backfill.ts`: `runReviewBackfill` (`--review-backfill`): the
-  newest `-n` marked sidecars, each claimed in the index, unmarked, reviewed.
+- `memory/review-backfill.ts`: `runReviewBackfill`: the newest `-n` marked
+  sidecars, claimed, unmarked, reviewed; a failed call restores it and stops.
 - `memory/vocabulary.ts`, `tagging.ts`, `tags-view.ts`: tags, a SKOS-style
   vocabulary in `tags.json` (concepts with `prefLabel`, `altLabel`,
   `broader` and `scopeNote`, and the tombstones of deleted and merged

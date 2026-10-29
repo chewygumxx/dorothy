@@ -39,9 +39,9 @@ snapshot, so a rerun measures what reviews add.
 | Trigger | `dorothy --review-backfill [-n <count>]`, run by the user or the agent | Spending a plan's usage is a choice. Cost: a command per batch |
 | Batch | `-n`, default 25; newest first | A plan's limits are watched between batches; recent work matters most. Cost: about 12 batches for 305 |
 | Reviewer | The `Reviewer` the service builds, with its persona, vocabulary, history and lock | One review, wherever it runs. Cost: none |
-| Mark | Cleared under the lock, as a live record clears it, just before the review | A failed review then retries as any other does. Cost: a conversation whose review fails is reviewed by the service later |
+| Mark | Cleared under the lock, as a live record clears it, just before the review; a failed model call (thrown, or reported by the reviewer) restores the mark and the earlier failures under the lock and stops the batch | A limit or an outage would fail every call after it, and a conversation left unmarked is offered no more by the command. The rest stay marked and untouched. Cost: a conversation failing for another reason (notes, save) stays unmarked, and a chat's catch-up retries it |
 | Running service | The command takes the review claim the index holds, which keeps chats and hooks off the conversation; the service takes no claim | The service reviews only conversations a live record queued. Cost: a live record during a batch may bring one extra review, merged under the lock |
-| Output | A line a conversation (its phrase and `reviewed`, `marked` or `failed`) and a total | Progress through a long batch. Cost: none |
+| Output | A line a conversation (its phrase and `reviewed`, `marked`, `unchanged`, `held` or `failed`), a total, and where a failed call stopped the batch, why, with exit 1 | Progress through a long batch. Cost: none |
 
 ## Later
 
@@ -53,7 +53,8 @@ snapshot, so a rerun measures what reviews add.
 Over a temporary store with backfilled and live conversations and a
 fake call: the newest `-n` backfilled ones reviewed, live ones and the
 rest untouched; the mark cleared only for those reviewed; a failed call
-leaving its conversation for a later review; a held claim skipped.
+restoring its conversation's mark and stopping the batch, the rest
+untouched; a held claim skipped.
 
 ## Verification
 
