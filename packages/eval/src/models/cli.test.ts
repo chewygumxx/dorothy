@@ -356,6 +356,56 @@ const LIMITS = [
         ` (try again at ${RESET})`,
     ],
     [
+        "Claude's session limit, with no status",
+        claude,
+        JSON.stringify({
+            is_error: true,
+            result: "You've hit your session limit \u00b7 resets 3pm (Europe/London)",
+        }),
+        1,
+        " (try again at 3pm)",
+    ],
+    [
+        "Claude's weekly limit, with exit 0",
+        claude,
+        JSON.stringify({
+            is_error: true,
+            result: "You've hit your weekly limit \u00b7 resets Nov 3, 9am",
+        }),
+        0,
+        " (try again at Nov 3, 9am)",
+    ],
+    [
+        "Claude's limit reached, with no reset",
+        claude,
+        JSON.stringify({ is_error: true, result: "5-hour limit reached" }),
+        1,
+        "",
+    ],
+    [
+        "Codex's workspace out of credits, in a failed turn",
+        codex,
+        JSON.stringify({
+            type: "turn.failed",
+            error: {
+                message:
+                    "Your workspace is out of credits. Add credits to continue.",
+            },
+        }),
+        1,
+        "",
+    ],
+    [
+        "Claude's reset naming words, not a time",
+        claude,
+        JSON.stringify({
+            is_error: true,
+            result: "You've hit your session limit \u00b7 resets whenever you like",
+        }),
+        1,
+        "",
+    ],
+    [
         "Claude's reset naming words, not a time",
         claude,
         JSON.stringify({
@@ -391,6 +441,27 @@ describe("a plan's limit", () => {
             );
             expect(String(error)).not.toContain("Private");
             expect(fake.removed).toHaveLength(1);
+        },
+    );
+
+    it.each(["session", "weekly", "Opus", "Sonnet", "Fable"])(
+        "is read from Claude's %s limit, with no status",
+        async (kind) => {
+            const fake = fakeCli(() => ({
+                exitCode: 1,
+                stdout: JSON.stringify({
+                    is_error: true,
+                    result: `You've hit your ${kind} limit \u00b7 resets 3pm`,
+                }),
+            }));
+            const error = await cliAttempt(claude, messages, schema, {
+                env,
+                ...fake,
+            }).catch((e) => e);
+            expect(error).toBeInstanceOf(PlanLimit);
+            expect(error.message).toBe(
+                "the claude plan's usage limit is reached (try again at 3pm)",
+            );
         },
     );
 
@@ -466,6 +537,24 @@ describe("a plan's limit", () => {
             "a Codex message item that mentions a limit",
             codex,
             '{"type":"item.completed","item":{"text":"usage limit"}}',
+            1,
+        ],
+        [
+            "a Claude reply that quotes a limit but is no error",
+            claude,
+            claudeReply({ result: "You've hit your session limit" }),
+            0,
+        ],
+        [
+            "a Claude error that hits another thing",
+            claude,
+            JSON.stringify({ is_error: true, result: "You hit your head" }),
+            1,
+        ],
+        [
+            "a Codex error in Claude's words for a limit",
+            codex,
+            '{"type":"error","message":"You\'ve hit your session limit"}',
             1,
         ],
         ["output with no event", claude, "usage limit", 1],

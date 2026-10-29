@@ -195,17 +195,21 @@ const usageOf = (value: unknown) => {
 
 // What each CLI says of a limit, read leniently. A status 429 is one
 // whatever it says.
-const LIMIT = /usage[ _]limit|usage credits|rate[ _]limit/i;
+const LIMIT = /usage[ _]limit|usage credits|out of credits|rate[ _]limit/i;
+
+// What Claude alone says: "You've hit your session limit" (also weekly,
+// Opus, Sonnet or Fable) and "limit reached".
+const CLAUDE_LIMIT = /hit your [\w ]*limit|limit reached/i;
 
 // A word of a time or date: digits (a time, a day, an ISO stamp), AM or
 // PM, a month or a weekday.
 const WHEN =
-    /^(?:\d[\dTZ:/.+-]*(?:st|nd|rd|th)?|[ap]m|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]{0,6}|(?:mon|tue|wed|thu|fri|sat|sun)[a-z]{0,6})$/i;
+    /^(?:\d[\dTZ:/.+-]*(?:st|nd|rd|th|[ap]m)?|[ap]m|at|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]{0,6}|(?:mon|tue|wed|thu|fri|sat|sun)[a-z]{0,6})$/i;
 
 // The reset time the CLI gives, if a time or date is all it is: any other
 // reply text, that a capture might repeat, is left out.
 const resetIn = (text: string): string | null => {
-    const said = /try again at ([A-Za-z0-9 ,:/.+-]{1,40})/i
+    const said = /(?:try again at|resets) ([A-Za-z0-9 ,:/.+-]{1,40})/i
         .exec(text)?.[1]
         ?.trim()
         .replace(/\.$/, "");
@@ -236,7 +240,9 @@ function claudeLimit(stdout: string): Limit | null {
     const text = typeof reply.result === "string" ? reply.result : "";
     if (
         reply.is_error !== true ||
-        (reply.api_error_status !== 429 && !LIMIT.test(text))
+        (reply.api_error_status !== 429 &&
+            !LIMIT.test(text) &&
+            !CLAUDE_LIMIT.test(text))
     ) {
         return null;
     }
