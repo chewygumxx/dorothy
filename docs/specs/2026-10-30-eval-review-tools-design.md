@@ -43,7 +43,7 @@ a script outside the repository. This spec fixes all three.
 | Recognising it | Codex: a `turn.failed` or error event, or the exit, naming a usage limit; Claude: an error reply with status 429 or naming a usage limit or credits | The phrases each CLI prints today, read from the reply, never printed. Cost: a CLI that rewords them fails calls as before |
 | Generate | The same stop, with the drafts made so far kept | As `--max-calls` stops it. Cost: none |
 | Evidence shown | `review --evidence <chars>`, default 6,000 per cited conversation | Enough for most drafts; the terminal scrolls. Cost: longer pages |
-| Agents' decisions | `review --apply <file> --reviewer <name>` | One line per draft, `accept`, `edit`, `reject` or `unsure`, applied with review's own checks; `--dry-run` reports without writing | 
+| Agents' decisions | `review --apply <file> --reviewer <name>` | One line per draft, `accept`, `edit`, `reject` or `unsure`, applied with review's own checks; `--dry-run` reports without writing |
 | Who reviewed | `reviews.jsonl` in the work directory: each decision's question, new id, reviewer, decision, reason and time | The question's `note` holds a knowledge update's older claim. Cost: none |
 
 ## Applying decisions
