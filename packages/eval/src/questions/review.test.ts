@@ -9,7 +9,8 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { runCli } from "../cli.js";
 import {
     extraQuestion,
@@ -298,5 +299,410 @@ describe("bun run eval -- review", () => {
         const { io } = fakeIo({ answers: ["a"] });
         expect(await runCli(["review", "--work", work], io)).toBe(1);
         expect(readFileSync(questionsPath(work), "utf8")).toBe("not json\n");
+    });
+});
+
+const reviewsOf = () =>
+    readFileSync(join(work, "reviews.jsonl"), "utf8")
+        .split("\n")
+        .filter((line) => line !== "")
+        .map((line) => JSON.parse(line));
+
+describe("bun run eval -- review, logging its decisions", () => {
+    it("logs the owner's accepts and rejects, and not a skip or an edit", async () => {
+        const { io } = fakeIo({
+            answers: ["a", "r", "too close", "s", "q"],
+        });
+        expect(await runCli(["review", "--work", work], io)).toBe(0);
+        const [accepted, rejected, ...rest] = reviewsOf();
+        expect(rest).toEqual([]);
+        expect(accepted).toMatchObject({
+            id: questionId("Which plot is my allotment?", [`c:${GARDEN}`]),
+            reviewer: "owner",
+            decision: "accept",
+            reason: "",
+        });
+        expect(rejected).toMatchObject({
+            id: questionId("Where is my allotment?", [`c:${GARDEN}`]),
+            reviewer: "owner",
+            decision: "reject",
+            reason: "too close",
+        });
+        expect(new Date(accepted.at).toISOString()).toBe(accepted.at);
+    });
+
+    it("logs nothing for an edit the owner is refused", async () => {
+        const { io } = fakeIo({
+            answers: ["e", "q"],
+            onEdit: (path) => writeFileSync(path, "{not json"),
+        });
+        expect(await runCli(["review", "--work", work], io)).toBe(0);
+        expect(existsSync(join(work, "reviews.jsonl"))).toBe(false);
+    });
+});
+
+describe("bun run eval -- review --evidence", () => {
+    let longTemp: ReturnType<typeof tempRoot>;
+    let longWork: string;
+    const turns = Array.from({ length: 80 }, (_, at) => ({
+        role: (at % 2 === 0 ? "user" : "assistant") as "user" | "assistant",
+        text: `Turn ${at}: my allotment plot is by the river, and ${"x".repeat(80)}`,
+        at: `2026-09-05T10:${String(at % 60).padStart(2, "0")}:00.000Z`,
+    }));
+
+    beforeEach(async () => {
+        longTemp = tempRoot("review-long");
+        longWork = await snapshotFixture(longTemp.root, {
+            conversations: [{ phrase: GARDEN, title: "The allotment", turns }],
+            knowledge: [],
+        });
+        await writeQuestions(longWork, [
+            drafted("Which plot is my allotment?"),
+        ]);
+    });
+    afterEach(() => longTemp.remove());
+
+    // The length of the passage shown for the one cited conversation.
+    const shownLength = async (...options: string[]) => {
+        const { io, out } = fakeIo({ answers: ["q"] });
+        expect(
+            await runCli(["review", "--work", longWork, ...options], io),
+        ).toBe(0);
+        const shown = out.join("");
+        const from = shown.indexOf(`c:${GARDEN}: The allotment`);
+        return shown.slice(from, shown.indexOf("\n[a]ccept")).length;
+    };
+
+    it("shows 6,000 characters of a conversation by default", async () => {
+        const length = await shownLength();
+        expect(length).toBeGreaterThan(3000);
+        expect(length).toBeLessThan(6500);
+    });
+
+    it("shows as many as it is asked", async () => {
+        expect(await shownLength("--evidence", "500")).toBeLessThan(900);
+        expect(await shownLength("--evidence", "12000")).toBeGreaterThan(
+            await shownLength(),
+        );
+    });
+
+    it("wants a positive whole number", async () => {
+        for (const bad of ["0", "-5", "1.5", "lots"]) {
+            const { io, err } = fakeIo();
+            expect(
+                await runCli(
+                    ["review", "--work", longWork, `--evidence=${bad}`],
+                    io,
+                ),
+            ).toBe(1);
+            expect(err.join("")).toContain("--evidence must be a whole number");
+        }
+    });
+});
+
+describe("bun run eval -- review --apply", () => {
+    let more: Question;
+    beforeEach(async () => {
+        more = drafted("Which allotment plot is by the river?");
+        await writeQuestions(work, [
+            drafted("Which plot is my allotment?"),
+            drafted("Where is my allotment?"),
+            drafted("By what is my allotment?"),
+            more,
+        ]);
+    });
+
+    const idOf = (question: string) => questionId(question, [`c:${GARDEN}`]);
+
+    const apply = async (lines: (object | string)[], ...options: string[]) => {
+        const file = join(temp.root, "decisions.jsonl");
+        writeFileSync(
+            file,
+            `${lines.map((line) => (typeof line === "string" ? line : JSON.stringify(line))).join("\n")}\n`,
+        );
+        const { io, out, err } = fakeIo();
+        const code = await runCli(
+            [
+                "review",
+                "--work",
+                work,
+                "--apply",
+                file,
+                "--reviewer",
+                "agent-1",
+                ...options,
+            ],
+            io,
+        );
+        return { code, out: out.join(""), err: err.join("") };
+    };
+
+    it("applies accept, reject, edit and unsure, and logs who", async () => {
+        const first = idOf("Which plot is my allotment?");
+        const second = idOf("Where is my allotment?");
+        const third = idOf("By what is my allotment?");
+        const { code, out, err } = await apply([
+            { id: first, decision: "accept", reason: "clear" },
+            { id: second, decision: "reject", reason: "close to the first" },
+            {
+                id: third,
+                decision: "edit",
+                reason: "reworded",
+                question: "What number is my allotment plot?",
+                answer: "Plot twelve.",
+            },
+            { id: more.id, decision: "unsure", reason: "river unclear" },
+        ]);
+        expect(err).toBe("");
+        expect(code).toBe(0);
+        expect(out).toBe("accepted 1, rejected 1, edited 1, unsure 1\n");
+        const { questions } = await readQuestions(work);
+        expect(questions.map((question) => question.status)).toEqual([
+            "accepted",
+            "rejected",
+            "accepted",
+            "draft",
+        ]);
+        expect(questions[1]?.note).toBe("close to the first");
+        expect(questions[2]).toMatchObject({
+            id: idOf("What number is my allotment plot?"),
+            question: "What number is my allotment plot?",
+            answer: "Plot twelve.",
+            evidence: [`c:${GARDEN}`],
+        });
+        const log = reviewsOf();
+        expect(log.map((entry) => entry.decision)).toEqual([
+            "accept",
+            "reject",
+            "edit",
+            "unsure",
+        ]);
+        expect(log[0]).toMatchObject({
+            id: first,
+            reviewer: "agent-1",
+            reason: "clear",
+        });
+        expect(log[0]).not.toHaveProperty("newId");
+        expect(log[2]).toMatchObject({
+            id: third,
+            newId: idOf("What number is my allotment plot?"),
+            reason: "reworded",
+        });
+        expect(log[3]).toMatchObject({ id: more.id, reviewer: "agent-1" });
+        expect(new Date(log[3].at).toISOString()).toBe(log[3].at);
+    });
+
+    it("keeps a reject's note when it gives no reason", async () => {
+        await writeQuestions(work, [
+            { ...drafted("Which plot is my allotment?"), note: "older claim" },
+        ]);
+        const { code } = await apply([
+            { id: idOf("Which plot is my allotment?"), decision: "reject" },
+        ]);
+        expect(code).toBe(0);
+        expect((await readQuestions(work)).questions[0]).toMatchObject({
+            status: "rejected",
+            note: "older claim",
+        });
+    });
+
+    it("edits only what the line gives", async () => {
+        const id = idOf("Which plot is my allotment?");
+        await apply([{ id, decision: "edit", answer: "Number twelve." }]);
+        expect((await readQuestions(work)).questions[0]).toMatchObject({
+            id,
+            question: "Which plot is my allotment?",
+            answer: "Number twelve.",
+            status: "accepted",
+        });
+        expect(reviewsOf()[0]).not.toHaveProperty("newId");
+    });
+
+    it("refuses an edit review's editor would, and says why", async () => {
+        const before = readFileSync(questionsPath(work), "utf8");
+        const one = idOf("Which plot is my allotment?");
+        const two = idOf("Where is my allotment?");
+        const three = idOf("By what is my allotment?");
+        const { code, out, err } = await apply([
+            { id: one, decision: "edit", evidence: ["c:nowhere"] },
+            { id: two, decision: "edit", question: "By what is my allotment?" },
+            { id: three, decision: "edit", question: "  " },
+        ]);
+        expect(code).toBe(1);
+        expect(out).toBe("accepted 0, rejected 0, edited 0, unsure 0\n");
+        const lines = err.trimEnd().split("\n");
+        expect(lines[0]).toBe(`${one}: c:nowhere is not in the snapshot`);
+        expect(lines[1]).toBe(
+            `${two}: another question has that text and evidence`,
+        );
+        expect(lines[2]).toStartWith(`${three}: question: `);
+        expect(lines).toHaveLength(3);
+        expect(readFileSync(questionsPath(work), "utf8")).toBe(before);
+        expect(existsSync(join(work, "reviews.jsonl"))).toBe(false);
+    });
+
+    it("refuses an edit whose id is another question's text", async () => {
+        const two = idOf("Where is my allotment?");
+        const { err } = await apply([
+            { id: two, decision: "edit", question: "By what is my allotment?" },
+        ]);
+        expect(err).toContain("another question has that text and evidence");
+    });
+
+    it("reports a line naming no draft, or a decided one, and goes on", async () => {
+        const first = idOf("Which plot is my allotment?");
+        const { code, out, err } = await apply([
+            { id: "q-00000000", decision: "accept" },
+            { id: first, decision: "accept" },
+            { id: first, decision: "reject", reason: "again" },
+        ]);
+        expect(code).toBe(1);
+        expect(out).toBe("accepted 1, rejected 0, edited 0, unsure 0\n");
+        expect(err).toBe(
+            `q-00000000: no such question\n${first}: already accepted\n`,
+        );
+        expect(reviewsOf()).toHaveLength(1);
+        const again = await apply([{ id: first, decision: "accept" }]);
+        expect(again.err).toBe(`${first}: already accepted\n`);
+        expect(again.code).toBe(1);
+    });
+
+    it("reports a line it cannot read, by its number", async () => {
+        const first = idOf("Which plot is my allotment?");
+        const { code, err } = await apply([
+            { id: first, decision: "accept" },
+            "{not json",
+            "",
+            { id: first, decision: "approve" },
+            { decision: "accept" },
+            { id: more.id, decision: "accept", answer: "Plot twelve." },
+        ]);
+        expect(code).toBe(1);
+        const lines = err.trimEnd().split("\n");
+        expect(lines[0]).toBe("line 2: not JSON");
+        expect(lines[1]).toStartWith(`${first}: decision: `);
+        expect(lines[2]).toStartWith("line 5: id: ");
+        expect(lines[3]).toBe(
+            `${more.id}: only an edit gives a question, answer or evidence`,
+        );
+        expect(lines).toHaveLength(4);
+        expect(await statuses()).toEqual([
+            "accepted",
+            "draft",
+            "draft",
+            "draft",
+        ]);
+    });
+
+    it("writes nothing on a dry run, but checks the lines against each other", async () => {
+        const before = readFileSync(questionsPath(work), "utf8");
+        const one = idOf("Which plot is my allotment?");
+        const two = idOf("Where is my allotment?");
+        const { code, out, err } = await apply(
+            [
+                {
+                    id: one,
+                    decision: "edit",
+                    question: "What number is my allotment plot?",
+                },
+                {
+                    id: two,
+                    decision: "edit",
+                    question: "What number is my allotment plot?",
+                },
+                { id: more.id, decision: "unsure" },
+            ],
+            "--dry-run",
+        );
+        expect(code).toBe(1);
+        expect(out).toBe(
+            "dry run, nothing written: accepted 0, rejected 0, edited 1, unsure 1\n",
+        );
+        expect(err).toBe(
+            `${two}: another question has that text and evidence\n`,
+        );
+        expect(readFileSync(questionsPath(work), "utf8")).toBe(before);
+        expect(existsSync(join(work, "reviews.jsonl"))).toBe(false);
+    });
+
+    it("exits 0 when every line applied", async () => {
+        const { code, err } = await apply(
+            [{ id: more.id, decision: "unsure" }],
+            "--dry-run",
+        );
+        expect(code).toBe(0);
+        expect(err).toBe("");
+    });
+
+    it("keeps a question the file gained while it ran, and the lock", async () => {
+        const extra = extraQuestion("Which river runs by my allotment?");
+        const first = idOf("Which plot is my allotment?");
+        await whileLocked(work, extra, () =>
+            apply([{ id: first, decision: "accept" }]),
+        );
+        const { questions } = await readQuestions(work);
+        expect(questions.at(-1)?.question).toBe(extra.question);
+        expect(questions[0]?.status).toBe("accepted");
+    });
+
+    it("needs a reviewer, and the options only together", async () => {
+        const file = join(temp.root, "decisions.jsonl");
+        writeFileSync(file, "");
+        for (const [args, why] of [
+            [["--apply", file], "--apply needs --reviewer"],
+            [["--reviewer", "agent-1"], "--reviewer goes with --apply"],
+            [["--dry-run"], "--dry-run goes with --apply"],
+            [
+                ["--apply", file, "--reviewer", "a", "--evidence", "9"],
+                "--evidence is for reviewing in the terminal",
+            ],
+        ] as const) {
+            const { io, err } = fakeIo();
+            expect(await runCli(["review", "--work", work, ...args], io)).toBe(
+                1,
+            );
+            expect(err.join("")).toContain(why);
+        }
+    });
+
+    it("says when the decisions file cannot be read", async () => {
+        const { io, err } = fakeIo();
+        const missing = join(temp.root, "none.jsonl");
+        expect(
+            await runCli(
+                [
+                    "review",
+                    "--work",
+                    work,
+                    "--apply",
+                    missing,
+                    "--reviewer",
+                    "agent-1",
+                ],
+                io,
+            ),
+        ).toBe(1);
+        expect(err.join("")).toContain(`cannot read ${missing}: ENOENT`);
+    });
+
+    it("never opens the editor or asks a question", async () => {
+        const { io } = fakeIo();
+        io.ask = async () => {
+            throw new Error("asked");
+        };
+        io.edit = async () => {
+            throw new Error("edited");
+        };
+        const file = join(temp.root, "decisions.jsonl");
+        writeFileSync(
+            file,
+            `${JSON.stringify({ id: more.id, decision: "accept" })}\n`,
+        );
+        expect(
+            await runCli(
+                ["review", "--work", work, "--apply", file, "--reviewer", "a"],
+                io,
+            ),
+        ).toBe(0);
     });
 });
