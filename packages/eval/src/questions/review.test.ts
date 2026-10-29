@@ -309,7 +309,7 @@ const reviewsOf = () =>
         .map((line) => JSON.parse(line));
 
 describe("bun run eval -- review, logging its decisions", () => {
-    it("logs the owner's accepts and rejects, and not a skip or an edit", async () => {
+    it("logs the owner's accepts and rejects, and not a skip", async () => {
         const { io } = fakeIo({
             answers: ["a", "r", "too close", "s", "q"],
         });
@@ -329,6 +329,30 @@ describe("bun run eval -- review, logging its decisions", () => {
             reason: "too close",
         });
         expect(new Date(accepted.at).toISOString()).toBe(accepted.at);
+    });
+
+    it("logs the owner's edit under its old id and its new", async () => {
+        const old = questionId("Which plot is my allotment?", [`c:${GARDEN}`]);
+        const { io } = fakeIo({
+            answers: ["e", "q"],
+            onEdit: (path) => {
+                const question = JSON.parse(readFileSync(path, "utf8"));
+                question.question = "What number is my allotment plot?";
+                writeFileSync(path, JSON.stringify(question));
+            },
+        });
+        expect(await runCli(["review", "--work", work], io)).toBe(0);
+        const [edit, ...rest] = reviewsOf();
+        expect(rest).toEqual([]);
+        expect(edit).toMatchObject({
+            id: old,
+            newId: questionId("What number is my allotment plot?", [
+                `c:${GARDEN}`,
+            ]),
+            reviewer: "owner",
+            decision: "edit",
+            reason: "",
+        });
     });
 
     it("logs nothing for an edit the owner is refused", async () => {

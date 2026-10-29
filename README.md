@@ -567,7 +567,8 @@ bun run eval -- review --work ~/eval --apply decisions.jsonl \
 
 It exits 1 if any line had a problem. An `unsure` leaves the draft for
 you. `~/eval/reviews.jsonl` logs every decision, yours as `owner`, with
-who made it, any new id and the reason.
+who made it, any new id and the reason; your edits in `review` are
+logged with the old id and the new, though the draft stays a draft.
 
 Each generation adds reported input and output tokens by role to its
 `~/eval/generated.json` entry; older entries without `tokens` remain

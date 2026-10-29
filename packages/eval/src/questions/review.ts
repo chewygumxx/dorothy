@@ -226,16 +226,19 @@ async function logReviews(work: string, reviewed: Reviewed[]): Promise<void> {
 
 const OWNER = "owner";
 
-// An interactive decision, once it is in the file.
+// An interactive decision, once it is in the file; an edit also gives the
+// id the question has after it.
 const ownerDecided = (
     work: string,
     id: string,
-    decision: "accept" | "reject",
+    decision: Reviewed["decision"],
     reason: string,
+    newId = id,
 ) =>
     logReviews(work, [
         {
             id,
+            ...(newId === id ? {} : { newId }),
             reviewer: OWNER,
             decision,
             reason,
@@ -309,6 +312,13 @@ export async function reviewQuestions(
                 } else {
                     questions[at] = outcome;
                     tally.edited++;
+                    await ownerDecided(
+                        work,
+                        question.id,
+                        "edit",
+                        "",
+                        outcome.id,
+                    );
                 }
                 continue;
             }
