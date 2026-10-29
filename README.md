@@ -556,7 +556,9 @@ lists a command's options.
 decisions, one JSON line each, `{"id", "decision", "reason"}` with a
 decision of `accept`, `reject`, `edit` or `unsure` (an `edit` adds any of
 `question`, `answer` and `evidence`), are applied with review's own
-checks, and a line that fails them is reported and skipped:
+checks, and a line that fails them (a key it does not know, or an edit
+that gives nothing or changes nothing, among them) is reported and
+skipped:
 
 ```sh
 bun run eval -- review --work ~/eval --apply decisions.jsonl \

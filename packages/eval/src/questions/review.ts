@@ -318,8 +318,9 @@ export async function reviewQuestions(
     return await finish();
 }
 
-// One line of an agent's decisions.
-const lineSchema = z.object({
+// One line of an agent's decisions. A key it does not know is a mistake
+// in the line, which an edit would otherwise lose without a word.
+const lineSchema = z.strictObject({
     id: z.string().min(1),
     decision: z.enum(["accept", "reject", "edit", "unsure"]),
     reason: z.string().optional(),
@@ -432,6 +433,9 @@ function applyOne(
             note: reason === "" ? held.note : reason.slice(0, 2000),
         };
     } else {
+        if ((line.question ?? line.answer ?? line.evidence) === undefined) {
+            return "an edit gives a question, answer or evidence";
+        }
         const edit = checkedEdit(
             {
                 ...held,
@@ -444,6 +448,9 @@ function applyOne(
         );
         if (typeof edit === "string") {
             return edit;
+        }
+        if (edit.answer === held.answer && sameQuestion(edit, held)) {
+            return "the edit changes nothing";
         }
         decided = { ...edit, status: "accepted" };
     }

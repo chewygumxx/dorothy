@@ -89,8 +89,10 @@ options declared and described for `--help`, its failures as
   directory, takes a new id from its text and evidence, cannot set the
   status, and if refused says why. `--apply` runs an agent's decisions
   through the same `checkedEdit` and `place`, in one locked write (none
-  on `--dry-run`), reporting a bad line and skipping it. Each decision,
-  the owner's too, is a line of `reviews.jsonl` in the work directory.
+  on `--dry-run`), reporting a bad line and skipping it: one with a key
+  it does not know, or an edit that gives nothing or changes nothing.
+  Each decision, the owner's too, is a line of `reviews.jsonl` in the
+  work directory.
 - `models/config.ts`: `eval.toml`, each role's route (`api` by default,
   `claude` or `codex`), model, API credentials or Codex effort.
 - `models/client.ts`: `Models`, dispatch, retries and `--max-calls`;

@@ -549,6 +549,87 @@ describe("bun run eval -- review --apply", () => {
         expect(err).toContain("another question has that text and evidence");
     });
 
+    it("reports a key it does not know, and applies nothing of that line", async () => {
+        const first = idOf("Which plot is my allotment?");
+        const two = idOf("Where is my allotment?");
+        const three = idOf("By what is my allotment?");
+        const { code, out, err } = await apply([
+            { id: first, decision: "edit", anwser: "Number twelve." },
+            { id: two, decision: "reject", why: "too close" },
+            { id: three, decision: "accept", confidence: 0.9 },
+        ]);
+        expect(code).toBe(1);
+        expect(out).toBe("accepted 0, rejected 0, edited 0, unsure 0\n");
+        const lines = err.trimEnd().split("\n");
+        expect(lines[0]).toStartWith(`${first}: `);
+        expect(lines[0]).toContain("anwser");
+        expect(lines[1]).toStartWith(`${two}: `);
+        expect(lines[1]).toContain("why");
+        expect(lines[2]).toContain("confidence");
+        expect(lines).toHaveLength(3);
+        expect(await statuses()).toEqual(["draft", "draft", "draft", "draft"]);
+        expect(existsSync(join(work, "reviews.jsonl"))).toBe(false);
+    });
+
+    it("refuses an edit that names no question, answer or evidence", async () => {
+        const id = idOf("Which plot is my allotment?");
+        const { code, err } = await apply([
+            { id, decision: "edit" },
+            { id, decision: "edit", reason: "wrong plot" },
+            { id, decision: "edit", edit: { answer: "Number twelve." } },
+        ]);
+        expect(code).toBe(1);
+        const lines = err.trimEnd().split("\n");
+        expect(lines[0]).toBe(
+            `${id}: an edit gives a question, answer or evidence`,
+        );
+        expect(lines[1]).toBe(lines[0]);
+        expect(lines[2]).toStartWith(`${id}: `);
+        expect(lines[2]).toContain("edit");
+        expect(lines).toHaveLength(3);
+        expect((await statuses())[0]).toBe("draft");
+    });
+
+    it("refuses an edit that changes nothing", async () => {
+        const id = idOf("Which plot is my allotment?");
+        const { code, out, err } = await apply([
+            {
+                id,
+                decision: "edit",
+                question: "Which plot is my allotment?",
+                evidence: [`c:${GARDEN}`],
+            },
+        ]);
+        expect(code).toBe(1);
+        expect(out).toBe("accepted 0, rejected 0, edited 0, unsure 0\n");
+        expect(err).toBe(`${id}: the edit changes nothing\n`);
+        expect((await statuses())[0]).toBe("draft");
+        expect(existsSync(join(work, "reviews.jsonl"))).toBe(false);
+    });
+
+    it("reports these on a dry run too", async () => {
+        const id = idOf("Which plot is my allotment?");
+        const before = readFileSync(questionsPath(work), "utf8");
+        const { code, out, err } = await apply(
+            [
+                { id, decision: "edit", anwser: "x" },
+                { id, decision: "edit" },
+                {
+                    id,
+                    decision: "edit",
+                    question: "Which plot is my allotment?",
+                },
+            ],
+            "--dry-run",
+        );
+        expect(code).toBe(1);
+        expect(out).toBe(
+            "dry run, nothing written: accepted 0, rejected 0, edited 0, unsure 0\n",
+        );
+        expect(err.trimEnd().split("\n")).toHaveLength(3);
+        expect(readFileSync(questionsPath(work), "utf8")).toBe(before);
+    });
+
     it("reports a line naming no draft, or a decided one, and goes on", async () => {
         const first = idOf("Which plot is my allotment?");
         const { code, out, err } = await apply([
