@@ -299,7 +299,8 @@ export class Models {
         this.prepare(role);
         const found = requireRole(this.config, role);
         if (found.via === "claude" || found.via === "codex") {
-            const jsonSchema = z.toJSONSchema(schema);
+            // claude refuses a schema naming its draft; neither CLI needs it.
+            const { $schema: _draft, ...jsonSchema } = z.toJSONSchema(schema);
             return this.call(async () => {
                 const reply = await cliAttempt(
                     found,

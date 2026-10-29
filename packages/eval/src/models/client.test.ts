@@ -379,6 +379,8 @@ describe.each(routes)("Models through $via", (config) => {
                   ]
                 : fake.contents.get(`${request?.cwd}/schema.json`);
         const schema = JSON.parse(json ?? "null");
+        // claude refuses a schema naming its draft by $schema.
+        expect(schema).not.toHaveProperty("$schema");
         expect(schema.additionalProperties).toBe(false);
         expect(schema.required).toEqual(["questions"]);
         expect(schema.properties.questions.items.additionalProperties).toBe(
