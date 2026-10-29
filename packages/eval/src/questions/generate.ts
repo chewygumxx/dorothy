@@ -16,8 +16,9 @@ import type {
     ArchiveKnowledge,
 } from "@dorothy/memory/evaluation";
 import { z } from "zod";
-import { UsageError } from "../errors.js";
-import { CallCap, failureOf, type Message } from "../models/client.js";
+import { RunStop, UsageError } from "../errors.js";
+import { PlanLimit } from "../models/cli.js";
+import { failureOf, type Message } from "../models/client.js";
 import {
     type Corpus,
     clip,
@@ -503,6 +504,8 @@ export async function generateQuestions(options: {
     unkept: Question[];
     dropped: Record<string, number>;
     stopped: string | null;
+    // Whether a plan's usage limit stopped it.
+    limited: boolean;
 }> {
     const ids = new Map(
         options.existing.map((question) => [question.id, question]),
@@ -512,12 +515,11 @@ export async function generateQuestions(options: {
     const drop = (reason: string) => {
         dropped[reason] = (dropped[reason] ?? 0) + 1;
     };
-    const stop = (stopped: string, unkept: Question[] = []) => ({
-        made,
-        unkept,
-        dropped,
-        stopped,
-    });
+    const stop = (
+        stopped: string,
+        unkept: Question[] = [],
+        limited = false,
+    ) => ({ made, unkept, dropped, stopped, limited });
     // Calls failed in a row; any call that returns resets it.
     let failures = 0;
     for (const type of GENERATED_TYPES) {
@@ -542,8 +544,17 @@ export async function generateQuestions(options: {
                 drafts = await options.draft(sample, n);
                 failures = 0;
             } catch (error) {
-                if (error instanceof CallCap) {
-                    return stop(error.message);
+                if (error instanceof RunStop) {
+                    // Generate has no --resume: a limit is waited out and
+                    // generate run again.
+                    const limited = error instanceof PlanLimit;
+                    return stop(
+                        limited
+                            ? `${error.message}; run generate again after the reset`
+                            : error.message,
+                        [],
+                        limited,
+                    );
                 }
                 const why = failureOf(error);
                 drop(`failed call: ${why}`);
@@ -585,7 +596,7 @@ export async function generateQuestions(options: {
             }
         }
     }
-    return { made, unkept: [], dropped, stopped: null };
+    return { made, unkept: [], dropped, stopped: null, limited: false };
 }
 
 // The day of the snapshot's last turn: questions are asked as of then.

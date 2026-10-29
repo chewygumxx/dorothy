@@ -13,7 +13,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { UsageError } from "../errors.js";
 import { tempRoot } from "../testing.js";
-import { CliFailure, cliAttempt } from "./cli.js";
+import { CliFailure, cliAttempt, PlanLimit } from "./cli.js";
 import type { CliConfig } from "./config.js";
 import { fakeCli } from "./testing.js";
 
@@ -257,6 +257,401 @@ describe("CLI routes", () => {
             expect(fake.removed).toHaveLength(1);
         },
     );
+});
+
+const RESET = "Nov 3rd, 2026 9:12 AM";
+const codexLimit = `You've hit your usage limit. Upgrade to Pro (https://example.test/pro) or try again at ${RESET}.`;
+const LIMITS = [
+    [
+        "Claude's credits reply",
+        claude,
+        JSON.stringify({
+            is_error: true,
+            api_error_status: 429,
+            result: "Fable 5.1 requires usage credits. Switch to another model to continue.",
+        }),
+        1,
+        "",
+    ],
+    [
+        "Claude's 429 with any text",
+        claude,
+        JSON.stringify({
+            is_error: true,
+            api_error_status: 429,
+            result: "Private snapshot",
+        }),
+        1,
+        "",
+    ],
+    [
+        "Claude's limit string, ending in an epoch",
+        claude,
+        JSON.stringify({
+            is_error: true,
+            result: "Claude AI usage limit reached|1793401200",
+        }),
+        1,
+        " (try again at 2026-10-30T23:00:00.000Z)",
+    ],
+    [
+        "Claude's rate limit text",
+        claude,
+        JSON.stringify({ is_error: true, result: "Rate limit exceeded" }),
+        0,
+        "",
+    ],
+    [
+        "Codex's error and turn.failed events",
+        codex,
+        [
+            '{"type":"thread.started","thread_id":"t"}',
+            JSON.stringify({ type: "error", message: codexLimit }),
+            JSON.stringify({
+                type: "turn.failed",
+                error: { message: codexLimit },
+            }),
+        ].join("\n"),
+        1,
+        ` (try again at ${RESET})`,
+    ],
+    [
+        "Codex's turn.failed alone",
+        codex,
+        JSON.stringify({
+            type: "turn.failed",
+            error: { message: "The usage limit has been reached" },
+        }),
+        0,
+        "",
+    ],
+    [
+        "Codex's notice, then turn.failed, with exit 0",
+        codex,
+        [
+            JSON.stringify({ type: "error", message: codexLimit }),
+            JSON.stringify({
+                type: "turn.failed",
+                error: { message: "Request failed" },
+            }),
+        ].join("\n"),
+        0,
+        ` (try again at ${RESET})`,
+    ],
+    [
+        "Codex's notice, then a non-zero exit after turn.completed",
+        codex,
+        [
+            JSON.stringify({ type: "error", message: codexLimit }),
+            '{"type":"turn.completed"}',
+        ].join("\n"),
+        1,
+        ` (try again at ${RESET})`,
+    ],
+    [
+        "Codex's notice with no turn.completed, exit 0",
+        codex,
+        JSON.stringify({ type: "error", message: codexLimit }),
+        0,
+        ` (try again at ${RESET})`,
+    ],
+    [
+        "Claude's session limit, with no status",
+        claude,
+        JSON.stringify({
+            is_error: true,
+            result: "You've hit your session limit \u00b7 resets 3pm (Europe/London)",
+        }),
+        1,
+        " (try again at 3pm)",
+    ],
+    [
+        "Claude's weekly limit, with exit 0",
+        claude,
+        JSON.stringify({
+            is_error: true,
+            result: "You've hit your weekly limit \u00b7 resets Nov 3, 9am",
+        }),
+        0,
+        " (try again at Nov 3, 9am)",
+    ],
+    [
+        "Claude's limit reached, with no reset",
+        claude,
+        JSON.stringify({ is_error: true, result: "5-hour limit reached" }),
+        1,
+        "",
+    ],
+    [
+        "Codex's workspace out of credits, in a failed turn",
+        codex,
+        JSON.stringify({
+            type: "turn.failed",
+            error: {
+                message:
+                    "Your workspace is out of credits. Add credits to continue.",
+            },
+        }),
+        1,
+        "",
+    ],
+    [
+        "Claude's reset naming words, not a time",
+        claude,
+        JSON.stringify({
+            is_error: true,
+            result: "You've hit your session limit \u00b7 resets whenever you like",
+        }),
+        1,
+        "",
+    ],
+    [
+        "Claude's reset naming words, not a time",
+        claude,
+        JSON.stringify({
+            is_error: true,
+            result: "Usage limit reached, try again at your convenience",
+        }),
+        1,
+        "",
+    ],
+    [
+        "Codex's error event after an unreadable line",
+        codex,
+        `not JSON\n${JSON.stringify({ type: "error", message: "usage_limit_reached" })}`,
+        1,
+        "",
+    ],
+] as const;
+
+describe("a plan's limit", () => {
+    it.each(LIMITS)(
+        "is read from %s",
+        async (_name, config, stdout, exitCode, reset) => {
+            const fake = fakeCli(() => ({ exitCode, stdout }));
+            const error = await cliAttempt(config, messages, schema, {
+                env,
+                ...fake,
+            }).catch((e) => e);
+            expect(error).toBeInstanceOf(PlanLimit);
+            expect(error).toBeInstanceOf(UsageError);
+            expect(error).not.toBeInstanceOf(CliFailure);
+            expect(error.message).toBe(
+                `the ${config.via} plan's usage limit is reached${reset}`,
+            );
+            expect(String(error)).not.toContain("Private");
+            expect(fake.removed).toHaveLength(1);
+        },
+    );
+
+    it.each(["session", "weekly", "Opus", "Sonnet", "Fable"])(
+        "is read from Claude's %s limit, with no status",
+        async (kind) => {
+            const fake = fakeCli(() => ({
+                exitCode: 1,
+                stdout: JSON.stringify({
+                    is_error: true,
+                    result: `You've hit your ${kind} limit \u00b7 resets 3pm`,
+                }),
+            }));
+            const error = await cliAttempt(claude, messages, schema, {
+                env,
+                ...fake,
+            }).catch((e) => e);
+            expect(error).toBeInstanceOf(PlanLimit);
+            expect(error.message).toBe(
+                "the claude plan's usage limit is reached (try again at 3pm)",
+            );
+        },
+    );
+
+    it.each([
+        "9:12 AM",
+        "Nov 3rd, 2026 9:12 AM",
+        "2026-11-03 09:12",
+        "Monday 4:05 pm",
+        "11/03/2026",
+    ])("keeps a reset of %o that is a time or date", async (reset) => {
+        const fake = fakeCli(() => ({
+            exitCode: 1,
+            stdout: JSON.stringify({
+                is_error: true,
+                result: `Usage limit reached, try again at ${reset}.`,
+            }),
+        }));
+        const error = await cliAttempt(claude, messages, schema, {
+            env,
+            ...fake,
+        }).catch((e) => e);
+        expect(error.message).toBe(
+            `the claude plan's usage limit is reached (try again at ${reset})`,
+        );
+    });
+
+    // Codex says of a recovered stream what it says of a failed one.
+    it("succeeds when a retry notice names a limit but the turn completes", async () => {
+        const fake = fakeCli((request) => {
+            fake.contents.set(`${request.cwd}/reply.txt`, '{"n":3}');
+            return {
+                stdout: [
+                    JSON.stringify({
+                        type: "error",
+                        message:
+                            "Reconnecting... 1/5 (rate limit exceeded: try again in 2s)",
+                    }),
+                    '{"type":"turn.completed","usage":{"input_tokens":5,"output_tokens":2}}',
+                ].join("\n"),
+            };
+        });
+        expect(
+            await cliAttempt(codex, messages, schema, { env, ...fake }),
+        ).toMatchObject({ text: '{"n":3}', value: { n: 3 }, input: 5 });
+        expect(fake.removed).toHaveLength(1);
+    });
+
+    // Whatever else they come to, none of these is a limit.
+    it.each([
+        [
+            "a Claude reply that mentions a limit but is no error",
+            claude,
+            claudeReply({ result: "The usage limit is a policy" }),
+            0,
+        ],
+        [
+            "a Claude error with another status and text",
+            claude,
+            JSON.stringify({
+                is_error: true,
+                api_error_status: 500,
+                result: "Overloaded",
+            }),
+            1,
+        ],
+        [
+            "a Codex retry notice",
+            codex,
+            '{"type":"error","message":"Reconnecting... 1/5"}',
+            1,
+        ],
+        [
+            "a Codex message item that mentions a limit",
+            codex,
+            '{"type":"item.completed","item":{"text":"usage limit"}}',
+            1,
+        ],
+        [
+            "a Claude reply that quotes a limit but is no error",
+            claude,
+            claudeReply({ result: "You've hit your session limit" }),
+            0,
+        ],
+        [
+            "a Claude error that hits another thing",
+            claude,
+            JSON.stringify({ is_error: true, result: "You hit your head" }),
+            1,
+        ],
+        [
+            "a Codex error in Claude's words for a limit",
+            codex,
+            '{"type":"error","message":"You\'ve hit your session limit"}',
+            1,
+        ],
+        ["output with no event", claude, "usage limit", 1],
+    ] as const)(
+        "is not read from %s",
+        async (_name, config, stdout, exitCode) => {
+            const fake = fakeCli(() => ({ exitCode, stdout }));
+            const error = await cliAttempt(config, messages, schema, {
+                env,
+                ...fake,
+            }).catch((e) => e);
+            expect(error).not.toBeInstanceOf(PlanLimit);
+        },
+    );
+});
+
+describe("a Codex model switch", () => {
+    const switched =
+        "Automatically switched to gpt-6.1-luna due to usage limits.";
+    // A turn that completes with a notice among its events.
+    const completed = (notice: object) => {
+        const fake = fakeCli((request) => {
+            fake.contents.set(`${request.cwd}/reply.txt`, '{"n":3}');
+            return {
+                stdout: [
+                    '{"type":"thread.started","thread_id":"t"}',
+                    JSON.stringify(notice),
+                    '{"type":"turn.completed","usage":{"input_tokens":5,"output_tokens":2}}',
+                ].join("\n"),
+            };
+        });
+        return fake;
+    };
+
+    it.each([
+        ["an error event", { type: "error", message: switched }],
+        [
+            "an error item",
+            {
+                type: "item.completed",
+                item: { id: "i", type: "error", message: switched },
+            },
+        ],
+    ])(
+        "stops the run, though the turn completes, on %s",
+        async (_n, notice) => {
+            const fake = completed(notice);
+            const error = await cliAttempt(codex, messages, schema, {
+                env,
+                ...fake,
+            }).catch((e) => e);
+            expect(error).toBeInstanceOf(PlanLimit);
+            expect(error.message).toBe(
+                "the codex plan switched the model to gpt-6.1-luna under its usage limits",
+            );
+            expect(fake.removed).toHaveLength(1);
+        },
+    );
+
+    it("stops the run on a notice that does not name the model", async () => {
+        const fake = completed({
+            type: "error",
+            message:
+                "Automatically switched to a smaller model due to usage limits.",
+        });
+        const error = await cliAttempt(codex, messages, schema, {
+            env,
+            ...fake,
+        }).catch((e) => e);
+        expect(error).toBeInstanceOf(PlanLimit);
+        expect(error.message).toBe(
+            "the codex plan switched the model under its usage limits",
+        );
+    });
+
+    it.each([
+        [
+            "a switch back",
+            {
+                type: "error",
+                message:
+                    "Automatically switched back to gpt-6.1-terra because ordinary usage is available again.",
+            },
+        ],
+        [
+            "an answer that says it",
+            {
+                type: "item.completed",
+                item: { id: "i", type: "agent_message", text: switched },
+            },
+        ],
+    ])("goes on past %s", async (_n, notice) => {
+        const fake = completed(notice);
+        expect(
+            await cliAttempt(codex, messages, schema, { env, ...fake }),
+        ).toMatchObject({ value: { n: 3 } });
+    });
 });
 
 it.each(["temp", "write", "read"] as const)(

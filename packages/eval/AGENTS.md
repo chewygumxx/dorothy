@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-19
-mtime: 2026-10-29
+mtime: 2026-10-30
 spdx: GPL-3.0-only
 title: packages/eval/AGENTS.md
 description: >-
@@ -84,9 +84,15 @@ options declared and described for `--help`, its failures as
   arrive and records each generation's seed and reported tokens by role
   in `generated.json`; older entries need no tokens.
 - `questions/review.ts`: the owner's pass over the drafts, and the
-  `review` command; an edit goes through `editing.json` in the work
+  `review` command (`--evidence` sets the characters shown of each
+  conversation); an edit goes through `editing.json` in the work
   directory, takes a new id from its text and evidence, cannot set the
-  status, and if refused says why.
+  status, and if refused says why. `--apply` runs an agent's decisions
+  through the same `checkedEdit` and `place`, in one locked write (none
+  on `--dry-run`), reporting a bad line and skipping it: one with a key
+  it does not know, or an edit that gives nothing or changes nothing.
+  Each decision, the owner's too and an edit of the owner's with its
+  old id and new, is a line of `reviews.jsonl` in the work directory.
 - `models/config.ts`: `eval.toml`, each role's route (`api` by default,
   `claude` or `codex`), model, API credentials or Codex effort.
 - `models/client.ts`: `Models`, dispatch, retries and `--max-calls`;
@@ -100,6 +106,23 @@ options declared and described for `--help`, its failures as
   groups and remove their directories, with handlers only while live.
   Startup errors do not retry; cleanup is best effort. Codex error events
   may be retry notices; exit, turn.failed and the reply decide success.
+  A reply that says the plan's usage limit is reached, read before the
+  exit code, is a `PlanLimit`, never retried: a `RunStop`, as `CallCap`
+  is, so `run` and `generate` stop with what is done; a run resumes
+  after the reset, generate is run again. Either exits 75
+  (`EXIT_TEMPFAIL`) for a wrapper to wait on; a `CallCap` exits 0. What
+  it says: Claude, an
+  error reply with status 429, or text with "usage limit", "usage
+  credits", "out of credits", "rate limit", "hit your ... limit" (its
+  session, weekly, Opus, Sonnet or Fable limit) or "limit reached";
+  Codex, an error or turn.failed event with the first four, but only
+  when the turn did not complete: a retry notice that a completed turn
+  outlived is no limit. The reset time ("try again at", or Claude's
+  "resets") is kept only if it is a time or date. A Codex notice that
+  the plan "automatically switched" the model "due to usage limits"
+  also stops the run, even from a completed turn, since the reply is
+  then not the role's model's: no event names the model, so the notice
+  text is all there is to match.
   `models/testing.ts`: injected
   in-memory runner and files; runner integration tests use temp scripts.
 - `systems/`: `System` and `makeSystem` (`system.ts`); the corpus, the

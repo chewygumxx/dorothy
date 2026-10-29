@@ -9,7 +9,7 @@
 //
 
 import { type Command, intOf, stringOf, workOf } from "../command.js";
-import { UsageError } from "../errors.js";
+import { EXIT_TEMPFAIL, UsageError } from "../errors.js";
 import { Models } from "../models/client.js";
 import {
     type EvalConfig,
@@ -180,7 +180,7 @@ export const runCommand: Command = {
         }
         const corpus = await openCorpus(workEnv(work));
         try {
-            const { stopped } = await runEvaluation(info, {
+            const { stopped, limited } = await runEvaluation(info, {
                 work,
                 corpus,
                 questions: accepted,
@@ -193,7 +193,8 @@ export const runCommand: Command = {
                     `stopped: ${stopped}; resume with \`bun run eval -- run --work ${work} --resume ${info.id}\`\n`,
                 );
             }
-            return 0;
+            // A plan's limit is waited out: a wrapper can resume on 75.
+            return limited ? EXIT_TEMPFAIL : 0;
         } finally {
             corpus.close();
         }

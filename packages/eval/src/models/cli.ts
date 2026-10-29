@@ -14,7 +14,7 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Env } from "@dorothy/core";
-import { codeOf, UsageError } from "../errors.js";
+import { codeOf, RunStop, UsageError } from "../errors.js";
 import type { Message } from "./client.js";
 import type { CliConfig } from "./config.js";
 
@@ -52,6 +52,28 @@ export type CliReply = {
 };
 export class CliFailure extends Error {}
 class CliUnavailable extends UsageError {}
+
+// The route's plan has no usage left: not a fault of the call, and no
+// retry mends it. The run stops, keeping what is done, for the command to
+// say how to go on after the reset, which the CLI may have said.
+export class PlanLimit extends RunStop {
+    // switchedTo is the model a plan put the turn on, or null if the CLI did
+    // not name it; undefined if the plan did not switch the model.
+    constructor(
+        via: CliConfig["via"],
+        resets: string | null,
+        switchedTo?: string | null,
+    ) {
+        const when = resets === null ? "" : ` (try again at ${resets})`;
+        super(
+            switchedTo === undefined
+                ? `the ${via} plan's usage limit is reached${when}`
+                : `the ${via} plan switched the model${
+                      switchedTo === null ? "" : ` to ${switchedTo}`
+                  } under its usage limits${when}`,
+        );
+    }
+}
 const files: CliFiles = {
     temp: async () => mkdtempSync(join(tmpdir(), "dorothy-eval-model-")),
     write: (path, text, mode) => writeFile(path, text, { mode }),
@@ -180,6 +202,129 @@ const usageOf = (value: unknown) => {
     };
 };
 
+// What each CLI says of a limit, read leniently. A status 429 is one
+// whatever it says.
+const LIMIT = /usage[ _]limit|usage credits|out of credits|rate[ _]limit/i;
+
+// What Claude alone says: "You've hit your session limit" (also weekly,
+// Opus, Sonnet or Fable) and "limit reached".
+const CLAUDE_LIMIT = /hit your [\w ]*limit|limit reached/i;
+
+// The notice Codex gives when its plan puts a turn on another model. No
+// event names the model; this text is all there is.
+const SWITCH = /automatically switched to (.{1,60}?) due to usage limits/i;
+
+// A word of a time or date: digits (a time, a day, an ISO stamp), AM or
+// PM, a month or a weekday.
+const WHEN =
+    /^(?:\d[\dTZ:/.+-]*(?:st|nd|rd|th|[ap]m)?|[ap]m|at|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]{0,6}|(?:mon|tue|wed|thu|fri|sat|sun)[a-z]{0,6})$/i;
+
+// The reset time the CLI gives, if a time or date is all it is: any other
+// reply text, that a capture might repeat, is left out.
+const resetIn = (text: string): string | null => {
+    const said = /(?:try again at|resets) ([A-Za-z0-9 ,:/.+-]{1,40})/i
+        .exec(text)?.[1]
+        ?.trim()
+        .replace(/\.$/, "");
+    if (said === undefined || !/\d/.test(said)) return null;
+    return said.split(/\s+/).every((word) => WHEN.test(word.replace(/,$/, "")))
+        ? said
+        : null;
+};
+
+// Claude ends some limit replies in `|<epoch seconds>`.
+const epochIn = (text: string): string | null => {
+    const seconds = /\|(\d{10})\s*$/.exec(text)?.[1];
+    return seconds === undefined
+        ? null
+        : new Date(Number(seconds) * 1000).toISOString();
+};
+
+// A limit the CLI said, and when it resets if a time or date. A switch
+// of the model has the model it names, or null if it does not.
+type Limit = { resets: string | null; switchedTo?: string | null };
+
+// The limit a Claude error reply says, if it does.
+function claudeLimit(stdout: string): Limit | null {
+    let reply: Record<string, unknown>;
+    try {
+        reply = record(JSON.parse(stdout));
+    } catch {
+        return null;
+    }
+    const text = typeof reply.result === "string" ? reply.result : "";
+    if (
+        reply.is_error !== true ||
+        (reply.api_error_status !== 429 &&
+            !LIMIT.test(text) &&
+            !CLAUDE_LIMIT.test(text))
+    ) {
+        return null;
+    }
+    return { resets: resetIn(text) ?? epochIn(text) };
+}
+
+// The text an event gives as a notice of the turn: an error event's, a
+// failed turn's, an error item's. An answer or any other event gives none.
+function noticeOf(event: Record<string, unknown>): string | undefined {
+    let notice: unknown;
+    if (event.type === "error") {
+        notice = event.message;
+    } else if (event.type === "turn.failed") {
+        notice = record(event.error).message;
+    } else if (typeof event.item === "object" && event.item !== null) {
+        const item = event.item as Record<string, unknown>;
+        notice = item.type === "error" ? item.message : undefined;
+    }
+    return typeof notice === "string" ? notice : undefined;
+}
+
+// The model name a switch notice gives, if it is only a name.
+const modelIn = (named: string): string | null =>
+    /^[\w.:/-]{1,40}$/.test(named) ? named : null;
+
+// The limit Codex says in its events, if it does. A notice of a limit in
+// an error or turn.failed event counts only if the turn did not complete:
+// a completed turn, with exit 0 and no turn.failed, has outlived a retry
+// notice. A notice that the plan switched the model counts always, since
+// the reply is then not the role's model's. Other events, and lines that
+// are not events, say nothing of it.
+function codexLimit(stdout: string, exitCode: number | null): Limit | null {
+    const events: Record<string, unknown>[] = [];
+    for (const line of stdout.split("\n")) {
+        try {
+            events.push(record(JSON.parse(line)));
+        } catch {
+            // Not an event.
+        }
+    }
+    const notices = events.flatMap((event) => noticeOf(event) ?? []);
+    for (const notice of notices) {
+        const named = SWITCH.exec(notice)?.[1];
+        if (named !== undefined) {
+            return { resets: resetIn(notice), switchedTo: modelIn(named) };
+        }
+    }
+    const types = events.map((event) => event.type);
+    if (
+        exitCode === 0 &&
+        types.includes("turn.completed") &&
+        !types.includes("turn.failed")
+    ) {
+        return null;
+    }
+    for (const event of events) {
+        const message =
+            event.type === "error" || event.type === "turn.failed"
+                ? noticeOf(event)
+                : undefined;
+        if (message !== undefined && LIMIT.test(message)) {
+            return { resets: resetIn(message) };
+        }
+    }
+    return null;
+}
+
 // One attempt only. Models.call owns the cap, retry policy and timing.
 // All external failures lose their payload, including thrown filesystem
 // and runner errors: both may hold prompts or credentials.
@@ -300,6 +445,14 @@ export async function cliAttempt(
         }
         exitCode = result.exitCode;
         if (result.timedOut) throw failed("timed out");
+        // A CLI at its limit may exit non-zero, so this comes before the
+        // exit code is judged.
+        const limit =
+            config.via === "claude"
+                ? claudeLimit(result.stdout)
+                : codexLimit(result.stdout, exitCode);
+        if (limit !== null)
+            throw new PlanLimit(config.via, limit.resets, limit.switchedTo);
         if (exitCode !== 0)
             throw new CliFailure(
                 `${config.via} exited with code ${exitCode ?? "unknown"}`,
@@ -347,7 +500,9 @@ export async function cliAttempt(
             throw failed("unreadable reply");
         }
     } catch (error) {
-        throw error instanceof CliFailure || error instanceof CliUnavailable
+        throw error instanceof CliFailure ||
+            error instanceof CliUnavailable ||
+            error instanceof PlanLimit
             ? error
             : failed("could not run");
     } finally {

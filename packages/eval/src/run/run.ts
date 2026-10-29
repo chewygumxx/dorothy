@@ -14,9 +14,10 @@
 
 import { createHash } from "node:crypto";
 import { appendFile, mkdir, stat } from "node:fs/promises";
-import { UsageError } from "../errors.js";
+import { RunStop, UsageError } from "../errors.js";
 import { writeAtomic } from "../files.js";
-import { CallCap, failureOf, type Models } from "../models/client.js";
+import { PlanLimit } from "../models/cli.js";
+import { failureOf, type Models } from "../models/client.js";
 import { type EvalConfig, ROLES, type RoleConfig } from "../models/config.js";
 import { definitionOf, type Question } from "../questions/file.js";
 import { writeRunReport } from "../report/command.js";
@@ -204,14 +205,15 @@ function checkQuestions(info: RunInfo, accepted: readonly Question[]): void {
     }
 }
 
-// The cap reached at a judgement: the answer was paid for, so its record
-// is kept, with that judgement's failure, before the run stops.
-class Capped extends CallCap {
+// A stop (the cap, or a plan's limit) at a judgement: the answer was paid
+// for, so its record is kept, with that judgement's failure, before the run
+// stops.
+class Capped extends RunStop {
     constructor(
-        message: string,
+        readonly stop: RunStop,
         readonly record: RunRecord,
     ) {
-        super(message);
+        super(stop.message);
     }
 }
 
@@ -294,7 +296,8 @@ export function modelCalls(
 }
 
 // Asks each verdict the record lacks; a failed one is recorded and the
-// rest still run, but the cap stops them with the record kept.
+// rest still run, but a stop (the cap, a plan's limit) ends them with the
+// record kept.
 async function judge(
     record: RunRecord,
     question: Question,
@@ -332,8 +335,8 @@ async function judge(
             }
         } catch (caught) {
             record.failures.push(`${name}: ${failureOf(caught)}`);
-            if (caught instanceof CallCap) {
-                throw new Capped(caught.message, record);
+            if (caught instanceof RunStop) {
+                throw new Capped(caught, record);
             }
         }
     }
@@ -416,7 +419,7 @@ async function ask(
             answerPrompt(question, retrieved.context),
         );
     } catch (caught) {
-        if (caught instanceof CallCap) {
+        if (caught instanceof RunStop) {
             throw caught;
         }
         record.failures.push(`answer: ${failureOf(caught)}`);
@@ -435,7 +438,12 @@ export async function runEvaluation(
         concurrency: number;
         systems?: System[];
     },
-): Promise<{ summary: Summary; stopped: string | null }> {
+): Promise<{
+    summary: Summary;
+    stopped: string | null;
+    // Whether a plan's usage limit stopped it.
+    limited: boolean;
+}> {
     const asked = new Set(info.questionIds);
     const accepted = deps.questions.filter(
         (q) => q.status === "accepted" && asked.has(q.id),
@@ -496,6 +504,7 @@ export async function runEvaluation(
         await system.prepare?.();
     }
     let stopped: string | null = null;
+    let limited = false;
     // The first fault in any worker: the others stop at their next task,
     // and it is thrown once all have, after the systems are closed.
     // Declared so, tsc does not narrow it to null after the workers.
@@ -523,10 +532,16 @@ export async function runEvaluation(
                 try {
                     record = await settle(task);
                 } catch (error) {
-                    if (!(error instanceof CallCap)) {
+                    if (!(error instanceof RunStop)) {
                         throw error;
                     }
                     stopped = error.message;
+                    // Any worker's plan limit makes the run limited, though
+                    // another worker stop after it at --max-calls.
+                    limited ||=
+                        (error instanceof Capped
+                            ? error.stop
+                            : error) instanceof PlanLimit;
                     if (!(error instanceof Capped)) {
                         return;
                     }
@@ -593,5 +608,9 @@ export async function runEvaluation(
     if (fault !== null) {
         throw fault.error;
     }
-    return { summary: await writeRunReport(deps.work, info.id), stopped };
+    return {
+        summary: await writeRunReport(deps.work, info.id),
+        stopped,
+        limited,
+    };
 }

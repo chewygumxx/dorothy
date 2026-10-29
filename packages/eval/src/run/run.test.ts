@@ -18,9 +18,10 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { runCli } from "../cli.js";
+import type { CliRequest } from "../models/cli.js";
 import { Models } from "../models/client.js";
 import { configPath, readEvalConfig } from "../models/config.js";
-import { fakeCli } from "../models/testing.js";
+import { fakeCli, planLimitReply } from "../models/testing.js";
 import {
     type Question,
     questionId,
@@ -104,6 +105,32 @@ const serve = (answer: { status?: number; content?: string }) => {
     writeFileSync(configPath(work), stubConfig(stub.url));
     return stub;
 };
+// A CLI's good reply: the judges' verdict if a schema is asked, else the
+// answer. The fake is the caller's, whose files the CLI would write.
+const cliReply = (
+    via: "claude" | "codex",
+    request: CliRequest,
+    fake: ReturnType<typeof fakeCli>,
+) => {
+    const structured =
+        request.args.includes("--json-schema") ||
+        request.args.includes("--output-schema");
+    const value = { score: true, reasoning: "Checked." };
+    const text = structured
+        ? JSON.stringify(value)
+        : "Plot twelve, by the river.";
+    fake.contents.set(`${request.cwd}/reply.txt`, text);
+    return {
+        stdout:
+            via === "claude"
+                ? JSON.stringify({
+                      result: text,
+                      ...(structured ? { structured_output: value } : {}),
+                      usage: { input_tokens: 11, output_tokens: 7 },
+                  })
+                : '{"type":"error","message":"Reconnecting... 1/5"}\n{"type":"turn.completed","usage":{"input_tokens":11,"output_tokens":7}}',
+    };
+};
 const idOf = (out: string[]) =>
     /run ([0-9A-Za-z-]+):/.exec(out.join(""))?.[1] ?? "";
 
@@ -115,28 +142,7 @@ describe("bun run eval -- run", () => {
                 configPath(work),
                 `[models.answer]\nvia = "${via}"\nmodel = "fixture-answer"\n[models.judge]\nvia = "${via}"\nmodel = "fixture-judge"\n`,
             );
-            const fake = fakeCli((request) => {
-                const structured =
-                    request.args.includes("--json-schema") ||
-                    request.args.includes("--output-schema");
-                const value = { score: true, reasoning: "Checked." };
-                const text = structured
-                    ? JSON.stringify(value)
-                    : "Plot twelve, by the river.";
-                fake.contents.set(`${request.cwd}/reply.txt`, text);
-                return {
-                    stdout:
-                        via === "claude"
-                            ? JSON.stringify({
-                                  result: text,
-                                  ...(structured
-                                      ? { structured_output: value }
-                                      : {}),
-                                  usage: { input_tokens: 11, output_tokens: 7 },
-                              })
-                            : '{"type":"error","message":"Reconnecting... 1/5"}\n{"type":"turn.completed","usage":{"input_tokens":11,"output_tokens":7}}',
-                };
-            });
+            const fake = fakeCli((request) => cliReply(via, request, fake));
             const { io, out } = fakeIo({
                 env: {
                     PATH: "/fixture/bin",
@@ -392,6 +398,245 @@ describe("bun run eval -- run", () => {
             readFileSync(recordsPath(work, id), "utf8").trim().split("\n"),
         ).toHaveLength(6);
     });
+
+    it("exits 75 when one worker meets a plan limit and another the cap", async () => {
+        writeFileSync(
+            configPath(work),
+            `[models.answer]\nvia = "claude"\nmodel = "fixture-answer"\n[models.judge]\nvia = "claude"\nmodel = "fixture-judge"\n`,
+        );
+        const fake = fakeCli((request, count) =>
+            count === 1
+                ? planLimitReply("claude")
+                : cliReply("claude", request, fake),
+        );
+        const options = {
+            env: {
+                PATH: "/fixture/bin",
+                HOME: "/fixture",
+                CLAUDE_CODE_OAUTH_TOKEN: "fixture-token",
+            },
+            modelOptions: fake,
+        };
+        const args = [
+            "run",
+            "--work",
+            work,
+            "--systems",
+            "lexical",
+            "--concurrency",
+            "2",
+            "--max-calls",
+            "2",
+        ];
+        // The limit stops one worker; the other then meets --max-calls.
+        expect(await runCli(args, fakeIo(options).io)).toBe(75);
+    });
+
+    it.each([
+        ["claude", 1],
+        ["codex", 1],
+        ["claude", 5],
+        ["codex", 5],
+    ] as const)(
+        "stops at %s's plan limit on call %d, and resumes with no miss",
+        async (via, limitedAt) => {
+            writeFileSync(
+                configPath(work),
+                `[models.answer]\nvia = "${via}"\nmodel = "fixture-answer"\n[models.judge]\nvia = "${via}"\nmodel = "fixture-judge"\n`,
+            );
+            let limited = true;
+            const fake = fakeCli((request, count) =>
+                limited && count === limitedAt
+                    ? planLimitReply(via)
+                    : cliReply(via, request, fake),
+            );
+            const options = {
+                env: {
+                    PATH: "/fixture/bin",
+                    HOME: "/fixture",
+                    CLAUDE_CODE_OAUTH_TOKEN: "fixture-token",
+                },
+                modelOptions: fake,
+            };
+            const args = [
+                "run",
+                "--work",
+                work,
+                "--systems",
+                "lexical",
+                "--concurrency",
+                "1",
+            ];
+            const first = fakeIo(options);
+            // EX_TEMPFAIL, for a wrapper to wait and resume.
+            expect(await runCli(args, first.io)).toBe(75);
+            const id = idOf(first.out);
+            // One try: a limit is not retried, and nothing more is asked.
+            expect(fake.requests).toHaveLength(limitedAt);
+            expect(first.out.join("")).toContain(
+                `stopped: the ${via} plan's usage limit is reached; resume with`,
+            );
+            const kept = await readRecords(work, id);
+            if (limitedAt === 5) {
+                // The abstention's paid answer is kept, its judgement
+                // not made.
+                const capped = kept.find((each) => each.type === "abstention");
+                expect(capped?.answer?.text).toBe("Plot twelve, by the river.");
+                expect(capped?.failures).toEqual([
+                    `declined: the ${via} plan's usage limit is reached`,
+                ]);
+            }
+            const asked = fake.requests.length;
+            limited = false;
+            const again = fakeIo(options);
+            expect(
+                await runCli(["run", "--work", work, "--resume", id], again.io),
+            ).toBe(0);
+            expect(again.out.join("")).not.toContain("stopped:");
+            // What was done is not asked again.
+            expect(fake.requests.length - asked).toBe(9 - (limitedAt - 1));
+            const records = await readRecords(work, id);
+            expect(records).toHaveLength(5);
+            expect(records.every((each) => each.failures.length === 0)).toBe(
+                true,
+            );
+            expect(
+                records.find((each) => each.type === "abstention")?.judged
+                    .declined,
+            ).not.toBeNull();
+        },
+    );
+
+    // Records of a run that was stopped at a limit and then resumed must
+    // lack nothing: every answer and every verdict owed.
+    const expectComplete = async (id: string) => {
+        const records = await readRecords(work, id);
+        expect(records).toHaveLength(5);
+        expect(new Set(records.map((each) => each.question)).size).toBe(5);
+        for (const each of records) {
+            expect(each.failures).toEqual([]);
+            if (each.type === "lookup") continue;
+            expect(each.answer).not.toBeNull();
+            const owed =
+                each.type === "abstention"
+                    ? ["declined"]
+                    : ["strict", "lenient"];
+            for (const name of owed) {
+                expect(each.judged[name as "strict"]).not.toBeNull();
+            }
+        }
+    };
+    const cliRun = (via: "claude" | "codex", reply: (n: number) => boolean) => {
+        writeFileSync(
+            configPath(work),
+            `[models.answer]\nvia = "${via}"\nmodel = "fixture-answer"\n[models.judge]\nvia = "${via}"\nmodel = "fixture-judge"\n`,
+        );
+        let limited = true;
+        const fake = fakeCli((request, count) =>
+            limited && reply(count)
+                ? planLimitReply(via)
+                : cliReply(via, request, fake),
+        );
+        const options = {
+            env: {
+                PATH: "/fixture/bin",
+                HOME: "/fixture",
+                CLAUDE_CODE_OAUTH_TOKEN: "fixture-token",
+            },
+            modelOptions: fake,
+        };
+        return {
+            fake,
+            options,
+            release: () => {
+                limited = false;
+            },
+        };
+    };
+
+    it.each(["claude", "codex"] as const)(
+        "stops %s's run at a limit with several attempts in flight",
+        async (via) => {
+            // Every call from the second on meets the limit, as a plan's
+            // does once spent: answers and judgements alike, four at once.
+            const { fake, options, release } = cliRun(via, (n) => n >= 2);
+            const first = fakeIo(options);
+            expect(
+                await runCli(
+                    [
+                        "run",
+                        "--work",
+                        work,
+                        "--systems",
+                        "lexical",
+                        "--concurrency",
+                        "4",
+                    ],
+                    first.io,
+                ),
+            ).toBe(75);
+            const id = idOf(first.out);
+            expect(first.out.join("")).toContain(
+                `stopped: the ${via} plan's usage limit is reached; resume with`,
+            );
+            // Not retried: at most one try for each call that could start.
+            expect(fake.requests.length).toBeLessThanOrEqual(9);
+            release();
+            const again = fakeIo(options);
+            expect(
+                await runCli(["run", "--work", work, "--resume", id], again.io),
+            ).toBe(0);
+            expect(again.out.join("")).not.toContain("stopped:");
+            await expectComplete(id);
+        },
+    );
+
+    it.each(["claude", "codex"] as const)(
+        "stops %s's run at a two-judge record's second judge, and resumes",
+        async (via) => {
+            // Calls: the answer, strict, then lenient (the third).
+            const { fake, options, release } = cliRun(via, (n) => n === 3);
+            const first = fakeIo(options);
+            expect(
+                await runCli(
+                    [
+                        "run",
+                        "--work",
+                        work,
+                        "--systems",
+                        "lexical",
+                        "--concurrency",
+                        "1",
+                    ],
+                    first.io,
+                ),
+            ).toBe(75);
+            const id = idOf(first.out);
+            expect(fake.requests).toHaveLength(3);
+            const half = (await readRecords(work, id)).find(
+                (each) => each.judged.strict !== null,
+            );
+            // The answer and the first verdict are kept, the second owed.
+            expect(half?.answer?.text).toBe("Plot twelve, by the river.");
+            expect(half?.judged.strict).toBe(true);
+            expect(half?.judged.lenient).toBeNull();
+            expect(half?.failures).toEqual([
+                `lenient: the ${via} plan's usage limit is reached`,
+            ]);
+            release();
+            const asked = fake.requests.length;
+            expect(
+                await runCli(
+                    ["run", "--work", work, "--resume", id],
+                    fakeIo(options).io,
+                ),
+            ).toBe(0);
+            // Only the lenient verdict of that record, then the rest: 9
+            // calls in all, the answer and strict already made.
+            expect(fake.requests.length - asked).toBe(7);
+            await expectComplete(id);
+        },
+    );
 
     it("labels totals as partial when an older run is resumed", async () => {
         serve({ content: "Plot twelve, by the river." });

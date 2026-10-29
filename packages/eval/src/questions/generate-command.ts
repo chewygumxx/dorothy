@@ -11,7 +11,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Command, intOf, workOf } from "../command.js";
-import { UsageError } from "../errors.js";
+import { EXIT_TEMPFAIL, UsageError } from "../errors.js";
 import { writeAtomic } from "../files.js";
 import { Models } from "../models/client.js";
 import { readEvalConfig, requireRole } from "../models/config.js";
@@ -248,7 +248,8 @@ export const generateCommand: Command = {
             if (stopped !== null) {
                 io.out(`stopped: ${stopped}\n`);
             }
-            return 0;
+            // A plan's limit is waited out: a wrapper can run again on 75.
+            return result.limited ? EXIT_TEMPFAIL : 0;
         } finally {
             corpus.close();
         }

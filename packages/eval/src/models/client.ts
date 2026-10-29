@@ -16,7 +16,7 @@ import type { AIMessage } from "@langchain/core/messages";
 import type { ChatGeneration } from "@langchain/core/outputs";
 import { ChatOpenAI } from "@langchain/openai";
 import { z } from "zod";
-import { UsageError } from "../errors.js";
+import { RunStop, UsageError } from "../errors.js";
 import { CliFailure, type CliOptions, cliAttempt } from "./cli.js";
 import {
     type ApiConfig,
@@ -56,7 +56,7 @@ export type TokenCounts = { input: number; output: number };
 export type RoleTokens = Partial<Record<Role, TokenCounts>>;
 
 // --max-calls spent: what is done is kept, and a run resumes.
-export class CallCap extends UsageError {}
+export class CallCap extends RunStop {}
 
 export type ModelsOptions = CliOptions & {
     findCli?: (command: string, path: string | undefined) => string | null;

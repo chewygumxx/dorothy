@@ -35,8 +35,9 @@ bun = "1.4"
 #
 # Utilities
 #
-# `jq` parses tool payloads in `.claude/hooks/prohibit-em-dash.sh` and
-# validates encrypted JSON in `scripts/check-secrets.sh`.
+# `jq` parses tool payloads in `.claude/hooks/prohibit-em-dash.sh`, reads
+# the status line's input in `scripts/statusline.sh` and validates
+# encrypted JSON in `scripts/check-secrets.sh`.
 #
 "aqua:jqlang/jq" = "1"
 

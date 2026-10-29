@@ -19,8 +19,10 @@ import {
 import { join } from "node:path";
 import type { ArchiveConversation } from "@dorothy/memory/evaluation";
 import { runCli } from "../cli.js";
+import { PlanLimit } from "../models/cli.js";
 import { CallCap } from "../models/client.js";
 import { configPath } from "../models/config.js";
+import { fakeCli, planLimitReply } from "../models/testing.js";
 import { workEnv } from "../snapshot/snapshot.js";
 import { type Corpus, openCorpus } from "../systems/corpus.js";
 import {
@@ -727,6 +729,40 @@ describe("generation", () => {
         expect(result.unkept).toEqual([]);
         expect(result.stopped).toBe("reached --max-calls (0)");
     });
+
+    it("stops at a plan's limit, keeping the drafts made so far", async () => {
+        let asked = 0;
+        const result = await generateQuestions({
+            corpus,
+            counts: { ...counts, "single-session": 10, "multi-session": 0 },
+            random: seeded(3),
+            model: "m/1",
+            existing: [],
+            today: "2026-10-19",
+            draft: async (sample) => {
+                if (++asked > 1) {
+                    throw new PlanLimit("codex", null);
+                }
+                return [
+                    {
+                        question: "Made before the limit?",
+                        answer: "An answer.",
+                        evidence: sample.ids,
+                        older: "",
+                    },
+                ];
+            },
+        });
+        // Not a failed call to try again, nor a drop.
+        expect(asked).toBe(2);
+        expect(result.made.map((each) => each.question)).toEqual([
+            "Made before the limit?",
+        ]);
+        expect(result.dropped).toEqual({});
+        expect(result.stopped).toBe(
+            "the codex plan's usage limit is reached; run generate again after the reset",
+        );
+    });
 });
 
 describe("failed calls", () => {
@@ -1085,6 +1121,80 @@ describe("bun run eval -- generate", () => {
         } finally {
             Object.assign(locking, kept);
         }
+    });
+
+    it("exits 75 when a plan's limit stops it", async () => {
+        writeFileSync(
+            configPath(work),
+            '[models.generate]\nvia = "claude"\nmodel = "fixture-generate"\n',
+        );
+        const fake = fakeCli(() => planLimitReply("claude"));
+        const env = {
+            PATH: "/fixture/bin",
+            HOME: "/fixture",
+            CLAUDE_CODE_OAUTH_TOKEN: "fixture-token",
+        };
+        const run = async (...more: string[]) => {
+            const { io, out } = fakeIo({ env, modelOptions: fake });
+            const code = await runCli(
+                [
+                    "generate",
+                    "--work",
+                    work,
+                    "--count",
+                    "1",
+                    "--type",
+                    "single-session=1",
+                    ...more,
+                ],
+                io,
+            );
+            return { code, out: out.join("") };
+        };
+        const limited = await run();
+        expect(limited.code).toBe(75);
+        expect(limited.out).toContain(
+            "stopped: the claude plan's usage limit is reached; run generate again after the reset",
+        );
+    });
+
+    it("exits 0 when --max-calls stops it", async () => {
+        writeFileSync(
+            configPath(work),
+            '[models.generate]\nvia = "claude"\nmodel = "fixture-generate"\n',
+        );
+        // One call that drafts nothing, then the cap.
+        const fake = fakeCli(() => ({
+            stdout: JSON.stringify({
+                is_error: false,
+                result: "",
+                structured_output: { questions: [] },
+            }),
+        }));
+        const { io, out } = fakeIo({
+            env: {
+                PATH: "/fixture/bin",
+                HOME: "/fixture",
+                CLAUDE_CODE_OAUTH_TOKEN: "fixture-token",
+            },
+            modelOptions: fake,
+        });
+        const code = await runCli(
+            [
+                "generate",
+                "--work",
+                work,
+                "--count",
+                "1",
+                "--type",
+                "single-session=1",
+                "--max-calls",
+                "1",
+            ],
+            io,
+        );
+        expect(out.join("")).toContain("stopped: reached --max-calls (1)");
+        expect(code).toBe(0);
     });
 
     it("refuses a generated.json it cannot read, before any call", async () => {

@@ -545,11 +545,33 @@ server (llama.cpp, Ollama) keeps them home. The judge and the generator
 must support structured output. `--max-calls` caps the calls of
 `generate` or `run`, and a run stopped by it resumes with
 `--resume <run>`, the id the run printed; `--dry-run` beside it counts
-only what the run has left. A failed call counts as a miss. A system's
-ranked items are the ones that fit its budget, so recall at 5 and 10
-falls with a smaller `--budget`. Each run's report is
-`~/eval/runs/<run>/report.md`, and `bun run eval -- <command> --help`
-lists a command's options.
+only what the run has left. A failed call counts as a miss, except that
+a plan's usage limit (Claude's or Codex's) stops the run or `generate`
+instead, keeping what is done: `run` then resumes with `--resume` after
+the reset. Either exits 75 (EX_TEMPFAIL) so a wrapper can wait and go
+on; a stop at `--max-calls` exits 0. A system's ranked items are the
+ones that fit its budget, so recall at 5 and 10 falls with a smaller
+`--budget`. Each run's report is `~/eval/runs/<run>/report.md`, and
+`bun run eval -- <command> --help` lists a command's options.
+
+`review` shows up to 6,000 characters of each cited conversation, or
+`--evidence <chars>`. An agent can screen the drafts for you: its
+decisions, one JSON line each, `{"id", "decision", "reason"}` with a
+decision of `accept`, `reject`, `edit` or `unsure` (an `edit` adds any of
+`question`, `answer` and `evidence`), are applied with review's own
+checks, and a line that fails them (a key it does not know, or an edit
+that gives nothing or changes nothing, among them) is reported and
+skipped:
+
+```sh
+bun run eval -- review --work ~/eval --apply decisions.jsonl \
+    --reviewer agent-1 --dry-run   # drop --dry-run to write
+```
+
+It exits 1 if any line had a problem. An `unsure` leaves the draft for
+you. `~/eval/reviews.jsonl` logs every decision, yours as `owner`, with
+who made it, any new id and the reason; your edits in `review` are
+logged with the old id and the new, though the draft stays a draft.
 
 Each generation adds reported input and output tokens by role to its
 `~/eval/generated.json` entry; older entries without `tokens` remain

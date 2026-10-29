@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-10-29
+mtime: 2026-10-30
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -493,3 +493,7 @@ In order of completion.
 - 2026-10-29: `dorothy --review-backfill` reviews backfilled
   conversations in batches on the reviewer's model; the first batch of
   three on the real store gave each a title, abstract and tags.
+- 2026-10-30: A plan's usage limit stops an evaluation run for
+  `--resume` rather than scoring misses; review shows fuller evidence
+  and applies agents' decisions; the status line keeps Claude's budget
+  where an agent can read it.
