@@ -399,6 +399,39 @@ describe("bun run eval -- run", () => {
         ).toHaveLength(6);
     });
 
+    it("exits 75 when one worker meets a plan limit and another the cap", async () => {
+        writeFileSync(
+            configPath(work),
+            `[models.answer]\nvia = "claude"\nmodel = "fixture-answer"\n[models.judge]\nvia = "claude"\nmodel = "fixture-judge"\n`,
+        );
+        const fake = fakeCli((request, count) =>
+            count === 1
+                ? planLimitReply("claude")
+                : cliReply("claude", request, fake),
+        );
+        const options = {
+            env: {
+                PATH: "/fixture/bin",
+                HOME: "/fixture",
+                CLAUDE_CODE_OAUTH_TOKEN: "fixture-token",
+            },
+            modelOptions: fake,
+        };
+        const args = [
+            "run",
+            "--work",
+            work,
+            "--systems",
+            "lexical",
+            "--concurrency",
+            "2",
+            "--max-calls",
+            "2",
+        ];
+        // The limit stops one worker; the other then meets --max-calls.
+        expect(await runCli(args, fakeIo(options).io)).toBe(75);
+    });
+
     it.each([
         ["claude", 1],
         ["codex", 1],

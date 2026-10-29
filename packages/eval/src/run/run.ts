@@ -536,7 +536,9 @@ export async function runEvaluation(
                         throw error;
                     }
                     stopped = error.message;
-                    limited =
+                    // Any worker's plan limit makes the run limited, though
+                    // another worker stop after it at --max-calls.
+                    limited ||=
                         (error instanceof Capped
                             ? error.stop
                             : error) instanceof PlanLimit;
