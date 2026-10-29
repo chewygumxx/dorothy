@@ -60,7 +60,8 @@ options declared and described for `--help`, its failures as
   unreadable or invalid, and `writeAtomic`, which writes whole or not
   at all.
 - `cli.ts`: the command table and `runCli`.
-- `command.ts`: `Io`, `Command` and the options' readers.
+- `command.ts`: `Io`, `Command` and the options' readers. `modelOptions`
+  injects model runners, files and CLI lookup; commands own env and caps.
 - `secrets.ts`: `loadModelSecrets` awaits core's loader on the checkout's
   `secrets.json` before paid model calls, with code-only warnings. Tests
   inject `Io.loadSecrets`.
@@ -91,11 +92,15 @@ options declared and described for `--help`, its failures as
 - `models/client.ts`: `Models`, dispatch, retries and `--max-calls`;
   `tokens` snapshots reported usage by role. A raw API completion
   callback includes openevals' judge usage; CLI replies count before
-  schema validation. The API client's own retries are off.
+  schema validation. `prepare` checks CLI availability before a call.
+  The API client's own retries are off.
 - `models/cli.ts`: isolated CLI attempts, private prompt/schema files,
   stdin, filtered environments, reply parsing and token events. A
-  timeout terminates the detached process group; startup errors do not
-  retry and cleanup is best effort. `models/testing.ts`: injected
+  timeout terminates the detached process group; signals stop all live
+  groups and remove their directories, with handlers only while live.
+  Startup errors do not retry; cleanup is best effort. Codex error events
+  may be retry notices; exit, turn.failed and the reply decide success.
+  `models/testing.ts`: injected
   in-memory runner and files; runner integration tests use temp scripts.
 - `systems/`: `System` and `makeSystem` (`system.ts`); the corpus, the
   snapshot's archive opened once, with items as text (`corpus.ts`);

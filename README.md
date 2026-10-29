@@ -479,16 +479,29 @@ to `"medium"` rather than your Codex setting. Its values are `"none"`,
 `"minimal"`, `"low"`, `"medium"`, `"high"` and `"xhigh"`, subject to the
 model's support. `effort` on another route is an error.
 
-Claude runs with a fresh config directory, no user settings, tools or
-MCP configuration, and no saved session. Its system prompt comes from a
-private file, with a neutral prompt when the role supplies none. Codex
-uses an ephemeral session and a read-only sandbox, skips the repository
-check, ignores user configuration and execpolicy rules, and limits
-instruction file reads to zero bytes. Both run in temporary working
-directories and receive the request on stdin. Their child environments
-contain only PATH, HOME and their route's login/config variables.
+Claude uses a fresh `CLAUDE_CONFIG_DIR`. `--setting-sources ""` disables
+settings sources, `--strict-mcp-config` limits MCP to explicitly supplied
+configuration (none here), `--tools ""` disables tools, and
+`--no-session-persistence` disables saved sessions. Its system prompt
+comes from a private file, with a neutral prompt when the role supplies
+none.
 
-Install the CLI for each subscription route. For Claude, set
+Codex's `--ephemeral` avoids saved session files, `-s read-only` selects
+the sandbox for model commands, and `--skip-git-repo-check` allows a
+temporary directory outside a repository. `--ignore-user-config` skips
+`$CODEX_HOME/config.toml`; `--ignore-rules` skips user and project
+execpolicy `.rules` files. `project_doc_max_bytes=0` sets the project
+document byte limit. Codex keeps the real HOME and CODEX_HOME for login.
+Exclusion of `hooks.json`, skills and global `AGENTS.md` has not been
+verified; those may still affect a call.
+
+Both CLIs run in temporary working directories and receive the request
+on stdin. Their child environments contain only PATH, HOME and their
+route's login/config variables. SIGINT, SIGTERM and SIGHUP stop every
+active CLI process group and remove its private temporary directory.
+
+Install each subscription CLI on PATH; a missing CLI stops the command
+before any call. For Claude, set
 `CLAUDE_CODE_OAUTH_TOKEN` with `sops edit secrets.json`; only the Claude
 child receives it. Codex uses your saved ChatGPT login, including
 `CODEX_HOME` when set. Set API key variables such as `OPENROUTER_API_KEY`
