@@ -496,6 +496,16 @@ describe("a draft", () => {
         ).toMatchObject({ evidence: [`c:${GARDEN}`, "c:other"] });
     });
 
+    it("is dropped as a knowledge update that names no older claim", () => {
+        const update: Sample = { ...garden, type: "knowledge-update" };
+        expect(acceptDraft(draft({ older: " " }), update, context())).toBe(
+            "no older claim",
+        );
+        expect(
+            acceptDraft(draft({ older: "On Fridays." }), update, context()),
+        ).toMatchObject({ type: "knowledge-update", note: "On Fridays." });
+    });
+
     it("is dropped as malformed for a path no evidence has, or a long question", () => {
         const odd: Sample = { ...garden, ids: ["nowhere", "c:"] };
         expect(

@@ -457,6 +457,12 @@ export function acceptDraft(
     if (abstention && answerable(question, context.corpus)) {
         return "answerable";
     }
+    // An update with nothing it replaced is a plain recall question
+    // under the wrong type.
+    const older = draft.older.trim();
+    if (sample.type === "knowledge-update" && older === "") {
+        return "no older claim";
+    }
     const id = questionId(question, evidence);
     const held = context.ids.get(id);
     if (held !== undefined) {
@@ -465,7 +471,6 @@ export function acceptDraft(
             ? "duplicate"
             : "id collision";
     }
-    const older = draft.older.trim();
     const parsed = questionSchema.safeParse({
         id,
         type: sample.type,
@@ -477,7 +482,7 @@ export function acceptDraft(
         project: sample.project,
         source: `generated:${context.model}`,
         status: "draft",
-        note: sample.type === "knowledge-update" && older !== "" ? older : null,
+        note: sample.type === "knowledge-update" ? older : null,
     });
     return parsed.success ? parsed.data : "malformed";
 }
