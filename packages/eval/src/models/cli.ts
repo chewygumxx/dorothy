@@ -325,8 +325,10 @@ export async function cliAttempt(
                 .split("\n")
                 .filter((line) => line.trim() !== "")) {
                 const event = record(JSON.parse(line));
-                if (event.type === "turn.failed" || event.type === "error")
-                    throw new Error();
+                // Exec also emits error events for recoverable stream
+                // retries. Exit status, turn.failed and the reply file
+                // determine whether this attempt succeeded.
+                if (event.type === "turn.failed") throw new Error();
                 if (event.type === "turn.completed") {
                     const counts = usageOf(event.usage);
                     usage.input += counts.input;

@@ -509,3 +509,54 @@ it.each([0, 17])(
         );
     },
 );
+
+it.each([undefined, schema])(
+    "keeps a Codex reply after a recoverable error event (schema %o)",
+    async (jsonSchema) => {
+        const fake = fakeCli((request) => {
+            fake.contents.set(
+                `${request.cwd}/reply.txt`,
+                jsonSchema === undefined ? "A reply" : '{"n":3}',
+            );
+            return {
+                stdout: '{"type":"error","message":"Reconnecting... 1/5 private snapshot"}\n{"type":"turn.completed","usage":{"input_tokens":21,"output_tokens":9}}\n',
+            };
+        });
+        const reply = await cliAttempt(codex, messages, jsonSchema, {
+            env,
+            ...fake,
+        });
+        expect(reply).toMatchObject({ input: 21, output: 9 });
+        expect(reply.text).toBe(
+            jsonSchema === undefined ? "A reply" : '{"n":3}',
+        );
+    },
+);
+
+it.each(["exit", "turn.failed", "missing output"])(
+    "rejects a failed Codex attempt despite an error event and later completion: %s",
+    async (failure) => {
+        const fake = fakeCli((request) => {
+            if (failure !== "missing output")
+                fake.contents.set(`${request.cwd}/reply.txt`, '{"n":3}');
+            return {
+                exitCode: failure === "exit" ? 17 : 0,
+                stdout: [
+                    '{"type":"error","message":"Reconnecting... 1/5 private snapshot"}',
+                    ...(failure === "turn.failed"
+                        ? [
+                              '{"type":"turn.failed","error":{"message":"private snapshot"}}',
+                          ]
+                        : []),
+                    '{"type":"turn.completed","usage":{"input_tokens":21,"output_tokens":9}}',
+                ].join("\n"),
+            };
+        });
+        const error = await cliAttempt(codex, messages, schema, {
+            env,
+            ...fake,
+        }).catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(CliFailure);
+        expect(String(error)).not.toContain("snapshot");
+    },
+);
