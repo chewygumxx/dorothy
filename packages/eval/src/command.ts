@@ -14,9 +14,12 @@
 import { resolve } from "node:path";
 import type { Env, SecretsCode } from "@dorothy/core";
 import { UsageError } from "./errors.js";
+import type { ModelsOptions } from "./models/client.js";
 
 export type Io = {
     env: Env;
+    // Inject model process/file operations without changing env or caps.
+    modelOptions?: Omit<ModelsOptions, "env" | "maxCalls">;
     // Required even in tests, so a fake terminal cannot read real secrets.
     loadSecrets(path: string, into: Env): Promise<SecretsCode | null>;
     out(text: string): void;

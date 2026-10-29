@@ -34,6 +34,7 @@ import { takeSnapshot } from "./snapshot/snapshot.js";
 export function fakeIo(
     options: {
         env?: Env;
+        modelOptions?: Io["modelOptions"];
         answers?: string[];
         onEdit?: (path: string) => void;
     } = {},
@@ -46,6 +47,7 @@ export function fakeIo(
         err,
         io: {
             env: options.env ?? {},
+            modelOptions: options.modelOptions,
             loadSecrets: async () => null,
             out: (text) => out.push(text),
             err: (text) => err.push(text),

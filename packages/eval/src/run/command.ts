@@ -15,7 +15,7 @@ import {
     type EvalConfig,
     readEvalConfig,
     requireRole,
-    vendorOf,
+    vendorOfRole,
 } from "../models/config.js";
 import { readQuestions } from "../questions/file.js";
 import { loadModelSecrets } from "../secrets.js";
@@ -161,12 +161,8 @@ export const runCommand: Command = {
             const answer = requireRole(config, "answer");
             const judge = requireRole(config, "judge");
             await loadModelSecrets(io);
-            if (vendorOf(answer.model) === vendorOf(judge.model)) {
-                io.err(
-                    `eval: the judge (${judge.model}) is of the answering model's vendor; a model of another family judges more fairly\n`,
-                );
-            }
             models = new Models(config, {
+                ...io.modelOptions,
                 env: io.env,
                 maxCalls:
                     values["max-calls"] === undefined
@@ -174,8 +170,13 @@ export const runCommand: Command = {
                         : intOf(values, "max-calls", 0, 1, 1_000_000),
             });
             // A missing key is said before anything is asked.
-            models.chat("answer");
-            models.chat("judge");
+            models.prepare("answer");
+            models.prepare("judge");
+            if (vendorOfRole(answer) === vendorOfRole(judge)) {
+                io.err(
+                    `eval: the judge (${judge.model}) is of the answering model's vendor; a model of another family judges more fairly\n`,
+                );
+            }
         }
         const corpus = await openCorpus(workEnv(work));
         try {

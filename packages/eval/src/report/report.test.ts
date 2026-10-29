@@ -226,6 +226,28 @@ describe("the report", () => {
         expect(text).toContain("| n/a |");
     });
 
+    it("reports role totals separately from the per-system answer costs", () => {
+        const run = {
+            ...info("r1"),
+            tokens: {
+                answer: { input: 150, output: 15 },
+                judge: { input: 600, output: 60 },
+            },
+        };
+        const text = reportOf(summarise(run, RECORDS));
+        expect(text).toContain("## Tokens by role");
+        expect(text).toContain("| Role | Input tokens | Output tokens |");
+        expect(text).toContain("| answer | 150 | 15 |");
+        expect(text).toContain("| judge | 600 | 60 |");
+        expect(text).not.toContain("| generate |");
+    });
+
+    it("does not invent role totals for an older run", () => {
+        expect(reportOf(summarise(info("r1"), RECORDS))).toContain(
+            "Role token totals were not recorded for this run.",
+        );
+    });
+
     it("shows whether the evidence was in context, or a dash before", () => {
         const text = reportOf(
             summarise(info("r1"), [
@@ -413,6 +435,42 @@ describe("bun run eval -- compare", () => {
             await runCli(["compare", "--work", temp.root, "r1", other], io);
             expect(err.join("") !== "").toBe(warned);
         }
+    });
+
+    it("refuses damaged token totals instead of reporting them", async () => {
+        write("r1");
+        const path = runInfoPath(temp.root, "r1");
+        const run = JSON.parse(readFileSync(path, "utf8"));
+        for (const tokens of [
+            { judge: { input: -1, output: 2 } },
+            { judge: { input: "one", output: 2 } },
+            { unknown: { input: 1, output: 2 } },
+        ]) {
+            writeFileSync(path, JSON.stringify({ ...run, tokens }));
+            await expect(writeRunReport(temp.root, "r1")).rejects.toThrow(
+                "tokens",
+            );
+        }
+    });
+
+    it("persists role tokens in the report and summary", async () => {
+        write("r1", {
+            tokens: {
+                answer: { input: 33, output: 21 },
+                judge: { input: 66, output: 42 },
+            },
+        });
+        await writeRunReport(temp.root, "r1");
+        expect(
+            JSON.parse(readFileSync(summaryPath(temp.root, "r1"), "utf8")).run
+                .tokens,
+        ).toEqual({
+            answer: { input: 33, output: 21 },
+            judge: { input: 66, output: 42 },
+        });
+        expect(readFileSync(reportPath(temp.root, "r1"), "utf8")).toContain(
+            "| judge | 66 | 42 |",
+        );
     });
 
     it("passes over a torn last line, as a resume does", async () => {

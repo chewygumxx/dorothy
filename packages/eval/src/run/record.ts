@@ -17,6 +17,8 @@ import { join } from "node:path";
 import { z } from "zod";
 import { codeOf, UsageError } from "../errors.js";
 import { readRecord } from "../files.js";
+import type { RoleTokens } from "../models/client.js";
+import { ROLES } from "../models/config.js";
 import type { QuestionType } from "../questions/file.js";
 import type { SnapshotInfo } from "../snapshot/snapshot.js";
 
@@ -56,6 +58,10 @@ export type RunInfo = {
     // Where each model was served, with no credential or query; a run
     // written before they were kept has none.
     baseUrls?: { answer: string | null; judge: string | null };
+    // Reported usage across invocations. Older runs have no totals;
+    // resuming one records only the new calls and marks them partial.
+    tokens?: RoleTokens;
+    tokensPartial?: boolean;
     snapshot: SnapshotInfo;
     questions: number;
     // The questions it asks, so a resumed run asks no others.
@@ -205,6 +211,16 @@ export const runInfoSchema = z.object({
     baseUrls: z
         .object({ answer: z.string().nullable(), judge: z.string().nullable() })
         .optional(),
+    tokens: z
+        .partialRecord(
+            z.enum(ROLES),
+            z.object({
+                input: z.number().int().nonnegative(),
+                output: z.number().int().nonnegative(),
+            }),
+        )
+        .optional(),
+    tokensPartial: z.boolean().optional(),
     snapshot: z.object({ source: z.string(), at: z.string() }),
     questions: z.number(),
     questionIds: z.array(z.string()),
