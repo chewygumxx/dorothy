@@ -40,8 +40,13 @@ snapshot, so a rerun measures what reviews add.
 | Batch | `-n`, default 25; newest first | A plan's limits are watched between batches; recent work matters most. Cost: about 12 batches for 305 |
 | Reviewer | The `Reviewer` the service builds, with its persona, vocabulary, history and lock | One review, wherever it runs. Cost: none |
 | Mark | Cleared under the lock, as a live record clears it, just before the review | A failed review then retries as any other does. Cost: a conversation whose review fails is reviewed by the service later |
-| Running service | The command takes the review claim the index holds, so the service never reviews the same conversation at once | As two chats never do. Cost: none |
+| Running service | The command takes the review claim the index holds, which keeps chats and hooks off the conversation; the service takes no claim | The service reviews only conversations a live record queued. Cost: a live record during a batch may bring one extra review, merged under the lock |
 | Output | A line a conversation (its phrase and `reviewed`, `marked` or `failed`) and a total | Progress through a long batch. Cost: none |
+
+## Later
+
+- The service's reviews to take the index's review claim, as chats and
+  hooks do, closing the overlap above for every reviewer.
 
 ## Testing
 
