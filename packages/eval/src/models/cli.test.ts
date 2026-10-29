@@ -571,6 +571,89 @@ describe("a plan's limit", () => {
     );
 });
 
+describe("a Codex model switch", () => {
+    const switched =
+        "Automatically switched to gpt-6.1-luna due to usage limits.";
+    // A turn that completes with a notice among its events.
+    const completed = (notice: object) => {
+        const fake = fakeCli((request) => {
+            fake.contents.set(`${request.cwd}/reply.txt`, '{"n":3}');
+            return {
+                stdout: [
+                    '{"type":"thread.started","thread_id":"t"}',
+                    JSON.stringify(notice),
+                    '{"type":"turn.completed","usage":{"input_tokens":5,"output_tokens":2}}',
+                ].join("\n"),
+            };
+        });
+        return fake;
+    };
+
+    it.each([
+        ["an error event", { type: "error", message: switched }],
+        [
+            "an error item",
+            {
+                type: "item.completed",
+                item: { id: "i", type: "error", message: switched },
+            },
+        ],
+    ])(
+        "stops the run, though the turn completes, on %s",
+        async (_n, notice) => {
+            const fake = completed(notice);
+            const error = await cliAttempt(codex, messages, schema, {
+                env,
+                ...fake,
+            }).catch((e) => e);
+            expect(error).toBeInstanceOf(PlanLimit);
+            expect(error.message).toBe(
+                "the codex plan switched the model to gpt-6.1-luna under its usage limits",
+            );
+            expect(fake.removed).toHaveLength(1);
+        },
+    );
+
+    it("stops the run on a notice that does not name the model", async () => {
+        const fake = completed({
+            type: "error",
+            message:
+                "Automatically switched to a smaller model due to usage limits.",
+        });
+        const error = await cliAttempt(codex, messages, schema, {
+            env,
+            ...fake,
+        }).catch((e) => e);
+        expect(error).toBeInstanceOf(PlanLimit);
+        expect(error.message).toBe(
+            "the codex plan switched the model under its usage limits",
+        );
+    });
+
+    it.each([
+        [
+            "a switch back",
+            {
+                type: "error",
+                message:
+                    "Automatically switched back to gpt-6.1-terra because ordinary usage is available again.",
+            },
+        ],
+        [
+            "an answer that says it",
+            {
+                type: "item.completed",
+                item: { id: "i", type: "agent_message", text: switched },
+            },
+        ],
+    ])("goes on past %s", async (_n, notice) => {
+        const fake = completed(notice);
+        expect(
+            await cliAttempt(codex, messages, schema, { env, ...fake }),
+        ).toMatchObject({ value: { n: 3 } });
+    });
+});
+
 it.each(["temp", "write", "read"] as const)(
     "sanitizes a failure to %s private files",
     async (operation) => {

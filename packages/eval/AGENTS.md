@@ -116,7 +116,11 @@ options declared and described for `--help`, its failures as
   Codex, an error or turn.failed event with the first four, but only
   when the turn did not complete: a retry notice that a completed turn
   outlived is no limit. The reset time ("try again at", or Claude's
-  "resets") is kept only if it is a time or date.
+  "resets") is kept only if it is a time or date. A Codex notice that
+  the plan "automatically switched" the model "due to usage limits"
+  also stops the run, even from a completed turn, since the reply is
+  then not the role's model's: no event names the model, so the notice
+  text is all there is to match.
   `models/testing.ts`: injected
   in-memory runner and files; runner integration tests use temp scripts.
 - `systems/`: `System` and `makeSystem` (`system.ts`); the corpus, the
