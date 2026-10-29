@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-10-21
+mtime: 2026-10-29
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -486,3 +486,7 @@ In order of completion.
 - 2026-10-21: Dorothy's secrets move from dotenvx, whose key the paid
   Dotenvx Armor held, to `secrets.json`, encrypted by sops to an age
   key outside the checkout; dotenvx is removed.
+- 2026-10-29: The evaluation's roles may call models through the user's
+  Claude and ChatGPT plans, before any API, and record their tokens. A
+  bake-off of six generators found most knowledge-update drafts carried
+  no earlier claim; the checks are to drop such drafts.
