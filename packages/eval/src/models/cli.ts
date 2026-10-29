@@ -54,12 +54,12 @@ export class CliFailure extends Error {}
 class CliUnavailable extends UsageError {}
 
 // The route's plan has no usage left: not a fault of the call, and no
-// retry mends it. The run stops, keeping what is done, to resume after the
-// reset, which the CLI may have said.
+// retry mends it. The run stops, keeping what is done, for the command to
+// say how to go on after the reset, which the CLI may have said.
 export class PlanLimit extends RunStop {
     constructor(via: CliConfig["via"], resets: string | null) {
         super(
-            `the ${via} plan's usage limit is reached; resume after the reset${
+            `the ${via} plan's usage limit is reached${
                 resets === null ? "" : ` (try again at ${resets})`
             }`,
         );
@@ -197,10 +197,23 @@ const usageOf = (value: unknown) => {
 // whatever it says.
 const LIMIT = /usage[ _]limit|usage credits|rate[ _]limit/i;
 
-// The reset time the CLI gives, which only plain date and time characters
-// may make up, so that nothing else of a reply is ever repeated.
-const resetIn = (text: string): string | null =>
-    /try again at ([A-Za-z0-9 ,:/+-]{1,40})/i.exec(text)?.[1]?.trim() || null;
+// A word of a time or date: digits (a time, a day, an ISO stamp), AM or
+// PM, a month or a weekday.
+const WHEN =
+    /^(?:\d[\dTZ:/.+-]*(?:st|nd|rd|th)?|[ap]m|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]{0,6}|(?:mon|tue|wed|thu|fri|sat|sun)[a-z]{0,6})$/i;
+
+// The reset time the CLI gives, if a time or date is all it is: any other
+// reply text, that a capture might repeat, is left out.
+const resetIn = (text: string): string | null => {
+    const said = /try again at ([A-Za-z0-9 ,:/.+-]{1,40})/i
+        .exec(text)?.[1]
+        ?.trim()
+        .replace(/\.$/, "");
+    if (said === undefined || !/\d/.test(said)) return null;
+    return said.split(/\s+/).every((word) => WHEN.test(word.replace(/,$/, "")))
+        ? said
+        : null;
+};
 
 // Claude ends some limit replies in `|<epoch seconds>`.
 const epochIn = (text: string): string | null => {
@@ -230,23 +243,36 @@ function claudeLimit(stdout: string): Limit | null {
     return { resets: resetIn(text) ?? epochIn(text) };
 }
 
-// The limit a Codex error or turn.failed event says, if one does. Other
-// events, and lines that are not events, say nothing of it.
-function codexLimit(stdout: string): Limit | null {
+// The limit a Codex error or turn.failed event says, if one does and the
+// turn did not complete. A completed turn, with exit 0 and no turn.failed,
+// has outlived any retry notice that named a limit. Other events, and lines
+// that are not events, say nothing of it.
+function codexLimit(stdout: string, exitCode: number | null): Limit | null {
+    const events: Record<string, unknown>[] = [];
     for (const line of stdout.split("\n")) {
         try {
-            const event = record(JSON.parse(line));
-            const message =
-                event.type === "error"
-                    ? event.message
-                    : event.type === "turn.failed"
-                      ? record(event.error).message
-                      : undefined;
-            if (typeof message === "string" && LIMIT.test(message)) {
-                return { resets: resetIn(message) };
-            }
+            events.push(record(JSON.parse(line)));
         } catch {
             // Not an event.
+        }
+    }
+    const types = events.map((event) => event.type);
+    if (
+        exitCode === 0 &&
+        types.includes("turn.completed") &&
+        !types.includes("turn.failed")
+    ) {
+        return null;
+    }
+    for (const event of events) {
+        const message =
+            event.type === "error"
+                ? event.message
+                : event.type === "turn.failed"
+                  ? record(event.error).message
+                  : undefined;
+        if (typeof message === "string" && LIMIT.test(message)) {
+            return { resets: resetIn(message) };
         }
     }
     return null;
@@ -374,9 +400,10 @@ export async function cliAttempt(
         if (result.timedOut) throw failed("timed out");
         // A CLI at its limit may exit non-zero, so this comes before the
         // exit code is judged.
-        const limit = (config.via === "claude" ? claudeLimit : codexLimit)(
-            result.stdout,
-        );
+        const limit =
+            config.via === "claude"
+                ? claudeLimit(result.stdout)
+                : codexLimit(result.stdout, exitCode);
         if (limit !== null) throw new PlanLimit(config.via, limit.resets);
         if (exitCode !== 0)
             throw new CliFailure(

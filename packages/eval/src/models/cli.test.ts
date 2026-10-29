@@ -326,6 +326,46 @@ const LIMITS = [
         "",
     ],
     [
+        "Codex's notice, then turn.failed, with exit 0",
+        codex,
+        [
+            JSON.stringify({ type: "error", message: codexLimit }),
+            JSON.stringify({
+                type: "turn.failed",
+                error: { message: "Request failed" },
+            }),
+        ].join("\n"),
+        0,
+        ` (try again at ${RESET})`,
+    ],
+    [
+        "Codex's notice, then a non-zero exit after turn.completed",
+        codex,
+        [
+            JSON.stringify({ type: "error", message: codexLimit }),
+            '{"type":"turn.completed"}',
+        ].join("\n"),
+        1,
+        ` (try again at ${RESET})`,
+    ],
+    [
+        "Codex's notice with no turn.completed, exit 0",
+        codex,
+        JSON.stringify({ type: "error", message: codexLimit }),
+        0,
+        ` (try again at ${RESET})`,
+    ],
+    [
+        "Claude's reset naming words, not a time",
+        claude,
+        JSON.stringify({
+            is_error: true,
+            result: "Usage limit reached, try again at your convenience",
+        }),
+        1,
+        "",
+    ],
+    [
         "Codex's error event after an unreadable line",
         codex,
         `not JSON\n${JSON.stringify({ type: "error", message: "usage_limit_reached" })}`,
@@ -347,12 +387,56 @@ describe("a plan's limit", () => {
             expect(error).toBeInstanceOf(UsageError);
             expect(error).not.toBeInstanceOf(CliFailure);
             expect(error.message).toBe(
-                `the ${config.via} plan's usage limit is reached; resume after the reset${reset}`,
+                `the ${config.via} plan's usage limit is reached${reset}`,
             );
             expect(String(error)).not.toContain("Private");
             expect(fake.removed).toHaveLength(1);
         },
     );
+
+    it.each([
+        "9:12 AM",
+        "Nov 3rd, 2026 9:12 AM",
+        "2026-11-03 09:12",
+        "Monday 4:05 pm",
+        "11/03/2026",
+    ])("keeps a reset of %o that is a time or date", async (reset) => {
+        const fake = fakeCli(() => ({
+            exitCode: 1,
+            stdout: JSON.stringify({
+                is_error: true,
+                result: `Usage limit reached, try again at ${reset}.`,
+            }),
+        }));
+        const error = await cliAttempt(claude, messages, schema, {
+            env,
+            ...fake,
+        }).catch((e) => e);
+        expect(error.message).toBe(
+            `the claude plan's usage limit is reached (try again at ${reset})`,
+        );
+    });
+
+    // Codex says of a recovered stream what it says of a failed one.
+    it("succeeds when a retry notice names a limit but the turn completes", async () => {
+        const fake = fakeCli((request) => {
+            fake.contents.set(`${request.cwd}/reply.txt`, '{"n":3}');
+            return {
+                stdout: [
+                    JSON.stringify({
+                        type: "error",
+                        message:
+                            "Reconnecting... 1/5 (rate limit exceeded: try again in 2s)",
+                    }),
+                    '{"type":"turn.completed","usage":{"input_tokens":5,"output_tokens":2}}',
+                ].join("\n"),
+            };
+        });
+        expect(
+            await cliAttempt(codex, messages, schema, { env, ...fake }),
+        ).toMatchObject({ text: '{"n":3}', value: { n: 3 }, input: 5 });
+        expect(fake.removed).toHaveLength(1);
+    });
 
     // Whatever else they come to, none of these is a limit.
     it.each([

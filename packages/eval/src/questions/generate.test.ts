@@ -759,7 +759,7 @@ describe("generation", () => {
         ]);
         expect(result.dropped).toEqual({});
         expect(result.stopped).toBe(
-            "the codex plan's usage limit is reached; resume after the reset",
+            "the codex plan's usage limit is reached; run generate again after the reset",
         );
     });
 });

@@ -17,6 +17,7 @@ import type {
 } from "@dorothy/memory/evaluation";
 import { z } from "zod";
 import { RunStop, UsageError } from "../errors.js";
+import { PlanLimit } from "../models/cli.js";
 import { failureOf, type Message } from "../models/client.js";
 import {
     type Corpus,
@@ -543,7 +544,13 @@ export async function generateQuestions(options: {
                 failures = 0;
             } catch (error) {
                 if (error instanceof RunStop) {
-                    return stop(error.message);
+                    // Generate has no --resume: a limit is waited out and
+                    // generate run again.
+                    return stop(
+                        error instanceof PlanLimit
+                            ? `${error.message}; run generate again after the reset`
+                            : error.message,
+                    );
                 }
                 const why = failureOf(error);
                 drop(`failed call: ${why}`);

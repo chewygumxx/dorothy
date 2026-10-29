@@ -106,9 +106,12 @@ options declared and described for `--help`, its failures as
   may be retry notices; exit, turn.failed and the reply decide success.
   A reply naming the plan's usage limit (Claude: an error with status
   429 or naming a limit or credits; Codex: an error or turn.failed event
-  naming one), read before the exit code, is a `PlanLimit`, never
-  retried: a `RunStop`, as `CallCap` is, so `run` and `generate` stop
-  with what is done and a run resumes after the reset.
+  naming one, but only when the turn did not complete: a retry notice
+  that a completed turn outlived is no limit), read before the exit
+  code, is a `PlanLimit`, never retried: a `RunStop`, as `CallCap` is,
+  so `run` and `generate` stop with what is done; a run resumes after
+  the reset, generate is run again. Its reset time is kept only if it
+  is a time or date.
   `models/testing.ts`: injected
   in-memory runner and files; runner integration tests use temp scripts.
 - `systems/`: `System` and `makeSystem` (`system.ts`); the corpus, the

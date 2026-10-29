@@ -440,7 +440,7 @@ describe("bun run eval -- run", () => {
             // One try: a limit is not retried, and nothing more is asked.
             expect(fake.requests).toHaveLength(limitedAt);
             expect(first.out.join("")).toContain(
-                `stopped: the ${via} plan's usage limit is reached; resume after the reset; resume with`,
+                `stopped: the ${via} plan's usage limit is reached; resume with`,
             );
             const kept = await readRecords(work, id);
             if (limitedAt === 5) {
@@ -449,7 +449,7 @@ describe("bun run eval -- run", () => {
                 const capped = kept.find((each) => each.type === "abstention");
                 expect(capped?.answer?.text).toBe("Plot twelve, by the river.");
                 expect(capped?.failures).toEqual([
-                    `declined: the ${via} plan's usage limit is reached; resume after the reset`,
+                    `declined: the ${via} plan's usage limit is reached`,
                 ]);
             }
             const asked = fake.requests.length;
@@ -470,6 +470,137 @@ describe("bun run eval -- run", () => {
                 records.find((each) => each.type === "abstention")?.judged
                     .declined,
             ).not.toBeNull();
+        },
+    );
+
+    // Records of a run that was stopped at a limit and then resumed must
+    // lack nothing: every answer and every verdict owed.
+    const expectComplete = async (id: string) => {
+        const records = await readRecords(work, id);
+        expect(records).toHaveLength(5);
+        expect(new Set(records.map((each) => each.question)).size).toBe(5);
+        for (const each of records) {
+            expect(each.failures).toEqual([]);
+            if (each.type === "lookup") continue;
+            expect(each.answer).not.toBeNull();
+            const owed =
+                each.type === "abstention"
+                    ? ["declined"]
+                    : ["strict", "lenient"];
+            for (const name of owed) {
+                expect(each.judged[name as "strict"]).not.toBeNull();
+            }
+        }
+    };
+    const cliRun = (via: "claude" | "codex", reply: (n: number) => boolean) => {
+        writeFileSync(
+            configPath(work),
+            `[models.answer]\nvia = "${via}"\nmodel = "fixture-answer"\n[models.judge]\nvia = "${via}"\nmodel = "fixture-judge"\n`,
+        );
+        let limited = true;
+        const fake = fakeCli((request, count) =>
+            limited && reply(count)
+                ? planLimitReply(via)
+                : cliReply(via, request, fake),
+        );
+        const options = {
+            env: {
+                PATH: "/fixture/bin",
+                HOME: "/fixture",
+                CLAUDE_CODE_OAUTH_TOKEN: "fixture-token",
+            },
+            modelOptions: fake,
+        };
+        return {
+            fake,
+            options,
+            release: () => {
+                limited = false;
+            },
+        };
+    };
+
+    it.each(["claude", "codex"] as const)(
+        "stops %s's run at a limit with several attempts in flight",
+        async (via) => {
+            // Every call from the second on meets the limit, as a plan's
+            // does once spent: answers and judgements alike, four at once.
+            const { fake, options, release } = cliRun(via, (n) => n >= 2);
+            const first = fakeIo(options);
+            expect(
+                await runCli(
+                    [
+                        "run",
+                        "--work",
+                        work,
+                        "--systems",
+                        "lexical",
+                        "--concurrency",
+                        "4",
+                    ],
+                    first.io,
+                ),
+            ).toBe(0);
+            const id = idOf(first.out);
+            expect(first.out.join("")).toContain(
+                `stopped: the ${via} plan's usage limit is reached; resume with`,
+            );
+            // Not retried: at most one try for each call that could start.
+            expect(fake.requests.length).toBeLessThanOrEqual(9);
+            release();
+            const again = fakeIo(options);
+            expect(
+                await runCli(["run", "--work", work, "--resume", id], again.io),
+            ).toBe(0);
+            expect(again.out.join("")).not.toContain("stopped:");
+            await expectComplete(id);
+        },
+    );
+
+    it.each(["claude", "codex"] as const)(
+        "stops %s's run at a two-judge record's second judge, and resumes",
+        async (via) => {
+            // Calls: the answer, strict, then lenient (the third).
+            const { fake, options, release } = cliRun(via, (n) => n === 3);
+            const first = fakeIo(options);
+            expect(
+                await runCli(
+                    [
+                        "run",
+                        "--work",
+                        work,
+                        "--systems",
+                        "lexical",
+                        "--concurrency",
+                        "1",
+                    ],
+                    first.io,
+                ),
+            ).toBe(0);
+            const id = idOf(first.out);
+            expect(fake.requests).toHaveLength(3);
+            const half = (await readRecords(work, id)).find(
+                (each) => each.judged.strict !== null,
+            );
+            // The answer and the first verdict are kept, the second owed.
+            expect(half?.answer?.text).toBe("Plot twelve, by the river.");
+            expect(half?.judged.strict).toBe(true);
+            expect(half?.judged.lenient).toBeNull();
+            expect(half?.failures).toEqual([
+                `lenient: the ${via} plan's usage limit is reached`,
+            ]);
+            release();
+            const asked = fake.requests.length;
+            expect(
+                await runCli(
+                    ["run", "--work", work, "--resume", id],
+                    fakeIo(options).io,
+                ),
+            ).toBe(0);
+            // Only the lenient verdict of that record, then the rest: 9
+            // calls in all, the answer and strict already made.
+            expect(fake.requests.length - asked).toBe(7);
+            await expectComplete(id);
         },
     );
 
