@@ -13,7 +13,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { UsageError } from "../errors.js";
 import { tempRoot } from "../testing.js";
-import { CliFailure, cliAttempt } from "./cli.js";
+import { CliFailure, cliAttempt, PlanLimit } from "./cli.js";
 import type { CliConfig } from "./config.js";
 import { fakeCli } from "./testing.js";
 
@@ -255,6 +255,145 @@ describe("CLI routes", () => {
             );
             expect(error.message).not.toContain("Private");
             expect(fake.removed).toHaveLength(1);
+        },
+    );
+});
+
+const RESET = "Nov 3rd, 2026 9:12 AM";
+const codexLimit = `You've hit your usage limit. Upgrade to Pro (https://example.test/pro) or try again at ${RESET}.`;
+const LIMITS = [
+    [
+        "Claude's credits reply",
+        claude,
+        JSON.stringify({
+            is_error: true,
+            api_error_status: 429,
+            result: "Fable 5.1 requires usage credits. Switch to another model to continue.",
+        }),
+        1,
+        "",
+    ],
+    [
+        "Claude's 429 with any text",
+        claude,
+        JSON.stringify({
+            is_error: true,
+            api_error_status: 429,
+            result: "Private snapshot",
+        }),
+        1,
+        "",
+    ],
+    [
+        "Claude's limit string, ending in an epoch",
+        claude,
+        JSON.stringify({
+            is_error: true,
+            result: "Claude AI usage limit reached|1793401200",
+        }),
+        1,
+        " (try again at 2026-10-30T23:00:00.000Z)",
+    ],
+    [
+        "Claude's rate limit text",
+        claude,
+        JSON.stringify({ is_error: true, result: "Rate limit exceeded" }),
+        0,
+        "",
+    ],
+    [
+        "Codex's error and turn.failed events",
+        codex,
+        [
+            '{"type":"thread.started","thread_id":"t"}',
+            JSON.stringify({ type: "error", message: codexLimit }),
+            JSON.stringify({
+                type: "turn.failed",
+                error: { message: codexLimit },
+            }),
+        ].join("\n"),
+        1,
+        ` (try again at ${RESET})`,
+    ],
+    [
+        "Codex's turn.failed alone",
+        codex,
+        JSON.stringify({
+            type: "turn.failed",
+            error: { message: "The usage limit has been reached" },
+        }),
+        0,
+        "",
+    ],
+    [
+        "Codex's error event after an unreadable line",
+        codex,
+        `not JSON\n${JSON.stringify({ type: "error", message: "usage_limit_reached" })}`,
+        1,
+        "",
+    ],
+] as const;
+
+describe("a plan's limit", () => {
+    it.each(LIMITS)(
+        "is read from %s",
+        async (_name, config, stdout, exitCode, reset) => {
+            const fake = fakeCli(() => ({ exitCode, stdout }));
+            const error = await cliAttempt(config, messages, schema, {
+                env,
+                ...fake,
+            }).catch((e) => e);
+            expect(error).toBeInstanceOf(PlanLimit);
+            expect(error).toBeInstanceOf(UsageError);
+            expect(error).not.toBeInstanceOf(CliFailure);
+            expect(error.message).toBe(
+                `the ${config.via} plan's usage limit is reached; resume after the reset${reset}`,
+            );
+            expect(String(error)).not.toContain("Private");
+            expect(fake.removed).toHaveLength(1);
+        },
+    );
+
+    // Whatever else they come to, none of these is a limit.
+    it.each([
+        [
+            "a Claude reply that mentions a limit but is no error",
+            claude,
+            claudeReply({ result: "The usage limit is a policy" }),
+            0,
+        ],
+        [
+            "a Claude error with another status and text",
+            claude,
+            JSON.stringify({
+                is_error: true,
+                api_error_status: 500,
+                result: "Overloaded",
+            }),
+            1,
+        ],
+        [
+            "a Codex retry notice",
+            codex,
+            '{"type":"error","message":"Reconnecting... 1/5"}',
+            1,
+        ],
+        [
+            "a Codex message item that mentions a limit",
+            codex,
+            '{"type":"item.completed","item":{"text":"usage limit"}}',
+            1,
+        ],
+        ["output with no event", claude, "usage limit", 1],
+    ] as const)(
+        "is not read from %s",
+        async (_name, config, stdout, exitCode) => {
+            const fake = fakeCli(() => ({ exitCode, stdout }));
+            const error = await cliAttempt(config, messages, schema, {
+                env,
+                ...fake,
+            }).catch((e) => e);
+            expect(error).not.toBeInstanceOf(PlanLimit);
         },
     );
 });

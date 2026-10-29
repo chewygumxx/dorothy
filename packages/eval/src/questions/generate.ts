@@ -16,8 +16,8 @@ import type {
     ArchiveKnowledge,
 } from "@dorothy/memory/evaluation";
 import { z } from "zod";
-import { UsageError } from "../errors.js";
-import { CallCap, failureOf, type Message } from "../models/client.js";
+import { RunStop, UsageError } from "../errors.js";
+import { failureOf, type Message } from "../models/client.js";
 import {
     type Corpus,
     clip,
@@ -542,7 +542,7 @@ export async function generateQuestions(options: {
                 drafts = await options.draft(sample, n);
                 failures = 0;
             } catch (error) {
-                if (error instanceof CallCap) {
+                if (error instanceof RunStop) {
                     return stop(error.message);
                 }
                 const why = failureOf(error);

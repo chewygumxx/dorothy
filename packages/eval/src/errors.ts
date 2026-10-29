@@ -13,6 +13,10 @@
 // and keeps its stack.
 export class UsageError extends Error {}
 
+// A reason to stop a run or a generation that is not the work's fault: what
+// is done is kept, and the command resumes or runs again later.
+export class RunStop extends UsageError {}
+
 // The code of a failed system call, if the error has one.
 export const codeOf = (error: unknown): string | undefined => {
     const code = (error as { code?: unknown } | null)?.code;

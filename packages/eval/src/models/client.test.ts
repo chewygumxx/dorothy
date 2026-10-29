@@ -10,12 +10,13 @@
 
 import { afterEach, describe, expect, it } from "bun:test";
 import { z } from "zod";
-import { UsageError } from "../errors.js";
+import { RunStop, UsageError } from "../errors.js";
 import { draftsSchema } from "../questions/generate.js";
 import { type StubReply, stubModels, tempRoot } from "../testing.js";
+import { PlanLimit } from "./cli.js";
 import { CallCap, failureOf, Models } from "./client.js";
 import type { CliConfig, EvalConfig } from "./config.js";
-import { fakeCli } from "./testing.js";
+import { fakeCli, planLimitReply } from "./testing.js";
 
 let stub: ReturnType<typeof stubModels> | null = null;
 afterEach(() => {
@@ -571,6 +572,22 @@ describe.each(routes)("Models through $via", (config) => {
             expect(fake.requests).toHaveLength(1);
         },
     );
+
+    it("stops at a plan's limit without retrying it", async () => {
+        const fake = fakeCli(() => planLimitReply(config.via));
+        const models = cliModels(config, fake);
+        const error = await models.complete("answer", ask).catch((e) => e);
+        expect(error).toBeInstanceOf(PlanLimit);
+        expect(error).toBeInstanceOf(RunStop);
+        expect(models.calls).toBe(1);
+        expect(fake.requests).toHaveLength(1);
+        const again = await models
+            .structured("judge", z.object({ n: z.number() }), "count", ask)
+            .catch((e) => e);
+        expect(again).toBeInstanceOf(PlanLimit);
+        expect(models.calls).toBe(2);
+        expect(fake.requests).toHaveLength(2);
+    });
 
     it("enforces the cap before running and between retries", async () => {
         const fake = fakeCli(() => ({

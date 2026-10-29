@@ -19,6 +19,7 @@ import {
 import { join } from "node:path";
 import type { ArchiveConversation } from "@dorothy/memory/evaluation";
 import { runCli } from "../cli.js";
+import { PlanLimit } from "../models/cli.js";
 import { CallCap } from "../models/client.js";
 import { configPath } from "../models/config.js";
 import { workEnv } from "../snapshot/snapshot.js";
@@ -726,6 +727,40 @@ describe("generation", () => {
         expect(result.made).toEqual([]);
         expect(result.unkept).toEqual([]);
         expect(result.stopped).toBe("reached --max-calls (0)");
+    });
+
+    it("stops at a plan's limit, keeping the drafts made so far", async () => {
+        let asked = 0;
+        const result = await generateQuestions({
+            corpus,
+            counts: { ...counts, "single-session": 10, "multi-session": 0 },
+            random: seeded(3),
+            model: "m/1",
+            existing: [],
+            today: "2026-10-19",
+            draft: async (sample) => {
+                if (++asked > 1) {
+                    throw new PlanLimit("codex", null);
+                }
+                return [
+                    {
+                        question: "Made before the limit?",
+                        answer: "An answer.",
+                        evidence: sample.ids,
+                        older: "",
+                    },
+                ];
+            },
+        });
+        // Not a failed call to try again, nor a drop.
+        expect(asked).toBe(2);
+        expect(result.made.map((each) => each.question)).toEqual([
+            "Made before the limit?",
+        ]);
+        expect(result.dropped).toEqual({});
+        expect(result.stopped).toBe(
+            "the codex plan's usage limit is reached; resume after the reset",
+        );
     });
 });
 

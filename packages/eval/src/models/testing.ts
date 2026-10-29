@@ -50,3 +50,24 @@ export function fakeCli(
     const findCli = (command: string) => `/fixture/bin/${command}`;
     return { runner, cliFiles, findCli, requests, contents, writes, removed };
 }
+
+// What each CLI printed when its plan's usage limit was reached.
+export const planLimitReply = (
+    via: "claude" | "codex",
+): Partial<CliResult> => ({
+    exitCode: 1,
+    stdout:
+        via === "claude"
+            ? JSON.stringify({
+                  is_error: true,
+                  api_error_status: 429,
+                  result: "Fable 5.1 requires usage credits. Switch to another model to continue.",
+              })
+            : `${JSON.stringify({
+                  type: "error",
+                  message: "You've hit your usage limit.",
+              })}\n${JSON.stringify({
+                  type: "turn.failed",
+                  error: { message: "You've hit your usage limit." },
+              })}`,
+});

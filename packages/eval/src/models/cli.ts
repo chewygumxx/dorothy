@@ -14,7 +14,7 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Env } from "@dorothy/core";
-import { codeOf, UsageError } from "../errors.js";
+import { codeOf, RunStop, UsageError } from "../errors.js";
 import type { Message } from "./client.js";
 import type { CliConfig } from "./config.js";
 
@@ -52,6 +52,19 @@ export type CliReply = {
 };
 export class CliFailure extends Error {}
 class CliUnavailable extends UsageError {}
+
+// The route's plan has no usage left: not a fault of the call, and no
+// retry mends it. The run stops, keeping what is done, to resume after the
+// reset, which the CLI may have said.
+export class PlanLimit extends RunStop {
+    constructor(via: CliConfig["via"], resets: string | null) {
+        super(
+            `the ${via} plan's usage limit is reached; resume after the reset${
+                resets === null ? "" : ` (try again at ${resets})`
+            }`,
+        );
+    }
+}
 const files: CliFiles = {
     temp: async () => mkdtempSync(join(tmpdir(), "dorothy-eval-model-")),
     write: (path, text, mode) => writeFile(path, text, { mode }),
@@ -180,6 +193,65 @@ const usageOf = (value: unknown) => {
     };
 };
 
+// What each CLI says of a limit, read leniently. A status 429 is one
+// whatever it says.
+const LIMIT = /usage[ _]limit|usage credits|rate[ _]limit/i;
+
+// The reset time the CLI gives, which only plain date and time characters
+// may make up, so that nothing else of a reply is ever repeated.
+const resetIn = (text: string): string | null =>
+    /try again at ([A-Za-z0-9 ,:/+-]{1,40})/i.exec(text)?.[1]?.trim() || null;
+
+// Claude ends some limit replies in `|<epoch seconds>`.
+const epochIn = (text: string): string | null => {
+    const seconds = /\|(\d{10})\s*$/.exec(text)?.[1];
+    return seconds === undefined
+        ? null
+        : new Date(Number(seconds) * 1000).toISOString();
+};
+
+type Limit = { resets: string | null };
+
+// The limit a Claude error reply says, if it does.
+function claudeLimit(stdout: string): Limit | null {
+    let reply: Record<string, unknown>;
+    try {
+        reply = record(JSON.parse(stdout));
+    } catch {
+        return null;
+    }
+    const text = typeof reply.result === "string" ? reply.result : "";
+    if (
+        reply.is_error !== true ||
+        (reply.api_error_status !== 429 && !LIMIT.test(text))
+    ) {
+        return null;
+    }
+    return { resets: resetIn(text) ?? epochIn(text) };
+}
+
+// The limit a Codex error or turn.failed event says, if one does. Other
+// events, and lines that are not events, say nothing of it.
+function codexLimit(stdout: string): Limit | null {
+    for (const line of stdout.split("\n")) {
+        try {
+            const event = record(JSON.parse(line));
+            const message =
+                event.type === "error"
+                    ? event.message
+                    : event.type === "turn.failed"
+                      ? record(event.error).message
+                      : undefined;
+            if (typeof message === "string" && LIMIT.test(message)) {
+                return { resets: resetIn(message) };
+            }
+        } catch {
+            // Not an event.
+        }
+    }
+    return null;
+}
+
 // One attempt only. Models.call owns the cap, retry policy and timing.
 // All external failures lose their payload, including thrown filesystem
 // and runner errors: both may hold prompts or credentials.
@@ -300,6 +372,12 @@ export async function cliAttempt(
         }
         exitCode = result.exitCode;
         if (result.timedOut) throw failed("timed out");
+        // A CLI at its limit may exit non-zero, so this comes before the
+        // exit code is judged.
+        const limit = (config.via === "claude" ? claudeLimit : codexLimit)(
+            result.stdout,
+        );
+        if (limit !== null) throw new PlanLimit(config.via, limit.resets);
         if (exitCode !== 0)
             throw new CliFailure(
                 `${config.via} exited with code ${exitCode ?? "unknown"}`,
@@ -347,7 +425,9 @@ export async function cliAttempt(
             throw failed("unreadable reply");
         }
     } catch (error) {
-        throw error instanceof CliFailure || error instanceof CliUnavailable
+        throw error instanceof CliFailure ||
+            error instanceof CliUnavailable ||
+            error instanceof PlanLimit
             ? error
             : failed("could not run");
     } finally {

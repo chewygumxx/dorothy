@@ -14,9 +14,9 @@
 
 import { createHash } from "node:crypto";
 import { appendFile, mkdir, stat } from "node:fs/promises";
-import { UsageError } from "../errors.js";
+import { RunStop, UsageError } from "../errors.js";
 import { writeAtomic } from "../files.js";
-import { CallCap, failureOf, type Models } from "../models/client.js";
+import { failureOf, type Models } from "../models/client.js";
 import { type EvalConfig, ROLES, type RoleConfig } from "../models/config.js";
 import { definitionOf, type Question } from "../questions/file.js";
 import { writeRunReport } from "../report/command.js";
@@ -204,9 +204,10 @@ function checkQuestions(info: RunInfo, accepted: readonly Question[]): void {
     }
 }
 
-// The cap reached at a judgement: the answer was paid for, so its record
-// is kept, with that judgement's failure, before the run stops.
-class Capped extends CallCap {
+// A stop (the cap, or a plan's limit) at a judgement: the answer was paid
+// for, so its record is kept, with that judgement's failure, before the run
+// stops.
+class Capped extends RunStop {
     constructor(
         message: string,
         readonly record: RunRecord,
@@ -294,7 +295,8 @@ export function modelCalls(
 }
 
 // Asks each verdict the record lacks; a failed one is recorded and the
-// rest still run, but the cap stops them with the record kept.
+// rest still run, but a stop (the cap, a plan's limit) ends them with the
+// record kept.
 async function judge(
     record: RunRecord,
     question: Question,
@@ -332,7 +334,7 @@ async function judge(
             }
         } catch (caught) {
             record.failures.push(`${name}: ${failureOf(caught)}`);
-            if (caught instanceof CallCap) {
+            if (caught instanceof RunStop) {
                 throw new Capped(caught.message, record);
             }
         }
@@ -416,7 +418,7 @@ async function ask(
             answerPrompt(question, retrieved.context),
         );
     } catch (caught) {
-        if (caught instanceof CallCap) {
+        if (caught instanceof RunStop) {
             throw caught;
         }
         record.failures.push(`answer: ${failureOf(caught)}`);
@@ -523,7 +525,7 @@ export async function runEvaluation(
                 try {
                     record = await settle(task);
                 } catch (error) {
-                    if (!(error instanceof CallCap)) {
+                    if (!(error instanceof RunStop)) {
                         throw error;
                     }
                     stopped = error.message;

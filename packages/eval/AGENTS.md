@@ -100,6 +100,11 @@ options declared and described for `--help`, its failures as
   groups and remove their directories, with handlers only while live.
   Startup errors do not retry; cleanup is best effort. Codex error events
   may be retry notices; exit, turn.failed and the reply decide success.
+  A reply naming the plan's usage limit (Claude: an error with status
+  429 or naming a limit or credits; Codex: an error or turn.failed event
+  naming one), read before the exit code, is a `PlanLimit`, never
+  retried: a `RunStop`, as `CallCap` is, so `run` and `generate` stop
+  with what is done and a run resumes after the reset.
   `models/testing.ts`: injected
   in-memory runner and files; runner integration tests use temp scripts.
 - `systems/`: `System` and `makeSystem` (`system.ts`); the corpus, the
