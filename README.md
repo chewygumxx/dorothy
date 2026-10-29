@@ -1,6 +1,6 @@
 ---
 ctime: 2026-09-29
-mtime: 2026-10-21
+mtime: 2026-10-29
 spdx: GPL-3.0-only
 title: "dorothy"
 description: "Conversational LLM interface"
@@ -452,28 +452,48 @@ bun run eval -- run --work ~/eval --retrieval-only
 
 `mine` and a retrieval-only run need no model. To draft questions of
 LongMemEval's types and to answer and judge them, name a model for each
-role in `~/eval/eval.toml`, any OpenAI-compatible Chat Completions
-endpoint, with the variable that holds its key:
+role in `~/eval/eval.toml`. Use your Claude or ChatGPT plan through the
+`claude` or `codex` CLI before either vendor's API. Each role chooses its
+route with `via`: `"api"` by default, `"claude"` or `"codex"`. API roles
+use any OpenAI-compatible Chat Completions endpoint. For example:
 
 ```toml
 [models.generate]
-base-url = "https://openrouter.ai/api/v1"
-model = "deepseek/deepseek-v3.2"
-key = "OPENROUTER_API_KEY"
+via = "claude"
+model = "claude-haiku-5-5"
 
 [models.answer]
-base-url = "https://openrouter.ai/api/v1"
-model = "openai/gpt-oss-120b"
-key = "OPENROUTER_API_KEY"
+via = "codex"
+model = "gpt-6.1-terra"
+effort = "medium"
 
 [models.judge]
 base-url = "https://openrouter.ai/api/v1"
-model = "google/gemini-2.5-flash"
+model = "google/gemini-4-argon"
 key = "OPENROUTER_API_KEY"
 ```
 
-Set `OPENROUTER_API_KEY` with `sops edit secrets.json`. The commands load
-this checkout's `secrets.json` before calling a model, with no wrapper:
+Only API roles accept `base-url` and `key`, which names an environment
+variable. CLI roles take `model`; Codex also takes `effort`, defaulting
+to `"medium"` rather than your Codex setting. Its values are `"none"`,
+`"minimal"`, `"low"`, `"medium"`, `"high"` and `"xhigh"`, subject to the
+model's support. `effort` on another route is an error.
+
+Claude runs with a fresh config directory, no user settings, tools or
+MCP configuration, and no saved session. Its system prompt comes from a
+private file, with a neutral prompt when the role supplies none. Codex
+uses an ephemeral session and a read-only sandbox, skips the repository
+check, ignores user configuration and execpolicy rules, and limits
+instruction file reads to zero bytes. Both run in temporary working
+directories and receive the request on stdin. Their child environments
+contain only PATH, HOME and their route's login/config variables.
+
+Install the CLI for each subscription route. For Claude, set
+`CLAUDE_CODE_OAUTH_TOKEN` with `sops edit secrets.json`; only the Claude
+child receives it. Codex uses your saved ChatGPT login, including
+`CODEX_HOME` when set. Set API key variables such as `OPENROUTER_API_KEY`
+with `sops edit secrets.json` too. The commands load this checkout's
+secrets before calling a model, with no wrapper:
 
 ```sh
 bun run eval -- generate --work ~/eval --count 300
@@ -493,6 +513,15 @@ ranked items are the ones that fit its budget, so recall at 5 and 10
 falls with a smaller `--budget`. Each run's report is
 `~/eval/runs/<run>/report.md`, and `bun run eval -- <command> --help`
 lists a command's options.
+
+Each generation adds reported input and output tokens by role to its
+`~/eval/generated.json` entry; older entries without `tokens` remain
+readable. A run saves role totals in `run.json` and its report's
+"Tokens by role" table, including judge usage. Totals accumulate across
+capped runs and resumes. The system cost table counts answer tokens.
+Only reported usage is counted: a CLI that gives no usage contributes
+zero. An older run has no role totals; resuming it marks new totals as
+partial because earlier calls were not recorded.
 
 ### Development mode
 

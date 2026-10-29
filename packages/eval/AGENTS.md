@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-19
-mtime: 2026-10-21
+mtime: 2026-10-29
 spdx: GPL-3.0-only
 title: packages/eval/AGENTS.md
 description: >-
@@ -80,22 +80,31 @@ options declared and described for `--help`, its failures as
 - `questions/generate.ts`: samples, prompts and checks for drafting
   each type; `questions/generate-command.ts`: the `generate` command,
   which merges each call's drafts into the question file as they
-  arrive and records each generation's seed in `generated.json`.
+  arrive and records each generation's seed and reported tokens by role
+  in `generated.json`; older entries need no tokens.
 - `questions/review.ts`: the owner's pass over the drafts, and the
   `review` command; an edit goes through `editing.json` in the work
   directory, takes a new id from its text and evidence, cannot set the
   status, and if refused says why.
-- `models/config.ts`: `eval.toml`, a base URL, model and key variable
-  per role; `models/client.ts`: `Models`, one `ChatOpenAI` per role,
-  with retries of its own (the client's are off: it does not retry a
-  headerless 429) and the `--max-calls` cap.
+- `models/config.ts`: `eval.toml`, each role's route (`api` by default,
+  `claude` or `codex`), model, API credentials or Codex effort.
+- `models/client.ts`: `Models`, dispatch, retries and `--max-calls`;
+  `tokens` snapshots reported usage by role. A raw API completion
+  callback includes openevals' judge usage; CLI replies count before
+  schema validation. The API client's own retries are off.
+- `models/cli.ts`: isolated CLI attempts, private prompt/schema files,
+  stdin, filtered environments, reply parsing and token events. A
+  timeout terminates the detached process group; startup errors do not
+  retry and cleanup is best effort. `models/testing.ts`: injected
+  in-memory runner and files; runner integration tests use temp scripts.
 - `systems/`: `System` and `makeSystem` (`system.ts`); the corpus, the
   snapshot's archive opened once, with items as text (`corpus.ts`);
   `termsOf` and `scoreOf` (`terms.ts`); and the three systems,
   `dorothy.ts`, `lexical.ts` and `full.ts`. A new system is a maker in
   `system.ts`'s table.
-- `run/record.ts`: a run's directory, its records and settings; the last
-  record per question and system stands.
+- `run/record.ts`: a run's directory, records and settings; `run.json`
+  keeps cumulative role tokens, optional on older runs. The last record
+  per question and system stands.
 - `run/judges.ts`: the answering prompt, the judges (openevals' strict
   prompt and ours) and `declines`; `run/run.ts`: `runEvaluation`, which
   appends a record per question and system and resumes where a run
@@ -103,8 +112,10 @@ options declared and described for `--help`, its failures as
   judgements it lacks) and refusing a changed snapshot, model or base
   URL, or a question removed or edited since the run began (its
   `definitions` in `run.json`, a digest of each, gold answer included).
-  A run without every saved definition cannot be resumed;
-  `run/command.ts`: the `run` command.
-- `report/`: `summarise`, the Markdown report and `compareOf`, and the
-  `compare` command with `writeRunReport`.
+  A run without every saved definition cannot be resumed. Reported
+  token deltas are saved even for capped or failed work; a resumed
+  older run marks its new totals partial. `run/command.ts`: the command.
+- `report/`: `summarise`, the Markdown report with role token totals
+  beside the per-system answer costs, `compareOf` and the `compare`
+  command with `writeRunReport`. Older runs say totals were not kept.
 - `testing.ts`: `fakeIo`, temporary roots and the fixture archive.
