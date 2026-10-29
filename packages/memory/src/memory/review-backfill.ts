@@ -21,11 +21,24 @@ import { indexPath, RecallIndex } from "../recall/store.js";
 import { transcriptDir } from "../transcript.js";
 import { indexCatalogue } from "./catalogue.js";
 import { indexClaims, type LaunchedHistory, launchHistory } from "./open.js";
-import { Reviewer } from "./reviewer.js";
-import { readSidecar, setBackfilled, writeLock } from "./sidecar.js";
+import { type Reviewed, Reviewer } from "./reviewer.js";
+import {
+    markFailed,
+    readSidecar,
+    recordingFor,
+    setBackfilled,
+    updateSidecar,
+} from "./sidecar.js";
 import { vocabularyPath } from "./vocabulary.js";
 
-export type ReviewBackfillOutcome = "reviewed" | "marked" | "held" | "failed";
+// reviewed and marked wrote notes; unchanged wrote none (declined, or
+// another writer got there first); held is another owner's claim.
+export type ReviewBackfillOutcome =
+    | "reviewed"
+    | "marked"
+    | "unchanged"
+    | "held"
+    | "failed";
 export type ReviewBackfillCounts = Record<ReviewBackfillOutcome, number>;
 export type ReviewBackfillOptions = {
     env: Env;
@@ -60,6 +73,12 @@ async function lastEventAt(path: string): Promise<number> {
     }
     return last;
 }
+
+// An error's first line, never longer than a warning should be.
+const reasonOf = (error: unknown) =>
+    (error instanceof Error ? error.message : String(error))
+        .split("\n", 1)[0]
+        ?.slice(0, 200) ?? "";
 
 async function candidates(dir: string) {
     let names: string[];
@@ -101,7 +120,7 @@ export async function runReviewBackfill({
     progress,
     now = () => new Date(),
     warn = (message) => {
-        process.stderr.write(`${message}\n`);
+        process.stderr.write(`dorothy: ${message}\n`);
     },
 }: ReviewBackfillOptions): Promise<ReviewBackfillCounts> {
     if (!Number.isInteger(count) || count < 1)
@@ -109,6 +128,7 @@ export async function runReviewBackfill({
     const totals: ReviewBackfillCounts = {
         reviewed: 0,
         marked: 0,
+        unchanged: 0,
         held: 0,
         failed: 0,
     };
@@ -120,7 +140,7 @@ export async function runReviewBackfill({
     try {
         launched = await launchHistory({ config, index, warnings, env });
         const versions = launched?.history.handle() ?? null;
-        const lock = writeLock(index, versions) ?? index.lock;
+        const lock = versions?.lock ?? index.lock;
         const loaded = await indexCatalogue(
             index,
             dir,
@@ -172,19 +192,48 @@ export async function runReviewBackfill({
                         );
                         return true;
                     });
-                    problem = false;
-                    if (!cleared) {
-                        outcome = "marked";
+                    // The lock and the commit may have outlasted the lease.
+                    if (!(await claim.take())) {
+                        outcome = "held";
+                    } else if (!cleared) {
+                        outcome = "unchanged";
                     } else {
-                        const reviewed = await reviewer.review(
-                            phrase,
-                            new AbortController().signal,
-                        );
+                        problem = false;
+                        let reviewed: Reviewed;
+                        try {
+                            reviewed = await reviewer.review(
+                                phrase,
+                                new AbortController().signal,
+                            );
+                        } catch (error) {
+                            // The call threw. Back it off as a refused one.
+                            warn(
+                                `memory: couldn't review ${phrase}: ${reasonOf(error)}`,
+                            );
+                            await updateSidecar(
+                                dir,
+                                phrase,
+                                (latest) =>
+                                    latest?.hidden
+                                        ? null
+                                        : markFailed(
+                                              latest,
+                                              now().toISOString(),
+                                          ),
+                                lock,
+                                recordingFor(
+                                    versions,
+                                    `review: ${phrase} (dorothy, failed)`,
+                                ),
+                            );
+                            reviewed = { kind: "none" };
+                            problem = true;
+                        }
                         outcome = problem
                             ? "failed"
-                            : reviewed.kind === "reviewed"
-                              ? "reviewed"
-                              : "marked";
+                            : reviewed.kind === "none"
+                              ? "unchanged"
+                              : reviewed.kind;
                         if (reviewed.kind !== "none") {
                             const entry = entries.get(phrase);
                             if (entry !== undefined)
@@ -198,12 +247,21 @@ export async function runReviewBackfill({
                                 });
                         }
                     }
-                } catch {
+                } catch (error) {
                     // The mark deliberately stays clear after a failed
-                    // call, so the ordinary service can retry it later.
+                    // call, so a chat's catch-up can retry it later.
+                    warn(
+                        `memory: couldn't review ${phrase}: ${reasonOf(error)}`,
+                    );
                     outcome = "failed";
                 } finally {
-                    await claim.release();
+                    try {
+                        await claim.release();
+                    } catch (error) {
+                        warn(
+                            `memory: couldn't release the claim on ${phrase}: ${reasonOf(error)}`,
+                        );
+                    }
                 }
             }
             totals[outcome]++;

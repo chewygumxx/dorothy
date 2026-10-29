@@ -8,7 +8,7 @@
 //
 //
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -41,7 +41,13 @@ const NOTES = {
 const output = { ...NOTES, tags: [], coined: [] };
 const phrase = (seed: number) =>
     newPhrase(() => Uint8Array.from([seed, 1, 2, 3, 4, 5, 6, 7]));
-const emptyCounts = { reviewed: 0, marked: 0, held: 0, failed: 0 };
+const emptyCounts = {
+    reviewed: 0,
+    marked: 0,
+    unchanged: 0,
+    held: 0,
+    failed: 0,
+};
 let root: string;
 let env: Env;
 let dir: string;
@@ -100,6 +106,18 @@ const notes = async (id: string) => {
     if (read.kind !== "ok") throw new Error("fixture notes missing");
     return read.sidecar;
 };
+// Runs mutate once the batch has taken its claim on a conversation,
+// which is after it chose the batch and before it takes the lock.
+function afterClaim(mutate: () => Promise<void>) {
+    const claim = RecallIndex.prototype.claim;
+    return spyOn(RecallIndex.prototype, "claim").mockImplementation(
+        async function (this: RecallIndex, ...args) {
+            const taken = await claim.apply(this, args);
+            await mutate();
+            return taken;
+        },
+    );
+}
 const options = (call: StructuredCall) => ({
     env,
     call,
@@ -154,7 +172,7 @@ describe("runReviewBackfill", () => {
             count: 2,
             progress: (id, outcome) => progress.push([id, outcome]),
         });
-        expect(result).toEqual({ reviewed: 2, marked: 0, held: 0, failed: 0 });
+        expect(result).toEqual({ ...emptyCounts, reviewed: 2 });
         expect(progress).toEqual([
             [recentEvent, "reviewed"],
             [recentAssistant, "reviewed"],
@@ -185,7 +203,7 @@ describe("runReviewBackfill", () => {
                     return good(request);
                 }),
             ),
-        ).toEqual({ reviewed: 25, marked: 0, held: 0, failed: 0 });
+        ).toEqual({ ...emptyCounts, reviewed: 25 });
         expect(calls).toBe(25);
         expect((await notes(ids[0] as string)).backfilled).toBe(true);
         expect((await notes(ids[25] as string)).backfilled).not.toBe(true);
@@ -265,18 +283,19 @@ describe("runReviewBackfill", () => {
         }
     });
 
-    it.each(["refused", "thrown", "invalid"])(
-        "reports a %s call as failed, leaves the mark clear and releases the claim",
-        async (failure) => {
+    it.each([
+        ["a refused call", "refused"],
+        ["an invalid call", "invalid"],
+    ])(
+        "reports %s as failed, leaves the mark clear and releases the claim",
+        async (_title, failure) => {
             const id = await conversation(1, NOW.getTime());
             const index = RecallIndex.open(indexPath(env));
             try {
                 const progress: string[] = [];
                 const result = await runReviewBackfill({
-                    ...options(async () => {
-                        if (failure === "thrown")
-                            throw new Error("fixture failure");
-                        return failure === "invalid"
+                    ...options(async () =>
+                        failure === "invalid"
                             ? {
                                   ok: true,
                                   output: {},
@@ -287,8 +306,8 @@ describe("runReviewBackfill", () => {
                                   ok: false,
                                   reason: "fixture refusal",
                                   costUsd: 0,
-                              };
-                    }),
+                              },
+                    ),
                     progress: (_id, outcome) => progress.push(outcome),
                 });
                 expect(result).toEqual({ ...emptyCounts, failed: 1 });
@@ -311,6 +330,169 @@ describe("runReviewBackfill", () => {
             }
         },
     );
+
+    it("warns of a thrown call by phrase and reason, and backs off", async () => {
+        const id = await conversation(1, NOW.getTime());
+        await writeFile(
+            sidecarPath(dir, id),
+            `${JSON.stringify({ ...EMPTY_SIDECAR, backfilled: true, title: "Secret title" })}\n`,
+        );
+        const index = RecallIndex.open(indexPath(env));
+        try {
+            const warnings: string[] = [];
+            expect(
+                await runReviewBackfill({
+                    ...options(async () => {
+                        throw new Error("fixture failure\nsecond line");
+                    }),
+                    warn: (message) => warnings.push(message),
+                }),
+            ).toEqual({ ...emptyCounts, failed: 1 });
+            expect(warnings).toHaveLength(1);
+            expect(warnings[0]).toContain(id);
+            expect(warnings[0]).toContain("fixture failure");
+            expect(warnings[0]).not.toContain("second line");
+            expect(warnings[0]).not.toContain("Secret title");
+            const failed = await notes(id);
+            expect(failed.backfilled).not.toBe(true);
+            expect(failed.failures).toEqual({
+                count: 1,
+                at: NOW.toISOString(),
+            });
+            expect(reviewDue(failed, NOW.getTime() + 60_000)).toBe(false);
+            expect(await index.claim(id, "service", Date.now(), 60_000)).toBe(
+                true,
+            );
+        } finally {
+            index.close();
+        }
+    });
+
+    it("warns of a failure under the lock by phrase and reason", async () => {
+        const id = await conversation(1, NOW.getTime(), {
+            title: "Secret title",
+        });
+        const warnings: string[] = [];
+        let calls = 0;
+        const claim = afterClaim(() =>
+            writeFile(sidecarPath(dir, id), "{broken"),
+        );
+        try {
+            expect(
+                await runReviewBackfill({
+                    ...options(async (request) => {
+                        calls++;
+                        return good(request);
+                    }),
+                    warn: (message) => warnings.push(message),
+                }),
+            ).toEqual({ ...emptyCounts, failed: 1 });
+        } finally {
+            claim.mockRestore();
+        }
+        expect(calls).toBe(0);
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toContain(id);
+        expect(warnings[0]).toContain("cannot be read");
+        expect(warnings[0]).not.toContain("Secret title");
+    });
+
+    it.each([
+        ["a live append", { backfilled: false }],
+        ["the user hiding it", { hidden: true }],
+    ])(
+        "leaves notes changed by %s since selection alone",
+        async (_title, change) => {
+            const id = await conversation(1, NOW.getTime());
+            const written = `${JSON.stringify({ ...EMPTY_SIDECAR, backfilled: true, ...change })}\n`;
+            let calls = 0;
+            const claim = afterClaim(() =>
+                writeFile(sidecarPath(dir, id), written),
+            );
+            try {
+                expect(
+                    await runReviewBackfill(
+                        options(async (request) => {
+                            calls++;
+                            return good(request);
+                        }),
+                    ),
+                ).toEqual({ ...emptyCounts, unchanged: 1 });
+            } finally {
+                claim.mockRestore();
+            }
+            expect(calls).toBe(0);
+            expect(await readFile(sidecarPath(dir, id), "utf8")).toBe(written);
+        },
+    );
+
+    it("renews the claim after the lock, before the call", async () => {
+        await conversation(1, NOW.getTime());
+        const renew = spyOn(RecallIndex.prototype, "renew");
+        try {
+            let renewals = 0;
+            await runReviewBackfill(
+                options(async (request) => {
+                    renewals = renew.mock.calls.length;
+                    return good(request);
+                }),
+            );
+            // Taking the claim renews once; so does the renewal.
+            expect(renewals).toBe(2);
+        } finally {
+            renew.mockRestore();
+        }
+    });
+
+    it("keeps the counts when releasing a claim throws", async () => {
+        const first = await conversation(1, NOW.getTime());
+        const second = await conversation(2, NOW.getTime() - 1);
+        const progress: [string, string][] = [];
+        const warnings: string[] = [];
+        const release = spyOn(
+            RecallIndex.prototype,
+            "release",
+        ).mockRejectedValue(new Error("fixture release failure"));
+        try {
+            expect(
+                await runReviewBackfill({
+                    ...options(good),
+                    progress: (id, outcome) => progress.push([id, outcome]),
+                    warn: (message) => warnings.push(message),
+                }),
+            ).toEqual({ ...emptyCounts, reviewed: 2 });
+        } finally {
+            release.mockRestore();
+        }
+        expect(progress).toEqual([
+            [first, "reviewed"],
+            [second, "reviewed"],
+        ]);
+        expect(warnings).toHaveLength(2);
+        expect(warnings[0]).toContain(first);
+        expect(warnings[0]).toContain("fixture release failure");
+    });
+
+    it("reports a declined review as unchanged, not marked", async () => {
+        // A recent failure backs the conversation off: nothing is written.
+        const id = await conversation(1, NOW.getTime(), {
+            failures: { count: 1, at: NOW.toISOString() },
+        });
+        let calls = 0;
+        const progress: string[] = [];
+        expect(
+            await runReviewBackfill({
+                ...options(async (request) => {
+                    calls++;
+                    return good(request);
+                }),
+                progress: (_id, outcome) => progress.push(outcome),
+            }),
+        ).toEqual({ ...emptyCounts, unchanged: 1 });
+        expect(calls).toBe(0);
+        expect(progress).toEqual(["unchanged"]);
+        expect((await notes(id)).backfilled).not.toBe(true);
+    });
 
     it("reports a missing transcript as failed after clearing the mark", async () => {
         const id = await conversation(1, NOW.getTime());
@@ -450,13 +632,18 @@ describe("runReviewBackfill", () => {
     });
 
     it.each([0, -1, 1.5, Infinity, NaN])(
-        "rejects invalid count %s before any call",
+        "rejects invalid count %p before any call",
         async (count) => {
             await expect(
                 runReviewBackfill({ ...options(good), count }),
             ).rejects.toThrow("positive integer");
         },
     );
+
+    it("opens an index in a store with no directories yet", async () => {
+        await rm(root, { recursive: true, force: true });
+        expect(await runReviewBackfill(options(good))).toEqual(emptyCounts);
+    });
 
     it("returns empty counts for an empty store", async () => {
         expect(await runReviewBackfill(options(good))).toEqual(emptyCounts);
