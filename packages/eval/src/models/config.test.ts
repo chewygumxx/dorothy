@@ -70,6 +70,15 @@ describe("eval.toml", () => {
         });
     });
 
+    it("reads a role's timeout, in seconds", async () => {
+        write(
+            '[models.judge]\nvia = "codex"\nmodel = "gpt-6.1-sol"\ntimeout-seconds = 600\n[models.answer]\nbase-url = "http://x"\nmodel = "m"\ntimeout-seconds = 30\n',
+        );
+        const config = await readEvalConfig(temp.root);
+        expect(config.judge).toMatchObject({ timeoutSeconds: 600 });
+        expect(config.answer).toMatchObject({ timeoutSeconds: 30 });
+    });
+
     it.each([
         ['via = "other"\nmodel = "m"', "via"],
         ['via = 3\nmodel = "m"', "via"],
@@ -81,6 +90,19 @@ describe("eval.toml", () => {
         ['base-url = "http://x"\nmodel = "m"\neffort = "low"', "effort"],
         ['via = "codex"\nmodel = "m"\neffort = "bogus"', "effort"],
         ['via = "codex"\nmodel = "m"\neffort = 3', "effort"],
+        ['via = "codex"\nmodel = "m"\ntimeout-seconds = 0', "timeout-seconds"],
+        [
+            'via = "claude"\nmodel = "m"\ntimeout-seconds = 4000',
+            "timeout-seconds",
+        ],
+        [
+            'via = "claude"\nmodel = "m"\ntimeout-seconds = "60"',
+            "timeout-seconds",
+        ],
+        [
+            'via = "claude"\nmodel = "m"\ntimeout-seconds = 1.5',
+            "timeout-seconds",
+        ],
     ])("refuses invalid route settings: %s", async (settings, problem) => {
         write(`[models.judge]\n${settings}\n`);
         const error = await readEvalConfig(temp.root).catch((e) => e);

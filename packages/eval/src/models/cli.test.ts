@@ -112,6 +112,20 @@ describe("CLI routes", () => {
         expect(fake.removed).toEqual(["/private/eval-1"]);
     });
 
+    it("gives an attempt its role's timeout", async () => {
+        const fake = fakeCli((request) => {
+            fake.contents.set(`${request.cwd}/reply.txt`, '{"n":3}');
+            return {
+                stdout: '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}\n',
+            };
+        });
+        await cliAttempt({ ...codex, timeoutSeconds: 600 }, messages, schema, {
+            env,
+            ...fake,
+        });
+        expect(fake.requests[0]?.timeoutMs).toBe(600_000);
+    });
+
     it("isolates Codex while retaining its login and reads its file and events", async () => {
         const fake = fakeCli((request) => {
             fake.contents.set(`${request.cwd}/reply.txt`, '{"n":3}');

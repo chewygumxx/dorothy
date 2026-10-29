@@ -22,6 +22,7 @@ export type ApiConfig = {
     baseUrl: string;
     model: string;
     key: string | null;
+    timeoutSeconds?: number;
 };
 export const EFFORTS = [
     "none",
@@ -31,13 +32,21 @@ export const EFFORTS = [
     "high",
     "xhigh",
 ] as const;
-export type CliConfig =
+export type CliConfig = { timeoutSeconds?: number } & (
     | { via: "claude"; model: string }
-    | { via: "codex"; model: string; effort: (typeof EFFORTS)[number] };
+    | { via: "codex"; model: string; effort: (typeof EFFORTS)[number] }
+);
 export type RoleConfig = ApiConfig | CliConfig;
 export type EvalConfig = Record<Role, RoleConfig | null>;
 
-const SETTINGS = ["via", "base-url", "model", "key", "effort"];
+const SETTINGS = [
+    "via",
+    "base-url",
+    "model",
+    "key",
+    "effort",
+    "timeout-seconds",
+];
 const KEY_NAME = /^[A-Z_][A-Z0-9_]*$/;
 
 export const configPath = (work: string) => join(work, "eval.toml");
@@ -62,6 +71,20 @@ function roleOf(role: Role, table: unknown): RoleConfig {
     if (typeof model !== "string" || model.trim() === "") {
         throw new UsageError(`${where} needs model`);
     }
+    // How long one attempt may take; 120 seconds where unset.
+    const seconds = table["timeout-seconds"];
+    if (
+        seconds !== undefined &&
+        (typeof seconds !== "number" ||
+            !Number.isInteger(seconds) ||
+            seconds < 1 ||
+            seconds > 3600)
+    ) {
+        throw new UsageError(
+            `${where}: timeout-seconds must be a whole number from 1 to 3600`,
+        );
+    }
+    const timeout = seconds === undefined ? {} : { timeoutSeconds: seconds };
     if (via !== "codex" && table.effort !== undefined) {
         throw new UsageError(`${where}: effort is only for codex`);
     }
@@ -72,7 +95,7 @@ function roleOf(role: Role, table: unknown): RoleConfig {
             }
         }
         if (via === "claude") {
-            return { via, model };
+            return { via, model, ...timeout };
         }
         const effort = table.effort ?? "medium";
         if (!EFFORTS.some((value) => value === effort)) {
@@ -80,7 +103,12 @@ function roleOf(role: Role, table: unknown): RoleConfig {
                 `${where}: effort must be ${EFFORTS.join(", ")}`,
             );
         }
-        return { via, model, effort: effort as (typeof EFFORTS)[number] };
+        return {
+            via,
+            model,
+            effort: effort as (typeof EFFORTS)[number],
+            ...timeout,
+        };
     }
     const baseUrl = table["base-url"];
     const key = table.key;
@@ -97,7 +125,7 @@ function roleOf(role: Role, table: unknown): RoleConfig {
             `${where}: key names a variable, in capitals, digits and underscores, such as "OPENROUTER_API_KEY", never the key itself`,
         );
     }
-    return { via, baseUrl, model, key: key ?? null };
+    return { via, baseUrl, model, key: key ?? null, ...timeout };
 }
 
 export async function readEvalConfig(work: string): Promise<EvalConfig> {
