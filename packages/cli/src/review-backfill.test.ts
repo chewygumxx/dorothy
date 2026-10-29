@@ -156,6 +156,34 @@ describe("runBackfillReview", () => {
         expect(h.out).toEqual([]);
     });
 
+    it("says that a failed call stopped the batch, and why, and exits 1", async () => {
+        const h = harness([]);
+        const code = await runBackfillReview(25, {
+            ...h.deps,
+            run: async (options) => {
+                options.progress?.("amber-brook-cedar-dune", "reviewed");
+                options.progress?.("birch-cove-delta-ember", "failed");
+                options.stopped?.("usage limit reached");
+                return counted([
+                    ["amber-brook-cedar-dune", "reviewed"],
+                    ["birch-cove-delta-ember", "failed"],
+                ]);
+            },
+        });
+        expect(code).toBe(1);
+        expect(h.out.join("")).toBe(
+            [
+                "amber-brook-cedar-dune: reviewed",
+                "birch-cove-delta-ember: failed",
+                "total: 1 reviewed, 0 marked, 0 unchanged, 0 held, 1 failed",
+                "",
+            ].join("\n"),
+        );
+        expect(h.err.join("")).toBe(
+            "dorothy: --review-backfill stopped after a failed call: usage limit reached; the rest stay marked\n",
+        );
+    });
+
     it("says why and exits 1 when the batch itself cannot run", async () => {
         const h = harness([]);
         const code = await runBackfillReview(25, {
@@ -165,7 +193,9 @@ describe("runBackfillReview", () => {
             },
         });
         expect(code).toBe(1);
-        expect(h.err.join("")).toContain("the index is locked");
+        expect(h.err.join("")).toBe(
+            "dorothy: --review-backfill stopped: the index is locked\n",
+        );
         expect(h.out).toEqual([]);
     });
 });

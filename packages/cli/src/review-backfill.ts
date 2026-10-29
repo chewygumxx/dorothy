@@ -38,9 +38,14 @@ const COUNTED = [
     "failed",
 ] as const satisfies readonly (keyof ReviewBackfillCounts)[];
 
+// An error's first line, as a run's reason should be.
+const firstLine = (error: unknown) =>
+    (error instanceof Error ? error.message : String(error)).split("\n", 1)[0];
+
 // dorothy --review-backfill: a line a conversation as it is done, then
-// the counts. It fails only when a batch did nothing and something failed;
-// the agent that cannot load, or a store that cannot open, fails it too.
+// the counts. It fails when a failed model call stopped the batch, or when
+// a batch did nothing and something failed; the agent that cannot load, or
+// a store that cannot open, fails it too.
 export async function runBackfillReview(
     count: number,
     {
@@ -60,6 +65,7 @@ export async function runBackfillReview(
     if (loaded.review === null) {
         return 1;
     }
+    let stopped: string | null = null;
     try {
         const counts = await run({
             env,
@@ -69,17 +75,24 @@ export async function runBackfillReview(
             progress: (phrase, outcome) => {
                 out(`${phrase}: ${outcome}\n`);
             },
+            stopped: (reason) => {
+                stopped = reason;
+            },
         });
         out(
             `total: ${COUNTED.map((name) => `${counts[name]} ${name}`).join(", ")}\n`,
         );
+        if (stopped !== null) {
+            err(
+                `dorothy: --review-backfill stopped after a failed call: ${stopped}; the rest stay marked\n`,
+            );
+            return 1;
+        }
         return counts.reviewed + counts.marked === 0 && counts.failed > 0
             ? 1
             : 0;
     } catch (error) {
-        err(
-            `dorothy: --review-backfill stopped: ${error instanceof Error ? error.message : String(error)}\n`,
-        );
+        err(`dorothy: --review-backfill stopped: ${firstLine(error)}\n`);
         return 1;
     }
 }
