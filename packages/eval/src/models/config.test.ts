@@ -37,16 +37,55 @@ describe("eval.toml", () => {
         expect(await readEvalConfig(temp.root)).toEqual({
             generate: null,
             answer: {
+                via: "api",
                 baseUrl: "https://openrouter.ai/api/v1",
                 model: "openai/gpt-oss-120b",
                 key: "OPENROUTER_API_KEY",
             },
             judge: {
+                via: "api",
                 baseUrl: "http://127.0.0.1:8080/v1",
                 model: "local",
                 key: null,
             },
         });
+    });
+
+    it("reads subscription routes with Codex effort defaulted", async () => {
+        write(
+            '[models.generate]\nvia = "claude"\nmodel = "claude-haiku-5-5"\n[models.answer]\nvia = "codex"\nmodel = "gpt-6.1-terra"\n',
+        );
+        expect(await readEvalConfig(temp.root)).toEqual({
+            generate: { via: "claude", model: "claude-haiku-5-5" },
+            answer: { via: "codex", model: "gpt-6.1-terra", effort: "medium" },
+            judge: null,
+        });
+        write(
+            '[models.judge]\nvia = "codex"\nmodel = "gpt-6.1-terra"\neffort = "low"\n',
+        );
+        expect((await readEvalConfig(temp.root)).judge).toEqual({
+            via: "codex",
+            model: "gpt-6.1-terra",
+            effort: "low",
+        });
+    });
+
+    it.each([
+        ['via = "other"\nmodel = "m"', "via"],
+        ['via = 3\nmodel = "m"', "via"],
+        ['via = "claude"', "needs model"],
+        ['via = "codex"\nmodel = " "', "needs model"],
+        ['via = "claude"\nmodel = "m"\nbase-url = "http://x"', "base-url"],
+        ['via = "codex"\nmodel = "m"\nkey = "PRIVATE"', "key"],
+        ['via = "claude"\nmodel = "m"\neffort = "low"', "effort"],
+        ['base-url = "http://x"\nmodel = "m"\neffort = "low"', "effort"],
+        ['via = "codex"\nmodel = "m"\neffort = "bogus"', "effort"],
+        ['via = "codex"\nmodel = "m"\neffort = 3', "effort"],
+    ])("refuses invalid route settings: %s", async (settings, problem) => {
+        write(`[models.judge]\n${settings}\n`);
+        const error = await readEvalConfig(temp.root).catch((e) => e);
+        expect(String(error)).toContain("[models.judge]");
+        expect(String(error)).toContain(problem);
     });
 
     it("refuses a role it does not know", async () => {

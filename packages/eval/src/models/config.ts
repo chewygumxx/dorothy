@@ -8,8 +8,8 @@
 //
 //
 
-// <work>/eval.toml: a base URL and a model for each role, and the name of
-// the variable that holds its key. A key itself never goes in the file.
+// <work>/eval.toml: each role names its route and model. API keys are
+// named by their variable, never written in the file.
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -17,10 +17,27 @@ import { codeOf, UsageError } from "../errors.js";
 
 export const ROLES = ["generate", "answer", "judge"] as const;
 export type Role = (typeof ROLES)[number];
-export type RoleConfig = { baseUrl: string; model: string; key: string | null };
+export type ApiConfig = {
+    via?: "api";
+    baseUrl: string;
+    model: string;
+    key: string | null;
+};
+export const EFFORTS = [
+    "none",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+] as const;
+export type CliConfig =
+    | { via: "claude"; model: string }
+    | { via: "codex"; model: string; effort: (typeof EFFORTS)[number] };
+export type RoleConfig = ApiConfig | CliConfig;
 export type EvalConfig = Record<Role, RoleConfig | null>;
 
-const SETTINGS = ["base-url", "model", "key"];
+const SETTINGS = ["via", "base-url", "model", "key", "effort"];
 const KEY_NAME = /^[A-Z_][A-Z0-9_]*$/;
 
 export const configPath = (work: string) => join(work, "eval.toml");
@@ -37,8 +54,35 @@ function roleOf(role: Role, table: unknown): RoleConfig {
     if (extra.length > 0) {
         throw new UsageError(`${where} has no setting ${extra.join(", ")}`);
     }
-    const baseUrl = table["base-url"];
+    const via = table.via ?? "api";
+    if (via !== "api" && via !== "claude" && via !== "codex") {
+        throw new UsageError(`${where}: via must be api, claude or codex`);
+    }
     const model = table.model;
+    if (typeof model !== "string" || model.trim() === "") {
+        throw new UsageError(`${where} needs model`);
+    }
+    if (via !== "codex" && table.effort !== undefined) {
+        throw new UsageError(`${where}: effort is only for codex`);
+    }
+    if (via !== "api") {
+        for (const setting of ["base-url", "key"]) {
+            if (table[setting] !== undefined) {
+                throw new UsageError(`${where}: ${setting} is only for api`);
+            }
+        }
+        if (via === "claude") {
+            return { via, model };
+        }
+        const effort = table.effort ?? "medium";
+        if (!EFFORTS.some((value) => value === effort)) {
+            throw new UsageError(
+                `${where}: effort must be ${EFFORTS.join(", ")}`,
+            );
+        }
+        return { via, model, effort: effort as (typeof EFFORTS)[number] };
+    }
+    const baseUrl = table["base-url"];
     const key = table.key;
     if (
         typeof baseUrl !== "string" ||
@@ -47,16 +91,13 @@ function roleOf(role: Role, table: unknown): RoleConfig {
     ) {
         throw new UsageError(`${where} needs base-url, an http or https URL`);
     }
-    if (typeof model !== "string" || model.trim() === "") {
-        throw new UsageError(`${where} needs model`);
-    }
     // The message never repeats what was written, which may be a key.
     if (key !== undefined && (typeof key !== "string" || !KEY_NAME.test(key))) {
         throw new UsageError(
             `${where}: key names a variable, in capitals, digits and underscores, such as "OPENROUTER_API_KEY", never the key itself`,
         );
     }
-    return { baseUrl, model, key: key ?? null };
+    return { via, baseUrl, model, key: key ?? null };
 }
 
 export async function readEvalConfig(work: string): Promise<EvalConfig> {

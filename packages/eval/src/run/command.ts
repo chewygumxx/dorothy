@@ -174,8 +174,8 @@ export const runCommand: Command = {
                         : intOf(values, "max-calls", 0, 1, 1_000_000),
             });
             // A missing key is said before anything is asked.
-            models.chat("answer");
-            models.chat("judge");
+            models.prepare("answer");
+            models.prepare("judge");
         }
         const corpus = await openCorpus(workEnv(work));
         try {

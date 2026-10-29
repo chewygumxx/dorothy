@@ -11,9 +11,11 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { z } from "zod";
 import { UsageError } from "../errors.js";
+import { draftsSchema } from "../questions/generate.js";
 import { type StubReply, stubModels } from "../testing.js";
 import { CallCap, failureOf, Models } from "./client.js";
-import type { EvalConfig } from "./config.js";
+import type { CliConfig, EvalConfig } from "./config.js";
+import { fakeCli } from "./testing.js";
 
 let stub: ReturnType<typeof stubModels> | null = null;
 afterEach(() => {
@@ -305,4 +307,174 @@ describe("Models", () => {
         ).rejects.toThrow(UsageError);
         expect(requests).toHaveLength(1);
     });
+});
+
+const routes: CliConfig[] = [
+    { via: "claude", model: "claude-haiku-5-5" },
+    { via: "codex", model: "gpt-6.1-terra", effort: "medium" },
+];
+const cliEnv = {
+    PATH: "/bin",
+    HOME: "/fake",
+    CLAUDE_CODE_OAUTH_TOKEN: "test-oauth",
+};
+const cliModels = (
+    config: CliConfig,
+    options: Partial<ConstructorParameters<typeof Models>[1]>,
+) =>
+    new Models(
+        { generate: config, answer: config, judge: config },
+        { env: cliEnv, retryMs: 1, ...options },
+    );
+
+describe.each(routes)("Models through $via", (config) => {
+    const reply = (value: unknown, count: number, broken = false) => {
+        const fake = fakeCli((request, attempt) => {
+            const body =
+                broken && attempt < count
+                    ? "unreadable private snapshot test-oauth"
+                    : JSON.stringify(value);
+            if (config.via === "codex") {
+                fake.contents.set(`${request.cwd}/reply.txt`, body);
+                return {
+                    stdout: '{"type":"turn.completed","usage":{"input_tokens":11,"output_tokens":7}}',
+                };
+            }
+            return {
+                stdout:
+                    broken && attempt < count
+                        ? body
+                        : JSON.stringify({
+                              result: "Hi.",
+                              structured_output: value,
+                              usage: { input_tokens: 11, output_tokens: 7 },
+                          }),
+            };
+        });
+        return fake;
+    };
+
+    it("dispatches a completion without an API client", async () => {
+        const fake = reply("Hi.", 1);
+        const models = cliModels(config, fake);
+        expect(await models.complete("answer", ask)).toMatchObject({
+            text: config.via === "claude" ? "Hi." : '"Hi."',
+            input: 11,
+            output: 7,
+        });
+        expect(models.calls).toBe(1);
+    });
+
+    it("requests and checks the same structured schema", async () => {
+        const fake = reply({ questions: [] }, 1);
+        const models = cliModels(config, fake);
+        expect(
+            await models.structured("generate", draftsSchema, "drafts", ask),
+        ).toEqual({ value: { questions: [] }, input: 11, output: 7 });
+        const request = fake.requests[0];
+        const json =
+            config.via === "claude"
+                ? request?.args[
+                      (request?.args.indexOf("--json-schema") ?? -2) + 1
+                  ]
+                : fake.contents.get(`${request?.cwd}/schema.json`);
+        const schema = JSON.parse(json ?? "null");
+        expect(schema.additionalProperties).toBe(false);
+        expect(schema.required).toEqual(["questions"]);
+        expect(schema.properties.questions.items.additionalProperties).toBe(
+            false,
+        );
+        expect(schema.properties.questions.items.required).toEqual([
+            "question",
+            "answer",
+            "evidence",
+            "older",
+        ]);
+    });
+
+    it("retries an unreadable reply and spends each attempt", async () => {
+        const fake = reply({ n: 3 }, 3, true);
+        const models = cliModels(config, fake);
+        expect(
+            (
+                await models.structured(
+                    "generate",
+                    z.object({ n: z.number() }),
+                    "count",
+                    ask,
+                )
+            ).value,
+        ).toEqual({ n: 3 });
+        expect(models.calls).toBe(3);
+        expect(new Set(fake.requests.map((request) => request.cwd)).size).toBe(
+            3,
+        );
+        expect(fake.removed).toHaveLength(3);
+    });
+
+    it("does not retry a parsed schema mismatch or expose its value", async () => {
+        const fake = reply({ n: "Private snapshot test-oauth" }, 1);
+        const models = cliModels(config, fake);
+        const error = await models
+            .structured("generate", z.object({ n: z.number() }), "count", ask)
+            .catch((e) => e);
+        expect(error).toBeInstanceOf(UsageError);
+        expect(error.message).toBe(
+            "the model's reply did not match its schema",
+        );
+        expect(models.calls).toBe(1);
+    });
+
+    it.each(["exit", "timeout", "spawn"])(
+        "retries a %s failure without exposing output",
+        async (kind) => {
+            const fake = fakeCli(() => {
+                if (kind === "spawn")
+                    throw new Error("private snapshot test-oauth");
+                return {
+                    exitCode: 19,
+                    stdout: "private snapshot test-oauth",
+                    timedOut: kind === "timeout",
+                };
+            });
+            const models = cliModels(config, fake);
+            const error = await models.complete("answer", ask).catch((e) => e);
+            expect(models.calls).toBe(3);
+            expect(failureOf(error)).toStartWith(
+                `${config.via} exited with code`,
+            );
+            expect(String(error)).not.toContain("snapshot");
+            expect(String(error)).not.toContain("test-oauth");
+        },
+    );
+
+    it("enforces the cap before running and between retries", async () => {
+        const fake = fakeCli(() => ({
+            exitCode: 19,
+            stdout: "private snapshot test-oauth",
+        }));
+        const models = cliModels(config, { ...fake, maxCalls: 2 });
+        const error = await models.complete("answer", ask).catch((e) => e);
+        expect(error).toBeInstanceOf(CallCap);
+        expect(error.message).toContain(`${config.via} exited with code 19`);
+        expect(fake.requests).toHaveLength(2);
+        const capped = cliModels(config, { ...fake, maxCalls: 0 });
+        await expect(capped.complete("answer", ask)).rejects.toBeInstanceOf(
+            CallCap,
+        );
+        expect(fake.requests).toHaveLength(2);
+    });
+});
+
+it("requires Claude OAuth from the supplied environment before spending a call", async () => {
+    const fake = fakeCli(() => ({ stdout: "{}" }));
+    const models = cliModels(
+        { via: "claude", model: "m" },
+        { ...fake, env: {} },
+    );
+    await expect(models.complete("answer", ask)).rejects.toThrow(
+        "CLAUDE_CODE_OAUTH_TOKEN is not set",
+    );
+    expect(models.calls).toBe(0);
+    expect(fake.requests).toHaveLength(0);
 });

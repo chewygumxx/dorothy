@@ -8,18 +8,18 @@
 //
 //
 
-// The models of eval.toml over OpenAI-compatible Chat Completions, with
-// one client per role, retries of its own and a cap on calls. The
-// client's own retries are off: it does not retry a 429 without headers.
+// The models of eval.toml over API or subscription CLI routes, with
+// retries of our own and a cap on calls. The API client's retries are
+// off: it does not retry a 429 without headers.
 
-import type { Env } from "@dorothy/core";
 import { ChatOpenAI } from "@langchain/openai";
-import type { z } from "zod";
+import { z } from "zod";
 import { UsageError } from "../errors.js";
+import { CliFailure, type CliOptions, cliAttempt } from "./cli.js";
 import {
+    type ApiConfig,
     type EvalConfig,
     type Role,
-    type RoleConfig,
     requireRole,
 } from "./config.js";
 
@@ -53,8 +53,7 @@ export type Completion = {
 // --max-calls spent: what is done is kept, and a run resumes.
 export class CallCap extends UsageError {}
 
-export type ModelsOptions = {
-    env: Env;
+export type ModelsOptions = CliOptions & {
     maxCalls?: number | null;
     timeoutMs?: number;
     // The first retry's wait; the second waits twice as long.
@@ -87,6 +86,7 @@ function retryable(error: unknown): boolean {
     if (error instanceof UsageError) {
         return false;
     }
+    if (error instanceof CliFailure) return true;
     const status = statusOf(error);
     if (status === null) {
         const { name, message } =
@@ -140,7 +140,7 @@ export class Models {
         return this.#calls;
     }
 
-    #keyOf(found: RoleConfig): string {
+    #keyOf(found: ApiConfig): string {
         if (found.key === null) {
             // A local server takes any key.
             return "none";
@@ -155,10 +155,32 @@ export class Models {
         return key;
     }
 
+    // Validate credentials before a command opens its corpus or pays for
+    // any call. CLI roles never construct an API client.
+    prepare(role: Role): void {
+        const found = requireRole(this.config, role);
+        if (found.via === "claude") {
+            const token = this.options.env.CLAUDE_CODE_OAUTH_TOKEN;
+            if (token === undefined || token === "") {
+                throw new UsageError(
+                    "CLAUDE_CODE_OAUTH_TOKEN is not set: add it with `sops edit secrets.json`",
+                );
+            }
+            this.#keys.add(token);
+        } else if (found.via !== "codex") {
+            this.chat(role);
+        }
+    }
+
     chat(role: Role): ChatOpenAI {
         let chat = this.#chats.get(role);
         if (chat === undefined) {
             const found = requireRole(this.config, role);
+            if (found.via === "claude" || found.via === "codex") {
+                throw new UsageError(
+                    `the ${role} role uses ${found.via}, not an API client`,
+                );
+            }
             chat = new ChatOpenAI({
                 model: found.model,
                 apiKey: this.#keyOf(found),
@@ -243,8 +265,21 @@ export class Models {
     }
 
     async complete(role: Role, messages: Message[]): Promise<Completion> {
-        const chat = this.chat(role);
+        this.prepare(role);
+        const found = requireRole(this.config, role);
         const started = performance.now();
+        if (found.via === "claude" || found.via === "codex") {
+            const reply = await this.call(() =>
+                cliAttempt(found, messages, undefined, this.options),
+            );
+            return {
+                text: reply.text,
+                input: reply.input,
+                output: reply.output,
+                ms: Math.round(performance.now() - started),
+            };
+        }
+        const chat = this.chat(role);
         const reply = await this.call(() => chat.invoke(messages));
         const usage = reply.usage_metadata as Usage;
         return {
@@ -261,6 +296,30 @@ export class Models {
         name: string,
         messages: Message[],
     ): Promise<{ value: T; input: number; output: number }> {
+        this.prepare(role);
+        const found = requireRole(this.config, role);
+        if (found.via === "claude" || found.via === "codex") {
+            const jsonSchema = z.toJSONSchema(schema);
+            return this.call(async () => {
+                const reply = await cliAttempt(
+                    found,
+                    messages,
+                    jsonSchema,
+                    this.options,
+                );
+                const parsed = schema.safeParse(reply.value);
+                if (!parsed.success) {
+                    throw new UsageError(
+                        "the model's reply did not match its schema",
+                    );
+                }
+                return {
+                    value: parsed.data,
+                    input: reply.input,
+                    output: reply.output,
+                };
+            });
+        }
         const chat = this.chat(role).withStructuredOutput(schema, {
             name,
             includeRaw: true,

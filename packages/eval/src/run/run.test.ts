@@ -632,6 +632,33 @@ describe("a run", () => {
         expect(alone.baseUrls).toEqual({ answer: null, judge: null });
     });
 
+    it("records a subscription route and effort without a base URL", async () => {
+        const info = newRunInfo(
+            {
+                systems: ["lexical"],
+                budget: 8000,
+                fullBudget: 400_000,
+                retrievalOnly: false,
+            },
+            [],
+            {
+                generate: null,
+                answer: { via: "claude", model: "claude-haiku-5-5" },
+                judge: {
+                    via: "codex",
+                    model: "gpt-6.1-terra",
+                    effort: "medium",
+                },
+            },
+            await readSnapshot(work),
+            new Date("2026-10-29T00:00:00.000Z"),
+        );
+        expect(info.baseUrls).toEqual({
+            answer: "claude",
+            judge: "codex:medium",
+        });
+    });
+
     it("records a system's failure and goes on", async () => {
         const corpus = await openCorpus(workEnv(work));
         try {

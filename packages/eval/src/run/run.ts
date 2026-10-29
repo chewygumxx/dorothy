@@ -70,8 +70,20 @@ function rolesOf(config: EvalConfig, retrievalOnly: boolean) {
             judge: of("judge", (found) => found.model),
         },
         baseUrls: {
-            answer: of("answer", (found) => servedAt(found.baseUrl)),
-            judge: of("judge", (found) => servedAt(found.baseUrl)),
+            answer: of("answer", (found) =>
+                found.via === "claude"
+                    ? "claude"
+                    : found.via === "codex"
+                      ? `codex:${found.effort}`
+                      : servedAt(found.baseUrl),
+            ),
+            judge: of("judge", (found) =>
+                found.via === "claude"
+                    ? "claude"
+                    : found.via === "codex"
+                      ? `codex:${found.effort}`
+                      : servedAt(found.baseUrl),
+            ),
         },
     };
 }
