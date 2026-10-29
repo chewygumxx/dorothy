@@ -23,9 +23,9 @@ import { indexCatalogue } from "./catalogue.js";
 import { indexClaims, type LaunchedHistory, launchHistory } from "./open.js";
 import { type Reviewed, Reviewer } from "./reviewer.js";
 import {
-    markFailed,
     readSidecar,
     recordingFor,
+    type Sidecar,
     setBackfilled,
     updateSidecar,
 } from "./sidecar.js";
@@ -46,6 +46,8 @@ export type ReviewBackfillOptions = {
     call: StructuredCall;
     persona: string;
     progress?: (phrase: string, outcome: ReviewBackfillOutcome) => void;
+    // A failed model call ends the batch; this says why, by its first line.
+    stopped?: (reason: string) => void;
     now?: () => Date;
     warn?: (message: string) => void;
 };
@@ -111,13 +113,16 @@ async function candidates(dir: string) {
 }
 
 // Explicitly chosen backfills use the same Reviewer and claim as the
-// service. The cap applies to candidates, including held claims.
+// service. The cap applies to candidates, including held claims. A failed
+// model call, likelier to fail the rest too, gives the conversation its
+// mark back and stops the batch, whatever the plan or the API says next.
 export async function runReviewBackfill({
     env,
     count = 25,
     call,
     persona,
     progress,
+    stopped,
     now = () => new Date(),
     warn = (message) => {
         process.stderr.write(`dorothy: ${message}\n`);
@@ -152,6 +157,7 @@ export async function runReviewBackfill({
             loaded.entries.map((entry) => [entry.phrase, entry]),
         );
         let problem = false;
+        let callFailure: string | null = null;
         const reviewer = new Reviewer({
             dir,
             config: config.memory,
@@ -164,13 +170,40 @@ export async function runReviewBackfill({
             entries: () => entries.values(),
             warn: (message, issue) => {
                 if (issue.phrase !== null) problem = true;
+                if (issue.kind === "call")
+                    callFailure = reasonOf(issue.error ?? "the call failed");
                 warn(message);
             },
             cost: () => {},
         });
+        // The mark and failures the conversation began the batch with, as
+        // if nothing had been tried: a later batch can take it up again.
+        const restoreMark = async (
+            phrase: string,
+            failures: Sidecar["failures"],
+        ) => {
+            const result = await updateSidecar(
+                dir,
+                phrase,
+                (latest) =>
+                    latest === null || latest.hidden
+                        ? null
+                        : { ...latest, backfilled: true, failures },
+                lock,
+                recordingFor(
+                    versions,
+                    `review: ${phrase} (dorothy, backfill restored)`,
+                ),
+            );
+            if (result.kind === "failed")
+                warn(
+                    `memory: couldn't restore the backfill mark on ${phrase}: ${result.reason.split("\n", 1)[0]?.slice(0, 200)}`,
+                );
+        };
         for (const { phrase } of (await candidates(dir)).slice(0, count)) {
             const claim = indexClaims(index, phrase)();
             let outcome: ReviewBackfillOutcome;
+            let stop: string | null = null;
             if (!(await claim.take())) {
                 outcome = "held";
             } else {
@@ -182,7 +215,7 @@ export async function runReviewBackfill({
                         // A live append or another batch may have got here
                         // since selection. Hidden notes stay untouched.
                         if (!read.sidecar.backfilled || read.sidecar.hidden)
-                            return false;
+                            return null;
                         const path = await setBackfilled(dir, phrase, false);
                         if (path === null)
                             throw new Error("backfill mark was not cleared");
@@ -190,15 +223,16 @@ export async function runReviewBackfill({
                             [path],
                             `review: ${phrase} (dorothy, backfill)`,
                         );
-                        return true;
+                        return { failures: read.sidecar.failures };
                     });
                     // The lock and the commit may have outlasted the lease.
                     if (!(await claim.take())) {
                         outcome = "held";
-                    } else if (!cleared) {
+                    } else if (cleared === null) {
                         outcome = "unchanged";
                     } else {
                         problem = false;
+                        callFailure = null;
                         let reviewed: Reviewed;
                         try {
                             reviewed = await reviewer.review(
@@ -206,35 +240,23 @@ export async function runReviewBackfill({
                                 new AbortController().signal,
                             );
                         } catch (error) {
-                            // The call threw. Back it off as a refused one.
                             warn(
                                 `memory: couldn't review ${phrase}: ${reasonOf(error)}`,
                             );
-                            await updateSidecar(
-                                dir,
-                                phrase,
-                                (latest) =>
-                                    latest?.hidden
-                                        ? null
-                                        : markFailed(
-                                              latest,
-                                              now().toISOString(),
-                                          ),
-                                lock,
-                                recordingFor(
-                                    versions,
-                                    `review: ${phrase} (dorothy, failed)`,
-                                ),
-                            );
+                            callFailure = reasonOf(error);
                             reviewed = { kind: "none" };
                             problem = true;
+                        }
+                        if (callFailure !== null) {
+                            stop = callFailure;
+                            await restoreMark(phrase, cleared.failures);
                         }
                         outcome = problem
                             ? "failed"
                             : reviewed.kind === "none"
                               ? "unchanged"
                               : reviewed.kind;
-                        if (reviewed.kind !== "none") {
+                        if (stop === null && reviewed.kind !== "none") {
                             const entry = entries.get(phrase);
                             if (entry !== undefined)
                                 entries.set(phrase, {
@@ -248,8 +270,8 @@ export async function runReviewBackfill({
                         }
                     }
                 } catch (error) {
-                    // The mark deliberately stays clear after a failed
-                    // call, so a chat's catch-up can retry it later.
+                    // Any other failure leaves the mark clear, so a chat's
+                    // catch-up can retry the conversation later.
                     warn(
                         `memory: couldn't review ${phrase}: ${reasonOf(error)}`,
                     );
@@ -266,6 +288,10 @@ export async function runReviewBackfill({
             }
             totals[outcome]++;
             progress?.(phrase, outcome);
+            if (stop !== null) {
+                stopped?.(stop);
+                break;
+            }
         }
         return totals;
     } finally {

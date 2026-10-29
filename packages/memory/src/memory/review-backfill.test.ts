@@ -283,69 +283,68 @@ describe("runReviewBackfill", () => {
         }
     });
 
-    it.each([
-        ["a refused call", "refused"],
-        ["an invalid call", "invalid"],
-    ])(
-        "reports %s as failed, leaves the mark clear and releases the claim",
-        async (_title, failure) => {
-            const id = await conversation(1, NOW.getTime());
-            const index = RecallIndex.open(indexPath(env));
-            try {
-                const progress: string[] = [];
-                const result = await runReviewBackfill({
-                    ...options(async () =>
-                        failure === "invalid"
-                            ? {
-                                  ok: true,
-                                  output: {},
-                                  model: "fixture",
-                                  costUsd: 0,
-                              }
-                            : {
-                                  ok: false,
-                                  reason: "fixture refusal",
-                                  costUsd: 0,
-                              },
-                    ),
-                    progress: (_id, outcome) => progress.push(outcome),
-                });
-                expect(result).toEqual({ ...emptyCounts, failed: 1 });
-                expect(progress).toEqual(["failed"]);
-                expect((await notes(id)).backfilled).not.toBe(true);
-                expect(
-                    reviewDue(
-                        await notes(id),
-                        NOW.getTime() + 8 * 24 * 3_600_000,
-                    ),
-                ).toBe(true);
-                expect(
-                    await index.claim(id, "service", Date.now(), 60_000),
-                ).toBe(true);
-                expect(await runReviewBackfill(options(good))).toEqual(
-                    emptyCounts,
-                );
-            } finally {
-                index.close();
-            }
-        },
-    );
+    it("reports an invalid review as failed, backs it off and goes on", async () => {
+        const first = await conversation(1, NOW.getTime());
+        const second = await conversation(2, NOW.getTime() - 1);
+        const index = RecallIndex.open(indexPath(env));
+        try {
+            const progress: [string, string][] = [];
+            let calls = 0;
+            const stopped: string[] = [];
+            const result = await runReviewBackfill({
+                ...options(async (request) => {
+                    calls++;
+                    return calls === 1
+                        ? { ok: true, output: {}, model: "fixture", costUsd: 0 }
+                        : good(request);
+                }),
+                progress: (id, outcome) => progress.push([id, outcome]),
+                stopped: (reason) => stopped.push(reason),
+            });
+            expect(result).toEqual({ ...emptyCounts, failed: 1, reviewed: 1 });
+            expect(progress).toEqual([
+                [first, "failed"],
+                [second, "reviewed"],
+            ]);
+            expect(stopped).toEqual([]);
+            expect((await notes(first)).backfilled).not.toBe(true);
+            expect((await notes(first)).failures).toEqual({
+                count: 1,
+                at: NOW.toISOString(),
+            });
+            expect(
+                reviewDue(
+                    await notes(first),
+                    NOW.getTime() + 8 * 24 * 3_600_000,
+                ),
+            ).toBe(true);
+            expect(
+                await index.claim(first, "service", Date.now(), 60_000),
+            ).toBe(true);
+            expect(await runReviewBackfill(options(good))).toEqual(emptyCounts);
+        } finally {
+            index.close();
+        }
+    });
 
-    it("warns of a thrown call by phrase and reason, and backs off", async () => {
+    it("warns of a thrown call by phrase and first line, restores the mark and stops", async () => {
         const id = await conversation(1, NOW.getTime());
         await writeFile(
             sidecarPath(dir, id),
             `${JSON.stringify({ ...EMPTY_SIDECAR, backfilled: true, title: "Secret title" })}\n`,
         );
+        const before = await notes(id);
         const index = RecallIndex.open(indexPath(env));
         try {
             const warnings: string[] = [];
+            const stopped: string[] = [];
             expect(
                 await runReviewBackfill({
                     ...options(async () => {
                         throw new Error("fixture failure\nsecond line");
                     }),
                     warn: (message) => warnings.push(message),
+                    stopped: (reason) => stopped.push(reason),
                 }),
             ).toEqual({ ...emptyCounts, failed: 1 });
             expect(warnings).toHaveLength(1);
@@ -353,13 +352,9 @@ describe("runReviewBackfill", () => {
             expect(warnings[0]).toContain("fixture failure");
             expect(warnings[0]).not.toContain("second line");
             expect(warnings[0]).not.toContain("Secret title");
-            const failed = await notes(id);
-            expect(failed.backfilled).not.toBe(true);
-            expect(failed.failures).toEqual({
-                count: 1,
-                at: NOW.toISOString(),
-            });
-            expect(reviewDue(failed, NOW.getTime() + 60_000)).toBe(false);
+            expect(stopped).toEqual(["fixture failure"]);
+            const restored = await notes(id);
+            expect(restored).toEqual({ ...before, rev: before.rev + 2 });
             expect(await index.claim(id, "service", Date.now(), 60_000)).toBe(
                 true,
             );
@@ -367,6 +362,82 @@ describe("runReviewBackfill", () => {
             index.close();
         }
     });
+
+    it("restores the mark and the earlier failures of a refused call, which a later batch can review", async () => {
+        const earlier = { count: 2, at: "2026-10-01T00:00:00.000Z" };
+        const id = await conversation(1, NOW.getTime(), {
+            failures: earlier,
+        });
+        const progress: string[] = [];
+        const stopped: string[] = [];
+        expect(
+            await runReviewBackfill({
+                ...options(async () => ({
+                    ok: false,
+                    reason: "fixture refusal\nsecond line",
+                    costUsd: 0,
+                })),
+                progress: (_id, outcome) => progress.push(outcome),
+                stopped: (reason) => stopped.push(reason),
+            }),
+        ).toEqual({ ...emptyCounts, failed: 1 });
+        expect(progress).toEqual(["failed"]);
+        expect(stopped).toEqual(["fixture refusal"]);
+        expect(await notes(id)).toMatchObject({
+            backfilled: true,
+            failures: earlier,
+        });
+        expect(await runReviewBackfill(options(good))).toEqual({
+            ...emptyCounts,
+            reviewed: 1,
+        });
+        expect(await notes(id)).toMatchObject(NOTES);
+        expect((await notes(id)).backfilled).not.toBe(true);
+    });
+
+    it.each([
+        ["throws", async () => Promise.reject(new Error("limit reached"))],
+        [
+            "is refused",
+            async () => ({ ok: false as const, reason: "limit", costUsd: 0 }),
+        ],
+    ])(
+        "stops a batch at a call that %s, leaving the rest marked",
+        async (_title, failing) => {
+            const newest = await conversation(1, NOW.getTime() + 2);
+            const middle = await conversation(2, NOW.getTime() + 1);
+            const oldest = await conversation(3, NOW.getTime());
+            const oldestBefore = await readFile(
+                sidecarPath(dir, oldest),
+                "utf8",
+            );
+            const progress: [string, string][] = [];
+            const stopped: string[] = [];
+            let calls = 0;
+            expect(
+                await runReviewBackfill({
+                    ...options(async (request) => {
+                        calls++;
+                        return calls === 1 ? good(request) : failing();
+                    }),
+                    progress: (id, outcome) => progress.push([id, outcome]),
+                    stopped: (reason) => stopped.push(reason),
+                }),
+            ).toEqual({ ...emptyCounts, reviewed: 1, failed: 1 });
+            expect(calls).toBe(2);
+            expect(progress).toEqual([
+                [newest, "reviewed"],
+                [middle, "failed"],
+            ]);
+            expect(stopped).toHaveLength(1);
+            expect((await notes(newest)).backfilled).not.toBe(true);
+            expect((await notes(middle)).backfilled).toBe(true);
+            expect((await notes(middle)).failures).toBeNull();
+            expect(await readFile(sidecarPath(dir, oldest), "utf8")).toBe(
+                oldestBefore,
+            );
+        },
+    );
 
     it("warns of a failure under the lock by phrase and reason", async () => {
         const id = await conversation(1, NOW.getTime(), {
@@ -513,21 +584,6 @@ describe("runReviewBackfill", () => {
         expect(
             warnings.some((message) => message.includes("couldn't review")),
         ).toBe(true);
-    });
-
-    it("continues after a failed review", async () => {
-        await conversation(1, NOW.getTime());
-        await conversation(2, NOW.getTime() - 1);
-        let calls = 0;
-        expect(
-            await runReviewBackfill(
-                options(async (request) =>
-                    ++calls === 1
-                        ? { ok: false, reason: "fixture refusal", costUsd: 0 }
-                        : good(request),
-                ),
-            ),
-        ).toEqual({ ...emptyCounts, reviewed: 1, failed: 1 });
     });
 
     it("marks fully user-owned notes without paying for a review", async () => {
