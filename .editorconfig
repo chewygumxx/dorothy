@@ -29,3 +29,10 @@ insert_final_newline = true
 # ---------
 [*.md]
 indent_size = 2
+
+# ---------
+# Secrets
+# ---------
+# sops writes secrets.json with tabs on every edit.
+[secrets.json]
+indent_style = tab
