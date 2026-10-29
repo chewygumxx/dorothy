@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-19
-mtime: 2026-10-29
+mtime: 2026-10-30
 spdx: GPL-3.0-only
 title: packages/eval/AGENTS.md
 description: >-
@@ -84,9 +84,13 @@ options declared and described for `--help`, its failures as
   arrive and records each generation's seed and reported tokens by role
   in `generated.json`; older entries need no tokens.
 - `questions/review.ts`: the owner's pass over the drafts, and the
-  `review` command; an edit goes through `editing.json` in the work
+  `review` command (`--evidence` sets the characters shown of each
+  conversation); an edit goes through `editing.json` in the work
   directory, takes a new id from its text and evidence, cannot set the
-  status, and if refused says why.
+  status, and if refused says why. `--apply` runs an agent's decisions
+  through the same `checkedEdit` and `place`, in one locked write (none
+  on `--dry-run`), reporting a bad line and skipping it. Each decision,
+  the owner's too, is a line of `reviews.jsonl` in the work directory.
 - `models/config.ts`: `eval.toml`, each role's route (`api` by default,
   `claude` or `codex`), model, API credentials or Codex effort.
 - `models/client.ts`: `Models`, dispatch, retries and `--max-calls`;

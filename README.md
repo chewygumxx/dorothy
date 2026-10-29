@@ -551,6 +551,22 @@ falls with a smaller `--budget`. Each run's report is
 `~/eval/runs/<run>/report.md`, and `bun run eval -- <command> --help`
 lists a command's options.
 
+`review` shows up to 6,000 characters of each cited conversation, or
+`--evidence <chars>`. An agent can screen the drafts for you: its
+decisions, one JSON line each, `{"id", "decision", "reason"}` with a
+decision of `accept`, `reject`, `edit` or `unsure` (an `edit` adds any of
+`question`, `answer` and `evidence`), are applied with review's own
+checks, and a line that fails them is reported and skipped:
+
+```sh
+bun run eval -- review --work ~/eval --apply decisions.jsonl \
+    --reviewer agent-1 --dry-run   # drop --dry-run to write
+```
+
+It exits 1 if any line had a problem. An `unsure` leaves the draft for
+you. `~/eval/reviews.jsonl` logs every decision, yours as `owner`, with
+who made it, any new id and the reason.
+
 Each generation adds reported input and output tokens by role to its
 `~/eval/generated.json` entry; older entries without `tokens` remain
 readable. A run saves role totals in `run.json` and its report's
