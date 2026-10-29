@@ -12,8 +12,11 @@
 // judge: its own correctness prompt for the strict verdict, and prompts
 // of ours, in its placeholders, for the rest.
 
+import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { CORRECTNESS_PROMPT, createLLMAsJudge } from "openevals";
+import { z } from "zod";
 import type { Message, Models } from "../models/client.js";
+import { requireRole } from "../models/config.js";
 import type { Question } from "../questions/file.js";
 
 export const LENIENT_PROMPT = `You are grading an answer against a reference answer.
@@ -72,9 +75,42 @@ export type Judges = {
     stale: Judge;
 };
 
+// The same required fields and guidance as openevals' default verdict.
+const verdictSchema = z.object({
+    reasoning: z
+        .string()
+        .describe(
+            "A human-readable explanation of the score. You MUST end the reasoning with a sentence that says: Thus, the score should be: SCORE_YOU_ASSIGN.",
+        ),
+    score: z
+        .boolean()
+        .describe(
+            "A score that is true if criteria in the prompt are met, and false otherwise.",
+        ),
+});
+
 export function makeJudges(models: Models): Judges {
-    const chat = models.chat("judge");
+    const config = requireRole(models.config, "judge");
+    const cli = config.via === "claude" || config.via === "codex";
+    const chat = cli ? null : models.chat("judge");
     const judgeOf = (prompt: string, key: string): Judge => {
+        if (chat === null) {
+            const template = ChatPromptTemplate.fromTemplate(prompt);
+            return async (params) => {
+                const content = await template.format({
+                    inputs: params.inputs,
+                    outputs: params.outputs,
+                    reference_outputs: params.referenceOutputs ?? "",
+                });
+                const { value } = await models.structured(
+                    "judge",
+                    verdictSchema,
+                    key,
+                    [{ role: "user", content }],
+                );
+                return { score: value.score, reasoning: value.reasoning };
+            };
+        }
         const evaluator = createLLMAsJudge({
             prompt,
             judge: chat,
