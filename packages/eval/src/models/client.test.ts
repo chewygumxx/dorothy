@@ -45,6 +45,36 @@ describe("Models", () => {
         expect(models.calls).toBe(1);
     });
 
+    it("sums API tokens separately by role across concurrent calls", async () => {
+        const { url } = serve(() => ({ json: { n: 3 } }));
+        const models = new Models(configOf(url), { env: {} });
+        await Promise.all([
+            models.complete("answer", ask),
+            models.complete("answer", ask),
+            models.structured(
+                "generate",
+                z.object({ n: z.number() }),
+                "count",
+                ask,
+            ),
+            models.structured(
+                "judge",
+                z.object({ n: z.number() }),
+                "count",
+                ask,
+            ),
+        ]);
+        expect(models.tokens).toEqual({
+            answer: { input: 22, output: 14 },
+            generate: { input: 11, output: 7 },
+            judge: { input: 11, output: 7 },
+        });
+        const saved = models.tokens;
+        await models.complete("answer", ask);
+        expect(saved.answer).toEqual({ input: 22, output: 14 });
+        expect(models.tokens.answer).toEqual({ input: 33, output: 21 });
+    });
+
     it("sends the key from its variable", async () => {
         const { url, requests } = serve(() => ({ content: "Hi." }));
         const models = new Models(configOf(url, "EVAL_KEY"), {
@@ -365,6 +395,44 @@ describe.each(routes)("Models through $via", (config) => {
         expect(models.calls).toBe(1);
     });
 
+    it("sums CLI tokens by role across completion and structured calls", async () => {
+        const fake = reply({ n: 3 }, 1);
+        const models = cliModels(config, fake);
+        await Promise.all([
+            models.complete("answer", ask),
+            models.complete("answer", ask),
+            models.structured(
+                "generate",
+                z.object({ n: z.number() }),
+                "count",
+                ask,
+            ),
+            models.structured(
+                "judge",
+                z.object({ n: z.number() }),
+                "count",
+                ask,
+            ),
+        ]);
+        expect(models.tokens).toEqual({
+            answer: { input: 22, output: 14 },
+            generate: { input: 11, output: 7 },
+            judge: { input: 11, output: 7 },
+        });
+    });
+
+    it("records zero tokens when the CLI gives no usage", async () => {
+        const fake = fakeCli((request) => {
+            fake.contents.set(`${request.cwd}/reply.txt`, "A reply");
+            return {
+                stdout: config.via === "claude" ? '{"result":"A reply"}' : "",
+            };
+        });
+        const models = cliModels(config, fake);
+        await models.complete("answer", ask);
+        expect(models.tokens).toEqual({ answer: { input: 0, output: 0 } });
+    });
+
     it("requests and checks the same structured schema", async () => {
         const fake = reply({ questions: [] }, 1);
         const models = cliModels(config, fake);
@@ -412,6 +480,7 @@ describe.each(routes)("Models through $via", (config) => {
             3,
         );
         expect(fake.removed).toHaveLength(3);
+        expect(models.tokens).toEqual({ generate: { input: 11, output: 7 } });
     });
 
     it("does not retry a parsed schema mismatch or expose its value", async () => {
@@ -424,6 +493,7 @@ describe.each(routes)("Models through $via", (config) => {
         expect(error.message).toBe(
             "the model's reply did not match its schema",
         );
+        expect(models.tokens).toEqual({ generate: { input: 11, output: 7 } });
         expect(models.calls).toBe(1);
     });
 

@@ -788,6 +788,8 @@ describe("bun run eval -- generate", () => {
     });
 
     it("drafts questions and records its seed", async () => {
+        const legacy = { seed: 99, model: "legacy/model" };
+        await recordGeneration(work, legacy);
         stub = stubModels((request) => {
             const content = JSON.stringify(request.body.messages);
             const id = /<item id=\\"([^\\]+)\\">/.exec(content)?.[1] ?? "";
@@ -833,7 +835,9 @@ describe("bun run eval -- generate", () => {
         expect(record.at(-1)).toMatchObject({
             seed: 5,
             model: "generate/model",
+            tokens: { generate: { input: 11, output: 7 } },
         });
+        expect(record[0]).toEqual(legacy);
         expect(
             (
                 stub.requests[0]?.body.response_format as
@@ -947,6 +951,12 @@ describe("bun run eval -- generate", () => {
         expect(await run.code).toBe(0);
         expect(seen).toEqual([true]);
         expect(run.out[0]).toBe("seed 11\n");
+        const entry = JSON.parse(
+            readFileSync(join(work, "generated.json"), "utf8"),
+        ).at(-1);
+        // One draft per call cannot fill ten in the six allowed tries.
+        expect(stub.requests).toHaveLength(6);
+        expect(entry.tokens).toEqual({ generate: { input: 66, output: 42 } });
     });
 
     it("says what fell short of what was asked", async () => {

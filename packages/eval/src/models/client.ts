@@ -12,6 +12,8 @@
 // retries of our own and a cap on calls. The API client's retries are
 // off: it does not retry a 429 without headers.
 
+import type { AIMessage } from "@langchain/core/messages";
+import type { ChatGeneration } from "@langchain/core/outputs";
 import { ChatOpenAI } from "@langchain/openai";
 import { z } from "zod";
 import { UsageError } from "../errors.js";
@@ -49,6 +51,9 @@ export type Completion = {
     output: number;
     ms: number;
 };
+
+export type TokenCounts = { input: number; output: number };
+export type RoleTokens = Partial<Record<Role, TokenCounts>>;
 
 // --max-calls spent: what is done is kept, and a run resumes.
 export class CallCap extends UsageError {}
@@ -127,6 +132,7 @@ type Usage = { input_tokens?: number; output_tokens?: number } | undefined;
 
 export class Models {
     #calls = 0;
+    readonly #tokens: RoleTokens = {};
     readonly #chats = new Map<Role, ChatOpenAI>();
     // Every key read, so no failure carries one into a record.
     readonly #keys = new Set<string>();
@@ -138,6 +144,17 @@ export class Models {
 
     get calls(): number {
         return this.#calls;
+    }
+
+    get tokens(): RoleTokens {
+        return structuredClone(this.#tokens);
+    }
+
+    #count(role: Role, input: number, output: number): void {
+        this.#tokens[role] ??= { input: 0, output: 0 };
+        const total = this.#tokens[role];
+        total.input += input;
+        total.output += output;
     }
 
     #keyOf(found: ApiConfig): string {
@@ -184,6 +201,24 @@ export class Models {
             chat = new ChatOpenAI({
                 model: found.model,
                 apiKey: this.#keyOf(found),
+                // Raw API responses include usage even when downstream
+                // schema parsing fails. This also sees openevals' judges.
+                callbacks: [
+                    {
+                        handleLLMEnd: (result) => {
+                            const message = (
+                                result.generations[0]?.[0] as
+                                    | ChatGeneration
+                                    | undefined
+                            )?.message as AIMessage | undefined;
+                            this.#count(
+                                role,
+                                message?.usage_metadata?.input_tokens ?? 0,
+                                message?.usage_metadata?.output_tokens ?? 0,
+                            );
+                        },
+                    },
+                ],
                 maxRetries: 0,
                 timeout: this.options.timeoutMs ?? 120_000,
                 configuration: {
@@ -204,10 +239,11 @@ export class Models {
     // not after a wait, and again after it: callers retrying together
     // each look at the cap just before they spend, with nothing awaited
     // between the look and the spend.
-    async call<T>(work: () => Promise<T>): Promise<T> {
+    async call<T>(work: () => Promise<T>, role?: Role): Promise<T> {
         let failure: unknown = null;
         for (let attempt = 0; ; attempt++) {
             this.#spend(failure);
+            if (role !== undefined) this.#count(role, 0, 0);
             try {
                 return await work();
             } catch (error) {
@@ -269,9 +305,16 @@ export class Models {
         const found = requireRole(this.config, role);
         const started = performance.now();
         if (found.via === "claude" || found.via === "codex") {
-            const reply = await this.call(() =>
-                cliAttempt(found, messages, undefined, this.options),
-            );
+            const reply = await this.call(async () => {
+                const done = await cliAttempt(
+                    found,
+                    messages,
+                    undefined,
+                    this.options,
+                );
+                this.#count(role, done.input, done.output);
+                return done;
+            }, role);
             return {
                 text: reply.text,
                 input: reply.input,
@@ -280,7 +323,7 @@ export class Models {
             };
         }
         const chat = this.chat(role);
-        const reply = await this.call(() => chat.invoke(messages));
+        const reply = await this.call(() => chat.invoke(messages), role);
         const usage = reply.usage_metadata as Usage;
         return {
             text: textOf(reply.content),
@@ -308,6 +351,7 @@ export class Models {
                     jsonSchema,
                     this.options,
                 );
+                this.#count(role, reply.input, reply.output);
                 const parsed = schema.safeParse(reply.value);
                 if (!parsed.success) {
                     throw new UsageError(
@@ -319,7 +363,7 @@ export class Models {
                     input: reply.input,
                     output: reply.output,
                 };
-            });
+            }, role);
         }
         const chat = this.chat(role).withStructuredOutput(schema, {
             name,
@@ -337,7 +381,10 @@ export class Models {
                 }
                 throw error;
             }
-        })) as unknown as { raw: { usage_metadata?: Usage }; parsed: T | null };
+        }, role)) as unknown as {
+            raw: { usage_metadata?: Usage };
+            parsed: T | null;
+        };
         if (reply.parsed === null) {
             throw new UsageError("the model's reply did not match its schema");
         }

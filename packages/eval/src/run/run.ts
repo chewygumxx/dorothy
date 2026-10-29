@@ -17,7 +17,7 @@ import { appendFile, mkdir, stat } from "node:fs/promises";
 import { UsageError } from "../errors.js";
 import { writeAtomic } from "../files.js";
 import { CallCap, failureOf, type Models } from "../models/client.js";
-import type { EvalConfig, RoleConfig } from "../models/config.js";
+import { type EvalConfig, ROLES, type RoleConfig } from "../models/config.js";
 import { definitionOf, type Question } from "../questions/file.js";
 import { writeRunReport } from "../report/command.js";
 import type { Summary } from "../report/summary.js";
@@ -30,6 +30,7 @@ import {
     type RunInfo,
     type RunRecord,
     readRecords,
+    readRunInfo,
     recordsPath,
     runDir,
     runInfoPath,
@@ -116,6 +117,7 @@ export function newRunInfo(
         ...settings,
         models,
         baseUrls,
+        tokens: {},
         snapshot,
         questions: accepted.length,
         questionIds: accepted.map((question) => question.id),
@@ -458,6 +460,7 @@ export async function runEvaluation(
         deps.systems ??
         info.systems.map((name) => makeSystem(name, deps.corpus));
     const models = info.retrievalOnly ? null : deps.models;
+    const tokensBefore = models?.tokens ?? {};
     const judges = models === null ? null : makeJudges(models);
     const tasks = pendingOf(
         { ...info, systems: systems.map((system) => system.name) },
@@ -552,6 +555,40 @@ export async function runEvaluation(
         for (const system of systems) {
             await system.close?.();
         }
+    }
+    // Keep costs from capped and failed work too, rather than deriving
+    // them from the last successful record for each question/system.
+    if (models !== null) {
+        const saved = await readRunInfo(deps.work, info.id);
+        const tokens = { ...saved.tokens };
+        const now = models.tokens;
+        for (const role of ROLES) {
+            const used = now[role];
+            if (used === undefined) continue;
+            const before = tokensBefore[role];
+            const input = used.input - (before?.input ?? 0);
+            const output = used.output - (before?.output ?? 0);
+            if (before !== undefined && input === 0 && output === 0) continue;
+            const prior = tokens[role] ?? { input: 0, output: 0 };
+            tokens[role] = {
+                input: prior.input + input,
+                output: prior.output + output,
+            };
+        }
+        await writeAtomic(
+            runInfoPath(deps.work, info.id),
+            `${JSON.stringify(
+                {
+                    ...saved,
+                    tokens,
+                    ...(saved.tokens === undefined
+                        ? { tokensPartial: true }
+                        : {}),
+                },
+                null,
+                4,
+            )}\n`,
+        );
     }
     if (fault !== null) {
         throw fault.error;

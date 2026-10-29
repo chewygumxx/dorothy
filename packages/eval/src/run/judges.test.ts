@@ -13,6 +13,7 @@ import { CORRECTNESS_PROMPT } from "openevals";
 import { Models } from "../models/client.js";
 import type { CliConfig } from "../models/config.js";
 import { fakeCli } from "../models/testing.js";
+import { stubModels } from "../testing.js";
 import {
     ABSTENTION_PROMPT,
     LENIENT_PROMPT,
@@ -87,3 +88,34 @@ it.each([
         expect(schema.additionalProperties).toBe(false);
     },
 );
+
+it("counts API judge usage once through openevals", async () => {
+    const stub = stubModels(() => ({
+        json: { score: true, reasoning: "Checked." },
+    }));
+    try {
+        const models = new Models(
+            {
+                generate: null,
+                answer: null,
+                judge: { model: "judge/model", baseUrl: stub.url, key: null },
+            },
+            { env: {} },
+        );
+        const judges = makeJudges(models);
+        await judges.strict({
+            inputs: "Q",
+            outputs: "A",
+            referenceOutputs: "Gold",
+        });
+        await judges.lenient({
+            inputs: "Q",
+            outputs: "A",
+            referenceOutputs: "Gold",
+        });
+        expect(models.tokens).toEqual({ judge: { input: 22, output: 14 } });
+        expect(models.calls).toBe(2);
+    } finally {
+        stub.stop();
+    }
+});

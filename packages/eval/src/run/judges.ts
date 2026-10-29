@@ -118,7 +118,10 @@ export function makeJudges(models: Models): Judges {
         });
         // openevals gives the judge's reasoning as its comment.
         return async (params) => {
-            const result = (await models.call(() => evaluator(params))) as {
+            const result = (await models.call(
+                () => evaluator(params),
+                "judge",
+            )) as {
                 score?: unknown;
                 comment?: unknown;
             };

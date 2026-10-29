@@ -11,6 +11,7 @@
 // A run's report, and two runs compared, as Markdown. Every rate goes
 // with its counts: some types hold few questions.
 
+import { ROLES } from "../models/config.js";
 import { QUESTION_TYPES } from "../questions/file.js";
 import type { Cell, Rate, Summary } from "./summary.js";
 
@@ -84,9 +85,31 @@ export function reportOf(summary: Summary): string {
                 `| ${name} | ${all.retrievalMs} | ${all.chars} | ${all.answerMs} | ${all.input} | ${all.output} | ${all.failures} |`,
         ),
         "",
-        "## Alone",
+        "## Tokens by role",
         "",
     );
+    if (run.tokens === undefined) {
+        lines.push("Role token totals were not recorded for this run.");
+    } else {
+        if (run.tokensPartial)
+            lines.push("Partial totals: earlier calls were not recorded.", "");
+        const rows = ROLES.flatMap((role) => {
+            const used = run.tokens?.[role];
+            return used === undefined
+                ? []
+                : [`| ${role} | ${used.input} | ${used.output} |`];
+        });
+        lines.push(
+            ...(rows.length === 0
+                ? ["No model calls recorded."]
+                : [
+                      "| Role | Input tokens | Output tokens |",
+                      "| --- | --- | --- |",
+                      ...rows,
+                  ]),
+        );
+    }
+    lines.push("", "## Alone", "");
     const alone = systems.flatMap(([name, { alone: split }]) => [
         ...(split.right.length === 0
             ? []

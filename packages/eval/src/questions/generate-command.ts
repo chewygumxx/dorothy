@@ -37,7 +37,8 @@ import {
     seeded,
 } from "./generate.js";
 
-// <work>/generated.json: each generation's seed, model, counts and drops.
+// <work>/generated.json: each generation's seed, model, counts, drops
+// and reported tokens by role. Older entries need no token field.
 async function readGenerations(work: string): Promise<unknown[]> {
     let text: string;
     try {
@@ -208,6 +209,7 @@ export const generateCommand: Command = {
                     at: new Date().toISOString(),
                     seed,
                     model: role.model,
+                    tokens: models.tokens,
                     asked: counts,
                     made: byType(result.made),
                     notAdded,

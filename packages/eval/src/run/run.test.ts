@@ -202,11 +202,32 @@ describe("bun run eval -- run", () => {
         const capped = kept.find((each) => each.type === "abstention");
         expect(capped?.answer?.text).toBe("Plot twelve, by the river.");
         expect(capped?.failures).toEqual(["declined: reached --max-calls (4)"]);
+        const infoPath = join(work, "runs", id, "run.json");
+        expect(JSON.parse(readFileSync(infoPath, "utf8")).tokens).toEqual({
+            answer: { input: 22, output: 14 },
+            judge: { input: 22, output: 14 },
+        });
         const again = fakeIo();
         const asked = requests.length;
         expect(
             await runCli(["run", "--work", work, "--resume", id], again.io),
         ).toBe(0);
+        const totals = {
+            answer: { input: 33, output: 21 },
+            judge: { input: 66, output: 42 },
+        };
+        expect(JSON.parse(readFileSync(infoPath, "utf8")).tokens).toEqual(
+            totals,
+        );
+        const report = readFileSync(reportPath(work, id), "utf8");
+        expect(report).toContain("| answer | 33 | 21 |");
+        expect(report).toContain("| judge | 66 | 42 |");
+        expect(
+            await runCli(["run", "--work", work, "--resume", id], fakeIo().io),
+        ).toBe(0);
+        expect(JSON.parse(readFileSync(infoPath, "utf8")).tokens).toEqual(
+            totals,
+        );
         // The capped record is asked its judgement alone, its answer kept;
         // the update is asked whole: an answer and three judgements.
         expect(requests.length - asked).toBe(5);
@@ -220,6 +241,44 @@ describe("bun run eval -- run", () => {
         expect(
             readFileSync(recordsPath(work, id), "utf8").trim().split("\n"),
         ).toHaveLength(6);
+    });
+
+    it("labels totals as partial when an older run is resumed", async () => {
+        serve({ content: "Plot twelve, by the river." });
+        const first = fakeIo();
+        expect(
+            await runCli(
+                [
+                    "run",
+                    "--work",
+                    work,
+                    "--systems",
+                    "lexical",
+                    "--concurrency",
+                    "1",
+                    "--max-calls",
+                    "4",
+                ],
+                first.io,
+            ),
+        ).toBe(0);
+        const id = idOf(first.out);
+        const path = join(work, "runs", id, "run.json");
+        const old = JSON.parse(readFileSync(path, "utf8"));
+        delete old.tokens;
+        writeFileSync(path, JSON.stringify(old));
+        expect(
+            await runCli(["run", "--work", work, "--resume", id], fakeIo().io),
+        ).toBe(0);
+        const resumed = JSON.parse(readFileSync(path, "utf8"));
+        expect(resumed.tokensPartial).toBe(true);
+        expect(resumed.tokens).toEqual({
+            answer: { input: 11, output: 7 },
+            judge: { input: 44, output: 28 },
+        });
+        expect(readFileSync(reportPath(work, id), "utf8")).toContain(
+            "Partial totals: earlier calls were not recorded.",
+        );
     });
 
     it("refuses to resume on another snapshot or model", async () => {
