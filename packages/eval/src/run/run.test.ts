@@ -238,7 +238,7 @@ describe("bun run eval -- run", () => {
     it("fails once before creating a run when a CLI is missing", async () => {
         writeFileSync(
             configPath(work),
-            '[models.answer]\nvia = "claude"\nmodel = "fixture"\n[models.judge]\nvia = "codex"\nmodel = "fixture"\n',
+            '[models.answer]\nvia = "claude"\nmodel = "fixture"\n[models.judge]\nvia = "claude"\nmodel = "fixture"\n',
         );
         const fake = fakeCli(() => ({}));
         const { io, err } = fakeIo({

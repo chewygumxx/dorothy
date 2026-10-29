@@ -161,11 +161,6 @@ export const runCommand: Command = {
             const answer = requireRole(config, "answer");
             const judge = requireRole(config, "judge");
             await loadModelSecrets(io);
-            if (vendorOfRole(answer) === vendorOfRole(judge)) {
-                io.err(
-                    `eval: the judge (${judge.model}) is of the answering model's vendor; a model of another family judges more fairly\n`,
-                );
-            }
             models = new Models(config, {
                 ...io.modelOptions,
                 env: io.env,
@@ -177,6 +172,11 @@ export const runCommand: Command = {
             // A missing key is said before anything is asked.
             models.prepare("answer");
             models.prepare("judge");
+            if (vendorOfRole(answer) === vendorOfRole(judge)) {
+                io.err(
+                    `eval: the judge (${judge.model}) is of the answering model's vendor; a model of another family judges more fairly\n`,
+                );
+            }
         }
         const corpus = await openCorpus(workEnv(work));
         try {
