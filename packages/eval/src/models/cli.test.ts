@@ -9,6 +9,9 @@
 //
 
 import { describe, expect, it } from "bun:test";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tempRoot } from "../testing.js";
 import { CliFailure, cliAttempt } from "./cli.js";
 import type { CliConfig } from "./config.js";
 import { fakeCli } from "./testing.js";
@@ -275,3 +278,128 @@ it.each(["temp", "write", "read", "remove"] as const)(
         expect(error.message).not.toContain("private-token");
     },
 );
+
+it("bounds the real runner's deadline and stops a wrapper's grandchild", async () => {
+    const temp = tempRoot("cli-deadline");
+    const pidsFile = join(temp.root, "pids");
+    // The parent reaps its child on TERM. Killing only the parent leaves
+    // sleep holding stdout open, just as the npm Codex wrapper does.
+    writeFileSync(
+        join(temp.root, "codex"),
+        `#!/bin/sh
+trap 'wait "$grandchild"; exit 0' TERM
+sleep 30 &
+grandchild=$!
+printf '%s %s\\n' "$$" "$grandchild" > "$HOME/pids"
+wait
+`,
+        { mode: 0o700 },
+    );
+    const started = performance.now();
+    const attempt = cliAttempt(codex, messages, undefined, {
+        env: { PATH: `${temp.root}:/usr/bin:/bin`, HOME: temp.root },
+        timeoutMs: 200,
+    }).catch((e: unknown) => e);
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
+    try {
+        const result = await Promise.race([
+            attempt,
+            new Promise<null>((resolve) => {
+                watchdog = setTimeout(() => resolve(null), 1500);
+            }),
+        ]);
+        expect(result).toBeInstanceOf(CliFailure);
+        expect(performance.now() - started).toBeLessThan(1000);
+        expect((result as Error).message).toContain("timed out");
+        const [, grandchild] = readFileSync(pidsFile, "utf8")
+            .trim()
+            .split(/\s+/)
+            .map(Number);
+        expect(grandchild).toBeGreaterThan(0);
+        expect(() => process.kill(grandchild as number, 0)).toThrow();
+    } finally {
+        clearTimeout(watchdog);
+        const pids = readFileSync(pidsFile, "utf8")
+            .trim()
+            .split(/\s+/)
+            .map(Number);
+        for (const pid of pids) {
+            try {
+                process.kill(pid, "SIGKILL");
+            } catch {
+                /* Already gone. */
+            }
+        }
+        await attempt;
+        temp.remove();
+    }
+}, 5000);
+
+it("escalates the real runner's deadline when the child ignores TERM", async () => {
+    const temp = tempRoot("cli-kill");
+    const pidFile = join(temp.root, "pid");
+    writeFileSync(
+        join(temp.root, "codex"),
+        `#!/bin/sh
+trap '' TERM
+printf '%s\\n' "$$" > "$HOME/pid"
+exec sleep 30
+`,
+        { mode: 0o700 },
+    );
+    try {
+        const started = performance.now();
+        const error = await cliAttempt(codex, messages, undefined, {
+            env: { PATH: `${temp.root}:/usr/bin:/bin`, HOME: temp.root },
+            timeoutMs: 200,
+        }).catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(CliFailure);
+        expect((error as Error).message).toContain("timed out");
+        expect(performance.now() - started).toBeLessThan(1000);
+        const pid = Number(readFileSync(pidFile, "utf8").trim());
+        let alive = true;
+        for (let poll = 0; poll < 50 && alive; poll++) {
+            try {
+                process.kill(pid, 0);
+            } catch {
+                alive = false;
+            }
+            if (alive) await Bun.sleep(10);
+        }
+        expect(alive).toBe(false);
+    } finally {
+        const pid = Number(readFileSync(pidFile, "utf8").trim());
+        try {
+            process.kill(pid, "SIGKILL");
+        } catch {
+            /* Already gone. */
+        }
+        temp.remove();
+    }
+}, 3000);
+
+it("reads a normal reply through the real runner", async () => {
+    const temp = tempRoot("cli-reply");
+    writeFileSync(
+        join(temp.root, "claude"),
+        `#!/bin/sh
+cat >/dev/null
+printf '%s\\n' '{"result":"A reply","usage":{"input_tokens":3,"output_tokens":2}}'
+`,
+        { mode: 0o700 },
+    );
+    try {
+        expect(
+            await cliAttempt(claude, messages, undefined, {
+                env: {
+                    PATH: `${temp.root}:/usr/bin:/bin`,
+                    HOME: temp.root,
+                    CLAUDE_CODE_OAUTH_TOKEN: "test-token",
+                },
+                timeoutMs: 1000,
+            }),
+        ).toMatchObject({ text: "A reply", input: 3, output: 2 });
+    } finally {
+        temp.remove();
+    }
+});

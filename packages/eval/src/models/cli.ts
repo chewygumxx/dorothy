@@ -8,6 +8,7 @@
 //
 //
 
+import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -55,30 +56,61 @@ const files: CliFiles = {
     remove: (path) => rm(path, { recursive: true, force: true }),
 };
 
-const run: CliRunner = async (request) => {
-    const child = Bun.spawn([request.command, ...request.args], {
-        cwd: request.cwd,
-        env: request.env,
-        stdin: new Blob([request.stdin]),
-        stdout: "pipe",
-        // Progress and failures may quote snapshot text. Never retain it.
-        stderr: "ignore",
+const run: CliRunner = (request) =>
+    new Promise((resolve, reject) => {
+        const child = spawn(request.command, request.args, {
+            cwd: request.cwd,
+            env: request.env,
+            detached: true,
+            // Progress and failures may quote snapshot text. Never retain it.
+            stdio: ["pipe", "pipe", "ignore"],
+        });
+        let stdout = "";
+        let exitCode: number | null = null;
+        let timedOut = false;
+        const signalGroup = (signal: NodeJS.Signals) => {
+            if (child.pid === undefined) return;
+            try {
+                process.kill(-child.pid, signal);
+            } catch {
+                // The group may already have exited.
+            }
+        };
+        const timer = setTimeout(() => {
+            timedOut = true;
+            signalGroup("SIGTERM");
+            // A wrapper's descendants may still hold the pipe. Stop reading
+            // at the deadline, regardless of when those descriptors close.
+            child.stdout.destroy();
+            child.stdin.destroy();
+            setTimeout(() => {
+                signalGroup("SIGKILL");
+                resolve({ exitCode, stdout: "", timedOut: true });
+            }, 100);
+        }, request.timeoutMs);
+        child.stdout.setEncoding("utf8");
+        child.stdout.on("data", (chunk: string) => {
+            stdout += chunk;
+        });
+        // A child may exit before reading stdin (EPIPE).
+        child.stdin.on("error", () => {});
+        child.on("error", (error) => {
+            if (!timedOut) {
+                clearTimeout(timer);
+                reject(error);
+            }
+        });
+        child.on("exit", (code) => {
+            exitCode = code;
+        });
+        child.on("close", (code) => {
+            if (!timedOut) {
+                clearTimeout(timer);
+                resolve({ exitCode: code, stdout });
+            }
+        });
+        child.stdin.end(request.stdin);
     });
-    let timedOut = false;
-    const timer = setTimeout(() => {
-        timedOut = true;
-        child.kill("SIGKILL");
-    }, request.timeoutMs);
-    try {
-        const [exitCode, stdout] = await Promise.all([
-            child.exited,
-            new Response(child.stdout).text(),
-        ]);
-        return { exitCode, stdout, timedOut };
-    } finally {
-        clearTimeout(timer);
-    }
-};
 
 const record = (value: unknown): Record<string, unknown> => {
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
