@@ -59,6 +59,7 @@ export type RoleTokens = Partial<Record<Role, TokenCounts>>;
 export class CallCap extends UsageError {}
 
 export type ModelsOptions = CliOptions & {
+    findCli?: (command: string, path: string | undefined) => string | null;
     maxCalls?: number | null;
     timeoutMs?: number;
     // The first retry's wait; the second waits twice as long.
@@ -176,6 +177,17 @@ export class Models {
     // any call. CLI roles never construct an API client.
     prepare(role: Role): void {
         const found = requireRole(this.config, role);
+        if (found.via === "claude" || found.via === "codex") {
+            const find =
+                this.options.findCli ??
+                ((command: string, path: string | undefined) =>
+                    path ? Bun.which(command, { PATH: path }) : null);
+            if (find(found.via, this.options.env.PATH) === null) {
+                throw new UsageError(
+                    `eval.toml: [models.${role}]: ${found.via} is not on PATH; install it or update PATH`,
+                );
+            }
+        }
         if (found.via === "claude") {
             const token = this.options.env.CLAUDE_CODE_OAUTH_TOKEN;
             if (token === undefined || token === "") {

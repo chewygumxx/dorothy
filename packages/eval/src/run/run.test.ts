@@ -20,6 +20,7 @@ import { join } from "node:path";
 import { runCli } from "../cli.js";
 import { Models } from "../models/client.js";
 import { configPath, readEvalConfig } from "../models/config.js";
+import { fakeCli } from "../models/testing.js";
 import {
     type Question,
     questionId,
@@ -107,6 +108,155 @@ const idOf = (out: string[]) =>
     /run ([0-9A-Za-z-]+):/.exec(out.join(""))?.[1] ?? "";
 
 describe("bun run eval -- run", () => {
+    it.each(["claude", "codex"] as const)(
+        "runs CLI answers and judges through %s with injected runners",
+        async (via) => {
+            writeFileSync(
+                configPath(work),
+                `[models.answer]\nvia = "${via}"\nmodel = "fixture-answer"\n[models.judge]\nvia = "${via}"\nmodel = "fixture-judge"\n`,
+            );
+            const fake = fakeCli((request) => {
+                const structured =
+                    request.args.includes("--json-schema") ||
+                    request.args.includes("--output-schema");
+                const value = { score: true, reasoning: "Checked." };
+                const text = structured
+                    ? JSON.stringify(value)
+                    : "Plot twelve, by the river.";
+                fake.contents.set(`${request.cwd}/reply.txt`, text);
+                return {
+                    stdout:
+                        via === "claude"
+                            ? JSON.stringify({
+                                  result: text,
+                                  ...(structured
+                                      ? { structured_output: value }
+                                      : {}),
+                                  usage: { input_tokens: 11, output_tokens: 7 },
+                              })
+                            : '{"type":"error","message":"Reconnecting... 1/5"}\n{"type":"turn.completed","usage":{"input_tokens":11,"output_tokens":7}}',
+                };
+            });
+            const { io, out } = fakeIo({
+                env: {
+                    PATH: "/fixture/bin",
+                    HOME: "/fixture",
+                    CLAUDE_CODE_OAUTH_TOKEN: "fixture-token",
+                },
+                modelOptions: fake,
+            });
+            expect(
+                await runCli(
+                    [
+                        "run",
+                        "--work",
+                        work,
+                        "--systems",
+                        "lexical",
+                        "--concurrency",
+                        "1",
+                    ],
+                    io,
+                ),
+            ).toBe(0);
+            expect(fake.requests).toHaveLength(9);
+            expect(
+                fake.requests.every((request) => request.command === via),
+            ).toBe(true);
+            expect(fake.requests[0]?.stdin).toContain("<memory>");
+            const id = idOf(out);
+            const records = await readRecords(work, id);
+            expect(
+                records.every((record) => record.failures.length === 0),
+            ).toBe(true);
+            expect(
+                records.find((record) => record.type === "single-session")
+                    ?.judged.reasons,
+            ).toEqual({ strict: "Checked.", lenient: "Checked." });
+            expect(
+                JSON.parse(
+                    readFileSync(join(work, "runs", id, "run.json"), "utf8"),
+                ).tokens,
+            ).toEqual({
+                answer: { input: 33, output: 21 },
+                judge: { input: 66, output: 42 },
+            });
+            expect(readFileSync(reportPath(work, id), "utf8")).toContain(
+                "| judge | 66 | 42 |",
+            );
+        },
+    );
+
+    it.each([
+        ["claude", "anthropic/claude-haiku-5-5", true],
+        ["codex", "openai/gpt-6.1-terra", true],
+        ["claude", "openai/gpt-6.1-terra", false],
+        ["codex", "anthropic/claude-haiku-5-5", false],
+    ] as const)(
+        "compares the vendor of %s with API judge %s",
+        async (via, model, warned) => {
+            writeFileSync(
+                configPath(work),
+                `[models.answer]\nvia = "${via}"\nmodel = "fixture-answer"\n[models.judge]\nbase-url = "http://127.0.0.1:9/v1"\nmodel = "${model}"\n`,
+            );
+            const fake = fakeCli((request) => {
+                fake.contents.set(`${request.cwd}/reply.txt`, "Fixture answer");
+                return {
+                    stdout:
+                        via === "claude" ? '{"result":"Fixture answer"}' : "",
+                };
+            });
+            const { io, err } = fakeIo({
+                env: {
+                    PATH: "/fixture/bin",
+                    HOME: "/fixture",
+                    CLAUDE_CODE_OAUTH_TOKEN: "fixture-token",
+                },
+                modelOptions: fake,
+            });
+            expect(
+                await runCli(
+                    [
+                        "run",
+                        "--work",
+                        work,
+                        "--systems",
+                        "lexical",
+                        "--max-calls",
+                        "1",
+                    ],
+                    io,
+                ),
+            ).toBe(0);
+            expect(
+                err.join("").includes("is of the answering model's vendor"),
+            ).toBe(warned);
+            expect(fake.requests).toHaveLength(1);
+        },
+    );
+
+    it("fails once before creating a run when a CLI is missing", async () => {
+        writeFileSync(
+            configPath(work),
+            '[models.answer]\nvia = "claude"\nmodel = "fixture"\n[models.judge]\nvia = "codex"\nmodel = "fixture"\n',
+        );
+        const fake = fakeCli(() => ({}));
+        const { io, err } = fakeIo({
+            env: {
+                PATH: "/fixture/bin",
+                CLAUDE_CODE_OAUTH_TOKEN: "fixture-token",
+            },
+            modelOptions: { ...fake, findCli: () => null },
+        });
+        expect(
+            await runCli(["run", "--work", work, "--systems", "lexical"], io),
+        ).toBe(1);
+        expect(err).toHaveLength(1);
+        expect(err[0]).toContain("[models.answer]: claude is not on PATH");
+        expect(fake.requests).toHaveLength(0);
+        expect(existsSync(join(work, "runs"))).toBe(false);
+    });
+
     it("measures retrieval alone with no model", async () => {
         const { io, out } = fakeIo();
         expect(

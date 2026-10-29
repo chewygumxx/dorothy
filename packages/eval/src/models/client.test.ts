@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { z } from "zod";
 import { UsageError } from "../errors.js";
 import { draftsSchema } from "../questions/generate.js";
-import { type StubReply, stubModels } from "../testing.js";
+import { type StubReply, stubModels, tempRoot } from "../testing.js";
 import { CallCap, failureOf, Models } from "./client.js";
 import type { CliConfig, EvalConfig } from "./config.js";
 import { fakeCli } from "./testing.js";
@@ -393,6 +393,36 @@ describe.each(routes)("Models through $via", (config) => {
             output: 7,
         });
         expect(models.calls).toBe(1);
+    });
+
+    it("checks the supplied PATH without falling back to the host", () => {
+        const temp = tempRoot("cli-path");
+        try {
+            const fake = reply({ n: 3 }, 1);
+            const models = cliModels(config, {
+                ...fake,
+                findCli: undefined,
+                env: { ...cliEnv, PATH: temp.root },
+            });
+            expect(() => models.prepare("answer")).toThrow("not on PATH");
+            expect(models.calls).toBe(0);
+            expect(fake.requests).toHaveLength(0);
+        } finally {
+            temp.remove();
+        }
+    });
+
+    it("rejects a missing role CLI before spending any call", async () => {
+        const fake = reply({ n: 3 }, 1);
+        const models = cliModels(config, { ...fake, findCli: () => null });
+        expect(() => models.prepare("answer")).toThrow(
+            `[models.answer]: ${config.via} is not on PATH`,
+        );
+        await expect(models.complete("answer", ask)).rejects.toThrow(
+            "not on PATH",
+        );
+        expect(models.calls).toBe(0);
+        expect(fake.requests).toHaveLength(0);
     });
 
     it("sums CLI tokens by role across completion and structured calls", async () => {

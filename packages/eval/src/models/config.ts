@@ -158,3 +158,10 @@ export const vendorOf = (model: string) =>
     model.includes("/")
         ? model.slice(0, model.indexOf("/"))
         : (model.split(/[-:]/)[0] ?? model);
+
+export const vendorOfRole = (role: RoleConfig) =>
+    role.via === "claude"
+        ? "anthropic"
+        : role.via === "codex"
+          ? "openai"
+          : vendorOf(role.model);

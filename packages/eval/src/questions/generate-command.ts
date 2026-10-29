@@ -138,6 +138,7 @@ export const generateCommand: Command = {
         const role = requireRole(config, "generate");
         await loadModelSecrets(io);
         const models = new Models(config, {
+            ...io.modelOptions,
             env: io.env,
             maxCalls:
                 values["max-calls"] === undefined

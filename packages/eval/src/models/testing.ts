@@ -47,5 +47,6 @@ export function fakeCli(
             ...(await reply(request, requests.length)),
         };
     };
-    return { runner, cliFiles, requests, contents, writes, removed };
+    const findCli = (command: string) => `/fixture/bin/${command}`;
+    return { runner, cliFiles, findCli, requests, contents, writes, removed };
 }

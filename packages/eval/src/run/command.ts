@@ -15,7 +15,7 @@ import {
     type EvalConfig,
     readEvalConfig,
     requireRole,
-    vendorOf,
+    vendorOfRole,
 } from "../models/config.js";
 import { readQuestions } from "../questions/file.js";
 import { loadModelSecrets } from "../secrets.js";
@@ -161,12 +161,13 @@ export const runCommand: Command = {
             const answer = requireRole(config, "answer");
             const judge = requireRole(config, "judge");
             await loadModelSecrets(io);
-            if (vendorOf(answer.model) === vendorOf(judge.model)) {
+            if (vendorOfRole(answer) === vendorOfRole(judge)) {
                 io.err(
                     `eval: the judge (${judge.model}) is of the answering model's vendor; a model of another family judges more fairly\n`,
                 );
             }
             models = new Models(config, {
+                ...io.modelOptions,
                 env: io.env,
                 maxCalls:
                     values["max-calls"] === undefined
