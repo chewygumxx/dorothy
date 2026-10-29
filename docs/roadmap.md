@@ -490,3 +490,6 @@ In order of completion.
   Claude and ChatGPT plans, before any API, and record their tokens. A
   bake-off of six generators found most knowledge-update drafts carried
   no earlier claim; the checks are to drop such drafts.
+- 2026-10-29: `dorothy --review-backfill` reviews backfilled
+  conversations in batches on the reviewer's model; the first batch of
+  three on the real store gave each a title, abstract and tags.
