@@ -17,6 +17,10 @@ export class UsageError extends Error {}
 // is done is kept, and the command resumes or runs again later.
 export class RunStop extends UsageError {}
 
+// The exit of a command stopped by a plan's usage limit (sysexits' EX_TEMPFAIL),
+// for a wrapper to wait for the reset and go on.
+export const EXIT_TEMPFAIL = 75;
+
 // The code of a failed system call, if the error has one.
 export const codeOf = (error: unknown): string | undefined => {
     const code = (error as { code?: unknown } | null)?.code;

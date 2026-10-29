@@ -109,7 +109,9 @@ options declared and described for `--help`, its failures as
   A reply that says the plan's usage limit is reached, read before the
   exit code, is a `PlanLimit`, never retried: a `RunStop`, as `CallCap`
   is, so `run` and `generate` stop with what is done; a run resumes
-  after the reset, generate is run again. What it says: Claude, an
+  after the reset, generate is run again. Either exits 75
+  (`EXIT_TEMPFAIL`) for a wrapper to wait on; a `CallCap` exits 0. What
+  it says: Claude, an
   error reply with status 429, or text with "usage limit", "usage
   credits", "out of credits", "rate limit", "hit your ... limit" (its
   session, weekly, Opus, Sonnet or Fable limit) or "limit reached";

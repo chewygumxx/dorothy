@@ -504,6 +504,8 @@ export async function generateQuestions(options: {
     unkept: Question[];
     dropped: Record<string, number>;
     stopped: string | null;
+    // Whether a plan's usage limit stopped it.
+    limited: boolean;
 }> {
     const ids = new Map(
         options.existing.map((question) => [question.id, question]),
@@ -513,12 +515,11 @@ export async function generateQuestions(options: {
     const drop = (reason: string) => {
         dropped[reason] = (dropped[reason] ?? 0) + 1;
     };
-    const stop = (stopped: string, unkept: Question[] = []) => ({
-        made,
-        unkept,
-        dropped,
-        stopped,
-    });
+    const stop = (
+        stopped: string,
+        unkept: Question[] = [],
+        limited = false,
+    ) => ({ made, unkept, dropped, stopped, limited });
     // Calls failed in a row; any call that returns resets it.
     let failures = 0;
     for (const type of GENERATED_TYPES) {
@@ -546,10 +547,13 @@ export async function generateQuestions(options: {
                 if (error instanceof RunStop) {
                     // Generate has no --resume: a limit is waited out and
                     // generate run again.
+                    const limited = error instanceof PlanLimit;
                     return stop(
-                        error instanceof PlanLimit
+                        limited
                             ? `${error.message}; run generate again after the reset`
                             : error.message,
+                        [],
+                        limited,
                     );
                 }
                 const why = failureOf(error);
@@ -592,7 +596,7 @@ export async function generateQuestions(options: {
             }
         }
     }
-    return { made, unkept: [], dropped, stopped: null };
+    return { made, unkept: [], dropped, stopped: null, limited: false };
 }
 
 // The day of the snapshot's last turn: questions are asked as of then.

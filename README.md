@@ -545,11 +545,14 @@ server (llama.cpp, Ollama) keeps them home. The judge and the generator
 must support structured output. `--max-calls` caps the calls of
 `generate` or `run`, and a run stopped by it resumes with
 `--resume <run>`, the id the run printed; `--dry-run` beside it counts
-only what the run has left. A failed call counts as a miss. A system's
-ranked items are the ones that fit its budget, so recall at 5 and 10
-falls with a smaller `--budget`. Each run's report is
-`~/eval/runs/<run>/report.md`, and `bun run eval -- <command> --help`
-lists a command's options.
+only what the run has left. A failed call counts as a miss, except that
+a plan's usage limit (Claude's or Codex's) stops the run or `generate`
+instead, keeping what is done: `run` then resumes with `--resume` after
+the reset. Either exits 75 (EX_TEMPFAIL) so a wrapper can wait and go
+on; a stop at `--max-calls` exits 0. A system's ranked items are the
+ones that fit its budget, so recall at 5 and 10 falls with a smaller
+`--budget`. Each run's report is `~/eval/runs/<run>/report.md`, and
+`bun run eval -- <command> --help` lists a command's options.
 
 `review` shows up to 6,000 characters of each cited conversation, or
 `--evidence <chars>`. An agent can screen the drafts for you: its

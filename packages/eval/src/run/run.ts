@@ -16,6 +16,7 @@ import { createHash } from "node:crypto";
 import { appendFile, mkdir, stat } from "node:fs/promises";
 import { RunStop, UsageError } from "../errors.js";
 import { writeAtomic } from "../files.js";
+import { PlanLimit } from "../models/cli.js";
 import { failureOf, type Models } from "../models/client.js";
 import { type EvalConfig, ROLES, type RoleConfig } from "../models/config.js";
 import { definitionOf, type Question } from "../questions/file.js";
@@ -209,10 +210,10 @@ function checkQuestions(info: RunInfo, accepted: readonly Question[]): void {
 // stops.
 class Capped extends RunStop {
     constructor(
-        message: string,
+        readonly stop: RunStop,
         readonly record: RunRecord,
     ) {
-        super(message);
+        super(stop.message);
     }
 }
 
@@ -335,7 +336,7 @@ async function judge(
         } catch (caught) {
             record.failures.push(`${name}: ${failureOf(caught)}`);
             if (caught instanceof RunStop) {
-                throw new Capped(caught.message, record);
+                throw new Capped(caught, record);
             }
         }
     }
@@ -437,7 +438,12 @@ export async function runEvaluation(
         concurrency: number;
         systems?: System[];
     },
-): Promise<{ summary: Summary; stopped: string | null }> {
+): Promise<{
+    summary: Summary;
+    stopped: string | null;
+    // Whether a plan's usage limit stopped it.
+    limited: boolean;
+}> {
     const asked = new Set(info.questionIds);
     const accepted = deps.questions.filter(
         (q) => q.status === "accepted" && asked.has(q.id),
@@ -498,6 +504,7 @@ export async function runEvaluation(
         await system.prepare?.();
     }
     let stopped: string | null = null;
+    let limited = false;
     // The first fault in any worker: the others stop at their next task,
     // and it is thrown once all have, after the systems are closed.
     // Declared so, tsc does not narrow it to null after the workers.
@@ -529,6 +536,10 @@ export async function runEvaluation(
                         throw error;
                     }
                     stopped = error.message;
+                    limited =
+                        (error instanceof Capped
+                            ? error.stop
+                            : error) instanceof PlanLimit;
                     if (!(error instanceof Capped)) {
                         return;
                     }
@@ -595,5 +606,9 @@ export async function runEvaluation(
     if (fault !== null) {
         throw fault.error;
     }
-    return { summary: await writeRunReport(deps.work, info.id), stopped };
+    return {
+        summary: await writeRunReport(deps.work, info.id),
+        stopped,
+        limited,
+    };
 }

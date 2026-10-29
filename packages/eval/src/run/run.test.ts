@@ -435,7 +435,8 @@ describe("bun run eval -- run", () => {
                 "1",
             ];
             const first = fakeIo(options);
-            expect(await runCli(args, first.io)).toBe(0);
+            // EX_TEMPFAIL, for a wrapper to wait and resume.
+            expect(await runCli(args, first.io)).toBe(75);
             const id = idOf(first.out);
             // One try: a limit is not retried, and nothing more is asked.
             expect(fake.requests).toHaveLength(limitedAt);
@@ -540,7 +541,7 @@ describe("bun run eval -- run", () => {
                     ],
                     first.io,
                 ),
-            ).toBe(0);
+            ).toBe(75);
             const id = idOf(first.out);
             expect(first.out.join("")).toContain(
                 `stopped: the ${via} plan's usage limit is reached; resume with`,
@@ -576,7 +577,7 @@ describe("bun run eval -- run", () => {
                     ],
                     first.io,
                 ),
-            ).toBe(0);
+            ).toBe(75);
             const id = idOf(first.out);
             expect(fake.requests).toHaveLength(3);
             const half = (await readRecords(work, id)).find(
