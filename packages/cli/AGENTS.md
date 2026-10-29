@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-21
+mtime: 2026-10-29
 spdx: GPL-3.0-only
 title: packages/cli/AGENTS.md
 description: >-
@@ -54,44 +54,38 @@ lazy.
   terminal.
 - `dump.ts`: `runDump` composes `previewStart` with `dumpRequest` for
   `--dump-context`.
-- `claude.ts`: `launchClaude`, for `--claude` and its dump, starts the
-  gateway and `claude` with its base URL there. With a proxy set, the
-  gateway host joins both bypass lists. It sets `ENABLE_TOOL_SEARCH=1`
-  unless set, and the marker joins the user's own `--append-system-prompt`
-  (Claude Code keeps only the last; `claudeArgs`). With
-  `[memory] enabled` it syncs the project `claude` starts in, gives the
-  gateway chat's memory block as its section, and sets
-  `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`; with `recall` too, `--mcp-config=`
-  offers the recall server as `dorothy-memory` with `--project`, and
-  `--settings=` allows its tools, a user's own `--settings` merged in
-  (`dorothyFlags`). A merged settings file may hold secrets and argv is
-  world-readable, so the merge goes to a private file (mode 0600, in
-  `$XDG_RUNTIME_DIR/dorothy` or a 0700 `dorothy-<uid>` under the temporary
-  directory; `privateWriter`) passed by path, removed by `Launch.cleanup`
-  when `claude` exits; inline JSON stays inline. If the private write
-  fails, the user's original arguments are kept and a warning says
-  Dorothy's settings could not be added.
-  With `[memory] enabled` it also notes the launch (`DOROTHY_LAUNCH`),
-  passes `Stop` and `SessionEnd` hooks running `dorothy --claude-hook`
-  (`hookSettings`) and, for a new session, `--session-id`
-  (`claudeSession`: a resume decides wherever a `--session-id`
-  stands, `-r<id>` counts, and a free-text flag's value is no flag);
-  the block leaves out a session resumed by id. It sets
-  `DOROTHY_ANTHROPIC_BASE_URL` from the user's `ANTHROPIC_BASE_URL`, and
-  `SOPS_AGE_KEY_FILE` from the explicit path or the existing default age
-  key under the configuration directory (`sops-key.ts`), without reading
-  it. `runClaude` runs it for `--claude`, forwards `SIGTERM` and `SIGHUP`,
-  ignores `SIGINT` (the terminal sends it to `claude` too), and exits with
-  `claude`'s code. This program runs
-  again as `bun --no-env-file`, so a project's `.env` never reaches a
-  hook, a catch-up or the recall server. Before `claude` starts it
-  starts a detached catch-up of each launch a killed `dorothy` left
-  behind, memory off or on, and says what hooks left to tell; once
-  `claude` exits, or fails to start, a catch-up of its own launch,
-  whatever else its teardown throws.
-  From a package script (`bun run dev`), `userShell` gives `claude` the
-  directory it was run from and the `PATH` before Bun prepended its
-  `node_modules/.bin` entries.
+- `claude.ts`: `launchClaude`, for `--claude` and its dump, starts the gateway
+  and `claude` with its base URL there. With a proxy set, the gateway host joins
+  both bypass lists. It sets `ENABLE_TOOL_SEARCH=1` unless set, and the marker
+  joins the user's own `--append-system-prompt` (Claude Code keeps only the
+  last; `claudeArgs`). With `[memory] enabled` it syncs the project `claude`
+  starts in, gives the gateway chat's memory block as its section, and sets
+  `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`; with `recall` too, `--mcp-config=` offers
+  the recall server as `dorothy-memory` with `--project`, and `--settings=`
+  allows its tools, a user's own `--settings` merged in (`dorothyFlags`). A
+  merged settings file may hold secrets and argv is world-readable, so the merge
+  goes to a private file (mode 0600, in `$XDG_RUNTIME_DIR/dorothy` or a 0700
+  `dorothy-<uid>` under the temporary directory; `privateWriter`) passed by
+  path, removed by `Launch.cleanup` when `claude` exits; inline JSON stays
+  inline. If the private write fails, the user's original arguments are kept and
+  a warning says Dorothy's settings could not be added. With `[memory] enabled`
+  it also notes the launch (`DOROTHY_LAUNCH`), passes `Stop` and `SessionEnd`
+  hooks running `dorothy --claude-hook` (`hookSettings`) and, for a new session,
+  `--session-id` (`claudeSession`: a resume decides wherever a `--session-id`
+  stands, `-r<id>` counts, and a free-text flag's value is no flag); the block
+  leaves out a session resumed by id. It sets `DOROTHY_ANTHROPIC_BASE_URL` from
+  the user's `ANTHROPIC_BASE_URL`, and `SOPS_AGE_KEY_FILE` from the explicit
+  path or the existing default age key under the configuration directory
+  (`sops-key.ts`), without reading it. `runClaude` runs it for `--claude`,
+  forwards `SIGTERM` and `SIGHUP`, ignores `SIGINT` (the terminal sends it to
+  `claude` too), and exits with `claude`'s code. This program runs again as
+  `bun --no-env-file`, so a project's `.env` never reaches a hook, a catch-up or
+  the recall server. Before `claude` starts it starts a detached catch-up of
+  each launch a killed `dorothy` left behind, memory off or on, and says what
+  hooks left to tell; once `claude` exits, or fails to start, a catch-up of its
+  own launch, whatever else its teardown throws. From a package script (`bun run
+  dev`), `userShell` gives `claude` the directory it was run from and the `PATH`
+  before Bun prepended its `node_modules/.bin` entries.
 - `claude-dump.ts`: `runClaudeDump` for `--claude --dump-context`: the
   gateway's upstream is `captureServer` from `@dorothy/agent`, `claude`
   runs quietly in print mode without saving its session, and is stopped
@@ -118,6 +112,12 @@ lazy.
   `--sweep` (`runSweep`, `runSweepDismiss`) and `--mcp`, memory's stdio
   bridge (`@dorothy/memory/bridge`), which starts `--serve` as
   `bun --no-env-file` when none answers.
+- `review-backfill.ts`: `runBackfillReview`, for `--review-backfill`, runs
+  memory's `runReviewBackfill` on the agent `reviewAgent` gives (Claude Code's
+  variables dropped, this checkout's secrets), so reviews use the Claude
+  plan's token where `secrets.json` holds it. It prints `<phrase>: <outcome>`
+  a conversation, then a total, and exits 1 if none was reviewed or marked
+  and one failed, or if a failed call stopped the batch, which it says.
 - `recall-launch.ts`: `recallLaunch` launches this program again as the
   recall server, leaving out the conversation it serves and, with
   `--project`, naming the directory chat started in.

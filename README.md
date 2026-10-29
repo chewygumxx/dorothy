@@ -431,6 +431,30 @@ the rest is kept aside, and the next start tells of it. `--sweep
 `--sweep --dismiss <host> <session>` stops the notice. Claude Code's own
 are `--claude-hook --reread` and `--dismiss <session>`.
 
+A conversation recorded by `--sweep --backfill` carries that durable mark,
+and its notes stay empty: no title, abstract, tags or knowledge. `dorothy
+--review-backfill [-n | --count <count>]` reviews them in batches, the
+newest `-n` (25 by default) by their last event, on the reviewer's model
+and with the credentials her other reviews use, the Claude plan's token
+where that is what `secrets.json` holds. Each batch spends plan usage, so
+run one, watch your limits, then run the next:
+
+```sh
+bun run dev -- --review-backfill -n 3    # a small batch first
+```
+
+It prints `<phrase>: <outcome>` a conversation, then a total. An outcome
+is `reviewed`, `marked` (nothing to extract), `unchanged` (the reviewer
+wrote nothing, as during a backoff), `held` (another process is reviewing
+it) or `failed`; the command exits 1 when none was reviewed or marked and
+one failed. A failed model call stops the batch, with a line saying why and
+exit 1: that conversation keeps its mark and the rest stay untouched, for a
+later run. The command takes the review claim a chat or a hook takes,
+which keeps both off the conversation while it is reviewed, but not the
+service, which reviews only conversations a live record queued. A review
+that fails otherwise (its notes, a save) leaves the mark cleared, and a
+chat's catch-up retries it, not the service.
+
 Her knowledge lives in `knowledge/` in the data directory, one Markdown
 file each in the [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md),
 which you may read and edit; `facts/` is moved there once.

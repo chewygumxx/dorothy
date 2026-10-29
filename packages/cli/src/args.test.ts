@@ -758,3 +758,63 @@ describe("--sweep", () => {
         expect(USAGE).toContain("--dismiss <host> <session>");
     });
 });
+
+describe("--review-backfill", () => {
+    const USAGE_MESSAGE = "--review-backfill takes [-n | --count <count>]";
+
+    it("takes a batch of 25 unless -n gives another", () => {
+        expect(parseArgs(["--review-backfill"], false)).toEqual({
+            kind: "review-backfill",
+            count: 25,
+        });
+        expect(parseArgs(["--review-backfill", "-n", "3"], false)).toEqual({
+            kind: "review-backfill",
+            count: 3,
+        });
+        expect(parseArgs(["--review-backfill", "-n10"], false)).toEqual({
+            kind: "review-backfill",
+            count: 10,
+        });
+        expect(parseArgs(["--review-backfill", "--count", "7"], false)).toEqual(
+            { kind: "review-backfill", count: 7 },
+        );
+    });
+
+    it("needs no terminal, and is named by --help", () => {
+        expect(parseArgs(["--review-backfill"], true).kind).toBe(
+            "review-backfill",
+        );
+        expect(USAGE).toContain(
+            "dorothy --review-backfill [-n | --count <count>]",
+        );
+    });
+
+    it("refuses a count that is not a positive integer, and any word", () => {
+        for (const argv of [
+            ["--review-backfill", "-n"],
+            ["--review-backfill", "-n", "0"],
+            ["--review-backfill", "-n", "-1"],
+            ["--review-backfill", "-n", "2.5"],
+            ["--review-backfill", "-n", "many"],
+            ["--review-backfill", "-n", ""],
+            ["--review-backfill", "-n", "1e1"],
+            ["--review-backfill", "-n", "99999999999999999999"],
+            ["--review-backfill", "3"],
+            ["--review-backfill", "--all"],
+            ["--review-backfill", "-n", "3", "-n", "4"],
+            ["--review-backfill", "-n", "3", "--count", "3"],
+            ["--review-backfill", "--count", "3", "--count", "3"],
+        ]) {
+            expect(parseArgs(argv, false)).toEqual({
+                kind: "usage",
+                message: USAGE_MESSAGE,
+            });
+        }
+    });
+
+    it("is no option of chat or a prompt", () => {
+        expect(parseArgs(["--dev", "--review-backfill"], false).kind).toBe(
+            "usage",
+        );
+    });
+});

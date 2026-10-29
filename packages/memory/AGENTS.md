@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-21
+mtime: 2026-10-29
 spdx: GPL-3.0-only
 title: packages/memory/AGENTS.md
 description: >-
@@ -53,10 +53,12 @@ and prompts as text (`MemoryPrompts`).
 - `memory/sidecar.ts`: the notes, kept in `<phrase>.meta.json` beside the
   transcript, including a durable backfill mark cleared by live appends.
   `service.ts`'s `MemoryService` freezes each session's block and schedules
-  reviews (`scheduler.ts`; `reviewer.ts`, also the hooks'), never blocking chat.
-  `track.ts`'s `trackMemory` decorates the `ChatSession`, so `App` sees
+  reviews (`scheduler.ts`; `reviewer.ts`, also the hooks'), never blocking
+  chat. `track.ts`'s `trackMemory` decorates the `ChatSession`, so `App` sees
   only notices. `rank.ts`, `block.ts`, `edit-view.ts` and `list.ts` are
   pure; `commands.ts` has `--list`, `--memory`, `--tags`, `--edit-tags`.
+- `memory/review-backfill.ts`: `runReviewBackfill`: the newest `-n` marked
+  sidecars, claimed, unmarked, reviewed; a failed call restores it and stops.
 - `memory/vocabulary.ts`, `tagging.ts`, `tags-view.ts`: tags, a SKOS-style
   vocabulary in `tags.json` (concepts with `prefLabel`, `altLabel`,
   `broader` and `scopeNote`, and the tombstones of deleted and merged
@@ -68,16 +70,15 @@ and prompts as text (`MemoryPrompts`).
   the lock (`store.ts`); `yaml` checks duplicate keys; `commands.ts` theirs.
 - `projects/`: a project's identity, registry, exported form and sync
   with its repository; read [its own guide](./src/projects/AGENTS.md).
-- `recall/`: search over past conversations and facts. `store.ts` is a
-  derived SQLite FTS5 index in the XDG cache; `sync.ts` syncs it from the
-  transcripts and sidecars before every query: a conversation's source
-  and project from its first session, its body sessions (`sessionPhrase`)
-  too, a hidden one's turns counted but their text left out, and
-  `facts.ts` the facts by content hash. `query.ts` has `search`, `open`,
-  `recollect` (a hidden chat's turns from its transcript); `tags.ts`
-  mirrors the vocabulary; `remember.ts` writes her facts; `server.ts`
-  serves them over MCP on stdio as `dorothy --recall-server`, one call at
-  a time, history opened without the mirror. Reviews appraise each read
+- `recall/`: search over past conversations and facts. `store.ts` is a derived
+  SQLite FTS5 index in the XDG cache; `sync.ts` syncs it from the transcripts
+  and sidecars before every query: a conversation's source and project from its
+  first session, its body sessions (`sessionPhrase`) too, a hidden one's turns
+  counted but their text left out, and `facts.ts` the facts by content hash.
+  `query.ts` has `search`, `open`, `recollect` (a hidden chat's turns from its
+  transcript); `tags.ts` mirrors the vocabulary; `remember.ts` writes her facts;
+  `server.ts` serves them over MCP on stdio as `dorothy --recall-server`, one
+  call at a time, history opened without the mirror. Reviews appraise each read
   into the sidecar, and `salience()` (`rank.ts`) weighs appraised reads.
 - `compaction/`: past `[compaction] soft` tokens, at the next idle (past
   `hard`, before the next message), `compact()` splits the turns before
@@ -119,13 +120,12 @@ and prompts as text (`MemoryPrompts`).
   commits each turn once the transcript is flushed.
 - The memory block charges the earlier turns' abstracts first.
 - `recollect` is served only with `--recollect`, for a chat with clusters.
-- Hidden chats carry no catalogue concepts; backfills get no paid review.
-- Nothing deletes a fact: one retired stays indexed, searchable and in
-  history. Its origin is set by the code that writes it, never read
-  from its text, and only the user raises it.
+- Hidden chats carry no catalogue concepts; backfills are reviewed on request.
+- Nothing deletes a fact: one retired stays indexed, searchable and in history.
+  Its origin is set by the code that writes it, never read from its text, and
+  only the user raises it.
 - A key that does not open the newest sealed bundle seals nothing.
-- The vocabulary path is always passed (`vocabularyPath()`), never derived
-  from the transcripts directory.
+- `vocabularyPath()` is always passed, never derived from the transcripts dir.
 
 ## Tests
 

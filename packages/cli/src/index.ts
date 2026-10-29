@@ -266,6 +266,11 @@ const RUNNERS: Runners = {
         const { runSweepDismiss } = await service();
         return runSweepDismiss(mode.host, mode.session);
     },
+    "review-backfill": async (mode) => {
+        // Reviews as the hooks and the service get them, on the plan's token.
+        const { runBackfillReview } = await import("./review-backfill.js");
+        return runBackfillReview(mode.count, { agent: reviewAgent });
+    },
     mcp: async (mode) => {
         const { runBridge } = await import("@dorothy/memory/bridge");
         return runBridge({

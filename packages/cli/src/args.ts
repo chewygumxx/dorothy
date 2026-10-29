@@ -53,6 +53,7 @@ export type Mode =
     | { kind: "token-revoke"; device: string }
     | { kind: "sweep"; backfill: boolean; reread: boolean }
     | { kind: "sweep-dismiss"; host: string; session: string }
+    | { kind: "review-backfill"; count: number }
     | { kind: "mcp"; host: string | null }
     | { kind: "claude-hook"; hook: HookMode }
     | { kind: "claude"; args: string[] }
@@ -95,6 +96,11 @@ export const USAGE = [
     "       dorothy --sweep --reread   read again what a sweep could not",
     "       dorothy --sweep --dismiss <host> <session>",
     "                                  stop telling of what it could not",
+    "       dorothy --review-backfill [-n | --count <count>]",
+    "                                  review the newest backfilled chats on",
+    "                                  the reviewer's model (the Claude plan,",
+    "                                  if secrets.json holds its token); each",
+    "                                  batch spends that usage",
     "       dorothy --mcp [--host <host>]",
     "                                  her memory over MCP (stdio), through",
     "                                  the service, for the host named",
@@ -158,6 +164,7 @@ const COMMANDS: Record<string, Command> = {
     "--recall-server": parseRecallServer,
     "--serve": parseServe,
     "--sweep": parseSweep,
+    "--review-backfill": parseReviewBackfill,
     "--mcp": parseMcp,
     "--claude-hook": parseHook,
     "--dump-context": parseDump,
@@ -428,6 +435,28 @@ function parseSweep(rest: readonly string[]): Mode {
               reread: reread.length > 0,
           }
         : usage(SWEEP_USAGE);
+}
+
+const REVIEW_BACKFILL_USAGE = "--review-backfill takes [-n | --count <count>]";
+
+// A batch's size: a positive integer, 25 where none is given.
+function parseReviewBackfill(rest: readonly string[]): Mode {
+    const parsed = options(rest, {
+        count: { type: "string", short: "n", multiple: true },
+    });
+    const given = parsed?.values.count?.[0];
+    if (
+        parsed === null ||
+        parsed.positionals.length > 0 ||
+        (parsed.values.count?.length ?? 0) > 1 ||
+        (given !== undefined && !/^[1-9]\d*$/.test(given))
+    ) {
+        return usage(REVIEW_BACKFILL_USAGE);
+    }
+    const count = given === undefined ? 25 : Number(given);
+    return Number.isSafeInteger(count)
+        ? { kind: "review-backfill", count }
+        : usage(REVIEW_BACKFILL_USAGE);
 }
 
 const MCP_USAGE = "--mcp takes [--host <host>], a host as its profile names it";

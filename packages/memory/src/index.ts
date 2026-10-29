@@ -31,3 +31,9 @@ export {
     openMemory,
 } from "./memory/open.js";
 export { type Preview, previewStart } from "./memory/preview.js";
+export {
+    type ReviewBackfillCounts,
+    type ReviewBackfillOptions,
+    type ReviewBackfillOutcome,
+    runReviewBackfill,
+} from "./memory/review-backfill.js";
