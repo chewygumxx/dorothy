@@ -126,8 +126,13 @@ const tokens = (value: unknown): number =>
         : 0;
 const usageOf = (value: unknown) => {
     const usage = value === undefined ? {} : record(value);
+    // Claude counts cached input apart from input_tokens; Codex's
+    // input_tokens already holds its cached_input_tokens.
     return {
-        input: tokens(usage.input_tokens),
+        input:
+            tokens(usage.input_tokens) +
+            tokens(usage.cache_creation_input_tokens) +
+            tokens(usage.cache_read_input_tokens),
         output: tokens(usage.output_tokens),
     };
 };

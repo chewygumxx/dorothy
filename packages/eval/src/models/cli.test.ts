@@ -53,6 +53,7 @@ const claudeReply = (extra = {}) =>
         usage: {
             input_tokens: 11,
             output_tokens: 7,
+            cache_creation_input_tokens: 3,
             cache_read_input_tokens: 5,
         },
         ...extra,
@@ -104,7 +105,8 @@ describe("CLI routes", () => {
         expect(reply).toEqual({
             text: "A reply",
             value: { n: 3 },
-            input: 11,
+            // Claude counts cached input apart from input_tokens.
+            input: 19,
             output: 7,
         });
         expect(fake.removed).toEqual(["/private/eval-1"]);
