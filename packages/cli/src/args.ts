@@ -96,9 +96,11 @@ export const USAGE = [
     "       dorothy --sweep --reread   read again what a sweep could not",
     "       dorothy --sweep --dismiss <host> <session>",
     "                                  stop telling of what it could not",
-    "       dorothy --review-backfill [-n <count>]",
-    "                                  review the newest backfilled chats, on",
-    "                                  the Claude plan; each batch spends it",
+    "       dorothy --review-backfill [-n | --count <count>]",
+    "                                  review the newest backfilled chats on",
+    "                                  the reviewer's model (the Claude plan,",
+    "                                  if secrets.json holds its token); each",
+    "                                  batch spends that usage",
     "       dorothy --mcp [--host <host>]",
     "                                  her memory over MCP (stdio), through",
     "                                  the service, for the host named",
@@ -435,15 +437,18 @@ function parseSweep(rest: readonly string[]): Mode {
         : usage(SWEEP_USAGE);
 }
 
-const REVIEW_BACKFILL_USAGE = "--review-backfill takes [-n <count>]";
+const REVIEW_BACKFILL_USAGE = "--review-backfill takes [-n | --count <count>]";
 
 // A batch's size: a positive integer, 25 where none is given.
 function parseReviewBackfill(rest: readonly string[]): Mode {
-    const parsed = options(rest, { count: { type: "string", short: "n" } });
-    const given = parsed?.values.count;
+    const parsed = options(rest, {
+        count: { type: "string", short: "n", multiple: true },
+    });
+    const given = parsed?.values.count?.[0];
     if (
         parsed === null ||
         parsed.positionals.length > 0 ||
+        (parsed.values.count?.length ?? 0) > 1 ||
         (given !== undefined && !/^[1-9]\d*$/.test(given))
     ) {
         return usage(REVIEW_BACKFILL_USAGE);

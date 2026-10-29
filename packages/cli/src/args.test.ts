@@ -760,7 +760,7 @@ describe("--sweep", () => {
 });
 
 describe("--review-backfill", () => {
-    const USAGE_MESSAGE = "--review-backfill takes [-n <count>]";
+    const USAGE_MESSAGE = "--review-backfill takes [-n | --count <count>]";
 
     it("takes a batch of 25 unless -n gives another", () => {
         expect(parseArgs(["--review-backfill"], false)).toEqual({
@@ -784,7 +784,9 @@ describe("--review-backfill", () => {
         expect(parseArgs(["--review-backfill"], true).kind).toBe(
             "review-backfill",
         );
-        expect(USAGE).toContain("dorothy --review-backfill [-n <count>]");
+        expect(USAGE).toContain(
+            "dorothy --review-backfill [-n | --count <count>]",
+        );
     });
 
     it("refuses a count that is not a positive integer, and any word", () => {
@@ -799,6 +801,9 @@ describe("--review-backfill", () => {
             ["--review-backfill", "-n", "99999999999999999999"],
             ["--review-backfill", "3"],
             ["--review-backfill", "--all"],
+            ["--review-backfill", "-n", "3", "-n", "4"],
+            ["--review-backfill", "-n", "3", "--count", "3"],
+            ["--review-backfill", "--count", "3", "--count", "3"],
         ]) {
             expect(parseArgs(argv, false)).toEqual({
                 kind: "usage",
