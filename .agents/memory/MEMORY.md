@@ -23,3 +23,5 @@
   Approve every Codex prompt; Codex runs never-ask, full access
 - [Trust to proceed](./trust-to-proceed.md)
   Carry on with agreed next steps unasked; report what was done
+- [Usage limits](./usage-limits.md)
+  Read Codex's 5h budget before dispatching; size jobs to fit
