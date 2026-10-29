@@ -9,6 +9,7 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { existsSync } from "node:fs";
 import {
     chmod,
     mkdir,
@@ -20,7 +21,7 @@ import {
     writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 
 const script = join(import.meta.dir, "statusline.sh");
 const limits = {
@@ -90,5 +91,67 @@ describe("the status line", () => {
         );
         expect(code).toBe(0);
         expect(out).toStartWith("drawn ");
+    });
+
+    describe("without ccstatusline", () => {
+        // The ambient PATH, less any directory that holds ccstatusline.
+        let without: Record<string, string>;
+        beforeEach(async () => {
+            await rm(join(root, "bin", "ccstatusline"));
+            without = {
+                PATH: [
+                    join(root, "bin"),
+                    ...(process.env.PATH ?? "")
+                        .split(delimiter)
+                        .filter(
+                            (directory) =>
+                                !existsSync(join(directory, "ccstatusline")),
+                        ),
+                ].join(delimiter),
+            };
+        });
+
+        it("draws the model and the 5-hour use", async () => {
+            const { out, code } = await statusLine(
+                { model: { display_name: "Opus" }, rate_limits: limits },
+                without,
+            );
+            expect(code).toBe(0);
+            expect(out).toBe("Opus | 5h 42%\n");
+            // The limits are kept all the same.
+            expect(await readdir(join(root, "run"))).toHaveLength(1);
+        });
+
+        it("draws the model alone when there are no limits", async () => {
+            const { out } = await statusLine(
+                { model: { display_name: "Opus" } },
+                without,
+            );
+            expect(out).toBe("Opus\n");
+        });
+
+        it("draws the 5-hour use of a model with no name", async () => {
+            const { out } = await statusLine({ rate_limits: limits }, without);
+            expect(out).toBe("Claude | 5h 42%\n");
+        });
+
+        it("rounds the percentage and drops control characters", async () => {
+            const { out } = await statusLine(
+                {
+                    model: { display_name: "Op\u001b[31mus" },
+                    rate_limits: {
+                        five_hour: { used_percentage: 41.6, resets_at: 1 },
+                    },
+                },
+                without,
+            );
+            expect(out).toBe("Op[31mus | 5h 42%\n");
+        });
+
+        it("draws something for an input it cannot read", async () => {
+            const { out, code } = await statusLine("not an object", without);
+            expect(code).toBe(0);
+            expect(out).toBe("Claude\n");
+        });
     });
 });

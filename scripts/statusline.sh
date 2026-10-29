@@ -14,8 +14,9 @@
 # an agent can read them before spending: rate_limits, with the time,
 # in $XDG_RUNTIME_DIR/claude-usage-<account>.json, the account being
 # CLAUDE_CONFIG_DIR's last part. Then the user's own status line,
-# ccstatusline, draws from the same input. A missing jq or runtime
-# directory skips the file; the status line is drawn regardless.
+# ccstatusline, draws from the same input; without it, a minimal line: the
+# model's name and the 5-hour use. A missing jq or runtime directory skips
+# the file; the status line is drawn regardless.
 
 input=$(cat)
 
@@ -36,4 +37,15 @@ fi
 
 if command -v ccstatusline >/dev/null 2>&1; then
     printf '%s' "$input" | ccstatusline
+else
+    line=$(
+        printf '%s' "$input" |
+            jq -r '[
+                (.model.display_name // "Claude"),
+                (.rate_limits.five_hour.used_percentage
+                    | select(type == "number") | "5h \(round)%")
+            ] | join(" | ")' 2>/dev/null |
+            tr -d '[:cntrl:]'
+    )
+    printf '%s\n' "${line:-Claude}"
 fi
