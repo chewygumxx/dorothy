@@ -13,6 +13,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Env } from "@dorothy/core";
+import { codeOf, UsageError } from "../errors.js";
 import type { Message } from "./client.js";
 import type { CliConfig } from "./config.js";
 
@@ -49,6 +50,7 @@ export type CliReply = {
     output: number;
 };
 export class CliFailure extends Error {}
+class CliUnavailable extends UsageError {}
 const files: CliFiles = {
     temp: () => mkdtemp(join(tmpdir(), "dorothy-eval-model-")),
     write: (path, text, mode) => writeFile(path, text, { mode }),
@@ -177,11 +179,13 @@ export async function cliAttempt(
                 "--model",
                 config.model,
             ];
-            if (system !== "") {
-                const path = join(directory, "system.txt");
-                await io.write(path, system, 0o600);
-                args.push("--system-prompt-file", path);
-            }
+            const path = join(directory, "system.txt");
+            await io.write(
+                path,
+                system || "Answer the user's request directly.",
+                0o600,
+            );
+            args.push("--system-prompt-file", path);
             if (schema !== undefined)
                 args.push("--json-schema", JSON.stringify(schema));
         } else {
@@ -214,17 +218,29 @@ export async function cliAttempt(
             }
             args.push("-");
         }
-        const result = await (options.runner ?? run)({
-            command: config.via,
-            args,
-            env,
-            cwd: directory,
-            stdin:
-                config.via === "claude"
-                    ? prompt
-                    : messages.map((message) => message.content).join("\n\n"),
-            timeoutMs: options.timeoutMs ?? 120_000,
-        });
+        let result: CliResult;
+        try {
+            result = await (options.runner ?? run)({
+                command: config.via,
+                args,
+                env,
+                cwd: directory,
+                stdin:
+                    config.via === "claude"
+                        ? prompt
+                        : messages
+                              .map((message) => message.content)
+                              .join("\n\n"),
+                timeoutMs: options.timeoutMs ?? 120_000,
+            });
+        } catch (error) {
+            const code = codeOf(error);
+            throw new CliUnavailable(
+                code === "ENOENT"
+                    ? `${config.via} is missing (ENOENT): install it and make it available on PATH`
+                    : `${config.via} is not runnable${code === "EACCES" ? " (EACCES)" : ""}: check the executable and its permissions`,
+            );
+        }
         exitCode = result.exitCode;
         if (result.timedOut) throw failed("timed out");
         if (exitCode !== 0)
@@ -272,14 +288,18 @@ export async function cliAttempt(
             throw failed("unreadable reply");
         }
     } catch (error) {
-        throw error instanceof CliFailure ? error : failed("could not run");
+        throw error instanceof CliFailure || error instanceof CliUnavailable
+            ? error
+            : failed("could not run");
     } finally {
         if (directory !== undefined) {
-            await io
-                .remove(directory)
-                .catch(() =>
-                    Promise.reject(failed("could not remove temporary files")),
-                );
+            // Cleanup must neither discard a paid reply nor replace the
+            // original failure. Its error can also contain private text.
+            try {
+                await io.remove(directory);
+            } catch {
+                // Best effort, including synchronous filesystem failures.
+            }
         }
     }
 }

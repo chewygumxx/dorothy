@@ -11,6 +11,7 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { UsageError } from "../errors.js";
 import { tempRoot } from "../testing.js";
 import { CliFailure, cliAttempt } from "./cli.js";
 import type { CliConfig } from "./config.js";
@@ -218,9 +219,7 @@ describe("CLI routes", () => {
             });
             await expect(
                 cliAttempt(config, messages, undefined, { env, ...failed }),
-            ).rejects.toThrow(
-                `${config.via} exited with code unknown: could not run`,
-            );
+            ).rejects.toThrow(`${config.via} is not runnable`);
             expect(failed.removed).toHaveLength(1);
         },
     );
@@ -258,7 +257,7 @@ describe("CLI routes", () => {
     );
 });
 
-it.each(["temp", "write", "read", "remove"] as const)(
+it.each(["temp", "write", "read"] as const)(
     "sanitizes a failure to %s private files",
     async (operation) => {
         const fake = fakeCli((request) => {
@@ -403,3 +402,88 @@ printf '%s\\n' '{"result":"A reply","usage":{"input_tokens":3,"output_tokens":2}
         temp.remove();
     }
 });
+
+it("always supplies Claude a private neutral system prompt for user-only messages", async () => {
+    const fake = fakeCli(() => ({ stdout: claudeReply() }));
+    await cliAttempt(
+        claude,
+        [{ role: "user", content: "Judge this answer." }],
+        schema,
+        { env, ...fake },
+    );
+    const args = fake.requests[0]?.args ?? [];
+    expect(args).toContain("--system-prompt-file");
+    expect(args[args.indexOf("--system-prompt-file") + 1]).toBe(
+        "/private/eval-1/system.txt",
+    );
+    expect(fake.writes).toContainEqual({
+        path: "/private/eval-1/system.txt",
+        text: "Answer the user's request directly.",
+        mode: 0o600,
+    });
+    expect(fake.requests[0]?.stdin).toBe("Judge this answer.");
+});
+
+it.each([claude, codex])(
+    "keeps a successful $via reply when temp cleanup fails",
+    async (config) => {
+        const fake = fakeCli((request) => {
+            fake.contents.set(`${request.cwd}/reply.txt`, '{"n":3}');
+            return { stdout: config.via === "claude" ? claudeReply() : "" };
+        });
+        fake.cliFiles.remove = async () => {
+            throw new Error("Private snapshot private-token");
+        };
+        expect(
+            await cliAttempt(config, messages, schema, { env, ...fake }),
+        ).toMatchObject({ value: { n: 3 } });
+    },
+);
+
+it("keeps a paid reply when temp removal throws synchronously", async () => {
+    const fake = fakeCli(() => ({ stdout: claudeReply() }));
+    fake.cliFiles.remove = () => {
+        throw new Error("private-token");
+    };
+    expect(
+        await cliAttempt(claude, messages, schema, { env, ...fake }),
+    ).toMatchObject({ value: { n: 3 } });
+});
+
+it("keeps the original failure when temp cleanup also fails", async () => {
+    const fake = fakeCli(() => ({ exitCode: 17 }));
+    fake.cliFiles.remove = async () => {
+        throw new Error("Private snapshot private-token");
+    };
+    const error = await cliAttempt(codex, messages, schema, {
+        env,
+        ...fake,
+    }).catch((e: unknown) => e);
+    expect((error as Error).message).toBe("codex exited with code 17");
+});
+
+it.each(["ENOENT", "EACCES"])(
+    "rejects an unavailable CLI through the real runner (%s)",
+    async (code) => {
+        const temp = tempRoot("cli-unavailable");
+        if (code === "EACCES") {
+            writeFileSync(join(temp.root, "codex"), "#!/bin/sh\nexit 0\n", {
+                mode: 0o600,
+            });
+        }
+        try {
+            const error = await cliAttempt(codex, messages, undefined, {
+                env: { PATH: temp.root, HOME: temp.root },
+            }).catch((e: unknown) => e);
+            expect(error).toBeInstanceOf(UsageError);
+            // Bun's PATH resolver also reports ENOENT for candidates
+            // without execute permission. Neither case is retryable.
+            expect((error as Error).message).toMatch(
+                /codex is (missing|not runnable)/,
+            );
+            expect((error as Error).message).not.toContain(temp.root);
+        } finally {
+            temp.remove();
+        }
+    },
+);

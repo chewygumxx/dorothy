@@ -54,6 +54,19 @@ export function servedAt(baseUrl: string): string {
     return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, "")}`;
 }
 
+// CLI markers share baseUrls so the existing resume check also detects
+// route and effort changes; its mismatch message still says "base URL".
+function servedBy(found: RoleConfig): string {
+    switch (found.via) {
+        case "claude":
+            return "claude";
+        case "codex":
+            return `codex:${found.effort}`;
+        default:
+            return servedAt(found.baseUrl);
+    }
+}
+
 // The answer and judge roles' models and where they are served, or none
 // for a run that asks no model.
 function rolesOf(config: EvalConfig, retrievalOnly: boolean) {
@@ -70,20 +83,8 @@ function rolesOf(config: EvalConfig, retrievalOnly: boolean) {
             judge: of("judge", (found) => found.model),
         },
         baseUrls: {
-            answer: of("answer", (found) =>
-                found.via === "claude"
-                    ? "claude"
-                    : found.via === "codex"
-                      ? `codex:${found.effort}`
-                      : servedAt(found.baseUrl),
-            ),
-            judge: of("judge", (found) =>
-                found.via === "claude"
-                    ? "claude"
-                    : found.via === "codex"
-                      ? `codex:${found.effort}`
-                      : servedAt(found.baseUrl),
-            ),
+            answer: of("answer", servedBy),
+            judge: of("judge", servedBy),
         },
     };
 }

@@ -13,7 +13,12 @@ import { CORRECTNESS_PROMPT } from "openevals";
 import { Models } from "../models/client.js";
 import type { CliConfig } from "../models/config.js";
 import { fakeCli } from "../models/testing.js";
-import { makeJudges } from "./judges.js";
+import {
+    ABSTENTION_PROMPT,
+    LENIENT_PROMPT,
+    makeJudges,
+    STALE_PROMPT,
+} from "./judges.js";
 
 it.each([
     { via: "claude", model: "claude-haiku-5-5" },
@@ -57,11 +62,18 @@ it.each([
             ).toEqual({ score: true, reasoning: "Supported." });
         }
         expect(models.calls).toBe(4);
-        expect(fake.requests[0]?.stdin).toContain("A {question}");
-        expect(fake.requests[0]?.stdin).toContain("Gold");
-        expect(fake.requests[0]?.stdin).not.toContain("{reference_outputs}");
-        expect(fake.requests[0]?.stdin).toContain(
-            CORRECTNESS_PROMPT.split("{inputs}")[0] ?? "",
+        expect(fake.requests.map((request) => request.stdin)).toEqual(
+            [
+                CORRECTNESS_PROMPT,
+                LENIENT_PROMPT,
+                ABSTENTION_PROMPT,
+                STALE_PROMPT,
+            ].map((prompt) =>
+                prompt
+                    .replaceAll("{inputs}", "A {question}")
+                    .replaceAll("{outputs}", "Answer")
+                    .replaceAll("{reference_outputs}", "Gold"),
+            ),
         );
         const json =
             config.via === "claude"

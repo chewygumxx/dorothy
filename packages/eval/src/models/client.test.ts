@@ -425,12 +425,10 @@ describe.each(routes)("Models through $via", (config) => {
         expect(models.calls).toBe(1);
     });
 
-    it.each(["exit", "timeout", "spawn"])(
+    it.each(["exit", "timeout"])(
         "retries a %s failure without exposing output",
         async (kind) => {
             const fake = fakeCli(() => {
-                if (kind === "spawn")
-                    throw new Error("private snapshot test-oauth");
                 return {
                     exitCode: 19,
                     stdout: "private snapshot test-oauth",
@@ -445,6 +443,30 @@ describe.each(routes)("Models through $via", (config) => {
             );
             expect(String(error)).not.toContain("snapshot");
             expect(String(error)).not.toContain("test-oauth");
+        },
+    );
+
+    it.each(["ENOENT", "EACCES", "UNKNOWN"])(
+        "does not retry a %s failure to start",
+        async (code) => {
+            const fake = fakeCli(() => {
+                throw Object.assign(new Error("private snapshot test-oauth"), {
+                    code,
+                });
+            });
+            const models = cliModels(config, fake);
+            const error = await models
+                .complete("answer", ask)
+                .catch((e: unknown) => e);
+            expect(error).toBeInstanceOf(UsageError);
+            expect((error as Error).message).toContain(config.via);
+            expect((error as Error).message).toContain(
+                code === "ENOENT" ? "missing" : "not runnable",
+            );
+            expect(String(error)).not.toContain("snapshot");
+            expect(String(error)).not.toContain("test-oauth");
+            expect(models.calls).toBe(1);
+            expect(fake.requests).toHaveLength(1);
         },
     );
 

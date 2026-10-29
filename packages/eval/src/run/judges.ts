@@ -12,7 +12,7 @@
 // judge: its own correctness prompt for the strict verdict, and prompts
 // of ours, in its placeholders, for the rest.
 
-import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { PromptTemplate } from "@langchain/core/prompts";
 import { CORRECTNESS_PROMPT, createLLMAsJudge } from "openevals";
 import { z } from "zod";
 import type { Message, Models } from "../models/client.js";
@@ -95,7 +95,7 @@ export function makeJudges(models: Models): Judges {
     const chat = cli ? null : models.chat("judge");
     const judgeOf = (prompt: string, key: string): Judge => {
         if (chat === null) {
-            const template = ChatPromptTemplate.fromTemplate(prompt);
+            const template = PromptTemplate.fromTemplate(prompt);
             return async (params) => {
                 const content = await template.format({
                     inputs: params.inputs,
