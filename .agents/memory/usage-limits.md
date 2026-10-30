@@ -58,6 +58,9 @@ epoch seconds, with `at`, when it was written. The file describes only
 the account of the session drawing the status line, and goes stale
 while no client draws it: treat a reading over 10 minutes old as
 unknown, and the reserve's budget as known only by its limit messages.
+The same file keeps `context_window` (`used_percentage` of
+`context_window_size`): watch it, and Codex's "Context N% used", and
+plan a compaction or a fresh Codex session before either runs out.
 In late October 2026 Codex's limits were reset often by a promotion, so
 the user said to spend them freely. See
 [codex-full-send](./codex-full-send.md).

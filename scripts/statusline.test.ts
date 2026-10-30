@@ -78,6 +78,15 @@ describe("the status line", () => {
         expect((await stat(path)).mode & 0o777).toBe(0o600);
     });
 
+    it("keeps the session's context window, limits or none", async () => {
+        const context = { used_percentage: 67, context_window_size: 1000000 };
+        await statusLine({ context_window: context });
+        const path = join(root, "run", "claude-usage-claude-2.json");
+        const kept = JSON.parse(await readFile(path, "utf8"));
+        expect(kept.context_window).toEqual(context);
+        expect(kept.rate_limits).toBeNull();
+    });
+
     it("keeps nothing when the input carries no limits", async () => {
         const { out } = await statusLine({ model: { display_name: "Opus" } });
         expect(out).toStartWith("drawn ");

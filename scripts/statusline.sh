@@ -10,8 +10,9 @@
 #
 
 # Claude Code's status line for this project. Claude Code passes the
-# plan's rate limits to the status line alone, so this keeps them where
-# an agent can read them before spending: rate_limits, with the time,
+# plan's rate limits and the session's context window to the status line
+# alone, so this keeps them where an agent can read them before spending:
+# rate_limits and context_window, with the time,
 # in $XDG_RUNTIME_DIR/claude-usage-<account>.json, the account being
 # CLAUDE_CONFIG_DIR's last part. Then the user's own status line,
 # ccstatusline, draws from the same input; without it, a minimal line: the
@@ -27,7 +28,8 @@ if [ -n "$runtime" ] && [ -d "$runtime" ] && command -v jq >/dev/null 2>&1; then
     temporary="$target.$$"
     if printf '%s' "$input" |
         jq -c --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            'select(.rate_limits != null) | {at: $at, rate_limits}' \
+            'select(.rate_limits != null or .context_window != null)
+                | {at: $at, rate_limits, context_window}' \
             >"$temporary" 2>/dev/null &&
         [ -s "$temporary" ]; then
         chmod 600 "$temporary" && mv -f "$temporary" "$target"

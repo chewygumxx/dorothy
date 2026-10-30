@@ -339,6 +339,25 @@ Found but not scheduled, each with its source.
 - Testing whether the identity's place in Claude Code's prompt costs her
   any of its agentic ability, against plain `claude` (Dorothy's
   identity).
+- Context stewardship: the coordinating agent seeing and managing every
+  context window it relies on. Its own is visible: the status line keeps
+  `context_window.used_percentage` beside the plan limits. Codex's shows
+  in its pane, and herdr can reset it between tasks. No API compacts a
+  running session, but `/compact <instructions>` typed into its pane
+  does: herdr typing it into the agent's own pane, with `compact-summary`'s
+  instructions at a turn boundary, under a standing agreement on when,
+  is self-compaction; a peer or a timer could watch thresholds (the
+  user, 2026-10-30).
+- Procedures as skills: memories that describe a procedure (dispatching
+  to Codex through herdr, routing work by budget across Codex and two
+  Claude accounts, overnight wait-and-resume, agents pre-screening a
+  test set) moved into `.agents/skills/`, loaded on demand, leaving
+  memory to facts and preferences (the user, 2026-10-30).
+- The evaluation's scripts, kept outside the repository against its rule
+  on declared utilities: the account launcher (`with-claude.sh`), the
+  wait-and-resume wrappers, the paced backfill-review loop, the bake-off
+  and render scripts, now in the private `dorothy-eval` repository
+  (the first evaluation's record).
 
 ## Done
 
