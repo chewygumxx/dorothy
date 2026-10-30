@@ -18,7 +18,7 @@
       "source": "chewygumxx/claude-library",
       "sourceType": "github",
       "skillPath": "plugins/compact/skills/compact-summary/SKILL.md",
-      "computedHash": "c53fd741cd6b7dcf5cf6a3f9827b5b0df0ede3e6d5a1882f9dac634503538545"
+      "computedHash": "f35c3ad5f90b5c961990bcae2c81eb1467efe75e73d34771035956aa8813fade"
     },
     "dispatching-parallel-agents": {
       "source": "superpowers",
