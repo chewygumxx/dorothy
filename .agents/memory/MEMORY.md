@@ -25,3 +25,5 @@
   Carry on with agreed next steps unasked; report what was done
 - [Usage limits](./usage-limits.md)
   Route by budget: Codex if it fits, else Claude leaving room, else wait
+- [Self-compaction](./self-compaction.md)
+  Past 85% context, compact through herdr at a turn boundary; say so
