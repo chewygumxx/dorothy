@@ -50,6 +50,32 @@ or estimates.
 
 In order; the first is next.
 
+### Agentic Asset Consolidation
+
+The first run showed how much of the work is the agents' own: one
+coordinating session dispatching to Codex and to Claude subagents
+across two accounts, waiting out plan limits overnight, compacting
+itself, and pre-screening a test set crosswise. Its procedures live in
+memories and in scripts outside the repository; this phase makes them
+declared assets. Context stewardship: compacting through herdr at a
+turn boundary, by typing `/compact`, a space, then the instructions into the
+agent's own pane, which worked on 2026-10-31 where one paste did not;
+resetting Codex between tasks; the status line's readings. Procedures
+as skills: dispatching to Codex, routing by budget, waiting and resuming
+at a limit, and agents pre-screening, moved out of memory. The
+evaluation's scripts, from the account launcher to the paced review
+loop, brought into the repository. Each skill that sends through herdr
+says that its text reads as the user's, until provenance is settled.
+
+- **Status**: Next
+- **Required**: Requisites Fulfilled
+- **Rationale**: The engine's spec and its runs lean on the same
+  dispatch, budgets and waits as the first run did, and each session
+  re-derived them from memory and scratch scripts the repository's rule
+  on declared utilities forbids. Done first, the engine's work starts
+  from skills that load on demand and scripts under review, and a
+  compacted session keeps its procedures.
+
 ### Dorothy's Memory
 
 One memory wherever Dorothy goes: in her chat, in Claude Code and in
@@ -124,7 +150,7 @@ verified them before the user's backfill, then the owner's first run.
 - **Status**: Store, Bodies, Contract, Evaluation and Recording Built;
   the Backfill Recorded and Reviewed; the First Run Done
   ([record](./reports/2026-10-31-first-evaluation.md)); the Engine's
-  Spec Next, then Delivery
+  Spec Next, after the Consolidation, then Delivery
 - **Required**: Requisites Fulfilled
 - **Rationale**: Wherever she goes, her memory follows with her. The
   contract gives every harness one service and every engine one
@@ -340,30 +366,11 @@ Found but not scheduled, each with its source.
 - Testing whether the identity's place in Claude Code's prompt costs her
   any of its agentic ability, against plain `claude` (Dorothy's
   identity).
-- Context stewardship: the coordinating agent seeing and managing every
-  context window it relies on. Its own is visible: the status line keeps
-  `context_window.used_percentage` beside the plan limits. Codex's shows
-  in its pane, and herdr can reset it between tasks. No API compacts a
-  running session, but `/compact <instructions>` typed into its pane
-  does: herdr typing it into the agent's own pane, with `compact-summary`'s
-  instructions at a turn boundary, under a standing agreement on when,
-  is self-compaction; a peer or a timer could watch thresholds (the
-  user, 2026-10-30).
 - Message provenance between agents: text one agent sends another
   through herdr arrives as if typed by the user, so a recipient cannot
   tell a peer's request, or the user's own scheduled message, from the
   user. To be settled later, by A2A, Agent Delegation Receipts or both
   (the user, 2026-10-31).
-- Procedures as skills: memories that describe a procedure (dispatching
-  to Codex through herdr, routing work by budget across Codex and two
-  Claude accounts, overnight wait-and-resume, agents pre-screening a
-  test set) moved into `.agents/skills/`, loaded on demand, leaving
-  memory to facts and preferences (the user, 2026-10-30).
-- The evaluation's scripts, kept outside the repository against its rule
-  on declared utilities: the account launcher (`with-claude.sh`), the
-  wait-and-resume wrappers, the paced backfill-review loop, the bake-off
-  and render scripts, now in the private `dorothy-eval` repository
-  (the first evaluation's record).
 
 ## Done
 
@@ -525,3 +532,7 @@ In order of completion.
 - 2026-10-31: The evaluation's first run is done, before and after the
   backfill's review: reviews raise Dorothy's retrieval fivefold, but she
   answers from notes, not passages. The engine's spec is next.
+- 2026-10-31: Agentic Asset Consolidation goes ahead of the engine's
+  spec, taking three candidates: context stewardship, procedures as
+  skills and the evaluation's scripts, as the engine's work leans on
+  the same dispatch and budgets. Message provenance stays a candidate.
