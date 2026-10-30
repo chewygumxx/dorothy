@@ -32,6 +32,16 @@ estimate what it will spend, then route it, in this order:
 3. **Wait** for whichever limit resets first, Codex's or Claude's, and
    route the job there; a background timer, never a polling loop.
 
+Claude has two accounts, each a `CLAUDE_CONFIG_DIR`: `claude-2`, which
+the coordinating session runs on and spends first, and `claude`, a
+reserve for when `claude-2` is spent for the week. The OAuth token in
+`secrets.json` as `CLAUDE_CODE_OAUTH_TOKEN` is the reserve's, and the
+evaluation's `claude` route and Dorothy's reviews spend whatever token
+they are given, an exported one winning over `secrets.json`; a token
+for `claude-2` is `CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2`. The user lets the
+agent juggle both: `claude-2` while its budget allows, the reserve when
+it does not, else wait for the first reset.
+
 A job that fits nowhere whole is split: part now, the rest after a
 reset. Say when a job will not fit rather than finding out mid-run.
 Effort counts: Codex at `xhigh` spends far faster than at `high`.
@@ -44,6 +54,10 @@ Effort counts: Codex at `xhigh` spends far faster than at `high`.
 `CLAUDE_CONFIG_DIR`'s last part), which this project's status line
 (`scripts/statusline.sh`) writes from Claude Code's `rate_limits` at
 each render: the 5-hour and 7-day `used_percentage` and `resets_at` in
-epoch seconds, with `at`, when it was written. In late October 2026
-Codex's limits were reset often by a promotion, so the user said to
-spend them freely. See [codex-full-send](./codex-full-send.md).
+epoch seconds, with `at`, when it was written. The file describes only
+the account of the session drawing the status line, and goes stale
+while no client draws it: treat a reading over 10 minutes old as
+unknown, and the reserve's budget as known only by its limit messages.
+In late October 2026 Codex's limits were reset often by a promotion, so
+the user said to spend them freely. See
+[codex-full-send](./codex-full-send.md).
