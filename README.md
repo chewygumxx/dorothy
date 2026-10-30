@@ -61,6 +61,14 @@ Use sops's editor to set either credential as a JSON string:
 sops edit secrets.json
 ```
 
+With more than one Claude account, keep each token under its own name
+beginning `CLAUDE_CODE_OAUTH_TOKEN`, such as
+`CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2`, and choose the one to spend by
+setting `DOROTHY_CLAUDE_TOKEN_VAR` to its name. Reviews strip Claude
+Code's own variables, so an exported `CLAUDE_CODE_OAUTH_TOKEN` does not
+reach them; this does. A name with no such token fails rather than
+spend another account.
+
 Back up that age-key file somewhere off this machine: without it,
 `secrets.json` cannot be read. Never commit the age key. Sops also accepts
 another key-file path through `SOPS_AGE_KEY_FILE`.
