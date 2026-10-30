@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-10-30
+mtime: 2026-10-31
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -122,24 +122,25 @@ full-scale dry run on copies of the user's sessions (2026-10-21)
 verified them before the user's backfill, then the owner's first run.
 
 - **Status**: Store, Bodies, Contract, Evaluation and Recording Built;
-  the User's Backfill Next, then the First Run with generated and
-  reviewed questions, the Engine and Delivery
+  the Backfill Recorded and Reviewed; the First Run Done
+  ([record](./reports/2026-10-31-first-evaluation.md)); the Engine's
+  Spec Next, then Delivery
 - **Required**: Requisites Fulfilled
 - **Rationale**: Wherever she goes, her memory follows with her. The
   contract gives every harness one service and every engine one
-  interface, and the evaluation can now measure her memory, which the
-  user judges weak. A first retrieval run on her data (2026-10-20) found
-  10 conversations and one question to mine: she recorded only sessions
-  begun through `dorothy --claude`, while the user's Claude Code holds
-  302 sessions and Codex 7. Recording now reads Claude Code, Codex and
-  Hermes, and a dry run on copies of them all recorded 305
-  conversations, 36,926 events, in 29 s. The user's backfill of the real
-  sessions is next, and their call. Mining yields no question from
-  backfilled sessions, so the first run follows with questions generated
-  and reviewed by the owner, and the engine's spec chooses on its
-  numbers; should they leave the choice open, it may first ask for
-  adapters to the field's systems. Delivery comes last, once the engine
-  it delivers is chosen; the sweep has closed its two safety pieces.
+  interface, and the evaluation now measures her memory on the user's
+  own sessions: 315 conversations, 133 questions drafted by the plans'
+  strongest models and pre-screened crosswise by agents. Reviewing the
+  backfill raised her recall at 10 from 9.6% to 46.4%, past lexical
+  search on questions across sessions, but her strict accuracy only
+  from 4.0% to 7.3%: she finds the conversation and answers from its
+  notes, not the passage that holds the fact, while lexical search,
+  returning passages, scores 25%. The engine's spec chooses on these
+  numbers, passage retrieval within what she finds first among them;
+  should they leave the choice open, it may first ask for adapters to
+  the field's systems. The owner's spot-check of the test set may
+  change a few questions. Delivery comes last, once the engine it
+  delivers is chosen.
 
 ### Model Providers
 
@@ -516,3 +517,6 @@ In order of completion.
   `--resume` rather than scoring misses; review shows fuller evidence
   and applies agents' decisions; the status line keeps Claude's budget
   where an agent can read it.
+- 2026-10-31: The evaluation's first run is done, before and after the
+  backfill's review: reviews raise Dorothy's retrieval fivefold, but she
+  answers from notes, not passages. The engine's spec is next.
