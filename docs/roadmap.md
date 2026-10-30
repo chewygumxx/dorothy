@@ -349,6 +349,11 @@ Found but not scheduled, each with its source.
   instructions at a turn boundary, under a standing agreement on when,
   is self-compaction; a peer or a timer could watch thresholds (the
   user, 2026-10-30).
+- Message provenance between agents: text one agent sends another
+  through herdr arrives as if typed by the user, so a recipient cannot
+  tell a peer's request, or the user's own scheduled message, from the
+  user. To be settled later, by A2A, Agent Delegation Receipts or both
+  (the user, 2026-10-31).
 - Procedures as skills: memories that describe a procedure (dispatching
   to Codex through herdr, routing work by budget across Codex and two
   Claude accounts, overnight wait-and-resume, agents pre-screening a
