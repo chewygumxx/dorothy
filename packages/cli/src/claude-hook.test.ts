@@ -24,6 +24,7 @@ import type { HookDeps, HookMode } from "@dorothy/memory/claude-hook";
 import {
     checkoutRoot,
     type HookCliDeps,
+    loadCheckoutSecrets,
     reviewEnv,
     runHook,
 } from "./claude-hook.js";
@@ -68,6 +69,43 @@ describe("reviewEnv", () => {
             reviewEnv({ ...fromClaude(), DOROTHY_ANTHROPIC_BASE_URL: "" })
                 .ANTHROPIC_BASE_URL,
         ).toBeUndefined();
+    });
+});
+
+describe("the account Claude spends", () => {
+    // A fake secrets.json holding two accounts' tokens, as loadSecrets
+    // would set them: a name already set is kept.
+    const load = async (_path: string, into: Env) => {
+        into.CLAUDE_CODE_OAUTH_TOKEN ||= "reserve-token";
+        into.CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2 ||= "primary-token";
+        return null;
+    };
+
+    it("is secrets.json's own token when none is chosen", async () => {
+        const env: Env = {};
+        expect(await loadCheckoutSecrets(env, { load })).toBeNull();
+        expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe("reserve-token");
+    });
+
+    it("is the entry DOROTHY_CLAUDE_TOKEN_VAR names", async () => {
+        const env: Env = {
+            DOROTHY_CLAUDE_TOKEN_VAR: "CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2",
+        };
+        // As a review's environment is: claude's variables stripped.
+        const review = reviewEnv(env);
+        expect(await loadCheckoutSecrets(review, { load })).toBeNull();
+        expect(review.CLAUDE_CODE_OAUTH_TOKEN).toBe("primary-token");
+    });
+
+    it.each([
+        "CLAUDE_CODE_OAUTH_TOKEN_ABSENT",
+        "OPENROUTER_API_KEY",
+        "lower case",
+    ])("refuses a choice of %s rather than spend another", async (name) => {
+        const env: Env = { DOROTHY_CLAUDE_TOKEN_VAR: name };
+        expect(await loadCheckoutSecrets(env, { load })).toBe(
+            "SECRETS_INVALID",
+        );
     });
 });
 
