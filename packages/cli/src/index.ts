@@ -304,6 +304,20 @@ const RUNNERS: Runners = {
         const { runClaudeDump } = await import("./claude-dump.js");
         return runClaudeDump(mode.args, mode.message);
     },
+    codex: async (mode) => {
+        // No credentials: codex signs in as the user's own Codex does.
+        const { runCodex } = await import("./hosts/codex.js");
+        return runCodex(mode.args);
+    },
+    "codex-dump": async (mode) => {
+        const { codexCommand } = await import("./hosts/codex.js");
+        const command = await codexCommand(mode.args);
+        if (command === null) {
+            return 1;
+        }
+        process.stdout.write(`${JSON.stringify(command, null, 2)}\n`);
+        return 0;
+    },
 };
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

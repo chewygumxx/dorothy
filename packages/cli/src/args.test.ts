@@ -869,3 +869,14 @@ describe("--hook", () => {
         expect([...HOOK_EVENTS]).toEqual([...memory.HOOK_EVENTS]);
     });
 });
+
+it("reads --codex and its dump", () => {
+    expect(parseArgs(["--codex", "exec", "hi"], false)).toEqual({
+        kind: "codex",
+        args: ["exec", "hi"],
+    });
+    expect(parseArgs(["--codex", "--dump"], false)).toEqual({
+        kind: "codex-dump",
+        args: [],
+    });
+});

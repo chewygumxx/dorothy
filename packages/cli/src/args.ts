@@ -59,6 +59,8 @@ export type Mode =
     | { kind: "hook"; host: HookHost; event: HookEvent }
     | { kind: "claude"; args: string[] }
     | { kind: "claude-dump"; args: string[]; message: string }
+    | { kind: "codex"; args: string[] }
+    | { kind: "codex-dump"; args: string[] }
     | { kind: "help" }
     | { kind: "usage"; message: string };
 
@@ -120,6 +122,10 @@ export const USAGE = [
     "       dorothy --claude --dump-context [args...] [-- message...]",
     "                                  print the request claude would send",
     "                                  in print mode, through the gateway",
+    "       dorothy --codex [args...]  Codex, with Dorothy's persona, tools",
+    "                                  and hooks; args go to codex",
+    "       dorothy --codex --dump [args...]",
+    "                                  print the codex command it would run",
     "       dorothy --dev ...          development mode, before a chat, a",
     "                                  prompt or --dump-context",
 ].join("\n");
@@ -174,6 +180,7 @@ const COMMANDS: Record<string, Command> = {
     "--hook": parseHostHook,
     "--dump-context": parseDump,
     "--claude": parseClaude,
+    "--codex": parseCodex,
 };
 
 export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
@@ -565,6 +572,13 @@ function parseDump(argv: readonly string[]): Mode {
         message: words.length > 0 ? words.join(" ") : "hi",
         persona: "chat",
     };
+}
+
+// Everything after --codex is codex's, but for a leading --dump.
+function parseCodex(rest: readonly string[]): Mode {
+    return rest[0] === "--dump"
+        ? { kind: "codex-dump", args: rest.slice(1) }
+        : { kind: "codex", args: [...rest] };
 }
 
 // Everything after --claude is claude's, but for --dump-context, whose
