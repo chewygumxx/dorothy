@@ -311,8 +311,70 @@ describe("the dorothy system", () => {
 describe("makeSystem", () => {
     it("names the systems it has when asked for another", () => {
         expect(() => makeSystem("hindsight", corpus)).toThrow(
-            "no system hindsight; the systems are dorothy, lexical, full",
+            "no system hindsight; the systems are dorothy, lexical, full, cited",
         );
+    });
+});
+
+describe("the cited system", () => {
+    it("delivers exactly the question's evidence", async () => {
+        const found = await makeSystem("cited", corpus).retrieve(
+            {
+                ...asked("Where is my allotment plot?"),
+                evidence: [`c:${GARDEN}`],
+            },
+            8000,
+        );
+        expect(found.ranked).toEqual([`c:${GARDEN}`]);
+        expect(found.context).toContain(`<item id="c:${GARDEN}">`);
+    });
+
+    it("gives nothing for a question with none", async () => {
+        const found = await makeSystem("cited", corpus).retrieve(
+            asked("Anything?"),
+            8000,
+        );
+        expect(found).toMatchObject({ ranked: [], context: "" });
+    });
+
+    it("takes no options", () => {
+        expect(() => checkSystem("cited:x=1")).toThrow(
+            "cited takes no options",
+        );
+    });
+});
+
+describe("the lexical and full systems' items", () => {
+    it("carry each passage's range, as delivered", async () => {
+        const found = await makeSystem("lexical", corpus).retrieve(
+            asked("What do I drink at four in the afternoon?"),
+            4000,
+        );
+        expect(found.items?.map((item) => item.id)).toEqual(found.ranked);
+        const tea = found.items?.find((item) => item.id === `c:${TEA}`);
+        expect(tea?.kind).toBe("episode");
+        expect(tea?.turns).not.toBeNull();
+        expect(found.context).toContain(tea?.text ?? "unreachable");
+    });
+
+    it("run from a conversation's first turn to its last in full", async () => {
+        const found = await makeSystem("full", corpus).retrieve(
+            asked("anything"),
+            400_000,
+        );
+        expect(found.items?.map((item) => item.id)).toEqual(found.ranked);
+        const tea = corpus.conversations.get(`c:${TEA}`);
+        const turns = tea?.turns ?? [];
+        expect(
+            found.items?.find((item) => item.id === `c:${TEA}`),
+        ).toMatchObject({
+            kind: "episode",
+            turns: { from: turns[0]?.n, through: turns.at(-1)?.n },
+            cut: false,
+        });
+        expect(
+            found.items?.find((item) => item.id === "k:personal/uses-helix"),
+        ).toMatchObject({ kind: "knowledge", turns: null });
     });
 });
 

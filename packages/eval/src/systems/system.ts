@@ -15,6 +15,7 @@
 
 import type { DeliveredItem } from "@dorothy/memory/evaluation";
 import { UsageError } from "../errors.js";
+import { citedSystem } from "./cited.js";
 import type { Corpus } from "./corpus.js";
 import { dorothyOptions, dorothySystem } from "./dorothy.js";
 import { fullSystem } from "./full.js";
@@ -57,6 +58,7 @@ const OPTIONS = {
     dorothy: dorothyOptions,
     lexical: noOptions,
     full: noOptions,
+    cited: noOptions,
 };
 const MAKERS: {
     [K in keyof typeof OPTIONS]: (
@@ -67,6 +69,7 @@ const MAKERS: {
     dorothy: dorothySystem,
     lexical: (corpus) => lexicalSystem(corpus),
     full: (corpus) => fullSystem(corpus),
+    cited: (corpus) => citedSystem(corpus),
 };
 type SystemName = keyof typeof MAKERS;
 export const SYSTEM_NAMES = Object.keys(MAKERS) as SystemName[];
