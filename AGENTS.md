@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-31
+mtime: 2026-11-01
 spdx: GPL-3.0-only
 title: AGENTS.md
 description: >-
@@ -29,9 +29,9 @@ Eight Bun workspace packages under `packages/`, each `@dorothy/<name>`.
 `core` holds the contracts the others meet on, `identity` who Dorothy is;
 `memory` and `tui` depend on `core` alone, `agent` and `gateway` on it
 and `identity`, never on each other, `eval` on `core` and `memory`; `cli`
-on all but `identity` and `eval`, and wires them. A package exports only
-the entry points its `package.json` names and imports only what it
-declares, as Bun's isolated linker fails an undeclared or internal import.
+on all but `eval`, and wires them. A package exports only the entry points
+its `package.json` names and imports only what it declares, as Bun's
+isolated linker fails an undeclared or internal import.
 `workspace.test.ts` pins the graph, the entry points and the SDK's holder.
 
 ## Commands

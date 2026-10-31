@@ -8,7 +8,8 @@
 //
 //
 
-import { resolve } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Env, SecretsCode, StructuredCall } from "@dorothy/core";
 import { ambient } from "./ambient.js";
@@ -19,6 +20,7 @@ import {
     loadCheckoutSecrets,
     stripClaude,
 } from "./claude-hook.js";
+import { selfServe } from "./self.js";
 
 // What runs each mode, and the code it exits with; nothing where it set
 // its own. Each loads its packages as it runs, so a mode pays only for
@@ -37,15 +39,6 @@ const history = () => {
 
 const commands = () => import("@dorothy/memory/commands");
 const service = () => import("@dorothy/memory/service");
-
-// This program as a command, as --claude's hooks run it: --no-env-file,
-// so a project's .env never reaches the service.
-const selfServe = () => [
-    process.execPath,
-    "--no-env-file",
-    resolve(process.argv[1] ?? ""),
-    "--serve",
-];
 
 const writeError = (text: string): void => {
     process.stderr.write(text);
@@ -291,6 +284,18 @@ const RUNNERS: Runners = {
         }
         return code;
     },
+    hook: async (mode) => {
+        const { runHostHook } = await import("@dorothy/memory/host-hook");
+        const out = await runHostHook(
+            mode.host,
+            mode.event,
+            await Bun.stdin.text(),
+            { serve: selfServe() },
+        );
+        process.stdout.write(out);
+        // Like her Claude Code hooks, nothing started may hold the host.
+        process.exit(0);
+    },
     claude: async (mode) => {
         // No credentials: claude signs in as the user's own Claude Code does.
         const { runClaude } = await import("./claude.js");
@@ -300,6 +305,62 @@ const RUNNERS: Runners = {
         // No credentials, as for --claude.
         const { runClaudeDump } = await import("./claude-dump.js");
         return runClaudeDump(mode.args, mode.message);
+    },
+    codex: async (mode) => {
+        // No credentials: codex signs in as the user's own Codex does.
+        const { runCodex } = await import("./hosts/codex.js");
+        return runCodex(mode.args);
+    },
+    "codex-dump": async (mode) => {
+        const { codexCommand } = await import("./hosts/codex.js");
+        const command = await codexCommand(mode.args);
+        if (command === null) {
+            return 1;
+        }
+        process.stdout.write(`${JSON.stringify(command, null, 2)}\n`);
+        return 0;
+    },
+    install: async (mode) => {
+        const { hermesVersion, installHermes, uninstallHermes } = await import(
+            "./hosts/hermes.js"
+        );
+        const { hermesRoot } = await import("@dorothy/memory/host-hook");
+        const { identityPrompt } = await import("@dorothy/identity");
+        const { mainEntry, selfCommand } = await import("./self.js");
+        const self = selfCommand();
+        // Only an install writes her command; an uninstall needs no entry.
+        let entry = self[2] ?? "";
+        if (!mode.uninstall) {
+            const found =
+                mode.entry === null ? mainEntry(entry) : resolve(mode.entry);
+            if (found === null) {
+                writeError("dorothy: no main checkout found for her command\n");
+                return 1;
+            }
+            if (found !== entry) {
+                writeError(
+                    mode.entry === null
+                        ? `dorothy: using the main checkout's ${found}\n`
+                        : `dorothy: using the entry named by --entry, ${found}\n`,
+                );
+            }
+            entry = found;
+        }
+        const deps = {
+            home: hermesRoot(
+                process.env.HERMES_HOME || join(homedir(), ".hermes"),
+            ),
+            run: async (cmd: string[]) =>
+                Bun.spawn(cmd, { stdio: ["inherit", "inherit", "inherit"] })
+                    .exited,
+            which: () => Bun.which("hermes"),
+            version: hermesVersion,
+            self: [self[0] ?? "", self[1] ?? "", entry],
+            persona: identityPrompt(),
+            force: mode.force,
+            write: writeError,
+        };
+        return mode.uninstall ? uninstallHermes(deps) : installHermes(deps);
     },
 };
 

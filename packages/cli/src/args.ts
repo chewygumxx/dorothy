@@ -56,8 +56,18 @@ export type Mode =
     | { kind: "review-backfill"; count: number | "all" }
     | { kind: "mcp"; host: string | null }
     | { kind: "claude-hook"; hook: HookMode }
+    | { kind: "hook"; host: HookHost; event: HookEvent }
     | { kind: "claude"; args: string[] }
     | { kind: "claude-dump"; args: string[]; message: string }
+    | { kind: "codex"; args: string[] }
+    | { kind: "codex-dump"; args: string[] }
+    | {
+          kind: "install";
+          host: "hermes";
+          uninstall: boolean;
+          force: boolean;
+          entry: string | null;
+      }
     | { kind: "help" }
     | { kind: "usage"; message: string };
 
@@ -108,6 +118,9 @@ export const USAGE = [
     "       dorothy --claude-hook --reread | --dismiss <session>",
     "                                  read again the Claude Code lines she",
     "                                  could not, or stop telling of them",
+    "       dorothy --hook <host> <event>",
+    "                                  internal: what Codex's hooks and",
+    "                                  her Hermes provider run",
     "       dorothy -- <prompt...>     a prompt that starts with -",
     "       dorothy --dump-context [--resume <phrase>] [message...]",
     "                                  print the request a chat would send",
@@ -116,6 +129,13 @@ export const USAGE = [
     "       dorothy --claude --dump-context [args...] [-- message...]",
     "                                  print the request claude would send",
     "                                  in print mode, through the gateway",
+    "       dorothy --codex [args...]  Codex, with Dorothy's persona, tools",
+    "                                  and hooks; args go to codex",
+    "       dorothy --codex --dump [args...]",
+    "                                  print the codex command it would run",
+    "       dorothy --install hermes [--uninstall] [--force] [--entry <path>]",
+    "                                  a Hermes profile of hers, `dorothy`;",
+    "                                  --entry names her entry, for probes",
     "       dorothy --dev ...          development mode, before a chat, a",
     "                                  prompt or --dump-context",
 ].join("\n");
@@ -167,8 +187,11 @@ const COMMANDS: Record<string, Command> = {
     "--review-backfill": parseReviewBackfill,
     "--mcp": parseMcp,
     "--claude-hook": parseHook,
+    "--hook": parseHostHook,
     "--dump-context": parseDump,
     "--claude": parseClaude,
+    "--codex": parseCodex,
+    "--install": parseInstall,
 };
 
 export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
@@ -515,6 +538,25 @@ function parseHook(rest: readonly string[]): Mode {
     return hook(reread === true ? { kind: "reread" } : { kind: "hook" });
 }
 
+// Memory's own HOOK_EVENTS, restated: args.ts loads no memory module,
+// so --help stays light; args.test.ts pins the two equal.
+export const HOOK_EVENTS = ["session-start", "prompt"] as const;
+export type HookEvent = (typeof HOOK_EVENTS)[number];
+
+export const HOOK_HOSTS = ["codex", "hermes"] as const;
+export type HookHost = (typeof HOOK_HOSTS)[number];
+const HOST_HOOK_USAGE = `--hook takes a host (${HOOK_HOSTS.join(", ")}) and an event (${HOOK_EVENTS.join(", ")})`;
+
+function parseHostHook(rest: readonly string[]): Mode {
+    const [host, event, ...extra] = rest;
+    const known = HOOK_HOSTS.find((name) => name === host);
+    const happened = HOOK_EVENTS.find((name) => name === event);
+    if (known === undefined || happened === undefined || extra.length > 0) {
+        return usage(HOST_HOOK_USAGE);
+    }
+    return { kind: "hook", host: known, event: happened };
+}
+
 const DUMP_USAGE = "--dump-context takes [--resume <phrase>] [message...]";
 
 // Hand-read, as the message is free text: an option-like word after its
@@ -540,6 +582,35 @@ function parseDump(argv: readonly string[]): Mode {
         resume,
         message: words.length > 0 ? words.join(" ") : "hi",
         persona: "chat",
+    };
+}
+
+// Everything after --codex is codex's, but for a leading --dump.
+function parseCodex(rest: readonly string[]): Mode {
+    return rest[0] === "--dump"
+        ? { kind: "codex-dump", args: rest.slice(1) }
+        : { kind: "codex", args: [...rest] };
+}
+
+const INSTALL_USAGE =
+    "--install takes hermes [--uninstall] [--force] [--entry <path>]";
+
+function parseInstall(rest: readonly string[]): Mode {
+    const [host, ...flags] = rest;
+    const parsed = options(flags, {
+        uninstall: { type: "boolean" },
+        force: { type: "boolean" },
+        entry: { type: "string" },
+    });
+    if (host !== "hermes" || parsed === null || parsed.positionals.length > 0) {
+        return usage(INSTALL_USAGE);
+    }
+    return {
+        kind: "install",
+        host,
+        uninstall: parsed.values.uninstall === true,
+        force: parsed.values.force === true,
+        entry: parsed.values.entry ?? null,
     };
 }
 

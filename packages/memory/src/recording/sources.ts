@@ -13,6 +13,7 @@ import { type BigIntStats, constants } from "node:fs";
 import { open, readdir, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import type { Env } from "@dorothy/core";
+import { hermesRoot } from "../hosts/hermes-root.js";
 import { type HermesRead, readHermes } from "./hermes.js";
 
 export type Host = "claude-code" | "codex" | "hermes";
@@ -275,24 +276,40 @@ async function readHermesSession(
             sameFingerprint(fingerprint, rowsFingerprint(after)),
     };
 }
+// The default profile's database, then each named profile's, in name order.
+async function hermesDatabases(home: string): Promise<string[]> {
+    const profiles = (await entries(join(home, "profiles")))
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort();
+    return [
+        join(home, "state.db"),
+        ...profiles.map((name) => join(home, "profiles", name, "state.db")),
+    ];
+}
 export function hermesSource(env: Env): Source {
     return {
         host: "hermes",
         list: async () => {
-            const path = await existing(
-                join(hostRoot(env, "HERMES_HOME", ".hermes"), "state.db"),
-            );
-            if (path === null) return [];
-            return rowSummaries(path).map((row) => ({
-                host: "hermes",
-                path,
-                key: JSON.stringify(["hermes", path, row.id]),
-                session: row.id,
-                fingerprint: rowsFingerprint(row),
-                at: summaryTime(row.at),
-                read: (previous?: Fingerprint, options?: ReadOptions) =>
-                    readHermesSession(path, row.id, previous, options),
-            }));
+            const home = hermesRoot(hostRoot(env, "HERMES_HOME", ".hermes"));
+            const found: SourceSession[] = [];
+            for (const candidate of await hermesDatabases(home)) {
+                const path = await existing(candidate);
+                if (path === null) continue;
+                found.push(
+                    ...rowSummaries(path).map((row) => ({
+                        host: "hermes" as const,
+                        path,
+                        key: JSON.stringify(["hermes", path, row.id]),
+                        session: row.id,
+                        fingerprint: rowsFingerprint(row),
+                        at: summaryTime(row.at),
+                        read: (previous?: Fingerprint, options?: ReadOptions) =>
+                            readHermesSession(path, row.id, previous, options),
+                    })),
+                );
+            }
+            return found;
         },
     };
 }

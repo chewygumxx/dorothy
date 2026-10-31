@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-29
+mtime: 2026-11-01
 spdx: GPL-3.0-only
 title: packages/cli/AGENTS.md
 description: >-
@@ -19,9 +19,8 @@ tags:
 
 # packages/cli/AGENTS.md
 
-`@dorothy/cli` is the `dorothy` program. It is run, not imported: it
-exports nothing, and depends on every other package but `identity`,
-wiring memory, the agent, the TUI and the gateway together.
+`@dorothy/cli` is the `dorothy` program, run and not imported: it exports
+nothing and wires every other package together.
 
 ## Entry points and imports
 
@@ -29,29 +28,26 @@ No entry points. `src/index.ts` runs each mode from `RUNNERS`, whose
 type has `tsc` require a runner for every mode, and each runner loads
 its package lazily (`await import(...)`): memory's commands, recall server
 and hooks through their own entry points (`@dorothy/memory/commands`,
-`@dorothy/memory/recall-server`, `@dorothy/memory/claude-hook`), and even
-`prepareCliHome` only for the model modes, so `--help`, `--list` and
-`--recall-server` never load the Agent SDK. Keep every new mode's import
-lazy.
+`/recall-server`, `/claude-hook`, `/host-hook`), and even `prepareCliHome`
+only for the model modes, so `--help`, `--list` and `--recall-server` never
+load the Agent SDK. Keep every new mode's import lazy.
 
 ## Files
 
-- `index.ts`: the entry guard, which runs the mode `parseArgs` gives
-  from `RUNNERS`, each runner returning its exit code, or nothing where
-  it set its own (`runOneShot`).
-- `ambient.ts`: `ambient`, the process's environment, streams and entry
-  script, passed to memory's history commands.
+- `index.ts`: the entry guard, which runs the mode `parseArgs` gives from
+  `RUNNERS`, each runner returning its exit code, or nothing where it set its
+  own (`runOneShot`).
+- `ambient.ts`: `ambient`, the process's environment, streams and entry script,
+  passed to memory's history commands.
 - `args.ts`: the flags (`parseArgs`, `USAGE`) and the modes they give:
-  `COMMANDS` maps each flag to a reader of the words after it, those
-  taking options through `node:util`'s `parseArgs`.
-- `run-tui.ts`: `runTui` connects memory, the agent and `runApp`, with
-  the directory the user ran it from (`userShell`), whose project chat
-  records and syncs.
-  `openMemory` gets `structuredCall`, the persona's prompts as text and a
+  `COMMANDS` maps each flag to a reader of the words after it, those taking
+  options through `node:util`'s `parseArgs`.
+- `run-tui.ts`: `runTui` connects memory, the agent and `runApp`, with the
+  directory the user ran it from (`userShell`), whose project chat records and
+  syncs. `openMemory` gets `structuredCall`, the persona's prompts as text and a
   `connect` that starts a `Conversation`, and the screen runs over its
-  `createSession`. Once `runTui` resolves, everything is closed and the
-  CLI ends the process, so a push or repack still running never holds the
-  terminal.
+  `createSession`. Once `runTui` resolves, everything is closed and the CLI ends
+  the process, so a push or repack still running never holds the terminal.
 - `dump.ts`: `runDump` composes `previewStart` with `dumpRequest` for
   `--dump-context`.
 - `claude.ts`: `launchClaude`, for `--claude` and its dump, starts the gateway
@@ -76,51 +72,55 @@ lazy.
   leaves out a session resumed by id. It sets `DOROTHY_ANTHROPIC_BASE_URL` from
   the user's `ANTHROPIC_BASE_URL`, and `SOPS_AGE_KEY_FILE` from the explicit
   path or the existing default age key under the configuration directory
-  (`sops-key.ts`), without reading it. `runClaude` runs it for `--claude`,
-  forwards `SIGTERM` and `SIGHUP`, ignores `SIGINT` (the terminal sends it to
-  `claude` too), and exits with `claude`'s code. This program runs again as
-  `bun --no-env-file`, so a project's `.env` never reaches a hook, a catch-up or
-  the recall server. Before `claude` starts it starts a detached catch-up of
-  each launch a killed `dorothy` left behind, memory off or on, and says what
-  hooks left to tell; once `claude` exits, or fails to start, a catch-up of its
-  own launch, whatever else its teardown throws. From a package script (`bun run
-  dev`), `userShell` gives `claude` the directory it was run from and the `PATH`
-  before Bun prepended its `node_modules/.bin` entries.
-- `claude-dump.ts`: `runClaudeDump` for `--claude --dump-context`: the
-  gateway's upstream is `captureServer` from `@dorothy/agent`, `claude`
-  runs quietly in print mode without saving its session, and is stopped
-  at the first request, which is printed with a warning if the gateway
-  injected nothing, with the block alone: no sync, recall or
-  permissions. Imported lazily, so `--claude` never loads the SDK.
+  (`sops-key.ts`), without reading it. `runClaude` runs it through
+  `runForwarding` and exits with `claude`'s code. Before `claude` starts it
+  starts a detached catch-up of each launch a killed `dorothy` left behind,
+  memory off or on, and says what hooks left to tell; once `claude` exits, or
+  fails to start, a catch-up of its own launch, whatever else its teardown
+  throws. From a package script (`bun run dev`), `userShell` gives `claude` the
+  directory it was run from and the `PATH` before Bun prepended its
+  `node_modules/.bin` entries.
+- `self.ts`: `selfCommand`, this program as `bun --no-env-file <entry>`, so a
+  project's `.env` never reaches a hook or server (`selfServe`, `shellWord`);
+  `mainEntry`, the main checkout's entry, which an install writes;
+  `runForwarding`, shared by `--claude` and `--codex`: `SIGINT` ignored (the
+  terminal sends it to the host too), `SIGTERM` and `SIGHUP` forwarded.
+- `hosts/`: Codex's launcher, Hermes's install: [guide](./src/hosts/AGENTS.md)
+- `claude-dump.ts`: `runClaudeDump` for `--claude --dump-context`: the gateway's
+  upstream is `captureServer` from `@dorothy/agent`, `claude` runs quietly in
+  print mode without saving its session, and is stopped at the first request,
+  which is printed with a warning if the gateway injected nothing, with the
+  block alone: no sync, recall or permissions. Imported lazily, so `--claude`
+  never loads the SDK.
 - `claude-hook.ts`: `runHook`, for `--claude-hook`, gives memory's
-  `runClaudeHook` the environment `claude` gave the hook, in which it
-  finds the launch, and reviews: `process.env` loses the gateway's URL,
-  `ENABLE_TOOL_SEARCH`, `DOROTHY_LAUNCH`, `CLAUDECODE` and every
-  `CLAUDE_CODE_` variable (`reviewEnv`), but for the user's own base
-  URL, which the launch passes on as `DOROTHY_ANTHROPIC_BASE_URL` and
-  reviews take as `ANTHROPIC_BASE_URL`; `loadCheckoutSecrets` awaits
-  core's loader on this checkout's `secrets.json`. `SOPS_AGE_KEY_FILE`, passed
-  by the launch, keeps the key discoverable if Claude Code changes its
-  config directory. Failure is logged by code alone, and the agent loads
-  when a review asks. Memory gets the original launch environment for
-  catch-up; the agent gets the stripped environment with loaded secrets.
-  Hooks and catch-up log failures through memory's `hookLog` and exit 0.
+  `runClaudeHook` the environment `claude` gave the hook, in which it finds the
+  launch, and reviews: `process.env` loses the gateway's URL,
+  `ENABLE_TOOL_SEARCH`, `DOROTHY_LAUNCH`, `CLAUDECODE` and every `CLAUDE_CODE_`
+  variable (`reviewEnv`), but for the user's own base URL, which the launch
+  passes on as `DOROTHY_ANTHROPIC_BASE_URL` and reviews take as
+  `ANTHROPIC_BASE_URL`; `loadCheckoutSecrets` awaits core's loader on this
+  checkout's `secrets.json`. `SOPS_AGE_KEY_FILE`, passed by the launch, keeps
+  the key discoverable if Claude Code changes its config directory. Failure is
+  logged by code alone, and the agent loads when a review asks. Memory gets the
+  original launch environment for catch-up; the agent gets the stripped
+  environment with loaded secrets. Hooks and catch-up log failures through
+  memory's `hookLog` and exit 0.
 - `index.ts` also runs `--serve` (memory's service through
   `@dorothy/memory/service`, with reviews from the agent, Claude Code's
   variables dropped and Dorothy's `secrets.json` loaded by path from this
-  checkout; off, and said, if either fails), its token commands,
-  `--sweep` (`runSweep`, `runSweepDismiss`) and `--mcp`, memory's stdio
-  bridge (`@dorothy/memory/bridge`), which starts `--serve` as
-  `bun --no-env-file` when none answers.
+  checkout; off, and said, if either fails), its token commands, `--sweep`
+  (`runSweep`, `runSweepDismiss`), `--hook <host> <event>` (Codex's and Hermes's
+  hooks, via `@dorothy/memory/host-hook`) and `--mcp`, memory's stdio bridge
+  (`@dorothy/memory/bridge`), which starts `--serve` when none answers.
 - `review-backfill.ts`: `runBackfillReview`, for `--review-backfill`, runs
-  memory's `runReviewBackfill` on `reviewAgent`'s agent (Claude Code's
-  variables dropped, this checkout's secrets): the plan's token where
-  `secrets.json` holds it. It prints `<phrase>: <outcome>`, then a total;
-  exits 1 if none was reviewed or marked and one failed, or a failed call
-  stopped it. `-n all` repeats batches of 25; stopped exits 75.
-- `recall-launch.ts`: `recallLaunch` launches this program again as the
-  recall server, leaving out the conversation it serves and, with
-  `--project`, naming the directory chat started in.
+  memory's `runReviewBackfill` on `reviewAgent`'s agent (Claude Code's variables
+  dropped, this checkout's secrets): the plan's token where `secrets.json` holds
+  it. It prints `<phrase>: <outcome>`, then a total; exits 1 if none was
+  reviewed or marked and one failed, or a failed call stopped it. `-n all`
+  repeats batches of 25; stopped exits 75.
+- `recall-launch.ts`: `recallLaunch` launches this program again as the recall
+  server, leaving out the conversation it serves and, with `--project`, naming
+  the directory chat started in.
 
 ## Invariants
 

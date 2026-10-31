@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { newPhrase } from "@dorothy/core";
-import { parseArgs, USAGE } from "./args.js";
+import { HOOK_EVENTS, HOOK_HOSTS, parseArgs, USAGE } from "./args.js";
 
 const phrase = newPhrase(() => Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]));
 
@@ -832,4 +832,75 @@ describe("--review-backfill", () => {
             "usage",
         );
     });
+});
+
+describe("--hook", () => {
+    it("reads --hook", () => {
+        expect(parseArgs(["--hook", "codex", "prompt"], false)).toEqual({
+            kind: "hook",
+            host: "codex",
+            event: "prompt",
+        });
+        expect(parseArgs(["--hook", "claude-code", "prompt"], false).kind).toBe(
+            "usage",
+        );
+        expect(parseArgs(["--hook", "codex", "stop"], false).kind).toBe(
+            "usage",
+        );
+        expect(parseArgs(["--hook", "codex"], false).kind).toBe("usage");
+        expect(
+            parseArgs(["--hook", "codex", "prompt", "more"], false).kind,
+        ).toBe("usage");
+    });
+
+    it("names the hosts whose profiles take hooks or a plugin", async () => {
+        const { loadProfiles } = await import("@dorothy/memory/host-hook");
+        const profiles = await loadProfiles();
+        for (const host of HOOK_HOSTS) {
+            const delivery = profiles.get(host)?.delivery ?? [];
+            expect(
+                delivery.some((way) => way === "hook" || way === "plugin"),
+            ).toBe(true);
+        }
+    });
+
+    it("names the hook events memory reads", async () => {
+        const memory = await import("@dorothy/memory/host-hook");
+        expect([...HOOK_EVENTS]).toEqual([...memory.HOOK_EVENTS]);
+    });
+});
+
+it("reads --codex and its dump", () => {
+    expect(parseArgs(["--codex", "exec", "hi"], false)).toEqual({
+        kind: "codex",
+        args: ["exec", "hi"],
+    });
+    expect(parseArgs(["--codex", "--dump"], false)).toEqual({
+        kind: "codex-dump",
+        args: [],
+    });
+});
+
+it("reads --install hermes", () => {
+    expect(parseArgs(["--install", "hermes"], false)).toEqual({
+        kind: "install",
+        host: "hermes",
+        uninstall: false,
+        force: false,
+        entry: null,
+    });
+    expect(
+        parseArgs(["--install", "hermes", "--entry", "/w/index.ts"], false),
+    ).toMatchObject({ entry: "/w/index.ts" });
+    expect(
+        parseArgs(["--install", "hermes", "--uninstall"], false),
+    ).toMatchObject({ uninstall: true });
+    expect(parseArgs(["--install", "hermes", "--force"], false)).toMatchObject({
+        force: true,
+    });
+    expect(parseArgs(["--install", "codex"], false).kind).toBe("usage");
+    expect(parseArgs(["--install"], false).kind).toBe("usage");
+    expect(parseArgs(["--install", "hermes", "extra"], false).kind).toBe(
+        "usage",
+    );
 });

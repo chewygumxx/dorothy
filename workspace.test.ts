@@ -27,7 +27,7 @@ const PACKAGES = join(import.meta.dir, "packages");
 
 const GRAPH: Record<string, string[]> = {
     agent: ["core", "identity"],
-    cli: ["agent", "core", "gateway", "memory", "tui"],
+    cli: ["agent", "core", "gateway", "identity", "memory", "tui"],
     core: [],
     eval: ["core", "memory"],
     gateway: ["core", "identity"],
@@ -50,6 +50,7 @@ const ENTRIES: Record<string, string[]> = {
         "./client",
         "./commands",
         "./evaluation",
+        "./host-hook",
         "./recall-server",
         "./service",
     ],

@@ -43,8 +43,10 @@
         "@dorothy/agent": "workspace:*",
         "@dorothy/core": "workspace:*",
         "@dorothy/gateway": "workspace:*",
+        "@dorothy/identity": "workspace:*",
         "@dorothy/memory": "workspace:*",
         "@dorothy/tui": "workspace:*",
+        "yaml": "2.9.1",
       },
     },
     "packages/core": {
