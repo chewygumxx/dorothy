@@ -321,28 +321,40 @@ const RUNNERS: Runners = {
         return 0;
     },
     install: async (mode) => {
-        const { installHermes, uninstallHermes } = await import(
+        const { hermesVersion, installHermes, uninstallHermes } = await import(
             "./hosts/hermes.js"
         );
+        const { hermesRoot } = await import("@dorothy/memory/host-hook");
         const { identityPrompt } = await import("@dorothy/identity");
         const { mainEntry, selfCommand } = await import("./self.js");
         const self = selfCommand();
-        const entry =
-            mode.entry === null
-                ? mainEntry(self[2] ?? "")
-                : resolve(mode.entry);
-        if (entry === null) {
-            writeError("dorothy: no main checkout found for her command\n");
-            return 1;
-        }
-        if (entry !== self[2]) {
-            writeError(`dorothy: using the main checkout's ${entry}\n`);
+        // Only an install writes her command; an uninstall needs no entry.
+        let entry = self[2] ?? "";
+        if (!mode.uninstall) {
+            const found =
+                mode.entry === null ? mainEntry(entry) : resolve(mode.entry);
+            if (found === null) {
+                writeError("dorothy: no main checkout found for her command\n");
+                return 1;
+            }
+            if (found !== entry) {
+                writeError(
+                    mode.entry === null
+                        ? `dorothy: using the main checkout's ${found}\n`
+                        : `dorothy: using the entry named by --entry, ${found}\n`,
+                );
+            }
+            entry = found;
         }
         const deps = {
-            home: process.env.HERMES_HOME || join(homedir(), ".hermes"),
+            home: hermesRoot(
+                process.env.HERMES_HOME || join(homedir(), ".hermes"),
+            ),
             run: async (cmd: string[]) =>
                 Bun.spawn(cmd, { stdio: ["inherit", "inherit", "inherit"] })
                     .exited,
+            which: () => Bun.which("hermes"),
+            version: hermesVersion,
             self: [self[0] ?? "", self[1] ?? "", entry],
             persona: identityPrompt(),
             force: mode.force,
