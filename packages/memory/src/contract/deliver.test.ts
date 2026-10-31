@@ -164,6 +164,24 @@ describe("deliver", () => {
         expect(items[0]?.cut).toBe(true);
     });
 
+    it("packs an escaped item without ending inside an entity", async () => {
+        const sharp = { ...tea, body: "&".repeat(200) };
+        for (let budget = 91; budget <= 105; budget++) {
+            const { items } = await deliver(
+                {
+                    ...ask([fact("k:personal/likes-tea")], budget),
+                    escape: true,
+                    policy: { cap: 1000 },
+                },
+                sourceOf([], [sharp]),
+            );
+            const text = items[0]?.text ?? "";
+            expect(items[0]?.cut).toBe(true);
+            expect(text).not.toMatch(/&[a-z]*$/);
+            expect(text).toMatch(/&amp;$/);
+        }
+    });
+
     it("narrows a passage's range to what packing left", async () => {
         const { items } = await deliver(
             {

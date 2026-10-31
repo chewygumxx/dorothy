@@ -217,10 +217,13 @@ export function turnsIn(text: string): TurnRange | null {
 
 // Items as <item> elements within budget, the last one cut to fit: the
 // text, the ids that went in, each one's text as it went in, and
-// whether the last was cut.
+// whether the last was cut. trim, where given, readies the sliced text
+// of an item that is cut, as where a slice must not end inside an
+// entity.
 export function pack(
     items: readonly { id: string; text: string }[],
     budget: number,
+    trim: (text: string) => string = (text) => text,
 ): { text: string; ids: string[]; texts: string[]; cut: boolean } {
     const parts: string[] = [];
     const ids: string[] = [];
@@ -234,7 +237,8 @@ export function pack(
         if (room <= 0) {
             break;
         }
-        const text = item.text.slice(0, room);
+        const sliced = item.text.slice(0, room);
+        const text = sliced.length < item.text.length ? trim(sliced) : sliced;
         parts.push(open + text + close);
         ids.push(item.id);
         texts.push(text);

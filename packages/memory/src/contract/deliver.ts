@@ -75,9 +75,12 @@ export type DeliveryRequest = {
 // length, never inside an entity the escaping made.
 type Finish = (text: string, chars: number) => string;
 
+// An escaped text without an entity cut off at its end.
+const unfinished = (text: string) => text.replace(/&[a-z]*$/, "");
+
 const raw: Finish = (text, chars) => clip(text, chars);
 const escaped: Finish = (text, chars) =>
-    clip(escapeXml(text), chars).replace(/&[a-z]*$/, "");
+    unfinished(clip(escapeXml(text), chars));
 
 // One hit as an item, its text whole (within its cap) and finished.
 async function render(
@@ -149,8 +152,9 @@ async function render(
 export function packDelivery(
     items: readonly DeliveredItem[],
     budget: number,
+    trim?: (text: string) => string,
 ): Delivery {
-    const packed = pack(items, Math.max(0, budget));
+    const packed = pack(items, Math.max(0, budget), trim);
     const last = packed.ids.length - 1;
     return {
         text: packed.text,
@@ -196,5 +200,9 @@ export async function deliver(
         }
         items.push(await render(hit, source, terms, policy, finish, cost));
     }
-    return packDelivery(items, request.budget);
+    return packDelivery(
+        items,
+        request.budget,
+        escaping ? unfinished : undefined,
+    );
 }
