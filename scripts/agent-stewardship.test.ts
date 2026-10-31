@@ -23,6 +23,7 @@ import {
     realpath,
     rm,
     stat,
+    symlink,
     writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -851,5 +852,327 @@ exit 3
             expect([args, code]).toEqual([args, 2]);
         }
         expect(await readdir(root)).not.toContain("state");
+    });
+});
+
+describe("with-claude.sh", () => {
+    const withClaude = join(scripts, "with-claude.sh");
+    const printVar = ["sh", "-c", 'printf %s "$DOROTHY_CLAUDE_TOKEN_VAR"'];
+    // Fresh by default; the `at` has no fractions, as statusline.sh's.
+    const reading = (
+        five: number,
+        week: number,
+        ageSeconds = 0,
+        account = "claude-2",
+    ) =>
+        writeFile(
+            join(root, "run", `claude-usage-${account}.json`),
+            JSON.stringify({
+                at: new Date(Date.now() - ageSeconds * 1000)
+                    .toISOString()
+                    .replace(/\.\d+Z$/, "Z"),
+                rate_limits: {
+                    five_hour: { used_percentage: five, resets_at: 1 },
+                    seven_day: { used_percentage: week, resets_at: 2 },
+                },
+                context_window: {},
+            }),
+        );
+    const sopsCalls = async () =>
+        (await calls()).filter((call) => call[0] === "sops");
+    const firstSops = async () => (await sopsCalls())[0] ?? [];
+
+    beforeEach(async () => {
+        // A stand-in sops: the token is there unless "no-token" exists.
+        const path = join(root, "bin", "sops");
+        await writeFile(
+            path,
+            `#!/bin/sh\n${logging}\n[ -e "$STUB/no-token" ] && exit 1\nexit 0\n`,
+        );
+        await chmod(path, 0o755);
+    });
+
+    it("names the primary for a fresh, low reading", async () => {
+        await reading(10, 20);
+        const { out, err, code } = await run(withClaude, printVar);
+        expect([out, code]).toEqual(["CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2", 0]);
+        expect(err).toMatch(/^\d\d:\d\d claude account: primary\n$/);
+    });
+
+    it("names the reserve at 90% of the five-hour window", async () => {
+        await reading(90, 20);
+        const { out, err } = await run(withClaude, printVar);
+        expect(out).toBe("CLAUDE_CODE_OAUTH_TOKEN");
+        expect(err).toMatch(/claude account: reserve\n$/);
+    });
+
+    it("names the reserve at 80% of the week", async () => {
+        await reading(10, 80);
+        const { out } = await run(withClaude, printVar);
+        expect(out).toBe("CLAUDE_CODE_OAUTH_TOKEN");
+    });
+
+    it("keeps the primary just under both limits", async () => {
+        await reading(89.9, 79.9);
+        const { out } = await run(withClaude, printVar);
+        expect(out).toBe("CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2");
+    });
+
+    it("names the primary for a stale, high reading", async () => {
+        await reading(99, 99, 600);
+        const { out } = await run(withClaude, printVar);
+        expect(out).toBe("CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2");
+    });
+
+    it("names the primary with no reading", async () => {
+        const { out, err, code } = await run(withClaude, printVar);
+        expect([out, code]).toEqual(["CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2", 0]);
+        expect(err).toMatch(/claude account: primary\n$/);
+    });
+
+    const readings: [string, string][] = [
+        ["malformed", "{not json"],
+        ["empty", ""],
+        ["without rate_limits", '{"at":"2099-01-01T00:00:00Z"}'],
+        ["an array", "[1,2]"],
+        [
+            "without an at",
+            '{"rate_limits":{"five_hour":{"used_percentage":99}}}',
+        ],
+    ];
+    for (const [label, body] of readings) {
+        it(`counts a ${label} reading as none`, async () => {
+            await writeFile(
+                join(root, "run", "claude-usage-claude-2.json"),
+                body,
+            );
+            const { out, err, code } = await run(withClaude, printVar);
+            expect([out, code]).toEqual(["CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2", 0]);
+            expect(err).not.toMatch(/jq|error/i);
+        });
+    }
+
+    it("names the reserve when the primary has no token", async () => {
+        await touch("no-token");
+        await reading(0, 0);
+        const { out, err } = await run(withClaude, printVar);
+        expect(out).toBe("CLAUDE_CODE_OAUTH_TOKEN");
+        expect(err).toMatch(/claude account: reserve\n$/);
+    });
+
+    it("asks sops for the token by name, never decrypting it out", async () => {
+        await run(withClaude, printVar);
+        const call = await firstSops();
+        expect(call.slice(0, 4)).toEqual([
+            "sops",
+            "decrypt",
+            "--extract",
+            '["CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2"]',
+        ]);
+        expect(call[4]).toBe(
+            join(await realpath(join(scripts, "../../../..")), "secrets.json"),
+        );
+    });
+
+    it("takes another primary and token name", async () => {
+        const extra = {
+            DOROTHY_CLAUDE_PRIMARY: "claude-9",
+            DOROTHY_CLAUDE_PRIMARY_TOKEN_VAR: "NINE_TOKEN",
+        };
+        // The default account's reading is no business of claude-9.
+        await reading(99, 99);
+        const spent = await run(withClaude, printVar, "", extra);
+        expect(spent.out).toBe("NINE_TOKEN");
+        expect((await firstSops())[3]).toBe('["NINE_TOKEN"]');
+
+        await reading(95, 0, 0, "claude-9");
+        const limited = await run(withClaude, printVar, "", extra);
+        expect(limited.out).toBe("CLAUDE_CODE_OAUTH_TOKEN");
+    });
+
+    it("runs its command with its arguments as written", async () => {
+        const { out } = await run(withClaude, [
+            "printf",
+            "%s|",
+            "two words",
+            "$HOME",
+            "--",
+        ]);
+        expect(out).toBe("two words|$HOME|--|");
+    });
+
+    it("says its usage and runs nothing without a command", async () => {
+        const { err, code } = await run(withClaude, []);
+        expect([code, err]).toEqual([2, expect.stringMatching(/^usage: /)]);
+        expect(await sopsCalls()).toEqual([]);
+    });
+
+    it("finds one checkout through the .claude/skills link", async () => {
+        const checkout = join(root, "checkout");
+        const skill = join(checkout, ".agents", "skills", "agent-stewardship");
+        await mkdir(join(skill, "scripts"), { recursive: true });
+        await mkdir(join(checkout, ".claude", "skills"), { recursive: true });
+        await copyFile(withClaude, join(skill, "scripts", "with-claude.sh"));
+        await chmod(join(skill, "scripts", "with-claude.sh"), 0o755);
+        await symlink(
+            "../../.agents/skills/agent-stewardship",
+            join(checkout, ".claude", "skills", "agent-stewardship"),
+        );
+        const expected = join(await realpath(checkout), "secrets.json");
+        for (const base of [".agents", ".claude"]) {
+            await rm(join(root, "calls.log"), { force: true });
+            const script = join(
+                checkout,
+                base,
+                "skills",
+                "agent-stewardship",
+                "scripts",
+                "with-claude.sh",
+            );
+            const { code } = await run(script, ["true"]);
+            expect([base, code]).toEqual([base, 0]);
+            expect([base, (await firstSops())[4]]).toEqual([base, expected]);
+        }
+    });
+});
+
+describe("at-limit.sh", () => {
+    const atLimit = join(scripts, "at-limit.sh");
+    // Exits with each code of $STUB/codes in turn, then 0; logs each run.
+    const sequence = (...codes: number[]) =>
+        writeFile(join(root, "codes"), codes.map(String).join("\n"));
+    const counted = [
+        "sh",
+        "-c",
+        'echo "$*" >>"$STUB/runs"; n=$(wc -l <"$STUB/runs"); ' +
+            'exit "$(sed -n "$n"p "$STUB/codes" | grep . || echo 0)"',
+        "sh",
+        "a b",
+    ];
+    const runs = async () =>
+        (await readFile(join(root, "runs"), "utf8").catch(() => ""))
+            .split("\n")
+            .filter(Boolean);
+
+    it("runs again after 75, and exits 0 when it then succeeds", async () => {
+        await sequence(75, 0);
+        const { code, err } = await run(atLimit, [
+            "--wait",
+            "0",
+            "--",
+            ...counted,
+        ]);
+        expect(code).toBe(0);
+        expect(await runs()).toEqual(["a b", "a b"]);
+        expect(err).toMatch(
+            /^\d\d:\d\d limited; retrying in 0s \(1 of 40\)\n$/,
+        );
+    });
+
+    it("stops after N tries with 75 if it never succeeds", async () => {
+        await sequence(75, 75, 75, 75, 75, 75);
+        const { code, err } = await run(atLimit, [
+            "--wait",
+            "0",
+            "--tries",
+            "3",
+            "--",
+            ...counted,
+        ]);
+        expect(code).toBe(75);
+        expect((await runs()).length).toBe(4);
+        expect(err.trim().split("\n")).toEqual([
+            expect.stringMatching(/ limited; retrying in 0s \(1 of 3\)$/),
+            expect.stringMatching(/ limited; retrying in 0s \(2 of 3\)$/),
+            expect.stringMatching(/ limited; retrying in 0s \(3 of 3\)$/),
+        ]);
+    });
+
+    it("does not retry any other failure", async () => {
+        await sequence(1, 0);
+        const { code, err } = await run(atLimit, [
+            "--wait",
+            "0",
+            "--",
+            ...counted,
+        ]);
+        expect([code, err]).toEqual([1, ""]);
+        expect(await runs()).toHaveLength(1);
+    });
+
+    it("does not retry a success", async () => {
+        const { code } = await run(atLimit, ["--wait", "0", "--", ...counted]);
+        expect(code).toBe(0);
+        expect(await runs()).toHaveLength(1);
+    });
+
+    it("runs --retry from the second try, as written", async () => {
+        await sequence(75, 75, 0);
+        const { code } = await run(atLimit, [
+            "--wait",
+            "0",
+            "--retry",
+            'echo "resume $HOME" >>"$STUB/retried"; exit 3',
+            "--",
+            ...counted,
+        ]);
+        // The first retry's 3 ends the loop; the command ran once only.
+        expect(code).toBe(3);
+        expect(await runs()).toHaveLength(1);
+        expect(await readFile(join(root, "retried"), "utf8")).toBe(
+            `resume ${root}\n`,
+        );
+    });
+
+    it("retries --retry while it too exits 75", async () => {
+        await sequence(75);
+        const { code } = await run(atLimit, [
+            "--wait",
+            "0",
+            "--retry",
+            'echo r >>"$STUB/retried"; [ "$(wc -l <"$STUB/retried")" -ge 2 ]; ' +
+                "exit $(($? == 0 ? 0 : 75))",
+            "--",
+            ...counted,
+        ]);
+        expect(code).toBe(0);
+        expect(await runs()).toHaveLength(1);
+        expect((await readFile(join(root, "retried"), "utf8")).length).toBe(4);
+    });
+
+    it("passes an option-like command through after --", async () => {
+        const { code, out } = await run(atLimit, [
+            "--",
+            "printf",
+            "%s",
+            "--wait",
+        ]);
+        expect([code, out]).toEqual([0, "--wait"]);
+    });
+
+    it("sleeps the wait it was given", async () => {
+        await sequence(75, 0);
+        const sleeper = join(root, "bin", "sleep");
+        await writeFile(sleeper, `#!/bin/sh\n${logging}\n`);
+        await chmod(sleeper, 0o755);
+        await run(atLimit, ["--wait", "7", "--", ...counted]);
+        expect((await calls()).filter((call) => call[0] === "sleep")).toEqual([
+            ["sleep", "7"],
+        ]);
+    });
+
+    it("says its usage and runs nothing on a bad invocation", async () => {
+        for (const args of [
+            [],
+            ["--wait", "0"],
+            ["--wait", "soon", "--", "true"],
+            ["--tries"],
+            ["--bogus", "--", "true"],
+            ["true"],
+        ]) {
+            const { err, code } = await run(atLimit, args);
+            expect([args, code]).toEqual([args, 2]);
+            expect(err).toMatch(/^usage: /);
+        }
     });
 });
