@@ -33,8 +33,8 @@ readers never open a Dorothy store; tests use temporary roots.
   SQLite read-only, selecting a session before fetching payloads; a read
   has the same fields plus `parent` and `source`. `since` floors stable
   source ids, exclusively; sources pass zero: those ids are not monotonic.
-- `sources.ts`: `claudeSource`, `codexSource`, `hermesSource`; each lists
-  descriptors with key, path, time, fingerprint and `read(prev?, opts?)`.
+- `sources.ts`: `claudeSource`, `codexSource`, `hermesSource` (each profile's
+  `state.db`); each lists descriptors: key, path, time, fingerprint, `read`.
 - `state.ts`: private `sweep.json`, per-key skip fingerprints alone.
 - `watermark.ts`: a host's first sweep time, in the data directory's
   `recording.json`, committed to history, never in `sweep.json`.

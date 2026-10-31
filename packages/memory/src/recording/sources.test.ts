@@ -62,8 +62,10 @@ function only(sessions: SourceSession[]): SourceSession {
     if (!session) throw new Error("missing fixture session");
     return session;
 }
-async function hermesFixture(seed: (db: Database) => void) {
-    const path = join(env.HERMES_HOME ?? join(root, ".hermes"), "state.db");
+async function hermesFixture(
+    seed: (db: Database) => void,
+    path = join(env.HERMES_HOME ?? join(root, ".hermes"), "state.db"),
+) {
     await mkdir(dirname(path), { recursive: true });
     const writer = new Database(path);
     try {
@@ -296,6 +298,19 @@ describe("recording Hermes observations", () => {
             maxId: 0,
             count: 0,
         });
+        expect(new Set(sessions.map((session) => session.key)).size).toBe(2);
+    });
+    it("lists every Hermes profile's sessions", async () => {
+        env.HERMES_HOME = join(root, "profiles-hermes");
+        await hermesFixture((db) => hermesSession(db, "default-1"));
+        const theirs = join(env.HERMES_HOME, "profiles", "dorothy", "state.db");
+        await hermesFixture((db) => hermesSession(db, "hers-1"), theirs);
+        const sessions = await hermesSource(env).list();
+        expect(sessions.map((session) => session.session)).toEqual([
+            "default-1",
+            "hers-1",
+        ]);
+        expect(sessions[1]?.path).toBe(theirs);
         expect(new Set(sessions.map((session) => session.key)).size).toBe(2);
     });
     it("skips an unchanged session and reads its whole payload otherwise", async () => {
