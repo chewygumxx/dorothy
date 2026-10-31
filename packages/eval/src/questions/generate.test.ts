@@ -939,6 +939,17 @@ describe("bun run eval -- generate", () => {
         expect(stub.requests.length).toBeGreaterThan(0);
     });
 
+    it("names the models file when it lacks the generate role", async () => {
+        const file = join(temp.root, "models.toml");
+        writeFileSync(file, '[models.judge]\nvia = "claude"\nmodel = "m"\n');
+        const { io, err } = fakeIo();
+        expect(
+            await runCli(["generate", "--work", work, "--models", file], io),
+        ).toBe(1);
+        expect(err.join("")).toContain(`${file} has no [models.generate]`);
+        expect(err.join("")).not.toContain("eval.toml");
+    });
+
     it("keeps questions written while it ran", async () => {
         const extra = {
             ...(await readQuestions(work)).questions[0],

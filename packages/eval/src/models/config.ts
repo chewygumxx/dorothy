@@ -8,8 +8,9 @@
 //
 //
 
-// <work>/eval.toml, or the file --models names: each role names its route and model. API keys are
-// named by their variable, never written in the file.
+// <work>/eval.toml, or the file --models names: each role names its route
+// and model. API keys are named by their variable, never written in the
+// file.
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -183,11 +184,16 @@ export async function readEvalConfig(
     return config;
 }
 
-export function requireRole(config: EvalConfig, role: Role): RoleConfig {
+// `path` is the --models file the config was read from, if any.
+export function requireRole(
+    config: EvalConfig,
+    role: Role,
+    path?: string,
+): RoleConfig {
     const found = config[role];
     if (found === null) {
         throw new UsageError(
-            `eval.toml has no [models.${role}]: the README's evaluation section shows one`,
+            `${path ?? "eval.toml"} has no [models.${role}]: the README's evaluation section shows one`,
         );
     }
     return found;

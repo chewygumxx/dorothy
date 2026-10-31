@@ -1620,6 +1620,30 @@ describe("--models and --resume latest", () => {
         );
     });
 
+    it("names the models file when it lacks a role the run needs", async () => {
+        writeFileSync(
+            modelsFile(),
+            '[models.answer]\nvia = "claude"\nmodel = "m"\n',
+        );
+        const { io, err } = fakeIo();
+        expect(
+            await runCli(
+                [
+                    "run",
+                    "--work",
+                    work,
+                    "--systems",
+                    "lexical",
+                    "--models",
+                    modelsFile(),
+                ],
+                io,
+            ),
+        ).toBe(1);
+        expect(err.join("")).toContain(`${modelsFile()} has no [models.judge]`);
+        expect(err.join("")).not.toContain("eval.toml");
+    });
+
     it("finds the latest run by its start, ties by id, skipping the unreadable", async () => {
         expect(await latestRunId(work)).toBeNull();
         writeRun("b-middle", "2026-10-02T00:00:00.000Z");

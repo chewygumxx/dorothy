@@ -217,6 +217,13 @@ describe("eval.toml", () => {
             requireRole({ generate: null, answer: null, judge: null }, "judge"),
         ).toThrow("eval.toml has no [models.judge]");
     });
+
+    it("names the models file it was given instead of eval.toml", () => {
+        const none = { generate: null, answer: null, judge: null };
+        expect(() => requireRole(none, "judge", "/x/models.toml")).toThrow(
+            "/x/models.toml has no [models.judge]",
+        );
+    });
 });
 
 describe("a model's vendor", () => {

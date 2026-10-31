@@ -177,8 +177,8 @@ export const runCommand: Command = {
         }
         let models: Models | null = null;
         if (!info.retrievalOnly) {
-            const answer = requireRole(config, "answer");
-            const judge = requireRole(config, "judge");
+            const answer = requireRole(config, "answer", modelsOf(values));
+            const judge = requireRole(config, "judge", modelsOf(values));
             if (!(await loadModelSecrets(io))) return 1;
             models = new Models(config, {
                 ...io.modelOptions,

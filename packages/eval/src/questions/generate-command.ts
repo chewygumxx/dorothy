@@ -142,7 +142,7 @@ export const generateCommand: Command = {
         // Mended before any call is paid for.
         await readGenerations(work);
         const config = await readEvalConfig(work, modelsOf(values));
-        const role = requireRole(config, "generate");
+        const role = requireRole(config, "generate", modelsOf(values));
         if (!(await loadModelSecrets(io))) return 1;
         const models = new Models(config, {
             ...io.modelOptions,
