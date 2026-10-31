@@ -6,8 +6,8 @@ title: The memory engine
 description: >-
   The engine's first step built: passages delivered by one step shared
   by recall and the evaluation, hits carrying their turns, system
-  variants and stage counts; the tasks, reviews, rulings and a
-  retrieval-only verification.
+  variants and stage counts; the tasks, reviews, rulings, a
+  retrieval-only verification and the paid runs that kept her engine.
 tags:
   - dorothy
   - memory
@@ -34,7 +34,8 @@ hits carry their matched turns and alternate knowledge with
 conversations, so ten knowledge hits no longer crowd out every
 conversation. The evaluation gained system variants, a `cited` ceiling
 and four stage counts. The first evaluation's report gained two
-corrections.
+corrections. The paid runs took her strict accuracy from 7 to 40 of
+124, past lexical search's 31, so her engine stays and Delivery is next.
 
 Before execution, a Claude review (15 findings) and a Codex review (10)
 of the plan were folded into it. Seven tasks were built by Claude
@@ -129,6 +130,80 @@ Search's seeds cover slightly less than overlap at her defaults
 (43.7% against 45.3%); the paid runs will say whether answers follow.
 Strict accuracy needs those runs, about two model calls a question a
 system, which wait on the user's approval of the spend.
+
+## The paid runs
+
+The user approved the spend: Claude Haiku 5.5 answered on the reserve
+Claude account, and `openai/gpt-6.1-sol` judged through OpenRouter at
+its default effort. One job ran the nine systems above on the 133
+reviewed questions, about 3,546 model calls in 53 minutes, without a
+failure:
+
+```sh
+bun run eval -- run --work ~/eval --models ~/eval/eval.engine.toml \
+  --systems "<the nine systems above>"
+```
+
+| System | Strict | Lenient | Preference strict | Abstained |
+| --- | --- | --- | --- | --- |
+| today's options | 7/124 | 10/124 | 4/9 | 8/8 |
+| alternation alone | 35/124 | 45/124 | 2/9 | 8/8 |
+| duplicates removed | 34/124 | 54/124 | 2/9 | 8/8 |
+| knowledge capped | 37/124 | 55/124 | 1/9 | 8/8 |
+| block 0.2 | 44/124 | 57/124 | 3/9 | 8/8 |
+| block 0.6 | 40/124 | 58/124 | 1/9 | 8/8 |
+| `dorothy` | 40/124 | 56/124 | 2/9 | 8/8 |
+| `lexical` | 31/124 | 35/124 | 0/9 | 8/8 |
+| `cited` | 90/124 | 102/124 | 7/9 | 8/8 |
+
+Today's options reproduce the reviewed rerun's strict 9/124 at 7/124,
+within the judge's noise. Alternation alone takes her from 7 to 35; at
+her defaults she passes 40, past lexical search's 31, matching it on
+single-session questions (22 of 48 each) and leading on temporal ones
+(14 of 23 against 8) and those across sessions (2 of 38 against 1).
+Search's seeds, which covered slightly less than overlap, answer
+slightly more: 40 against 37. Of lexical search's 31 passes she shares
+19, and seven questions only lexical search passes. Given the evidence,
+`cited` passes 90: the gap from her 40 is in what she delivers and how
+the model answers from it, as her coverage of the gold answers' words,
+43.7% against the ceiling's 74.8%, shows.
+
+### The decision
+
+The spec's rule: if `dorothy` at its defaults reaches lexical search's
+strict passes without losing her preference passes or her correct
+abstentions, the engine stays hers and Delivery is next.
+
+- Strict passes: 40 against 31. Met.
+- Abstentions: 8 of 8 in every system. Met.
+- Preference passes: strict 2 of 9, against 4 of 9 under today's
+  options; lenient 9 of 9, against 7 of 9. Met on lenient, not strict.
+
+Today's options, duplicates removed and `dorothy` all deliver the
+preference questions' knowledge whole, in all nine. Today's options
+place it first and twice, in the block and as an item; her defaults
+place it once, third to fifth. The strict judge faults her answers for
+leaving out AEST's `+10:00` and for citing a preference it cannot see.
+Strict passes on these nine also flip between systems whose contexts
+barely differ: duplicates removed and `dorothy` pass two each, not the
+same two.
+
+Ruling: the engine stays hers, and Delivery is next. Her strict passes
+lead by nine, and on preferences she loses no lenient pass and gains
+two; the strict dip is in where knowledge sits, not in search, so a
+chunk index would not mend it. Cost if wrong: Delivery ships answers to
+preference questions a little worse than today's until knowledge
+placement is tuned, which the roadmap holds as a candidate.
+
+### Left
+
+- The owner's spot-check accepted its unsure draft, after edits, once
+  the runs had begun, and has reopened no sampled accept. The runs used
+  the 133 questions before it; the 134th is measured in the next run.
+  Cost: one preference question unmeasured.
+- The seven questions only lexical search passes, and the 12 of its 31
+  passes she misses, are where a chunk index or hybrid search would be
+  judged, later.
 
 ## Deferred
 
