@@ -163,11 +163,7 @@ export async function spotCheck(
             "# Spot-check: overturn an accept with review --reopen <id> --reason <why>",
             "",
             ...drafts.map((question, at) =>
-                block(
-                    question,
-                    `Unsure ${at + 1}`,
-                    "Left for you: the agent was unsure.",
-                ),
+                block(question, `Unsure ${at + 1}`, "Still a draft."),
             ),
             ...sample.map(([id, how], at) =>
                 block(

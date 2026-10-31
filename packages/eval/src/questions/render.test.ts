@@ -269,7 +269,7 @@ describe("spotCheck", () => {
                 .sort(),
         ).toEqual([idOf(one), idOf(two), idOf(four), idOf(five)].sort());
         expect(found.slice(1).every(([kind]) => kind === "Sample")).toBe(true);
-        expect(text).toContain("Left for you");
+        expect(text).toContain("Still a draft.");
         expect(text).not.toContain(idOf(three));
         expect(modeOf(file())).toBe(0o600);
     });
