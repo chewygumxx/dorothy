@@ -313,6 +313,29 @@ describe("recording Hermes observations", () => {
         expect(sessions[1]?.path).toBe(theirs);
         expect(new Set(sessions.map((session) => session.key)).size).toBe(2);
     });
+    it("sweeps the whole root when HERMES_HOME is one profile", async () => {
+        const hermes = join(root, "profiles-hermes");
+        await hermesFixture(
+            (db) => hermesSession(db, "default-1"),
+            join(hermes, "state.db"),
+        );
+        const theirs = join(hermes, "profiles", "dorothy", "state.db");
+        await hermesFixture((db) => hermesSession(db, "hers-1"), theirs);
+        const other = join(hermes, "profiles", "other", "state.db");
+        await hermesFixture((db) => hermesSession(db, "other-1"), other);
+        env.HERMES_HOME = join(hermes, "profiles", "dorothy");
+        const inside = await hermesSource(env).list();
+        env.HERMES_HOME = hermes;
+        const at = await hermesSource(env).list();
+        expect(inside.map((session) => session.session)).toEqual([
+            "default-1",
+            "hers-1",
+            "other-1",
+        ]);
+        expect(inside.map((session) => session.key)).toEqual(
+            at.map((session) => session.key),
+        );
+    });
     it("skips an unchanged session and reads its whole payload otherwise", async () => {
         await hermesFixture((db) => {
             hermesSession(db);

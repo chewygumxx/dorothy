@@ -18,5 +18,7 @@ export {
     parseHookInput,
 } from "./hooks/payload.js";
 export { type HostHookDeps, runHostHook } from "./hooks/run.js";
+// For her install, which names the root a profile's HERMES_HOME is in.
+export { hermesRoot } from "./hosts/hermes-root.js";
 // For the CLI's test that its hosts' profiles take hooks or a plugin.
 export { loadProfiles } from "./hosts/profiles.js";

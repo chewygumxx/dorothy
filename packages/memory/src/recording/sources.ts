@@ -13,6 +13,7 @@ import { type BigIntStats, constants } from "node:fs";
 import { open, readdir, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import type { Env } from "@dorothy/core";
+import { hermesRoot } from "../hosts/hermes-root.js";
 import { type HermesRead, readHermes } from "./hermes.js";
 
 export type Host = "claude-code" | "codex" | "hermes";
@@ -290,7 +291,7 @@ export function hermesSource(env: Env): Source {
     return {
         host: "hermes",
         list: async () => {
-            const home = hostRoot(env, "HERMES_HOME", ".hermes");
+            const home = hermesRoot(hostRoot(env, "HERMES_HOME", ".hermes"));
             const found: SourceSession[] = [];
             for (const candidate of await hermesDatabases(home)) {
                 const path = await existing(candidate);
