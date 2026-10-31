@@ -34,13 +34,15 @@ The message is a pointer to the resume note, never its content:
 S=.agents/skills/agent-stewardship/scripts
 f=$XDG_RUNTIME_DIR/claude-usage-claude-2.json
 note=${XDG_STATE_HOME:-$HOME/.local/state}/dorothy-agents/dorothy-main.md
-t=$(jq -er '.rate_limits.five_hour.resets_at + 300' "$f") &&
+t=$(jq -er '.rate_limits.five_hour.resets_at | numbers | . + 300' \
+    "$f") &&
     printf 'Woken at the reset: read %s\n' "$note" |
     "$S/send-prompt.sh" --at "@$t" dorothy-main
 ```
 
-A missing `resets_at` fails `jq -e`, and a past one `send-prompt.sh`
-refuses: either way nothing is armed, and you say so.
+A missing or non-numeric `resets_at` leaves `numbers` nothing to pass,
+so `jq -e` prints nothing and fails; a past one `send-prompt.sh`
+refuses. Either way nothing is armed, and you say so.
 
 For Codex, once its limit is met, its footer's warning gives the reset
 ([Codex](./codex.md)): arm a prompt to `dorothy-codex` for five minutes
