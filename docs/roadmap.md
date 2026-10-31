@@ -85,7 +85,10 @@ findings were all addressed; merged in #71 and #72. The roadmap sweep:
 [repository code review](./reports/2026-10-19-code-review.md). Recording:
 [spec](./specs/2026-10-20-recording-design.md),
 [plan](./plans/2026-10-20-recording.md),
-[report](./reports/2026-10-20-recording.md).
+[report](./reports/2026-10-20-recording.md). The engine's first step:
+[spec](./specs/2026-10-31-memory-engine-design.md),
+[plan](./plans/2026-10-31-memory-engine.md),
+[report](./reports/2026-10-31-memory-engine.md).
 
 The contract opened four more pieces, each with its own spec: the
 evaluation, which measures her memory against the field and chooses the
@@ -124,7 +127,7 @@ verified them before the user's backfill, then the owner's first run.
 - **Status**: Store, Bodies, Contract, Evaluation and Recording Built;
   the Backfill Recorded and Reviewed; the First Run Done
   ([record](./reports/2026-10-31-first-evaluation.md)); the Engine's
-  Spec Next, then Delivery
+  First Step Built; its Paid Runs Next, then Delivery
 - **Required**: Requisites Fulfilled
 - **Rationale**: Wherever she goes, her memory follows with her. The
   contract gives every harness one service and every engine one
@@ -135,12 +138,13 @@ verified them before the user's backfill, then the owner's first run.
   search on questions across sessions, but her strict accuracy only
   from 4.0% to 7.3%: she finds the conversation and answers from its
   notes, not the passage that holds the fact, while lexical search,
-  returning passages, scores 25%. The engine's spec chooses on these
-  numbers, passage retrieval within what she finds first among them;
-  should they leave the choice open, it may first ask for adapters to
-  the field's systems. The owner's spot-check of the test set may
-  change a few questions. Delivery comes last, once the engine it
-  delivers is chosen.
+  returning passages, scores 25%. The engine's first step found her
+  knowledge crowding out the passages she found, and delivers them now:
+  evidence for 98 of 125 questions, from 9. Its paid runs decide: at
+  lexical search's strict accuracy, her engine stays; short of it, a
+  chunk index or an adopted engine's search, on the stage counts. The
+  owner's spot-check of the test set may change a few questions.
+  Delivery comes last, once the engine it delivers is chosen.
 
 ### Model Providers
 
@@ -340,6 +344,10 @@ Found but not scheduled, each with its source.
 - Testing whether the identity's place in Claude Code's prompt costs her
   any of its agentic ability, against plain `claude` (Dorothy's
   identity).
+- The engine's deferred minors
+  ([record](./reports/2026-10-31-memory-engine.md#deferred)): early
+  variant errors untested, an undefined policy field, untraced source
+  errors, and the first evaluation's Summary beside its corrections.
 - The consolidation's deferred minors
   ([record](./reports/2026-10-31-agentic-asset-consolidation.md#deferred)):
   brittle test fakes and waits, stale rendered drafts, unvalidated
@@ -524,3 +532,9 @@ In order of completion.
   `dorothy` gained the options the first run's scratch scripts stood in
   for. The engine's spec is next again. Candidates gain its deferred
   minors.
+- 2026-10-31: The engine's first step is built: one delivery step,
+  shared by recall and the evaluation, gives passages; hits carry their
+  turns and alternate with knowledge. Retrieval alone delivers evidence
+  for 98 of 125 questions, from 9, past lexical search's 69. Its paid
+  runs, which decide between her engine and a chunk index, are next,
+  then Delivery. Candidates gain its deferred minors.
