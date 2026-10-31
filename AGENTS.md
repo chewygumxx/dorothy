@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-21
+mtime: 2026-10-31
 spdx: GPL-3.0-only
 title: AGENTS.md
 description: >-
@@ -53,9 +53,9 @@ declares, as Bun's isolated linker fails an undeclared or internal import.
   Back up the key off this machine. Edit only with `sops edit secrets.json`
   or core's `saveSecret`; never print values or put them in argv or URLs.
   `bunfig.toml` skips `.env`; pre-commit rejects plaintext values.
-- Confirm with the user before pushing, opening a pull request or changing
-  repository settings, which change only through `.repo-metadata.jsonc`,
-  never `gh repo edit`.
+- Push your branches, open their pull requests and merge your own once CI
+  passes, as the user approved. Confirm before changing repository settings,
+  which change only through `.repo-metadata.jsonc`, never `gh repo edit`.
 - New subsystems stay independent of any model provider's SDK, speaking
   standard protocols, with SDK types at a thin edge.
 - Declare in this repository every agentic asset and utility it employs;
