@@ -70,7 +70,7 @@ const EXCLUDED = [
 
 // The repository's own skills: committed beside the links, as
 // `.gitignore` negates them, and never recorded in the lock.
-const OWN = ["agent-stewardship", "worktrees"];
+const OWN = ["agent-pre-screening", "agent-stewardship", "worktrees"];
 
 const LINKS = [".agents/skills", ".claude/skills"];
 
