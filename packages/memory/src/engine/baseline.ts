@@ -11,7 +11,9 @@
 // The baseline engine: today's memory behind the interface. The FTS5
 // index searches, salience ranks conversations, and the reviewer writes
 // each conversation's notes; it proposes no knowledge yet, which the
-// engine spec brings.
+// engine spec brings. A search's episode hits carry their matched turns,
+// best first, and its kinds alternate, so knowledge never crowds out
+// every conversation.
 
 import {
     conversationId,
@@ -37,6 +39,7 @@ import {
     type MemoryEngine,
     type RankRequest,
 } from "./engine.js";
+import { mergeHits } from "./merge.js";
 
 export type BaselineDeps = {
     env: Env;
@@ -114,12 +117,13 @@ export function baselineEngine(deps: BaselineDeps): MemoryEngine {
                     ),
                 };
             });
-            const hits: MemoryHit[] = [];
+            const knowledge: MemoryHit[] = [];
+            const episodes: MemoryHit[] = [];
             for (const hit of found.facts) {
                 if (hit.retired) {
                     continue;
                 }
-                hits.push({
+                knowledge.push({
                     id: knowledgeId(
                         hit.scope === "personal"
                             ? hit.id
@@ -136,16 +140,19 @@ export function baselineEngine(deps: BaselineDeps): MemoryEngine {
             }
             for (const hit of found.results) {
                 const scope = found.projects.get(hit.identifier) ?? "personal";
-                hits.push({
+                episodes.push({
                     id: conversationId(hit.identifier),
                     kind: "episode",
                     scope,
                     title: hit.name ?? hit.identifier,
                     snippet: hit.matches[0]?.text ?? hit.description ?? "",
                     date: hit.dateModified,
+                    ...(hit.matches.length === 0
+                        ? {}
+                        : { turns: hit.matches.map((match) => match.turn) }),
                 });
             }
-            return hits.slice(0, request.limit);
+            return mergeHits(knowledge, episodes, "alternate", request.limit);
         },
         async rankKnowledge(request: RankRequest): Promise<KnowledgeItem[]> {
             const { facts } = await listFacts(root);

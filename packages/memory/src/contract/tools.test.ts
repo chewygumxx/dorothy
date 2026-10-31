@@ -156,6 +156,27 @@ describe("the contract's MCP server", () => {
         expect(engine.calls).toContain("search tea");
     });
 
+    it("returns an episode's matched turns", async () => {
+        await client.close();
+        await connect(
+            null,
+            fakeEngine({
+                hits: [
+                    {
+                        id: "c:bingo-overabundance-mazer-kasha",
+                        kind: "episode",
+                        scope: "personal",
+                        title: "tea",
+                        snippet: "Tea.",
+                        turns: [3, 1],
+                    },
+                ],
+            }),
+        );
+        const { text } = await call("search", { query: "tea" });
+        expect(JSON.parse(text)[0].turns).toEqual([3, 1]);
+    });
+
     it("says there is no project for a project search outside one", async () => {
         const { isError, text } = await call("search", {
             query: "tea",
