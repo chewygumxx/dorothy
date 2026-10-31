@@ -12,15 +12,15 @@
         "@chewygumxx/biome-config": "^1.0.0",
         "@chewygumxx/commitlint-config": "^1.1.0",
         "@chewygumxx/cz-commitlint": "^1.0.2",
-        "@chewygumxx/markdownlint-cli2-config": "^1.0.1",
+        "@chewygumxx/markdownlint-cli2-config": "^1.1.0",
         "@chewygumxx/remark-preset": "^1.0.3",
-        "@chewygumxx/yamllint-config": "^1.0.0",
+        "@chewygumxx/yamllint-config": "^1.0.1",
         "@commitlint/cli": "^21.2.2",
-        "@types/bun": "^1.4.2",
+        "@types/bun": "^1.4.3",
         "commitizen": "^4.3.2",
         "husky": "^9.1.7",
         "markdownlint-cli2": "^0.23.3",
-        "prettier": "^3.9.9",
+        "prettier": "^3.9.10",
         "remark-cli": "^12.0.1",
         "skills": "1.7.2",
         "superpowers": "github:obra/superpowers#v6.4.1",
@@ -90,7 +90,7 @@
         "@dorothy/core": "workspace:*",
         "ink": "^7.1.1",
         "lowlight": "^3.3.0",
-        "marked": "^18.0.14",
+        "marked": "^18.1.1",
         "react": "^19.2.0",
         "string-width": "^8.3.0",
       },
@@ -158,11 +158,11 @@
 
     "@chewygumxx/cz-commitlint": ["@chewygumxx/cz-commitlint@1.0.2", "", { "dependencies": { "@commitlint/cz-commitlint": "^21.2.3", "@commitlint/load": "^21.2.3", "@commitlint/types": "^21.2.3" }, "peerDependencies": { "commitizen": "^4.3.2", "inquirer": "^9.0.0 || ^10.0.0 || ^11.0.0 || ^12.0.0" } }, "sha512-MkyoPNHLA8JOQMJakC+s6XamOpYJBkp6EUQyFch4lDDWBC9WTBxAq1c7ZQIQNr8j46yrwliQIgfAFE0V3o77SA=="],
 
-    "@chewygumxx/markdownlint-cli2-config": ["@chewygumxx/markdownlint-cli2-config@1.0.1", "", { "peerDependencies": { "markdownlint-cli2": "^0.23.3" } }, "sha512-DDzLMon209zg/S4T4we7+h+mWso28SM0VdE8E0mB9O/bWTOigSNTDYxcl4Y2gVsS5/XZFLm6vPkHwSd8p3TwKQ=="],
+    "@chewygumxx/markdownlint-cli2-config": ["@chewygumxx/markdownlint-cli2-config@1.1.0", "", { "peerDependencies": { "markdownlint-cli2": "^0.23.3" } }, "sha512-kkHjZ6IeCumPU0J3xECzdA6sGrq8eJTlLtMgTq+uiZTdolWFbwK6j1NCd3VC+W1JefC+2YGYpvmC7Vm9rioTFg=="],
 
     "@chewygumxx/remark-preset": ["@chewygumxx/remark-preset@1.0.3", "", { "dependencies": { "remark-frontmatter": "^5.0.0", "remark-gfm": "^4.0.1", "remark-lint-maximum-line-length": "^4.1.1", "remark-lint-no-undefined-references": "^5.0.2", "remark-preset-lint-consistent": "^6.0.1", "remark-preset-lint-recommended": "^7.0.1" }, "peerDependencies": { "remark-cli": "^12.0.1" } }, "sha512-DVM+17zzlQIFjYaQQcJXzOyPq/cFFTkX56sSsDBLgWulpdXgPqACiyt03x3zId2YqrY7E7Hqdv/D2+2CWW1s7w=="],
 
-    "@chewygumxx/yamllint-config": ["@chewygumxx/yamllint-config@1.0.0", "", {}, "sha512-OvmULncqfjLhioUfVoRTzPZ8zzd2y+bOo5gPZpS9MrYP7p5xPWTTTKweBIRG6m8ebGXAYdUUUg6vxmElVnmEbQ=="],
+    "@chewygumxx/yamllint-config": ["@chewygumxx/yamllint-config@1.0.1", "", {}, "sha512-tzSARI7mA4+6H7UiIPLipgQ0K3LVmKKSwCzUt+mFFcqkcej6r1wGcNSTr5fBA8pTMt3oSQxpdDhlNjoHXalmsQ=="],
 
     "@commitlint/cli": ["@commitlint/cli@21.2.3", "", { "dependencies": { "@commitlint/config-conventional": "^21.2.3", "@commitlint/format": "^21.2.3", "@commitlint/lint": "^21.2.3", "@commitlint/load": "^21.2.3", "@commitlint/read": "^21.2.3", "@commitlint/types": "^21.2.3", "tinyexec": "^1.0.0", "yargs": "^18.0.0" }, "bin": { "commitlint": "cli.js" } }, "sha512-5yOX6IRjcrIReCxpyAd04hgI/yhUMpVBJ/ouwFV0wk9yx5+fYRDWZWJ5h55Tbedgfol+5m2mU5nqzbB8g3v0vQ=="],
 
@@ -302,7 +302,7 @@
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
-    "@types/bun": ["@types/bun@1.4.2", "", { "dependencies": { "bun-types": "1.4.2" } }, "sha512-GimotNn7+ZV0uVArItBbriZsR1oNf0+WTzPkdcFrzShI7k2norL0uzEaJT8T33dWr7O/c9ZDuAFQrctKCi72oQ=="],
+    "@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
 
     "@types/concat-stream": ["@types/concat-stream@2.0.3", "", { "dependencies": { "@types/node": "*" } }, "sha512-3qe4oQAPNwVNwK4C9c8u+VJqv9kez+2MR4qJpoPFfXtgxxif1QbFusvXzK0/Wra2VX07smostI2VMmJNSpZjuQ=="],
 
@@ -426,7 +426,7 @@
 
     "buffer-from": ["buffer-from@1.1.2", "", {}, "sha512-E+XQCRwSbaaiChtv6k6Dwgc+bx+Bs6vuKJHHl5kox/BaKbhiXzqQOwK4cO22yElGp2OCmjwVhT3HmxgyPGnJfQ=="],
 
-    "bun-types": ["bun-types@1.4.2", "", { "dependencies": { "@types/node": "*" } }, "sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w=="],
+    "bun-types": ["bun-types@1.4.4", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-yjrJh5oGX7mMPKGd19YXyIjmEuj4G4zNC30bs7PM9Az7NQ3ndF3j6hbeRdvJTRQEhJ/FYQwW0a2moweEi2hMxQ=="],
 
     "bytes": ["bytes@3.1.2", "", {}, "sha512-/Nf7TyzTx6S3yRJObOAV7956r8cr2+Oj8AC5dt8wSP3BQAoeX58NoHyCU8P8zGkNXStjTSi6fzO6F0pBdcYbEg=="],
 
@@ -836,7 +836,7 @@
 
     "markdownlint-cli2-formatter-default": ["markdownlint-cli2-formatter-default@0.0.6", "", { "peerDependencies": { "markdownlint-cli2": ">=0.0.4" } }, "sha512-VVDGKsq9sgzu378swJ0fcHfSicUnMxnL8gnLm/Q4J/xsNJ4e5bA6lvAz7PCzIl0/No0lHyaWdqVD2jotxOSFMQ=="],
 
-    "marked": ["marked@18.0.14", "", { "bin": { "marked": "bin/marked.js" } }, "sha512-mBHK6FBHuBAlhgRe88w9F0O1AbwwXJUcQibUbC/QcdTbVGAD7aWza+xt3N6oT/jCZx3/OMeS+8rnuiHZcQ9s7A=="],
+    "marked": ["marked@18.1.2", "", { "bin": { "marked": "bin/marked.js" } }, "sha512-DfOnvLAQ6WYeWxWO1u4RyFOeqyHup6dks5PPqnoFiooU7ipRvidO/2j8plhAHIiZg574E9ZlzSjUiPMLAzFkgg=="],
 
     "math-intrinsics": ["math-intrinsics@1.1.0", "", {}, "sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g=="],
 
@@ -1056,7 +1056,7 @@
 
     "possible-typed-array-names": ["possible-typed-array-names@1.1.0", "", {}, "sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg=="],
 
-    "prettier": ["prettier@3.9.9", "", { "bin": "bin/prettier.cjs" }, "sha512-Z/CJHIkdujO/OtN7nXUii0Rf3VT5SRuhjBA82Xvu2XhBUgX3nhP67T0LHceBdQLex7OOFGTox+Q5Yg8Jk2Qivg=="],
+    "prettier": ["prettier@3.9.10", "", { "bin": { "prettier": "bin/prettier.cjs" } }, "sha512-skGHTH1Yb9QvaTC4hWnRTzEYtCpApF0UMBPz+t/0ZPzP8ihefo/btKd+QA7pUE0fEwA1SbS/NmhyEcstdXOIdA=="],
 
     "proc-log": ["proc-log@4.2.0", "", {}, "sha512-g8+OnU/L2v+wyiVK+D5fA34J7EH8jZ8DDlvwhRCMxmMj7UCBvxiO1mGeN+36JXIKF4zevU4kRBd8lVgG9vLelA=="],
 
