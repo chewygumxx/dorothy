@@ -127,7 +127,8 @@ verified them before the user's backfill, then the owner's first run.
 - **Status**: Store, Bodies, Contract, Evaluation and Recording Built;
   the Backfill Recorded and Reviewed; the First Run Done
   ([record](./reports/2026-10-31-first-evaluation.md)); the Engine's
-  First Step Built; its Paid Runs Next, then Delivery
+  First Step Built and its Paid Runs Done, keeping her engine;
+  Delivery Next, Pending Design
 - **Required**: Requisites Fulfilled
 - **Rationale**: Wherever she goes, her memory follows with her. The
   contract gives every harness one service and every engine one
@@ -140,11 +141,11 @@ verified them before the user's backfill, then the owner's first run.
   notes, not the passage that holds the fact, while lexical search,
   returning passages, scores 25%. The engine's first step found her
   knowledge crowding out the passages she found, and delivers them now:
-  evidence for 98 of 125 questions, from 9. Its paid runs decide: at
-  lexical search's strict accuracy, her engine stays; short of it, a
-  chunk index or an adopted engine's search, on the stage counts. The
-  owner's spot-check of the test set may change a few questions.
-  Delivery comes last, once the engine it delivers is chosen.
+  evidence for 98 of 125 questions, from 9. Its paid runs took her
+  strict accuracy from 7 to 40 of 124, past lexical search's 31, with
+  every abstention kept, so her engine stays and Delivery, the last
+  piece, is next; a chunk index waits on the questions only lexical
+  search passes.
 
 ### Model Providers
 
@@ -348,6 +349,10 @@ Found but not scheduled, each with its source.
   ([record](./reports/2026-10-31-memory-engine.md#deferred)): early
   variant errors untested, an undefined policy field, untraced source
   errors, and the first evaluation's Summary beside its corrections.
+- Knowledge placement for preferences: the paid runs' strict passes on
+  preference questions fell from 4 to 2 of 9 when her knowledge stopped
+  leading the context, though every lenient pass held
+  ([record](./reports/2026-10-31-memory-engine.md#the-decision)).
 - The consolidation's deferred minors
   ([record](./reports/2026-10-31-agentic-asset-consolidation.md#deferred)):
   brittle test fakes and waits, stale rendered drafts, unvalidated
@@ -538,3 +543,7 @@ In order of completion.
   for 98 of 125 questions, from 9, past lexical search's 69. Its paid
   runs, which decide between her engine and a chunk index, are next,
   then Delivery. Candidates gain its deferred minors.
+- 2026-10-31: The engine's paid runs are done: at her defaults Dorothy
+  passes 40 of 124 questions strictly, past lexical search's 31, so her
+  engine stays and Delivery is next. Candidates gain knowledge placement
+  for preferences.
