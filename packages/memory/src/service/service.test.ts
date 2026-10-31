@@ -441,6 +441,31 @@ describe("the memory service", () => {
         ]);
     });
 
+    it("recalls the turn of a conversation matching a prompt", async () => {
+        await start();
+        await post("/v1/record", {
+            host: "codex",
+            session: "s1",
+            events: [
+                {
+                    sourceId: "a",
+                    at: AT,
+                    kind: "user",
+                    text: "My bicycle is crimson.",
+                },
+            ],
+        });
+        const response = await post("/v1/recall", {
+            host: "codex",
+            session: "s2",
+            prompt: "what colour is my bicycle?",
+        });
+        const recalled = await response.json();
+        expect(recalled.text).toContain("My bicycle is crimson.");
+        expect(recalled.ids).toHaveLength(1);
+        expect(recalled.ids[0]).toStartWith("c:");
+    });
+
     it("records a session and opens the next with a block", async () => {
         await start();
         const recorded = await post("/v1/record", {

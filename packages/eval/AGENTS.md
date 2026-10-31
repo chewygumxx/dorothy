@@ -124,16 +124,13 @@ test through `runCli` and `fakeIo`.
   also stops the run, even from a completed turn, as the reply is not
   the role's model's; only the text names it. `models/testing.ts`:
   injected in-memory runner and files; integration tests use temp scripts.
-- `systems/`: `System` and `makeSystem` (`system.ts`); the corpus, the
-  snapshot's archive opened once, with items as text (`corpus.ts`);
-  `termsOf` and `scoreOf` (`terms.ts`); and the three systems,
-  `dorothy.ts`, `lexical.ts` and `full.ts`. A new system is a maker in
-  `system.ts`'s table.
-- `run/record.ts`: a run's directory, records and settings; `run.json`
-  keeps cumulative role tokens, optional on older runs. The last record
-  per question and system stands. `latestRunId`, for `--resume latest`:
-  the greatest `at`, ties by id, skipping a directory with no valid
-  `run.json`.
+- `systems/`: the corpus and the systems a run asks, `dorothy`, `lexical`,
+  `full` and the `cited` ceiling: [the systems' guide](./src/systems/AGENTS.md).
+- `run/record.ts`: a run's directory, records (retrieval by stage: found,
+  delivered, covered) and settings; `run.json` keeps cumulative role
+  tokens, optional on older runs. The last record per question and
+  system stands. `latestRunId`, for `--resume latest`: the greatest `at`,
+  ties by id, skipping a directory with no valid `run.json`.
 - `run/judges.ts`: the answering prompt, the judges (openevals' strict
   prompt and ours) and `declines`; `run/run.ts`: `runEvaluation`, which
   appends a record per question and system and resumes where a run
@@ -144,7 +141,8 @@ test through `runCli` and `fakeIo`.
   A run without every saved definition cannot be resumed. Reported
   token deltas are saved even for capped or failed work; a resumed
   older run marks new totals partial. `run/command.ts`: the command.
-- `report/`: `summarise`, the Markdown report with role token totals
-  beside the per-system answer costs, `compareOf`, the `compare` command
-  and `writeRunReport`. Older runs say totals were not kept.
+- `report/`: `summarise`, whose cells count found, delivered and covered,
+  the Markdown report with role token totals beside the answer costs,
+  `compareOf`, the `compare` command and `writeRunReport`. Older runs say
+  totals were not kept.
 - `testing.ts`: `fakeIo`, temporary roots and the fixture archive.

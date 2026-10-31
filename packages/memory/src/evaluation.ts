@@ -14,6 +14,31 @@
 // tests.
 
 export {
+    type DeliveredItem,
+    type Delivery,
+    type DeliveryPolicy,
+    deliver,
+    type EvidenceSource,
+    ITEM_SHARE,
+    PASSAGE_SEEDS,
+    type PassageSeeds,
+    packDelivery,
+} from "./contract/deliver.js";
+export {
+    clip,
+    conversationText,
+    type EvidenceConversation,
+    type EvidenceKnowledge,
+    type EvidenceTurn,
+    knowledgeText,
+    type Passage,
+    pack,
+    passage,
+    type TurnRange,
+    turnsIn,
+} from "./contract/passage.js";
+export { firstTermAt, scoreOf, termsOf } from "./contract/terms.js";
+export {
     type AppraisedRead,
     type AppraisedReads,
     type Archive,
@@ -31,3 +56,4 @@ export {
     fixturePhrase,
     writeArchive,
 } from "./engine/fixture.js";
+export { HIT_ORDERS, type HitOrder, mergeHits } from "./engine/merge.js";

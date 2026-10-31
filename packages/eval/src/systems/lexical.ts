@@ -11,11 +11,23 @@
 // The bound from below: every turn and knowledge file scored by how many
 // of the question's terms it holds, with no index, as grep would find.
 
-import { type Corpus, knowledgeText, passage } from "./corpus.js";
-import { packed, type System } from "./system.js";
-import { scoreOf, termsOf } from "./terms.js";
+import {
+    type DeliveredItem,
+    knowledgeText,
+    packDelivery,
+    passage,
+    scoreOf,
+    termsOf,
+} from "@dorothy/memory/evaluation";
+import type { Corpus } from "./corpus.js";
+import type { System } from "./system.js";
 
-type Scored = { id: string; score: number; at: string; text: () => string };
+type Scored = {
+    id: string;
+    score: number;
+    at: string;
+    item: () => DeliveredItem;
+};
 
 const newestFirst = (a: Scored, b: Scored) =>
     b.score - a.score ||
@@ -41,12 +53,21 @@ export function lexicalSystem(corpus: Corpus): System {
                         id: conversation.id,
                         score,
                         at: conversation.lastAt,
-                        text: () =>
-                            passage(
+                        item: () => {
+                            const found = passage(
                                 conversation,
                                 terms,
                                 Math.floor(budget / 3),
-                            ),
+                            );
+                            return {
+                                id: conversation.id,
+                                kind: "episode",
+                                turns: found.turns,
+                                text: found.text,
+                                cut: found.cut,
+                                opened: true,
+                            };
+                        },
                     });
                 }
             }
@@ -57,17 +78,28 @@ export function lexicalSystem(corpus: Corpus): System {
                         id: knowledge.id,
                         score,
                         at: knowledge.at,
-                        text: () => knowledgeText(knowledge),
+                        item: () => ({
+                            id: knowledge.id,
+                            kind: "knowledge",
+                            turns: null,
+                            text: knowledgeText(knowledge),
+                            cut: false,
+                            opened: true,
+                        }),
                     });
                 }
             }
             scored.sort(newestFirst);
             const best = scored.slice(0, 20);
-            const fitted = packed(
-                best.map((each) => ({ id: each.id, text: each.text() })),
+            const delivery = packDelivery(
+                best.map((each) => each.item()),
                 budget,
             );
-            return { ranked: fitted.ids, context: fitted.text };
+            return {
+                ranked: delivery.items.map((item) => item.id),
+                context: delivery.text,
+                items: delivery.items,
+            };
         },
     };
 }

@@ -21,42 +21,26 @@ import {
     type Env,
     knowledgeId,
 } from "@dorothy/core";
-import { buildBlock } from "../contract/block.js";
+import { composeBlock } from "../contract/block.js";
+import { knowledgeRecord, turnsOf } from "../contract/evidence.js";
+import type {
+    EvidenceConversation,
+    EvidenceKnowledge,
+    EvidenceTurn,
+} from "../contract/passage.js";
 import { dataRoot, listFacts } from "../facts/store.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { keywordsOf, vocabularyBroken } from "../recall/tags.js";
 import { readTranscript, transcriptPath } from "../transcript.js";
 import { baselineEngine } from "./baseline.js";
-import { knowledgePath, type MemoryEngine } from "./engine.js";
+import type { MemoryEngine } from "./engine.js";
 
-export type ArchiveTurn = {
-    n: number;
-    role: "user" | "assistant";
-    at: string;
-    text: string;
-};
-export type ArchiveConversation = {
-    id: string;
-    phrase: string;
-    project: string | null;
-    title: string | null;
+export type ArchiveTurn = EvidenceTurn;
+export type ArchiveConversation = EvidenceConversation & {
     // Her concepts' labels.
     tags: string[];
-    firstAt: string;
-    lastAt: string;
-    turns: ArchiveTurn[];
 };
-export type ArchiveKnowledge = {
-    id: string;
-    // "personal", or the project's id.
-    scope: string;
-    type: string;
-    title: string;
-    description: string;
-    body: string;
-    at: string;
-    retired: { at: string; why: string } | null;
-};
+export type ArchiveKnowledge = EvidenceKnowledge;
 // A read her review judged useful or essential: her purpose, and what
 // she opened for it, as a contract id.
 export type AppraisedRead = {
@@ -80,7 +64,13 @@ export type Archive = {
         project: string | null;
         budget: number;
         exclude: string | null;
-    }): Promise<{ text: string; ids: string[] }>;
+    }): Promise<{
+        text: string;
+        ids: string[];
+        // Each item the block gave at its full tier, with the line it
+        // rendered for it.
+        full: { id: string; text: string }[];
+    }>;
     conversations(): ArchiveConversation[];
     knowledge(): Promise<ArchiveKnowledge[]>;
     appraisedReads(): Promise<AppraisedReads>;
@@ -93,12 +83,6 @@ type ConversationRow = {
     title: string | null;
     first_at: number;
     last_at: number;
-};
-type TurnRow = {
-    n: number;
-    role: "user" | "assistant";
-    at: number;
-    text: string;
 };
 type ReadRow = {
     id: string;
@@ -171,10 +155,16 @@ export async function openArchive(
     return {
         engine,
         async block(request) {
-            const response = await buildBlock(request, engine);
+            const { response, lines } = await composeBlock(request, engine);
             return {
                 text: response.text,
                 ids: response.items.map((item) => item.id),
+                full: response.items
+                    .filter((item) => item.tier === "full")
+                    .map((item) => ({
+                        id: item.id,
+                        text: lines.get(item.id) ?? "",
+                    })),
             };
         },
         conversations() {
@@ -187,9 +177,6 @@ export async function openArchive(
                      ORDER BY first_at, phrase`,
                 )
                 .all() as ConversationRow[];
-            const turns = index.db.query(
-                "SELECT n, role, at, text FROM turns WHERE phrase = ? ORDER BY n",
-            );
             return rows.map((row) => ({
                 id: conversationId(row.phrase),
                 phrase: row.phrase,
@@ -198,29 +185,12 @@ export async function openArchive(
                 tags: labelled ? keywordsOf(index, row.phrase) : [],
                 firstAt: iso(row.first_at),
                 lastAt: iso(row.last_at),
-                turns: (turns.all(row.phrase) as TurnRow[]).map((turn) => ({
-                    n: turn.n,
-                    role: turn.role,
-                    at: iso(turn.at),
-                    text: turn.text,
-                })),
+                turns: turnsOf(index, row.phrase),
             }));
         },
         async knowledge() {
             const { facts } = await listFacts(dataRoot(env));
-            return facts.map(({ scope, fact }) => ({
-                id: knowledgeId(knowledgePath(scope, fact.name)),
-                scope: scope.kind === "personal" ? "personal" : scope.id,
-                type: fact.type,
-                title: fact.title,
-                description: fact.description,
-                body: fact.body,
-                at: fact.provenance.at,
-                retired:
-                    fact.retired === null
-                        ? null
-                        : { at: fact.retired.at, why: fact.retired.why },
-            }));
+            return facts.map(({ scope, fact }) => knowledgeRecord(scope, fact));
         },
         async appraisedReads() {
             const rows = index.db

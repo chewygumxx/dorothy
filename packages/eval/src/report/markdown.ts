@@ -13,6 +13,7 @@
 
 import { ROLES } from "../models/config.js";
 import { QUESTION_TYPES } from "../questions/file.js";
+import { baseOf } from "../systems/system.js";
 import type { Cell, Rate, Summary } from "./summary.js";
 
 export const ADOPTION_RULE = [
@@ -29,23 +30,35 @@ export const percent = (rate: Rate) =>
         : `${((100 * rate.hits) / rate.of).toFixed(1)}% (${rate.hits}/${rate.of})`;
 
 const ACCURACY = [
-    "| System | Strict | Lenient | Recall@5 | Recall@10 | In context | Abstained | Declined wrongly | Older answer |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| System | Strict | Lenient | Found | Recall@5 | Recall@10 | Delivered | Delivered or noted | Covered | Abstained | Declined wrongly | Older answer |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
 ];
-// In context is a dash for records written before it was kept.
-const accuracyRow = (name: string, cell: Cell) =>
-    `| ${name} | ${[
-        cell.strict,
-        cell.lenient,
-        cell.at5,
-        cell.at10,
-        cell.inContext,
-        cell.declined,
-        cell.wronglyDeclined,
-        cell.stale,
-    ]
-        .map((each) => (each === null ? "-" : percent(each)))
-        .join(" | ")} |`;
+// Covered: the mean share of the answer's terms the evidence held, and
+// how many held every one.
+const coverage = (covered: Cell["covered"]) =>
+    covered === null
+        ? "-"
+        : covered.full.of === 0
+          ? "n/a"
+          : `${((100 * covered.total) / covered.full.of).toFixed(1)}% (${covered.full.hits}/${covered.full.of} whole)`;
+// A stage is a dash for records written before it was kept, or by a
+// system that gives none.
+const accuracyRow = (name: string, cell: Cell) => {
+    const rate = (each: Rate | null) => (each === null ? "-" : percent(each));
+    return `| ${name} | ${[
+        rate(cell.strict),
+        rate(cell.lenient),
+        rate(cell.found),
+        rate(cell.at5),
+        rate(cell.at10),
+        rate(cell.delivered),
+        rate(cell.inContext),
+        coverage(cell.covered),
+        rate(cell.declined),
+        rate(cell.wronglyDeclined),
+        rate(cell.stale),
+    ].join(" | ")} |`;
+};
 
 export function reportOf(summary: Summary): string {
     const { run } = summary;
@@ -63,6 +76,12 @@ export function reportOf(summary: Summary): string {
         ...ACCURACY,
         ...systems.map(([name, each]) => accuracyRow(name, each.all)),
         "",
+        ...(systems.some(([name]) => baseOf(name) === "cited")
+            ? [
+                  "cited is given each question's evidence: a ceiling, not a contender.",
+                  "",
+              ]
+            : []),
         "## By type",
     ];
     for (const type of QUESTION_TYPES) {

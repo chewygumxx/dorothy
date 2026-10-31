@@ -102,6 +102,9 @@ export type MemoryHit = {
     title: string;
     snippet: string;
     date?: string | undefined;
+    // An episode's matched turns, best first, at most three: where a
+    // passage or an open starts.
+    turns?: number[] | undefined;
     // Knowledge the user has not confirmed carries a warning.
     unconfirmed?: string | undefined;
 };

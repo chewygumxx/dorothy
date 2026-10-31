@@ -28,6 +28,17 @@ export type Judged = Record<Verdict, boolean | null> & {
     // reasons were kept has none.
     reasons?: Partial<Record<Verdict, string>>;
 };
+export type RecordedItem = {
+    id: string;
+    kind: "knowledge" | "episode";
+    // A passage's first and last turn; null for anything else.
+    turns: { from: number; through: number } | null;
+    chars: number;
+    cut: boolean;
+    opened: boolean;
+    // Knowledge the opening block gave in full, not a hit.
+    block?: true;
+};
 export type RunRecord = {
     question: string;
     system: string;
@@ -38,11 +49,25 @@ export type RunRecord = {
         chars: number;
         ms: number;
         error: string | null;
+        // What went into the context, without its text; only for a
+        // system that reports it.
+        items?: RecordedItem[];
     };
     // Null for a question with no evidence. inContext: whether any
     // evidence id is anywhere in the system's ranked ids, past the ten
-    // kept; a record written before it was kept has none.
-    recall: { at5: boolean; at10: boolean; inContext?: boolean } | null;
+    // kept; a record written before it was kept has none. Each of the
+    // rest is absent where the system gave no found or items: found,
+    // whether the engine's hits held evidence; delivered, whether
+    // evidence went into the context opened; covered, the share of the
+    // gold answer's terms that evidence held (null where it has none).
+    recall: {
+        at5: boolean;
+        at10: boolean;
+        inContext?: boolean;
+        found?: boolean;
+        delivered?: boolean;
+        covered?: number | null;
+    } | null;
     answer: { text: string; input: number; output: number; ms: number } | null;
     judged: Judged;
     failures: string[];
@@ -112,7 +137,13 @@ function isRunRecord(value: unknown): value is RunRecord {
             typeof field.at5 === "boolean" &&
             typeof field.at10 === "boolean" &&
             (field.inContext === undefined ||
-                typeof field.inContext === "boolean"));
+                typeof field.inContext === "boolean") &&
+            (field.found === undefined || typeof field.found === "boolean") &&
+            (field.delivered === undefined ||
+                typeof field.delivered === "boolean") &&
+            (field.covered === undefined ||
+                field.covered === null ||
+                number(field.covered)));
     return (
         table(record) &&
         typeof record.question === "string" &&

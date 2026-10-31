@@ -275,6 +275,74 @@ describe("search by kind", () => {
     });
 });
 
+describe("search's turns and order", () => {
+    it("gives up to three matched turns, best first", async () => {
+        const phrase = newPhrase(() =>
+            Uint8Array.from([90, 1, 2, 3, 4, 5, 6, 7]),
+        );
+        mkdirSync(transcriptDir(env), { recursive: true });
+        writeFileSync(
+            transcriptPath(phrase, env),
+            line("session", 0, {
+                phrase: "p",
+                sdkSessionId: "",
+                model: "m",
+                promptHash: "",
+                resumed: false,
+            }) +
+                line("user", 1, { text: "a kumquat" }) +
+                line("assistant", 2, {
+                    text: "kumquat kumquat, a fine kumquat",
+                }) +
+                line("user", 3, { text: "nothing here" }) +
+                line("assistant", 4, {
+                    text: "kumquat once, among a good many other words here",
+                }) +
+                line("user", 5, { text: "kumquat kumquat" }),
+        );
+        const hits = await engine().search({
+            query: "kumquat",
+            within: "all",
+            kind: "episodes",
+            limit: 10,
+            project: null,
+        });
+        // The index's own order of this conversation's matching turns.
+        const best = (
+            index.db
+                .query(
+                    `SELECT t.n AS n FROM turns_fts
+                     JOIN turns t ON t.rowid = turns_fts.rowid
+                     WHERE turns_fts MATCH '"kumquat"' AND t.phrase = ?
+                     ORDER BY bm25(turns_fts) LIMIT 3`,
+                )
+                .all(phrase) as { n: number }[]
+        ).map((row) => row.n);
+        expect(best).toHaveLength(3);
+        expect(hits.find((each) => each.id === `c:${phrase}`)?.turns).toEqual(
+            best,
+        );
+    });
+
+    it("keeps an episode among ten knowledge hits", async () => {
+        const root = dataRoot(env);
+        for (let at = 0; at < 12; at++) {
+            await putFact(root, PERSONAL, fact(`kumquat-${at}`));
+        }
+        const phrase = converse(2, null, "kumquat");
+        const hits = await engine().search({
+            query: "kumquat",
+            within: "all",
+            kind: "all",
+            limit: 10,
+            project: null,
+        });
+        expect(hits).toHaveLength(10);
+        expect(hits[0]?.id).toBe(`c:${phrase}`);
+        expect(hits[1]?.kind).toBe("knowledge");
+    });
+});
+
 describe("extract", () => {
     it("does nothing where no reviewer is wired", async () => {
         const bare = baselineEngine({

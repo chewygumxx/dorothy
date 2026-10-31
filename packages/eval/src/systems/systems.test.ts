@@ -9,17 +9,22 @@
 //
 
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import type { ArchiveConversation } from "@dorothy/memory/evaluation";
+import {
+    conversationText,
+    mergeHits,
+    passage,
+} from "@dorothy/memory/evaluation";
 import { workEnv } from "../snapshot/snapshot.js";
 import { GARDEN, READER, snapshotFixture, TEA, tempRoot } from "../testing.js";
+import { type Corpus, openCorpus } from "./corpus.js";
+import { DOROTHY_DEFAULTS, dorothyOptions } from "./dorothy.js";
 import {
-    type Corpus,
-    conversationText,
-    openCorpus,
-    passage,
-} from "./corpus.js";
-import { type Asked, makeSystem, packed, packItems } from "./system.js";
-import { scoreOf, termsOf } from "./terms.js";
+    type Asked,
+    checkSystem,
+    makeSystem,
+    type Retrieved,
+} from "./system.js";
+import { TODAY, TODAY_QUESTIONS } from "./today.fixture.js";
 
 let temp: ReturnType<typeof tempRoot>;
 let corpus: Corpus;
@@ -42,126 +47,21 @@ const asked = (
     asOf: "2026-10-19",
     project,
     exclude,
+    evidence: [],
 });
 // Whether the context holds an item, or the block's mention, of an id.
 const mentions = (context: string, id: string) => context.includes(`"${id}"`);
 
-describe("terms", () => {
-    it("keeps words of three letters or more, not the common ones", () => {
-        expect(termsOf("What do I drink at four in the afternoon?")).toEqual([
-            "drink",
-            "four",
-            "afternoon",
-        ]);
-    });
-
-    it("counts the terms a text holds", () => {
-        expect(
-            scoreOf("I drink green tea at four.", ["drink", "four", "plot"]),
-        ).toBe(2);
-    });
-});
-
 describe("items", () => {
-    it("pack within the budget, the last cut to fit", () => {
-        const packed = packItems(
-            [
-                { id: "c:a", text: "x".repeat(50) },
-                { id: "c:b", text: "y".repeat(50) },
-            ],
-            120,
-        );
-        expect(packed.length).toBeLessThanOrEqual(120);
-        expect(packed).toStartWith('<item id="c:a">\n');
-        expect(packed).toContain('<item id="c:b">');
-    });
-
-    it("report the ids that went in, not those the budget cut off", () => {
-        const items = [
-            { id: "c:a", text: "x".repeat(50) },
-            { id: "c:b", text: "y".repeat(50) },
-            { id: "c:c", text: "z".repeat(50) },
-        ];
-        const whole = packed(items, 400);
-        expect(whole.ids).toEqual(["c:a", "c:b", "c:c"]);
-        expect(packItems(items, 400)).toBe(whole.text);
-        // The second is cut to fit and counts; the third never gets in.
-        const cut = packed(items, 120);
-        expect(cut.ids).toEqual(["c:a", "c:b"]);
-        expect(cut.text).not.toContain("c:c");
-        expect(packed(items, 0)).toEqual({ text: "", ids: [] });
-    });
-
     it("pass the turns that match, with their neighbours", () => {
         const tea = corpus.conversations.get(`c:${TEA}`);
         if (tea === undefined) {
             throw new Error("the fixture lacks its tea");
         }
-        const text = passage(tea, ["tea"], 1000);
+        const { text } = passage(tea, ["tea"], 1000);
         expect(text).toContain("green tea at four every afternoon");
         expect(text).toContain("Green tea at four, noted.");
-        expect(passage(tea, ["tea"], 20).length).toBeLessThanOrEqual(20);
-    });
-});
-
-describe("passage", () => {
-    const longTurn = (text: string): ArchiveConversation => ({
-        id: "c:long",
-        phrase: "long",
-        project: null,
-        title: "Discussion",
-        tags: [],
-        firstAt: "2026-10-01T00:00:00Z",
-        lastAt: "2026-10-01T00:00:00Z",
-        turns: [{ n: 1, role: "user", at: "2026-10-01T00:00:00Z", text }],
-    });
-
-    it("excerpts a matching turn too long to fit, not drops it", () => {
-        const long = longTurn(
-            `My bicycle is crimson. ${"details ".repeat(1000)}`,
-        );
-        const text = passage(long, ["bicycle"], 300);
-        expect(text.length).toBeLessThanOrEqual(300);
-        expect(text).toStartWith(
-            "Discussion, 2026-10-01 to 2026-10-01\n[1] user",
-        );
-        expect(text).toContain("My bicycle is crimson.");
-    });
-
-    it("centres the excerpt on the match, wherever it lies", () => {
-        const long = longTurn(
-            `${"filler ".repeat(500)}my bicycle is crimson${" filler".repeat(500)}`,
-        );
-        const text = passage(long, ["bicycle"], 300);
-        expect(text.length).toBeLessThanOrEqual(300);
-        expect(text).toContain("my bicycle is crimson");
-    });
-
-    for (const [word, query, padding] of [
-        ["cafe\u0301", "café", "ﬃ filler "],
-        ["㍿", "株式会社", "ﬃ filler "],
-        ["cafe\u0301", "café", "\uffa1\uffc2 filler "],
-    ] as const) {
-        it(`keeps a normalized ${query} match after ${padding}`, () => {
-            // Normalization expands ligatures and composes halfwidth jamo,
-            // so its offsets cannot be used to slice the original turn.
-            const answer = `My ${word} order is espresso.`;
-            const long = longTurn(
-                `${padding.repeat(500)}${answer}${" filler".repeat(500)}`,
-            );
-            const terms = termsOf(query);
-            expect(scoreOf(long.turns[0]?.text ?? "", terms)).toBe(1);
-            const text = passage(long, terms, 300);
-            expect(text.length).toBeLessThanOrEqual(300);
-            expect(text).toContain(answer);
-        });
-    }
-
-    it("excerpts the start of a long first turn where none match", () => {
-        const long = longTurn(`Opening words. ${"padding ".repeat(1000)}`);
-        const text = passage(long, ["zebra"], 300);
-        expect(text.length).toBeLessThanOrEqual(300);
-        expect(text).toContain("Opening words.");
+        expect(passage(tea, ["tea"], 20).text.length).toBeLessThanOrEqual(20);
     });
 });
 
@@ -306,30 +206,45 @@ describe("the dorothy system", () => {
 
     it("ranks the hits as her search gave them, then the block's", async () => {
         const question = "Where is my allotment plot?";
-        const hits = await corpus.archive.engine.search({
-            query: question,
-            within: "all",
-            kind: "all",
-            limit: 10,
-            project: null,
-        });
+        const search = (kind: "knowledge" | "episodes") =>
+            corpus.archive.engine.search({
+                query: question,
+                within: "all",
+                kind,
+                limit: 10,
+                project: null,
+            });
+        const hits = mergeHits(
+            await search("knowledge"),
+            await search("episodes"),
+            "alternate",
+            10,
+        );
         const block = await corpus.archive.block({
             project: null,
-            budget: 3200,
+            budget: Math.floor(8000 * 0.4),
             exclude: null,
         });
         const found = await makeSystem("dorothy", corpus).retrieve(
             asked(question),
             8000,
         );
-        const given = hits.map((hit) => hit.id);
+        const delivered = hits
+            .filter(
+                (hit) =>
+                    !(
+                        hit.kind === "knowledge" &&
+                        block.full.some((item) => item.id === hit.id)
+                    ),
+            )
+            .map((hit) => hit.id);
         expect(found.ranked).toEqual([
-            ...given,
-            ...block.ids.filter((id) => !given.includes(id)),
+            ...delivered,
+            ...block.ids.filter((id) => !delivered.includes(id)),
         ]);
         // The hits lead, though the block holds the knowledge first.
         expect(found.ranked[0]).toBe(`c:${GARDEN}`);
-        expect(given).not.toEqual(block.ids);
+        expect(delivered).not.toEqual(block.ids);
     });
 
     it("ranks only the hits that fitted, and what the block holds", async () => {
@@ -396,7 +311,182 @@ describe("the dorothy system", () => {
 describe("makeSystem", () => {
     it("names the systems it has when asked for another", () => {
         expect(() => makeSystem("hindsight", corpus)).toThrow(
-            "no system hindsight; the systems are dorothy, lexical, full",
+            "no system hindsight; the systems are dorothy, lexical, full, cited",
+        );
+    });
+});
+
+describe("the cited system", () => {
+    it("delivers exactly the question's evidence", async () => {
+        const found = await makeSystem("cited", corpus).retrieve(
+            {
+                ...asked("Where is my allotment plot?"),
+                evidence: [`c:${GARDEN}`],
+            },
+            8000,
+        );
+        expect(found.ranked).toEqual([`c:${GARDEN}`]);
+        expect(found.context).toContain(`<item id="c:${GARDEN}">`);
+    });
+
+    it("gives nothing for a question with none", async () => {
+        const found = await makeSystem("cited", corpus).retrieve(
+            asked("Anything?"),
+            8000,
+        );
+        expect(found).toMatchObject({ ranked: [], context: "" });
+    });
+
+    it("takes no options", () => {
+        expect(() => checkSystem("cited:x=1")).toThrow(
+            "cited takes no options",
+        );
+    });
+});
+
+describe("the lexical and full systems' items", () => {
+    it("carry each passage's range, as delivered", async () => {
+        const found = await makeSystem("lexical", corpus).retrieve(
+            asked("What do I drink at four in the afternoon?"),
+            4000,
+        );
+        expect(found.items?.map((item) => item.id)).toEqual(found.ranked);
+        const tea = found.items?.find((item) => item.id === `c:${TEA}`);
+        expect(tea?.kind).toBe("episode");
+        expect(tea?.turns).not.toBeNull();
+        expect(found.context).toContain(tea?.text ?? "unreachable");
+    });
+
+    it("run from a conversation's first turn to its last in full", async () => {
+        const found = await makeSystem("full", corpus).retrieve(
+            asked("anything"),
+            400_000,
+        );
+        expect(found.items?.map((item) => item.id)).toEqual(found.ranked);
+        const tea = corpus.conversations.get(`c:${TEA}`);
+        const turns = tea?.turns ?? [];
+        expect(
+            found.items?.find((item) => item.id === `c:${TEA}`),
+        ).toMatchObject({
+            kind: "episode",
+            turns: { from: turns[0]?.n, through: turns.at(-1)?.n },
+            cut: false,
+        });
+        expect(
+            found.items?.find((item) => item.id === "k:personal/uses-helix"),
+        ).toMatchObject({ kind: "knowledge", turns: null });
+    });
+});
+
+const TODAY_SYSTEM =
+    "dorothy:order=knowledge-first:dedupe=off:seeds=overlap:knowledge=whole";
+
+describe("the dorothy system's context today", () => {
+    for (const question of TODAY_QUESTIONS) {
+        it(`holds for ${question}`, async () => {
+            const found = await makeSystem(TODAY_SYSTEM, corpus).retrieve(
+                asked(question),
+                8000,
+            );
+            expect({
+                ranked: found.ranked,
+                context: found.context,
+            }).toEqual(TODAY[question]);
+        });
+    }
+});
+
+describe("system names", () => {
+    it("names a variant by its options, and keeps the name", () => {
+        expect(makeSystem("dorothy:block=0.2", corpus).name).toBe(
+            "dorothy:block=0.2",
+        );
+        expect(dorothyOptions(new Map([["dedupe", "off"]]))).toEqual({
+            ...DOROTHY_DEFAULTS,
+            dedupe: false,
+        });
+    });
+
+    for (const [name, says] of [
+        [
+            "dorothy:size=3",
+            "dorothy takes block, order, cap, seeds, dedupe, knowledge, not size",
+        ],
+        ["dorothy:seeds=random", "seeds takes search or overlap, not random"],
+        ["dorothy:dedupe=yes", "dedupe takes on or off, not yes"],
+        ["dorothy:knowledge=all", "knowledge takes capped or whole, not all"],
+        ["dorothy:cap=x", "cap takes a share above 0, up to 1, not x"],
+        ["dorothy:block=1", "block takes a share from 0 to under 1, not 1"],
+        ["dorothy:cap=0", "cap takes a share above 0, up to 1, not 0"],
+        ["dorothy:order=random", "order takes alternate or knowledge-first"],
+        ["dorothy:block=0.2:block=0.3", "block is given twice"],
+        ["dorothy:", 'each option is key=value, not ""'],
+        ["dorothy:block= 0.2", "each option is key=value"],
+        ["lexical:block=0.2", "lexical takes no options"],
+        ["nobody", "no system nobody; the systems are"],
+    ] as const) {
+        it(`refuses ${name}`, () => {
+            expect(() => checkSystem(name)).toThrow(says);
+        });
+    }
+
+    it("takes each key's values", () => {
+        const of = (key: string, value: string) =>
+            dorothyOptions(new Map([[key, value]]));
+        expect(of("block", "0").block).toBe(0);
+        expect(of("block", "0.6").block).toBe(0.6);
+        expect(of("cap", "1").cap).toBe(1);
+        expect(of("order", "knowledge-first").order).toBe("knowledge-first");
+        expect(of("seeds", "overlap").seeds).toBe("overlap");
+        expect(of("dedupe", "on").dedupe).toBe(true);
+        expect(of("knowledge", "whole").wholeKnowledge).toBe(true);
+        expect(of("knowledge", "capped").wholeKnowledge).toBe(false);
+        expect(dorothyOptions(new Map())).toEqual(DOROTHY_DEFAULTS);
+    });
+});
+
+describe("the dorothy system's delivery", () => {
+    it("opens her search's conversation as a passage", async () => {
+        const found = await makeSystem("dorothy", corpus).retrieve(
+            asked("Where is my allotment plot?"),
+            8000,
+        );
+        expect(found.found).toContain(`c:${GARDEN}`);
+        const item = found.items?.find((each) => each.id === `c:${GARDEN}`);
+        expect(item?.kind).toBe("episode");
+        expect(item?.turns).not.toBeNull();
+    });
+
+    it("leaves out knowledge the block gave in full, unless told", async () => {
+        const question = "Do I use Helix?";
+        const deduped = await makeSystem("dorothy", corpus).retrieve(
+            asked(question),
+            8000,
+        );
+        const kept = await makeSystem("dorothy:dedupe=off", corpus).retrieve(
+            asked(question),
+            8000,
+        );
+        // The hits delivered, not the block's knowledge reported beside.
+        const ids = (found: Retrieved) =>
+            (found.items ?? [])
+                .filter((each) => each.block !== true)
+                .map((each) => each.id);
+        expect(ids(deduped)).not.toContain("k:personal/uses-helix");
+        expect(ids(kept)).toContain("k:personal/uses-helix");
+    });
+
+    it("gives no block at a share of nothing", async () => {
+        const found = await makeSystem("dorothy:block=0", corpus).retrieve(
+            asked("Where is my allotment plot?"),
+            8000,
+        );
+        // No block at all: not its frame, not its closing reminder,
+        // and no separator charged.
+        expect(found.context).toStartWith("<item id=");
+        expect(found.context.length).toBeLessThanOrEqual(8000);
+        expect(found.ranked).toEqual(
+            (found.items ?? []).map((item) => item.id),
         );
     });
 });

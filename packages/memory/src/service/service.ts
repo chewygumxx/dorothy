@@ -29,6 +29,7 @@ import { hookLog } from "../bodies/log.js";
 import { recordSession } from "../bodies/record.js";
 import { openingBlock } from "../contract/block.js";
 import { ContractError } from "../contract/errors.js";
+import { indexEvidence } from "../contract/evidence.js";
 import { FrozenBlocks } from "../contract/frozen.js";
 import { recallFor } from "../contract/recall.js";
 import { acceptRecord, type Held, sessionKey } from "../contract/record.js";
@@ -337,7 +338,11 @@ export async function startService(
                                 recallRequestSchema,
                                 await bodyOf(request),
                             ),
-                            { engine, profiles },
+                            {
+                                engine,
+                                profiles,
+                                evidence: () => indexEvidence(index, root),
+                            },
                         ),
                     );
                 case SERVICE_PATHS.record: {

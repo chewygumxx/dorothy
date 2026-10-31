@@ -14,6 +14,7 @@
 
 import { createHash } from "node:crypto";
 import { appendFile, mkdir, stat } from "node:fs/promises";
+import { scoreOf, termsOf } from "@dorothy/memory/evaluation";
 import { RunStop, UsageError } from "../errors.js";
 import { writeAtomic } from "../files.js";
 import { PlanLimit } from "../models/cli.js";
@@ -24,7 +25,12 @@ import { writeRunReport } from "../report/command.js";
 import type { Summary } from "../report/summary.js";
 import type { SnapshotInfo } from "../snapshot/snapshot.js";
 import type { Corpus } from "../systems/corpus.js";
-import { makeSystem, type Retrieved, type System } from "../systems/system.js";
+import {
+    baseOf,
+    makeSystem,
+    type Retrieved,
+    type System,
+} from "../systems/system.js";
 import { answerPrompt, declines, type Judges, makeJudges } from "./judges.js";
 import {
     endRecords,
@@ -220,6 +226,58 @@ class Capped extends RunStop {
 const hasEvidence = (ranked: string[], evidence: string[]) =>
     ranked.some((id) => evidence.includes(id));
 
+// The share of the gold answer's terms that the texts hold; null where
+// there is no answer, or it has no terms.
+export function coverageOf(
+    answer: string | null,
+    texts: readonly string[],
+): number | null {
+    if (answer === null) {
+        return null;
+    }
+    const terms = termsOf(answer);
+    return terms.length === 0
+        ? null
+        : scoreOf(texts.join("\n"), terms) / terms.length;
+}
+
+// What a question's evidence came to at each stage past the ranking: the
+// engine's hits (found), the evidence opened into the context
+// (delivered) and how much of the answer it holds (covered). A failed
+// retrieval found and delivered nothing, which the summary counts.
+export function stagesOf(
+    question: Question,
+    retrieved: Retrieved,
+    failed: boolean,
+) {
+    if (failed) {
+        return { covered: coverageOf(question.answer, []) };
+    }
+    const { found, items } = retrieved;
+    // Opened evidence only: a stand-in title and snippet is not the
+    // evidence delivered.
+    const cited = (items ?? []).filter(
+        (item) =>
+            item.opened &&
+            (item.kind === "knowledge" || item.turns !== null) &&
+            question.evidence.includes(item.id),
+    );
+    return {
+        ...(found === undefined
+            ? {}
+            : { found: hasEvidence(found, question.evidence) }),
+        ...(items === undefined
+            ? {}
+            : {
+                  delivered: cited.length > 0,
+                  covered: coverageOf(
+                      question.answer,
+                      cited.map((item) => item.text),
+                  ),
+              }),
+    };
+}
+
 // The verdicts a model owes an answered question: whether an abstention
 // declines; strict and lenient for the rest, and for an update with an
 // older answer, whether it gives that one.
@@ -360,8 +418,9 @@ async function ask(
                 asOf: question.asOf,
                 project: question.project,
                 exclude: question.exclude,
+                evidence: question.evidence,
             },
-            system.name === "full" ? info.fullBudget : info.budget,
+            baseOf(system.name) === "full" ? info.fullBudget : info.budget,
         );
     } catch (caught) {
         error = failureOf(caught);
@@ -375,6 +434,14 @@ async function ask(
             chars: retrieved.context.length,
             ms: Math.round(performance.now() - started),
             error,
+            ...(retrieved.items === undefined
+                ? {}
+                : {
+                      items: retrieved.items.map(({ text, ...item }) => ({
+                          ...item,
+                          chars: text.length,
+                      })),
+                  }),
         },
         recall:
             question.evidence.length === 0
@@ -393,6 +460,7 @@ async function ask(
                           retrieved.ranked,
                           question.evidence,
                       ),
+                      ...stagesOf(question, retrieved, error !== null),
                   },
         answer: null,
         judged: {

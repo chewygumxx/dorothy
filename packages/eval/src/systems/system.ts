@@ -9,11 +9,15 @@
 //
 
 // What every system meets: a question, a budget of characters, and back
-// its ids best first with the context the answering model reads.
+// its ids best first with the context the answering model reads. A system
+// is named <system>[:<key>=<value>]..., as dorothy:block=0.2:order=
+// knowledge-first.
 
+import type { DeliveredItem } from "@dorothy/memory/evaluation";
 import { UsageError } from "../errors.js";
+import { citedSystem } from "./cited.js";
 import type { Corpus } from "./corpus.js";
-import { dorothySystem } from "./dorothy.js";
+import { dorothyOptions, dorothySystem } from "./dorothy.js";
 import { fullSystem } from "./full.js";
 import { lexicalSystem } from "./lexical.js";
 
@@ -23,10 +27,21 @@ export type Asked = {
     project: string | null;
     // The phrase of a conversation left out of retrieval.
     exclude: string | null;
+    // The question's evidence ids, for the cited ceiling alone.
+    evidence: readonly string[];
 };
 // Contract ids best first, for evidence recall, and the context. Every
 // ranked id is in the context: an item the budget cut off is not ranked.
-export type Retrieved = { ranked: string[]; context: string };
+export type Retrieved = {
+    ranked: string[];
+    context: string;
+    // The engine's hits before packing, best first; systems with an
+    // engine only.
+    found?: string[];
+    // What went into the context, as delivered; dorothy adds the
+    // knowledge her block gave in full, marked block.
+    items?: (DeliveredItem & { block?: true })[];
+};
 
 export interface System {
     readonly name: string;
@@ -36,51 +51,72 @@ export interface System {
     close?(): Promise<void>;
 }
 
-const MAKERS = {
-    dorothy: dorothySystem,
-    lexical: lexicalSystem,
-    full: fullSystem,
-} as const;
-export const SYSTEM_NAMES = Object.keys(MAKERS) as (keyof typeof MAKERS)[];
+export const DEFAULT_SYSTEMS = ["dorothy", "lexical", "full"] as const;
 
-export function makeSystem(name: string, corpus: Corpus): System {
-    const make = MAKERS[name as keyof typeof MAKERS];
-    if (make === undefined) {
+// What a system takes for options, checked before anything opens.
+const OPTIONS = {
+    dorothy: dorothyOptions,
+    lexical: noOptions,
+    full: noOptions,
+    cited: noOptions,
+};
+const MAKERS: {
+    [K in keyof typeof OPTIONS]: (
+        corpus: Corpus,
+        options: ReturnType<(typeof OPTIONS)[K]>,
+    ) => System;
+} = {
+    dorothy: dorothySystem,
+    lexical: (corpus) => lexicalSystem(corpus),
+    full: (corpus) => fullSystem(corpus),
+    cited: (corpus) => citedSystem(corpus),
+};
+type SystemName = keyof typeof MAKERS;
+export const SYSTEM_NAMES = Object.keys(MAKERS) as SystemName[];
+
+export const baseOf = (name: string) => name.split(":")[0] as string;
+
+function noOptions(raw: ReadonlyMap<string, string>, name: string): null {
+    if (raw.size > 0) {
+        throw new UsageError(`${name}: ${baseOf(name)} takes no options`);
+    }
+    return null;
+}
+
+export function parseSystemName(name: string): {
+    base: SystemName;
+    options: Map<string, string>;
+} {
+    const [base = "", ...pairs] = name.split(":");
+    if (!(SYSTEM_NAMES as readonly string[]).includes(base)) {
         throw new UsageError(
-            `no system ${name}; the systems are ${SYSTEM_NAMES.join(", ")}`,
+            `no system ${base}; the systems are ${SYSTEM_NAMES.join(", ")}`,
         );
     }
-    return make(corpus);
-}
-
-// Items as <item> elements within budget, the last one cut to fit, and
-// the ids of the items that went in.
-export function packed(
-    items: { id: string; text: string }[],
-    budget: number,
-): { text: string; ids: string[] } {
-    const parts: string[] = [];
-    const ids: string[] = [];
-    let left = budget;
-    for (const item of items) {
-        const open = `<item id="${item.id}">\n`;
-        const close = "\n</item>\n";
-        const room = left - open.length - close.length;
-        if (room <= 0) {
-            break;
+    const options = new Map<string, string>();
+    for (const pair of pairs) {
+        const match = /^([a-z]+)=([^\s:=]+)$/.exec(pair);
+        if (match === null) {
+            throw new UsageError(
+                `${name}: each option is key=value, not "${pair}"`,
+            );
         }
-        const text = item.text.slice(0, room);
-        parts.push(open + text + close);
-        ids.push(item.id);
-        left -= open.length + text.length + close.length;
-        if (text.length < item.text.length) {
-            break;
+        const [, key, value] = match as unknown as [string, string, string];
+        if (options.has(key)) {
+            throw new UsageError(`${name}: ${key} is given twice`);
         }
+        options.set(key, value);
     }
-    return { text: parts.join(""), ids };
+    return { base: base as SystemName, options };
 }
 
-export const packItems = (
-    items: { id: string; text: string }[],
-    budget: number,
-): string => packed(items, budget).text;
+export function checkSystem(name: string): void {
+    const { base, options } = parseSystemName(name);
+    OPTIONS[base](options, name);
+}
+
+export function makeSystem(name: string, corpus: Corpus): System {
+    const { base, options } = parseSystemName(name);
+    const make = MAKERS[base] as (corpus: Corpus, options: unknown) => System;
+    return { ...make(corpus, OPTIONS[base](options, name)), name };
+}

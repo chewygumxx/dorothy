@@ -18,6 +18,7 @@ import {
     writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import type { DeliveredItem } from "@dorothy/memory/evaluation";
 import { runCli } from "../cli.js";
 import type { CliRequest } from "../models/cli.js";
 import { Models } from "../models/client.js";
@@ -46,7 +47,13 @@ import {
     reportPath,
     summaryPath,
 } from "./record.js";
-import { newRunInfo, runEvaluation, servedAt } from "./run.js";
+import {
+    coverageOf,
+    newRunInfo,
+    runEvaluation,
+    servedAt,
+    stagesOf,
+} from "./run.js";
 
 let temp: ReturnType<typeof tempRoot>;
 let work: string;
@@ -1038,7 +1045,136 @@ describe("bun run eval -- run", () => {
     });
 });
 
+describe("coverageOf", () => {
+    it("is the share of the answer's terms the texts hold", () => {
+        expect(
+            coverageOf("Green tea at four", ["I drink green tea daily."]),
+        ).toBeCloseTo(2 / 3);
+        expect(coverageOf("Green tea at four", [])).toBe(0);
+    });
+
+    it("is null for no answer, or one with no terms", () => {
+        expect(coverageOf(null, ["text"])).toBeNull();
+        expect(coverageOf("It is so.", ["text"])).toBeNull();
+    });
+});
+
+describe("stagesOf", () => {
+    const question = accepted("Where is my bike?", {
+        type: "single-session",
+        answer: "Crimson bike, shed",
+        evidence: ["c:talk", "k:personal/bike"],
+    });
+    const item = (
+        fields: Partial<DeliveredItem> & Pick<DeliveredItem, "id">,
+    ): DeliveredItem => ({
+        kind: "episode",
+        turns: { from: 1, through: 2 },
+        text: "My crimson bike is in the shed.",
+        cut: false,
+        opened: true,
+        ...fields,
+    });
+    const stages = (...items: (DeliveredItem & { block?: true })[]) =>
+        stagesOf(question, { ranked: [], context: "", items }, false);
+
+    it("counts an opened passage with turns as delivered", () => {
+        const got = stages(item({ id: "c:talk" }));
+        expect(got.delivered).toBe(true);
+        expect(got.covered).toBe(1);
+    });
+
+    it("does not count a stand-in", () => {
+        const got = stages(item({ id: "c:talk", opened: false }));
+        expect(got.delivered).toBe(false);
+        expect(got.covered).toBe(0);
+    });
+
+    it("does not count a passage packed down to its head", () => {
+        const got = stages(item({ id: "c:talk", turns: null }));
+        expect(got.delivered).toBe(false);
+        expect(got.covered).toBe(0);
+    });
+
+    it("counts knowledge the block gave, its line covering", () => {
+        const got = stages({
+            ...item({ id: "k:personal/bike", kind: "knowledge" }),
+            turns: null,
+            text: "Crimson bike, kept in the shed.",
+            block: true,
+        });
+        expect(got.delivered).toBe(true);
+        expect(got.covered).toBe(1);
+    });
+
+    it("counts only the question's evidence", () => {
+        expect(stages(item({ id: "c:other" })).delivered).toBe(false);
+    });
+});
+
 describe("a run", () => {
+    it("records retrieval by stage, with no text kept", async () => {
+        const corpus = await openCorpus(workEnv(work));
+        try {
+            const { questions } = await readQuestions(work);
+            const info = newRunInfo(
+                {
+                    systems: ["dorothy", "lexical", "cited"],
+                    budget: 8000,
+                    fullBudget: 400_000,
+                    retrievalOnly: true,
+                },
+                questions,
+                await readEvalConfig(work),
+                await readSnapshot(work),
+                new Date("2026-10-19T01:00:00.000Z"),
+            );
+            const { summary } = await runEvaluation(info, {
+                work,
+                corpus,
+                questions,
+                models: null,
+                concurrency: 1,
+            });
+            const records = (await readRecords(work, info.id)).filter(
+                (each) => each.recall !== null,
+            );
+            const of = (system: string) =>
+                records.filter((each) => each.system === system);
+            expect(of("dorothy").length).toBeGreaterThan(0);
+            for (const record of of("dorothy")) {
+                expect(typeof record.recall?.found).toBe("boolean");
+                expect(typeof record.recall?.delivered).toBe("boolean");
+                expect(["number", "object"]).toContain(
+                    typeof record.recall?.covered,
+                );
+                for (const item of record.retrieval.items ?? []) {
+                    expect(typeof item.chars).toBe("number");
+                    expect(item).not.toHaveProperty("text");
+                }
+            }
+            expect(of("dorothy").some((each) => each.retrieval.items)).toBe(
+                true,
+            );
+            for (const record of of("lexical")) {
+                expect(typeof record.recall?.delivered).toBe("boolean");
+                expect(record.recall).not.toHaveProperty("found");
+            }
+            expect(of("cited").length).toBeGreaterThan(0);
+            for (const record of of("cited")) {
+                expect(record.recall?.delivered).toBe(true);
+            }
+            expect(summary.systems.dorothy?.all.found).not.toBeNull();
+            expect(summary.systems.lexical?.all.found).toBeNull();
+            expect(summary.systems.cited?.alone).toEqual({
+                right: [],
+                wrong: [],
+            });
+        } finally {
+            corpus.close();
+        }
+    });
+
     it("records each role's base URL with no credential in it", async () => {
         const role = (baseUrl: string, model: string) => ({
             baseUrl,
@@ -1155,6 +1291,17 @@ describe("a run", () => {
             expect(records).toHaveLength(5);
             expect(records[0]?.retrieval.error).toBe("down");
             expect(summary.systems.broken?.all.failures).toBe(5);
+            // A failure is a miss in each stage, and covers nothing of an
+            // answer that has terms.
+            const garden = records.find(
+                (each) => each.type === "single-session",
+            );
+            expect(garden?.recall).toMatchObject({ covered: 0 });
+            expect(garden?.recall).not.toHaveProperty("found");
+            expect(summary.systems.broken?.all.found).toEqual({
+                hits: 0,
+                of: questions.filter((each) => each.evidence.length > 0).length,
+            });
         } finally {
             corpus.close();
         }
@@ -1274,11 +1421,12 @@ describe("a run", () => {
                 at10: false,
                 inContext: true,
             });
+            expect(garden?.retrieval).not.toHaveProperty("items");
             expect(
                 summary.systems.wide?.byType["single-session"]?.inContext,
             ).toEqual({ hits: 1, of: 1 });
             expect(readFileSync(reportPath(work, info.id), "utf8")).toContain(
-                "| Recall@10 | In context |",
+                "| Recall@10 | Delivered | Delivered or noted |",
             );
         } finally {
             corpus.close();

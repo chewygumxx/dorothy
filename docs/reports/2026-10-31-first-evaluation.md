@@ -105,6 +105,12 @@ After the reviews, by type:
   where the evidence existed. Her retrieval returns notes, and a fact a
   question asks for is in the transcript. A second stage, the passage
   from each conversation found, is the plainest gap for the engine.
+
+  *Correction, 2026-10-31:* her evaluated system does select passages,
+  with the same function as lexical search's; they never fit beside the
+  opening block and the knowledge ranked ahead of them. Of the 58
+  questions whose evidence reached the answering model, 49 reached it
+  only as a note in the block.
 - Questions about one conversation, or its times, still favour lexical
   search, whose recall barely changed with the reviews: notes summarise
   a conversation, and such questions ask for its details.
@@ -114,6 +120,12 @@ After the reviews, by type:
   from transcript text and echo its words; and preference questions,
   drawn from knowledge files that only Dorothy indexes, lean towards
   her. Several types are too small to read alone: 9, 8, 6 and 1.
+
+  *Correction, 2026-10-31:* lexical search reads knowledge too, scored
+  with the conversations, so knowledge files were not only hers to find.
+
+The corrections came from
+[the engine's spec](../specs/2026-10-31-memory-engine-design.md).
 
 ## Rulings
 
