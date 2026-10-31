@@ -30,7 +30,7 @@ Dorothy in hosts other than Claude Code, whose launcher is `claude.ts`.
   never bypassed. `--codex --dump` prints the command.
 - `hermes.ts`: `dorothy --install hermes`, a profile `dorothy` made by
   `hermes profile create --no-alias --clone`; she owns its `SOUL.md`,
-  `plugins/dorothy/`, `dorothy.json` and three keys, nothing else.
+  `plugins/dorothy/`, `dorothy.json` and four keys, nothing else.
 - `../../assets/hermes/`: her provider, Python's standard library
   alone, running `--hook hermes`; `test_dorothy.py` stubs Hermes's
   base, and `hermes-plugin.test.ts` runs it under `bun test`.
