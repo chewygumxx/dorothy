@@ -40,8 +40,16 @@ export type EvidenceKnowledge = {
     retired: { at: string; why: string } | null;
 };
 
+// The first chars UTF-16 units of text, backing off one where the cut
+// would end on half a surrogate pair.
+const head = (text: string, chars: number) => {
+    const cut = text.slice(0, Math.max(0, chars));
+    const last = cut.charCodeAt(cut.length - 1);
+    return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
+};
+
 export const clip = (text: string, chars: number) =>
-    text.length <= chars ? text : text.slice(0, Math.max(0, chars));
+    text.length <= chars ? text : head(text, chars);
 
 const day = (at: string) => at.slice(0, 10);
 const minute = (at: string) => at.slice(0, 16).replace("T", " ");
@@ -252,7 +260,7 @@ export function pack(
         if (room <= 0) {
             break;
         }
-        const sliced = item.text.slice(0, room);
+        const sliced = head(item.text, room);
         const text = sliced.length < item.text.length ? trim(sliced) : sliced;
         parts.push(open + text + close);
         ids.push(item.id);

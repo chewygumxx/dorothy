@@ -11,6 +11,7 @@
 import { describe, expect, it } from "bun:test";
 import { escapeXml } from "../memory/block.js";
 import {
+    clip,
     type EvidenceConversation,
     pack,
     passage,
@@ -219,6 +220,27 @@ describe("passage seeds", () => {
         expect(found.turns).toEqual({ from: 7, through: 7 });
         expect(found.cut).toBe(true);
         expect(passage(talk, ["bicycle"], 1000).cut).toBe(false);
+    });
+});
+
+describe("cuts", () => {
+    const emoji = "\u{1F600}";
+
+    it("clip does not end on half a surrogate pair", () => {
+        const text = `ab${emoji}cd`;
+        expect(clip(text, 3)).toBe("ab");
+        expect(clip(text, 4)).toBe(`ab${emoji}`);
+    });
+
+    it("pack does not end an item on half a surrogate pair", () => {
+        const open = '<item id="c:a">\n'.length;
+        const close = "\n</item>\n".length;
+        const packed = pack(
+            [{ id: "c:a", text: `ab${emoji}cd` }],
+            open + close + 3,
+        );
+        expect(packed.texts).toEqual(["ab"]);
+        expect(packed.cut).toBe(true);
     });
 });
 
