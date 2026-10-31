@@ -31,3 +31,10 @@ than wait to be told.
 flight that the summary would have to carry; write the instructions
 first, with the open tasks, decisions and state; tell the user each
 time. Typed input reads as the user's own, so use it for this alone.
+
+Delivery that worked (2026-10-31): a background job waits with
+`herdr agent wait dorothy-main --until idle`, then `herdr pane
+send-text <pane> "/compact "`, then `send-text` the instructions alone,
+then `herdr agent send-keys dorothy-main enter`, a few seconds between.
+`herdr agent prompt` delivers a plain message, never a command, and the
+whole line in one `send-text` did nothing visible.
