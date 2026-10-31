@@ -9,7 +9,7 @@
 //
 
 import { expect, it } from "bun:test";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
@@ -27,6 +27,8 @@ const setup = async () => {
             said.push(text);
         },
         answers: async () => true,
+        which: () => "/bin/hermes",
+        version: () => "0.22.2",
         // Stands in for `hermes profile create --clone`, which copies the
         // user's SOUL.md and .env as well as config.yaml.
         run: async (cmd: string[]) => {
@@ -181,4 +183,94 @@ it("refuses an entry that cannot answer --hook", async () => {
         1,
     );
     expect(runs).toEqual([]);
+});
+
+it("says each key it wrote", async () => {
+    const { deps, said, profile } = await setup();
+    await installHermes(deps);
+    const config = join(profile, "config.yaml");
+    for (const key of [
+        "memory.provider",
+        "memory.memory_enabled",
+        "memory.user_profile_enabled",
+        "mcp_servers.dorothy",
+    ]) {
+        expect(said).toContain(`dorothy: wrote ${key} in ${config}\n`);
+    }
+});
+
+it("keeps a long value of the user's on one line", async () => {
+    const { deps, profile } = await setup();
+    const long = `${"word ".repeat(40)}end`;
+    const run = async (cmd: string[]) => {
+        await deps.run(cmd);
+        await writeFile(
+            join(profile, "config.yaml"),
+            `model:\n  note: ${long}\n`,
+        );
+        return 0;
+    };
+    expect(await installHermes({ ...deps, run })).toBe(0);
+    const text = await readFile(join(profile, "config.yaml"), "utf8");
+    expect(text).toContain(`note: ${long}\n`);
+});
+
+// Directories and files of the profile, to see that nothing was written.
+const listing = (dir: string) =>
+    readdir(dir, { recursive: true }).catch(() => []);
+
+for (const [name, config, problem] of [
+    ["memory with no value", "memory:\nmodel: m\n", "Expected YAML collection"],
+    ["unparseable YAML", "memory: [unclosed\nmodel: {\n", "dorothy:"],
+] as const) {
+    it(`writes nothing over a config with ${name}`, async () => {
+        const { deps, profile, said } = await setup();
+        const run = async (cmd: string[]) => {
+            await deps.run(cmd);
+            await writeFile(join(profile, "config.yaml"), config);
+            return 0;
+        };
+        // Her profile exists, unmarked until an install of hers wrote it.
+        await run([]);
+        const before = await listing(profile);
+        expect(await installHermes({ ...deps, run, force: true })).toBe(1);
+        expect(await listing(profile)).toEqual(before);
+        expect(await readFile(join(profile, "config.yaml"), "utf8")).toBe(
+            config,
+        );
+        expect(await readFile(join(profile, "SOUL.md"), "utf8")).toBe(
+            "The user's own persona.\n",
+        );
+        expect(said.join("")).toContain(join(profile, "config.yaml"));
+        expect(said.join("")).toContain(problem);
+    });
+}
+
+it("does not make her profile from a home config it cannot merge", async () => {
+    const { deps, home, runs, said } = await setup();
+    await writeFile(join(home, "config.yaml"), "memory:\n");
+    expect(await installHermes(deps)).toBe(1);
+    expect(runs).toEqual([]);
+    expect(said.join("")).toContain(join(home, "config.yaml"));
+});
+
+it("says hermes is missing and exits 1", async () => {
+    const { deps, runs, said, home } = await setup();
+    const none = { ...deps, which: () => null };
+    expect(await installHermes(none)).toBe(1);
+    expect(await uninstallHermes(none)).toBe(1);
+    expect(runs).toEqual([]);
+    expect(said.join("")).toContain("hermes is not on PATH");
+    expect(await listing(home)).toEqual([]);
+});
+
+it("warns of a Hermes her profile was not checked against", async () => {
+    const { deps, said } = await setup();
+    expect(await installHermes({ ...deps, version: () => "9.9.9" })).toBe(0);
+    expect(said.join("")).toContain(
+        "Hermes 9.9.9 is not one her profile was checked against (0.22.2)",
+    );
+    said.length = 0;
+    await installHermes(deps);
+    expect(said.join("")).not.toContain("checked against");
 });
