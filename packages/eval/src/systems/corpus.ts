@@ -15,6 +15,7 @@ import {
     type Archive,
     type ArchiveConversation,
     type ArchiveKnowledge,
+    type EvidenceSource,
     openArchive,
 } from "@dorothy/memory/evaluation";
 
@@ -44,3 +45,9 @@ export async function openCorpus(env: Env): Promise<Corpus> {
         throw error;
     }
 }
+
+// What delivery reads of the corpus: its own records, by contract id.
+export const corpusEvidence = (corpus: Corpus): EvidenceSource => ({
+    conversation: async (id) => corpus.conversations.get(id),
+    knowledge: async (id) => corpus.knowledge.get(id),
+});

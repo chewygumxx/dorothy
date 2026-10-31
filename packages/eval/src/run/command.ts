@@ -29,7 +29,11 @@ import { readQuestions } from "../questions/file.js";
 import { loadModelSecrets } from "../secrets.js";
 import { readSnapshot, workEnv } from "../snapshot/snapshot.js";
 import { openCorpus } from "../systems/corpus.js";
-import { SYSTEM_NAMES } from "../systems/system.js";
+import {
+    checkSystem,
+    DEFAULT_SYSTEMS,
+    SYSTEM_NAMES,
+} from "../systems/system.js";
 import { latestRunId, readRecords, readRunInfo, reportPath } from "./record.js";
 import {
     checkResumable,
@@ -48,13 +52,13 @@ function systemsOf(text: string): string[] {
                 .filter((name) => name !== ""),
         ),
     ];
-    const unknown = names.find(
-        (name) => !(SYSTEM_NAMES as readonly string[]).includes(name),
-    );
-    if (names.length === 0 || unknown !== undefined) {
+    if (names.length === 0) {
         throw new UsageError(
-            `--systems takes some of ${SYSTEM_NAMES.join(", ")}, comma-separated`,
+            `--systems takes some of ${SYSTEM_NAMES.join(", ")}, comma-separated, each with any options, as dorothy:block=0.2`,
         );
+    }
+    for (const name of names) {
+        checkSystem(name);
     }
     return names;
 }
@@ -141,7 +145,7 @@ export const runCommand: Command = {
                       {
                           systems: systemsOf(
                               stringOf(values, "systems") ??
-                                  SYSTEM_NAMES.join(","),
+                                  DEFAULT_SYSTEMS.join(","),
                           ),
                           budget: intOf(values, "budget", 8000, 500, 1_000_000),
                           fullBudget: intOf(

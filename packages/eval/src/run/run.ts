@@ -24,7 +24,12 @@ import { writeRunReport } from "../report/command.js";
 import type { Summary } from "../report/summary.js";
 import type { SnapshotInfo } from "../snapshot/snapshot.js";
 import type { Corpus } from "../systems/corpus.js";
-import { makeSystem, type Retrieved, type System } from "../systems/system.js";
+import {
+    baseOf,
+    makeSystem,
+    type Retrieved,
+    type System,
+} from "../systems/system.js";
 import { answerPrompt, declines, type Judges, makeJudges } from "./judges.js";
 import {
     endRecords,
@@ -360,8 +365,9 @@ async function ask(
                 asOf: question.asOf,
                 project: question.project,
                 exclude: question.exclude,
+                evidence: question.evidence,
             },
-            system.name === "full" ? info.fullBudget : info.budget,
+            baseOf(system.name) === "full" ? info.fullBudget : info.budget,
         );
     } catch (caught) {
         error = failureOf(caught);
