@@ -22,8 +22,10 @@ node_modules/
 # The skills CLI's links; the repository's own skills are committed.
 /.agents/skills/*
 !/.agents/skills/worktrees/
+!/.agents/skills/agent-stewardship/
 /.claude/skills/*
 !/.claude/skills/worktrees
+!/.claude/skills/agent-stewardship
 # Claude Code's own worktrees, where no hook puts them elsewhere.
 /.claude/worktrees/
 
