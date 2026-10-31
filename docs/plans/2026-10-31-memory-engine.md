@@ -126,10 +126,19 @@ Each ruled here, to be recorded in the ledger:
    cut the last item inside an entity, which leaves a stray `&am` but
    never breaks the frame. Cost: a few odd characters at the end of a
    cut recall.
-7. Delivered and covered count opened items only, and knowledge the
-   block gave in full, which `dorothy` reports as items marked
-   `block`; a stand-in title and snippet is not delivered evidence.
-   Cost: none.
+7. Delivered and covered count opened items only (a passage only while
+   its text still holds a turn), and knowledge the block gave in full,
+   which `dorothy` reports as items marked `block`, with the line the
+   block rendered; a stand-in title and snippet is not delivered
+   evidence. Cost: none.
+8. A stand-in title and snippet is capped even under today's options;
+   today's code let it run to the packing. Snippets are search's
+   twelve-token excerpts or a note's description, and stand-ins arise
+   only for hits outside the corpus, so the difference is rare. Cost:
+   a long description cut where it was not.
+9. A passage takes search's seeds alone when the conversation still
+   holds any; word overlap only where none remain, or when forced, as
+   the spec says. Cost: none.
 
 ---
 
@@ -144,7 +153,8 @@ Each ruled here, to be recorded in the ledger:
 | `packages/memory/src/engine/merge.ts` | 2 | `mergeHits`, `HIT_ORDERS` |
 | `packages/memory/src/engine/archive.ts` | 1, 2 | Types alias the evidence types; `block` gives `full` |
 | `packages/memory/src/engine/baseline.ts` | 4 | Hits carry `turns`; kinds alternate |
-| `packages/core/src/contracts/memory.ts` | 4 | `MemoryHit.turns` |
+| `packages/core/src/contracts/memory.ts` | 2 | `MemoryHit.turns` |
+| `packages/memory/src/contract/block.ts` | 2 | `composeBlock`, each item's line |
 | `packages/memory/src/contract/recall.ts` | 5 | Recall through `deliver` |
 | `packages/memory/src/service/service.ts` | 5 | Recall's evidence source |
 | `packages/memory/src/evaluation.ts` | 1, 2 | Exports for eval |
@@ -401,6 +411,8 @@ source over the recall index. Nothing calls them yet but tests.
   `archive.test.ts`, `packages/memory/src/evaluation.ts`,
   `packages/eval/src/systems/lexical.ts`, `dorothy.ts`, `full.ts`,
   `systems.test.ts`, `packages/eval/src/questions/review.ts`,
+  `packages/memory/src/contract/block.ts`,
+  `packages/core/src/contracts/memory.ts`,
   `packages/memory/src/contract/AGENTS.md`
 
 **Interfaces:**
@@ -431,7 +443,12 @@ source over the recall index. Nothing calls them yet but tests.
       terms: readonly string[],
       chars: number,
       seeds?: readonly number[],
+      // What a text costs against chars: its length, or its escaped
+      // length where the caller escapes.
+      cost?: (text: string) => number,
   ): Passage;
+  // The turn numbers whose lines a passage's text holds.
+  export function turnsIn(text: string): TurnRange | null;
   export function pack(
       items: readonly { id: string; text: string }[],
       budget: number,
@@ -471,6 +488,21 @@ source over the recall index. Nothing calls them yet but tests.
       request: DeliveryRequest,
       source: EvidenceSource,
   ): Promise<Delivery>;
+  // Items, each with its whole text, packed within budget: each
+  // delivered item's text as it went in, cut marked, and a cut
+  // passage's range what its text still holds.
+  export function packDelivery(
+      items: readonly DeliveredItem[],
+      budget: number,
+  ): Delivery;
+
+  // core's MemoryHit gains: turns?: number[] | undefined
+
+  // contract/block.ts
+  export function composeBlock(
+      request: { project: string | null; budget: number; exclude?: string | null },
+      engine: MemoryEngine,
+  ): Promise<{ response: BlockResponse; lines: Map<string, string> }>;
 
   // contract/evidence.ts
   export function turnsOf(index: RecallIndex, phrase: string): EvidenceTurn[];
@@ -481,11 +513,13 @@ source over the recall index. Nothing calls them yet but tests.
   ): EvidenceSource;
 
   // engine/archive.ts: Archive.block now resolves to
-  // { text: string; ids: string[]; full: string[] }
+  // { text: string; ids: string[]; full: { id: string; text: string }[] }
+  // full: each item the block gave at its full tier, with the line it
+  // rendered for it.
   ```
 
-  All of these but `turnsOf`, `knowledgeRecord` and `indexEvidence` are
-  exported from `@dorothy/memory/evaluation`.
+  All of these but `turnsOf`, `knowledgeRecord`, `indexEvidence` and
+  `composeBlock` are exported from `@dorothy/memory/evaluation`.
 
 - [ ] **Step 1: Write the failing merge tests**
 
@@ -608,13 +642,15 @@ const talk: EvidenceConversation = {
 };
 
 describe("passage seeds", () => {
-    it("starts from the seeds, with their neighbours", () => {
+    it("takes the seeds and their neighbours alone", () => {
+        // Turn 1 matches the query, but seeds rule out overlap.
         const found = passage(talk, ["hello"], 1000, [3]);
-        expect(found.turns).toEqual({ from: 1, through: 4 });
+        expect(found.turns).toEqual({ from: 2, through: 4 });
         expect(found.text).toContain("[3] user");
-        // The seed's neighbours come before the overlap's turn.
+        expect(found.text).not.toContain("Hello there.");
         const tight = passage(talk, ["hello"], 130, [3]);
         expect(tight.text).toContain("crimson");
+        expect(tight.turns).toEqual({ from: 2, through: 3 });
     });
 
     it("falls back to overlap for seeds the conversation lacks", () => {
@@ -622,6 +658,30 @@ describe("passage seeds", () => {
             from: 1,
             through: 2,
         });
+    });
+
+    it("keeps the match of an excerpt when escaping swells it", () => {
+        const long: EvidenceConversation = {
+            ...talk,
+            turns: [
+                {
+                    n: 1,
+                    role: "user",
+                    at: AT,
+                    text: `${"&".repeat(1000)} bicycle crimson ${"&".repeat(1000)}`,
+                },
+            ],
+        };
+        const cost = (text: string) => escapeXml(text).length;
+        const found = passage(long, ["bicycle"], 200, [], cost);
+        expect(cost(found.text)).toBeLessThanOrEqual(200);
+        expect(found.text).toContain("bicycle");
+    });
+
+    it("reads the turns a text holds", () => {
+        const { text } = passage(talk, ["bicycle"], 1000, [3]);
+        expect(turnsIn(text)).toEqual({ from: 2, through: 4 });
+        expect(turnsIn("Talk, 2026-10-01 to 2026-10-01")).toBeNull();
     });
 
     it("gives no range when only the head fits", () => {
@@ -672,8 +732,13 @@ describe("pack's account", () => {
 });
 ```
 
-In the `tight` case, 130 characters hold the head (30) and turns 2
-and 3 (118 in all); turn 4 would make 167.
+In the `tight` case, 130 characters hold the head (30) and turns 3
+and 2 (118 in all); turn 4 would make 167. Import `escapeXml` from
+`../memory/block.js`.
+
+The zero-budget assertion moved in Task 1 (`pack(items, 0)` equal to
+`{ text: "", ids: [] }`) now reads
+`{ text: "", ids: [], texts: [], cut: false }`.
 
 Run: `bun test packages/memory/src/contract/passage.test.ts`
 Expected: FAIL (`turns` undefined; `pack` lacks `texts`).
@@ -693,29 +758,34 @@ export type Passage = {
 };
 
 // The turns that best match, each with its neighbours, in order, within
-// chars: the seeds first (search's matched turns, by number), then the
-// turns by how many terms they hold; the first turn where nothing
-// matches. A first turn too long for chars is excerpted around its first
-// match, not left out.
+// chars: search's matched turns where the conversation still holds any
+// (the seeds, by number), else the turns by how many terms they hold;
+// the first turn where nothing matches. A first turn too long for chars
+// is excerpted around its first match, not left out. cost is what a
+// text costs against chars: its escaped length where the caller
+// escapes.
 export function passage(
     conversation: EvidenceConversation,
     terms: readonly string[],
     chars: number,
     seeds: readonly number[] = [],
+    cost: (text: string) => number = (text) => text.length,
 ): Passage {
     const turns = conversation.turns;
-    const seeded = seeds
-        .map((n) => turns.findIndex((turn) => turn.n === n))
-        .filter((at) => at >= 0);
+    const seeded = [
+        ...new Set(
+            seeds
+                .map((n) => turns.findIndex((turn) => turn.n === n))
+                .filter((at) => at >= 0),
+        ),
+    ];
     const scored = turns
         .map((turn, at) => ({ at, score: scoreOf(turn.text, terms) }))
         .filter((each) => each.score > 0)
         .sort((a, b) => b.score - a.score || a.at - b.at)
         .map((each) => each.at);
-    const order = [...new Set([...seeded, ...scored])];
-    if (order.length === 0) {
-        order.push(0);
-    }
+    const order =
+        seeded.length > 0 ? seeded : scored.length > 0 ? scored : [0];
     const chosen = new Set<number>();
     const picked = () =>
         [...chosen]
@@ -741,7 +811,7 @@ export function passage(
                 continue;
             }
             chosen.add(near);
-            if (render().length > chars) {
+            if (cost(render()) > chars) {
                 chosen.delete(near);
                 return chosen.size === 0
                     ? excerpt(
@@ -749,6 +819,7 @@ export function passage(
                           turns[near] as EvidenceTurn,
                           terms,
                           chars,
+                          cost,
                       )
                     : result(render());
             }
@@ -756,12 +827,64 @@ export function passage(
     }
     return result(render());
 }
+
+// One turn cut to the room chars leaves it, around the first of terms it
+// holds, or from its start; narrowed until its cost fits.
+function excerpt(
+    conversation: EvidenceConversation,
+    turn: EvidenceTurn,
+    terms: readonly string[],
+    chars: number,
+    cost: (text: string) => number,
+): Passage {
+    const hit = firstTermAt(turn.text, terms);
+    let room =
+        chars -
+        cost(conversationText(conversation, [{ ...turn, text: "" }])) -
+        2 * ELLIPSIS.length;
+    while (room > 0) {
+        const end = Math.min(
+            turn.text.length,
+            Math.max(0, (hit ?? 0) - Math.floor(room / 4)) + room,
+        );
+        const start = Math.max(0, end - room);
+        const text = `${start > 0 ? ELLIPSIS : ""}${turn.text.slice(start, end)}${end < turn.text.length ? ELLIPSIS : ""}`;
+        const rendered = conversationText(conversation, [{ ...turn, text }]);
+        const over = cost(rendered) - chars;
+        if (over <= 0) {
+            return {
+                text: rendered,
+                turns: { from: turn.n, through: turn.n },
+                cut: true,
+            };
+        }
+        room -= over;
+    }
+    return {
+        text: clip(conversationText(conversation, []), chars),
+        turns: null,
+        cut: true,
+    };
+}
+
+const TURN_LINE = /^\[(\d+)\] (?:user|assistant), /gm;
+
+// The first and last turn whose line a passage's text holds, as
+// conversationText writes them; null where it holds none.
+export function turnsIn(text: string): TurnRange | null {
+    const numbers = [...text.matchAll(TURN_LINE)].map((match) =>
+        Number(match[1]),
+    );
+    return numbers.length === 0
+        ? null
+        : { from: Math.min(...numbers), through: Math.max(...numbers) };
+}
 ```
 
-`excerpt` returns a `Passage`: `{ text, turns: { from: turn.n, through:
-turn.n }, cut: true }`, or `{ text: clip(...), turns: null, cut: true }`
-where no room is left. With no seeds the order is today's, so the
-existing tests, read through `.text`, still pass.
+With the default `cost`, `excerpt`'s first window is today's exactly
+(its room is today's, and the text fits at once), and with no seeds the
+order is today's, so the existing tests, read through `.text`, still
+pass.
 
 `pack` keeps its loop and also collects each packed text and whether
 the last was cut:
@@ -809,6 +932,17 @@ Expected: PASS.
 
 - [ ] **Step 5: Write the failing delivery tests**
 
+First the contract field the delivery reads, in
+`packages/core/src/contracts/memory.ts`'s `MemoryHit`, after `date`:
+
+```ts
+    // An episode's matched turns, best first, at most three: where a
+    // passage or an open starts.
+    turns?: number[] | undefined;
+```
+
+Nothing fills it yet; Task 4 makes the baseline do so.
+
 `packages/memory/src/contract/deliver.test.ts`, reusing the `talk`
 conversation of Step 3 (copy it; tests do not import each other):
 
@@ -817,9 +951,10 @@ import { describe, expect, it } from "bun:test";
 import type { MemoryHit } from "@dorothy/core";
 import { UNCONFIRMED } from "../facts/file.js";
 import { deliver, type EvidenceSource } from "./deliver.js";
-import type {
-    EvidenceConversation,
-    EvidenceKnowledge,
+import {
+    type EvidenceConversation,
+    type EvidenceKnowledge,
+    turnsIn,
 } from "./passage.js";
 
 // talk, as in passage.test.ts.
@@ -953,6 +1088,48 @@ describe("deliver", () => {
         expect(items[0]?.cut).toBe(true);
     });
 
+    it("narrows a passage's range to what packing left", async () => {
+        const { items } = await deliver(
+            {
+                ...ask([episode("c:talk", [3])], 100),
+                policy: { cap: 1000 },
+            },
+            source,
+        );
+        expect(items[0]?.cut).toBe(true);
+        expect(items[0]?.turns).toEqual(turnsIn(items[0]?.text ?? ""));
+        expect(items[0]?.turns?.through ?? 0).toBeLessThan(4);
+    });
+
+    it("gives no range where packing left only the head", async () => {
+        const { items } = await deliver(
+            { ...ask([episode("c:talk", [3])], 60), policy: { cap: 1000 } },
+            source,
+        );
+        expect(items[0]?.turns).toBeNull();
+        expect(items[0]?.opened).toBe(true);
+    });
+
+    it("keeps the matched words of an escaped passage", async () => {
+        const amp: EvidenceConversation = {
+            ...talk,
+            turns: [
+                {
+                    n: 1,
+                    role: "user",
+                    at: AT,
+                    text: `${"&".repeat(1000)} bicycle crimson ${"&".repeat(1000)}`,
+                },
+            ],
+        };
+        const { items } = await deliver(
+            { ...ask([episode("c:talk", [1])], 800), escape: true },
+            sourceOf([amp], []),
+        );
+        expect(items[0]?.text).toContain("bicycle");
+        expect(items[0]?.text.length).toBeLessThanOrEqual(200);
+    });
+
     it("stands an unopened source's title and snippet in", async () => {
         const { items } = await deliver(ask([episode("c:gone", [1])]), source);
         expect(items[0]).toMatchObject({
@@ -1061,7 +1238,6 @@ export type DeliveryRequest = {
     escape?: boolean;
 };
 
-type Rendered = Omit<DeliveredItem, "text"> & { whole: string };
 // How an item's text is made ready: escaped or not, then cut to a
 // length, never inside an entity the escaping made.
 type Finish = (text: string, chars: number) => string;
@@ -1070,26 +1246,29 @@ const raw: Finish = (text, chars) => clip(text, chars);
 const escaped: Finish = (text, chars) =>
     clip(escapeXml(text), chars).replace(/&[a-z]*$/, "");
 
+// One hit as an item, its text whole (within its cap) and finished.
 async function render(
     hit: MemoryHit,
     source: EvidenceSource,
     terms: readonly string[],
     policy: DeliveryPolicy,
     finish: Finish,
-): Promise<Rendered> {
+    cost: (text: string) => number,
+): Promise<DeliveredItem> {
     const mark = hit.unconfirmed === undefined ? "" : `[${hit.unconfirmed}]\n`;
     const item = (
         text: string,
         chars: number,
-        fields: Pick<Rendered, "turns" | "opened"> & { cut?: boolean },
-    ): Rendered => {
-        const whole = finish(text, chars);
+        fields: Pick<DeliveredItem, "turns" | "opened"> & { cut?: boolean },
+    ): DeliveredItem => {
+        const whole = finish(text, Infinity);
+        const fitted = finish(text, chars);
         return {
             id: hit.id,
             kind: hit.kind,
             turns: fields.turns,
-            whole,
-            cut: (fields.cut ?? false) || whole.length < finish(text, Infinity).length,
+            text: fitted,
+            cut: (fields.cut ?? false) || fitted.length < whole.length,
             opened: fields.opened,
         };
     };
@@ -1099,7 +1278,13 @@ async function render(
             if (conversation !== undefined) {
                 const seeds =
                     policy.seeds === "search" ? (hit.turns ?? []) : [];
-                const found = passage(conversation, terms, policy.cap, seeds);
+                const found = passage(
+                    conversation,
+                    terms,
+                    policy.cap,
+                    seeds,
+                    cost,
+                );
                 return item(found.text, policy.cap, {
                     turns: found.turns,
                     opened: true,
@@ -1125,6 +1310,31 @@ async function render(
     });
 }
 
+export function packDelivery(
+    items: readonly DeliveredItem[],
+    budget: number,
+): Delivery {
+    const packed = pack(items, Math.max(0, budget));
+    const last = packed.ids.length - 1;
+    return {
+        text: packed.text,
+        items: packed.ids.map((_, at) => {
+            const item = items[at] as DeliveredItem;
+            const text = packed.texts[at] as string;
+            const cut = at === last && packed.cut;
+            return {
+                ...item,
+                text,
+                cut: item.cut || cut,
+                // A passage cut by packing holds only the turns whose
+                // lines survived; the head alone holds none.
+                turns:
+                    cut && item.kind === "episode" ? turnsIn(text) : item.turns,
+            };
+        }),
+    };
+}
+
 export async function deliver(
     request: DeliveryRequest,
     source: EvidenceSource,
@@ -1136,38 +1346,29 @@ export async function deliver(
         wholeKnowledge: false,
         ...request.policy,
     };
-    const finish = request.escape === true ? escaped : raw;
+    const escaping = request.escape === true;
+    const finish = escaping ? escaped : raw;
+    const cost = escaping
+        ? (text: string) => escapeXml(text).length
+        : (text: string) => text.length;
     const terms = termsOf(request.query);
     const shown = new Set(policy.shown);
-    const rendered: Rendered[] = [];
+    const items: DeliveredItem[] = [];
     for (const hit of request.hits) {
         if (hit.kind === "knowledge" && shown.has(hit.id)) {
             continue;
         }
-        rendered.push(await render(hit, source, terms, policy, finish));
+        items.push(await render(hit, source, terms, policy, finish, cost));
     }
-    const packed = pack(
-        rendered.map((item) => ({ id: item.id, text: item.whole })),
-        Math.max(0, request.budget),
-    );
-    const last = packed.ids.length - 1;
-    return {
-        text: packed.text,
-        items: packed.ids.map((_, at) => {
-            const { whole: _whole, ...item } = rendered[at] as Rendered;
-            return {
-                ...item,
-                text: packed.texts[at] as string,
-                cut: item.cut || (at === last && packed.cut),
-            };
-        }),
-    };
+    return packDelivery(items, request.budget);
 }
 ```
 
 `clip(text, Infinity)` returns the text whole: `text.length <=
 Infinity`. An item's `text` is what went into the context, escaped
-where `escape` is set.
+where `escape` is set. A passage costed by its escaped length already
+fits its cap once escaped, so `finish` cuts it only at an entity's
+tail. Import `turnsIn` with the rest from `./passage.js`.
 
 Run: `bun test packages/memory/src/contract/deliver.test.ts`
 Expected: PASS.
@@ -1432,32 +1633,68 @@ export function indexEvidence(
 }
 ```
 
-In `archive.ts`: `knowledge()` maps with `knowledgeRecord`;
-`conversations()` reads each conversation's turns with `turnsOf` (its
-own turn query and `TurnRow` go); `block` also returns
-`full: response.items.filter((item) => item.tier === "full").map((item)
-=> item.id)`, and the `Archive` type says so. Add to `archive.test.ts`:
+In `block.ts`, `buildBlock`'s body becomes `composeBlock`, which also
+returns each packed item's rendered line by id (its `pack` pushes one
+line per item, so `lines[i]` is `items[i]`'s); `buildBlock` returns its
+`response` alone, so every caller and response is unchanged:
 
 ```ts
-it("names the block's items given in full", async () => {
+export async function buildBlock(
+    request: { project: string | null; budget: number; exclude?: string | null },
+    engine: MemoryEngine,
+): Promise<BlockResponse> {
+    return (await composeBlock(request, engine)).response;
+}
+```
+
+In `archive.ts`: `knowledge()` maps with `knowledgeRecord`;
+`conversations()` reads each conversation's turns with `turnsOf` (its
+own turn query and `TurnRow` go); `block` calls `composeBlock` and also
+returns `full`, each item at the `full` tier with its rendered line,
+the text the answering model reads:
+
+```ts
+const { response, lines } = await composeBlock(request, engine);
+return {
+    text: response.text,
+    ids: response.items.map((item) => item.id),
+    full: response.items
+        .filter((item) => item.tier === "full")
+        .map((item) => ({ id: item.id, text: lines.get(item.id) ?? "" })),
+};
+```
+
+and the `Archive` type says so. Add to `archive.test.ts`:
+
+```ts
+it("names the block's items given in full, with their lines", async () => {
     const block = await (archive as Archive).block({
         project: null,
         budget: 10_000,
         exclude: null,
     });
     expect(block.full.length).toBeGreaterThan(0);
-    expect(block.full.every((id) => block.ids.includes(id))).toBe(true);
+    for (const item of block.full) {
+        expect(block.ids).toContain(item.id);
+        expect(block.text).toContain(item.text);
+        expect(item.text).toContain(`(${item.id})`);
+    }
 });
 ```
+
+The last line holds for knowledge, whose line names its id; if the
+fixture's block gives an episode in full, assert that line on
+knowledge items alone.
 
 Run: `bun test packages/memory/src/contract packages/memory/src/engine`
 Expected: PASS.
 
 - [ ] **Step 9: Exports and guide**
 
-`evaluation.ts` adds `deliver`, `ITEM_SHARE`, `PASSAGE_SEEDS` and the
+`evaluation.ts` adds `deliver`, `packDelivery`, `ITEM_SHARE`,
+`PASSAGE_SEEDS` and the
 types `DeliveredItem`, `Delivery`, `DeliveryPolicy`, `EvidenceSource`,
-`PassageSeeds` from `./contract/deliver.js`; `type Passage` and
+`PassageSeeds` from `./contract/deliver.js`; `turnsIn`, `type Passage` and
 `type TurnRange` from `./contract/passage.js`; `HIT_ORDERS`,
 `mergeHits` and `type HitOrder` from `./engine/merge.js`.
 
@@ -1480,7 +1717,7 @@ Run: `bun run check`
 Expected: PASS.
 
 ```bash
-git add packages/memory packages/eval
+git add packages/core packages/memory packages/eval
 git commit -m "feat(memory): Deliver hits as passages"
 ```
 
@@ -1600,7 +1837,11 @@ const block = await corpus.archive.block({
 });
 const delivered = hits
     .filter(
-        (hit) => !(hit.kind === "knowledge" && block.full.includes(hit.id)),
+        (hit) =>
+            !(
+                hit.kind === "knowledge" &&
+                block.full.some((item) => item.id === hit.id)
+            ),
     )
     .map((hit) => hit.id);
 expect(found.ranked).toEqual([
@@ -1697,8 +1938,13 @@ describe("the dorothy system's delivery", () => {
             asked("Where is my allotment plot?"),
             8000,
         );
-        expect(found.context).not.toContain("<memory>");
+        // No block at all: not its frame, not its closing reminder,
+        // and no separator charged.
+        expect(found.context).toStartWith("<item id=");
         expect(found.context.length).toBeLessThanOrEqual(8000);
+        expect(found.ranked).toEqual(
+            (found.items ?? []).map((item) => item.id),
+        );
     });
 });
 ```
@@ -1876,11 +2122,18 @@ export function dorothySystem(
     return {
         name: "dorothy",
         async retrieve(asked, budget) {
-            const block = await corpus.archive.block({
-                project: asked.project,
-                budget: Math.floor(budget * options.block),
-                exclude: asked.exclude,
-            });
+            // At a share of nothing there is no block, not even the
+            // closing reminder buildBlock gives a budget too small.
+            const block =
+                options.block === 0
+                    ? { text: "", ids: [], full: [] }
+                    : await corpus.archive.block({
+                          project: asked.project,
+                          budget: Math.floor(budget * options.block),
+                          exclude: asked.exclude,
+                      });
+            const room =
+                block.text === "" ? budget : budget - block.text.length - 1;
             const search = (kind: "knowledge" | "episodes") =>
                 corpus.archive.engine.search({
                     query: asked.text,
@@ -1900,11 +2153,13 @@ export function dorothySystem(
                 {
                     query: asked.text,
                     hits,
-                    budget: Math.max(0, budget - block.text.length - 1),
+                    budget: Math.max(0, room),
                     policy: {
                         cap: Math.floor(budget * options.cap),
                         seeds: options.seeds,
-                        shown: options.dedupe ? block.full : [],
+                        shown: options.dedupe
+                            ? block.full.map((item) => item.id)
+                            : [],
                         wholeKnowledge: options.wholeKnowledge,
                     },
                 },
@@ -1919,28 +2174,27 @@ export function dorothySystem(
                     ...delivered,
                     ...block.ids.filter((id) => !given.has(id)),
                 ],
-                context: clip(`${block.text}\n${delivery.text}`, budget),
+                context:
+                    block.text === ""
+                        ? delivery.text
+                        : clip(`${block.text}\n${delivery.text}`, budget),
                 found: hits.map((hit) => hit.id),
                 // The block's knowledge given in full is delivered too,
-                // for the stages; ranked keeps to what the hits gave.
+                // for the stages, as the line the model read; ranked
+                // keeps to what the hits gave.
                 items: [
                     ...delivery.items,
-                    ...block.full.flatMap((id) => {
-                        const knowledge = corpus.knowledge.get(id);
-                        return knowledge === undefined
-                            ? []
-                            : [
-                                  {
-                                      id,
-                                      kind: "knowledge" as const,
-                                      turns: null,
-                                      text: knowledgeText(knowledge),
-                                      cut: false,
-                                      opened: true,
-                                      block: true as const,
-                                  },
-                              ];
-                    }),
+                    ...block.full
+                        .filter((item) => item.id.startsWith("k:"))
+                        .map((item) => ({
+                            id: item.id,
+                            kind: "knowledge" as const,
+                            turns: null,
+                            text: item.text,
+                            cut: false,
+                            opened: true,
+                            block: true as const,
+                        })),
                 ],
             };
         },
@@ -1949,7 +2203,7 @@ export function dorothySystem(
 ```
 
 `dorothy.ts` imports `clip`, `deliver`, `HIT_ORDERS`, `ITEM_SHARE`,
-`knowledgeText`, `mergeHits`, `PASSAGE_SEEDS` and the types it names
+`mergeHits`, `PASSAGE_SEEDS` and the types it names
 from `@dorothy/memory/evaluation`, and `UsageError` from
 `../errors.js`.
 
@@ -1964,7 +2218,8 @@ export const corpusEvidence = (corpus: Corpus): EvidenceSource => ({
 ```
 
 Under today's options this reproduces the old context exactly, but for
-the warning on unconfirmed knowledge, which the fixture lacks: two
+the warning on unconfirmed knowledge and the cap on a stand-in's title
+and snippet (Departures 4 and 8), neither of which the fixture meets: two
 searches merged knowledge first equal the baseline's own merge, the
 passage cap is a quarter of the whole budget as the old `budget / 4`,
 knowledge goes in whole as before, and overlap seeds are the old
@@ -2021,15 +2276,14 @@ git commit -m "feat(eval): System variants through delivery"
 
 **Files:**
 
-- Modify: `packages/core/src/contracts/memory.ts`,
-  `packages/memory/src/engine/baseline.ts`, `baseline.test.ts`,
+- Modify: `packages/memory/src/engine/baseline.ts`, `baseline.test.ts`,
   `packages/memory/src/contract/tools.test.ts`,
   `packages/memory/src/contract/AGENTS.md`
 
 **Interfaces:**
 
-- Consumes: `mergeHits` (Task 2).
-- Produces: `MemoryHit.turns?: number[] | undefined`; the baseline's
+- Consumes: `mergeHits` and `MemoryHit.turns` (Task 2).
+- Produces: the baseline's
   `search` returns episode hits with up to three matched turn numbers,
   best first, and merges the kinds with
   `mergeHits(knowledge, episodes, "alternate", request.limit)`.
@@ -2129,18 +2383,7 @@ Run: `bun test packages/memory/src/engine/baseline.test.ts`
 Expected: FAIL (no `turns`; knowledge fills all ten). The `tools.test.ts`
 case passes already.
 
-- [ ] **Step 2: The contract field**
-
-In `packages/core/src/contracts/memory.ts`'s `MemoryHit`, after
-`date`:
-
-```ts
-    // An episode's matched turns, best first, at most three: where a
-    // passage or an open starts.
-    turns?: number[] | undefined;
-```
-
-- [ ] **Step 3: The baseline**
+- [ ] **Step 2: The baseline**
 
 In `baseline.ts`'s `search`, collect knowledge hits and episode hits in
 two arrays, as now, and return
@@ -2165,20 +2408,20 @@ Update the header comment to say hits carry their turns and the kinds
 alternate. Fix any test that expected knowledge first from a `kind:
 "all"` search (`grep -rn 'kind: "all"' packages/memory/src`).
 
-- [ ] **Step 4: Guide**
+- [ ] **Step 3: Guide**
 
 `packages/memory/src/contract/AGENTS.md`, the `../engine/` line: the
 baseline's hits carry matched turns and alternate knowledge with
 episodes through `mergeHits`.
 
-- [ ] **Step 5: Verify and commit**
+- [ ] **Step 4: Verify and commit**
 
 Run: `bun run check`
 Expected: PASS, eval's characterization test among them (eval asks
 for each kind apart, so the baseline's order does not reach it).
 
 ```bash
-git add packages/core packages/memory
+git add packages/memory
 git commit -m "feat(memory): Hits carry turns; kinds alternate"
 ```
 
@@ -2583,23 +2826,60 @@ check). In `system.ts`: `OPTIONS` gains `cited: noOptions`, `MAKERS`
 gains `cited: (corpus) => citedSystem(corpus)`, and
 `DEFAULT_SYSTEMS` stays `dorothy, lexical, full`.
 
-`lexical.ts` and `full.ts` return `items` from their `pack`:
+`lexical.ts` and `full.ts` deliver through memory's `packDelivery`,
+so their items carry each passage's range and cut as `deliver`'s do.
+In `lexical.ts`, each scored item makes a `DeliveredItem` instead of a
+text:
 
 ```ts
-const fitted = pack(/* as now */);
-return {
-    ranked: fitted.ids,
-    context: fitted.text,
-    items: fitted.ids.map((id, at) => ({
-        id,
-        kind: id.startsWith("k:") ? "knowledge" : "episode",
-        turns: null,
-        text: fitted.texts[at] as string,
-        cut: fitted.cut && at === fitted.ids.length - 1,
+type Scored = {
+    id: string;
+    score: number;
+    at: string;
+    item: () => DeliveredItem;
+};
+// a conversation:
+item: () => {
+    const found = passage(conversation, terms, Math.floor(budget / 3));
+    return {
+        id: conversation.id,
+        kind: "episode",
+        turns: found.turns,
+        text: found.text,
+        cut: found.cut,
         opened: true,
-    })),
+    };
+},
+// a piece of knowledge:
+item: () => ({
+    id: knowledge.id,
+    kind: "knowledge",
+    turns: null,
+    text: knowledgeText(knowledge),
+    cut: false,
+    opened: true,
+}),
+// and at the end:
+const delivery = packDelivery(
+    best.map((each) => each.item()),
+    budget,
+);
+return {
+    ranked: delivery.items.map((item) => item.id),
+    context: delivery.text,
+    items: delivery.items,
 };
 ```
+
+In `full.ts`, each of `everything()`'s entries holds its
+`DeliveredItem`, a conversation's range being its first and last turn
+(`null` for one with none), and `retrieve` returns
+`packDelivery(filtered.map((each) => each.item), budget)` as `ranked`,
+`context` and `items` as above.
+
+Both pack the same texts in the same order as before, so their
+contexts are unchanged: the lexical and full tests that compare
+contexts must pass untouched.
 
 - [ ] **Step 3: Records**
 
@@ -2640,7 +2920,10 @@ text.length }))`, and `recall`, for a question with evidence, gains:
           // Opened evidence only: a stand-in title and snippet is not
           // the evidence delivered.
           const cited = retrieved.items.filter(
-              (item) => item.opened && question.evidence.includes(item.id),
+              (item) =>
+                  item.opened &&
+                  (item.kind === "knowledge" || item.turns !== null) &&
+                  question.evidence.includes(item.id),
           );
           return {
               delivered: cited.length > 0,
@@ -2652,8 +2935,12 @@ text.length }))`, and `recall`, for a question with evidence, gains:
       })()),
 ```
 
-A failed retrieval leaves the record without these fields, as it has
-no `found` or `items`; the summary counts it as a miss (Step 4).
+A failed retrieval has no `found` or `items`; its record gains only
+`covered: coverageOf(question.answer, [])`: 0 where the question's
+answer has terms, so a failure counts against coverage, and `null`
+where it has none (a lookup, or an answer of common words), so such a
+question stays out of coverage whether retrieval failed or not. The
+summary counts the failure as a miss in found and delivered (Step 4).
 
 - [ ] **Step 4: Summary and report**
 
@@ -2661,17 +2948,19 @@ no `found` or `items`; the summary counts it as a miss (Step 4).
 `found: rate()`, `delivered: rate()`, `covered: { total: 0, full:
 rate() }`. In `add`, for a record with `recall`:
 
-- one whose `retrieval.error` is set counts as a miss in each of the
-  three that the cell still keeps (`of` up by one; for `covered`,
-  `full.of` up by one and nothing added to `total`), as `tally`'s
-  `owed` does for verdicts;
+- one whose `retrieval.error` is set counts as a miss in found and
+  delivered where the cell still keeps them (`of` up by one), as
+  `tally`'s `owed` does for verdicts, and tallies its `covered` value
+  like any other (0 counts; `null` is skipped);
 - otherwise each follows `inContext`'s rule: lacking the field makes
   the cell's value `null` for good; having it tallies it (`covered`: a
   `null` value is skipped; a number adds to `total`, counts in
   `full.of`, and in `full.hits` when it is 1).
 
-Add a test: a system's records, one with a retrieval error among them,
-keep their stage counts, the errored one counted a miss.
+Add tests: a system's records, one with a retrieval error among them,
+keep their stage counts, the errored one counted a miss; an errored
+lookup (no answer) stays out of coverage's count; an errored question
+whose answer has terms counts 0 in it.
 In `summarise`, the verdicts for "alone" skip any system whose
 `baseOf(name)` is `cited`.
 
