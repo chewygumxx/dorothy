@@ -1,13 +1,14 @@
 ---
 ctime: 2026-10-31
-mtime: 2026-10-31
+mtime: 2026-11-01
 spdx: GPL-3.0-only
 title: The memory engine
 description: >-
   The engine's first step built: passages delivered by one step shared
   by recall and the evaluation, hits carrying their turns, system
   variants and stage counts; the tasks, reviews, rulings, a
-  retrieval-only verification and the paid runs that kept her engine.
+  retrieval-only verification, and the paid runs, probes and rerun
+  that kept her engine.
 tags:
   - dorothy
   - memory
@@ -34,8 +35,10 @@ hits carry their matched turns and alternate knowledge with
 conversations, so ten knowledge hits no longer crowd out every
 conversation. The evaluation gained system variants, a `cited` ceiling
 and four stage counts. The first evaluation's report gained two
-corrections. The paid runs took her strict accuracy from 7 to 40 of
-124, past lexical search's 31, so her engine stays and Delivery is next.
+corrections. The paid runs, run again once the judges were told her
+answers are remembered, took her strict accuracy from 7 to 43 of 125,
+past lexical search's 27, with half her preference answers right, so
+her engine stays and Delivery is next.
 
 Before execution, a Claude review (15 findings) and a Codex review (10)
 of the plan were folded into it. Seven tasks were built by Claude
@@ -168,7 +171,7 @@ slightly more: 40 against 37. Of lexical search's 31 passes she shares
 the model answers from it, as her coverage of the gold answers' words,
 43.7% against the ceiling's 74.8%, shows.
 
-### The decision
+### The first decision
 
 The spec's rule: if `dorothy` at its defaults reaches lexical search's
 strict passes without losing her preference passes or her correct
@@ -188,20 +191,80 @@ Strict passes on these nine also flip between systems whose contexts
 barely differ: duplicates removed and `dorothy` pass two each, not the
 same two.
 
-Ruling: the engine stays hers, and Delivery is next. Her strict passes
-lead by nine, and on preferences she loses no lenient pass and gains
-two; the strict dip is in where knowledge sits, not in search, so a
-chunk index would not mend it. Cost if wrong: Delivery ships answers to
-preference questions a little worse than today's until knowledge
-placement is tuned, which the roadmap holds as a candidate.
+A first ruling kept her engine on her strict lead, taking the dip for
+placement. The user overturned it: 2 of 9 is below adequate, so the
+rule is not met. Two probes then looked for the cause, each on a copy
+of the evaluation's data holding the ten accepted preference questions,
+the spot-check's included, each system run three times against the
+judge's noise.
+
+| Probe | System | Strict |
+| --- | --- | --- |
+| Placement | `dorothy` | 7/30 |
+| Placement | `dorothy:order=knowledge-first` | 7/30 |
+| Placement | knowledge first and twice, as today's | 2/30 |
+| Confirmed | `dorothy`, the Melbourne note the user's | 9/30 |
+
+Placement is not the cause: knowledge first passes as often as her
+defaults, and doubled, less. Nor is the unconfirmed mark: confirming the
+note on the copy ends her "I haven't confirmed that" (4 answers to 0)
+but not her strict failures. Of the 74 strict failures in the first
+probe, 49 fault an answer for a preference the judge cannot see, such as
+"the format you've said you prefer", and 47 for leaving out AEST's
+`+10:00`. openevals' correctness prompt is given the question, the
+answer and the reference, never the memory she answers from, so what
+she truthfully attributes to the user reads to it as invented. `cited`,
+whose answers rarely name their source, passes 7 of 9.
+
+Ruling, the user's choice among four: the strict and lenient judges are
+told the answer comes from a memory of the user, so a claim it
+attributes to the user is not invented where the reference agrees
+(`MEMORY_NOTE` in `run/judges.ts`, #102), and every system is run again.
+openevals' prompt is unchanged, and a contradicted or missing fact still
+fails. Cost if wrong: a judge more lenient towards remembered claims
+than the first, its counts not comparable with the first run's.
+
+### The rerun
+
+The same nine systems, on the 134 accepted questions with the
+spot-check's, under the new judges: 3,573 model calls in 56 minutes,
+without a failure, on the same models and accounts.
+
+| System | Strict | Lenient | Preference strict | Abstained |
+| --- | --- | --- | --- | --- |
+| today's options | 7/125 | 13/125 | 5/10 | 8/8 |
+| alternation alone | 37/125 | 51/125 | 5/10 | 8/8 |
+| duplicates removed | 34/125 | 52/125 | 3/10 | 8/8 |
+| knowledge capped | 39/125 | 52/125 | 5/10 | 8/8 |
+| block 0.2 | 42/125 | 57/125 | 5/10 | 8/8 |
+| block 0.6 | 39/125 | 59/125 | 4/10 | 8/8 |
+| `dorothy` | 43/125 | 60/125 | 5/10 | 8/8 |
+| `lexical` | 27/125 | 34/125 | 0/10 | 8/8 |
+| `cited` | 85/125 | 104/125 | 6/10 | 8/8 |
+
+At her defaults she passes 43, against lexical search's 27: 21 of 48
+single-session questions against 20, 14 of 23 temporal against 6, 2 of
+38 across sessions against 0, 1 of 6 updates each, and 5 of 10
+preferences against none. She shares 17 of lexical search's 27 passes;
+five questions only lexical search passes. Of her five preference
+failures, four still leave out `+10:00`, as `cited` does on its own.
+
+### The decision
+
+- Strict passes: 43 against 27. Met.
+- Preference passes: 5 of 10, as many as today's options and one short
+  of `cited`. Met.
+- Abstentions: 8 of 8 in every system. Met.
+
+Ruling: the engine stays hers, and Delivery is next. Her preference
+answers now fall short of the ceiling by one, on a fact the answering
+prompt's one or two sentences may squeeze out, which the roadmap holds
+as a candidate. Cost if wrong: Delivery ships preference answers right
+half the time, as the old behaviour's were.
 
 ### Left
 
-- The owner's spot-check accepted its unsure draft, after edits, once
-  the runs had begun, and has reopened no sampled accept. The runs used
-  the 133 questions before it; the 134th is measured in the next run.
-  Cost: one preference question unmeasured.
-- The seven questions only lexical search passes, and the 12 of its 31
+- The five questions only lexical search passes, and the 10 of its 27
   passes she misses, are where a chunk index or hybrid search would be
   judged, later.
 

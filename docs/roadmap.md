@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-10-31
+mtime: 2026-11-01
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -141,11 +141,12 @@ verified them before the user's backfill, then the owner's first run.
   notes, not the passage that holds the fact, while lexical search,
   returning passages, scores 25%. The engine's first step found her
   knowledge crowding out the passages she found, and delivers them now:
-  evidence for 98 of 125 questions, from 9. Its paid runs took her
-  strict accuracy from 7 to 40 of 124, past lexical search's 31, with
-  every abstention kept, so her engine stays and Delivery, the last
-  piece, is next; a chunk index waits on the questions only lexical
-  search passes.
+  evidence for 98 of 125 questions, from 9. Its paid runs, judged
+  again once the judges were told her answers are remembered, took her
+  strict accuracy from 7 to 43 of 125, past lexical search's 27, with
+  half her preference answers right and every abstention kept, so her
+  engine stays and Delivery, the last piece, is next; a chunk index
+  waits on the questions only lexical search passes.
 
 ### Model Providers
 
@@ -349,9 +350,9 @@ Found but not scheduled, each with its source.
   ([record](./reports/2026-10-31-memory-engine.md#deferred)): early
   variant errors untested, an undefined policy field, untraced source
   errors, and the first evaluation's Summary beside its corrections.
-- Knowledge placement for preferences: the paid runs' strict passes on
-  preference questions fell from 4 to 2 of 9 when her knowledge stopped
-  leading the context, though every lenient pass held
+- The evaluation's answering prompt asks for one or two sentences,
+  which may cost answers a fact the reference holds, such as AEST's
+  `+10:00` beside AEDT's `+11:00` on preference questions
   ([record](./reports/2026-10-31-memory-engine.md#the-decision)).
 - The consolidation's deferred minors
   ([record](./reports/2026-10-31-agentic-asset-consolidation.md#deferred)):
@@ -547,3 +548,10 @@ In order of completion.
   passes 40 of 124 questions strictly, past lexical search's 31, so her
   engine stays and Delivery is next. Candidates gain knowledge placement
   for preferences.
+- 2026-11-01: The user found the paid runs' 2 of 9 preference answers
+  inadequate, which overturned the ruling above. Probes put most of the
+  failures on the strict judge, which never sees her memory; told her
+  answers are remembered, the judges' rerun has her at 43 of 125 against
+  lexical search's 27, and 5 of 10 preferences. Her engine stays and
+  Delivery is next. Knowledge placement, which the probes ruled out,
+  leaves Candidates; the answering prompt's length joins them.
