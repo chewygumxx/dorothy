@@ -15,10 +15,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
     chmod,
+    copyFile,
     mkdir,
     mkdtemp,
     readdir,
     readFile,
+    realpath,
     rm,
     stat,
     writeFile,
@@ -36,6 +38,8 @@ const scripts = join(
 );
 const send = join(scripts, "send-prompt.sh");
 const compact = join(scripts, "compact-self.sh");
+const job = join(scripts, "job.sh");
+const stopped = join(scripts, "job-stopped.sh");
 
 // Every call to a stand-in is logged as its arguments, each ended by a
 // NUL, and the call by \001, so a message with newlines survives intact.
@@ -538,5 +542,314 @@ describe("compact-self.sh", () => {
         expect(code).toBe(2);
         expect(err).toContain("usage");
         expect(await calls()).toEqual([]);
+    });
+});
+
+describe("job.sh", () => {
+    const spawnIn = (args: string[], cwd: string, extra = {}) =>
+        Bun.spawn([job, ...args], {
+            cwd,
+            env: { ...env, ...extra },
+            stdin: new Blob([""]),
+            stdout: "pipe",
+            stderr: "pipe",
+        });
+    const submitted = async () =>
+        (await calls()).find((call) => call[0] === "systemd-run") ?? [];
+    const setenvs = (call: string[]) =>
+        call
+            .filter((arg) => arg.startsWith("--setenv="))
+            .map((arg) => arg.slice("--setenv=".length))
+            .sort();
+
+    it("submits a user unit that logs, notifies and runs the command", async () => {
+        const dir = await mkdtemp(join(root, "cwd-"));
+        const command = ["printf", "two words", "$HOME", "--env", "--"];
+        const child = spawnIn(
+            ["eval-run", "--notify", "bob", "--", ...command],
+            dir,
+        );
+        const { out, code } = await finish(child);
+        expect(code).toBe(0);
+        const call = await submitted();
+        const unit = call.find((arg) => arg.startsWith("--unit=")) ?? "";
+        expect(unit).toMatch(/^--unit=dorothy-job-eval-run-\d+$/);
+        const name = unit.slice("--unit=".length);
+        const log = join(
+            root,
+            "state",
+            "dorothy-agents",
+            "jobs",
+            `${name}.log`,
+        );
+        expect(call.slice(0, 3)).toEqual([
+            "systemd-run",
+            "--user",
+            "--collect",
+        ]);
+        expect(call).toEqual(
+            expect.arrayContaining([
+                "--expand-environment=no",
+                "-p",
+                `StandardOutput=append:${log}`,
+                `StandardError=append:${log}`,
+                `ExecStopPost=${stopped} ${name} bob`,
+            ]),
+        );
+        // Everything after the first "--" is the command, as written.
+        expect(call.slice(call.indexOf("--") + 1)).toEqual(command);
+        expect(out).toBe(`unit: ${name}\nlog: ${log}\n`);
+    });
+
+    it("passes no agent as a dash, and runs in the caller's directory", async () => {
+        const dir = await mkdtemp(join(root, "cwd-"));
+        const { code } = await finish(spawnIn(["x", "--", "true"], dir));
+        expect(code).toBe(0);
+        const call = await submitted();
+        expect(call).toContain(`--working-directory=${await realpath(dir)}`);
+        const post = call.find((arg) => arg.startsWith("ExecStopPost=")) ?? "";
+        expect(post).toMatch(/ dorothy-job-x-\d+ -$/);
+    });
+
+    it("sets by name only the allowlist that is set, and --env names", async () => {
+        const dir = await mkdtemp(join(root, "cwd-"));
+        const child = spawnIn(
+            [
+                "x",
+                "--env",
+                "FOO",
+                "--env",
+                "PATH",
+                "--env",
+                "UNSET_ONE",
+                "--",
+                "true",
+            ],
+            dir,
+            {
+                FOO: "foo-value-1",
+                DOROTHY_CLAUDE_PRIMARY: "claude-9",
+                DOROTHY_CLAUDE_PRIMARY_TOKEN_VAR: "TOKEN_X",
+                DOROTHY_OTHER: "no",
+                SECRET_TOKEN: "hunter2",
+                HERDR_SOCKET_PATH: "/tmp/herdr.sock",
+            },
+        );
+        const { code } = await finish(child);
+        expect(code).toBe(0);
+        const call = await submitted();
+        expect(setenvs(call)).toEqual([
+            "DOROTHY_CLAUDE_PRIMARY",
+            "DOROTHY_CLAUDE_PRIMARY_TOKEN_VAR",
+            "FOO",
+            "HERDR_SOCKET_PATH",
+            "HOME",
+            "PATH",
+            "UNSET_ONE",
+            "XDG_RUNTIME_DIR",
+            "XDG_STATE_HOME",
+        ]);
+        const joined = call.join("\n");
+        for (const value of [
+            "foo-value-1",
+            "claude-9",
+            "hunter2",
+            "herdr.sock",
+        ]) {
+            expect(joined).not.toContain(value);
+        }
+    });
+
+    it("refuses a checkout path that systemd would split", async () => {
+        const spaced = join(root, "a b");
+        await mkdir(spaced);
+        for (const file of ["job.sh", "job-stopped.sh", "pane-lock.sh"]) {
+            await copyFile(join(scripts, file), join(spaced, file));
+            await chmod(join(spaced, file), 0o755);
+        }
+        const { code, err } = await run(join(spaced, "job.sh"), [
+            "x",
+            "--",
+            "true",
+        ]);
+        expect(code).toBe(1);
+        expect(err).toContain("systemd would read");
+        expect(await calls()).toEqual([]);
+    });
+
+    it("says its usage for a bad name, env name, agent or no command", async () => {
+        for (const args of [
+            [],
+            ["x"],
+            ["x", "--"],
+            ["bad name", "--", "true"],
+            ["-x", "--", "true"],
+            ["x", "--env", "A=b", "--", "true"],
+            ["x", "--env", "1A", "--", "true"],
+            ["x", "--notify", "a b", "--", "true"],
+            ["x", "--notify", "-", "--", "true"],
+            ["x", "--bogus", "--", "true"],
+            ["x", "true"],
+        ]) {
+            const { code, err } = await run(job, args);
+            expect([args, code]).toEqual([args, 2]);
+            expect(err).toContain("usage");
+        }
+        expect(await calls()).toEqual([]);
+    });
+
+    it("prints nothing of its own directory when CDPATH is set", async () => {
+        const { out, code } = await run(job, ["x", "--", "true"], "", {
+            CDPATH: scripts,
+        });
+        expect(code).toBe(0);
+        expect(out.split("\n")).toHaveLength(3);
+        expect(out).toMatch(/^unit: dorothy-job-x-\d+\nlog: /);
+    });
+
+    it("fails, printing no unit, when systemd-run refuses", async () => {
+        await touch("fail-run");
+        const { out, code } = await run(job, ["x", "--", "true"]);
+        expect(code).toBe(1);
+        expect(out).toBe("");
+    });
+});
+
+describe("job-stopped.sh", () => {
+    const unit = "dorothy-job-eval-run-1761900000000000000";
+    const jobs = () => join(root, "state", "dorothy-agents", "jobs");
+    const result = () => readFile(join(jobs(), `${unit}.result`), "utf8");
+    const at = "at=\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\dZ\n$";
+
+    // The helper beside a send-prompt.sh that logs, and fails on demand.
+    async function stubSend() {
+        const dir = join(root, "stubbed");
+        await mkdir(dir);
+        for (const file of ["job-stopped.sh", "pane-lock.sh"]) {
+            await copyFile(join(scripts, file), join(dir, file));
+        }
+        const body = `#!/bin/sh
+${logging}
+cat >"$STUB/send.stdin"
+[ -e "$STUB/fail-send" ] || exit 0
+echo "send-prompt.sh: boom" >&2
+echo "second line" >&2
+exit 3
+`;
+        await writeFile(join(dir, "send-prompt.sh"), body);
+        for (const file of ["job-stopped.sh", "send-prompt.sh"]) {
+            await chmod(join(dir, file), 0o755);
+        }
+        return join(dir, "job-stopped.sh");
+    }
+
+    it("records an exit, then tells the agent through a timed send", async () => {
+        const helper = await stubSend();
+        const { code } = await run(helper, [unit, "bob"], "", {
+            SERVICE_RESULT: "exit-code",
+            EXIT_CODE: "exited",
+            EXIT_STATUS: "1",
+        });
+        expect(code).toBe(0);
+        expect(await result()).toMatch(
+            new RegExp(
+                `^result=exit-code\nexit_code=exited\nexit_status=1\n${at}`,
+            ),
+        );
+        expect(await calls()).toEqual([
+            ["send-prompt.sh", "--from", "job:eval-run", "--in", "1s", "bob"],
+        ]);
+        expect(await readFile(join(root, "send.stdin"), "utf8")).toBe(
+            `job ${unit} stopped: exit-code (exited 1); log ${join(jobs(), `${unit}.log`)}\n`,
+        );
+    });
+
+    it("records a signal", async () => {
+        const helper = await stubSend();
+        await run(helper, [unit, "bob"], "", {
+            SERVICE_RESULT: "signal",
+            EXIT_CODE: "killed",
+            EXIT_STATUS: "9",
+        });
+        expect(await result()).toMatch(
+            new RegExp(
+                `^result=signal\nexit_code=killed\nexit_status=9\n${at}`,
+            ),
+        );
+        expect(await readFile(join(root, "send.stdin"), "utf8")).toContain(
+            "stopped: signal (killed 9); log",
+        );
+    });
+
+    it("records a failed start, which has no exit code or status", async () => {
+        const helper = await stubSend();
+        await run(helper, [unit, "bob"], "", { SERVICE_RESULT: "resources" });
+        expect(await result()).toMatch(
+            new RegExp(`^result=resources\nexit_code=\nexit_status=\n${at}`),
+        );
+        expect(await readFile(join(root, "send.stdin"), "utf8")).toBe(
+            `job ${unit} stopped: resources; log ${join(jobs(), `${unit}.log`)}\n`,
+        );
+    });
+
+    it("keeps the result and exits 0 when the send fails", async () => {
+        const helper = await stubSend();
+        await touch("fail-send");
+        const { code } = await run(helper, [unit, "bob"], "", {
+            SERVICE_RESULT: "exit-code",
+            EXIT_CODE: "exited",
+            EXIT_STATUS: "1",
+        });
+        expect(code).toBe(0);
+        expect(await result()).toMatch(/^result=exit-code\nexit_code=exited\n/);
+        expect(
+            await readFile(join(jobs(), `${unit}.notify.log`), "utf8"),
+        ).toMatch(
+            /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ send to bob failed \(3\): send-prompt.sh: boom second line\n$/,
+        );
+    });
+
+    it("tells no one for a dash, and still records the result", async () => {
+        const helper = await stubSend();
+        const { code } = await run(helper, [unit, "-"], "", {
+            SERVICE_RESULT: "success",
+            EXIT_CODE: "exited",
+            EXIT_STATUS: "0",
+        });
+        expect(code).toBe(0);
+        expect(await result()).toContain("result=success\n");
+        expect(await calls()).toEqual([]);
+        expect(await readdir(jobs())).toEqual([`${unit}.result`]);
+    });
+
+    it("sends through the real send-prompt.sh as a retried timer", async () => {
+        const { code } = await run(stopped, [unit, "bob"], "", {
+            SERVICE_RESULT: "success",
+            EXIT_CODE: "exited",
+            EXIT_STATUS: "0",
+        });
+        expect(code).toBe(0);
+        const [call] = await calls();
+        expect(call).toContain("--on-active=1s");
+        const id = (call?.find((arg) => arg.startsWith("--unit=")) ?? "").slice(
+            "--unit=dorothy-send-".length,
+        );
+        expect(await readFile(join(sendsDir(), `${id}.msg`), "utf8")).toBe(
+            `[from job:eval-run, scheduled] job ${unit} stopped: success (exited 0); log ${join(jobs(), `${unit}.log`)}`,
+        );
+    });
+
+    it("says its usage for a unit or agent it cannot use", async () => {
+        for (const args of [
+            [],
+            [unit],
+            ["../x-1", "-"],
+            ["other-1", "-"],
+            [unit, "a b"],
+        ]) {
+            const { code } = await run(stopped, args);
+            expect([args, code]).toEqual([args, 2]);
+        }
+        expect(await readdir(root)).not.toContain("state");
     });
 });
