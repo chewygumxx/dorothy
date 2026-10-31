@@ -8,6 +8,8 @@
 //
 //
 
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Env, SecretsCode, StructuredCall } from "@dorothy/core";
 import { ambient } from "./ambient.js";
@@ -317,6 +319,36 @@ const RUNNERS: Runners = {
         }
         process.stdout.write(`${JSON.stringify(command, null, 2)}\n`);
         return 0;
+    },
+    install: async (mode) => {
+        const { installHermes, uninstallHermes } = await import(
+            "./hosts/hermes.js"
+        );
+        const { identityPrompt } = await import("@dorothy/identity");
+        const { mainEntry, selfCommand } = await import("./self.js");
+        const self = selfCommand();
+        const entry =
+            mode.entry === null
+                ? mainEntry(self[2] ?? "")
+                : resolve(mode.entry);
+        if (entry === null) {
+            writeError("dorothy: no main checkout found for her command\n");
+            return 1;
+        }
+        if (entry !== self[2]) {
+            writeError(`dorothy: using the main checkout's ${entry}\n`);
+        }
+        const deps = {
+            home: process.env.HERMES_HOME || join(homedir(), ".hermes"),
+            run: async (cmd: string[]) =>
+                Bun.spawn(cmd, { stdio: ["inherit", "inherit", "inherit"] })
+                    .exited,
+            self: [self[0] ?? "", self[1] ?? "", entry],
+            persona: identityPrompt(),
+            force: mode.force,
+            write: writeError,
+        };
+        return mode.uninstall ? uninstallHermes(deps) : installHermes(deps);
     },
 };
 

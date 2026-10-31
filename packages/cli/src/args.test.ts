@@ -880,3 +880,27 @@ it("reads --codex and its dump", () => {
         args: [],
     });
 });
+
+it("reads --install hermes", () => {
+    expect(parseArgs(["--install", "hermes"], false)).toEqual({
+        kind: "install",
+        host: "hermes",
+        uninstall: false,
+        force: false,
+        entry: null,
+    });
+    expect(
+        parseArgs(["--install", "hermes", "--entry", "/w/index.ts"], false),
+    ).toMatchObject({ entry: "/w/index.ts" });
+    expect(
+        parseArgs(["--install", "hermes", "--uninstall"], false),
+    ).toMatchObject({ uninstall: true });
+    expect(parseArgs(["--install", "hermes", "--force"], false)).toMatchObject({
+        force: true,
+    });
+    expect(parseArgs(["--install", "codex"], false).kind).toBe("usage");
+    expect(parseArgs(["--install"], false).kind).toBe("usage");
+    expect(parseArgs(["--install", "hermes", "extra"], false).kind).toBe(
+        "usage",
+    );
+});

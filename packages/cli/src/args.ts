@@ -61,6 +61,13 @@ export type Mode =
     | { kind: "claude-dump"; args: string[]; message: string }
     | { kind: "codex"; args: string[] }
     | { kind: "codex-dump"; args: string[] }
+    | {
+          kind: "install";
+          host: "hermes";
+          uninstall: boolean;
+          force: boolean;
+          entry: string | null;
+      }
     | { kind: "help" }
     | { kind: "usage"; message: string };
 
@@ -126,6 +133,9 @@ export const USAGE = [
     "                                  and hooks; args go to codex",
     "       dorothy --codex --dump [args...]",
     "                                  print the codex command it would run",
+    "       dorothy --install hermes [--uninstall] [--force] [--entry <path>]",
+    "                                  a Hermes profile of hers, `dorothy`;",
+    "                                  --entry names her entry, for probes",
     "       dorothy --dev ...          development mode, before a chat, a",
     "                                  prompt or --dump-context",
 ].join("\n");
@@ -181,6 +191,7 @@ const COMMANDS: Record<string, Command> = {
     "--dump-context": parseDump,
     "--claude": parseClaude,
     "--codex": parseCodex,
+    "--install": parseInstall,
 };
 
 export function parseArgs(argv: readonly string[], isTTY: boolean): Mode {
@@ -579,6 +590,28 @@ function parseCodex(rest: readonly string[]): Mode {
     return rest[0] === "--dump"
         ? { kind: "codex-dump", args: rest.slice(1) }
         : { kind: "codex", args: [...rest] };
+}
+
+const INSTALL_USAGE =
+    "--install takes hermes [--uninstall] [--force] [--entry <path>]";
+
+function parseInstall(rest: readonly string[]): Mode {
+    const [host, ...flags] = rest;
+    const parsed = options(flags, {
+        uninstall: { type: "boolean" },
+        force: { type: "boolean" },
+        entry: { type: "string" },
+    });
+    if (host !== "hermes" || parsed === null || parsed.positionals.length > 0) {
+        return usage(INSTALL_USAGE);
+    }
+    return {
+        kind: "install",
+        host,
+        uninstall: parsed.values.uninstall === true,
+        force: parsed.values.force === true,
+        entry: parsed.values.entry ?? null,
+    };
 }
 
 // Everything after --claude is claude's, but for --dump-context, whose
