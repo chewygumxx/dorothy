@@ -66,8 +66,9 @@ beginning `CLAUDE_CODE_OAUTH_TOKEN`, such as
 `CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2`, and choose the one to spend by
 setting `DOROTHY_CLAUDE_TOKEN_VAR` to its name. Reviews strip Claude
 Code's own variables, so an exported `CLAUDE_CODE_OAUTH_TOKEN` does not
-reach them; this does. A name with no such token fails rather than
-spend another account.
+reach them; this does, and eval honours it too. A name with no such
+token fails rather than spend another account: a review fails, and eval
+stops before any model call.
 
 Back up that age-key file somewhere off this machine: without it,
 `secrets.json` cannot be read. Never commit the age key. Sops also accepts

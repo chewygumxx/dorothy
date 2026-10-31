@@ -35,7 +35,8 @@ user's preferences behind these rules are in agent memory:
    at a turn boundary, never mid-task with work in flight, and tell the
    user each time. Write the instructions with `compact-summary`, then
    run `compact-self.sh` detached. Typed input reads as the user's own:
-   type into a pane only to compact or through `send-prompt.sh`.
+   type into your own pane only to compact; to another agent, write
+   through `send-prompt.sh`.
 2. **Route by budget.** Estimate what a job will spend, then send it to
    the first that fits: Codex, if the job fits its 5-hour budget; else
    a Claude subagent on the primary account, leaving room for

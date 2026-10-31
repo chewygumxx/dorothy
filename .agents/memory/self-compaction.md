@@ -28,4 +28,4 @@ than wait to be told.
 **How to apply:** follow
 [agent-stewardship](../skills/agent-stewardship/SKILL.md): never
 mid-task with work in flight, and typed input reads as the user's own,
-so use it for this alone.
+so type into your own pane for this alone.
