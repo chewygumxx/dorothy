@@ -132,18 +132,20 @@ const respond = (text: string, items: BlockItem[]): BlockResponse => ({
     used: size(text),
 });
 
-export async function buildBlock(
+// The block, and each packed item's rendered line by id.
+export async function composeBlock(
     request: {
         project: string | null;
         budget: number;
         exclude?: string | null;
     },
     engine: MemoryEngine,
-): Promise<BlockResponse> {
+): Promise<{ response: BlockResponse; lines: Map<string, string> }> {
+    const lines = new Map<string, string>();
     const frame = ["<memory>", BLOCK_INTRO, CLOSING, "</memory>"].join("\n");
     let left = request.budget - size(frame);
     if (left < 0) {
-        return respond(CLOSING, []);
+        return { response: respond(CLOSING, []), lines };
     }
     const known = await engine.rankKnowledge({ project: request.project });
     const episodes = await engine.rankEpisodes({
@@ -196,13 +198,32 @@ export async function buildBlock(
             continue;
         }
         parts.push(...section.head, ...packed.lines, section.close);
+        packed.items.forEach((item, at) => {
+            lines.set(item.id, packed.lines[at] as string);
+        });
         items.push(...packed.items);
         left -= wrapper + packed.spent;
     }
-    return respond(
-        ["<memory>", BLOCK_INTRO, ...parts, CLOSING, "</memory>"].join("\n"),
-        items,
-    );
+    return {
+        response: respond(
+            ["<memory>", BLOCK_INTRO, ...parts, CLOSING, "</memory>"].join(
+                "\n",
+            ),
+            items,
+        ),
+        lines,
+    };
+}
+
+export async function buildBlock(
+    request: {
+        project: string | null;
+        budget: number;
+        exclude?: string | null;
+    },
+    engine: MemoryEngine,
+): Promise<BlockResponse> {
+    return (await composeBlock(request, engine)).response;
 }
 
 export async function openingBlock(

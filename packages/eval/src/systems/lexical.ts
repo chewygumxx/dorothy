@@ -48,11 +48,8 @@ export function lexicalSystem(corpus: Corpus): System {
                         score,
                         at: conversation.lastAt,
                         text: () =>
-                            passage(
-                                conversation,
-                                terms,
-                                Math.floor(budget / 3),
-                            ),
+                            passage(conversation, terms, Math.floor(budget / 3))
+                                .text,
                     });
                 }
             }

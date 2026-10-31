@@ -235,6 +235,20 @@ describe("an archive", () => {
         expect(block?.text).toContain("<memory>");
     });
 
+    it("names the block's items given in full, with their lines", async () => {
+        const block = await archive?.block({
+            project: null,
+            budget: 10_000,
+            exclude: null,
+        });
+        expect(block?.full.length).toBeGreaterThan(0);
+        for (const item of block?.full ?? []) {
+            expect(block?.ids).toContain(item.id);
+            expect(block?.text).toContain(item.text);
+            expect(item.text).toContain(`(${item.id})`);
+        }
+    });
+
     it("searches through its engine", async () => {
         const hits = await archive?.engine.search({
             query: "green tea",

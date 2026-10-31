@@ -47,10 +47,10 @@ describe("items", () => {
         if (tea === undefined) {
             throw new Error("the fixture lacks its tea");
         }
-        const text = passage(tea, ["tea"], 1000);
+        const { text } = passage(tea, ["tea"], 1000);
         expect(text).toContain("green tea at four every afternoon");
         expect(text).toContain("Green tea at four, noted.");
-        expect(passage(tea, ["tea"], 20).length).toBeLessThanOrEqual(20);
+        expect(passage(tea, ["tea"], 20).text.length).toBeLessThanOrEqual(20);
     });
 });
 

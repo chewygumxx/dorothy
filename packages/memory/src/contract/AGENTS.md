@@ -41,10 +41,16 @@ gives back, and the service that speaks it. The spec is
 - `passage.ts`, `terms.ts`: items as text a model reads, passages of
   a conversation by its matching turns, packing within a budget, and
   the query's terms; shared with the evaluation.
+- `deliver.ts`: ranked hits as the text a model reads, within a
+  budget: episodes as passages from search's matched turns, knowledge
+  whole, each within its cap, knowledge already shown left out, and an
+  unreadable source as its title and snippet. Recall and the
+  evaluation's `dorothy` system deliver through it. `evidence.ts`: its
+  source over the recall index, visible conversations only.
 - `tools.ts`: the four MCP tools, an unexpected error reading
   `Memory failed.`; `testing.ts`: a fake engine.
 - `../engine/`: `MemoryEngine`, and the baseline over today's index,
-  salience and reviewer.
+  salience and reviewer; `merge.ts`'s `mergeHits`.
 - `../hosts/`: host profiles, one JSON file a harness.
 - `../service/`: the HTTP service (`service.ts`, its routes; `guard.ts`
   refuses what a web page could send; `jobs.ts` extracts (never a
@@ -111,4 +117,4 @@ records; `writeArchive` writes a small archive for its tests. It writes
 only the recall index, where the environment points. Appraised reads
 leave out a hidden reader's, counted, and name a transcript it could
 not read.
-It also exports the passage and term code.
+It also exports the passage, term, delivery and merge code.

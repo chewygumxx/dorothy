@@ -69,7 +69,7 @@ export function describeEvidence(
         .map((id) => {
             const conversation = corpus.conversations.get(id);
             if (conversation !== undefined) {
-                return `  ${id}: ${conversation.title ?? "Untitled"}\n${indent(passage(conversation, terms, chars))}`;
+                return `  ${id}: ${conversation.title ?? "Untitled"}\n${indent(passage(conversation, terms, chars).text)}`;
             }
             const knowledge = corpus.knowledge.get(id);
             return knowledge === undefined

@@ -55,7 +55,7 @@ export function dorothySystem(corpus: Corpus): System {
                                   conversation,
                                   terms,
                                   Math.floor(budget / 4),
-                              )
+                              ).text
                             : knowledge !== undefined
                               ? knowledgeText(knowledge)
                               : `${hit.title}: ${hit.snippet}`,
