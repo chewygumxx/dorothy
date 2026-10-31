@@ -105,8 +105,31 @@ Each ruled here, to be recorded in the ledger:
    each item keeps its delivered text, for coverage. Cost: none.
 4. Unconfirmed knowledge carries its warning in the evaluation too, as
    recall needs it; the characterization fixture holds confirmed
-   knowledge only. Cost: a context unlike the old one where knowledge
-   is unconfirmed.
+   knowledge only. This is the one difference between today's context
+   and the new code under today's options. Cost: a context unlike the
+   old one where knowledge is unconfirmed.
+5. Today's `dorothy` caps passages, never knowledge. The policy gains
+   `wholeKnowledge`, and `dorothy` the option `knowledge` (`capped`,
+   the default, or `whole`), so that today's behaviour is reproducible
+   and the knowledge cap is measured on its own. The spec's runs become:
+   1. `dorothy:order=knowledge-first:dedupe=off:seeds=overlap:knowledge=whole`,
+      today's;
+   2. `dorothy:dedupe=off:seeds=overlap:knowledge=whole`, alternation;
+   3. `dorothy:seeds=overlap:knowledge=whole`, duplicates removed;
+   4. `dorothy:seeds=overlap`, knowledge capped;
+   5. `dorothy:block=0.2` and `dorothy:block=0.6` beside `dorothy`.
+
+   `cited` delivers its knowledge whole, as the spec says. Cost: one
+   run more.
+6. Escaping comes before the cap, which clips back to an entity's
+   start, so an escaped item keeps within its cap; packing may still
+   cut the last item inside an entity, which leaves a stray `&am` but
+   never breaks the frame. Cost: a few odd characters at the end of a
+   cut recall.
+7. Delivered and covered count opened items only, and knowledge the
+   block gave in full, which `dorothy` reports as items marked
+   `block`; a stand-in title and snippet is not delivered evidence.
+   Cost: none.
 
 ---
 
@@ -252,9 +275,10 @@ export const TODAY: Record<
 };
 ```
 
-Run the script twice: if the two outputs differ (the block's ranking
-reads the clock), say so in the report and record only the `ranked`
-and the `<item>` part of `context` (everything after the block).
+Run the script twice. Salience decay is a factor common to every
+conversation, so the block's order should not drift with the clock;
+if the two outputs differ all the same, stop and report
+`NEEDS_CONTEXT` with both outputs, changing nothing.
 
 - [ ] **Step 2: Add the characterization test**
 
@@ -331,10 +355,17 @@ Expected: PASS (it records today's behaviour).
 
 - [ ] **Step 5: Guides**
 
-- `packages/eval/AGENTS.md`, systems bullet: `termsOf` and `scoreOf`
-  are memory's now; replace "`termsOf` and `scoreOf` (`terms.ts`); and"
-  with "the passage and term code from `@dorothy/memory/evaluation`;"
-  (no line added).
+- `packages/eval/AGENTS.md`, the systems bullet becomes, still five
+  lines:
+
+  ```markdown
+  - `systems/`: `System` and `makeSystem` (`system.ts`); the corpus, the
+    snapshot's archive opened once (`corpus.ts`); and the three systems,
+    `dorothy.ts`, `lexical.ts` and `full.ts`, whose passages, terms and
+    packing are memory's, from `@dorothy/memory/evaluation`. A new system
+    is a maker in `system.ts`'s table.
+  ```
+
 - `packages/memory/src/contract/AGENTS.md`, Files: add
   "- `passage.ts`, `terms.ts`: items as text a model reads, passages of
   a conversation by its matching turns, packing within a budget, and
@@ -369,6 +400,7 @@ source over the recall index. Nothing calls them yet but tests.
   `passage.test.ts`, `packages/memory/src/engine/archive.ts`,
   `archive.test.ts`, `packages/memory/src/evaluation.ts`,
   `packages/eval/src/systems/lexical.ts`, `dorothy.ts`, `full.ts`,
+  `systems.test.ts`, `packages/eval/src/questions/review.ts`,
   `packages/memory/src/contract/AGENTS.md`
 
 **Interfaces:**
@@ -389,7 +421,11 @@ source over the recall index. Nothing calls them yet but tests.
 
   // contract/passage.ts (changed)
   export type TurnRange = { from: number; through: number };
-  export type Passage = { text: string; turns: TurnRange | null };
+  export type Passage = {
+      text: string;
+      turns: TurnRange | null;
+      cut: boolean;
+  };
   export function passage(
       conversation: EvidenceConversation,
       terms: readonly string[],
@@ -413,6 +449,7 @@ source over the recall index. Nothing calls them yet but tests.
       cap: number;
       seeds: PassageSeeds;
       shown: readonly string[];
+      wholeKnowledge: boolean;
   };
   export type DeliveredItem = {
       id: string;
@@ -605,10 +642,10 @@ describe("passage seeds", () => {
                 },
             ],
         };
-        expect(passage(long, ["bicycle"], 200).turns).toEqual({
-            from: 7,
-            through: 7,
-        });
+        const found = passage(long, ["bicycle"], 200);
+        expect(found.turns).toEqual({ from: 7, through: 7 });
+        expect(found.cut).toBe(true);
+        expect(passage(talk, ["bicycle"], 1000).cut).toBe(false);
     });
 });
 
@@ -635,10 +672,8 @@ describe("pack's account", () => {
 });
 ```
 
-The `tight` case's 130 characters fit the head line and the seed's
-first neighbours but not turn 1; if the head line's length makes 130
-wrong, choose the budget that fits the head, turns 2 to 4 and no more,
-and say so in the report.
+In the `tight` case, 130 characters hold the head (30) and turns 2
+and 3 (118 in all); turn 4 would make 167.
 
 Run: `bun test packages/memory/src/contract/passage.test.ts`
 Expected: FAIL (`turns` undefined; `pack` lacks `texts`).
@@ -649,7 +684,13 @@ In `passage.ts`:
 
 ```ts
 export type TurnRange = { from: number; through: number };
-export type Passage = { text: string; turns: TurnRange | null };
+// A passage, its first and last turn, and whether its text was cut
+// short rather than ended at a turn.
+export type Passage = {
+    text: string;
+    turns: TurnRange | null;
+    cut: boolean;
+};
 
 // The turns that best match, each with its neighbours, in order, within
 // chars: the seeds first (search's matched turns, by number), then the
@@ -680,15 +721,17 @@ export function passage(
         [...chosen]
             .sort((a, b) => a - b)
             .map((at) => turns[at] as EvidenceTurn);
-    const result = (text: string): Passage => {
+    const result = (whole: string): Passage => {
         const numbers = picked().map((turn) => turn.n);
         const [from, through] = [numbers[0], numbers.at(-1)];
+        const text = clip(whole, chars);
         return {
             text,
             turns:
                 from === undefined || through === undefined
                     ? null
                     : { from, through },
+            cut: text.length < whole.length,
         };
     };
     const render = () => conversationText(conversation, picked());
@@ -707,18 +750,18 @@ export function passage(
                           terms,
                           chars,
                       )
-                    : result(clip(render(), chars));
+                    : result(render());
             }
         }
     }
-    return result(clip(render(), chars));
+    return result(render());
 }
 ```
 
 `excerpt` returns a `Passage`: `{ text, turns: { from: turn.n, through:
-turn.n } }`, or `{ text: clip(...), turns: null }` where no room is
-left. With no seeds the order is today's, so the existing tests, read
-through `.text`, still pass.
+turn.n }, cut: true }`, or `{ text: clip(...), turns: null, cut: true }`
+where no room is left. With no seeds the order is today's, so the
+existing tests, read through `.text`, still pass.
 
 `pack` keeps its loop and also collects each packed text and whether
 the last was cut:
@@ -757,7 +800,9 @@ export function pack(
 }
 ```
 
-Eval's callers of `passage` (`lexical.ts`, `dorothy.ts`) take `.text`.
+Eval's callers of `passage` take `.text`: `lexical.ts`, `dorothy.ts`,
+`questions/review.ts` (its `indent(...)`) and the test `pass the turns
+that match, with their neighbours` in `systems.test.ts`.
 
 Run: `bun test packages/memory/src/contract/passage.test.ts`
 Expected: PASS.
@@ -883,6 +928,31 @@ describe("deliver", () => {
         expect(items[0]?.cut).toBe(true);
     });
 
+    it("gives knowledge whole past the cap when told", async () => {
+        const long = { ...tea, body: "word ".repeat(1000) };
+        const { items } = await deliver(
+            {
+                ...ask([fact("k:personal/likes-tea")]),
+                policy: { wholeKnowledge: true },
+            },
+            sourceOf([], [long]),
+        );
+        expect(items[0]?.text.length).toBeGreaterThan(2000);
+        expect(items[0]?.cut).toBe(false);
+    });
+
+    it("keeps an escaped item within its cap, never inside an entity", async () => {
+        const sharp = { ...tea, body: "&".repeat(1000) };
+        const { items } = await deliver(
+            { ...ask([fact("k:personal/likes-tea")]), escape: true },
+            sourceOf([], [sharp]),
+        );
+        const text = items[0]?.text ?? "";
+        expect(text.length).toBeLessThanOrEqual(2000);
+        expect(text).toMatch(/&amp;$/);
+        expect(items[0]?.cut).toBe(true);
+    });
+
     it("stands an unopened source's title and snippet in", async () => {
         const { items } = await deliver(ask([episode("c:gone", [1])]), source);
         expect(items[0]).toMatchObject({
@@ -965,6 +1035,9 @@ export type DeliveryPolicy = {
     seeds: PassageSeeds;
     // Ids given in full already: knowledge among them is left out.
     shown: readonly string[];
+    // Whether knowledge goes in whole, past the cap, as the evaluation's
+    // dorothy system gave it before delivery was shared.
+    wholeKnowledge: boolean;
 };
 export type DeliveredItem = {
     id: string;
@@ -989,47 +1062,67 @@ export type DeliveryRequest = {
 };
 
 type Rendered = Omit<DeliveredItem, "text"> & { whole: string };
+// How an item's text is made ready: escaped or not, then cut to a
+// length, never inside an entity the escaping made.
+type Finish = (text: string, chars: number) => string;
+
+const raw: Finish = (text, chars) => clip(text, chars);
+const escaped: Finish = (text, chars) =>
+    clip(escapeXml(text), chars).replace(/&[a-z]*$/, "");
 
 async function render(
     hit: MemoryHit,
     source: EvidenceSource,
     terms: readonly string[],
     policy: DeliveryPolicy,
+    finish: Finish,
 ): Promise<Rendered> {
     const mark = hit.unconfirmed === undefined ? "" : `[${hit.unconfirmed}]\n`;
-    const capped = (whole: string, opened: boolean): Rendered => ({
-        id: hit.id,
-        kind: hit.kind,
-        turns: null,
-        whole: clip(whole, policy.cap),
-        cut: whole.length > policy.cap,
-        opened,
-    });
+    const item = (
+        text: string,
+        chars: number,
+        fields: Pick<Rendered, "turns" | "opened"> & { cut?: boolean },
+    ): Rendered => {
+        const whole = finish(text, chars);
+        return {
+            id: hit.id,
+            kind: hit.kind,
+            turns: fields.turns,
+            whole,
+            cut: (fields.cut ?? false) || whole.length < finish(text, Infinity).length,
+            opened: fields.opened,
+        };
+    };
     try {
         if (hit.kind === "episode") {
             const conversation = await source.conversation(hit.id);
             if (conversation !== undefined) {
-                const seeds = policy.seeds === "search" ? (hit.turns ?? []) : [];
+                const seeds =
+                    policy.seeds === "search" ? (hit.turns ?? []) : [];
                 const found = passage(conversation, terms, policy.cap, seeds);
-                return {
-                    id: hit.id,
-                    kind: "episode",
+                return item(found.text, policy.cap, {
                     turns: found.turns,
-                    whole: found.text,
-                    cut: false,
                     opened: true,
-                };
+                    cut: found.cut,
+                });
             }
         } else {
             const knowledge = await source.knowledge(hit.id);
             if (knowledge !== undefined) {
-                return capped(mark + knowledgeText(knowledge), true);
+                return item(
+                    mark + knowledgeText(knowledge),
+                    policy.wholeKnowledge ? Infinity : policy.cap,
+                    { turns: null, opened: true },
+                );
             }
         }
     } catch {
         // An unreadable source stands in as its title and snippet.
     }
-    return capped(`${mark}${hit.title}: ${hit.snippet}`, false);
+    return item(`${mark}${hit.title}: ${hit.snippet}`, policy.cap, {
+        turns: null,
+        opened: false,
+    });
 }
 
 export async function deliver(
@@ -1040,8 +1133,10 @@ export async function deliver(
         cap: Math.floor(request.budget * ITEM_SHARE),
         seeds: "search",
         shown: [],
+        wholeKnowledge: false,
         ...request.policy,
     };
+    const finish = request.escape === true ? escaped : raw;
     const terms = termsOf(request.query);
     const shown = new Set(policy.shown);
     const rendered: Rendered[] = [];
@@ -1049,12 +1144,10 @@ export async function deliver(
         if (hit.kind === "knowledge" && shown.has(hit.id)) {
             continue;
         }
-        rendered.push(await render(hit, source, terms, policy));
+        rendered.push(await render(hit, source, terms, policy, finish));
     }
-    const escape =
-        request.escape === true ? escapeXml : (text: string) => text;
     const packed = pack(
-        rendered.map((item) => ({ id: item.id, text: escape(item.whole) })),
+        rendered.map((item) => ({ id: item.id, text: item.whole })),
         Math.max(0, request.budget),
     );
     const last = packed.ids.length - 1;
@@ -1071,6 +1164,10 @@ export async function deliver(
     };
 }
 ```
+
+`clip(text, Infinity)` returns the text whole: `text.length <=
+Infinity`. An item's `text` is what went into the context, escaped
+where `escape` is set.
 
 Run: `bun test packages/memory/src/contract/deliver.test.ts`
 Expected: PASS.
@@ -1173,6 +1270,27 @@ describe("indexEvidence", () => {
                 retired: null,
             });
         expect(await evidence.knowledge("k:personal/nothing")).toBeUndefined();
+        expect(await evidence.knowledge("c:nothing")).toBeUndefined();
+    });
+
+    it("gives a project's knowledge by its id", async () => {
+        await writeArchive(env, {
+            conversations: [],
+            knowledge: [
+                {
+                    scope: "github.com/me/app",
+                    name: "uses-rust",
+                    title: "Uses Rust",
+                    body: "The app is in Rust.",
+                    at,
+                },
+            ],
+        });
+        expect(
+            await indexEvidence(index, dataRoot(env)).knowledge(
+                "k:projects/github.com/me/app/uses-rust",
+            ),
+        ).toMatchObject({ scope: "github.com/me/app", title: "Uses Rust" });
     });
 });
 ```
@@ -1189,13 +1307,18 @@ Expected: FAIL, `./evidence.js` not found.
 
 ```ts
 // What delivery reads of Dorothy's own archive: a visible conversation's
-// turns from the recall index by contract id, and knowledge from its
-// files, read once for the source's life.
+// turns from the recall index by contract id, under the index's lock,
+// and a piece of knowledge from its own file.
 
 import { knowledgeId, parseMemoryId } from "@dorothy/core";
 import { knowledgePath } from "../engine/engine.js";
 import type { Fact } from "../facts/file.js";
-import { listFacts, type Scope } from "../facts/store.js";
+import {
+    factPath,
+    PERSONAL,
+    readFactFile,
+    type Scope,
+} from "../facts/store.js";
 import type { RecallIndex } from "../recall/store.js";
 import type { EvidenceSource } from "./deliver.js";
 import type {
@@ -1245,47 +1368,65 @@ export function knowledgeRecord(scope: Scope, fact: Fact): EvidenceKnowledge {
     };
 }
 
+// A knowledge id's scope and name: personal/<name>, or
+// projects/<id>/<name>, whose id may hold slashes.
+function scopeOf(path: string): { scope: Scope; name: string } | null {
+    const at = path.lastIndexOf("/");
+    const [where, name] = [path.slice(0, at), path.slice(at + 1)];
+    if (where === "personal") {
+        return { scope: PERSONAL, name };
+    }
+    return where.startsWith("projects/")
+        ? { scope: { kind: "project", id: where.slice(9) }, name }
+        : null;
+}
+
 export function indexEvidence(
     index: RecallIndex,
     root: string,
 ): EvidenceSource {
-    let knowledge: Promise<Map<string, EvidenceKnowledge>> | undefined;
     return {
         async conversation(id): Promise<EvidenceConversation | undefined> {
             const parsed = parseMemoryId(id);
             if (parsed === null || parsed.kind !== "conversation") {
                 return undefined;
             }
-            const row = index.db
-                .query(
-                    `SELECT project, title, first_at, last_at
-                     FROM conversations
-                     WHERE phrase = ? AND hidden = 0 AND first_at IS NOT NULL`,
-                )
-                .get(parsed.phrase) as ConversationRow | null;
-            return row === null
-                ? undefined
-                : {
-                      id,
-                      phrase: parsed.phrase,
-                      project: row.project,
-                      title: row.title,
-                      firstAt: iso(row.first_at),
-                      lastAt: iso(row.last_at),
-                      turns: turnsOf(index, parsed.phrase),
-                  };
+            return index.exclusive(() => {
+                const row = index.db
+                    .query(
+                        `SELECT project, title, first_at, last_at
+                         FROM conversations
+                         WHERE phrase = ? AND hidden = 0
+                             AND first_at IS NOT NULL`,
+                    )
+                    .get(parsed.phrase) as ConversationRow | null;
+                return row === null
+                    ? undefined
+                    : {
+                          id,
+                          phrase: parsed.phrase,
+                          project: row.project,
+                          title: row.title,
+                          firstAt: iso(row.first_at),
+                          lastAt: iso(row.last_at),
+                          turns: turnsOf(index, parsed.phrase),
+                      };
+            });
         },
         async knowledge(id) {
-            knowledge ??= listFacts(root).then(
-                ({ facts }) =>
-                    new Map(
-                        facts.map(({ scope, fact }) => {
-                            const record = knowledgeRecord(scope, fact);
-                            return [record.id, record] as const;
-                        }),
-                    ),
+            const parsed = parseMemoryId(id);
+            const target =
+                parsed?.kind === "knowledge" ? scopeOf(parsed.path) : null;
+            if (target === null) {
+                return undefined;
+            }
+            const read = await readFactFile(
+                factPath(root, target.scope, target.name),
+                target.name,
             );
-            return (await knowledge).get(id);
+            return read.kind === "ok"
+                ? knowledgeRecord(target.scope, read.fact)
+                : undefined;
         },
     };
 }
@@ -1378,8 +1519,9 @@ git commit -m "feat(memory): Deliver hits as passages"
       // The engine's hits before packing, best first; systems with an
       // engine only.
       found?: string[];
-      // What went into the context, as delivered.
-      items?: DeliveredItem[];
+      // What went into the context, as delivered; dorothy adds the
+      // knowledge her block gave in full, marked block.
+      items?: (DeliveredItem & { block?: true })[];
   };
   export const DEFAULT_SYSTEMS: readonly string[];
   export const baseOf: (name: string) => string;
@@ -1397,6 +1539,7 @@ git commit -m "feat(memory): Deliver hits as passages"
       cap: number;
       seeds: PassageSeeds;
       dedupe: boolean;
+      wholeKnowledge: boolean;
   };
   export const DOROTHY_DEFAULTS: DorothyOptions;
   export function dorothyOptions(
@@ -1418,7 +1561,8 @@ In `systems.test.ts`: `asked` adds `evidence: []`. The
 characterization test now asks for today's options by name:
 
 ```ts
-const TODAY_SYSTEM = "dorothy:order=knowledge-first:dedupe=off:seeds=overlap";
+const TODAY_SYSTEM =
+    "dorothy:order=knowledge-first:dedupe=off:seeds=overlap:knowledge=whole";
 // in the characterization test:
 const found = await makeSystem(TODAY_SYSTEM, corpus).retrieve(
     asked(question),
@@ -1446,9 +1590,26 @@ const hits = mergeHits(
 );
 ```
 
-and expects `found.ranked` to be the delivered ids (those of `hits`
-not shown in full in the block, in order) followed by the block's
-other ids. New tests:
+and the block as the system fetches it, then expects:
+
+```ts
+const block = await corpus.archive.block({
+    project: null,
+    budget: Math.floor(8000 * 0.4),
+    exclude: null,
+});
+const delivered = hits
+    .filter(
+        (hit) => !(hit.kind === "knowledge" && block.full.includes(hit.id)),
+    )
+    .map((hit) => hit.id);
+expect(found.ranked).toEqual([
+    ...delivered,
+    ...block.ids.filter((id) => !delivered.includes(id)),
+]);
+```
+
+New tests:
 
 ```ts
 describe("system names", () => {
@@ -1463,7 +1624,11 @@ describe("system names", () => {
     });
 
     for (const [name, says] of [
-        ["dorothy:size=3", "dorothy takes block, order, cap, seeds, dedupe, not size"],
+        ["dorothy:size=3", "dorothy takes block, order, cap, seeds, dedupe, knowledge, not size"],
+        ["dorothy:seeds=random", "seeds takes search or overlap, not random"],
+        ["dorothy:dedupe=yes", "dedupe takes on or off, not yes"],
+        ["dorothy:knowledge=all", "knowledge takes capped or whole, not all"],
+        ["dorothy:cap=x", "cap takes a share above 0, up to 1, not x"],
         ["dorothy:block=1", "block takes a share from 0 to under 1, not 1"],
         ["dorothy:cap=0", "cap takes a share above 0, up to 1, not 0"],
         ["dorothy:order=random", "order takes alternate or knowledge-first"],
@@ -1477,6 +1642,20 @@ describe("system names", () => {
             expect(() => checkSystem(name)).toThrow(says);
         });
     }
+
+    it("takes each key's values", () => {
+        const of = (key: string, value: string) =>
+            dorothyOptions(new Map([[key, value]]));
+        expect(of("block", "0").block).toBe(0);
+        expect(of("block", "0.6").block).toBe(0.6);
+        expect(of("cap", "1").cap).toBe(1);
+        expect(of("order", "knowledge-first").order).toBe("knowledge-first");
+        expect(of("seeds", "overlap").seeds).toBe("overlap");
+        expect(of("dedupe", "on").dedupe).toBe(true);
+        expect(of("knowledge", "whole").wholeKnowledge).toBe(true);
+        expect(of("knowledge", "capped").wholeKnowledge).toBe(false);
+        expect(dorothyOptions(new Map())).toEqual(DOROTHY_DEFAULTS);
+    });
 });
 
 describe("the dorothy system's delivery", () => {
@@ -1504,8 +1683,11 @@ describe("the dorothy system's delivery", () => {
             asked(question),
             8000,
         );
+        // The hits delivered, not the block's knowledge reported beside.
         const ids = (found: Retrieved) =>
-            (found.items ?? []).map((each) => each.id);
+            (found.items ?? [])
+                .filter((each) => each.block !== true)
+                .map((each) => each.id);
         expect(ids(deduped)).not.toContain("k:personal/uses-helix");
         expect(ids(kept)).toContain("k:personal/uses-helix");
     });
@@ -1621,6 +1803,8 @@ export type DorothyOptions = {
     seeds: PassageSeeds;
     // Whether knowledge the block gave in full is left out of the hits.
     dedupe: boolean;
+    // Whether knowledge goes in whole, past the cap, as it did before.
+    wholeKnowledge: boolean;
 };
 export const DOROTHY_DEFAULTS: DorothyOptions = {
     block: 0.4,
@@ -1628,8 +1812,9 @@ export const DOROTHY_DEFAULTS: DorothyOptions = {
     cap: ITEM_SHARE,
     seeds: "search",
     dedupe: true,
+    wholeKnowledge: false,
 };
-const KEYS = ["block", "order", "cap", "seeds", "dedupe"] as const;
+const KEYS = ["block", "order", "cap", "seeds", "dedupe", "knowledge"] as const;
 
 export function dorothyOptions(
     raw: ReadonlyMap<string, string>,
@@ -1670,6 +1855,10 @@ export function dorothyOptions(
                 break;
             case "dedupe":
                 options.dedupe = among(["on", "off"] as const) === "on";
+                break;
+            case "knowledge":
+                options.wholeKnowledge =
+                    among(["capped", "whole"] as const) === "whole";
                 break;
             default:
                 throw new UsageError(
@@ -1716,6 +1905,7 @@ export function dorothySystem(
                         cap: Math.floor(budget * options.cap),
                         seeds: options.seeds,
                         shown: options.dedupe ? block.full : [],
+                        wholeKnowledge: options.wholeKnowledge,
                     },
                 },
                 corpusEvidence(corpus),
@@ -1731,12 +1921,37 @@ export function dorothySystem(
                 ],
                 context: clip(`${block.text}\n${delivery.text}`, budget),
                 found: hits.map((hit) => hit.id),
-                items: delivery.items,
+                // The block's knowledge given in full is delivered too,
+                // for the stages; ranked keeps to what the hits gave.
+                items: [
+                    ...delivery.items,
+                    ...block.full.flatMap((id) => {
+                        const knowledge = corpus.knowledge.get(id);
+                        return knowledge === undefined
+                            ? []
+                            : [
+                                  {
+                                      id,
+                                      kind: "knowledge" as const,
+                                      turns: null,
+                                      text: knowledgeText(knowledge),
+                                      cut: false,
+                                      opened: true,
+                                      block: true as const,
+                                  },
+                              ];
+                    }),
+                ],
             };
         },
     };
 }
 ```
+
+`dorothy.ts` imports `clip`, `deliver`, `HIT_ORDERS`, `ITEM_SHARE`,
+`knowledgeText`, `mergeHits`, `PASSAGE_SEEDS` and the types it names
+from `@dorothy/memory/evaluation`, and `UsageError` from
+`../errors.js`.
 
 `corpus.ts` adds:
 
@@ -1748,11 +1963,13 @@ export const corpusEvidence = (corpus: Corpus): EvidenceSource => ({
 });
 ```
 
-Under today's options this reproduces the old context exactly: two
+Under today's options this reproduces the old context exactly, but for
+the warning on unconfirmed knowledge, which the fixture lacks: two
 searches merged knowledge first equal the baseline's own merge, the
-cap is a quarter of the whole budget as the old `budget / 4`, and
-overlap seeds are the old passage order. If the characterization test
-fails, find which of these differs before changing anything else.
+passage cap is a quarter of the whole budget as the old `budget / 4`,
+knowledge goes in whole as before, and overlap seeds are the old
+passage order. If the characterization test fails, find which of these
+differs before changing anything else.
 
 - [ ] **Step 4: The run and the command**
 
@@ -1823,8 +2040,30 @@ Add to `baseline.test.ts`, using its `converse` and `fact` helpers:
 
 ```ts
 describe("search's turns and order", () => {
-    it("gives an episode's matched turns", async () => {
-        const phrase = converse(1, null, "my kumquat tree");
+    it("gives up to three matched turns, best first", async () => {
+        const phrase = newPhrase(() =>
+            Uint8Array.from([90, 1, 2, 3, 4, 5, 6, 7]),
+        );
+        mkdirSync(transcriptDir(env), { recursive: true });
+        writeFileSync(
+            transcriptPath(phrase, env),
+            line("session", 0, {
+                phrase: "p",
+                sdkSessionId: "",
+                model: "m",
+                promptHash: "",
+                resumed: false,
+            }) +
+                line("user", 1, { text: "a kumquat" }) +
+                line("assistant", 2, {
+                    text: "kumquat kumquat, a fine kumquat",
+                }) +
+                line("user", 3, { text: "nothing here" }) +
+                line("assistant", 4, {
+                    text: "kumquat once, among a good many other words here",
+                }) +
+                line("user", 5, { text: "kumquat kumquat" }),
+        );
         const hits = await engine().search({
             query: "kumquat",
             within: "all",
@@ -1832,9 +2071,21 @@ describe("search's turns and order", () => {
             limit: 10,
             project: null,
         });
-        const hit = hits.find((each) => each.id === `c:${phrase}`);
-        expect(hit?.turns).toHaveLength(1);
-        expect(hit?.turns?.[0]).toBeGreaterThanOrEqual(0);
+        // The index's own order of this conversation's matching turns.
+        const best = (
+            index.db
+                .query(
+                    `SELECT t.n AS n FROM turns_fts
+                     JOIN turns t ON t.rowid = turns_fts.rowid
+                     WHERE turns_fts MATCH '"kumquat"' AND t.phrase = ?
+                     ORDER BY bm25(turns_fts) LIMIT 3`,
+                )
+                .all(phrase) as { n: number }[]
+        ).map((row) => row.n);
+        expect(best).toHaveLength(3);
+        expect(hits.find((each) => each.id === `c:${phrase}`)?.turns).toEqual(
+            best,
+        );
     });
 
     it("keeps an episode among ten knowledge hits", async () => {
@@ -1857,12 +2108,13 @@ describe("search's turns and order", () => {
 });
 ```
 
-The first test's turn number is whatever the index gives the one user
-turn; assert its exact value once you have read `recall/sync.ts`'s
-numbering (the passage head shows it as `[n]`).
+The first test reads the index after `engine().search` has synced it
+(`index` is the file's own). Four turns match, so three come back.
 
 In `tools.test.ts`, a `search` through the fake engine whose hit
-carries `turns: [3, 1]` returns them in its JSON:
+carries `turns: [3, 1]` returns them in its JSON. This pins that the
+tool passes the field through; it passes before the change, as the
+tool returns the engine's hits as they are:
 
 ```ts
 it("returns an episode's matched turns", async () => {
@@ -1873,8 +2125,9 @@ it("returns an episode's matched turns", async () => {
 });
 ```
 
-Run: `bun test packages/memory/src/engine/baseline.test.ts packages/memory/src/contract/tools.test.ts`
-Expected: FAIL (no `turns`; knowledge fills all ten).
+Run: `bun test packages/memory/src/engine/baseline.test.ts`
+Expected: FAIL (no `turns`; knowledge fills all ten). The `tools.test.ts`
+case passes already.
 
 - [ ] **Step 2: The contract field**
 
@@ -2057,9 +2310,8 @@ expect(short.text).toContain("a: Tea\n</item>");
 expect(await ask(10)).toEqual({ text: "", ids: [], used: 0 });
 ```
 
-At `frame + item` the room is the item's 31 characters, whose quarter,
-7, is exactly `a: Tea.`'s length; if the cap cuts it, say so in the
-report rather than raising the cap.
+At `frame + item` the room is the item's 30 characters (14, 7 and 9),
+whose quarter, 7, is exactly `a: Tea.`'s length.
 
 `escapes what a passage holds` keeps its assertions.
 
@@ -2118,6 +2370,12 @@ In `service.ts`'s recall route pass
 root its `FactStore` already holds. Any other caller of `recallFor`
 does the same with its own index and root.
 
+In `service.test.ts`, beside `recalls for a prompt`, a test that writes
+a conversation into the service's temporary data root (as the file's
+other tests that record or index one do), recalls with a prompt
+matching one of its turns, and expects that turn's text in the
+response's `text` and the conversation's `c:` id in `ids`.
+
 - [ ] **Step 4: Guide**
 
 `packages/memory/src/contract/AGENTS.md`, `recall.ts`'s line: passages
@@ -2157,9 +2415,13 @@ git commit -m "feat(memory): Recall delivers passages"
   // record.ts
   export type RecordedItem = {
       id: string;
+      kind: "knowledge" | "episode";
       turns: { from: number; through: number } | null;
       chars: number;
       cut: boolean;
+      opened: boolean;
+      // Knowledge the opening block gave in full, not a hit.
+      block?: true;
   };
   // RunRecord.retrieval gains: items?: RecordedItem[]
   // RunRecord.recall gains, each absent where the system gave no
@@ -2301,6 +2563,7 @@ export function citedSystem(corpus: Corpus): System {
                     policy: {
                         cap: Math.floor(budget / Math.max(1, hits.length)),
                         seeds: "overlap",
+                        wholeKnowledge: true,
                     },
                 },
                 corpusEvidence(corpus),
@@ -2363,10 +2626,9 @@ export function coverageOf(
 }
 ```
 
-In `ask`, `retrieval` gains
-`items: retrieved.items?.map(({ id, turns, text, cut }) => ({ id,
-turns, chars: text.length, cut }))` when `retrieved.items` is defined,
-and `recall`, for a question with evidence, gains:
+In `ask`, when `retrieved.items` is defined, `retrieval` gains
+`items: retrieved.items.map(({ text, ...item }) => ({ ...item, chars:
+text.length }))`, and `recall`, for a question with evidence, gains:
 
 ```ts
 ...(retrieved.found === undefined
@@ -2374,27 +2636,42 @@ and `recall`, for a question with evidence, gains:
     : { found: hasEvidence(retrieved.found, question.evidence) }),
 ...(retrieved.items === undefined
     ? {}
-    : {
-          delivered: retrieved.items.some((item) =>
-              question.evidence.includes(item.id),
-          ),
-          covered: coverageOf(
-              question.answer,
-              retrieved.items
-                  .filter((item) => question.evidence.includes(item.id))
-                  .map((item) => item.text),
-          ),
-      }),
+    : (() => {
+          // Opened evidence only: a stand-in title and snippet is not
+          // the evidence delivered.
+          const cited = retrieved.items.filter(
+              (item) => item.opened && question.evidence.includes(item.id),
+          );
+          return {
+              delivered: cited.length > 0,
+              covered: coverageOf(
+                  question.answer,
+                  cited.map((item) => item.text),
+              ),
+          };
+      })()),
 ```
+
+A failed retrieval leaves the record without these fields, as it has
+no `found` or `items`; the summary counts it as a miss (Step 4).
 
 - [ ] **Step 4: Summary and report**
 
 `summary.ts`'s `Cell` gains the three fields, `emptyCell` starting
 `found: rate()`, `delivered: rate()`, `covered: { total: 0, full:
-rate() }`. In `add`, each follows `inContext`'s rule: a record with
-`recall` but lacking the field makes the cell's value `null` for good;
-otherwise it tallies (`covered`: a `null` value is skipped; a number
-adds to `total`, counts in `full.of`, and in `full.hits` when it is 1).
+rate() }`. In `add`, for a record with `recall`:
+
+- one whose `retrieval.error` is set counts as a miss in each of the
+  three that the cell still keeps (`of` up by one; for `covered`,
+  `full.of` up by one and nothing added to `total`), as `tally`'s
+  `owed` does for verdicts;
+- otherwise each follows `inContext`'s rule: lacking the field makes
+  the cell's value `null` for good; having it tallies it (`covered`: a
+  `null` value is skipped; a number adds to `total`, counts in
+  `full.of`, and in `full.hits` when it is 1).
+
+Add a test: a system's records, one with a retrieval error among them,
+keep their stage counts, the errored one counted a miss.
 In `summarise`, the verdicts for "alone" skip any system whose
 `baseOf(name)` is `cited`.
 
@@ -2507,19 +2784,23 @@ git commit -m "docs: Correct the first evaluation's report"
 The coordinating agent, not an implementer:
 
 1. `bun run check` under temporary XDG roots.
-2. A retrieval-only run on the owner's evaluation data, which calls no
-   model and writes only a new run under `~/eval/runs`:
+2. A retrieval-only run on a copy of the owner's evaluation data, as
+   the spec says: it calls no model, and the copy takes the run and
+   the recall index the run syncs, leaving `~/eval` untouched:
 
    ```sh
-   bun run eval -- run --work ~/eval --retrieval-only --systems \
-   "dorothy:order=knowledge-first:dedupe=off:seeds=overlap,\
-   dorothy:dedupe=off:seeds=overlap,dorothy:seeds=overlap,\
+   copy=$(mktemp -d)/eval && cp -a ~/eval "$copy"
+   bun run eval -- run --work "$copy" --retrieval-only --systems \
+   "dorothy:order=knowledge-first:dedupe=off:seeds=overlap:knowledge=whole,\
+   dorothy:dedupe=off:seeds=overlap:knowledge=whole,\
+   dorothy:seeds=overlap:knowledge=whole,dorothy:seeds=overlap,\
    dorothy:block=0.2,dorothy:block=0.6,dorothy,lexical,cited"
    ```
 
    Its first system must match the reviewed rerun's recall at 10 and
-   delivered-or-noted counts; the report records each system's found,
-   delivered and covered counts, overall and by type, counts only.
+   delivered-or-noted counts, read from `~/eval/runs` without writing;
+   the report records each system's found, delivered and covered
+   counts, overall and by type, counts only. The copy is removed after.
 3. The paid runs the spec lists, after the user approves the spend and
    the models' budgets allow; their results and the decision go in the
    phase's report.
