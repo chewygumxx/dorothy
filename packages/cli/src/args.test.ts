@@ -760,7 +760,8 @@ describe("--sweep", () => {
 });
 
 describe("--review-backfill", () => {
-    const USAGE_MESSAGE = "--review-backfill takes [-n | --count <count>]";
+    const USAGE_MESSAGE =
+        "--review-backfill takes [-n | --count <count | all>]";
 
     it("takes a batch of 25 unless -n gives another", () => {
         expect(parseArgs(["--review-backfill"], false)).toEqual({
@@ -780,12 +781,24 @@ describe("--review-backfill", () => {
         );
     });
 
+    it("takes every backfill in one pass for all", () => {
+        for (const argv of [
+            ["--review-backfill", "-n", "all"],
+            ["--review-backfill", "--count", "all"],
+        ]) {
+            expect(parseArgs(argv, false)).toEqual({
+                kind: "review-backfill",
+                count: "all",
+            });
+        }
+    });
+
     it("needs no terminal, and is named by --help", () => {
         expect(parseArgs(["--review-backfill"], true).kind).toBe(
             "review-backfill",
         );
         expect(USAGE).toContain(
-            "dorothy --review-backfill [-n | --count <count>]",
+            "dorothy --review-backfill [-n | --count <count | all>]",
         );
     });
 
@@ -796,6 +809,8 @@ describe("--review-backfill", () => {
             ["--review-backfill", "-n", "-1"],
             ["--review-backfill", "-n", "2.5"],
             ["--review-backfill", "-n", "many"],
+            ["--review-backfill", "-n", "ALL"],
+            ["--review-backfill", "-n", "all", "-n", "3"],
             ["--review-backfill", "-n", ""],
             ["--review-backfill", "-n", "1e1"],
             ["--review-backfill", "-n", "99999999999999999999"],

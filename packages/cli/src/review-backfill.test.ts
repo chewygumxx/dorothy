@@ -198,4 +198,125 @@ describe("runBackfillReview", () => {
         );
         expect(h.out).toEqual([]);
     });
+
+    describe("all", () => {
+        const names = (from: number, to: number) =>
+            Array.from(
+                { length: to - from },
+                (_, n) => `held-${String(from + n).padStart(2, "0")}`,
+            );
+        // A run over a store of phrases, each with its outcome, that
+        // honours skip and the count as the real one does.
+        function store(
+            phrases: [string, ReviewBackfillOutcome][],
+            stopAt?: { batch: number; reason: string },
+        ) {
+            const h = harness([]);
+            const batches: { count?: number; skip: string[] }[] = [];
+            h.deps.run = async (options: ReviewBackfillOptions) => {
+                batches.push({
+                    count: options.count,
+                    skip: [...(options.skip ?? [])],
+                });
+                const chosen = phrases
+                    .filter(([phrase]) => !options.skip?.has(phrase))
+                    .slice(0, options.count);
+                const done: [string, ReviewBackfillOutcome][] = [];
+                for (const entry of chosen) {
+                    done.push(entry);
+                    options.progress?.(...entry);
+                    if (stopAt?.batch === batches.length) {
+                        options.stopped?.(stopAt.reason);
+                        break;
+                    }
+                }
+                return counted(done);
+            };
+            return { ...h, batches };
+        }
+
+        it("reaches reviewable conversations behind a batch of held ones", async () => {
+            const held = names(0, 25).map(
+                (phrase) => [phrase, "held"] as [string, ReviewBackfillOutcome],
+            );
+            const h = store([
+                ...held,
+                ["amber-brook-cedar-dune", "reviewed"],
+                ["birch-cove-delta-ember", "marked"],
+            ]);
+            expect(await runBackfillReview("all", h.deps)).toBe(0);
+            expect(h.batches.map((batch) => batch.count)).toEqual([25, 25, 25]);
+            expect(h.batches[1]?.skip).toEqual(names(0, 25));
+            expect(h.batches[2]?.skip).toHaveLength(27);
+            expect(h.out.slice(-3)).toEqual([
+                "amber-brook-cedar-dune: reviewed\n",
+                "birch-cove-delta-ember: marked\n",
+                "total: 1 reviewed, 1 marked, 0 unchanged, 25 held, 0 failed\n",
+            ]);
+            expect(h.err).toEqual([]);
+        });
+
+        it("says so, and exits 0, where every conversation is held", async () => {
+            const h = store(
+                names(0, 3).map(
+                    (phrase) =>
+                        [phrase, "held"] as [string, ReviewBackfillOutcome],
+                ),
+            );
+            expect(await runBackfillReview("all", h.deps)).toBe(0);
+            expect(h.out.slice(-2)).toEqual([
+                "total: 0 reviewed, 0 marked, 0 unchanged, 3 held, 0 failed\n",
+                "review-backfill: every marked conversation is held by another process\n",
+            ]);
+        });
+
+        it("does not call a pass with nothing to review held", async () => {
+            const h = store([]);
+            expect(await runBackfillReview("all", h.deps)).toBe(0);
+            expect(h.batches).toHaveLength(1);
+            expect(h.out).toEqual([
+                "total: 0 reviewed, 0 marked, 0 unchanged, 0 held, 0 failed\n",
+            ]);
+        });
+
+        it("exits 75 on a stopped batch, keeping the earlier totals", async () => {
+            const first = names(0, 25).map(
+                (phrase) =>
+                    [phrase, "reviewed"] as [string, ReviewBackfillOutcome],
+            );
+            const h = store(
+                [
+                    ...first,
+                    ["amber-brook-cedar-dune", "reviewed"],
+                    ["birch-cove-delta-ember", "failed"],
+                    ["clay-dawn-eagle-fern", "reviewed"],
+                ],
+                { batch: 2, reason: "usage limit reached" },
+            );
+            expect(await runBackfillReview("all", h.deps)).toBe(75);
+            expect(h.batches).toHaveLength(2);
+            expect(h.out.at(-1)).toBe(
+                "total: 26 reviewed, 0 marked, 0 unchanged, 0 held, 0 failed\n",
+            );
+            expect(
+                h.out.filter((line) => line.startsWith("total:")),
+            ).toHaveLength(1);
+            expect(h.err.join("")).toBe(
+                "dorothy: --review-backfill stopped after a failed call: usage limit reached; the rest stay marked\n",
+            );
+        });
+
+        it("exits 1 when a pass reviewed nothing and one failed", async () => {
+            const h = store([["amber-brook-cedar-dune", "failed"]]);
+            expect(await runBackfillReview("all", h.deps)).toBe(1);
+        });
+
+        it("leaves a numeric count one batch, with no skip", async () => {
+            const h = harness([["amber-brook-cedar-dune", "reviewed"]]);
+            expect(await runBackfillReview(3, h.deps)).toBe(0);
+            expect(h.seen).toHaveLength(1);
+            expect(h.seen[0]?.count).toBe(3);
+            expect(h.seen[0]?.skip).toBeUndefined();
+        });
+    });
 });

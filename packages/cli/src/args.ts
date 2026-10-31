@@ -53,7 +53,7 @@ export type Mode =
     | { kind: "token-revoke"; device: string }
     | { kind: "sweep"; backfill: boolean; reread: boolean }
     | { kind: "sweep-dismiss"; host: string; session: string }
-    | { kind: "review-backfill"; count: number }
+    | { kind: "review-backfill"; count: number | "all" }
     | { kind: "mcp"; host: string | null }
     | { kind: "claude-hook"; hook: HookMode }
     | { kind: "claude"; args: string[] }
@@ -96,7 +96,7 @@ export const USAGE = [
     "       dorothy --sweep --reread   read again what a sweep could not",
     "       dorothy --sweep --dismiss <host> <session>",
     "                                  stop telling of what it could not",
-    "       dorothy --review-backfill [-n | --count <count>]",
+    "       dorothy --review-backfill [-n | --count <count | all>]",
     "                                  review the newest backfilled chats on",
     "                                  the reviewer's model (the Claude plan,",
     "                                  if secrets.json holds its token); each",
@@ -437,9 +437,10 @@ function parseSweep(rest: readonly string[]): Mode {
         : usage(SWEEP_USAGE);
 }
 
-const REVIEW_BACKFILL_USAGE = "--review-backfill takes [-n | --count <count>]";
+const REVIEW_BACKFILL_USAGE =
+    "--review-backfill takes [-n | --count <count | all>]";
 
-// A batch's size: a positive integer, 25 where none is given.
+// A batch's size: a positive integer, 25 where none is given, or all.
 function parseReviewBackfill(rest: readonly string[]): Mode {
     const parsed = options(rest, {
         count: { type: "string", short: "n", multiple: true },
@@ -449,10 +450,11 @@ function parseReviewBackfill(rest: readonly string[]): Mode {
         parsed === null ||
         parsed.positionals.length > 0 ||
         (parsed.values.count?.length ?? 0) > 1 ||
-        (given !== undefined && !/^[1-9]\d*$/.test(given))
+        (given !== undefined && given !== "all" && !/^[1-9]\d*$/.test(given))
     ) {
         return usage(REVIEW_BACKFILL_USAGE);
     }
+    if (given === "all") return { kind: "review-backfill", count: "all" };
     const count = given === undefined ? 25 : Number(given);
     return Number.isSafeInteger(count)
         ? { kind: "review-backfill", count }

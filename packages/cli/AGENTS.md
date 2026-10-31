@@ -113,11 +113,11 @@ lazy.
   bridge (`@dorothy/memory/bridge`), which starts `--serve` as
   `bun --no-env-file` when none answers.
 - `review-backfill.ts`: `runBackfillReview`, for `--review-backfill`, runs
-  memory's `runReviewBackfill` on the agent `reviewAgent` gives (Claude Code's
-  variables dropped, this checkout's secrets), so reviews use the Claude
-  plan's token where `secrets.json` holds it. It prints `<phrase>: <outcome>`
-  a conversation, then a total, and exits 1 if none was reviewed or marked
-  and one failed, or if a failed call stopped the batch, which it says.
+  memory's `runReviewBackfill` on `reviewAgent`'s agent (Claude Code's
+  variables dropped, this checkout's secrets): the plan's token where
+  `secrets.json` holds it. It prints `<phrase>: <outcome>`, then a total;
+  exits 1 if none was reviewed or marked and one failed, or a failed call
+  stopped it. `-n all` repeats batches of 25; stopped exits 75.
 - `recall-launch.ts`: `recallLaunch` launches this program again as the
   recall server, leaving out the conversation it serves and, with
   `--project`, naming the directory chat started in.

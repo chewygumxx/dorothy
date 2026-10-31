@@ -441,15 +441,21 @@ are `--claude-hook --reread` and `--dismiss <session>`.
 
 A conversation recorded by `--sweep --backfill` carries that durable mark,
 and its notes stay empty: no title, abstract, tags or knowledge. `dorothy
---review-backfill [-n | --count <count>]` reviews them in batches, the
-newest `-n` (25 by default) by their last event, on the reviewer's model
-and with the credentials her other reviews use, the Claude plan's token
-where that is what `secrets.json` holds. Each batch spends plan usage, so
-run one, watch your limits, then run the next:
+--review-backfill [-n | --count <count | all>]` reviews them in batches,
+the newest `-n` (25 by default) by their last event, on the reviewer's
+model and with the credentials her other reviews use, the Claude plan's
+token where that is what `secrets.json` holds. Each batch spends plan
+usage, so run one, watch your limits, then run the next:
 
 ```sh
 bun run dev -- --review-backfill -n 3    # a small batch first
+bun run dev -- --review-backfill -n all  # every one, in batches of 25
 ```
+
+`-n all` repeats batches of 25 until none is left, passing over a
+conversation another process holds rather than letting it fill a batch.
+A stopped pass exits 75, for a wrapper to run again once limits lift; a
+pass that finds every marked conversation held says so and exits 0.
 
 It prints `<phrase>: <outcome>` a conversation, then a total. An outcome
 is `reviewed`, `marked` (nothing to extract), `unchanged` (the reviewer
