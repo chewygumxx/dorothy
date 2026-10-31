@@ -167,6 +167,30 @@ describe("passage seeds", () => {
         expect(found.text).toContain("bicycle");
     });
 
+    it("skips a turn too long to fit and grows on past it", () => {
+        const kumquat: EvidenceConversation = {
+            ...talk,
+            turns: [
+                { n: 1, role: "user", at: AT, text: "hello" },
+                { n: 2, role: "assistant", at: AT, text: "x".repeat(3000) },
+                {
+                    n: 3,
+                    role: "user",
+                    at: AT,
+                    text: "what colour is my kumquat bike?",
+                },
+                { n: 4, role: "assistant", at: AT, text: "It is crimson." },
+                { n: 5, role: "user", at: AT, text: "kumquat again" },
+            ],
+        };
+        const found = passage(kumquat, ["kumquat"], 2000, [3, 5]);
+        expect(found.text).toContain("[3] user");
+        expect(found.text).toContain("It is crimson.");
+        expect(found.text).toContain("[5] user");
+        expect(found.text).not.toContain("[2] assistant");
+        expect(found.turns).toEqual({ from: 3, through: 5 });
+    });
+
     it("reads the turns a text holds", () => {
         const { text } = passage(talk, ["bicycle"], 1000, [3]);
         expect(turnsIn(text)).toEqual({ from: 2, through: 4 });

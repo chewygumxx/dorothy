@@ -77,7 +77,8 @@ export function knowledgeText(knowledge: EvidenceKnowledge): string {
 }
 
 export type TurnRange = { from: number; through: number };
-// A passage, its first and last turn, and whether its text was cut
+// A passage, its first and last turn (a range of what was chosen, which
+// may span a turn skipped as too long), and whether its text was cut
 // short rather than ended at a turn.
 export type Passage = {
     text: string;
@@ -140,15 +141,20 @@ export function passage(
             chosen.add(near);
             if (cost(render()) > chars) {
                 chosen.delete(near);
-                return chosen.size === 0
-                    ? excerpt(
-                          conversation,
-                          turns[near] as EvidenceTurn,
-                          terms,
-                          chars,
-                          cost,
-                      )
-                    : result(render());
+                if (chosen.size === 0) {
+                    return excerpt(
+                        conversation,
+                        turns[near] as EvidenceTurn,
+                        terms,
+                        chars,
+                        cost,
+                    );
+                }
+                // Search's seeds each get their try; overlap stops here.
+                if (seeded.length > 0) {
+                    continue;
+                }
+                return result(render());
             }
         }
     }
