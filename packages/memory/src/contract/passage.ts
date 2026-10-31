@@ -86,6 +86,20 @@ export type Passage = {
     cut: boolean;
 };
 
+// The turns' indexes by how many terms they hold, best first; the
+// first where none holds any.
+function scoredTurns(
+    turns: readonly EvidenceTurn[],
+    terms: readonly string[],
+): number[] {
+    const scored = turns
+        .map((turn, at) => ({ at, score: scoreOf(turn.text, terms) }))
+        .filter((each) => each.score > 0)
+        .sort((a, b) => b.score - a.score || a.at - b.at)
+        .map((each) => each.at);
+    return scored.length > 0 ? scored : [0];
+}
+
 // The turns that best match, each with its neighbours, in order, within
 // chars: search's matched turns where the conversation still holds any
 // (the seeds, by number), else the turns by how many terms they hold;
@@ -108,12 +122,7 @@ export function passage(
                 .filter((at) => at >= 0),
         ),
     ];
-    const scored = turns
-        .map((turn, at) => ({ at, score: scoreOf(turn.text, terms) }))
-        .filter((each) => each.score > 0)
-        .sort((a, b) => b.score - a.score || a.at - b.at)
-        .map((each) => each.at);
-    const order = seeded.length > 0 ? seeded : scored.length > 0 ? scored : [0];
+    const order = seeded.length > 0 ? seeded : scoredTurns(turns, terms);
     const chosen = new Set<number>();
     const picked = () =>
         [...chosen]
