@@ -23,34 +23,31 @@ tags:
 [its spec](../../docs/specs/2026-10-18-memory-evaluation-design.md)
 says: a snapshot of a data directory, questions mined and generated
 from it, systems asked them, answers judged, and a report. It is a tool
-for her builders, run as `bun run eval -- <command>`; nothing imports
-it, and it has no entry point.
+for her builders, run as `bun run eval -- <command>`.
 
 ## Entry points and imports
 
-None. Of the `@dorothy` packages it depends on `core` and `memory`, and
-of memory only `@dorothy/memory/evaluation`, which opens an archive. It
-reads no file of memory's itself.
+None; nothing imports it. It depends on `core` and `memory`, of memory
+only `@dorothy/memory/evaluation`, which opens an archive.
 
 ## Rules
 
 - Every command but `snapshot` takes `--work` and runs with
   `workEnv(work)`, which points every root into the work directory.
-  Nothing reads a data directory but `snapshot`, and only the one
-  `--from` names.
+  Only `snapshot` reads a data directory, the one `--from` names.
 - Tests build their archive with `writeFixtureData` or
   `snapshotFixture` from `src/testing.ts`, under a temporary root.
-- A failure the user can mend is an `UsageError`, said by `runCli` in a
-  line, or a line to each problem it lists; anything else is a fault
-  and keeps its stack.
+- A failure the user can mend is a `UsageError`, said by `runCli` in a
+  line, or one to each problem it lists; anything else is a fault and
+  keeps its stack.
 
 ## Commands
 
 `snapshot`, `mine`, `generate`, `review`, `run` and `compare`, in the
 order a user meets them; the README's "Measuring her memory" shows
-each. A new command is a `Command` in `cli.ts`'s table, with its
-options declared and described for `--help`, its failures as
-`UsageError`s, and a test through `runCli` with `fakeIo`.
+each. A new command is a `Command` in `cli.ts`'s table, its options
+declared and described for `--help`, its failures `UsageError`s, with a
+test through `runCli` and `fakeIo`.
 
 ## Files
 
@@ -71,36 +68,40 @@ options declared and described for `--help`, its failures as
   worktree, follows a link only at the top of what it copies, counts the
   rest and swaps a whole copy in, its record set aside before and written
   after; `readSnapshot`, which tells a missing record from a bad one;
-  `workEnv`; and the `snapshot` command.
+  `workEnv`; the `snapshot` command.
 - `questions/file.ts`: the question file, its schema and ids; the
   commands that rewrite it do so through `updateQuestions`, which reads,
   changes and writes it under a lock file beside it, held by pid; the
   same lock, as `underLock`, serves `generated.json`.
-- `questions/mine.ts`: lookup questions from her appraised reads (a
-  backfilled session has none), and the `mine` command.
+- `questions/mine.ts`: the `mine` command: lookup questions from her
+  appraised reads (a backfilled session has none).
 - `questions/generate.ts`: samples, prompts and checks for drafting each
   type; `questions/generate-command.ts`: the `generate` command, which
   merges each call's drafts into the question file as they arrive and
-  records each generation's seed and reported tokens by role in
-  `generated.json`; older entries need no tokens.
-- `questions/review.ts`: the owner's pass over the drafts, and the
-  `review` command (`--evidence` sets the characters shown of each
+  records each generation's seed and any role tokens in `generated.json`.
+- `questions/review.ts`: the owner's pass over the drafts and the
+  `review` command (`--evidence`: characters shown of each
   conversation); an edit goes through `editing.json` in the work
   directory, takes a new id from its text and evidence, cannot set the
   status, and if refused says why. `--apply` runs an agent's decisions
   through the same `checkedEdit` and `place`, in one locked write (none
-  on `--dry-run`), reporting a bad line and skipping it: one with a key
-  it does not know, or an edit that gives nothing or changes nothing.
-  Each decision, the owner's too and an edit of the owner's with its
-  old id and new, is a line of `reviews.jsonl` in the work directory.
+  on `--dry-run`), reporting and skipping a bad line: a key it does not
+  know, or an edit that gives nothing or changes nothing. Each decision,
+  the owner's too (an edit by its old id and new), is a line of
+  `reviews.jsonl`; `reopen` makes an accepted question a draft and logs
+  why. `--apply`, `--render`, `--spot-check` and `--reopen` exclude each
+  other and each other's options (`modeOf`).
+- `questions/render.ts`: `renderDrafts` writes the drafts, by source,
+  as `drafts-<k>.md` for agents; `spotCheck`, the unsure drafts and a
+  sample of each reviewer's accepts, the first to name one keeping it.
 - `models/config.ts`: `eval.toml`, or the file `--models` names (which
   must exist), each role's route (`api` by default, `claude` or `codex`),
   model, API credentials or Codex effort; errors name the file.
 - `models/client.ts`: `Models`, dispatch, retries and `--max-calls`;
-  `tokens` snapshots reported usage by role. A raw API completion
-  callback includes openevals' judge usage; CLI replies count before
-  schema validation. `prepare` checks CLI availability before a call.
-  The API client's own retries are off.
+  `tokens` snapshots reported usage by role, with openevals' judge usage
+  from a raw API completion callback; CLI replies count before schema
+  validation. `prepare` checks CLI availability before a call. The API
+  client's own retries are off.
 - `models/cli.ts`: isolated CLI attempts, private prompt/schema files,
   stdin, filtered environments, reply parsing and token events. A
   timeout terminates the detached process group; signals stop all live
@@ -120,10 +121,9 @@ options declared and described for `--help`, its failures as
   turn outlived is no limit. The reset time ("try again at", or Claude's
   "resets") is kept only if it is a time or date. A Codex notice that
   the plan "automatically switched" the model "due to usage limits"
-  also stops the run, even from a completed turn, since the reply is
-  then not the role's model's: no event names the model, so the notice
-  text is all there is to match. `models/testing.ts`: injected in-memory
-  runner and files; runner integration tests use temp scripts.
+  also stops the run, even from a completed turn, as the reply is not
+  the role's model's; only the text names it. `models/testing.ts`:
+  injected in-memory runner and files; integration tests use temp scripts.
 - `systems/`: `System` and `makeSystem` (`system.ts`); the corpus, the
   snapshot's archive opened once, with items as text (`corpus.ts`);
   `termsOf` and `scoreOf` (`terms.ts`); and the three systems,
@@ -131,9 +131,9 @@ options declared and described for `--help`, its failures as
   `system.ts`'s table.
 - `run/record.ts`: a run's directory, records and settings; `run.json`
   keeps cumulative role tokens, optional on older runs. The last record
-  per question and system stands. `latestRunId` is what `--resume latest`
-  resumes: the greatest `at`, ties by id, skipping a directory with no
-  valid `run.json`.
+  per question and system stands. `latestRunId`, for `--resume latest`:
+  the greatest `at`, ties by id, skipping a directory with no valid
+  `run.json`.
 - `run/judges.ts`: the answering prompt, the judges (openevals' strict
   prompt and ours) and `declines`; `run/run.ts`: `runEvaluation`, which
   appends a record per question and system and resumes where a run
@@ -143,8 +143,8 @@ options declared and described for `--help`, its failures as
   `definitions` in `run.json`, a digest of each, gold answer included).
   A run without every saved definition cannot be resumed. Reported
   token deltas are saved even for capped or failed work; a resumed
-  older run marks its new totals partial. `run/command.ts`: the command.
+  older run marks new totals partial. `run/command.ts`: the command.
 - `report/`: `summarise`, the Markdown report with role token totals
-  beside the per-system answer costs, `compareOf` and the `compare`
-  command with `writeRunReport`. Older runs say totals were not kept.
+  beside the per-system answer costs, `compareOf`, the `compare` command
+  and `writeRunReport`. Older runs say totals were not kept.
 - `testing.ts`: `fakeIo`, temporary roots and the fixture archive.

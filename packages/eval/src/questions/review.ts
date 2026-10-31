@@ -376,6 +376,39 @@ export async function reviewQuestions(
     return await finish();
 }
 
+// An accepted question made a draft again, as review writes the file, and
+// the owner's reason logged: the way to overturn an accept.
+export async function reopen(
+    work: string,
+    id: string,
+    reason: string,
+): Promise<void> {
+    await updateQuestions(work, (questions) => {
+        const held = questions.find((question) => question.id === id);
+        if (held === undefined) {
+            throw new UsageError(`no question ${id}`);
+        }
+        if (held.status !== "accepted") {
+            throw new UsageError(`${id} is ${held.status}, not accepted`);
+        }
+        return {
+            questions: questions.map((question) =>
+                question === held ? { ...held, status: "draft" } : question,
+            ),
+            result: null,
+        };
+    });
+    await logReviews(work, [
+        {
+            id,
+            decision: "reopen",
+            reviewer: OWNER,
+            reason,
+            at: new Date().toISOString(),
+        },
+    ]);
+}
+
 // One line of an agent's decisions. A key it does not know is a mistake
 // in the line, which an edit would otherwise lose without a word.
 const lineSchema = z.strictObject({
@@ -559,7 +592,7 @@ async function applyFile(
 
 // The ways review goes other than one draft at a time, each by its
 // option, and the options that belong to one only.
-const MODES = ["apply", "render", "spot-check"] as const;
+const MODES = ["apply", "render", "spot-check", "reopen"] as const;
 type Mode = (typeof MODES)[number];
 const BELONGS: Record<string, Mode> = {
     reviewer: "apply",
@@ -567,6 +600,7 @@ const BELONGS: Record<string, Mode> = {
     batches: "render",
     source: "render",
     per: "spot-check",
+    reason: "reopen",
 };
 
 // The mode the options name, or what is wrong with how they are given:
@@ -681,6 +715,15 @@ export const reviewCommand: Command = {
             description:
                 "with --spot-check: accepts sampled of each reviewer (1 to 1000, default 15)",
         },
+        reopen: {
+            type: "string",
+            description:
+                "make this accepted question a draft again; with --reason",
+        },
+        reason: {
+            type: "string",
+            description: "with --reopen: why, for reviews.jsonl",
+        },
     },
     async run(values, _positionals, io) {
         const work = workOf(values);
@@ -691,6 +734,11 @@ export const reviewCommand: Command = {
         const chars = intOf(values, "evidence", EVIDENCE_CHARS, 1, 10_000_000);
         if (file !== null && reviewer === null) {
             throw new UsageError("--apply needs --reviewer, who made them");
+        }
+        const reopening = stringOf(values, "reopen");
+        const reason = stringOf(values, "reason");
+        if (reopening !== null && reason === null) {
+            throw new UsageError("--reopen needs --reason, why");
         }
         await readSnapshot(work);
         if (mode === "render") {
@@ -709,6 +757,11 @@ export const reviewCommand: Command = {
                 random: Math.random,
             });
             io.out(`${unsure} unsure, ${sampled} sampled -> ${target}\n`);
+            return 0;
+        }
+        if (reopening !== null && reason !== null) {
+            await reopen(work, reopening, reason);
+            io.out(`${reopening} is a draft again\n`);
             return 0;
         }
         if (file !== null && reviewer !== null) {

@@ -812,6 +812,109 @@ describe("bun run eval -- review --apply", () => {
     });
 });
 
+describe("bun run eval -- review --reopen", () => {
+    const first = questionId("Which plot is my allotment?", [`c:${GARDEN}`]);
+    const second = questionId("Where is my allotment?", [`c:${GARDEN}`]);
+    const reopen = async (...args: string[]) => {
+        const { io, out, err } = fakeIo();
+        const code = await runCli(["review", "--work", work, ...args], io);
+        return { code, out: out.join(""), err: err.join("") };
+    };
+
+    beforeEach(async () => {
+        const [one, two, three] = (await readQuestions(work)).questions;
+        await writeQuestions(work, [
+            { ...(one as Question), status: "accepted", note: "kept" },
+            two as Question,
+            three as Question,
+        ]);
+    });
+
+    it("makes an accepted question a draft, and logs why", async () => {
+        const { code, out } = await reopen(
+            "--reopen",
+            first,
+            "--reason",
+            "the answer is stale",
+        );
+        expect(code).toBe(0);
+        expect(out).toContain(first);
+        const { questions } = await readQuestions(work);
+        expect(questions.map((question) => question.status)).toEqual([
+            "draft",
+            "draft",
+            "draft",
+        ]);
+        expect(questions[0]?.note).toBe("kept");
+        const [entry, ...rest] = reviewsOf();
+        expect(rest).toEqual([]);
+        expect(entry).toMatchObject({
+            id: first,
+            decision: "reopen",
+            reviewer: "owner",
+            reason: "the answer is stale",
+        });
+        expect(new Date(entry.at).toISOString()).toBe(entry.at);
+    });
+
+    it("refuses a draft, or a rejected question, saying its status", async () => {
+        const before = readFileSync(questionsPath(work), "utf8");
+        const draft = await reopen("--reopen", second, "--reason", "why");
+        expect(draft.code).toBe(1);
+        expect(draft.err).toContain(`${second} is draft, not accepted`);
+        expect(readFileSync(questionsPath(work), "utf8")).toBe(before);
+        expect(existsSync(join(work, "reviews.jsonl"))).toBe(false);
+        const [one, ...rest] = (await readQuestions(work)).questions;
+        await writeQuestions(work, [
+            { ...(one as Question), status: "rejected" },
+            ...rest,
+        ]);
+        const rejected = await reopen("--reopen", first, "--reason", "why");
+        expect(rejected.code).toBe(1);
+        expect(rejected.err).toContain(`${first} is rejected, not accepted`);
+    });
+
+    it("says when no question has the id", async () => {
+        const { code, err } = await reopen(
+            "--reopen",
+            "q-00000000",
+            "--reason",
+            "why",
+        );
+        expect(code).toBe(1);
+        expect(err).toContain("no question q-00000000");
+        expect(existsSync(join(work, "reviews.jsonl"))).toBe(false);
+    });
+
+    it("needs a reason, and the reason only with it", async () => {
+        const missing = await reopen("--reopen", first);
+        expect(missing.code).toBe(1);
+        expect(missing.err).toContain("--reopen needs --reason");
+        const alone = await reopen("--reason", "why");
+        expect(alone.code).toBe(1);
+        expect(alone.err).toContain("--reason goes with --reopen");
+        expect((await readQuestions(work)).questions[0]?.status).toBe(
+            "accepted",
+        );
+    });
+
+    it("never opens the editor or asks a question", async () => {
+        const { io } = fakeIo();
+        io.ask = async () => {
+            throw new Error("asked");
+        };
+        io.edit = async () => {
+            throw new Error("edited");
+        };
+        expect(
+            await runCli(
+                ["review", "--work", work, "--reopen", first, "--reason", "x"],
+                io,
+            ),
+        ).toBe(0);
+    });
+});
+
 describe("bun run eval -- review, its modes apart", () => {
     const clash = async (args: string[], why: string) => {
         const { io, err, out } = fakeIo();
@@ -822,12 +925,13 @@ describe("bun run eval -- review, its modes apart", () => {
     };
     const file = () => join(temp.root, "decisions.jsonl");
 
-    it("takes one of --render, --spot-check and --apply", async () => {
+    it("takes one of --render, --spot-check, --reopen and --apply", async () => {
         writeFileSync(file(), "");
         const modes: Record<string, string[]> = {
             apply: ["--apply", file(), "--reviewer", "a"],
             render: ["--render", join(temp.root, "out")],
             "spot-check": ["--spot-check", join(temp.root, "out", "s.md")],
+            reopen: ["--reopen", "q-00000000", "--reason", "x"],
         };
         const names = Object.keys(modes);
         for (const [at, a] of names.entries()) {
@@ -865,6 +969,10 @@ describe("bun run eval -- review, its modes apart", () => {
         await clash(
             ["--spot-check", out, "--batches", "2"],
             "--batches cannot go with --spot-check",
+        );
+        await clash(
+            ["--reopen", "q-00000000", "--reason", "x", "--evidence", "9"],
+            "--evidence cannot go with --reopen",
         );
         await clash(
             ["--apply", file(), "--reviewer", "a", "--batches", "2"],

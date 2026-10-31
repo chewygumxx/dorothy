@@ -590,6 +590,19 @@ you. `~/eval/reviews.jsonl` logs every decision, yours as `owner`, with
 who made it, any new id and the reason; your edits in `review` are
 logged with the old id and the new, though the draft stays a draft.
 
+To give an agent the drafts in files, `review --render <dir>` writes
+them to `<dir>/drafts-1.md` and on, each with the evidence it cites.
+`--batches <n>` (1 to 100) splits them into that many parts, the larger
+first, and `--source <model>` takes only the drafts that model
+generated; with none, it says so and writes nothing. Then check the
+agents' work: `review --spot-check <file>` writes the drafts they left
+unsure and, of each reviewer, up to `--per <n>` (15 by default) accepts
+chosen at random, each with who decided it and how. An accept you
+disagree with goes back to the drafts with
+`review --reopen <id> --reason <why>`, logged as a `reopen` of yours,
+for you or an agent to decide again. Each of `--apply`, `--render`,
+`--spot-check` and `--reopen` stands alone.
+
 Each generation adds reported input and output tokens by role to its
 `~/eval/generated.json` entry; older entries without `tokens` remain
 readable. A run saves role totals in `run.json` and its report's
