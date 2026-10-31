@@ -20,10 +20,10 @@
 - [Target harnesses](./target-harnesses.md)
   Built for and tested against Claude Code, Codex, OpenClaw and Hermes
 - [Codex full send](./codex-full-send.md)
-  Approve every Codex prompt; Codex runs never-ask, full access
+  Approve every Codex prompt yourself; never relay one to the user
 - [Trust to proceed](./trust-to-proceed.md)
   Carry on with agreed next steps unasked; report what was done
 - [Usage limits](./usage-limits.md)
-  Route by budget: Codex if it fits, else Claude leaving room, else wait
+  Route by budget: Codex, then Claude leaving room, the reserve, or wait
 - [Self-compaction](./self-compaction.md)
-  Past 85% context, compact through herdr at a turn boundary; say so
+  Past 85% context, compact yourself at a turn boundary; say so
