@@ -121,7 +121,11 @@ if [ -n "$deliver" ]; then
     status=$(agent_status "$agent") || refuse absent 4
     [ "$status" != blocked ] || refuse blocked 3
     text=$(cat "$sends/$id.msg")
-    herdr pane send-text "$pane" "$text" >/dev/null 2>&1 || refuse unsendable 1
+    # A failed send-text may still have written, so it is never sent again.
+    if ! herdr pane send-text "$pane" "$text" >/dev/null 2>&1; then
+        log 'partial: send-text failed, not resent'
+        die 1 "$id: send-text failed, not resent"
+    fi
     if ! herdr pane send-keys "$pane" enter >/dev/null 2>&1; then
         log 'partial: text written, enter failed'
         die 1 "$id: text written, enter failed"
@@ -170,7 +174,9 @@ if [ -n "$at" ]; then
     esac
     epoch=$(date -d "$at" +%s 2>/dev/null) || die 2 "cannot read the time $at"
     [ "$epoch" -gt "$(date +%s)" ] || die 2 "$at is not in the future"
-    resolved=$(date -d "$at" '+%Y-%m-%d %H:%M:%S %Z')
+    # Read in the local zone, set in UTC, as zone abbreviations are numeric
+    # (+03) in many zones. (`date -u -d "$at"` would read it as UTC.)
+    resolved=$(date -u -d "@$epoch" '+%Y-%m-%d %H:%M:%S UTC')
     option=--on-calendar=$resolved
 else
     resolved="in $span"

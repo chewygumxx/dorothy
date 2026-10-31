@@ -16,7 +16,7 @@
 #   compact-self.sh <instructions file>
 #
 # Needs $HERDR_PANE_ID. Writes `/compact`, a space and the file's
-# contents, then Enter, apart and pausing between (DOROTHY_COMPACT_PAUSE
+# contents (after a space if they begin with `-`), then Enter, apart and pausing between (DOROTHY_COMPACT_PAUSE
 # seconds, 3 by default), holding the pane's lock so no message falls
 # in between.
 #
@@ -37,6 +37,10 @@ pane=$HERDR_PANE_ID
 instructions=$(cat "$1")
 [ -n "$instructions" ] || usage
 pause=${DOROTHY_COMPACT_PAUSE:-3}
+# herdr takes no `--`, so text beginning with `-` could pass for an option.
+case $instructions in
+-*) instructions=" $instructions" ;;
+esac
 
 herdr agent wait "$pane" --until idle >/dev/null || die 1 'wait failed'
 sleep "$pause"

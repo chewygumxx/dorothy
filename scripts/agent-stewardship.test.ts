@@ -307,6 +307,19 @@ describe("send-prompt.sh, scheduled", () => {
         expect((await stat(file)).mode & 0o777).toBe(0o600);
     });
 
+    it("reads a time in the local zone and sets it in UTC", async () => {
+        const { code, out } = await run(
+            send,
+            ["--from", "a", "--at", "2099-01-01 00:00", "bob"],
+            "hi",
+            { TZ: "Australia/Sydney" },
+        );
+        expect(code).toBe(0);
+        const [call] = await calls();
+        expect(call).toContain("--on-calendar=2098-12-31 13:00:00 UTC");
+        expect(out).toContain("when: 2098-12-31 13:00:00 UTC");
+    });
+
     it("takes an epoch for a date", async () => {
         const { code } = await run(
             send,
@@ -421,6 +434,19 @@ describe("send-prompt.sh --deliver", () => {
         expect(await log()).toContain("re-armed");
     });
 
+    it("does not resend after a failed send-text, which may have written", async () => {
+        await touch("fail-text");
+        const { code } = await run(send, ["--deliver", id]);
+        expect(code).toBe(1);
+        expect(await log()).toMatch(
+            new RegExp(`^${stamp} partial: send-text failed, not resent\n$`),
+        );
+        expect(
+            (await calls()).filter((call) => call[0] === "systemd-run"),
+        ).toEqual([]);
+        expect((await writes()).map((call) => call[0])).toEqual(["send-text"]);
+    });
+
     it("records a partial send, and does not re-arm it", async () => {
         await touch("fail-keys");
         const { code } = await run(send, ["--deliver", id]);
@@ -466,6 +492,17 @@ describe("compact-self.sh", () => {
             ["herdr", "pane", "send-text", pane, "/compact "],
             ["herdr", "pane", "send-text", pane, text.trimEnd()],
             ["herdr", "pane", "send-keys", pane, "enter"],
+        ]);
+    });
+
+    it("spaces instructions that begin with a dash", async () => {
+        const file = await instructions("- Resume at task 5\n- Then task 6");
+        const { code } = await run(compact, [file], "", quick);
+        expect(code).toBe(0);
+        expect((await writes())[1]).toEqual([
+            "send-text",
+            pane,
+            " - Resume at task 5\n- Then task 6",
         ]);
     });
 
