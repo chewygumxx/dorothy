@@ -35,12 +35,13 @@ import {
 } from "@dorothy/gateway";
 // A type, erased: the CLI still loads memory lazily.
 import type { LaunchNote } from "@dorothy/memory";
+import {
+    type Spawned,
+    selfCommand,
+    shellWord,
+    spawnInherited,
+} from "./self.js";
 import { passSopsKey } from "./sops-key.js";
-
-export type Spawned = {
-    exited: Promise<number>;
-    kill: (signal?: NodeJS.Signals) => void;
-};
 
 export type ClaudeDeps = {
     env?: Env;
@@ -249,9 +250,6 @@ export function claudeSession(args: readonly string[]): ClaudeSession {
 // SessionEnd's hook only hands its session to a detached catch-up.
 export const END_TIMEOUT_S = 10;
 
-// Claude Code runs a hook's command through a shell: each word quoted.
-const shellWord = (word: string) => `'${word.replaceAll("'", "'\\''")}'`;
-
 // Dorothy's hooks, this program run again: after each reply, off its
 // path (async), and at the session's end.
 export function hookSettings(self: readonly string[]): Json {
@@ -274,17 +272,6 @@ export function hookSettings(self: readonly string[]): Json {
 // are.
 export const claudeConfigDir = (env: Env) =>
     env.CLAUDE_CONFIG_DIR || join(env.HOME || homedir(), ".claude");
-
-// This program as a command: the interpreter and the entry script it
-// was started with, so bun run dev records too. Claude Code runs hooks
-// and servers in the user's project, whose .env Bun would load into
-// their environment, a key of the project's among it, kept over
-// Dorothy's: --no-env-file, for the recall server too.
-const selfCommand = () => [
-    process.execPath,
-    "--no-env-file",
-    resolve(process.argv[1] ?? ""),
-];
 
 // A process of its own session, which outlives dorothy and a terminal
 // that hangs up, in the environment given. One that cannot start is not
@@ -534,16 +521,6 @@ export function userShell(env: Env): { env: Env; cwd?: string } {
     const cwd = env.npm_config_local_prefix;
     return cwd === undefined ? { env: shell } : { env: shell, cwd };
 }
-
-// Bun otherwise uses its startup environment, losing runtime credentials.
-const spawnInherited = (cmd: string[], env: Env, cwd?: string): Spawned =>
-    Bun.spawn(cmd, {
-        env,
-        cwd,
-        stdin: "inherit",
-        stdout: "inherit",
-        stderr: "inherit",
-    });
 
 // The user's own Claude Code, with Dorothy as its main agent: the gateway
 // replaces the marker appended to its system prompt with her identity.

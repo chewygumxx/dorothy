@@ -10,13 +10,8 @@
 
 import { captureServer } from "@dorothy/agent";
 import type { Env } from "@dorothy/core";
-import {
-    type ClaudeDeps,
-    launchClaude,
-    runAll,
-    type Spawned,
-    warnDrift,
-} from "./claude.js";
+import { type ClaudeDeps, launchClaude, runAll, warnDrift } from "./claude.js";
+import type { Spawned } from "./self.js";
 
 export type ClaudeDumpDeps = Omit<ClaudeDeps, "signals"> & {
     capture?: () => Pick<

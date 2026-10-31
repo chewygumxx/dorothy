@@ -56,6 +56,7 @@ export type Mode =
     | { kind: "review-backfill"; count: number | "all" }
     | { kind: "mcp"; host: string | null }
     | { kind: "claude-hook"; hook: HookMode }
+    | { kind: "hook"; host: HookHost; event: HookEvent }
     | { kind: "claude"; args: string[] }
     | { kind: "claude-dump"; args: string[]; message: string }
     | { kind: "help" }
@@ -108,6 +109,9 @@ export const USAGE = [
     "       dorothy --claude-hook --reread | --dismiss <session>",
     "                                  read again the Claude Code lines she",
     "                                  could not, or stop telling of them",
+    "       dorothy --hook <host> <event>",
+    "                                  internal: what Codex's hooks and",
+    "                                  her Hermes provider run",
     "       dorothy -- <prompt...>     a prompt that starts with -",
     "       dorothy --dump-context [--resume <phrase>] [message...]",
     "                                  print the request a chat would send",
@@ -167,6 +171,7 @@ const COMMANDS: Record<string, Command> = {
     "--review-backfill": parseReviewBackfill,
     "--mcp": parseMcp,
     "--claude-hook": parseHook,
+    "--hook": parseHostHook,
     "--dump-context": parseDump,
     "--claude": parseClaude,
 };
@@ -513,6 +518,25 @@ function parseHook(rest: readonly string[]): Mode {
             : usage(HOOK_USAGE);
     }
     return hook(reread === true ? { kind: "reread" } : { kind: "hook" });
+}
+
+// Memory's own HOOK_EVENTS, restated: args.ts loads no memory module,
+// so --help stays light; args.test.ts pins the two equal.
+export const HOOK_EVENTS = ["session-start", "prompt"] as const;
+export type HookEvent = (typeof HOOK_EVENTS)[number];
+
+export const HOOK_HOSTS = ["codex", "hermes"] as const;
+export type HookHost = (typeof HOOK_HOSTS)[number];
+const HOST_HOOK_USAGE = `--hook takes a host (${HOOK_HOSTS.join(", ")}) and an event (${HOOK_EVENTS.join(", ")})`;
+
+function parseHostHook(rest: readonly string[]): Mode {
+    const [host, event, ...extra] = rest;
+    const known = HOOK_HOSTS.find((name) => name === host);
+    const happened = HOOK_EVENTS.find((name) => name === event);
+    if (known === undefined || happened === undefined || extra.length > 0) {
+        return usage(HOST_HOOK_USAGE);
+    }
+    return { kind: "hook", host: known, event: happened };
 }
 
 const DUMP_USAGE = "--dump-context takes [--resume <phrase>] [message...]";

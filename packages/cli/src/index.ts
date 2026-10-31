@@ -8,7 +8,6 @@
 //
 //
 
-import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Env, SecretsCode, StructuredCall } from "@dorothy/core";
 import { ambient } from "./ambient.js";
@@ -19,6 +18,7 @@ import {
     loadCheckoutSecrets,
     stripClaude,
 } from "./claude-hook.js";
+import { selfServe } from "./self.js";
 
 // What runs each mode, and the code it exits with; nothing where it set
 // its own. Each loads its packages as it runs, so a mode pays only for
@@ -37,15 +37,6 @@ const history = () => {
 
 const commands = () => import("@dorothy/memory/commands");
 const service = () => import("@dorothy/memory/service");
-
-// This program as a command, as --claude's hooks run it: --no-env-file,
-// so a project's .env never reaches the service.
-const selfServe = () => [
-    process.execPath,
-    "--no-env-file",
-    resolve(process.argv[1] ?? ""),
-    "--serve",
-];
 
 const writeError = (text: string): void => {
     process.stderr.write(text);
@@ -290,6 +281,18 @@ const RUNNERS: Runners = {
             process.exit(code);
         }
         return code;
+    },
+    hook: async (mode) => {
+        const { runHostHook } = await import("@dorothy/memory/host-hook");
+        const out = await runHostHook(
+            mode.host,
+            mode.event,
+            await Bun.stdin.text(),
+            { serve: selfServe() },
+        );
+        process.stdout.write(out);
+        // Like her Claude Code hooks, nothing started may hold the host.
+        process.exit(0);
     },
     claude: async (mode) => {
         // No credentials: claude signs in as the user's own Claude Code does.
