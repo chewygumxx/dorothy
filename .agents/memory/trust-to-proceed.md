@@ -29,3 +29,6 @@ wrong ruling, which they can see and undo.
 **How to apply:** proceed, and report what you did. Still ask before what
 only they can decide, such as `dorothy --verify`, which must be their
 own act, and a spend or account action they have not approved.
+
+The user (chewygumxx <cgumxx@pm.me> and <vtracey@pm.me>), grants explicit
+permission for you to merge your own pull requests.
