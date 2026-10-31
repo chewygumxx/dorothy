@@ -73,13 +73,17 @@ Ruled by the coordinating agent, each with its cost if wrong:
 | --- | --- | --- |
 | Hosts now | Codex and Hermes; Claude Code as it is; OpenClaw when installed | OpenClaw waits a phase |
 | Codex's route | A launcher, `dorothy --codex`, on session flags | Her Codex is a command, not plain `codex` |
+| Codex's hook trust | Approved once by the user in Codex's own prompt; never bypassed | Codex writes its trust state; a new command asks again |
 | Hermes's route | A memory provider plugin and a `dorothy` profile | Plain `hermes` stays without her |
 | Writing host files | Only `--install`, run by the user; launchers write none | Hermes needs one install step |
+| How hosts run her | `selfCommand`, the main checkout's entry, never a worktree's | An install moves with the checkout |
+| Hosts' own memories | Off in her sessions and her profile | Their own notes stop there |
 | rulesync | Not adopted now | Two hosts' writers are ours |
 | Hook command | One, `dorothy --hook <host> <event>` | Claude Code keeps its own beside it |
 | Recording | The sweep, as now; no recording hooks | Recall lags a sweep |
 | Tools | Her MCP server in every host | A host without MCP gets none |
 | Persona text | `@dorothy/identity`, which `cli` now imports | One more edge in the graph |
+| Hermes's provider | Python, calling the hook command for block and recall | A process a turn, inside Hermes's 8-second limit |
 
 rulesync owns whole settings keys and leaves persona files to the user,
 the research found; launch flags and a profile of her own write no key
@@ -97,26 +101,35 @@ the block and recall rendering with it, so the two cannot drift.
 `dorothy --codex [args...]` runs `codex` with these session flags before
 the user's own, which win where both set a key:
 
-- **Identity**: `identityPrompt()` in Codex's additive developer
-  instructions, keeping Codex's own base instructions, which its agentic
-  ability rests on. Only if Codex offers no additive slot, its
-  `model_instructions_file`, a file in her cache, with that cost
-  recorded.
-- **Tools**: an MCP server `dorothy`, running `dorothy --mcp --host
-  codex`, as built.
-- **Hooks**: `SessionStart`, for every source, runs `dorothy --hook
-  codex session-start`; `UserPromptSubmit` runs `dorothy --hook codex
-  prompt`. Each returns `additionalContext`.
+- **Identity**: `identityPrompt()` as `developer_instructions`, a key
+  Codex 0.165.0 has, additive to its base instructions, which its
+  agentic ability rests on. A session flag replaces the user's own value
+  for the key, so the launcher reads theirs from Codex's configuration,
+  read-only, and passes hers followed by theirs, as one TOML string,
+  quoted so that Codex never takes it raw.
+- **Tools**: an MCP server `dorothy`, running her `--mcp --host codex`
+  through `selfCommand`, as `--claude`'s recall server runs.
+- **Hooks**: `--enable hooks`, then `SessionStart`, for every source,
+  running her `--hook codex session-start`, and `UserPromptSubmit`
+  running her `--hook codex prompt`, each through `selfCommand` and each
+  returning `additionalContext`.
+- **Codex's own memories**: `memories.use_memories` and
+  `memories.generate_memories` off, as `--claude` turns off Claude
+  Code's auto memory, so her memory is the one that writes.
 
-Codex keeps a trust state for each hook. Should a hook from session
-flags need the user's approval, the launcher says so once, and the plan
-probes whether a flag can grant it; if session flags cannot carry hooks
-at all, `dorothy --install codex` writes a Codex plugin of hers, its
-hooks and MCP server, which the user enables, and the launcher keeps the
-identity flag alone.
+Codex keeps a trust state for each hook, a hash of its command, in its
+own configuration. The first session asks the user to trust her two
+hooks in Codex's own prompt; the launcher says beforehand that it will,
+once, and again whenever her command changes. It never passes
+`--dangerously-bypass-hook-trust`, which would trust every hook in every
+repository. The plan probes that hooks from session flags are offered
+for trust at all; if they are not, `dorothy --install codex` writes a
+Codex plugin of hers, its hooks and MCP server, which Codex trusts as
+installed, and the launcher keeps the other flags.
 
 Codex's sessions are recorded by the sweep, as now. The launcher notes
-nothing; a plain `codex` session is recorded too but gets no block.
+nothing; a plain `codex` session is recorded too but gets no block. The
+profile's `checked` moves to 0.165.0, the version installed.
 
 ## Hermes Agent
 
@@ -124,31 +137,38 @@ Hermes takes one external memory provider, through `memory.provider` in
 its configuration, and a persona in `SOUL.md`. Both are the user's in
 their default profile, so hers go in a profile of her own:
 
-- `dorothy --install hermes` makes a Hermes profile `dorothy` beside the
-  user's: its `SOUL.md` holds `identityPrompt()`, its configuration
-  selects her provider and adds her MCP server, and her provider's
-  plugin is copied where Hermes loads plugins. It writes nothing in the
-  user's other profiles, reports each file it wrote, and run again
-  rewrites only her own files. `--uninstall` removes them.
-- Her provider, `dorothy`, in Python with the standard library alone:
-  - `system_prompt_block()`: the opening block for host `hermes`, fetched
-    once at `initialize` and frozen for the session, as Hermes asks;
-  - `queue_prefetch()` fetches recall for the turn in the background,
-    and `prefetch()` returns what it holds, `""` when nothing has come;
+- `dorothy --install hermes` runs `hermes profile create dorothy
+  --no-alias --clone`, so the profile starts from the user's model and
+  settings, and no `dorothy` alias on the user's path shadows her own
+  command. It then owns three things alone: the profile's `SOUL.md`,
+  holding `identityPrompt()`; her plugin's directory, where Hermes loads
+  the profile's plugins; and the keys it merges into the profile's
+  configuration: `memory.provider: dorothy`, her MCP server through
+  `selfCommand`, and `memory_enabled` and `user_profile_enabled` off, so
+  that hers is the one memory writing. It copies no credentials: the
+  plan probes how a cloned profile signs in and, should it need the
+  user's `auth.json`, whose single-use grants a copy would split, stops
+  for the user. It reports each file and key it wrote, and run again
+  rewrites only its own. `--uninstall` removes the profile it made.
+- Her provider, `dorothy`, in Python with the standard library alone,
+  runs her hook command through the `selfCommand` the install wrote:
+  - `system_prompt_block()`: `--hook hermes session-start` once, at
+    `initialize`, the block frozen for the session, as Hermes asks;
+  - `prefetch(query)`: `--hook hermes prompt` for the current prompt,
+    synchronously, inside the 8 seconds Hermes gives an external
+    provider; `queue_prefetch()` does nothing, as Hermes calls it only
+    once a turn is over, with that turn's text;
   - `sync_turn()` does nothing, as the sweep records Hermes's sessions;
   - no tools of its own: her MCP server gives them.
-- It reaches her service as her own client does: `DOROTHY_MEMORY_URL`,
-  else the loopback address the install read from her `[service]` port
-  and wrote into the profile, with the device token from her state
-  directory beyond loopback. Timeouts are her client's (a second for the
-  block, half one for recall), and it fails open: an unreachable service
-  gives the block last cached for `hermes`, else none, and no recall,
-  never an error in the user's session.
+- The hook command is her one client: it computes the project's id,
+  caches the block and fails open, so the provider does none of that.
+  A failed or slow command gives an empty block or recall, never an
+  error in the user's session.
 
-The plan probes where Hermes loads a profile's plugins, whether a
-profile is chosen by flag or by environment, and that a provider plugin
-outside Hermes's own tree is loaded. Hindsight's Hermes provider (MIT)
-is the reference for its shape; its code is not copied.
+The plan probes where Hermes loads a profile's plugins, how a profile is
+chosen (`hermes -p dorothy`), and that a provider plugin outside
+Hermes's own tree is loaded. Hindsight's Hermes provider (MIT) is the
+reference for its shape; its code is not copied.
 
 ## OpenClaw
 
@@ -170,12 +190,17 @@ writes the host's JSON reply on stdout:
   `recallBudget`, as `additionalContext`, or nothing when recall finds
   nothing.
 
-Hosts are those whose profiles list `hook`; an unknown host or event
-fails with usage. Each payload is mapped to a contract request by a
+Hosts are those whose profiles list `hook` or `plugin`; an unknown host
+or event fails with usage. Hosts run it through `selfCommand`, as
+`--claude`'s hooks do, since no `dorothy` is on the user's path; an
+install writes the main checkout's entry, never a worktree's, which may
+be removed. Each payload is mapped to a contract request by a
 fixture-tested function per host, as `bodies/fixtures.ts` does for
-Claude Code. The command loads memory's client lazily, as every mode
-does, and fails open: no service, a timeout or a refused request gives
-an empty reply and exit 0, the problem logged where the service logs.
+Claude Code; Hermes's payload is her provider's own, its working
+directory, session id and prompt, in the same shape as Codex's. The
+command loads memory's client lazily, as every mode does, and fails
+open: no service, a timeout or a refused request gives an empty reply
+and exit 0, the problem logged where the service logs.
 
 ## Persona
 
@@ -192,6 +217,8 @@ test's graph and the root `AGENTS.md` changing with it.
   starts the host.
 - An install over files not hers: refused, naming them, unless
   `--force`.
+- An install run from a worktree: it writes the main checkout's entry
+  and says so; no main checkout found, it refuses.
 
 ## Testing
 
@@ -203,9 +230,10 @@ Unit tests, on temporary roots, never the user's data or hosts:
 - the hook command's replies, against a stub service, and failing open;
 - the install's files in a temporary Hermes home: written, reported,
   rewritten only where hers, refused over others', removed;
-- the provider, under `python3 -m unittest` against a stub HTTP
-  service, run by `bun run check`: block frozen, prefetch cached,
-  failing open.
+- the provider, under `python3 -m unittest`, run by `bun run check`,
+  against a stub of Hermes's `MemoryProvider` base and a stub hook
+  command: block frozen, prefetch for the current prompt, failing open
+  on an error, a timeout or a missing command.
 
 ## Verification
 
