@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-19
-mtime: 2026-10-30
+mtime: 2026-11-01
 spdx: GPL-3.0-only
 title: packages/eval/AGENTS.md
 description: >-
@@ -132,10 +132,11 @@ test through `runCli` and `fakeIo`.
   system stands. `latestRunId`, for `--resume latest`: the greatest `at`,
   ties by id, skipping a directory with no valid `run.json`.
 - `run/judges.ts`: the answering prompt, the judges (openevals' strict
-  prompt and ours) and `declines`; `run/run.ts`: `runEvaluation`, which
-  appends a record per question and system and resumes where a run
-  stopped, asking a failed record again (a paid answer only for the
-  judgements it lacks) and refusing a changed snapshot, model or base
+  prompt and ours, strict and lenient behind `MEMORY_NOTE`) and
+  `declines`; `run/run.ts`: `runEvaluation`, which appends a record per
+  question and system and resumes where a run stopped, asking a failed
+  record again (a paid answer only for the judgements it lacks) and
+  refusing a changed snapshot, model or base
   URL, or a question removed or edited since the run began (its
   `definitions` in `run.json`, a digest of each, gold answer included).
   A run without every saved definition cannot be resumed. Reported

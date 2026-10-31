@@ -10,7 +10,8 @@
 
 // How an answer is asked for and judged. The judges are openevals' LLM
 // judge: its own correctness prompt for the strict verdict, and prompts
-// of ours, in its placeholders, for the rest.
+// of ours, in its placeholders, for the rest. The strict and lenient
+// judges read the question behind a note that the answer is remembered.
 
 import { PromptTemplate } from "@langchain/core/prompts";
 import { CORRECTNESS_PROMPT, createLLMAsJudge } from "openevals";
@@ -18,6 +19,14 @@ import { z } from "zod";
 import type { Message, Models } from "../models/client.js";
 import { requireRole } from "../models/config.js";
 import type { Question } from "../questions/file.js";
+
+// What the strict and lenient judges are told ahead of the question: the
+// answer comes from a memory of the user they do not see, so what it says
+// the user said or prefers is not invented where the reference agrees.
+export const MEMORY_NOTE = `An assistant with a memory of its user answered the user's question
+below. Its memory holds what the user has said and prefers, so the answer
+may say so; where what it attributes to the user agrees with the
+reference, it is not invented.`;
 
 export const LENIENT_PROMPT = `You are grading an answer against a reference answer.
 The answer is correct if it gives the reference's main point, even if it
@@ -132,9 +141,13 @@ export function makeJudges(models: Models): Judges {
             };
         };
     };
+    const remembered =
+        (judge: Judge): Judge =>
+        (params) =>
+            judge({ ...params, inputs: `${MEMORY_NOTE}\n\n${params.inputs}` });
     return {
-        strict: judgeOf(CORRECTNESS_PROMPT, "strict"),
-        lenient: judgeOf(LENIENT_PROMPT, "lenient"),
+        strict: remembered(judgeOf(CORRECTNESS_PROMPT, "strict")),
+        lenient: remembered(judgeOf(LENIENT_PROMPT, "lenient")),
         declined: judgeOf(ABSTENTION_PROMPT, "declined"),
         stale: judgeOf(STALE_PROMPT, "stale"),
     };
