@@ -8,7 +8,14 @@
 //
 //
 
-import { type Command, intOf, stringOf, workOf } from "../command.js";
+import {
+    type Command,
+    intOf,
+    modelsOf,
+    modelsOption,
+    stringOf,
+    workOf,
+} from "../command.js";
 import { EXIT_TEMPFAIL, UsageError } from "../errors.js";
 import { Models } from "../models/client.js";
 import {
@@ -74,6 +81,7 @@ export const runCommand: Command = {
             type: "boolean",
             description: "measure retrieval alone, with no model",
         },
+        models: modelsOption,
         resume: {
             type: "string",
             description: "the id of a stopped run, to finish it",
@@ -114,7 +122,7 @@ export const runCommand: Command = {
         // A run that asks no model reads no eval.toml.
         const config: EvalConfig = retrievalOnly
             ? { generate: null, answer: null, judge: null }
-            : await readEvalConfig(work);
+            : await readEvalConfig(work, modelsOf(values));
         const info =
             resumed !== null
                 ? resumed

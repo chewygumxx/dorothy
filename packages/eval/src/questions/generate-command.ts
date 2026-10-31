@@ -10,7 +10,13 @@
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type Command, intOf, workOf } from "../command.js";
+import {
+    type Command,
+    intOf,
+    modelsOf,
+    modelsOption,
+    workOf,
+} from "../command.js";
 import { EXIT_TEMPFAIL, UsageError } from "../errors.js";
 import { writeAtomic } from "../files.js";
 import { Models } from "../models/client.js";
@@ -104,6 +110,7 @@ export const generateCommand: Command = {
             description:
                 "the seed samples are drawn by, to repeat a generation",
         },
+        models: modelsOption,
         "max-calls": {
             type: "string",
             description: "stop after this many model calls",
@@ -134,7 +141,7 @@ export const generateCommand: Command = {
         const existing = await readQuestionsToRewrite(work);
         // Mended before any call is paid for.
         await readGenerations(work);
-        const config = await readEvalConfig(work);
+        const config = await readEvalConfig(work, modelsOf(values));
         const role = requireRole(config, "generate");
         if (!(await loadModelSecrets(io))) return 1;
         const models = new Models(config, {

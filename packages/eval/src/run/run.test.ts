@@ -11,6 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
     existsSync,
+    mkdirSync,
     readdirSync,
     readFileSync,
     statSync,
@@ -1498,5 +1499,99 @@ describe("a run", () => {
                 corpus.close();
             }
         });
+    });
+});
+
+describe("--models", () => {
+    // Where the work directory's eval.toml is not, to be sure it is not read.
+    const modelsFile = (name = "models.toml") => join(temp.root, name);
+    const cliFixture = () => {
+        const fake = fakeCli((request) => cliReply("claude", request, fake));
+        const options = {
+            env: {
+                PATH: "/fixture/bin",
+                HOME: "/fixture",
+                CLAUDE_CODE_OAUTH_TOKEN: "fixture-token",
+            },
+            modelOptions: fake,
+        };
+        return { fake, options };
+    };
+    const CLAUDE_MODELS =
+        '[models.answer]\nvia = "claude"\nmodel = "fixture-answer"\n[models.judge]\nvia = "claude"\nmodel = "fixture-judge"\n';
+    const inCwd = async (dir: string, body: () => Promise<void>) => {
+        const before = process.cwd();
+        process.chdir(dir);
+        try {
+            await body();
+        } finally {
+            process.chdir(before);
+        }
+    };
+
+    it("reads the models of --models, not eval.toml, as written relatively", async () => {
+        writeFileSync(configPath(work), "[models.answer\nbroken");
+        mkdirSync(join(temp.root, "elsewhere"));
+        writeFileSync(modelsFile("elsewhere/models.toml"), CLAUDE_MODELS);
+        const { fake, options } = cliFixture();
+        const first = fakeIo(options);
+        await inCwd(join(temp.root, "elsewhere"), async () => {
+            expect(
+                await runCli(
+                    [
+                        "run",
+                        "--work",
+                        work,
+                        "--systems",
+                        "lexical",
+                        "--concurrency",
+                        "1",
+                        "--models",
+                        "models.toml",
+                    ],
+                    first.io,
+                ),
+            ).toBe(0);
+            expect(fake.requests).toHaveLength(9);
+            const id = idOf(first.out);
+            const again = fakeIo(options);
+            expect(
+                await runCli(
+                    [
+                        "run",
+                        "--work",
+                        work,
+                        "--resume",
+                        id,
+                        "--models",
+                        "models.toml",
+                    ],
+                    again.io,
+                ),
+            ).toBe(0);
+            expect(again.err.join("")).not.toContain("eval.toml");
+        });
+    });
+
+    it("names the models file it was given when it fails", async () => {
+        writeFileSync(modelsFile(), "[models.answer\nbroken");
+        const { io, err } = fakeIo();
+        expect(
+            await runCli(
+                ["run", "--work", work, "--dry-run", "--models", modelsFile()],
+                io,
+            ),
+        ).toBe(1);
+        expect(err.join("")).toContain(`${modelsFile()} does not parse`);
+        const missing = fakeIo();
+        expect(
+            await runCli(
+                ["run", "--work", work, "--dry-run", "--models", "nope.toml"],
+                missing.io,
+            ),
+        ).toBe(1);
+        expect(missing.err.join("")).toContain(
+            `cannot read ${join(process.cwd(), "nope.toml")}: ENOENT`,
+        );
     });
 });

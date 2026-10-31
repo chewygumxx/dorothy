@@ -560,8 +560,11 @@ only what the run has left. A failed call counts as a miss, except that
 a plan's usage limit (Claude's or Codex's) stops the run or `generate`
 instead, keeping what is done: `run` then resumes with `--resume` after
 the reset. Either exits 75 (EX_TEMPFAIL) so a wrapper can wait and go
-on; a stop at `--max-calls` exits 0. A system's ranked items are the
-ones that fit its budget, so recall at 5 and 10 falls with a smaller
+on; a stop at `--max-calls` exits 0. `--models <file>` reads another file
+in place of `~/eval/eval.toml`, on `generate` and `run`, a relative path
+from where you run it.
+A system's ranked items are the ones that fit its budget, so recall at 5
+and 10 falls with a smaller
 `--budget`. Each run's report is `~/eval/runs/<run>/report.md`, and
 `bun run eval -- <command> --help` lists a command's options.
 

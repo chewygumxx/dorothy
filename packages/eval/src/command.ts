@@ -57,6 +57,18 @@ export function workOf(values: Values): string {
     return resolve(work);
 }
 
+// Every command that reads eval.toml takes this, to read another file.
+export const modelsOption = {
+    type: "string",
+    description: "the models' file, in place of the work directory's eval.toml",
+} as const;
+
+// The --models file, resolved against the current directory, or none.
+export function modelsOf(values: Values): string | undefined {
+    const file = stringOf(values, "models");
+    return file === null ? undefined : resolve(file);
+}
+
 export function intOf(
     values: Values,
     name: string,

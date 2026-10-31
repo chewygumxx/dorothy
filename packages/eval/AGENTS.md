@@ -57,33 +57,32 @@ options declared and described for `--help`, its failures as
 - `main.ts`: the process around `runCli`, with the real terminal;
   `editor.ts`: the owner's editor, whose failure to start is thrown.
 - `files.ts`: `readRecord`, which tells a missing JSON file from one
-  unreadable or invalid, and `writeAtomic`, which writes whole or not
-  at all.
+  unreadable or invalid, and `writeAtomic`, whole or not at all.
 - `cli.ts`: the command table and `runCli`.
-- `command.ts`: `Io`, `Command` and the options' readers. `modelOptions`
-  injects model runners, files and CLI lookup; commands own env and caps.
+- `command.ts`: `Io`, `Command`, the options' readers and `--models`, which
+  `run` and `generate` take. `modelOptions` injects model runners, files
+  and CLI lookup; commands own env and caps.
 - `secrets.ts`: `loadModelSecrets` awaits core's loader on the checkout's
   `secrets.json` before paid model calls, with code-only warnings, then
   `chooseClaudeToken`; false if `DOROTHY_CLAUDE_TOKEN_VAR` names no token,
   and `run` and `generate` return 1. Tests inject `Io.loadSecrets`.
 - `snapshot/`: `takeSnapshot`, which refuses a work directory in the
   checkout (found by the package's place, not by `.git`) or a sibling
-  worktree, follows a
-  link only at the top of what it copies, counts the rest and swaps a
-  whole copy in, its record set aside before and written after;
-  `readSnapshot`, which tells a missing record from a
-  bad one; `workEnv`; and the `snapshot` command.
+  worktree, follows a link only at the top of what it copies, counts the
+  rest and swaps a whole copy in, its record set aside before and written
+  after; `readSnapshot`, which tells a missing record from a bad one;
+  `workEnv`; and the `snapshot` command.
 - `questions/file.ts`: the question file, its schema and ids; the
   commands that rewrite it do so through `updateQuestions`, which reads,
   changes and writes it under a lock file beside it, held by pid; the
   same lock, as `underLock`, serves `generated.json`.
 - `questions/mine.ts`: lookup questions from her appraised reads (a
   backfilled session has none), and the `mine` command.
-- `questions/generate.ts`: samples, prompts and checks for drafting
-  each type; `questions/generate-command.ts`: the `generate` command,
-  which merges each call's drafts into the question file as they
-  arrive and records each generation's seed and reported tokens by role
-  in `generated.json`; older entries need no tokens.
+- `questions/generate.ts`: samples, prompts and checks for drafting each
+  type; `questions/generate-command.ts`: the `generate` command, which
+  merges each call's drafts into the question file as they arrive and
+  records each generation's seed and reported tokens by role in
+  `generated.json`; older entries need no tokens.
 - `questions/review.ts`: the owner's pass over the drafts, and the
   `review` command (`--evidence` sets the characters shown of each
   conversation); an edit goes through `editing.json` in the work
@@ -94,8 +93,9 @@ options declared and described for `--help`, its failures as
   it does not know, or an edit that gives nothing or changes nothing.
   Each decision, the owner's too and an edit of the owner's with its
   old id and new, is a line of `reviews.jsonl` in the work directory.
-- `models/config.ts`: `eval.toml`, each role's route (`api` by default,
-  `claude` or `codex`), model, API credentials or Codex effort.
+- `models/config.ts`: `eval.toml`, or the file `--models` names (which
+  must exist), each role's route (`api` by default, `claude` or `codex`),
+  model, API credentials or Codex effort; errors name the file.
 - `models/client.ts`: `Models`, dispatch, retries and `--max-calls`;
   `tokens` snapshots reported usage by role. A raw API completion
   callback includes openevals' judge usage; CLI replies count before
@@ -112,20 +112,18 @@ options declared and described for `--help`, its failures as
   is, so `run` and `generate` stop with what is done; a run resumes
   after the reset, generate is run again. Either exits 75
   (`EXIT_TEMPFAIL`) for a wrapper to wait on; a `CallCap` exits 0. What
-  it says: Claude, an
-  error reply with status 429, or text with "usage limit", "usage
-  credits", "out of credits", "rate limit", "hit your ... limit" (its
-  session, weekly, Opus, Sonnet or Fable limit) or "limit reached";
-  Codex, an error or turn.failed event with the first four, but only
-  when the turn did not complete: a retry notice that a completed turn
-  outlived is no limit. The reset time ("try again at", or Claude's
+  it says: Claude, an error reply with status 429, or text with "usage
+  limit", "usage credits", "out of credits", "rate limit", "hit your ...
+  limit" (its session, weekly, Opus, Sonnet or Fable limit) or "limit
+  reached"; Codex, an error or turn.failed event with the first four, but
+  only when the turn did not complete: a retry notice that a completed
+  turn outlived is no limit. The reset time ("try again at", or Claude's
   "resets") is kept only if it is a time or date. A Codex notice that
   the plan "automatically switched" the model "due to usage limits"
   also stops the run, even from a completed turn, since the reply is
   then not the role's model's: no event names the model, so the notice
-  text is all there is to match.
-  `models/testing.ts`: injected
-  in-memory runner and files; runner integration tests use temp scripts.
+  text is all there is to match. `models/testing.ts`: injected in-memory
+  runner and files; runner integration tests use temp scripts.
 - `systems/`: `System` and `makeSystem` (`system.ts`); the corpus, the
   snapshot's archive opened once, with items as text (`corpus.ts`);
   `termsOf` and `scoreOf` (`terms.ts`); and the three systems,
