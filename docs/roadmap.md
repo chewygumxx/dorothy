@@ -128,7 +128,8 @@ verified them before the user's backfill, then the owner's first run.
   the Backfill Recorded and Reviewed; the First Run Done
   ([record](./reports/2026-10-31-first-evaluation.md)); the Engine's
   First Step Built and its Paid Runs Done, keeping her engine;
-  Delivery Next, Pending Design
+  Delivery Built for Codex and Hermes, its Live Probes Waiting on the
+  User; OpenClaw's Waiting on its Install
 - **Required**: Requisites Fulfilled
 - **Rationale**: Wherever she goes, her memory follows with her. The
   contract gives every harness one service and every engine one
@@ -145,7 +146,13 @@ verified them before the user's backfill, then the owner's first run.
   again once the judges were told her answers are remembered, took her
   strict accuracy from 7 to 43 of 125, past lexical search's 27, with
   half her preference answers right and every abstention kept, so her
-  engine stays and Delivery, the last piece, is next; a chunk index
+  engine stays. Delivery, the last piece, gives her to Codex through
+  `dorothy --codex` and to Hermes through a provider in a profile of
+  her own, both through one hook command
+  ([spec](./specs/2026-11-01-delivery-design.md),
+  [plan](./plans/2026-11-01-delivery.md),
+  [report](./reports/2026-11-01-delivery.md)); its live probes wait for
+  the user's sign-ins, and Codex's for its week to reset. A chunk index
   waits on the questions only lexical search passes.
 
 ### Model Providers
@@ -350,6 +357,13 @@ Found but not scheduled, each with its source.
   ([record](./reports/2026-10-31-memory-engine.md#deferred)): early
   variant errors untested, an undefined policy field, untraced source
   errors, and the first evaluation's Summary beside its corrections.
+- Delivery's deferred minors and open checks
+  ([record](./reports/2026-11-01-delivery.md#deferred)): Codex's hook
+  payloads and trust, live Hermes loading and its working directory,
+  test gaps and install edge cases; and a running service that sees a
+  knowledge file added only once restarted.
+- OpenClaw's delivery, a memory-slot plugin and its persona files, once
+  it is installed (delivery spec, OpenClaw).
 - The evaluation's answering prompt asks for one or two sentences,
   which may cost answers a fact the reference holds, such as AEST's
   `+10:00` beside AEDT's `+11:00` on preference questions
@@ -555,3 +569,9 @@ In order of completion.
   lexical search's 27, and 5 of 10 preferences. Her engine stays and
   Delivery is next. Knowledge placement, which the probes ruled out,
   leaves Candidates; the answering prompt's length joins them.
+- 2026-11-01: Delivery is built for Codex and Hermes: `dorothy --codex`
+  passes her persona, tools and hooks as Codex's session flags, and
+  `dorothy --install hermes` makes a profile of hers with her provider;
+  one hook command serves both, and the sweep reads every Hermes
+  profile. Its live probes wait for the user. Candidates gain its
+  deferred minors and OpenClaw's delivery.
