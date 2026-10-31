@@ -219,7 +219,7 @@ describe("the report", () => {
         const text = reportOf(summarise(info("r1"), RECORDS));
         expect(text).toStartWith("# Memory evaluation r1\n");
         expect(text).toContain(
-            "| dorothy | 50.0% (1/2) | 50.0% (1/2) | 100.0% (2/2) |",
+            "| dorothy | 50.0% (1/2) | 50.0% (1/2) | - | 100.0% (2/2) |",
         );
         expect(text).toContain("### abstention");
         expect(text).toContain("answering answer/model, judging judge/model");
@@ -258,14 +258,113 @@ describe("the report", () => {
                 }),
             ]),
         );
-        expect(text).toContain("| Recall@10 | In context |");
+        expect(text).toContain(
+            "| Recall@10 | Delivered | Delivered or noted |",
+        );
         // The rest were written before it was kept.
         expect(text).toContain(
-            "| dorothy | 50.0% (1/2) | 50.0% (1/2) | 100.0% (2/2) | 100.0% (2/2) | - |",
+            "| dorothy | 50.0% (1/2) | 50.0% (1/2) | - | 100.0% (2/2) | 100.0% (2/2) | - | - | - |",
         );
         expect(text).toContain(
-            "| lexical | 100.0% (1/1) | 100.0% (1/1) | 0.0% (0/1) | 0.0% (0/1) | 100.0% (1/1) |",
+            "| lexical | 100.0% (1/1) | 100.0% (1/1) | - | 0.0% (0/1) | 0.0% (0/1) | - | 100.0% (1/1) | - |",
         );
+    });
+
+    it("heads each table by stage, with covered by mean and whole", () => {
+        const staged = (
+            question: string,
+            covered: number | null,
+            found = true,
+            delivered = true,
+        ) =>
+            record(question, "dorothy", {
+                recall: { at5: true, at10: true, found, delivered, covered },
+            });
+        const text = reportOf(
+            summarise({ ...info("r1"), systems: ["dorothy"] }, [
+                staged("a", 1),
+                staged("b", 1),
+                staged("c", 1),
+                staged("d", 0.5, true, false),
+                staged("e", 0, false, false),
+                staged("f", 1),
+                staged("g", 0.5),
+                staged("h", 0),
+                staged("skipped", null),
+            ]),
+        );
+        expect(text).toContain(
+            "| System | Strict | Lenient | Found | Recall@5 | Recall@10 | Delivered | Delivered or noted | Covered | Abstained | Declined wrongly | Older answer |",
+        );
+        // Of 8 answers with terms: 4 held whole, the shares summing to 5.
+        expect(text).toContain(
+            "| 88.9% (8/9) | 100.0% (9/9) | 100.0% (9/9) | 77.8% (7/9) | - | 62.5% (4/8 whole) |",
+        );
+    });
+
+    it("counts a failed retrieval a miss in each stage", () => {
+        const failed = (question: string, answer: boolean) =>
+            record(question, "dorothy", {
+                retrieval: { ranked: [], chars: 0, ms: 0, error: "down" },
+                recall: {
+                    at5: false,
+                    at10: false,
+                    covered: answer ? 0 : null,
+                },
+            });
+        const cell = summarise({ ...info("r1"), systems: ["dorothy"] }, [
+            record("a", "dorothy", {
+                recall: {
+                    at5: true,
+                    at10: true,
+                    found: true,
+                    delivered: true,
+                    covered: 1,
+                },
+            }),
+            failed("b", true),
+            // A lookup has no answer: out of coverage, failed or not.
+            failed("c", false),
+        ]).systems.dorothy?.all;
+        expect(cell?.found).toEqual({ hits: 1, of: 3 });
+        expect(cell?.delivered).toEqual({ hits: 1, of: 3 });
+        expect(cell?.covered).toEqual({ total: 1, full: { hits: 1, of: 2 } });
+    });
+
+    it("leaves a stage null for a system whose records lack it", () => {
+        const cell = summarise(info("r1"), RECORDS).systems.dorothy?.all;
+        expect(cell?.found).toBeNull();
+        expect(cell?.delivered).toBeNull();
+        expect(cell?.covered).toBeNull();
+    });
+
+    it("says cited is a ceiling, and never has it alone", () => {
+        const run = { ...info("r1"), systems: ["dorothy", "cited:x"] };
+        const records = [
+            record("q-1", "dorothy", {
+                judged: {
+                    strict: false,
+                    lenient: false,
+                    declined: false,
+                    stale: null,
+                },
+            }),
+            record("q-1", "cited"),
+        ];
+        const text = reportOf(summarise(run, records));
+        expect(text).toContain(
+            "cited is given each question's evidence: a ceiling, not a contender.",
+        );
+        expect(reportOf(summarise(info("r1"), RECORDS))).not.toContain(
+            "a ceiling",
+        );
+        const { systems } = summarise(
+            { ...info("r1"), systems: ["dorothy", "cited"] },
+            records,
+        );
+        expect(systems.cited?.alone).toEqual({ right: [], wrong: [] });
+        expect(systems.dorothy?.alone).toEqual({ right: [], wrong: [] });
+        expect(text).not.toContain("cited alone");
     });
 
     it("says a run without models asked none", () => {
@@ -506,6 +605,8 @@ describe("bun run eval -- compare", () => {
             damaged("h", { recall: { at5: true, at10: 1 } }),
             damaged("i", { recall: { at5: true, at10: true, inContext: 1 } }),
             damaged("j", { recall: [] }),
+            damaged("k", { recall: { at5: true, at10: true, found: 1 } }),
+            damaged("l", { recall: { at5: true, at10: true, covered: "x" } }),
         ];
         writeFileSync(
             recordsPath(temp.root, "r1"),
