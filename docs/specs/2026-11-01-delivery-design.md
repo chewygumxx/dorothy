@@ -84,6 +84,8 @@ Ruled by the coordinating agent, each with its cost if wrong:
 | Tools | Her MCP server in every host | A host without MCP gets none |
 | Persona text | `@dorothy/identity`, which `cli` now imports | One more edge in the graph |
 | Hermes's provider | Python, calling the hook command for block and recall | A process a turn, inside Hermes's 8-second limit |
+| Hermes's clone | Hermes's own copy of `.env` stands; no login copied | Her profile holds the user's keys too |
+| Probes' logins | The user signs a temporary host home in; none copied | Codex's probes wait for the user |
 
 rulesync owns whole settings keys and leaves persona files to the user,
 the research found; launch flags and a profile of her own write no key
@@ -145,11 +147,17 @@ their default profile, so hers go in a profile of her own:
   the profile's plugins; and the keys it merges into the profile's
   configuration: `memory.provider: dorothy`, her MCP server through
   `selfCommand`, and `memory_enabled` and `user_profile_enabled` off, so
-  that hers is the one memory writing. It copies no credentials: the
-  plan probes how a cloned profile signs in and, should it need the
-  user's `auth.json`, whose single-use grants a copy would split, stops
-  for the user. It reports each file and key it wrote, and run again
-  rewrites only its own. `--uninstall` removes the profile it made.
+  that hers is the one memory writing. Hermes's `--clone` copies the
+  profile's `config.yaml`, `.env` and `SOUL.md`, as for any clone: the
+  `.env`'s keys are reusable and stay in the user's own Hermes home, so
+  that copy stands. The install copies no credential itself, and should
+  the profile need the user's `auth.json` to sign in, whose single-use
+  grants a copy would split, it stops for the user. The `SOUL.md` is
+  hers when this run made the profile or when its digest is the one she
+  recorded in the profile's `dorothy.json`; any other is refused, naming
+  it, unless `--force`. It reports each file and key it wrote, and run
+  again rewrites only its own. `--uninstall` deletes the profile only
+  where her `dorothy.json` marks it hers.
 - Her provider, `dorothy`, in Python with the standard library alone,
   runs her hook command through the `selfCommand` the install wrote:
   - `system_prompt_block()`: `--hook hermes session-start` once, at
@@ -158,7 +166,9 @@ their default profile, so hers go in a profile of her own:
     synchronously, inside the 8 seconds Hermes gives an external
     provider; `queue_prefetch()` does nothing, as Hermes calls it only
     once a turn is over, with that turn's text;
-  - `sync_turn()` does nothing, as the sweep records Hermes's sessions;
+  - `sync_turn()` does nothing, as the sweep records Hermes's sessions:
+    Hermes keeps a `state.db` per profile, so the sweep reads every
+    profile's, hers among them, as well as the default's;
   - no tools of its own: her MCP server gives them.
 - The hook command is her one client: it computes the project's id,
   caches the block and fails open, so the provider does none of that.
@@ -237,8 +247,9 @@ Unit tests, on temporary roots, never the user's data or hosts:
 
 ## Verification
 
-Live probes, each on a temporary home for the host, with the user's
-credentials only where a host needs them:
+Live probes, each on a temporary home for the host that the user signs
+in themselves, never a copy of their login, and on temporary roots for
+Dorothy with a probe service of her own, never the user's store:
 
 - Codex: a `dorothy --codex exec` session whose first turn shows her
   block and whose prompt gets recall, its rollout swept; after Codex's
