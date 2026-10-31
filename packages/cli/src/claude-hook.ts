@@ -23,6 +23,7 @@
 import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
+    chooseClaudeToken,
     type Env,
     loadSecrets,
     type SecretsCode,
@@ -92,27 +93,6 @@ export async function loadCheckoutSecrets(
         return "SOPS_FAILED";
     }
     return failure ?? chooseClaudeToken(env);
-}
-
-// The name of the secrets.json entry whose token Claude is to spend, for
-// a user with more than one account: stripClaude drops an exported
-// CLAUDE_CODE_OAUTH_TOKEN, but not this, which carries a name alone.
-export const CLAUDE_TOKEN_VAR = "DOROTHY_CLAUDE_TOKEN_VAR";
-
-// A choice naming no such token fails, rather than spend another account.
-function chooseClaudeToken(env: Env): SecretsCode | null {
-    const name = env[CLAUDE_TOKEN_VAR];
-    if (name === undefined || name === "") {
-        return null;
-    }
-    const token = /^CLAUDE_CODE_OAUTH_TOKEN[A-Z0-9_]*$/.test(name)
-        ? env[name]
-        : undefined;
-    if (token === undefined || token === "") {
-        return "SECRETS_INVALID";
-    }
-    env.CLAUDE_CODE_OAUTH_TOKEN = token;
-    return null;
 }
 
 type Agent = { call: StructuredCall; persona: string };

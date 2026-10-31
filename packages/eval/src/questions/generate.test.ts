@@ -893,6 +893,63 @@ describe("bun run eval -- generate", () => {
         ).toBe("json_schema");
     });
 
+    it("reads --models, relative to where it runs, not eval.toml", async () => {
+        writeFileSync(configPath(work), "[models.generate\nbroken");
+        const { io, err } = fakeIo();
+        const before = process.cwd();
+        process.chdir(temp.root);
+        try {
+            expect(
+                await runCli(
+                    ["generate", "--work", work, "--models", "nope.toml"],
+                    io,
+                ),
+            ).toBe(1);
+        } finally {
+            process.chdir(before);
+        }
+        expect(err.join("")).toContain(`${join(temp.root, "nope.toml")}`);
+        expect(err.join("")).toContain("cannot read");
+        stub = stubModels(() => ({
+            json: { questions: [] },
+        }));
+        writeFileSync(join(temp.root, "models.toml"), stubConfig(stub.url));
+        const used = fakeIo();
+        process.chdir(temp.root);
+        try {
+            expect(
+                await runCli(
+                    [
+                        "generate",
+                        "--work",
+                        work,
+                        "--count",
+                        "1",
+                        "--type",
+                        "single-session=1",
+                        "--models",
+                        "models.toml",
+                    ],
+                    used.io,
+                ),
+            ).toBe(0);
+        } finally {
+            process.chdir(before);
+        }
+        expect(stub.requests.length).toBeGreaterThan(0);
+    });
+
+    it("names the models file when it lacks the generate role", async () => {
+        const file = join(temp.root, "models.toml");
+        writeFileSync(file, '[models.judge]\nvia = "claude"\nmodel = "m"\n');
+        const { io, err } = fakeIo();
+        expect(
+            await runCli(["generate", "--work", work, "--models", file], io),
+        ).toBe(1);
+        expect(err.join("")).toContain(`${file} has no [models.generate]`);
+        expect(err.join("")).not.toContain("eval.toml");
+    });
+
     it("keeps questions written while it ran", async () => {
         const extra = {
             ...(await readQuestions(work)).questions[0],

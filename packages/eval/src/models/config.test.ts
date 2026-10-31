@@ -10,6 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { tempRoot } from "../testing.js";
 import { configPath, readEvalConfig, requireRole, vendorOf } from "./config.js";
 
@@ -166,10 +167,62 @@ describe("eval.toml", () => {
         );
     });
 
+    it("reads the file it is given in place of eval.toml", async () => {
+        write('[models.judge]\nvia = "claude"\nmodel = "from-work"\n');
+        const other = join(temp.root, "other.toml");
+        writeFileSync(other, '[models.judge]\nvia = "claude"\nmodel = "m2"\n');
+        expect((await readEvalConfig(temp.root, other)).judge).toEqual({
+            via: "claude",
+            model: "m2",
+        });
+    });
+
+    it("names the file it was given in what it refuses", async () => {
+        const other = join(temp.root, "other.toml");
+        writeFileSync(other, '[models.judge]\nvia = "claude"\n');
+        await expect(readEvalConfig(temp.root, other)).rejects.toThrow(
+            `${other}: [models.judge] needs model`,
+        );
+        writeFileSync(other, "[models.judge\nbroken");
+        await expect(readEvalConfig(temp.root, other)).rejects.toThrow(
+            `${other} does not parse as TOML`,
+        );
+        writeFileSync(other, '[models.critic]\nmodel = "m"\n');
+        await expect(readEvalConfig(temp.root, other)).rejects.toThrow(
+            `${other}: no role critic`,
+        );
+        writeFileSync(other, "[models]\njudge = 1\n");
+        await expect(readEvalConfig(temp.root, other)).rejects.toThrow(
+            `${other}: [models.judge] must be a table`,
+        );
+        writeFileSync(other, "models = 1\n");
+        await expect(readEvalConfig(temp.root, other)).rejects.toThrow(
+            `${other}: [models] must be a table`,
+        );
+    });
+
+    it("says when the file it was given is missing or unreadable", async () => {
+        const other = join(temp.root, "other.toml");
+        await expect(readEvalConfig(temp.root, other)).rejects.toThrow(
+            `cannot read ${other}: ENOENT; name a models file that exists`,
+        );
+        mkdirSync(other);
+        await expect(readEvalConfig(temp.root, other)).rejects.toThrow(
+            `cannot read ${other}: EISDIR`,
+        );
+    });
+
     it("says where to add a role a command needs", () => {
         expect(() =>
             requireRole({ generate: null, answer: null, judge: null }, "judge"),
         ).toThrow("eval.toml has no [models.judge]");
+    });
+
+    it("names the models file it was given instead of eval.toml", () => {
+        const none = { generate: null, answer: null, judge: null };
+        expect(() => requireRole(none, "judge", "/x/models.toml")).toThrow(
+            "/x/models.toml has no [models.judge]",
+        );
     });
 });
 

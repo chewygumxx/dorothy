@@ -42,12 +42,19 @@ const COUNTED = [
 const firstLine = (error: unknown) =>
     (error instanceof Error ? error.message : String(error)).split("\n", 1)[0];
 
+const BATCH = 25;
+// Exit status for a stopped pass, as EX_TEMPFAIL: run it again later.
+const RETRY_LATER = 75;
+
 // dorothy --review-backfill: a line a conversation as it is done, then
 // the counts. It fails when a failed model call stopped the batch, or when
 // a batch did nothing and something failed; the agent that cannot load, or
-// a store that cannot open, fails it too.
+// a store that cannot open, fails it too. With `all`, batches of 25 repeat
+// until one reports no conversation, each leaving out every phrase an
+// earlier one reported, so a held conversation cannot fill a batch; a
+// stopped pass exits 75, for a caller to run again later.
 export async function runBackfillReview(
-    count: number,
+    count: number | "all",
     {
         agent,
         env = process.env,
@@ -65,30 +72,57 @@ export async function runBackfillReview(
     if (loaded.review === null) {
         return 1;
     }
+    const all = count === "all";
+    const seen = new Set<string>();
+    const totals: ReviewBackfillCounts = {
+        reviewed: 0,
+        marked: 0,
+        unchanged: 0,
+        held: 0,
+        failed: 0,
+    };
     let stopped: string | null = null;
     try {
-        const counts = await run({
-            env,
-            count,
-            call: loaded.review.call,
-            persona: loaded.review.persona,
-            progress: (phrase, outcome) => {
-                out(`${phrase}: ${outcome}\n`);
-            },
-            stopped: (reason) => {
-                stopped = reason;
-            },
-        });
+        let reported: number;
+        do {
+            reported = 0;
+            const counts = await run({
+                env,
+                count: all ? BATCH : count,
+                ...(all ? { skip: seen } : {}),
+                call: loaded.review.call,
+                persona: loaded.review.persona,
+                progress: (phrase, outcome) => {
+                    reported++;
+                    seen.add(phrase);
+                    out(`${phrase}: ${outcome}\n`);
+                },
+                stopped: (reason) => {
+                    stopped = reason;
+                },
+            });
+            for (const name of COUNTED) totals[name] += counts[name];
+        } while (all && reported > 0 && stopped === null);
         out(
-            `total: ${COUNTED.map((name) => `${counts[name]} ${name}`).join(", ")}\n`,
+            `total: ${COUNTED.map((name) => `${totals[name]} ${name}`).join(", ")}\n`,
         );
         if (stopped !== null) {
             err(
                 `dorothy: --review-backfill stopped after a failed call: ${stopped}; the rest stay marked\n`,
             );
-            return 1;
+            return all ? RETRY_LATER : 1;
         }
-        return counts.reviewed + counts.marked === 0 && counts.failed > 0
+        if (
+            all &&
+            totals.held > 0 &&
+            COUNTED.every((name) => name === "held" || totals[name] === 0)
+        ) {
+            out(
+                "review-backfill: every marked conversation is held by another process\n",
+            );
+            return 0;
+        }
+        return totals.reviewed + totals.marked === 0 && totals.failed > 0
             ? 1
             : 0;
     } catch (error) {

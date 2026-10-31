@@ -21,8 +21,12 @@ node_modules/
 /.remember/
 # The skills CLI's links; the repository's own skills are committed.
 /.agents/skills/*
+!/.agents/skills/agent-pre-screening/
+!/.agents/skills/agent-stewardship/
 !/.agents/skills/worktrees/
 /.claude/skills/*
+!/.claude/skills/agent-pre-screening
+!/.claude/skills/agent-stewardship
 !/.claude/skills/worktrees
 # Claude Code's own worktrees, where no hook puts them elsewhere.
 /.claude/worktrees/

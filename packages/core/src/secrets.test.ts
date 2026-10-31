@@ -19,7 +19,13 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadSecrets, type SecretsRun, saveSecret } from "./index.js";
+import {
+    CLAUDE_TOKEN_VAR,
+    chooseClaudeToken,
+    loadSecrets,
+    type SecretsRun,
+    saveSecret,
+} from "./index.js";
 import type { Env } from "./xdg.js";
 
 async function capture(
@@ -513,5 +519,53 @@ describe("saveSecret", () => {
                 throw new Error("untrusted diagnostic");
             }),
         ).rejects.toThrow(/^SOPS_FAILED$/);
+    });
+});
+
+describe("chooseClaudeToken", () => {
+    it("names its variable", () => {
+        expect(CLAUDE_TOKEN_VAR).toBe("DOROTHY_CLAUDE_TOKEN_VAR");
+    });
+
+    it.each([undefined, ""])("chooses nothing for a name of %p", (name) => {
+        const env: Env = { CLAUDE_CODE_OAUTH_TOKEN: "own" };
+        if (name !== undefined) env[CLAUDE_TOKEN_VAR] = name;
+        expect(chooseClaudeToken(env)).toBeNull();
+        expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe("own");
+    });
+
+    it("sets the token the name selects", () => {
+        const env: Env = {
+            [CLAUDE_TOKEN_VAR]: "CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2",
+            CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2: "synthetic-two",
+        };
+        expect(chooseClaudeToken(env)).toBeNull();
+        expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe("synthetic-two");
+    });
+
+    it("overrides an existing CLAUDE_CODE_OAUTH_TOKEN", () => {
+        const env: Env = {
+            [CLAUDE_TOKEN_VAR]: "CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2",
+            CLAUDE_CODE_OAUTH_TOKEN: "synthetic-other",
+            CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2: "synthetic-two",
+        };
+        expect(chooseClaudeToken(env)).toBeNull();
+        expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe("synthetic-two");
+    });
+
+    it.each([
+        ["a name matching no token pattern", "OPENROUTER_API_KEY"],
+        ["a lower case name", "lower case"],
+        ["a missing value", "CLAUDE_CODE_OAUTH_TOKEN_ABSENT"],
+        ["an empty value", "CLAUDE_CODE_OAUTH_TOKEN_EMPTY"],
+    ])("is SECRETS_INVALID for %s, leaving the token", (_, name) => {
+        const env: Env = {
+            [CLAUDE_TOKEN_VAR]: name,
+            CLAUDE_CODE_OAUTH_TOKEN: "synthetic-other",
+            CLAUDE_CODE_OAUTH_TOKEN_EMPTY: "",
+            OPENROUTER_API_KEY: "synthetic-key",
+        };
+        expect(chooseClaudeToken(env)).toBe("SECRETS_INVALID");
+        expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe("synthetic-other");
     });
 });

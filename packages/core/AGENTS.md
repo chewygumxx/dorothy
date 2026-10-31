@@ -52,6 +52,8 @@ below. It declares `niceware` alone, and never imports another
   and updates existing files with `sops set`. Failures carry codes alone.
   Names needing escapes or brackets in sops paths fail before any write.
   Both take a runner; the default closes unused stdin and discards stderr.
+  `chooseClaudeToken` sets `CLAUDE_CODE_OAUTH_TOKEN` to the entry
+  `DOROTHY_CLAUDE_TOKEN_VAR` names, or fails with `SECRETS_INVALID`.
 - `config.ts`: `config.toml` (`readConfig`, `parseConfig`).
 - `xdg.ts`: the XDG directories (`xdgDir`), the state directory among
   them.

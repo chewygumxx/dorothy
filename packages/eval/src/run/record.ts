@@ -12,7 +12,7 @@
 // question and system, appended as each completes; summary.json and
 // report.md, written at the end.
 
-import { appendFile, open, readFile } from "node:fs/promises";
+import { appendFile, open, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { codeOf, UsageError } from "../errors.js";
@@ -242,3 +242,37 @@ export const readRunInfo = (work: string, id: string): Promise<RunInfo> =>
                 : `${issue?.path.join(".") || "its form"}: ${issue?.message}`;
         },
     });
+
+// The run begun last, by `at`, the greater id of two begun together; null
+// where there is none. A directory without a readable run.json is not one.
+export async function latestRunId(work: string): Promise<string | null> {
+    let ids: string[];
+    try {
+        ids = await readdir(join(work, "runs"));
+    } catch (error) {
+        if (codeOf(error) === "ENOENT") {
+            return null;
+        }
+        throw error;
+    }
+    let latest: RunInfo | null = null;
+    for (const id of ids) {
+        let info: RunInfo;
+        try {
+            info = await readRunInfo(work, id);
+        } catch (error) {
+            if (error instanceof UsageError) {
+                continue;
+            }
+            throw error;
+        }
+        if (
+            latest === null ||
+            info.at > latest.at ||
+            (info.at === latest.at && info.id > latest.id)
+        ) {
+            latest = info;
+        }
+    }
+    return latest?.id ?? null;
+}

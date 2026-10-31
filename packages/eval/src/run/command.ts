@@ -8,7 +8,15 @@
 //
 //
 
-import { type Command, intOf, stringOf, workOf } from "../command.js";
+import { join } from "node:path";
+import {
+    type Command,
+    intOf,
+    modelsOf,
+    modelsOption,
+    stringOf,
+    workOf,
+} from "../command.js";
 import { EXIT_TEMPFAIL, UsageError } from "../errors.js";
 import { Models } from "../models/client.js";
 import {
@@ -22,7 +30,7 @@ import { loadModelSecrets } from "../secrets.js";
 import { readSnapshot, workEnv } from "../snapshot/snapshot.js";
 import { openCorpus } from "../systems/corpus.js";
 import { SYSTEM_NAMES } from "../systems/system.js";
-import { readRecords, readRunInfo, reportPath } from "./record.js";
+import { latestRunId, readRecords, readRunInfo, reportPath } from "./record.js";
 import {
     checkResumable,
     modelCalls,
@@ -51,6 +59,14 @@ function systemsOf(text: string): string[] {
     return names;
 }
 
+async function latestRun(work: string): Promise<string> {
+    const id = await latestRunId(work);
+    if (id === null) {
+        throw new UsageError(`no run in ${join(work, "runs")} to resume`);
+    }
+    return id;
+}
+
 // What run.json holds, so a resume takes no other.
 const SETTINGS = ["systems", "budget", "full-budget", "retrieval-only"];
 
@@ -74,9 +90,11 @@ export const runCommand: Command = {
             type: "boolean",
             description: "measure retrieval alone, with no model",
         },
+        models: modelsOption,
         resume: {
             type: "string",
-            description: "the id of a stopped run, to finish it",
+            description:
+                "the id of a stopped run, to finish it; latest for the last begun",
         },
         concurrency: {
             type: "string",
@@ -93,7 +111,8 @@ export const runCommand: Command = {
     },
     async run(values, _positionals, io) {
         const work = workOf(values);
-        const resume = stringOf(values, "resume");
+        const asked = stringOf(values, "resume");
+        const resume = asked === "latest" ? await latestRun(work) : asked;
         const given = SETTINGS.find((name) => values[name] !== undefined);
         if (resume !== null && given !== undefined) {
             throw new UsageError(
@@ -114,7 +133,7 @@ export const runCommand: Command = {
         // A run that asks no model reads no eval.toml.
         const config: EvalConfig = retrievalOnly
             ? { generate: null, answer: null, judge: null }
-            : await readEvalConfig(work);
+            : await readEvalConfig(work, modelsOf(values));
         const info =
             resumed !== null
                 ? resumed
@@ -158,9 +177,9 @@ export const runCommand: Command = {
         }
         let models: Models | null = null;
         if (!info.retrievalOnly) {
-            const answer = requireRole(config, "answer");
-            const judge = requireRole(config, "judge");
-            await loadModelSecrets(io);
+            const answer = requireRole(config, "answer", modelsOf(values));
+            const judge = requireRole(config, "judge", modelsOf(values));
+            if (!(await loadModelSecrets(io))) return 1;
             models = new Models(config, {
                 ...io.modelOptions,
                 env: io.env,

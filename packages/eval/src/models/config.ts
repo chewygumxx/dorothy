@@ -8,8 +8,9 @@
 //
 //
 
-// <work>/eval.toml: each role names its route and model. API keys are
-// named by their variable, never written in the file.
+// <work>/eval.toml, or the file --models names: each role names its route
+// and model. API keys are named by their variable, never written in the
+// file.
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -54,8 +55,8 @@ export const configPath = (work: string) => join(work, "eval.toml");
 const isTable = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
 
-function roleOf(role: Role, table: unknown): RoleConfig {
-    const where = `eval.toml: [models.${role}]`;
+function roleOf(file: string, role: Role, table: unknown): RoleConfig {
+    const where = `${file}: [models.${role}]`;
     if (!isTable(table)) {
         throw new UsageError(`${where} must be a table`);
     }
@@ -128,18 +129,30 @@ function roleOf(role: Role, table: unknown): RoleConfig {
     return { via, baseUrl, model, key: key ?? null, ...timeout };
 }
 
-export async function readEvalConfig(work: string): Promise<EvalConfig> {
+// The models of `path` as given, which must exist, else of the work
+// directory's eval.toml, which need not: no role is then named.
+export async function readEvalConfig(
+    work: string,
+    path?: string,
+): Promise<EvalConfig> {
     const config: EvalConfig = { generate: null, answer: null, judge: null };
+    const file = path ?? configPath(work);
+    const label = path ?? "eval.toml";
     let text: string;
     try {
-        text = await readFile(configPath(work), "utf8");
+        text = await readFile(file, "utf8");
     } catch (error) {
         const code = codeOf(error);
         if (code === "ENOENT") {
-            return config;
+            if (path === undefined) {
+                return config;
+            }
+            throw new UsageError(
+                `cannot read ${file}: ENOENT; name a models file that exists`,
+            );
         }
         throw new UsageError(
-            `cannot read ${configPath(work)}: ${code ?? "failed"}; mend it, or remove it to start again`,
+            `cannot read ${file}: ${code ?? "failed"}; mend it, or ${path === undefined ? "remove it to start again" : "name another"}`,
         );
     }
     let parsed: unknown;
@@ -148,34 +161,39 @@ export async function readEvalConfig(work: string): Promise<EvalConfig> {
     } catch {
         // The parser quotes the line it dislikes, which may hold a key.
         throw new UsageError(
-            "eval.toml does not parse as TOML: check its quoting",
+            `${label} does not parse as TOML: check its quoting`,
         );
     }
     const models = isTable(parsed) ? (parsed.models ?? {}) : {};
     if (!isTable(models)) {
-        throw new UsageError("eval.toml: [models] must be a table");
+        throw new UsageError(`${label}: [models] must be a table`);
     }
     const unknown = Object.keys(models).filter(
         (name) => !(ROLES as readonly string[]).includes(name),
     );
     if (unknown.length > 0) {
         throw new UsageError(
-            `eval.toml: no role ${unknown.join(", ")}; the roles are ${ROLES.join(", ")}`,
+            `${label}: no role ${unknown.join(", ")}; the roles are ${ROLES.join(", ")}`,
         );
     }
     for (const role of ROLES) {
         if (models[role] !== undefined) {
-            config[role] = roleOf(role, models[role]);
+            config[role] = roleOf(label, role, models[role]);
         }
     }
     return config;
 }
 
-export function requireRole(config: EvalConfig, role: Role): RoleConfig {
+// `path` is the --models file the config was read from, if any.
+export function requireRole(
+    config: EvalConfig,
+    role: Role,
+    path?: string,
+): RoleConfig {
     const found = config[role];
     if (found === null) {
         throw new UsageError(
-            `eval.toml has no [models.${role}]: the README's evaluation section shows one`,
+            `${path ?? "eval.toml"} has no [models.${role}]: the README's evaluation section shows one`,
         );
     }
     return found;

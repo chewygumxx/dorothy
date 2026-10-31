@@ -43,6 +43,8 @@ export type ReviewBackfillCounts = Record<ReviewBackfillOutcome, number>;
 export type ReviewBackfillOptions = {
     env: Env;
     count?: number;
+    // Phrases left out of the candidates before the count caps them.
+    skip?: ReadonlySet<string>;
     call: StructuredCall;
     persona: string;
     progress?: (phrase: string, outcome: ReviewBackfillOutcome) => void;
@@ -113,12 +115,14 @@ async function candidates(dir: string) {
 }
 
 // Explicitly chosen backfills use the same Reviewer and claim as the
-// service. The cap applies to candidates, including held claims. A failed
+// service. The cap applies to candidates, including held claims, once
+// `skip` has left its phrases out. A failed
 // model call, likelier to fail the rest too, gives the conversation its
 // mark back and stops the batch, whatever the plan or the API says next.
 export async function runReviewBackfill({
     env,
     count = 25,
+    skip,
     call,
     persona,
     progress,
@@ -200,7 +204,10 @@ export async function runReviewBackfill({
                     `memory: couldn't restore the backfill mark on ${phrase}: ${result.reason.split("\n", 1)[0]?.slice(0, 200)}`,
                 );
         };
-        for (const { phrase } of (await candidates(dir)).slice(0, count)) {
+        const chosen = (await candidates(dir))
+            .filter(({ phrase }) => !skip?.has(phrase))
+            .slice(0, count);
+        for (const { phrase } of chosen) {
             const claim = indexClaims(index, phrase)();
             let outcome: ReviewBackfillOutcome;
             let stop: string | null = null;

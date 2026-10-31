@@ -241,6 +241,26 @@ describe("runReviewBackfill", () => {
         }
     });
 
+    it("leaves skipped phrases out before the cap, which fills from the rest", async () => {
+        const first = await conversation(1, NOW.getTime() + 3);
+        const second = await conversation(2, NOW.getTime() + 2);
+        const third = await conversation(3, NOW.getTime() + 1);
+        const progress: [string, string][] = [];
+        expect(
+            await runReviewBackfill({
+                ...options(good),
+                count: 2,
+                skip: new Set([first]),
+                progress: (id, outcome) => progress.push([id, outcome]),
+            }),
+        ).toEqual({ ...emptyCounts, reviewed: 2 });
+        expect(progress).toEqual([
+            [second, "reviewed"],
+            [third, "reviewed"],
+        ]);
+        expect((await notes(first)).backfilled).toBe(true);
+    });
+
     it("holds the claim during the call, releases it afterwards and lets user edits win", async () => {
         const id = await conversation(1, NOW.getTime());
         const index = RecallIndex.open(indexPath(env));

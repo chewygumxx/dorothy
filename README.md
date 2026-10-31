@@ -66,8 +66,9 @@ beginning `CLAUDE_CODE_OAUTH_TOKEN`, such as
 `CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2`, and choose the one to spend by
 setting `DOROTHY_CLAUDE_TOKEN_VAR` to its name. Reviews strip Claude
 Code's own variables, so an exported `CLAUDE_CODE_OAUTH_TOKEN` does not
-reach them; this does. A name with no such token fails rather than
-spend another account.
+reach them; this does, and eval honours it too. A name with no such
+token fails rather than spend another account: a review fails, and eval
+stops before any model call.
 
 Back up that age-key file somewhere off this machine: without it,
 `secrets.json` cannot be read. Never commit the age key. Sops also accepts
@@ -441,15 +442,21 @@ are `--claude-hook --reread` and `--dismiss <session>`.
 
 A conversation recorded by `--sweep --backfill` carries that durable mark,
 and its notes stay empty: no title, abstract, tags or knowledge. `dorothy
---review-backfill [-n | --count <count>]` reviews them in batches, the
-newest `-n` (25 by default) by their last event, on the reviewer's model
-and with the credentials her other reviews use, the Claude plan's token
-where that is what `secrets.json` holds. Each batch spends plan usage, so
-run one, watch your limits, then run the next:
+--review-backfill [-n | --count <count | all>]` reviews them in batches,
+the newest `-n` (25 by default) by their last event, on the reviewer's
+model and with the credentials her other reviews use, the Claude plan's
+token where that is what `secrets.json` holds. Each batch spends plan
+usage, so run one, watch your limits, then run the next:
 
 ```sh
 bun run dev -- --review-backfill -n 3    # a small batch first
+bun run dev -- --review-backfill -n all  # every one, in batches of 25
 ```
+
+`-n all` repeats batches of 25 until none is left, passing over a
+conversation another process holds rather than letting it fill a batch.
+A stopped pass exits 75, for a wrapper to run again once limits lift; a
+pass that finds every marked conversation held says so and exits 0.
 
 It prints `<phrase>: <outcome>` a conversation, then a total. An outcome
 is `reviewed`, `marked` (nothing to extract), `unchanged` (the reviewer
@@ -560,8 +567,14 @@ only what the run has left. A failed call counts as a miss, except that
 a plan's usage limit (Claude's or Codex's) stops the run or `generate`
 instead, keeping what is done: `run` then resumes with `--resume` after
 the reset. Either exits 75 (EX_TEMPFAIL) so a wrapper can wait and go
-on; a stop at `--max-calls` exits 0. A system's ranked items are the
-ones that fit its budget, so recall at 5 and 10 falls with a smaller
+on; a stop at `--max-calls` exits 0. `--resume latest` takes the run
+begun last, and `--models <file>` reads another file in place of
+`~/eval/eval.toml`, on `generate` and `run`, a relative path from where
+you run it. So a wrapper can run
+`run --work ~/eval --models models.toml --resume latest` after each 75,
+until the run ends; with no run to resume it says so and writes nothing.
+A system's ranked items are the ones that fit its budget, so recall at 5
+and 10 falls with a smaller
 `--budget`. Each run's report is `~/eval/runs/<run>/report.md`, and
 `bun run eval -- <command> --help` lists a command's options.
 
@@ -583,6 +596,19 @@ It exits 1 if any line had a problem. An `unsure` leaves the draft for
 you. `~/eval/reviews.jsonl` logs every decision, yours as `owner`, with
 who made it, any new id and the reason; your edits in `review` are
 logged with the old id and the new, though the draft stays a draft.
+
+To give an agent the drafts in files, `review --render <dir>` writes
+them to `<dir>/drafts-1.md` and on, each with the evidence it cites.
+`--batches <n>` (1 to 100) splits them into that many parts, the larger
+first, and `--source <model>` takes only the drafts that model
+generated; with none, it says so and writes nothing. Then check the
+agents' work: `review --spot-check <file>` writes the drafts they left
+unsure and, of each agent, up to `--per <n>` (15 by default) accepts
+chosen at random, each with who decided it and how. An accept you
+disagree with goes back to the drafts with
+`review --reopen <id> --reason <why>`, logged as a `reopen` of yours,
+for you or an agent to decide again. Each of `--apply`, `--render`,
+`--spot-check` and `--reopen` stands alone.
 
 Each generation adds reported input and output tokens by role to its
 `~/eval/generated.json` entry; older entries without `tokens` remain

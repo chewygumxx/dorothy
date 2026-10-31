@@ -11,6 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
     existsSync,
+    mkdirSync,
     readdirSync,
     readFileSync,
     statSync,
@@ -38,7 +39,13 @@ import {
     stubModels,
     tempRoot,
 } from "../testing.js";
-import { readRecords, recordsPath, reportPath, summaryPath } from "./record.js";
+import {
+    latestRunId,
+    readRecords,
+    recordsPath,
+    reportPath,
+    summaryPath,
+} from "./record.js";
 import { newRunInfo, runEvaluation, servedAt } from "./run.js";
 
 let temp: ReturnType<typeof tempRoot>;
@@ -1498,5 +1505,200 @@ describe("a run", () => {
                 corpus.close();
             }
         });
+    });
+});
+
+describe("--models and --resume latest", () => {
+    // Where the work directory's eval.toml is not, to be sure it is not read.
+    const modelsFile = (name = "models.toml") => join(temp.root, name);
+    const cliFixture = () => {
+        const fake = fakeCli((request) => cliReply("claude", request, fake));
+        const options = {
+            env: {
+                PATH: "/fixture/bin",
+                HOME: "/fixture",
+                CLAUDE_CODE_OAUTH_TOKEN: "fixture-token",
+            },
+            modelOptions: fake,
+        };
+        return { fake, options };
+    };
+    const CLAUDE_MODELS =
+        '[models.answer]\nvia = "claude"\nmodel = "fixture-answer"\n[models.judge]\nvia = "claude"\nmodel = "fixture-judge"\n';
+    const inCwd = async (dir: string, body: () => Promise<void>) => {
+        const before = process.cwd();
+        process.chdir(dir);
+        try {
+            await body();
+        } finally {
+            process.chdir(before);
+        }
+    };
+    const runInfo = (id: string, at: string) => ({
+        id,
+        at,
+        systems: ["lexical"],
+        budget: 8000,
+        fullBudget: 400000,
+        retrievalOnly: true,
+        models: { answer: null, judge: null },
+        snapshot: { source: "/x", at },
+        questions: 0,
+        questionIds: [],
+    });
+    const writeRun = (id: string, at: string) => {
+        mkdirSync(join(work, "runs", id), { recursive: true });
+        writeFileSync(
+            join(work, "runs", id, "run.json"),
+            JSON.stringify(runInfo(id, at)),
+        );
+    };
+
+    it("reads the models of --models, not eval.toml, as written relatively", async () => {
+        writeFileSync(configPath(work), "[models.answer\nbroken");
+        mkdirSync(join(temp.root, "elsewhere"));
+        writeFileSync(modelsFile("elsewhere/models.toml"), CLAUDE_MODELS);
+        const { fake, options } = cliFixture();
+        const first = fakeIo(options);
+        await inCwd(join(temp.root, "elsewhere"), async () => {
+            expect(
+                await runCli(
+                    [
+                        "run",
+                        "--work",
+                        work,
+                        "--systems",
+                        "lexical",
+                        "--concurrency",
+                        "1",
+                        "--models",
+                        "models.toml",
+                    ],
+                    first.io,
+                ),
+            ).toBe(0);
+            expect(fake.requests).toHaveLength(9);
+            const id = idOf(first.out);
+            const again = fakeIo(options);
+            expect(
+                await runCli(
+                    [
+                        "run",
+                        "--work",
+                        work,
+                        "--resume",
+                        id,
+                        "--models",
+                        "models.toml",
+                    ],
+                    again.io,
+                ),
+            ).toBe(0);
+            expect(again.err.join("")).not.toContain("eval.toml");
+        });
+    });
+
+    it("names the models file it was given when it fails", async () => {
+        writeFileSync(modelsFile(), "[models.answer\nbroken");
+        const { io, err } = fakeIo();
+        expect(
+            await runCli(
+                ["run", "--work", work, "--dry-run", "--models", modelsFile()],
+                io,
+            ),
+        ).toBe(1);
+        expect(err.join("")).toContain(`${modelsFile()} does not parse`);
+        const missing = fakeIo();
+        expect(
+            await runCli(
+                ["run", "--work", work, "--dry-run", "--models", "nope.toml"],
+                missing.io,
+            ),
+        ).toBe(1);
+        expect(missing.err.join("")).toContain(
+            `cannot read ${join(process.cwd(), "nope.toml")}: ENOENT`,
+        );
+    });
+
+    it("names the models file when it lacks a role the run needs", async () => {
+        writeFileSync(
+            modelsFile(),
+            '[models.answer]\nvia = "claude"\nmodel = "m"\n',
+        );
+        const { io, err } = fakeIo();
+        expect(
+            await runCli(
+                [
+                    "run",
+                    "--work",
+                    work,
+                    "--systems",
+                    "lexical",
+                    "--models",
+                    modelsFile(),
+                ],
+                io,
+            ),
+        ).toBe(1);
+        expect(err.join("")).toContain(`${modelsFile()} has no [models.judge]`);
+        expect(err.join("")).not.toContain("eval.toml");
+    });
+
+    it("finds the latest run by its start, ties by id, skipping the unreadable", async () => {
+        expect(await latestRunId(work)).toBeNull();
+        writeRun("b-middle", "2026-10-02T00:00:00.000Z");
+        writeRun("c-newest", "2026-10-03T00:00:00.000Z");
+        writeRun("a-oldest", "2026-10-01T00:00:00.000Z");
+        // No run.json, a broken one and a stray file: none counts.
+        mkdirSync(join(work, "runs", "z-empty"));
+        mkdirSync(join(work, "runs", "y-broken"));
+        writeFileSync(join(work, "runs", "y-broken", "run.json"), "{");
+        writeFileSync(join(work, "runs", "x-stray"), "");
+        expect(await latestRunId(work)).toBe("c-newest");
+        writeRun("d-tied", "2026-10-03T00:00:00.000Z");
+        expect(await latestRunId(work)).toBe("d-tied");
+    });
+
+    it("resumes the latest run with --resume latest", async () => {
+        const run = async (systems: string) => {
+            const { io, out } = fakeIo();
+            expect(
+                await runCli(
+                    [
+                        "run",
+                        "--work",
+                        work,
+                        "--systems",
+                        systems,
+                        "--retrieval-only",
+                    ],
+                    io,
+                ),
+            ).toBe(0);
+            return idOf(out);
+        };
+        const older = await run("lexical");
+        const newer = await run("lexical,full");
+        const { io, out, err } = fakeIo();
+        expect(
+            await runCli(["run", "--work", work, "--resume", "latest"], io),
+        ).toBe(0);
+        expect(err).toEqual([]);
+        expect(idOf(out)).toBe(newer);
+        expect(idOf(out)).not.toBe(older);
+    });
+
+    it("says there is no run to resume, and writes nothing", async () => {
+        const before = readdirSync(work).sort();
+        const { io, err, out } = fakeIo();
+        expect(
+            await runCli(["run", "--work", work, "--resume", "latest"], io),
+        ).toBe(1);
+        expect(err.join("")).toContain(
+            `no run in ${join(work, "runs")} to resume`,
+        );
+        expect(out).toEqual([]);
+        expect(readdirSync(work).sort()).toEqual(before);
+        expect(existsSync(join(work, "runs"))).toBe(false);
     });
 });

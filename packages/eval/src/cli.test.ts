@@ -13,7 +13,8 @@ import { symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SecretsCode } from "@dorothy/core";
 import { COMMANDS, runCli } from "./cli.js";
-import { configPath } from "./models/config.js";
+import { configPath, ROLES } from "./models/config.js";
+import { fakeCli } from "./models/testing.js";
 import { writeQuestions } from "./questions/file.js";
 import {
     extraQuestion,
@@ -283,6 +284,112 @@ describe("evaluation secrets", () => {
             expect(stub?.requests.length).toBe(0);
         },
     );
+
+    describe("a named Claude token", () => {
+        const NAMED = "CLAUDE_CODE_OAUTH_TOKEN_TWO";
+
+        async function workViaClaude(): Promise<string> {
+            const work = await snapshotFixture(temp.root);
+            writeFileSync(
+                configPath(work),
+                ROLES.map(
+                    (role) =>
+                        `[models.${role}]\nvia = "claude"\nmodel = "claude-haiku-5-5"\n`,
+                ).join("\n"),
+            );
+            await writeQuestions(work, [
+                {
+                    ...extraQuestion("Which plot is my allotment?"),
+                    status: "accepted",
+                },
+            ]);
+            return work;
+        }
+
+        it.each(["generate", "run"])(
+            "stops %s before any model call when it names no token",
+            async (command) => {
+                const work = await workViaClaude();
+                const fake = fakeCli(() => ({ stdout: "{}" }));
+                const { io, err } = fakeIo({
+                    env: {
+                        CLAUDE_CODE_OAUTH_TOKEN: "synthetic-other",
+                        DOROTHY_CLAUDE_TOKEN_VAR:
+                            "CLAUDE_CODE_OAUTH_TOKEN_MISSING",
+                    },
+                    modelOptions: {
+                        runner: fake.runner,
+                        cliFiles: fake.cliFiles,
+                        findCli: fake.findCli,
+                    },
+                });
+                expect(await runCli(argsFor(command, work), io)).toBe(1);
+                expect(err).toEqual([
+                    "eval: DOROTHY_CLAUDE_TOKEN_VAR names no token in secrets.json; no model was called\n",
+                ]);
+                expect(fake.requests).toEqual([]);
+            },
+        );
+
+        it.each(["generate", "run"])(
+            "gives %s's runner the token the secrets hold for it",
+            async (command) => {
+                const work = await workViaClaude();
+                const fake = fakeCli((request) => {
+                    // The verdict, question or answer each call asks for.
+                    const id =
+                        /<item id="([^"]+)">/.exec(request.stdin)?.[1] ?? "";
+                    const value = request.args.includes("--json-schema")
+                        ? command === "generate"
+                            ? {
+                                  questions: [
+                                      {
+                                          question: "What did I say there?",
+                                          answer: "Something.",
+                                          evidence: [id],
+                                          older: "",
+                                      },
+                                  ],
+                              }
+                            : { reasoning: "Checked.", score: true }
+                        : undefined;
+                    return {
+                        stdout: JSON.stringify({
+                            result: "Plot twelve.",
+                            ...(value === undefined
+                                ? {}
+                                : { structured_output: value }),
+                            usage: { input_tokens: 1, output_tokens: 1 },
+                        }),
+                    };
+                });
+                const { io } = fakeIo({
+                    env: {
+                        CLAUDE_CODE_OAUTH_TOKEN: "synthetic-other",
+                        DOROTHY_CLAUDE_TOKEN_VAR: NAMED,
+                    },
+                    modelOptions: {
+                        runner: fake.runner,
+                        cliFiles: fake.cliFiles,
+                        findCli: fake.findCli,
+                    },
+                });
+                io.loadSecrets = async (_path, into) => {
+                    into[NAMED] = "synthetic-two";
+                    return null;
+                };
+                expect(await runCli(argsFor(command, work), io)).toBe(0);
+                expect(fake.requests.length > 0).toBe(true);
+                expect(
+                    fake.requests.every(
+                        (request) =>
+                            request.env.CLAUDE_CODE_OAUTH_TOKEN ===
+                            "synthetic-two",
+                    ),
+                ).toBe(true);
+            },
+        );
+    });
 
     it.each(["answer", "judge"])(
         "rejects a missing %s role before decrypting",

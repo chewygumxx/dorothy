@@ -17,24 +17,15 @@ metadata:
    -->
 
 On 2026-10-31 the user approved a standing rule: once its context passes
-85% (`context_window.used_percentage`, as
-[usage-limits](./usage-limits.md) says to read it), the coordinating
-agent, `dorothy-main`, compacts itself by having herdr type
-`/compact <instructions>` into its own pane, the instructions from the
-`compact-summary` skill.
+85%, the coordinating agent, `dorothy-main`, compacts itself by typing
+`/compact` with instructions into its own pane, at a turn boundary, and
+tells the user each time.
 
 **Why:** no API compacts a running session, but input typed into its
 terminal does; the user would rather the agent manage its own context
 than wait to be told.
 
-**How to apply:** only at a turn boundary, never mid-task with work in
-flight that the summary would have to carry; write the instructions
-first, with the open tasks, decisions and state; tell the user each
-time. Typed input reads as the user's own, so use it for this alone.
-
-Delivery that worked (2026-10-31): a background job waits with
-`herdr agent wait dorothy-main --until idle`, then `herdr pane
-send-text <pane> "/compact "`, then `send-text` the instructions alone,
-then `herdr agent send-keys dorothy-main enter`, a few seconds between.
-`herdr agent prompt` delivers a plain message, never a command, and the
-whole line in one `send-text` did nothing visible.
+**How to apply:** follow
+[agent-stewardship](../skills/agent-stewardship/SKILL.md): never
+mid-task with work in flight, and typed input reads as the user's own,
+so type into your own pane for this alone.

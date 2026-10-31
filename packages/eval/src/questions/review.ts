@@ -15,9 +15,16 @@
 // same checks, and every decision is logged with who made it.
 
 import { appendFile, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { z } from "zod";
-import { type Command, type Io, intOf, stringOf, workOf } from "../command.js";
+import {
+    type Command,
+    type Io,
+    intOf,
+    stringOf,
+    type Values,
+    workOf,
+} from "../command.js";
 import { codeOf, UsageError } from "../errors.js";
 import { readSnapshot, workEnv } from "../snapshot/snapshot.js";
 import {
@@ -36,9 +43,10 @@ import {
     sameQuestion,
     updateQuestions,
 } from "./file.js";
+import { renderDrafts, spotCheck } from "./render.js";
 
 // The characters of each cited conversation that review shows.
-const EVIDENCE_CHARS = 6000;
+export const EVIDENCE_CHARS = 6000;
 
 export type Tally = {
     accepted: number;
@@ -202,14 +210,54 @@ async function decide(
     });
 }
 
-type Reviewed = {
-    id: string;
-    newId?: string;
-    reviewer: string;
-    decision: "accept" | "reject" | "edit" | "unsure";
-    reason: string;
-    at: string;
-};
+type Decision = "accept" | "reject" | "edit" | "unsure";
+
+// A line of reviews.jsonl: a reopen is the owner's alone.
+const reviewedSchema = z.object({
+    id: z.string().min(1),
+    newId: z.string().min(1).optional(),
+    reviewer: z.string().min(1),
+    decision: z.enum(["accept", "reject", "edit", "unsure", "reopen"]),
+    reason: z.string(),
+    at: z.string(),
+});
+type Reviewed = z.infer<typeof reviewedSchema>;
+
+// Every line of the log, in order; none if there is no log yet.
+export async function readReviews(work: string): Promise<Reviewed[]> {
+    const path = join(work, "reviews.jsonl");
+    let text: string;
+    try {
+        text = await readFile(path, "utf8");
+    } catch (error) {
+        if (codeOf(error) === "ENOENT") {
+            return [];
+        }
+        throw new UsageError(
+            `cannot read ${path}: ${codeOf(error) ?? "failed"}`,
+        );
+    }
+    const reviews: Reviewed[] = [];
+    for (const [at, line] of text.split("\n").entries()) {
+        if (line.trim() === "") {
+            continue;
+        }
+        let read: unknown;
+        try {
+            read = JSON.parse(line);
+        } catch {
+            throw new UsageError(`${path} line ${at + 1} is not JSON`);
+        }
+        const parsed = reviewedSchema.safeParse(read);
+        if (!parsed.success) {
+            throw new UsageError(
+                `${path} line ${at + 1}: ${issueOf(parsed.error)}`,
+            );
+        }
+        reviews.push(parsed.data);
+    }
+    return reviews;
+}
 
 // Appends to <work>/reviews.jsonl what was decided and by whom, one line
 // a decision: the question's older claim is in its note, and its new id
@@ -231,7 +279,7 @@ const OWNER = "owner";
 const ownerDecided = (
     work: string,
     id: string,
-    decision: Reviewed["decision"],
+    decision: Decision,
     reason: string,
     newId = id,
 ) =>
@@ -328,6 +376,39 @@ export async function reviewQuestions(
     return await finish();
 }
 
+// An accepted question made a draft again, as review writes the file, and
+// the owner's reason logged: the way to overturn an accept.
+export async function reopen(
+    work: string,
+    id: string,
+    reason: string,
+): Promise<void> {
+    await updateQuestions(work, (questions) => {
+        const held = questions.find((question) => question.id === id);
+        if (held === undefined) {
+            throw new UsageError(`no question ${id}`);
+        }
+        if (held.status !== "accepted") {
+            throw new UsageError(`${id} is ${held.status}, not accepted`);
+        }
+        return {
+            questions: questions.map((question) =>
+                question === held ? { ...held, status: "draft" } : question,
+            ),
+            result: null,
+        };
+    });
+    await logReviews(work, [
+        {
+            id,
+            decision: "reopen",
+            reviewer: OWNER,
+            reason,
+            at: new Date().toISOString(),
+        },
+    ]);
+}
+
 // One line of an agent's decisions. A key it does not know is a mistake
 // in the line, which an edit would otherwise lose without a word.
 const lineSchema = z.strictObject({
@@ -340,7 +421,7 @@ const lineSchema = z.strictObject({
 });
 
 type Applied = {
-    counts: Record<Reviewed["decision"], number>;
+    counts: Record<Decision, number>;
     problems: string[];
 };
 
@@ -509,13 +590,91 @@ async function applyFile(
     }
 }
 
+// The ways review goes other than one draft at a time, each by its
+// option, and the options that belong to one only.
+const MODES = ["apply", "render", "spot-check", "reopen"] as const;
+type Mode = (typeof MODES)[number];
+const BELONGS: Record<string, Mode> = {
+    reviewer: "apply",
+    "dry-run": "apply",
+    batches: "render",
+    source: "render",
+    per: "spot-check",
+    reason: "reopen",
+};
+
+// The mode the options name, or what is wrong with how they are given:
+// two modes, or an option beside a mode it is not for.
+function modeOf(values: Values): Mode | null {
+    const named = MODES.filter((mode) => values[mode] !== undefined);
+    const [mode, other] = named;
+    if (mode !== undefined && other !== undefined) {
+        throw new UsageError(`--${mode} cannot go with --${other}`);
+    }
+    if (mode !== undefined && stringOf(values, mode) === null) {
+        throw new UsageError(`--${mode} needs a value`);
+    }
+    for (const [option, belongs] of Object.entries(BELONGS)) {
+        if (values[option] === undefined || values[option] === false) {
+            continue;
+        }
+        if (mode === undefined) {
+            throw new UsageError(`--${option} goes with --${belongs}`);
+        }
+        if (mode !== belongs) {
+            throw new UsageError(`--${option} cannot go with --${mode}`);
+        }
+    }
+    // The terminal's --evidence is shown by --render too.
+    if (mode !== undefined && mode !== "render") {
+        if (stringOf(values, "evidence") !== null) {
+            throw new UsageError(
+                mode === "apply"
+                    ? "--evidence is for reviewing in the terminal, not --apply"
+                    : `--evidence cannot go with --${mode}`,
+            );
+        }
+    }
+    return mode ?? null;
+}
+
+const plural = (count: number, noun: string) =>
+    `${count} ${noun}${count === 1 ? "" : "s"}`;
+
+// The command's --render: each file and its drafts, or why there are none.
+async function renderCommand(
+    work: string,
+    dir: string,
+    values: Values,
+    chars: number,
+    io: Io,
+): Promise<number> {
+    const source = stringOf(values, "source");
+    const sizes = await renderDrafts(work, resolve(dir), {
+        batches: intOf(values, "batches", 1, 1, 100),
+        source,
+        chars,
+    });
+    io.out(
+        sizes.length === 0
+            ? `no drafts${source === null ? "" : ` from ${source}`} to render\n`
+            : sizes
+                  .map(
+                      (size, k) =>
+                          `drafts-${k + 1}.md: ${plural(size, "draft")}\n`,
+                  )
+                  .join(""),
+    );
+    return 0;
+}
+
 export const reviewCommand: Command = {
     summary: "accept, edit or reject the drafts, one at a time",
     options: {
         work: { type: "string", description: "the evaluation's directory" },
         evidence: {
             type: "string",
-            description: `characters shown of each cited conversation (default ${EVIDENCE_CHARS})`,
+            description: `characters shown of each cited conversation (default ${EVIDENCE_CHARS}); with --render too`,
         },
         apply: {
             type: "string",
@@ -531,27 +690,80 @@ export const reviewCommand: Command = {
             description:
                 "with --apply: report what would be applied, writing nothing",
         },
+        render: {
+            type: "string",
+            description:
+                "write the drafts as Markdown for an agent to screen into this directory, drafts-<k>.md",
+        },
+        batches: {
+            type: "string",
+            description:
+                "with --render: files to split the drafts into (1 to 100, default 1)",
+        },
+        source: {
+            type: "string",
+            description:
+                "with --render: only the drafts of a generator, by model or generated:<model>",
+        },
+        "spot-check": {
+            type: "string",
+            description:
+                "write this file for your check of the unsure drafts and a sample of each reviewer's accepts",
+        },
+        per: {
+            type: "string",
+            description:
+                "with --spot-check: accepts sampled of each reviewer (1 to 1000, default 15)",
+        },
+        reopen: {
+            type: "string",
+            description:
+                "make this accepted question a draft again; with --reason",
+        },
+        reason: {
+            type: "string",
+            description: "with --reopen: why, for reviews.jsonl",
+        },
     },
     async run(values, _positionals, io) {
         const work = workOf(values);
+        const mode = modeOf(values);
         const file = stringOf(values, "apply");
         const reviewer = stringOf(values, "reviewer");
         const dryRun = values["dry-run"] === true;
         const chars = intOf(values, "evidence", EVIDENCE_CHARS, 1, 10_000_000);
-        if (file === null && (reviewer !== null || dryRun)) {
-            throw new UsageError(
-                `--${dryRun ? "dry-run" : "reviewer"} goes with --apply`,
-            );
-        }
         if (file !== null && reviewer === null) {
             throw new UsageError("--apply needs --reviewer, who made them");
         }
-        if (file !== null && stringOf(values, "evidence") !== null) {
-            throw new UsageError(
-                "--evidence is for reviewing in the terminal, not --apply",
-            );
+        const reopening = stringOf(values, "reopen");
+        const reason = stringOf(values, "reason");
+        if (reopening !== null && reason === null) {
+            throw new UsageError("--reopen needs --reason, why");
         }
         await readSnapshot(work);
+        if (mode === "render") {
+            return await renderCommand(
+                work,
+                stringOf(values, "render") ?? "",
+                values,
+                chars,
+                io,
+            );
+        }
+        if (mode === "spot-check") {
+            const target = resolve(stringOf(values, "spot-check") ?? "");
+            const { unsure, sampled } = await spotCheck(work, target, {
+                per: intOf(values, "per", 15, 1, 1000),
+                random: Math.random,
+            });
+            io.out(`${unsure} unsure, ${sampled} sampled -> ${target}\n`);
+            return 0;
+        }
+        if (reopening !== null && reason !== null) {
+            await reopen(work, reopening, reason);
+            io.out(`${reopening} is a draft again\n`);
+            return 0;
+        }
         if (file !== null && reviewer !== null) {
             return await applyFile(work, file, reviewer, dryRun, io);
         }
