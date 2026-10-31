@@ -583,8 +583,9 @@ three by default, each with any options after colons:
 `dorothy:block=0.2:order=knowledge-first` sets the opening block's
 share and how knowledge and conversations interleave (`alternate`, the
 default); `cap`, `seeds` (`search` or `overlap`), `dedupe` (`on` or
-`off`) and `knowledge` (`capped` or `whole`) the rest. `cited` is given
-each question's evidence, a ceiling for passage selection. Each record
+`off`) and `knowledge` (`capped`, the default, or `whole`) the rest.
+`cited` is given each question's evidence, a ceiling for passage
+selection. Each record
 and report counts four stages: evidence found by search, delivered as a
 passage or knowledge, delivered or only noted in the block, and
 covered: the share of the gold answer's words in what was delivered of
