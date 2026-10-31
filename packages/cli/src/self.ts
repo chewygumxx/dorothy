@@ -53,6 +53,41 @@ export const spawnInherited = (
         stderr: "inherit",
     });
 
+// The terminal sends SIGINT to the whole foreground group, the host
+// included: forwarding it would send the host a second, which it reads
+// as a request to quit. TERM, and HUP from anything but a hangup, can
+// reach dorothy alone, so the host is told; after a hangup it gets HUP
+// twice, which does no harm.
+const FORWARDED = ["SIGTERM", "SIGHUP"] as const;
+
+// Runs a host as a child, ignoring SIGINT and forwarding TERM and HUP
+// to it until it exits; the handlers are gone after, whatever happened.
+export async function runForwarding(
+    spawn: (cmd: string[], env: Env, cwd?: string) => Spawned,
+    cmd: string[],
+    env: Env,
+    signals: Pick<NodeJS.EventEmitter, "on" | "off">,
+    cwd?: string,
+): Promise<number> {
+    const ignore = () => {};
+    const handlers: (readonly [NodeJS.Signals, () => void])[] = [];
+    try {
+        const child = spawn(cmd, env, cwd);
+        signals.on("SIGINT", ignore);
+        for (const signal of FORWARDED) {
+            const handler = () => child.kill(signal);
+            handlers.push([signal, handler]);
+            signals.on(signal, handler);
+        }
+        return await child.exited;
+    } finally {
+        signals.off("SIGINT", ignore);
+        for (const [signal, handler] of handlers) {
+            signals.off(signal, handler);
+        }
+    }
+}
+
 // The entry script as it sits in the repository's main checkout, for
 // what outlives a session: a worktree may be removed, its path with it.
 // null outside a repository.

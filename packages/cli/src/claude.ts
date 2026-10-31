@@ -36,6 +36,7 @@ import {
 // A type, erased: the CLI still loads memory lazily.
 import type { LaunchNote } from "@dorothy/memory";
 import {
+    runForwarding,
     type Spawned,
     selfCommand,
     shellWord,
@@ -91,13 +92,6 @@ export function privateWriter(env: Env): (text: string) => string {
         return path;
     };
 }
-
-// The terminal sends SIGINT to the whole foreground group, claude
-// included: forwarding it would send claude a second, which it reads as
-// a request to quit. TERM, and HUP from anything but a hangup, can reach
-// dorothy alone, so claude is told; after a hangup it gets HUP twice,
-// which does no harm.
-const FORWARDED = ["SIGTERM", "SIGHUP"] as const;
 
 // What --claude asks of memory, loaded only when it is asked.
 export type ClaudeMemory = {
@@ -875,23 +869,16 @@ export async function runClaude(
     if (typeof launch === "number") {
         return launch;
     }
-    const ignore = () => {};
-    const handlers: (readonly [NodeJS.Signals, () => void])[] = [];
     try {
-        const child = spawn(launch.cmd, launch.env, launch.cwd);
-        signals.on("SIGINT", ignore);
-        for (const signal of FORWARDED) {
-            const handler = () => child.kill(signal);
-            handlers.push([signal, handler]);
-            signals.on(signal, handler);
-        }
-        return await child.exited;
+        return await runForwarding(
+            spawn,
+            launch.cmd,
+            launch.env,
+            signals,
+            launch.cwd,
+        );
     } finally {
         runAll([
-            () => signals.off("SIGINT", ignore),
-            ...handlers.map(([signal, handler]) => () => {
-                signals.off(signal, handler);
-            }),
             () => launch.gateway.stop(),
             launch.cleanup,
             () => warnDrift(launch.gateway.stats, write),

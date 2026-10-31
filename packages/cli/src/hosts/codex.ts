@@ -18,6 +18,7 @@ import { dirname, join } from "node:path";
 import type { Env } from "@dorothy/core";
 import { identityPrompt } from "@dorothy/identity";
 import {
+    runForwarding,
     type Spawned,
     selfCommand,
     shellWord,
@@ -159,13 +160,6 @@ async function noteTrust(
     await writeFile(path, `${digest}\n`);
 }
 
-// The terminal sends SIGINT to the whole foreground group, codex
-// included: forwarding it would send codex a second, which it may read
-// as a request to quit. TERM, and HUP from anything but a hangup, can
-// reach dorothy alone, so codex is told; after a hangup it gets HUP
-// twice, which does no harm.
-const FORWARDED = ["SIGTERM", "SIGHUP"] as const;
-
 export async function runCodex(
     args: readonly string[],
     deps: CodexDeps = {},
@@ -191,21 +185,5 @@ export async function runCodex(
         );
     }
     await noteTrust(env, self, write);
-    const ignore = () => {};
-    const handlers: (readonly [NodeJS.Signals, () => void])[] = [];
-    try {
-        const child = spawn(command, env);
-        signals.on("SIGINT", ignore);
-        for (const signal of FORWARDED) {
-            const handler = () => child.kill(signal);
-            handlers.push([signal, handler]);
-            signals.on(signal, handler);
-        }
-        return await child.exited;
-    } finally {
-        signals.off("SIGINT", ignore);
-        for (const [signal, handler] of handlers) {
-            signals.off(signal, handler);
-        }
-    }
+    return runForwarding(spawn, command, env, signals);
 }
