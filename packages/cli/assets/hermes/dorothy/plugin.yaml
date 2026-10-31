@@ -1,0 +1,12 @@
+# vim:set expandtab shiftwidth=4 filetype=yaml:
+# SPDX-License-Identifier: GPL-3.0-only
+
+#
+#
+# ~chewygumxx/dorothy.git
+# ::: :/packages/cli/assets/hermes/dorothy/plugin.yaml
+#
+#
+
+name: dorothy
+description: Dorothy's memory, from her service, through dorothy --hook.
