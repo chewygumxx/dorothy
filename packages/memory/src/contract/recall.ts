@@ -8,15 +8,15 @@
 //
 //
 
-// Recall for a prompt: a few passages that may bear on the user's
-// message, for a host to put in the user's turn, never in a system
-// prompt, so the cache holds.
+// Recall for a prompt: the passages that may bear on the user's
+// message, delivered within the host's budget, for a host to put in the
+// user's turn, never in a system prompt, so the cache holds.
 
 import type { RecallRequest, RecallResponse } from "@dorothy/core";
 import type { MemoryEngine } from "../engine/engine.js";
 import type { Profiles } from "../hosts/profiles.js";
-import { escapeXml } from "../memory/block.js";
 import { size } from "./block.js";
+import { deliver, type EvidenceSource } from "./deliver.js";
 import { ContractError } from "./errors.js";
 
 export const RECALL_INTRO =
@@ -27,7 +27,12 @@ const HITS = 8;
 
 export async function recallFor(
     request: RecallRequest,
-    deps: { engine: MemoryEngine; profiles: Profiles },
+    deps: {
+        engine: MemoryEngine;
+        profiles: Profiles;
+        // A fresh source for each request, as knowledge is read once.
+        evidence: () => EvidenceSource;
+    },
 ): Promise<RecallResponse> {
     const profile = deps.profiles.get(request.host);
     if (profile === undefined) {
@@ -48,29 +53,24 @@ export async function recallFor(
         limit: HITS,
         project,
     });
-    const frame = ["<recalled>", RECALL_INTRO, "</recalled>"];
-    let left = budget - size(frame.join("\n"));
-    const lines: string[] = [];
-    const ids: string[] = [];
-    for (const hit of hits) {
-        // Unconfirmed knowledge carries search's warning before its text.
-        const mark =
-            hit.unconfirmed === undefined
-                ? ""
-                : ` [${escapeXml(hit.unconfirmed)}]`;
-        const line = `- ${escapeXml(hit.title)} (${hit.id})${mark}: ${escapeXml(hit.snippet)}`;
-        if (size(line) + 1 > left) {
-            continue;
-        }
-        lines.push(line);
-        ids.push(hit.id);
-        left -= size(line) + 1;
-    }
-    if (lines.length === 0) {
+    const head = `<recalled>\n${RECALL_INTRO}\n`;
+    const tail = "</recalled>";
+    const delivery = await deliver(
+        {
+            query: request.prompt,
+            hits,
+            budget: budget - size(head) - size(tail),
+            escape: true,
+        },
+        deps.evidence(),
+    );
+    if (delivery.items.length === 0) {
         return EMPTY;
     }
-    const text = ["<recalled>", RECALL_INTRO, ...lines, "</recalled>"].join(
-        "\n",
-    );
-    return { text, ids, used: size(text) };
+    const text = `${head}${delivery.text}${tail}`;
+    return {
+        text,
+        ids: delivery.items.map((item) => item.id),
+        used: size(text),
+    };
 }

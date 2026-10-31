@@ -21,6 +21,8 @@ import type {
 import type { Fact } from "../facts/file.js";
 import { PERSONAL, type Scope } from "../facts/store.js";
 import type { Note } from "../memory/block.js";
+import type { EvidenceSource } from "./deliver.js";
+import type { EvidenceConversation, EvidenceKnowledge } from "./passage.js";
 
 const AT = "2026-10-15T09:30:00.000Z";
 
@@ -121,5 +123,20 @@ export function fakeEngine(parts: Partial<FakeParts> = {}): MemoryEngine & {
         async consolidate() {
             return [];
         },
+    };
+}
+
+// An evidence source over the records given, by id.
+export function fakeEvidence(
+    parts: {
+        conversations?: EvidenceConversation[];
+        knowledge?: EvidenceKnowledge[];
+    } = {},
+): EvidenceSource {
+    return {
+        conversation: async (id) =>
+            parts.conversations?.find((each) => each.id === id),
+        knowledge: async (id) =>
+            parts.knowledge?.find((each) => each.id === id),
     };
 }
