@@ -18,6 +18,7 @@ import {
     writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import type { DeliveredItem } from "@dorothy/memory/evaluation";
 import { runCli } from "../cli.js";
 import type { CliRequest } from "../models/cli.js";
 import { Models } from "../models/client.js";
@@ -46,7 +47,13 @@ import {
     reportPath,
     summaryPath,
 } from "./record.js";
-import { coverageOf, newRunInfo, runEvaluation, servedAt } from "./run.js";
+import {
+    coverageOf,
+    newRunInfo,
+    runEvaluation,
+    servedAt,
+    stagesOf,
+} from "./run.js";
 
 let temp: ReturnType<typeof tempRoot>;
 let work: string;
@@ -1049,6 +1056,59 @@ describe("coverageOf", () => {
     it("is null for no answer, or one with no terms", () => {
         expect(coverageOf(null, ["text"])).toBeNull();
         expect(coverageOf("It is so.", ["text"])).toBeNull();
+    });
+});
+
+describe("stagesOf", () => {
+    const question = accepted("Where is my bike?", {
+        type: "single-session",
+        answer: "Crimson bike, shed",
+        evidence: ["c:talk", "k:personal/bike"],
+    });
+    const item = (
+        fields: Partial<DeliveredItem> & Pick<DeliveredItem, "id">,
+    ): DeliveredItem => ({
+        kind: "episode",
+        turns: { from: 1, through: 2 },
+        text: "My crimson bike is in the shed.",
+        cut: false,
+        opened: true,
+        ...fields,
+    });
+    const stages = (...items: (DeliveredItem & { block?: true })[]) =>
+        stagesOf(question, { ranked: [], context: "", items }, false);
+
+    it("counts an opened passage with turns as delivered", () => {
+        const got = stages(item({ id: "c:talk" }));
+        expect(got.delivered).toBe(true);
+        expect(got.covered).toBe(1);
+    });
+
+    it("does not count a stand-in", () => {
+        const got = stages(item({ id: "c:talk", opened: false }));
+        expect(got.delivered).toBe(false);
+        expect(got.covered).toBe(0);
+    });
+
+    it("does not count a passage packed down to its head", () => {
+        const got = stages(item({ id: "c:talk", turns: null }));
+        expect(got.delivered).toBe(false);
+        expect(got.covered).toBe(0);
+    });
+
+    it("counts knowledge the block gave, its line covering", () => {
+        const got = stages({
+            ...item({ id: "k:personal/bike", kind: "knowledge" }),
+            turns: null,
+            text: "Crimson bike, kept in the shed.",
+            block: true,
+        });
+        expect(got.delivered).toBe(true);
+        expect(got.covered).toBe(1);
+    });
+
+    it("counts only the question's evidence", () => {
+        expect(stages(item({ id: "c:other" })).delivered).toBe(false);
     });
 });
 

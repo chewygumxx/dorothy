@@ -245,7 +245,11 @@ export function coverageOf(
 // engine's hits (found), the evidence opened into the context
 // (delivered) and how much of the answer it holds (covered). A failed
 // retrieval found and delivered nothing, which the summary counts.
-function stagesOf(question: Question, retrieved: Retrieved, failed: boolean) {
+export function stagesOf(
+    question: Question,
+    retrieved: Retrieved,
+    failed: boolean,
+) {
     if (failed) {
         return { covered: coverageOf(question.answer, []) };
     }
