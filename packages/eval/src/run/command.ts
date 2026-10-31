@@ -8,6 +8,7 @@
 //
 //
 
+import { join } from "node:path";
 import {
     type Command,
     intOf,
@@ -29,7 +30,7 @@ import { loadModelSecrets } from "../secrets.js";
 import { readSnapshot, workEnv } from "../snapshot/snapshot.js";
 import { openCorpus } from "../systems/corpus.js";
 import { SYSTEM_NAMES } from "../systems/system.js";
-import { readRecords, readRunInfo, reportPath } from "./record.js";
+import { latestRunId, readRecords, readRunInfo, reportPath } from "./record.js";
 import {
     checkResumable,
     modelCalls,
@@ -58,6 +59,14 @@ function systemsOf(text: string): string[] {
     return names;
 }
 
+async function latestRun(work: string): Promise<string> {
+    const id = await latestRunId(work);
+    if (id === null) {
+        throw new UsageError(`no run in ${join(work, "runs")} to resume`);
+    }
+    return id;
+}
+
 // What run.json holds, so a resume takes no other.
 const SETTINGS = ["systems", "budget", "full-budget", "retrieval-only"];
 
@@ -84,7 +93,8 @@ export const runCommand: Command = {
         models: modelsOption,
         resume: {
             type: "string",
-            description: "the id of a stopped run, to finish it",
+            description:
+                "the id of a stopped run, to finish it; latest for the last begun",
         },
         concurrency: {
             type: "string",
@@ -101,7 +111,8 @@ export const runCommand: Command = {
     },
     async run(values, _positionals, io) {
         const work = workOf(values);
-        const resume = stringOf(values, "resume");
+        const asked = stringOf(values, "resume");
+        const resume = asked === "latest" ? await latestRun(work) : asked;
         const given = SETTINGS.find((name) => values[name] !== undefined);
         if (resume !== null && given !== undefined) {
             throw new UsageError(

@@ -131,7 +131,9 @@ options declared and described for `--help`, its failures as
   `system.ts`'s table.
 - `run/record.ts`: a run's directory, records and settings; `run.json`
   keeps cumulative role tokens, optional on older runs. The last record
-  per question and system stands.
+  per question and system stands. `latestRunId` is what `--resume latest`
+  resumes: the greatest `at`, ties by id, skipping a directory with no
+  valid `run.json`.
 - `run/judges.ts`: the answering prompt, the judges (openevals' strict
   prompt and ours) and `declines`; `run/run.ts`: `runEvaluation`, which
   appends a record per question and system and resumes where a run
