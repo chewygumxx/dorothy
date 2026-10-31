@@ -125,10 +125,10 @@ test through `runCli` and `fakeIo`.
   the role's model's; only the text names it. `models/testing.ts`:
   injected in-memory runner and files; integration tests use temp scripts.
 - `systems/`: `System` and `makeSystem` (`system.ts`); the corpus, the
-  snapshot's archive opened once, with items as text (`corpus.ts`);
-  `termsOf` and `scoreOf` (`terms.ts`); and the three systems,
-  `dorothy.ts`, `lexical.ts` and `full.ts`. A new system is a maker in
-  `system.ts`'s table.
+  snapshot's archive opened once (`corpus.ts`); and the three systems,
+  `dorothy.ts`, `lexical.ts` and `full.ts`, whose passages, terms and
+  packing are memory's, from `@dorothy/memory/evaluation`. A new system
+  is a maker in `system.ts`'s table.
 - `run/record.ts`: a run's directory, records and settings; `run.json`
   keeps cumulative role tokens, optional on older runs. The last record
   per question and system stands. `latestRunId`, for `--resume latest`:

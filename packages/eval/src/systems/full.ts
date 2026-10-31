@@ -11,8 +11,13 @@
 // The bound from above, where it fits: everything, newest first, until
 // the budget. Its ranked ids are what fitted.
 
-import { type Corpus, conversationText, knowledgeText } from "./corpus.js";
-import { packed, type System } from "./system.js";
+import {
+    conversationText,
+    knowledgeText,
+    pack,
+} from "@dorothy/memory/evaluation";
+import type { Corpus } from "./corpus.js";
+import type { System } from "./system.js";
 
 export function fullSystem(corpus: Corpus): System {
     // Everything, newest first, with its text, made once for the corpus; a
@@ -47,7 +52,7 @@ export function fullSystem(corpus: Corpus): System {
     return {
         name: "full",
         async retrieve(asked, budget) {
-            const fitted = packed(
+            const fitted = pack(
                 everything().filter(
                     (each) =>
                         asked.exclude === null || each.phrase !== asked.exclude,

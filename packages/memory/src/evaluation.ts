@@ -14,6 +14,17 @@
 // tests.
 
 export {
+    clip,
+    conversationText,
+    type EvidenceConversation,
+    type EvidenceKnowledge,
+    type EvidenceTurn,
+    knowledgeText,
+    pack,
+    passage,
+} from "./contract/passage.js";
+export { firstTermAt, scoreOf, termsOf } from "./contract/terms.js";
+export {
     type AppraisedRead,
     type AppraisedReads,
     type Archive,

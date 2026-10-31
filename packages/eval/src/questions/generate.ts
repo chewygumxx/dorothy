@@ -11,22 +11,21 @@
 // Questions a model drafts from samples of the snapshot, in LongMemEval's
 // types, each checked before it is kept as a draft for the owner.
 
-import type {
-    ArchiveConversation,
-    ArchiveKnowledge,
+import {
+    type ArchiveConversation,
+    type ArchiveKnowledge,
+    clip,
+    conversationText,
+    knowledgeText,
+    pack,
+    scoreOf,
+    termsOf,
 } from "@dorothy/memory/evaluation";
 import { z } from "zod";
 import { RunStop, UsageError } from "../errors.js";
 import { PlanLimit } from "../models/cli.js";
 import { failureOf, type Message } from "../models/client.js";
-import {
-    type Corpus,
-    clip,
-    conversationText,
-    knowledgeText,
-} from "../systems/corpus.js";
-import { packItems } from "../systems/system.js";
-import { scoreOf, termsOf } from "../systems/terms.js";
+import type { Corpus } from "../systems/corpus.js";
 import {
     type Question,
     type QuestionType,
@@ -401,7 +400,7 @@ export function draftPrompt(sample: Sample, n: number): Message[] {
             role: "system",
             content: `${COMMON}\n\n${sample.guidance ?? GUIDANCE[sample.type]}\n\nToday is ${sample.asOf}. Write at most ${n} questions.`,
         },
-        { role: "user", content: packItems(sample.items, 16_000) },
+        { role: "user", content: pack(sample.items, 16_000).text },
     ];
 }
 

@@ -16,6 +16,7 @@
 
 import { appendFile, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { knowledgeText, passage, termsOf } from "@dorothy/memory/evaluation";
 import { z } from "zod";
 import {
     type Command,
@@ -27,13 +28,7 @@ import {
 } from "../command.js";
 import { codeOf, UsageError } from "../errors.js";
 import { readSnapshot, workEnv } from "../snapshot/snapshot.js";
-import {
-    type Corpus,
-    knowledgeText,
-    openCorpus,
-    passage,
-} from "../systems/corpus.js";
-import { termsOf } from "../systems/terms.js";
+import { type Corpus, openCorpus } from "../systems/corpus.js";
 import {
     issueOf,
     type Question,

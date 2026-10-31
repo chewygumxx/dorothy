@@ -22,6 +22,11 @@ import {
     knowledgeId,
 } from "@dorothy/core";
 import { buildBlock } from "../contract/block.js";
+import type {
+    EvidenceConversation,
+    EvidenceKnowledge,
+    EvidenceTurn,
+} from "../contract/passage.js";
 import { dataRoot, listFacts } from "../facts/store.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
 import { keywordsOf, vocabularyBroken } from "../recall/tags.js";
@@ -29,34 +34,12 @@ import { readTranscript, transcriptPath } from "../transcript.js";
 import { baselineEngine } from "./baseline.js";
 import { knowledgePath, type MemoryEngine } from "./engine.js";
 
-export type ArchiveTurn = {
-    n: number;
-    role: "user" | "assistant";
-    at: string;
-    text: string;
-};
-export type ArchiveConversation = {
-    id: string;
-    phrase: string;
-    project: string | null;
-    title: string | null;
+export type ArchiveTurn = EvidenceTurn;
+export type ArchiveConversation = EvidenceConversation & {
     // Her concepts' labels.
     tags: string[];
-    firstAt: string;
-    lastAt: string;
-    turns: ArchiveTurn[];
 };
-export type ArchiveKnowledge = {
-    id: string;
-    // "personal", or the project's id.
-    scope: string;
-    type: string;
-    title: string;
-    description: string;
-    body: string;
-    at: string;
-    retired: { at: string; why: string } | null;
-};
+export type ArchiveKnowledge = EvidenceKnowledge;
 // A read her review judged useful or essential: her purpose, and what
 // she opened for it, as a contract id.
 export type AppraisedRead = {

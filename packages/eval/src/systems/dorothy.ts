@@ -13,9 +13,15 @@
 // every scope, then the top hits opened until the budget is spent. Its
 // ranked ids are the hits that fitted, then the block's.
 
-import { type Corpus, clip, knowledgeText, passage } from "./corpus.js";
-import { packed, type System } from "./system.js";
-import { termsOf } from "./terms.js";
+import {
+    clip,
+    knowledgeText,
+    pack,
+    passage,
+    termsOf,
+} from "@dorothy/memory/evaluation";
+import type { Corpus } from "./corpus.js";
+import type { System } from "./system.js";
 
 // The block's share of the budget; the hits take the rest.
 const BLOCK_SHARE = 0.4;
@@ -56,7 +62,7 @@ export function dorothySystem(corpus: Corpus): System {
                 };
             });
             const left = budget - block.text.length - 1;
-            const fitted = packed(opened, Math.max(0, left));
+            const fitted = pack(opened, Math.max(0, left));
             const found = new Set(fitted.ids);
             return {
                 // Her search's hits that fitted, then what the block gave

@@ -9,17 +9,12 @@
 //
 
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import type { ArchiveConversation } from "@dorothy/memory/evaluation";
+import { conversationText, passage } from "@dorothy/memory/evaluation";
 import { workEnv } from "../snapshot/snapshot.js";
 import { GARDEN, READER, snapshotFixture, TEA, tempRoot } from "../testing.js";
-import {
-    type Corpus,
-    conversationText,
-    openCorpus,
-    passage,
-} from "./corpus.js";
-import { type Asked, makeSystem, packed, packItems } from "./system.js";
-import { scoreOf, termsOf } from "./terms.js";
+import { type Corpus, openCorpus } from "./corpus.js";
+import { type Asked, makeSystem } from "./system.js";
+import { TODAY, TODAY_QUESTIONS } from "./today.fixture.js";
 
 let temp: ReturnType<typeof tempRoot>;
 let corpus: Corpus;
@@ -46,52 +41,7 @@ const asked = (
 // Whether the context holds an item, or the block's mention, of an id.
 const mentions = (context: string, id: string) => context.includes(`"${id}"`);
 
-describe("terms", () => {
-    it("keeps words of three letters or more, not the common ones", () => {
-        expect(termsOf("What do I drink at four in the afternoon?")).toEqual([
-            "drink",
-            "four",
-            "afternoon",
-        ]);
-    });
-
-    it("counts the terms a text holds", () => {
-        expect(
-            scoreOf("I drink green tea at four.", ["drink", "four", "plot"]),
-        ).toBe(2);
-    });
-});
-
 describe("items", () => {
-    it("pack within the budget, the last cut to fit", () => {
-        const packed = packItems(
-            [
-                { id: "c:a", text: "x".repeat(50) },
-                { id: "c:b", text: "y".repeat(50) },
-            ],
-            120,
-        );
-        expect(packed.length).toBeLessThanOrEqual(120);
-        expect(packed).toStartWith('<item id="c:a">\n');
-        expect(packed).toContain('<item id="c:b">');
-    });
-
-    it("report the ids that went in, not those the budget cut off", () => {
-        const items = [
-            { id: "c:a", text: "x".repeat(50) },
-            { id: "c:b", text: "y".repeat(50) },
-            { id: "c:c", text: "z".repeat(50) },
-        ];
-        const whole = packed(items, 400);
-        expect(whole.ids).toEqual(["c:a", "c:b", "c:c"]);
-        expect(packItems(items, 400)).toBe(whole.text);
-        // The second is cut to fit and counts; the third never gets in.
-        const cut = packed(items, 120);
-        expect(cut.ids).toEqual(["c:a", "c:b"]);
-        expect(cut.text).not.toContain("c:c");
-        expect(packed(items, 0)).toEqual({ text: "", ids: [] });
-    });
-
     it("pass the turns that match, with their neighbours", () => {
         const tea = corpus.conversations.get(`c:${TEA}`);
         if (tea === undefined) {
@@ -101,67 +51,6 @@ describe("items", () => {
         expect(text).toContain("green tea at four every afternoon");
         expect(text).toContain("Green tea at four, noted.");
         expect(passage(tea, ["tea"], 20).length).toBeLessThanOrEqual(20);
-    });
-});
-
-describe("passage", () => {
-    const longTurn = (text: string): ArchiveConversation => ({
-        id: "c:long",
-        phrase: "long",
-        project: null,
-        title: "Discussion",
-        tags: [],
-        firstAt: "2026-10-01T00:00:00Z",
-        lastAt: "2026-10-01T00:00:00Z",
-        turns: [{ n: 1, role: "user", at: "2026-10-01T00:00:00Z", text }],
-    });
-
-    it("excerpts a matching turn too long to fit, not drops it", () => {
-        const long = longTurn(
-            `My bicycle is crimson. ${"details ".repeat(1000)}`,
-        );
-        const text = passage(long, ["bicycle"], 300);
-        expect(text.length).toBeLessThanOrEqual(300);
-        expect(text).toStartWith(
-            "Discussion, 2026-10-01 to 2026-10-01\n[1] user",
-        );
-        expect(text).toContain("My bicycle is crimson.");
-    });
-
-    it("centres the excerpt on the match, wherever it lies", () => {
-        const long = longTurn(
-            `${"filler ".repeat(500)}my bicycle is crimson${" filler".repeat(500)}`,
-        );
-        const text = passage(long, ["bicycle"], 300);
-        expect(text.length).toBeLessThanOrEqual(300);
-        expect(text).toContain("my bicycle is crimson");
-    });
-
-    for (const [word, query, padding] of [
-        ["cafe\u0301", "café", "ﬃ filler "],
-        ["㍿", "株式会社", "ﬃ filler "],
-        ["cafe\u0301", "café", "\uffa1\uffc2 filler "],
-    ] as const) {
-        it(`keeps a normalized ${query} match after ${padding}`, () => {
-            // Normalization expands ligatures and composes halfwidth jamo,
-            // so its offsets cannot be used to slice the original turn.
-            const answer = `My ${word} order is espresso.`;
-            const long = longTurn(
-                `${padding.repeat(500)}${answer}${" filler".repeat(500)}`,
-            );
-            const terms = termsOf(query);
-            expect(scoreOf(long.turns[0]?.text ?? "", terms)).toBe(1);
-            const text = passage(long, terms, 300);
-            expect(text.length).toBeLessThanOrEqual(300);
-            expect(text).toContain(answer);
-        });
-    }
-
-    it("excerpts the start of a long first turn where none match", () => {
-        const long = longTurn(`Opening words. ${"padding ".repeat(1000)}`);
-        const text = passage(long, ["zebra"], 300);
-        expect(text.length).toBeLessThanOrEqual(300);
-        expect(text).toContain("Opening words.");
     });
 });
 
@@ -399,4 +288,19 @@ describe("makeSystem", () => {
             "no system hindsight; the systems are dorothy, lexical, full",
         );
     });
+});
+
+describe("the dorothy system's context today", () => {
+    for (const question of TODAY_QUESTIONS) {
+        it(`holds for ${question}`, async () => {
+            const found = await makeSystem("dorothy", corpus).retrieve(
+                asked(question),
+                8000,
+            );
+            expect({
+                ranked: found.ranked,
+                context: found.context,
+            }).toEqual(TODAY[question]);
+        });
+    }
 });

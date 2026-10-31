@@ -4,7 +4,7 @@
 //
 //
 // ~chewygumxx/dorothy.git
-// ::: :/packages/eval/src/systems/terms.ts
+// ::: :/packages/memory/src/contract/terms.ts
 //
 //
 

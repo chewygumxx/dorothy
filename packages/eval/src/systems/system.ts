@@ -52,35 +52,3 @@ export function makeSystem(name: string, corpus: Corpus): System {
     }
     return make(corpus);
 }
-
-// Items as <item> elements within budget, the last one cut to fit, and
-// the ids of the items that went in.
-export function packed(
-    items: { id: string; text: string }[],
-    budget: number,
-): { text: string; ids: string[] } {
-    const parts: string[] = [];
-    const ids: string[] = [];
-    let left = budget;
-    for (const item of items) {
-        const open = `<item id="${item.id}">\n`;
-        const close = "\n</item>\n";
-        const room = left - open.length - close.length;
-        if (room <= 0) {
-            break;
-        }
-        const text = item.text.slice(0, room);
-        parts.push(open + text + close);
-        ids.push(item.id);
-        left -= open.length + text.length + close.length;
-        if (text.length < item.text.length) {
-            break;
-        }
-    }
-    return { text: parts.join(""), ids };
-}
-
-export const packItems = (
-    items: { id: string; text: string }[],
-    budget: number,
-): string => packed(items, budget).text;

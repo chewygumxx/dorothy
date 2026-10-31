@@ -11,9 +11,15 @@
 // The bound from below: every turn and knowledge file scored by how many
 // of the question's terms it holds, with no index, as grep would find.
 
-import { type Corpus, knowledgeText, passage } from "./corpus.js";
-import { packed, type System } from "./system.js";
-import { scoreOf, termsOf } from "./terms.js";
+import {
+    knowledgeText,
+    pack,
+    passage,
+    scoreOf,
+    termsOf,
+} from "@dorothy/memory/evaluation";
+import type { Corpus } from "./corpus.js";
+import type { System } from "./system.js";
 
 type Scored = { id: string; score: number; at: string; text: () => string };
 
@@ -63,7 +69,7 @@ export function lexicalSystem(corpus: Corpus): System {
             }
             scored.sort(newestFirst);
             const best = scored.slice(0, 20);
-            const fitted = packed(
+            const fitted = pack(
                 best.map((each) => ({ id: each.id, text: each.text() })),
                 budget,
             );
