@@ -160,7 +160,7 @@ export const runCommand: Command = {
         if (!info.retrievalOnly) {
             const answer = requireRole(config, "answer");
             const judge = requireRole(config, "judge");
-            await loadModelSecrets(io);
+            if (!(await loadModelSecrets(io))) return 1;
             models = new Models(config, {
                 ...io.modelOptions,
                 env: io.env,

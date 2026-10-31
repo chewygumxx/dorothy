@@ -136,7 +136,7 @@ export const generateCommand: Command = {
         await readGenerations(work);
         const config = await readEvalConfig(work);
         const role = requireRole(config, "generate");
-        await loadModelSecrets(io);
+        if (!(await loadModelSecrets(io))) return 1;
         const models = new Models(config, {
             ...io.modelOptions,
             env: io.env,

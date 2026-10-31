@@ -63,8 +63,9 @@ options declared and described for `--help`, its failures as
 - `command.ts`: `Io`, `Command` and the options' readers. `modelOptions`
   injects model runners, files and CLI lookup; commands own env and caps.
 - `secrets.ts`: `loadModelSecrets` awaits core's loader on the checkout's
-  `secrets.json` before paid model calls, with code-only warnings. Tests
-  inject `Io.loadSecrets`.
+  `secrets.json` before paid model calls, with code-only warnings, then
+  `chooseClaudeToken`; false if `DOROTHY_CLAUDE_TOKEN_VAR` names no token,
+  and `run` and `generate` return 1. Tests inject `Io.loadSecrets`.
 - `snapshot/`: `takeSnapshot`, which refuses a work directory in the
   checkout (found by the package's place, not by `.git`) or a sibling
   worktree, follows a
