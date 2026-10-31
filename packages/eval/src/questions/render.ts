@@ -98,8 +98,9 @@ function shuffled<T>(items: T[], random: () => number): T[] {
 
 // The drafts the agents left, and a sample of each reviewer's accepts,
 // into a file for the owner. A reviewer's accepts are the questions it
-// accepted or edited (the edit by the id it gave) that are accepted now,
-// each one with the first reviewer to name it.
+// accepted or edited (the edit by the id it gave) that are accepted now
+// and not reopened since, each one with the first reviewer to name it;
+// the owner is not a reviewer here.
 export async function spotCheck(
     work: string,
     file: string,
@@ -116,7 +117,19 @@ export async function spotCheck(
     const byReviewer = new Map<string, Map<string, string>>();
     const claimed = new Set<string>();
     for (const entry of await readReviews(work)) {
-        if (entry.decision !== "accept" && entry.decision !== "edit") {
+        // An overturned decision is no one's: a later one stands.
+        if (entry.decision === "reopen") {
+            claimed.delete(entry.id);
+            for (const held of byReviewer.values()) {
+                held.delete(entry.id);
+            }
+            continue;
+        }
+        // The owner's own decisions are not what the owner checks.
+        if (
+            entry.reviewer === "owner" ||
+            (entry.decision !== "accept" && entry.decision !== "edit")
+        ) {
             continue;
         }
         const id = entry.newId ?? entry.id;

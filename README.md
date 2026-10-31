@@ -596,7 +596,7 @@ them to `<dir>/drafts-1.md` and on, each with the evidence it cites.
 first, and `--source <model>` takes only the drafts that model
 generated; with none, it says so and writes nothing. Then check the
 agents' work: `review --spot-check <file>` writes the drafts they left
-unsure and, of each reviewer, up to `--per <n>` (15 by default) accepts
+unsure and, of each agent, up to `--per <n>` (15 by default) accepts
 chosen at random, each with who decided it and how. An accept you
 disagree with goes back to the drafts with
 `review --reopen <id> --reason <why>`, logged as a `reopen` of yours,

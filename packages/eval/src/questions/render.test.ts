@@ -238,8 +238,9 @@ describe("spotCheck", () => {
             { id: idOf(four), reviewer: "agent-2", decision: "accept" },
             { id: idOf(five), reviewer: "agent-2", decision: "accept" },
             { id: idOf(six), reviewer: "agent-2", decision: "unsure" },
+            // A reopened question, a draft again, that no one has decided.
             {
-                id: idOf(one),
+                id: idOf(six),
                 reviewer: "owner",
                 decision: "reopen",
                 reason: "no",
@@ -309,6 +310,63 @@ describe("spotCheck", () => {
             "Sample",
             idOf(one),
         ]);
+    });
+
+    it("leaves out the owner's accepts", async () => {
+        log(
+            { id: idOf(one), reviewer: "owner", decision: "accept" },
+            { id: idOf(two), reviewer: "agent-1", decision: "accept" },
+        );
+        expect(
+            await spotCheck(work, file(), { per: 15, random: () => 0 }),
+        ).toEqual({ unsure: 1, sampled: 1 });
+        expect(headings(readFileSync(file(), "utf8"))).toEqual([
+            ["Unsure", idOf(six)],
+            ["Sample", idOf(two)],
+        ]);
+    });
+
+    it("names who decided a reopened question the second time", async () => {
+        log(
+            { id: idOf(one), reviewer: "agent-1", decision: "accept" },
+            {
+                id: idOf(one),
+                reviewer: "owner",
+                decision: "reopen",
+                reason: "no",
+            },
+            {
+                id: idOf(one),
+                reviewer: "agent-2",
+                decision: "accept",
+                reason: "now",
+            },
+        );
+        expect(
+            await spotCheck(work, file(), { per: 15, random: () => 0 }),
+        ).toEqual({ unsure: 1, sampled: 1 });
+        const text = readFileSync(file(), "utf8");
+        expect(headings(text)).toEqual([
+            ["Unsure", idOf(six)],
+            ["Sample", idOf(one)],
+        ]);
+        expect(text).toContain("Decided by agent-2 (accept: now)");
+        expect(text).not.toContain("agent-1");
+    });
+
+    it("drops a reopened question nobody has decided again", async () => {
+        log(
+            { id: idOf(one), reviewer: "agent-1", decision: "accept" },
+            {
+                id: idOf(one),
+                reviewer: "owner",
+                decision: "reopen",
+                reason: "no",
+            },
+        );
+        expect(
+            await spotCheck(work, file(), { per: 15, random: () => 0 }),
+        ).toEqual({ unsure: 1, sampled: 0 });
     });
 
     it("needs no reviews to list the unsure drafts", async () => {

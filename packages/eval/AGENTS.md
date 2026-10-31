@@ -87,13 +87,13 @@ test through `runCli` and `fakeIo`.
   through the same `checkedEdit` and `place`, in one locked write (none
   on `--dry-run`), reporting and skipping a bad line: a key it does not
   know, or an edit that gives nothing or changes nothing. Each decision,
-  the owner's too (an edit by its old id and new), is a line of
-  `reviews.jsonl`; `reopen` makes an accepted question a draft and logs
-  why. `--apply`, `--render`, `--spot-check` and `--reopen` exclude each
-  other and each other's options (`modeOf`).
-- `questions/render.ts`: `renderDrafts` writes the drafts, by source,
-  as `drafts-<k>.md` for agents; `spotCheck`, the unsure drafts and a
-  sample of each reviewer's accepts, the first to name one keeping it.
+  the owner's too (an edit by old id and new), is a `reviews.jsonl`
+  line; `reopen` makes an accepted question a draft, logging why. The
+  modes `--apply`, `--render`, `--spot-check`, `--reopen` (`modeOf`)
+  exclude each other and each other's options.
+- `questions/render.ts`: `renderDrafts` writes drafts as `drafts-<k>.md`;
+  `spotCheck`, the unsure ones and a sample of each agent's accepts, not
+  the owner's, the first to name one keeping it, a `reopen` voiding it.
 - `models/config.ts`: `eval.toml`, or the file `--models` names (which
   must exist), each role's route (`api` by default, `claude` or `codex`),
   model, API credentials or Codex effort; errors name the file.
