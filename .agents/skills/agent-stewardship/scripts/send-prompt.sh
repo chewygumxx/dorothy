@@ -30,8 +30,9 @@
 
 set -eu
 
-here=$(cd "$(dirname "$0")" && pwd)
+here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 self=$here/$(basename "$0")
+# shellcheck source=pane-lock.sh source-path=SCRIPTDIR
 . "$here/pane-lock.sh"
 
 usage() {

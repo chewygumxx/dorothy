@@ -57,10 +57,14 @@ case "$1 $2" in
         exit 1
     fi
     name=$(cat "$STUB/name.$3" 2>/dev/null || printf %s "$3")
-    printf '{"result":{"agent":{"name":"%s","pane_id":"w1:p2","agent_status":"%s"}}}\\n' \\
-        "$name" "$(cat "$STUB/status")"
+    pane=$(cat "$STUB/pane.$3" 2>/dev/null || echo w1:p2)
+    printf '{"result":{"agent":{"name":"%s","pane_id":"%s","agent_status":"%s"}}}\\n' \\
+        "$name" "$pane" "$(cat "$STUB/status")"
     ;;
-"pane send-text") [ -e "$STUB/fail-text" ] && exit 1 ;;
+"pane send-text")
+    [ -e "$STUB/fail-text" ] && exit 1
+    [ -e "$STUB/fail-instructions" ] && [ "$4" != "/compact " ] && exit 1
+    ;;
 "pane send-keys") [ -e "$STUB/fail-keys" ] && exit 1 ;;
 esac
 exit 0
@@ -480,6 +484,8 @@ describe("compact-self.sh", () => {
     const pane = "w7:p3";
     const quick = { HERDR_PANE_ID: pane, DOROTHY_COMPACT_PAUSE: "0" };
 
+    beforeEach(() => writeFile(join(root, `pane.${pane}`), pane));
+
     async function instructions(text: string) {
         const file = join(root, "instructions.md");
         await writeFile(file, text);
@@ -492,6 +498,7 @@ describe("compact-self.sh", () => {
         const { code } = await run(compact, [file], "", quick);
         expect(code).toBe(0);
         expect(await calls()).toEqual([
+            ["herdr", "agent", "get", pane],
             ["herdr", "agent", "wait", pane, "--until", "idle"],
             ["herdr", "agent", "get", pane],
             ["herdr", "pane", "send-text", pane, "/compact "],
@@ -517,6 +524,52 @@ describe("compact-self.sh", () => {
         const { code } = await run(compact, [file], "", quick);
         expect(code).toBe(5);
         expect(await writes()).toEqual([]);
+    });
+
+    it("locks and writes the pane herdr reports after a move", async () => {
+        await writeFile(join(root, `pane.${pane}`), "w1:p2");
+        const file = await instructions("go on");
+        const { code } = await run(compact, [file], "", quick);
+        expect(code).toBe(0);
+        expect(await calls()).toEqual([
+            ["herdr", "agent", "get", pane],
+            ["herdr", "agent", "wait", "w1:p2", "--until", "idle"],
+            ["herdr", "agent", "get", "w1:p2"],
+            ["herdr", "pane", "send-text", "w1:p2", "/compact "],
+            ["herdr", "pane", "send-text", "w1:p2", "go on"],
+            ["herdr", "pane", "send-keys", "w1:p2", "enter"],
+        ]);
+        expect((await stat(lockFile())).isFile()).toBe(true);
+    });
+
+    it("sends nothing when no agent is on the pane", async () => {
+        await touch("absent");
+        const file = await instructions("go on");
+        const { code } = await run(compact, [file], "", quick);
+        expect(code).toBe(4);
+        expect(await writes()).toEqual([]);
+    });
+
+    it("names the partial state when the instructions fail", async () => {
+        await touch("fail-instructions");
+        const file = await instructions("go on");
+        const { code, err } = await run(compact, [file], "", quick);
+        expect(code).toBe(1);
+        expect(err).toContain("/compact typed");
+        expect(err).toContain("clear the input");
+        // The failed write is logged as attempted, and no Enter follows.
+        expect(await writes()).toEqual([
+            ["send-text", pane, "/compact "],
+            ["send-text", pane, "go on"],
+        ]);
+    });
+
+    it("names the partial state when Enter fails", async () => {
+        await touch("fail-keys");
+        const file = await instructions("go on");
+        const { code, err } = await run(compact, [file], "", quick);
+        expect(code).toBe(1);
+        expect(err).toContain("enter failed");
     });
 
     it("holds the pane's lock until its Enter is sent", async () => {

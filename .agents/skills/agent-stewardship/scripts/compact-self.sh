@@ -15,16 +15,19 @@
 #
 #   compact-self.sh <instructions file>
 #
-# Needs $HERDR_PANE_ID. Writes `/compact`, a space and the file's
-# contents (after a space if they begin with `-`), then Enter, apart and pausing between (DOROTHY_COMPACT_PAUSE
-# seconds, 3 by default), holding the pane's lock so no message falls
-# in between.
+# Needs $HERDR_PANE_ID, which names the agent; its pane, as herdr now
+# reports it, is the one locked and written. Writes `/compact`, a space
+# and the file's contents (after a space if they begin with `-`), then
+# Enter, apart and pausing between (DOROTHY_COMPACT_PAUSE seconds, 3 by
+# default), holding the pane's lock so no message falls in between.
 #
-# Exit: 2 usage, 5 the agent was not idle once the pane was locked.
+# Exit: 2 usage, 4 no agent on the pane, 5 the agent was not idle once
+# the pane was locked, 1 other failure.
 
 set -eu
 
-here=$(cd "$(dirname "$0")" && pwd)
+here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck source=pane-lock.sh source-path=SCRIPTDIR
 . "$here/pane-lock.sh"
 
 usage() {
@@ -33,9 +36,11 @@ usage() {
 }
 
 [ $# -eq 1 ] && [ -r "$1" ] && [ -n "${HERDR_PANE_ID:-}" ] || usage
-pane=$HERDR_PANE_ID
 instructions=$(cat "$1")
 [ -n "$instructions" ] || usage
+# The pane may have moved since $HERDR_PANE_ID was set; send-prompt.sh
+# locks the pane herdr reports, so this does too.
+pane=$(agent_pane "$HERDR_PANE_ID") || die 4 "no agent on $HERDR_PANE_ID"
 pause=${DOROTHY_COMPACT_PAUSE:-3}
 # herdr takes no `--`, so text beginning with `-` could pass for an option.
 case $instructions in
@@ -47,8 +52,11 @@ sleep "$pause"
 lock_pane "$pane"
 [ "$(agent_status "$pane")" = idle ] || die 5 "agent on $pane is not idle"
 
-herdr pane send-text "$pane" '/compact ' >/dev/null
+herdr pane send-text "$pane" '/compact ' >/dev/null 2>&1 ||
+    die 1 "cannot write to pane $pane"
 sleep "$pause"
-herdr pane send-text "$pane" "$instructions" >/dev/null
+herdr pane send-text "$pane" "$instructions" >/dev/null 2>&1 ||
+    die 1 "/compact typed in pane $pane, instructions not sent: clear the input"
 sleep "$pause"
-herdr pane send-keys "$pane" enter >/dev/null
+herdr pane send-keys "$pane" enter >/dev/null 2>&1 ||
+    die 1 "/compact and instructions typed in pane $pane, enter failed"

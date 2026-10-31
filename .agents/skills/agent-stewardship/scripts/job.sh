@@ -25,6 +25,7 @@
 set -eu
 
 here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck source=pane-lock.sh source-path=SCRIPTDIR
 . "$here/pane-lock.sh"
 
 usage() {
