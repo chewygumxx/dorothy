@@ -811,3 +811,145 @@ describe("bun run eval -- review --apply", () => {
         ).toBe(0);
     });
 });
+
+describe("bun run eval -- review, its modes apart", () => {
+    const clash = async (args: string[], why: string) => {
+        const { io, err, out } = fakeIo();
+        expect(await runCli(["review", "--work", work, ...args], io)).toBe(1);
+        expect(err.join("")).toContain(why);
+        expect(out.join("")).toBe("");
+        expect(existsSync(join(temp.root, "out"))).toBe(false);
+    };
+    const file = () => join(temp.root, "decisions.jsonl");
+
+    it("takes one of --render, --spot-check and --apply", async () => {
+        writeFileSync(file(), "");
+        const modes: Record<string, string[]> = {
+            apply: ["--apply", file(), "--reviewer", "a"],
+            render: ["--render", join(temp.root, "out")],
+            "spot-check": ["--spot-check", join(temp.root, "out", "s.md")],
+        };
+        const names = Object.keys(modes);
+        for (const [at, a] of names.entries()) {
+            for (const b of names.slice(at + 1)) {
+                await clash(
+                    [...(modes[a] ?? []), ...(modes[b] ?? [])],
+                    `--${a} cannot go with --${b}`,
+                );
+            }
+        }
+    });
+
+    it("names the options each mode leaves out", async () => {
+        const out = join(temp.root, "out");
+        await clash(
+            ["--render", out, "--reviewer", "a"],
+            "--reviewer cannot go with --render",
+        );
+        await clash(
+            ["--render", out, "--dry-run"],
+            "--dry-run cannot go with --render",
+        );
+        await clash(
+            ["--render", out, "--per", "3"],
+            "--per cannot go with --render",
+        );
+        await clash(
+            ["--spot-check", out, "--evidence", "9"],
+            "--evidence cannot go with --spot-check",
+        );
+        await clash(
+            ["--spot-check", out, "--source", "m/1"],
+            "--source cannot go with --spot-check",
+        );
+        await clash(
+            ["--spot-check", out, "--batches", "2"],
+            "--batches cannot go with --spot-check",
+        );
+        await clash(
+            ["--apply", file(), "--reviewer", "a", "--batches", "2"],
+            "--batches cannot go with --apply",
+        );
+    });
+
+    it("says what an option beside no mode goes with", async () => {
+        await clash(["--batches", "2"], "--batches goes with --render");
+        await clash(["--source", "m/1"], "--source goes with --render");
+        await clash(["--per", "2"], "--per goes with --spot-check");
+    });
+
+    it("bounds --batches and --per", async () => {
+        const out = join(temp.root, "out");
+        await clash(
+            ["--render", out, "--batches", "0"],
+            "--batches must be a whole number from 1 to 100",
+        );
+        await clash(
+            ["--render", out, "--batches", "101"],
+            "--batches must be a whole number from 1 to 100",
+        );
+        await clash(
+            ["--spot-check", out, "--per", "1001"],
+            "--per must be a whole number from 1 to 1000",
+        );
+    });
+});
+
+describe("bun run eval -- review --render and --spot-check", () => {
+    it("renders the drafts and says how many parts", async () => {
+        const dir = join(temp.root, "out", "drafts");
+        const { io, out } = fakeIo();
+        io.ask = async () => {
+            throw new Error("asked");
+        };
+        expect(
+            await runCli(
+                ["review", "--work", work, "--render", dir, "--batches", "2"],
+                io,
+            ),
+        ).toBe(0);
+        expect(out.join("")).toBe(
+            "drafts-1.md: 2 drafts\ndrafts-2.md: 1 draft\n",
+        );
+        expect(readFileSync(join(dir, "drafts-1.md"), "utf8")).toContain(
+            "Draft 1 of 3",
+        );
+    });
+
+    it("says plainly when there are no drafts, writing nothing", async () => {
+        await writeQuestions(work, []);
+        const dir = join(temp.root, "out");
+        const { io, out } = fakeIo();
+        expect(
+            await runCli(["review", "--work", work, "--render", dir], io),
+        ).toBe(0);
+        expect(out.join("")).toBe("no drafts to render\n");
+        expect(existsSync(dir)).toBe(false);
+    });
+
+    it("says when no draft is of the source", async () => {
+        const dir = join(temp.root, "out");
+        const { io, out } = fakeIo();
+        expect(
+            await runCli(
+                ["review", "--work", work, "--render", dir, "--source", "x/9"],
+                io,
+            ),
+        ).toBe(0);
+        expect(out.join("")).toBe("no drafts from x/9 to render\n");
+        expect(existsSync(dir)).toBe(false);
+    });
+
+    it("writes a spot-check and says what it holds", async () => {
+        const file = join(temp.root, "spot.md");
+        const { io, out } = fakeIo();
+        expect(
+            await runCli(
+                ["review", "--work", work, "--spot-check", file, "--per", "2"],
+                io,
+            ),
+        ).toBe(0);
+        expect(out.join("")).toBe(`3 unsure, 0 sampled -> ${file}\n`);
+        expect(readFileSync(file, "utf8")).toContain("Unsure 3:");
+    });
+});
