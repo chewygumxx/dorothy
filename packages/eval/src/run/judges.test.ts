@@ -17,6 +17,7 @@ import { stubModels } from "../testing.js";
 import {
     ABSTENTION_PROMPT,
     LENIENT_PROMPT,
+    MEMORY_NOTE,
     makeJudges,
     STALE_PROMPT,
 } from "./judges.js";
@@ -65,13 +66,13 @@ it.each([
         expect(models.calls).toBe(4);
         expect(fake.requests.map((request) => request.stdin)).toEqual(
             [
-                CORRECTNESS_PROMPT,
-                LENIENT_PROMPT,
-                ABSTENTION_PROMPT,
-                STALE_PROMPT,
-            ].map((prompt) =>
-                prompt
-                    .replaceAll("{inputs}", "A {question}")
+                [CORRECTNESS_PROMPT, `${MEMORY_NOTE}\n\nA {question}`],
+                [LENIENT_PROMPT, `${MEMORY_NOTE}\n\nA {question}`],
+                [ABSTENTION_PROMPT, "A {question}"],
+                [STALE_PROMPT, "A {question}"],
+            ].map(([prompt, inputs]) =>
+                (prompt ?? "")
+                    .replaceAll("{inputs}", inputs ?? "")
                     .replaceAll("{outputs}", "Answer")
                     .replaceAll("{reference_outputs}", "Gold"),
             ),
