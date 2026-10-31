@@ -64,9 +64,10 @@ brainstorm:
 - Anthropic is reached by the Messages API on an API key, the Max
   plan's monthly API credits first; the Agent SDK retires from her own
   calls.
-- Only providers that keep no prompts may receive her requests:
-  Anthropic's API, OpenRouter with data collection denied and zero
-  retention, featherless, and local servers.
+- Only providers the user accepted as keeping no prompts may receive
+  her requests: Anthropic's API on its commercial terms, OpenRouter
+  with data collection denied and zero retention, featherless, and
+  local servers.
 - Existing packages are surveyed before anything bespoke; new
   subsystems speak standard protocols, with SDK types at a thin edge.
 
@@ -100,14 +101,14 @@ wrong:
 | Config faults | `[providers]` and `[models]` faults are errors, unlike other tables | A typo stops chat until fixed |
 | Fallback trigger | Every failure but cancellation | One wasted attempt on a request that fails everywhere |
 | Chat mid-reply | Fallback until text has streamed or `remember` has run | A turn the user asks again |
-| Time budget | One `timeoutMs` per call, shared by its attempts | A slow first attempt leaves later ones little time |
+| Time budget | One `timeoutMs` per structured call, shared by its attempts; a stall ends an attempt sooner; chat has no deadline | A slow first attempt leaves later ones little time |
 | SDK retries | Off; fallback and cooldown decide | A blip costs a fallback, not a retry |
 | Cooldown scope | Usage refusals: the provider; rate limits: the provider and model | A provider-wide rate limit is learnt model by model |
 | Schema conformity | Only output that is not JSON falls back; callers validate the rest | A model returning wrong JSON is not replaced |
-| Extended thinking | Off in this phase | Her replies keep today's depth |
+| Thinking | Each model's lowest setting, adaptive where the model insists, summarised in the stream and never shown | Thinking tokens cost, as they did under the CLI |
 | Unknown prices | Cost shown as $0, with a notice | Understated costs until a price is set |
-| Default models | Chat `claude-opus-5-5`, review and compaction `claude-sonnet-5-5`, maintenance `claude-haiku-5-5` | Quality or credits, one line of config each |
-| The hook's proxy | `DOROTHY_ANTHROPIC_BASE_URL` retires; Part B's `base-url` replaces it | A user's proxy is lost for a merge |
+| Default models | Chat `claude-opus-5-5`, review and compaction `claude-sonnet-5-5`, maintenance `claude-haiku-5-5` | Quality or credits: a constant each in Part A, a line of config in Part B |
+| The hook's proxy | `DOROTHY_ANTHROPIC_BASE_URL` retires; Part B's `base-url` takes a loopback proxy | A remote proxy is no longer reachable |
 | Event names | `ready` carries `sessionId`; the transcript field keeps its name | A rename across `tui` and `memory` |
 | Merges | A waits for `ANTHROPIC_API_KEY` and its live smoke; B for its own | The branches wait |
 
@@ -170,7 +171,8 @@ export type Attempt<T> = (
 In `core/src/models/`:
 
 - `fallback.ts`: `runRoute(route, attempt, { cooldowns, signal,
-  deadlineMs })`, returning the value with the entry that gave it, every
+  deadlineMs })`, `deadlineMs` null for chat and the one-shot reply,
+  returning the value with the entry that gave it, every
   attempt's cost summed, and a note per move to a later entry; or every
   entry's failure. It decides; it never reads HTTP.
 - `cooldowns.ts`: `class Cooldowns`, built with a `Clock`
@@ -187,8 +189,9 @@ a `Failure`; only `agent` knows the wire. `StructuredOutcome` gains
 
 Part A builds all of this, `runRoute` and `Cooldowns` included, with the
 `anthropic` kind alone and one-entry routes that `cli` makes without
-config. Part B adds the config, the other three kinds and the tests of
-multi-entry routes.
+config; `runRoute`'s and `Cooldowns`' unit tests, on fake attempts,
+are Part A's. Part B adds the config, the other three kinds, and the
+wire and behaviour tests of multi-entry routes.
 
 ## Configuration (Part B)
 
@@ -250,7 +253,10 @@ Rules:
   `[models]` takes its default model (Decisions) on the provider named
   `anthropic`; if there is none of that kind and name, leaving the role
   out is a fault. A role given an empty list is a fault.
-- Faults: a kind outside the four, a setting a kind does not take, a
+- A route entry splits at its first colon, so `openrouter:x/y:free`
+  names model `x/y:free`.
+- Faults: a `[models]` key outside the four roles, a kind outside the
+  four, a setting a kind does not take, a
   non-loopback URL where loopback is required, a malformed key name or
   route entry, a route naming an undeclared provider, an empty route, a
   misplaced price. Unlike the other tables, whose faults are warnings
@@ -261,7 +267,7 @@ Rules:
 
 | Entry point | On a routing fault |
 | --- | --- |
-| TUI and one-shot reply | Print it and exit 1 |
+| TUI, one-shot reply and `--dump-context` | Print it and exit 1 |
 | Service | Log it; serve memory with reviews off |
 | Claude hook | Log it; skip the review; exit 0 |
 | `--review-backfill` | Print it and exit 1 |
@@ -285,9 +291,11 @@ that entry fails with class `secret`.
   package reads `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY` or any other
   variable of its own. Every call sets `maxRetries: 0`.
 - `memory` takes a review call and a compaction call apart, where it
-  took one `call`, and its compaction session detects a started reply
-  from `delta`, `lookup` and `remember` events, no longer from `sdk`
-  events.
+  took one `call`; shows a structured outcome's `notes` where it shows
+  that call's failures, as a TUI warning or a service log line; and its
+  compaction session detects a started reply from `delta`, `lookup` and
+  `remember` events, no longer from `sdk` events, so a queued interrupt
+  waits for the first of them.
 - `cli` builds the routes (Part A: one entry per role on Anthropic;
   Part B: from the config), one `Cooldowns`, and hands each caller its
   role: chat to the TUI and the one-shot reply, review to the service,
@@ -299,7 +307,9 @@ that entry fails with class `secret`.
   `cliCompactFailed`; `failureText`; the `QueryFn`, `StructuredQueryFn`,
   `OneShotQuery` and `CaptureQueryFn` seams; `stripClaude`,
   `reviewEnv`, `REVIEW_DROPPED` and `REVIEW_BASE_URL`, as no provider
-  reads the environment; and `chooseClaudeToken` in the hook's secrets,
+  reads the environment, with the launch's side that sets
+  `DOROTHY_ANTHROPIC_BASE_URL` (`cli/src/claude.ts`) and its text in
+  `cli/AGENTS.md`; and `chooseClaudeToken` in the hook's secrets,
   as no review spends an OAuth token. `chooseClaudeToken` stays in
   `core` for the eval's `via = "claude"` clients.
 - `workspace.test.ts` pins the holder: no package declares
@@ -318,9 +328,10 @@ sessions and history; memory's compaction estimate reads its `system`.
 `@ai-sdk/mcp/mcp-stdio`, on the same `recall` command and arguments,
 with:
 
-- the environment passed explicitly: the process's own, less every
-  provider key named by a route and every `CLAUDE_CODE_OAUTH_TOKEN*`, so
-  the server sees the caller's XDG roots;
+- the environment passed explicitly: the process's own, less every key
+  a provider names, every variable ending `_API_KEY` and every
+  `CLAUDE_CODE_OAUTH_TOKEN*`, so the server sees the caller's XDG roots
+  and no credential;
 - stderr ignored, so nothing reaches the TUI's screen;
 - its tools re-keyed `mcp__memory__<name>`, as the Agent SDK named them,
   so `ALLOWED_TOOLS`, `RECOLLECT_TOOL`, `toolOf`, the persona and the
@@ -331,17 +342,27 @@ with:
 `ready` is emitted once the client has started or failed, never inside
 `start()`, with the first entry's model and a session id of Dorothy's
 own; the transcript's `sdkSessionId` field keeps its name and takes that
-id. If the client fails to start, chat goes on without recall and warns
-once; if the server dies later, its tools fail as failed lookups.
-`close()` waits up to `CLOSE_GRACE_MS` for a tool call in flight before
-closing the client.
+id, and its session `model` is the first entry's, each turn's own
+model riding on `turn-end`. If the client fails to start, chat goes on
+without recall and warns once; if the server dies later, its tools fail
+as failed lookups. `close()` waits up to `CLOSE_GRACE_MS` for a tool
+call in flight before closing the client.
 
 **A turn** appends the user's message and runs `streamText` on the
 route through `runRoute`, with the tools, `stopWhen` at ten steps,
 `timeout: { firstChunkMs: 60_000, chunkMs: 60_000 }`, the session's
-abort signal and `maxRetries: 0`. On `anthropic`, the system prompt is
-sent as a system message carrying a cache breakpoint, with a second on
-the latest user message, so the stable prefix is read from cache.
+abort signal and `maxRetries: 0`. On `anthropic`, the system prompt
+goes in `instructions` as a system message carrying a cache breakpoint,
+as AI SDK 7 refuses system messages among `messages`; a second
+breakpoint is set on a per-request copy of the latest user message and
+never stored, so a session never carries more than Anthropic's four.
+
+Thinking runs at each model's lowest setting; `claude-opus-5-5` and
+`claude-sonnet-5-5` think adaptively whatever is asked. Its display is
+`summarized`, so reasoning streams as parts that count as chunks for
+`firstChunkMs` and `chunkMs`, and none of it reaches `delta`. Reasoning
+parts stay in the session's messages while the same `<provider>:<model>`
+answers, and are dropped from the copy sent to any other.
 
 The stream becomes the events the TUI draws:
 
@@ -356,7 +377,9 @@ The stream becomes the events the TUI draws:
   the text it has.
 
 When the turn ends, the response's messages join the session's. An
-interrupted turn keeps its complete steps and the text it streamed.
+interrupted turn keeps its complete steps and the text it streamed. A
+failed turn's `error` event carries the stats of what its attempts
+reported, or none if they reported nothing.
 
 | `TurnStats` field | Source |
 | --- | --- |
@@ -378,14 +401,18 @@ and exits 1 on failure.
 
 ## Structured calls
 
-`structuredCall(route, deps)` runs `generateText` with `Output.object`
+`structuredCall(route, deps)` runs `streamText` with `Output.object`
 over the request's JSON schema (`jsonSchema()`, with no validator of its
-own) through `runRoute`, all attempts sharing the request's `timeoutMs`
-as one deadline, so the claim leases of reviews and compactions, one
-timeout plus a margin, still hold. On `anthropic` it uses the provider's
+own) through `runRoute`, streaming so that `firstChunkMs` and `chunkMs`
+(60 seconds each, as in chat) end an attempt that stalls while time is
+left for the next. All attempts share the request's `timeoutMs` as one
+deadline, so the claim leases of reviews and compactions, one timeout
+plus a margin, still hold. On `anthropic` it uses the provider's
 native structured output; on the Chat Completions kinds it asks for
 `response_format` `json_schema` (`supportsStructuredOutputs: true`), and
-a provider that refuses that fails the attempt as `rejected`.
+a provider that refuses that fails the attempt as `rejected`. On
+`openrouter`, structured calls also send `require_parameters: true`, so
+only endpoints that honour the schema are chosen.
 
 Output that is not a JSON value of the schema's top-level type fails
 the attempt as `unparsed`. Output that parses is the caller's to judge,
@@ -408,6 +435,8 @@ more than one entry in Part B:
 3. A cancellation, the caller's signal or an interrupt, ends the call
    with no further attempt.
 4. Past the deadline, no entry is tried; the call fails as `timeout`.
+   Chat and the one-shot reply have no deadline; a stall ends their
+   attempts.
 5. `usage` puts the provider in cooldown and `rate-limit` the provider
    and model, until `retry-after` (seconds or an HTTP date) or for five
    minutes without one; a failure on a forced attempt sets its cooldown
@@ -420,24 +449,29 @@ more than one entry in Part B:
 
 `started` is set once a text part has streamed or `remember` has run.
 Lookups are reads: a turn that failed after lookups alone is replayed
-on the next entry from the user's message, and its lookups stay
-recorded as made. A started turn that fails ends with an `error` event
-carrying its partial reply, as today; the TUI reconnects, and the next
-turn starts from the first entry not in cooldown, as `Cooldowns`
-outlives the session.
+on the next entry from the user's message. Both attempts' lookups are
+shown and recorded, as both were made. A started turn that fails ends
+with an `error` event carrying its partial reply, as today; the TUI
+reconnects, and the next turn starts from the first entry not in
+cooldown, as `Cooldowns` outlives the session.
 
-Classification, in `agent/src/failures.ts`, for errors thrown and for
-error parts in a stream (a provider's mid-stream error after a 200
-included):
+Classification, in `agent/src/failures.ts`, for errors thrown, error
+parts in a stream (a provider's mid-stream error after a 200 included)
+and `abort` parts. The AI SDK reports a caller's abort and its own
+timeouts alike, as an `abort` part, so the attempt checks the caller's
+signal first: `cancelled` only if that signal has fired, `timeout` for
+any other abort. A mid-stream error's type maps as its status does:
+`rate_limit_error` as 429, `overloaded_error` as 529, `api_error` as
+500, `billing_error` as 402.
 
 | Wire | Class |
 | --- | --- |
-| The caller's abort | `cancelled` |
-| 402; or 400 or 403 whose message names credit, billing or a spending limit | `usage` |
+| An abort while the caller's signal has fired | `cancelled` |
+| 402; or 400 or 403 whose message names credit, billing, a spending limit or a usage limit | `usage` |
 | 429 | `rate-limit` |
 | 529, 503, or an `overloaded_error` | `overload` |
 | Any other 5xx | `server` |
-| The deadline, or `firstChunkMs` or `chunkMs` passing | `timeout` |
+| Any other abort: the deadline, `firstChunkMs` or `chunkMs` | `timeout` |
 | No connection, a reset, or a redirect | `network` |
 | Any other 4xx | `rejected` |
 | Structured output not JSON | `unparsed` |
@@ -454,8 +488,8 @@ one rejects a long session, and the README says so.
   models, cache reads and five-minute cache writes at their own rates.
   The table's values come from Anthropic's pricing page when Part A's
   plan is written, and the plan names its date.
-- `openrouter`: `providerMetadata.openrouter.usage.cost`, with the
-  provider's `usage: { include: true }` set.
+- `openrouter`: `providerMetadata.openrouter.usage.cost`, summed over
+  the steps, with the provider's `usage: { include: true }` set.
 - `featherless` and `local`: the entry's `price`, with `includeUsage`
   set so streams report usage.
 - A model with no price, an Anthropic model missing from the table or a
@@ -515,14 +549,18 @@ key is passed in. Two layers:
   OpenRouter's retention fields on every request, Anthropic's cache
   breakpoints, `include_usage`, `response_format`), usage and cost
   parsing, each classification row, a mid-stream error after a 200, a
-  redirect refused, and a test that sets `ANTHROPIC_BASE_URL` and
+  redirect refused, six turns carrying at most four `cache_control`
+  blocks, and a test that sets `ANTHROPIC_BASE_URL` and
   `ANTHROPIC_API_KEY` in the environment to a recording server and
   proves nothing reaches it.
 - **Behaviour tests** on the AI SDK's mock models (`ai/test`):
   `Conversation`'s events, stats, `contextTokens`, interruption, close
   with a tool call in flight, the ten-step stop, `started` and replay
-  after lookups; structured outcomes, notes, cost summing and the
-  shared deadline.
+  after lookups, a caller's abort told from a stall past
+  `firstChunkMs`, a long reasoning-only start that is not a stall, and
+  reasoning dropped for another provider; structured outcomes, notes,
+  cost summing, the shared deadline, and a stalled first attempt
+  leaving the second its time.
 
 And:
 
@@ -550,7 +588,10 @@ recorded in the report with output and cost:
 
 - **Part A**, after the user has added `ANTHROPIC_API_KEY` with
   `sops edit secrets.json`: one chat turn that recalls, one review, one
-  compaction, and `--dump-context`.
+  compaction, and `--dump-context`. The review's and the compaction's
+  outputs are judged by `validateReview` and `validateClusters`, as
+  `@ai-sdk/anthropic` moves some schema limits into descriptions; a
+  failure is investigated before the merge.
 - **Part B**, with `OPENROUTER_API_KEY`, already present: one call
   forced onto OpenRouter by a route whose first entry is a loopback
   server answering 429, on a model chosen that day for having a
@@ -579,7 +620,7 @@ recorded in the report with output and cost:
   usage-limits practice routes the agents; token budgets from usage.
 - Cooldowns shared between the TUI and the service.
 - A per-entry context window, checked before the attempt.
-- Extended thinking, with reasoning kept to the provider that made it.
+- Thinking set per role, beyond each model's lowest.
 - The memory engine's recall measured again on the new review model.
 - The gateway serving models other than Claude, for harnesses whose
   vendor supports it.
