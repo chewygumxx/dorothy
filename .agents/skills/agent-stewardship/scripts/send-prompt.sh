@@ -11,8 +11,10 @@
 
 # Sends a message, read from stdin, to an agent in a herdr pane, as text
 # and then Enter in two calls: Claude Code swallows an Enter arriving in
-# the same paste as text. A blocked agent is refused, as the text would
-# answer its dialog.
+# the same paste as text. A pause of DOROTHY_SEND_PAUSE seconds (1 by
+# default) separates them, as Codex takes an Enter sent at once as part of
+# the paste and does not submit. A blocked agent is refused, as the text
+# would answer its dialog.
 #
 #   send-prompt.sh [--from <name>] [--at <time> | --in <span>] <agent>
 #   send-prompt.sh --deliver <id>
@@ -30,6 +32,7 @@
 
 set -eu
 
+pause=${DOROTHY_SEND_PAUSE:-1}
 here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 self=$here/$(basename "$0")
 # shellcheck source=pane-lock.sh source-path=SCRIPTDIR
@@ -127,6 +130,7 @@ if [ -n "$deliver" ]; then
         log 'partial: send-text failed, not resent'
         die 1 "$id: send-text failed, not resent"
     fi
+    sleep "$pause"
     if ! herdr pane send-keys "$pane" enter >/dev/null 2>&1; then
         log 'partial: text written, enter failed'
         die 1 "$id: text written, enter failed"
@@ -163,6 +167,7 @@ if [ -z "$at$span" ]; then
     # The label begins the text, so a message of `-rf` is never an option.
     herdr pane send-text "$pane" "[from $from] $message" >/dev/null 2>&1 ||
         die 1 "cannot write to pane $pane"
+    sleep "$pause"
     herdr pane send-keys "$pane" enter >/dev/null 2>&1 ||
         die 1 "text written to pane $pane, enter failed"
     exit 0

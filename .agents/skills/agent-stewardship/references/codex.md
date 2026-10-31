@@ -38,7 +38,9 @@ Give Codex a task in files, not in the message:
 
    `herdr agent prompt dorothy-codex "<line>"` also works for Codex,
    which, unlike Claude Code, takes the Enter that arrives in the same
-   paste; it carries no label.
+   paste; it carries no label. `send-prompt.sh` sends the Enter apart
+   after a pause, as Codex reads an Enter sent at once after typed text
+   as a newline.
 
 3. Wait in the background shell, then read the report:
 

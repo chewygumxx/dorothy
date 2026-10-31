@@ -42,7 +42,9 @@ Claude Code session, and `dorothy-codex`, Codex. Inside a pane,
 `herdr agent prompt` sends the text and Enter as one bracketed paste.
 Codex submits it; Claude Code swallows an Enter that arrives with the
 paste, leaving the text unsent. So messages go as text, then Enter,
-apart, which `send-prompt.sh` does. Neither form sends a slash command:
+apart, which `send-prompt.sh` does, pausing a second between (Codex
+reads an Enter sent at once as part of the paste and does not submit;
+`DOROTHY_SEND_PAUSE` sets the seconds). Neither form sends a slash command:
 that is typed, as `compact-self.sh` types `/compact`.
 
 ## Sending a message

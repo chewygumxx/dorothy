@@ -99,6 +99,8 @@ beforeEach(async () => {
         XDG_STATE_HOME: join(root, "state"),
         STUB: root,
         TZ: "UTC",
+        // The pause before Enter, not waited out but for its own test.
+        DOROTHY_SEND_PAUSE: "0",
     };
 });
 
@@ -170,6 +172,25 @@ describe("send-prompt.sh, now", () => {
         expect(await writes()).toEqual([
             ["send-text", "w1:p2", "[from alice] hello"],
             ["send-keys", "w1:p2", "enter"],
+        ]);
+    });
+
+    it("pauses DOROTHY_SEND_PAUSE seconds between the text and Enter", async () => {
+        const stub = join(root, "bin", "sleep");
+        await writeFile(stub, `#!/bin/sh\n${logging}\n`);
+        await chmod(stub, 0o755);
+        const { code } = await run(send, ["--from", "alice", "bob"], "hi", {
+            DOROTHY_SEND_PAUSE: "7",
+        });
+        expect(code).toBe(0);
+        expect(
+            (await calls())
+                .filter((call) => call[0] !== "herdr" || call[1] === "pane")
+                .map((call) => call.slice(0, 3)),
+        ).toEqual([
+            ["herdr", "pane", "send-text"],
+            ["sleep", "7"],
+            ["herdr", "pane", "send-keys"],
         ]);
     });
 
@@ -387,6 +408,25 @@ describe("send-prompt.sh --deliver", () => {
         ]);
         expect(await log()).toMatch(new RegExp(`^${stamp} delivered\n$`));
         expect(await readdir(sendsDir())).not.toContain(`${id}.msg`);
+    });
+
+    it("pauses DOROTHY_SEND_PAUSE seconds between text and Enter", async () => {
+        const stub = join(root, "bin", "sleep");
+        await writeFile(stub, `#!/bin/sh\n${logging}\n`);
+        await chmod(stub, 0o755);
+        const { code } = await run(send, ["--deliver", id], "", {
+            DOROTHY_SEND_PAUSE: "7",
+        });
+        expect(code).toBe(0);
+        expect(
+            (await calls())
+                .filter((call) => call[0] !== "herdr" || call[1] === "pane")
+                .map((call) => call.slice(0, 3)),
+        ).toEqual([
+            ["herdr", "pane", "send-text"],
+            ["sleep", "7"],
+            ["herdr", "pane", "send-keys"],
+        ]);
     });
 
     it("re-arms in five minutes when blocked, counting the tries", async () => {
