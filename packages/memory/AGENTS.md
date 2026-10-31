@@ -26,9 +26,9 @@ and prompts as text (`MemoryPrompts`).
 
 ## Entry points and imports
 
-- `"."` (`src/index.ts`): `openMemory`, `previewStart`, and what
-  `--claude` asks of memory; `"./claude-hook"` (`src/claude-hook.ts`):
-  `runClaudeHook`, for its hooks. Read [their guide](./src/bodies/AGENTS.md).
+- `"."` (`src/index.ts`): `openMemory`, `previewStart`, what `--claude` asks;
+  `"./claude-hook"` (`runClaudeHook`) and `"./host-hook"` (`runHostHook`),
+  guides: [bodies](./src/bodies/AGENTS.md), [hooks](./src/hooks/AGENTS.md).
 - `"./commands"` (`src/commands.ts`): `--list`, `--memory`, `--tags`,
   `--edit-tags`, `--facts`, `--retire`, `--revive`, `--verify`, `--sync`,
   `--projects`, the history commands and `commandHistory()`.

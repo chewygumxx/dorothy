@@ -10,7 +10,8 @@
         "./service": "./src/service.ts",
         "./client": "./src/client.ts",
         "./bridge": "./src/bridge.ts",
-        "./evaluation": "./src/evaluation.ts"
+        "./evaluation": "./src/evaluation.ts",
+        "./host-hook": "./src/host-hook.ts"
     },
     "dependencies": {
         "@dorothy/core": "workspace:*",
