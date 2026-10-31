@@ -339,7 +339,7 @@ describe("the report", () => {
     });
 
     it("says cited is a ceiling, and never has it alone", () => {
-        const run = { ...info("r1"), systems: ["dorothy", "cited:x"] };
+        const run = { ...info("r1"), systems: ["dorothy", "cited"] };
         const records = [
             record("q-1", "dorothy", {
                 judged: {
@@ -351,17 +351,15 @@ describe("the report", () => {
             }),
             record("q-1", "cited"),
         ];
-        const text = reportOf(summarise(run, records));
+        const summary = summarise(run, records);
+        const text = reportOf(summary);
         expect(text).toContain(
             "cited is given each question's evidence: a ceiling, not a contender.",
         );
         expect(reportOf(summarise(info("r1"), RECORDS))).not.toContain(
             "a ceiling",
         );
-        const { systems } = summarise(
-            { ...info("r1"), systems: ["dorothy", "cited"] },
-            records,
-        );
+        const { systems } = summary;
         expect(systems.cited?.alone).toEqual({ right: [], wrong: [] });
         expect(systems.dorothy?.alone).toEqual({ right: [], wrong: [] });
         expect(text).not.toContain("cited alone");
