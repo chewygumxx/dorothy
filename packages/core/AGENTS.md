@@ -40,6 +40,10 @@ below. It declares `niceware` alone, and never imports another
   and compaction take.
 - `contracts/model.ts`: the routing contracts: `ROLES`, `KINDS`, a
   `RouteEntry`, `Routes`, `Failure` and `AttemptResult`, and `label`.
+- `models/cooldowns.ts`: `Cooldowns`, the usage and rate-limit refusals
+  a process skips until their time is up.
+- `models/fallback.ts`: `runRoute`, a call's entries in order, skipping
+  cooldowns and deciding on each Failure; `CANCELLED` and `timedOut`.
 - `models/prices.ts`: `ANTHROPIC_PRICES` and `stepCost`, what a step's
   tokens cost, or null for a model with no known price.
 - `models/routes.ts`: `DEFAULT_MODELS` and `defaultRoutes`, each role's

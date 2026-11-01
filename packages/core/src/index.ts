@@ -20,6 +20,8 @@ export * from "./contracts/recall.js";
 export * from "./contracts/session.js";
 export * from "./contracts/start.js";
 export * from "./contracts/structured.js";
+export * from "./models/cooldowns.js";
+export * from "./models/fallback.js";
 export * from "./models/prices.js";
 export * from "./models/routes.js";
 export * from "./secrets.js";
