@@ -131,8 +131,8 @@ SDK. Keep every new mode's import lazy.
   without any key or OAuth token, in `recallCwd`, never the user's project.
 - `--claude` loads no secrets: `claude` signs in as the user's own Claude
   Code does, and memory is read without credentials. `--claude-hook`
-  loads the checkout's `secrets.json` by path for reviews, once `claude`'s
-  variables are gone, never the working directory's.
+  loads the checkout's `secrets.json` by path for reviews, never the
+  working directory's; `claude`'s variables stay, no provider reads them.
 - The CLI passes `ambient()` to memory's history commands, and
   `commandHistory(...)` of it to memory's commands, the fact and
   project commands among them, and `editInEditor` (from
