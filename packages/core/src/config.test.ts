@@ -575,6 +575,9 @@ describe("routing in config.toml", () => {
         'models = { chat = ["anthropic:x"] }\nbudget = "\n',
         'providers.anthropic.kind = "anthropic"\nbudget = "\n',
         '[ "models" ]\nchat = ["anthropic:x"]\nbudget = "\n',
+        '[\'models\']\nchat = ["anthropic:x"]\nbudget = "\n',
+        '\'models\'.chat = ["anthropic:x"]\nbudget = "\n',
+        '[[models]]\nchat = "x"\nbudget = "\n',
     ])("faults a broken file that routes, naming its line: %j", (text) => {
         expect(routingOf(text)).toEqual({
             ok: false,
@@ -584,6 +587,10 @@ describe("routing in config.toml", () => {
                 ),
             ],
         });
+    });
+
+    it("keeps the default routes for a broken file whose keys only begin so", () => {
+        expect(routingOf('modelsx = 1\nbudget = "\n').ok).toBe(true);
     });
 
     it("faults a file that does not parse, naming its line", () => {

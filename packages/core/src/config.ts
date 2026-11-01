@@ -467,9 +467,9 @@ export function parseConfig(text: string): {
 }
 
 // A line that opens or sets [providers] or [models], in any of TOML's
-// forms: a table header, a dotted key or an inline table.
-const ROUTING_LINE =
-    /^\s*(\[\s*"?(providers|models)"?\s*[\].]|"?(providers|models)"?\s*[.=])/m;
+// forms: a table header, an array of tables, a dotted key or an inline
+// table, its key bare or quoted either way.
+const ROUTING_LINE = /^\s*\[*\s*["']?(providers|models)["']?\s*[\].=]/m;
 
 // The routes config.toml gives, or its faults. A file that does not
 // parse is a fault here only if it routes: the routes it meant cannot be
