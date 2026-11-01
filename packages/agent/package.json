@@ -8,8 +8,10 @@
     "dependencies": {
         "@ai-sdk/anthropic": "^4.0.94",
         "@ai-sdk/mcp": "^2.0.88",
+        "@ai-sdk/openai-compatible": "^3.0.82",
         "@dorothy/core": "workspace:*",
         "@dorothy/identity": "workspace:*",
+        "@openrouter/ai-sdk-provider": "^3.1.0",
         "ai": "^7.0.159",
         "zod": "^4.6.7"
     }

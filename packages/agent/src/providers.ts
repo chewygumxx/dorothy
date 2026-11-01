@@ -14,7 +14,9 @@
 // own, and a key goes only where its route says.
 
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { Env, RouteEntry } from "@dorothy/core";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import type { LanguageModel } from "ai";
 
 // The AI SDK writes its warnings to the console, which would land on the
@@ -37,7 +39,14 @@ export type ModelFactory = (
     use: Use,
 ) => LanguageModel;
 
-export const languageModel: ModelFactory = (entry, key) => {
+// Sent to OpenRouter on every request: no endpoint that collects data or
+// keeps prompts.
+export const OPENROUTER_RETENTION = {
+    data_collection: "deny",
+    zdr: true,
+} as const;
+
+export const languageModel: ModelFactory = (entry, key, use) => {
     const root = entry.baseUrl.replace(/\/+$/, "");
     switch (entry.kind) {
         case "anthropic":
@@ -45,6 +54,35 @@ export const languageModel: ModelFactory = (entry, key) => {
                 baseURL: `${root}/v1`,
                 apiKey: key,
                 fetch: noRedirect,
+            })(entry.model);
+        case "openrouter":
+            // strict: the compatible mode would leave out stream_options,
+            // and with it the usage of a stream.
+            return createOpenRouter({
+                baseURL: root,
+                apiKey: key,
+                fetch: noRedirect,
+                compatibility: "strict",
+            }).chat(entry.model, {
+                provider: {
+                    ...OPENROUTER_RETENTION,
+                    ...(use === "structured"
+                        ? { require_parameters: true }
+                        : {}),
+                },
+                usage: { include: true },
+            });
+        case "featherless":
+        case "huggingface":
+        case "local":
+            return createOpenAICompatible({
+                name: entry.kind,
+                baseURL: root,
+                // A keyless local server is sent no Authorization header.
+                ...(key === "" ? {} : { apiKey: key }),
+                fetch: noRedirect,
+                includeUsage: true,
+                supportsStructuredOutputs: true,
             })(entry.model);
         default:
             throw new Error(

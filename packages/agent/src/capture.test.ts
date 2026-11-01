@@ -152,13 +152,13 @@ describe("dumpRequest", () => {
         const body = await dumpRequest({
             setup: {},
             message: "hi",
-            entry: { ...OPUS, kind: "local" },
+            entry: { ...OPUS, kind: "unknown" as never },
             env: {},
             report: (kind, message) => reports.push([kind, message]),
         });
         expect(body).toBeNull();
         expect(reports).toEqual([
-            ["error", expect.stringContaining("no provider for local")],
+            ["error", expect.stringContaining("no provider for unknown")],
         ]);
     });
 });
