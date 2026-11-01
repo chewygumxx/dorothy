@@ -51,17 +51,28 @@ export async function runDump(
         write.err(`dorothy: ${preview.message}\n`);
         return 1;
     }
+    const notes: string[] = [];
+    let failure: string | null = null;
     const body = await dump({
         setup: { ...preview.start, persona: request.persona },
         message: request.message,
         entry: chatEntry(),
         env,
+        report: (kind, message) => {
+            if (kind === "error") {
+                failure = message;
+            } else {
+                notes.push(message);
+            }
+        },
     });
-    for (const warning of preview.warnings) {
+    for (const warning of [...preview.warnings, ...notes]) {
         write.err(`dorothy: ${warning}\n`);
     }
     if (body === null) {
-        write.err("dorothy: the chat sent no request to dump\n");
+        write.err(
+            `dorothy: the chat sent no request to dump${failure === null ? "" : `: ${failure}`}\n`,
+        );
         return 1;
     }
     write.out(`${JSON.stringify(body, null, 2)}\n`);

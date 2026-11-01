@@ -66,19 +66,23 @@ export function captureServer(): {
 // The first request a chat on this entry would send, as it would send
 // it, recall tools included: a session of its own, pointed at the
 // capture server with a stand-in key and no fallback, closed once the
-// server has answered.
+// server has answered. Its warnings go to report, and the error that
+// kept a request from being sent, if one did; the stand-in's own refusal
+// of the request it captured is not reported.
 export async function dumpRequest({
     setup,
     message,
     entry,
     env = process.env,
     connect,
+    report = () => {},
 }: {
     setup: SessionSetup;
     message: string;
     entry: RouteEntry;
     env?: Env;
     connect?: ConnectRecall;
+    report?: (kind: "warning" | "error", message: string) => void;
 }): Promise<unknown | null> {
     const server = captureServer();
     const conversation = new Conversation({
@@ -88,8 +92,14 @@ export async function dumpRequest({
         ...(connect === undefined ? {} : { connect }),
     });
     try {
+        let failure: string | null = null;
         const done = new Promise<void>((resolve) => {
             conversation.subscribe((event) => {
+                if (event.type === "warning") {
+                    report("warning", event.message);
+                } else if (event.type === "error") {
+                    failure = event.message;
+                }
                 if (event.type === "turn-end" || event.type === "error") {
                     resolve();
                 }
@@ -98,7 +108,11 @@ export async function dumpRequest({
         conversation.start();
         conversation.send(message);
         await done;
-        return server.bodies[0] ?? null;
+        const body = server.bodies[0] ?? null;
+        if (body === null && failure !== null) {
+            report("error", failure);
+        }
+        return body;
     } finally {
         await conversation.close();
         server.stop();

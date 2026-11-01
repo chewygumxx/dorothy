@@ -17,10 +17,16 @@ import { newPhrase } from "@dorothy/core";
 import { runDump } from "./dump.js";
 import { chatEntry } from "./models.js";
 
-const recording = (body: unknown = { model: "claude-opus-5-5" }) => {
+const recording = (
+    body: unknown = { model: "claude-opus-5-5" },
+    reports: ["warning" | "error", string][] = [],
+) => {
     const seen: Parameters<typeof dumpRequest>[0][] = [];
     const dump = async (options: Parameters<typeof dumpRequest>[0]) => {
         seen.push(options);
+        for (const [kind, message] of reports) {
+            options.report?.(kind, message);
+        }
         return body;
     };
     return { seen, dump };
@@ -70,7 +76,7 @@ describe("runDump", () => {
             entry: chatEntry(),
             setup: { persona: "chat", history: [] },
         });
-        expect(fake.seen[0]?.setup.recall).not.toBeNull();
+        expect(fake.seen[0]?.setup.recall).toHaveProperty("command");
     });
 
     it("dumps development mode", async () => {
@@ -102,5 +108,34 @@ describe("runDump", () => {
         );
         expect(code).toBe(1);
         expect(err).toBe("dorothy: the chat sent no request to dump\n");
+    });
+
+    it("says the warnings the dump met, beside the body", async () => {
+        const fake = recording({ model: "m" }, [
+            ["warning", "memory: recall is unavailable (spawn failed)"],
+        ]);
+        const code = await runDump(
+            { resume: null, message: "hi", persona: "chat" },
+            { env, dump: fake.dump, write },
+        );
+        expect(code).toBe(0);
+        expect(JSON.parse(out)).toEqual({ model: "m" });
+        expect(err).toBe(
+            "dorothy: memory: recall is unavailable (spawn failed)\n",
+        );
+    });
+
+    it("gives the cause when the chat sent no request", async () => {
+        const fake = recording(null, [
+            ["error", "ANTHROPIC_API_KEY is not set"],
+        ]);
+        const code = await runDump(
+            { resume: null, message: "hi", persona: "chat" },
+            { env, dump: fake.dump, write },
+        );
+        expect(code).toBe(1);
+        expect(err).toBe(
+            "dorothy: the chat sent no request to dump: ANTHROPIC_API_KEY is not set\n",
+        );
     });
 });

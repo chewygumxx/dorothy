@@ -127,4 +127,38 @@ describe("dumpRequest", () => {
             rmSync(cache, { recursive: true, force: true });
         }
     });
+
+    it("reports a recall server that would not start, and sends no tools", async () => {
+        const reports: [string, string][] = [];
+        const body = (await dumpRequest({
+            setup: { recall: { command: "recall", args: [] } },
+            message: "hi",
+            entry: OPUS,
+            env: {},
+            connect: async () => {
+                throw new Error("spawn failed");
+            },
+            report: (kind, message) => reports.push([kind, message]),
+        })) as Record<string, unknown>;
+        expect(body.model).toBe("claude-opus-5-5");
+        expect(body.tools).toBeUndefined();
+        expect(reports).toEqual([
+            ["warning", "memory: recall is unavailable (spawn failed)"],
+        ]);
+    });
+
+    it("reports why no request was sent, when none was", async () => {
+        const reports: [string, string][] = [];
+        const body = await dumpRequest({
+            setup: {},
+            message: "hi",
+            entry: { ...OPUS, kind: "local" },
+            env: {},
+            report: (kind, message) => reports.push([kind, message]),
+        });
+        expect(body).toBeNull();
+        expect(reports).toEqual([
+            ["error", expect.stringContaining("no provider for local")],
+        ]);
+    });
 });
