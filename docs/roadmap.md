@@ -155,31 +155,6 @@ verified them before the user's backfill, then the owner's first run.
   the user's sign-ins, and Codex's for its week to reset. A chunk index
   waits on the questions only lexical search passes.
 
-### Model Providers
-
-A provider contract in `core`, with the Messages API and an
-OpenAI-compatible implementation, and per-role routing in `config.toml`,
-so chat, reviews, compaction and maintenance each take a model fit for
-them. When Anthropic's usage runs out, requests fall back to another
-provider, such as featherless.ai or OpenRouter. Replaces the move to the
-Messages API alone (the `api` commit scope). Its design settles what
-the protocol diversity minutes left open: whether Dorothy keeps a
-runtime of her own for chat, reviews and compaction, and on what, such
-as LangChain.js, whose middleware covers fallback. The evaluation
-already reaches any OpenAI-compatible model through LangChain's
-`ChatOpenAI`, a client per role. Findings:
-[context leak](./reports/2026-10-07-context-leak.md),
-[objectives](./reports/2026-10-15-objectives.md),
-[LangChain](./reports/2026-10-18-protocol-diversity/langchain-and-standards.md).
-
-- **Status**: Pending Design
-- **Required**: Requisites Fulfilled
-- **Rationale**: Anthropic's models are too costly for every purpose, and
-  modularity keeps the Agent SDK inside `agent`. Resilience to upstream
-  hindrance is the first objective after memory. It goes ahead of
-  maintenance, whose background passes are where a cheaper model pays
-  most.
-
 ### Dorothy's Gateway
 
 An endpoint speaking the Anthropic and OpenAI protocols that adds
@@ -193,7 +168,7 @@ Code; Dorothy's Memory may bring her memory to it first. Notes:
 [budgets and a gateway](./notes/2026-10-07_budgets-gateway.md).
 
 - **Status**: Idea
-- **Required**: Model Providers
+- **Required**: Requisites Fulfilled
 - **Rationale**: Clients already supply the tools and the loop; Dorothy
   supplies the persona, the memory and the choice of model. It carries
   Model Providers' fallback to Claude Code, so it goes ahead of
@@ -209,7 +184,7 @@ knowledge. The design agreed so far is in
 [agent memory](../.agents/memory/maintenance-design-agreed.md).
 
 - **Status**: Design Agreed, Pending Specification
-- **Required**: Dorothy's Memory, Model Providers
+- **Required**: Dorothy's Memory
 - **Rationale**: A vocabulary without upkeep drifts. Memory history, now
   done, recovers from a wrong pass, and it is to be built inside the
   `memory` package.
@@ -273,6 +248,12 @@ Links between conversations and semantic search beside FTS5.
 ## Candidates
 
 Found but not scheduled, each with its source.
+
+- Model Providers' deferred findings
+  ([record](./deferred/2026-11-01_model-providers-deferred.md)): stream
+  errors coded by word, an output limit of her own, thinking on the other
+  kinds, the `local` kind against a real server, and tests that pin each
+  caller's route and the TUI's key names.
 
 - The sweep's remaining deferred minors and limits
   ([record](./reports/2026-10-19-roadmap-sweep.md#deferred)), including
@@ -429,6 +410,13 @@ In order of completion.
   [spec](./specs/2026-10-31-agentic-asset-consolidation-design.md),
   [plan](./plans/2026-10-31-agentic-asset-consolidation.md),
   [report](./reports/2026-10-31-agentic-asset-consolidation.md).
+- **Model Providers**:
+  [spec](./specs/2026-11-01-model-providers-design.md), plans for the
+  [runtime](./plans/2026-11-01-model-providers-runtime.md) and
+  [routing](./plans/2026-11-01-model-providers-routing.md),
+  [report](./reports/2026-11-01-model-providers.md),
+  [deferred](./deferred/2026-11-01_model-providers-deferred.md); merged
+  in #111 and #113.
 
 ## Revisions
 
@@ -575,3 +563,10 @@ In order of completion.
   one hook command serves both, and the sweep reads every Hermes
   profile. Its live probes wait for the user. Candidates gain its
   deferred minors and OpenClaw's delivery.
+- 2026-11-01: Model Providers is done: Dorothy runs on her own runtime,
+  the Vercel AI SDK, with no package on the Agent SDK, and
+  `config.toml` routes each role over Anthropic, OpenRouter,
+  featherless, Hugging Face's router and local servers, falling back
+  from one model to the next. Dorothy's Gateway and Cyclical
+  Maintenance no longer wait on it. Candidates gain its deferred
+  findings.
