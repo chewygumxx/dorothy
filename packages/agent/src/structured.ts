@@ -78,9 +78,9 @@ function fits(value: unknown, schema: Record<string, unknown>): boolean {
     }
 }
 
-// The schema's issues with an output, as the repair message gives them.
-// The Agent SDK validated against the full schema and retried; nothing
-// here does, and a schema zod cannot read is held to `fits` alone.
+// The schema's issues with an output, as the repair message gives them,
+// as the Agent SDK validated against the full schema and retried. A
+// schema zod cannot read is held to `fits` alone.
 function validatorFor(
     schema: Record<string, unknown>,
 ): (value: unknown) => string[] {
