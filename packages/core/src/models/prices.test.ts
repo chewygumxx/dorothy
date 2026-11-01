@@ -60,6 +60,12 @@ describe("stepCost", () => {
         ).toBeNull();
     });
 
+    it("knows no price for a model named as an object's own property", () => {
+        for (const model of ["constructor", "toString", "__proto__"]) {
+            expect(stepCost(anthropicEntry(model), usage(1000))).toBeNull();
+        }
+    });
+
     it("knows no price for another kind without one", () => {
         const entry = { ...anthropicEntry("m"), kind: "local" as const };
         expect(stepCost(entry, usage(10))).toBeNull();

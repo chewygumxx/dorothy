@@ -75,10 +75,11 @@ function priceOf(entry: RouteEntry, usage: StepUsage): Price | null {
     if (entry.kind !== "anthropic") {
         return null;
     }
-    const priced = ANTHROPIC_PRICES[entry.model];
-    if (priced === undefined) {
+    // Own keys only: a model named "constructor" has no price.
+    if (!Object.hasOwn(ANTHROPIC_PRICES, entry.model)) {
         return null;
     }
+    const priced = ANTHROPIC_PRICES[entry.model] as Priced;
     const prompt = usage.noCache + usage.cacheRead + usage.cacheWrite;
     return priced.over !== undefined && prompt > priced.over.tokens
         ? priced.over.price

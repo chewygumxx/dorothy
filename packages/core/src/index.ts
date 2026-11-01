@@ -24,6 +24,7 @@ export * from "./models/cooldowns.js";
 export * from "./models/fallback.js";
 export * from "./models/prices.js";
 export * from "./models/routes.js";
+export * from "./models/routing.js";
 export * from "./secrets.js";
 export * from "./session-id.js";
 export * from "./timers.js";

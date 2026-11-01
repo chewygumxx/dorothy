@@ -20,13 +20,14 @@ export const KINDS = [
     "anthropic",
     "openrouter",
     "featherless",
+    "huggingface",
     "local",
 ] as const;
 export type Kind = (typeof KINDS)[number];
 
 // One model a role may use, with what reaching it needs.
 export type RouteEntry = {
-    // The provider it came from, [providers.<name>] in Part B's config.
+    // The provider it came from: [providers.<name>] in config.toml.
     provider: string;
     kind: Kind;
     model: string;

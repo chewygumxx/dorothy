@@ -17,7 +17,10 @@ import {
     DEFAULT_CONFIG,
     parseConfig,
     readConfig,
+    readRouting,
+    routingOf,
 } from "./config.js";
+import { defaultRoutes } from "./models/routes.js";
 
 describe("parseConfig", () => {
     it("gives the defaults for an empty file", () => {
@@ -532,5 +535,98 @@ describe("readConfig", () => {
                 configPath({ XDG_CONFIG_HOME: value, HOME: "/home/u" }),
             ).toBe("/home/u/.config/dorothy/config.toml");
         }
+    });
+});
+
+describe("routing in config.toml", () => {
+    let dir = "";
+    beforeEach(async () => {
+        dir = await mkdtemp(join(tmpdir(), "dorothy-routing-"));
+    });
+    afterEach(async () => {
+        await rm(dir, { recursive: true, force: true });
+    });
+
+    it("leaves [providers] and [models] to routingOf, unwarned", () => {
+        const text = [
+            "[providers.anthropic]",
+            'kind = "nonsense"',
+            "",
+            "[models]",
+            "chat = []",
+        ].join("\n");
+        expect(parseConfig(text)).toEqual({
+            config: DEFAULT_CONFIG,
+            warnings: [],
+        });
+        expect(routingOf(text).ok).toBe(false);
+    });
+
+    it("keeps the default routes for a broken file that routes nothing", () => {
+        expect(routingOf('[memory]\nenabled = true\nbudget = "\n')).toEqual({
+            ok: true,
+            routing: { routes: defaultRoutes(), keys: ["ANTHROPIC_API_KEY"] },
+        });
+    });
+
+    it.each([
+        '[providers.anthropic]\nkind = "anthropic"\nbudget = "\n',
+        '[memory]\nbudget = "\n[models]\nchat = ["anthropic:x"]\n',
+        'models = { chat = ["anthropic:x"] }\nbudget = "\n',
+        'providers.anthropic.kind = "anthropic"\nbudget = "\n',
+        '[ "models" ]\nchat = ["anthropic:x"]\nbudget = "\n',
+    ])("faults a broken file that routes, naming its line: %j", (text) => {
+        expect(routingOf(text)).toEqual({
+            ok: false,
+            faults: [
+                expect.stringMatching(
+                    /^config\.toml line \d+: .+; its routes cannot be read$/,
+                ),
+            ],
+        });
+    });
+
+    it("faults a file that does not parse, naming its line", () => {
+        expect(
+            routingOf('[models]\nchat = ["anthropic:x"]\nbudget = "\n'),
+        ).toEqual({
+            ok: false,
+            faults: [
+                expect.stringMatching(
+                    /^config\.toml line 3: .+; its routes cannot be read$/,
+                ),
+            ],
+        });
+    });
+
+    it("routes every role to its default with no file", async () => {
+        expect(await readRouting({ XDG_CONFIG_HOME: dir })).toEqual({
+            ok: true,
+            routing: { routes: defaultRoutes(), keys: ["ANTHROPIC_API_KEY"] },
+        });
+    });
+
+    it("reads $XDG_CONFIG_HOME/dorothy/config.toml's routes", async () => {
+        await mkdir(join(dir, "dorothy"));
+        await writeFile(
+            join(dir, "dorothy", "config.toml"),
+            '[models]\nchat = ["anthropic:claude-sonnet-5-5"]\n',
+        );
+        const result = await readRouting({ XDG_CONFIG_HOME: dir });
+        expect(result.ok && result.routing.routes.chat[0]?.model).toBe(
+            "claude-sonnet-5-5",
+        );
+    });
+
+    it("faults a file that cannot be read", async () => {
+        await mkdir(join(dir, "dorothy", "config.toml"), { recursive: true });
+        expect(await readRouting({ XDG_CONFIG_HOME: dir })).toEqual({
+            ok: false,
+            faults: [
+                expect.stringMatching(
+                    /^config\.toml: .+; its routes cannot be read$/,
+                ),
+            ],
+        });
     });
 });
