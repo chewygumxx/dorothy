@@ -29,6 +29,7 @@ import {
     type StructuredCall,
     sleep,
     type Timers,
+    withNotes,
 } from "@dorothy/core";
 import { dataRoot } from "../facts/store.js";
 import { commandHistory } from "../history/commands.js";
@@ -402,7 +403,7 @@ async function stepsFor(
                     index,
                     vocabulary: vocabularyPath(env),
                     versions,
-                    call: agent.call,
+                    call: withNotes(agent.call, (message) => log.warn(message)),
                     persona: agent.persona,
                     now,
                     entries: () => loaded.entries,
