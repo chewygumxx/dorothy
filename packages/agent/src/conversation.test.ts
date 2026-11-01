@@ -422,6 +422,38 @@ describe("Conversation", () => {
         });
     });
 
+    it("disposes the stall timer when a turn ends, however it ends", async () => {
+        const timers = manualTimers();
+        const refusal = new APICallError({
+            message: "overloaded",
+            url: "u",
+            requestBodyValues: {},
+            statusCode: 529,
+        });
+        const { conversation, events } = session(
+            [
+                { chunks: textChunks("fine") },
+                refusal,
+                { chunks: [START], hang: true },
+            ],
+            { timers },
+        );
+        conversation.send("one");
+        await until(() => ended(events));
+        expect(of(events, "turn-end")).toHaveLength(1);
+        expect(timers.pending()).toEqual([]);
+        conversation.send("two");
+        await until(() => ended(events, 2));
+        expect(of(events, "error")).toHaveLength(1);
+        expect(timers.pending()).toEqual([]);
+        conversation.send("three");
+        await until(() => timers.pending().length === 1);
+        await conversation.interrupt();
+        await until(() => ended(events, 3));
+        expect(of(events, "turn-end")[1]).toMatchObject({ interrupted: true });
+        expect(timers.pending()).toEqual([]);
+    });
+
     it("warns when ten steps end in a tool call, and ends on the text it has", async () => {
         const { recall } = fakeRecall({ mcp__memory__search: { text: "{}" } });
         const { conversation, events } = session(
@@ -527,7 +559,7 @@ describe("Conversation with recall", () => {
         expect(of(events, "turn-end")).toHaveLength(1);
     });
 
-    it("settles a lookup cut short by an interrupt as failed", async () => {
+    it("settles a lookup cut short by an interrupt as failed, keeping the partial reply", async () => {
         const slow = tool({
             inputSchema: jsonSchema({ type: "object" }),
             execute: (_input, { abortSignal }) =>
@@ -537,8 +569,32 @@ describe("Conversation with recall", () => {
                     );
                 }),
         });
-        const { conversation, events } = session(
-            [{ chunks: toolChunks("c1", "mcp__memory__search", {}) }],
+        const { conversation, model, events } = session(
+            [
+                {
+                    chunks: [
+                        START,
+                        { type: "text-start", id: "t" },
+                        { type: "text-delta", id: "t", delta: "Let me look." },
+                        { type: "text-end", id: "t" },
+                        {
+                            type: "tool-call",
+                            toolCallId: "c1",
+                            toolName: "mcp__memory__search",
+                            input: "{}",
+                        },
+                        {
+                            type: "finish",
+                            usage: mockUsage(),
+                            finishReason: {
+                                unified: "tool-calls",
+                                raw: "tool_use",
+                            },
+                        },
+                    ],
+                },
+                { chunks: textChunks("Back.") },
+            ],
             {
                 recall: RECALL,
                 connect: async () => ({
@@ -556,7 +612,29 @@ describe("Conversation with recall", () => {
         await conversation.interrupt();
         await until(() => ended(events));
         expect(of(events, "lookup")[0]).toMatchObject({ id: "c1", ok: false });
-        expect(of(events, "turn-end")[0]).toMatchObject({ interrupted: true });
+        expect(of(events, "turn-end")[0]).toMatchObject({
+            reply: "Let me look.",
+            interrupted: true,
+        });
+        expect(of(events, "error")).toHaveLength(0);
+        // The session keeps the user's message and the partial text only.
+        conversation.send("again");
+        await until(() => ended(events, 2));
+        const kept = model.doStreamCalls[1]?.prompt.map((message) => [
+            message.role,
+            typeof message.content === "string"
+                ? message.content
+                : message.content.map((part) => part.type),
+        ]);
+        expect(kept).toEqual([
+            ["system", expect.any(String)],
+            ["user", ["text"]],
+            ["assistant", ["text"]],
+            ["user", ["text"]],
+        ]);
+        expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
+            "Let me look.",
+        );
     });
 
     it("lets a tool call in flight finish when the session closes", async () => {
