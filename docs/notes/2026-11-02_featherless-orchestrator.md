@@ -248,6 +248,59 @@ Every probe in this log together cost about $7.
 3. The hostile probe again, against the chosen model, with each new
    kind of request the real workers raise.
 
+## The orchestration spec, and a feasibility probe
+
+The entries since turned this log's leanings into a spec,
+[Orchestration](../specs/2026-11-02-orchestration-design.md) (PR #119):
+an MCP server, `@dorothy/orchestra`, running Claude Code and Codex
+workers through acpx, their approvals answered by rules, then a judge on
+an `approval` role, then the user by elicitation. Two Codex reviews of
+it (gpt-6.1-sol, on the OpenAI API key, from a temporary `CODEX_HOME`)
+found that the agents' own sandboxes, reached through acpx's adapters,
+cannot hold the hard limits: an approval can lift Codex's sandbox,
+Claude's Bash sandbox covers shell commands only, acpx cannot pass
+Claude's sandbox, hooks or settings sources, a linked worktree's shared
+object store cannot be both writable and safe, the broker's own git
+runs repository hooks, and `@ai-sdk/mcp` cannot deliver an
+elicitation's cancellation. The second review called the spec ready
+for a bounded feasibility probe, not a plan.
+
+The probe, on 2026-11-02, throwaway code under `/tmp/claude-spike`, no
+agent signed in:
+
+| Question | Result |
+| --- | --- |
+| acpx's embedded runtime under Bun | Yes: acpx 0.21.1 (0.22.0 is unreleased) drove a fake ACP agent through four turns; the gate's callback saw all four offered options and answered the exact `optionId`; a callback that threw, and one that returned nothing, both became `reject_once` under `permissionMode: "deny-all"` |
+| Both adapters inside bubblewrap 0.13.1 | Yes: `claude-agent-acp` 0.99.1 and `codex-acp` 2.5.0 each answered `initialize` from inside a box with `/` read-only, the home directory a fresh tmpfs, only the worktree writable, and no network |
+| What the box withholds | `~/.ssh` and `~/.codex/auth.json` absent; a write outside the worktree failed as a read-only file system; a direct connection failed as unreachable; the worktree was writable |
+| A network allowlist | Yes: a host-side CONNECT proxy on a Unix socket, bridged to `127.0.0.1:3128` inside the box by a Bun script, passed `registry.npmjs.org` (200), refused `example.com` (403), and a direct fetch still failed |
+| Elicitation's cancellation | Yes, through a transport wrapper around `@ai-sdk/mcp`'s stdio transport: it took two elicitations sent outside any tool call, removed the first when the server cancelled it, suppressed the user's late answer to it, and sent the answer to the second, the only one the server logged; it also declared the elicitation capability the client did not |
+
+Found on the way: `codex-acp` offers `api-key` as a sign-in method
+beside `chat-gpt`, so Codex workers could bill the OpenAI API key rather
+than wait on a subscription's weekly limit.
+
+What it means for the spec:
+
+- **Confinement from outside works,** so the hard limits can rest on a
+  box around the whole worker, adapter and agent together, whatever its
+  own settings say: no credentials of the user's, no network but an
+  allowlist, writes only where mounted. A repository's
+  `.claude/settings.json` pre-approving `git push` then meets no key and
+  no route to the remote.
+- **Still to settle with real agents,** after the weekly resets: each
+  agent's model traffic through the proxy, signed in; how an agent's
+  own login reaches it without its tools reading it (a credential the
+  box admits is readable by every command inside it, so it must be one
+  the allowlist makes useless elsewhere, or reach only the agent's
+  process); and whether an agent's own sandbox can still run nested
+  inside the box.
+- **The worktree question returns.** Inside a box, a linked worktree
+  needs its repository's shared object store mounted writable, which a
+  worker could damage for every branch; a clone borrowing the main
+  checkout's objects read-only (`git clone --reference`, or alternates)
+  gives each worker its own writable store at about a worktree's cost.
+
 ## Later
 
 - `docs/` has grown to warrant a formal organisation; once this research
