@@ -23,9 +23,17 @@ export type StructuredRequest = {
 };
 
 // A failed call still reports what it cost.
+// notes: what the call's route said on its way, a fallback's warning
+// among them; set only when there is one.
 export type StructuredOutcome =
-    | { ok: true; output: unknown; model: string; costUsd: number }
-    | { ok: false; reason: string; costUsd: number };
+    | {
+          ok: true;
+          output: unknown;
+          model: string;
+          costUsd: number;
+          notes?: string[];
+      }
+    | { ok: false; reason: string; costUsd: number; notes?: string[] };
 
 export type StructuredCall = (
     request: StructuredRequest,

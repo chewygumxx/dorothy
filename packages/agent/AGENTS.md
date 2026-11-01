@@ -47,7 +47,10 @@ never prune it as unused.
   error result (`result.ts`'s `failureText`, as the conversation says
   it) goes to stderr with exit status 1.
 - `structured.ts`: `structuredCall`, the `StructuredCall` reviews and
-  compaction take.
+  compaction take: `streamText` with `Output.object` on a route, run by
+  `runRoute`, all attempts sharing the request's `timeoutMs`.
+- `attempt.ts`: `STALL_MS`; `Watchdog`, an attempt's abort (its route's
+  signal, or a stall: no stream part for `STALL_MS`); `secretFailure`.
 - `persona.ts`: the persona, composed from `personaComponents` (identity,
   voice and provenance from `@dorothy/identity`; capabilities, plumbing
   and memory its own, memory telling her to keep lasting facts with
@@ -85,8 +88,8 @@ never prune it as unused.
 - `persona.test.ts` pins the chat prompt byte for byte, and that every
   persona is well formed: change the pin only when the persona is meant
   to change.
-- Inject `query()` (`QueryFn`, `StructuredQueryFn`, `CaptureQueryFn`);
-  no test reaches the API.
+- Inject `query()` (`QueryFn`, `CaptureQueryFn`) and, for `structuredCall`,
+  `mockModel` or `fakeMessages`; no test reaches the API.
 
 ## See also
 

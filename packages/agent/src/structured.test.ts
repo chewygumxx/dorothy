@@ -8,229 +8,261 @@
 //
 //
 
-import { describe, expect, it } from "bun:test";
-import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { StructuredRequest, Timers } from "@dorothy/core";
-import { baseOptions, cliOptions } from "./persona.js";
-import { type StructuredQueryFn, structuredCall } from "./structured.js";
+import { afterEach, describe, expect, it } from "bun:test";
+import { anthropicEntry, type StructuredRequest } from "@dorothy/core";
+import { APICallError } from "ai";
+import { STALL_MS } from "./attempt.js";
+import { structuredCall } from "./structured.js";
+import {
+    fakeMessages,
+    manualTimers,
+    mockModel,
+    mockUsage,
+    type Script,
+    textChunks,
+} from "./testing.js";
 
-const init = (model = "claude-test") =>
-    ({
-        type: "system",
-        subtype: "init",
-        model,
-        session_id: "s",
-    }) as unknown as SDKMessage;
-const success = (output: unknown, cost = 0.25) =>
-    ({
-        type: "result",
-        subtype: "success",
-        is_error: false,
-        result: "",
-        structured_output: output,
-        total_cost_usd: cost,
-    }) as unknown as SDKMessage;
-const failure = (errors: string[]) =>
-    ({
-        type: "result",
-        subtype: "error_max_structured_output_retries",
-        is_error: true,
-        errors,
-        total_cost_usd: 0.5,
-    }) as unknown as SDKMessage;
-
-type Fake = {
-    fn: StructuredQueryFn;
-    prompt: string | null;
-    options: Options | null;
-    closed: boolean;
-};
-
-// "hang" never yields, standing for a call that never answers.
-function fakeQuery(script: SDKMessage[] | "hang" | Error): Fake {
-    const fake: Fake = {
-        fn: ({ prompt, options }) => {
-            fake.prompt = prompt;
-            fake.options = options;
-            async function* run(): AsyncGenerator<SDKMessage> {
-                if (script === "hang") {
-                    await new Promise(() => {});
-                    return;
-                }
-                if (script instanceof Error) {
-                    throw script;
-                }
-                yield* script;
-            }
-            return Object.assign(run(), {
-                close: () => {
-                    fake.closed = true;
-                },
-            });
-        },
-        prompt: null,
-        options: null,
-        closed: false,
-    };
-    return fake;
-}
-
-// Timers that fire only when told to.
-function manualTimers() {
-    const pending = new Map<number, () => void>();
-    let next = 1;
-    const timers: Timers = {
-        set: (fn) => {
-            const id = next++;
-            pending.set(id, fn);
-            return id;
-        },
-        clear: (handle) => {
-            pending.delete(handle as number);
-        },
-    };
-    const fire = () => {
-        for (const [id, fn] of [...pending]) {
-            pending.delete(id);
-            fn();
-        }
-    };
-    return { timers, pending, fire };
-}
-
+const SCHEMA = { type: "object", properties: { ok: { type: "boolean" } } };
 const REQUEST: StructuredRequest = {
-    what: "compaction",
-    system: "You are Dorothy.",
-    prompt: "<turns/>",
-    schema: { type: "object" },
+    what: "review",
+    system: "persona",
+    prompt: "the chat",
+    schema: SCHEMA,
     timeoutMs: 120_000,
 };
+const env = { ANTHROPIC_API_KEY: "test-key" };
+const SONNET = anthropicEntry("claude-sonnet-5-5");
+
+const callWith = (
+    scripts: Script[],
+    extra: Parameters<typeof structuredCall>[0] = {},
+) => {
+    const model = mockModel(scripts, "claude-sonnet-5-5");
+    return {
+        model,
+        call: structuredCall({
+            route: [SONNET],
+            env,
+            model: () => model,
+            ...extra,
+        }),
+    };
+};
+
+async function until(done: () => boolean): Promise<void> {
+    const end = Date.now() + 2000;
+    while (!done()) {
+        if (Date.now() > end) {
+            throw new Error("timed out waiting");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+}
 
 describe("structuredCall", () => {
-    it("asks once, with no tools, on the CLI's private home", async () => {
-        const fake = fakeQuery([init(), success({ a: 1 })]);
-        await structuredCall({ queryFn: fake.fn })(REQUEST);
-        expect(fake.prompt).toBe("<turns/>");
-        expect(fake.options).toEqual({
-            ...baseOptions,
-            ...cliOptions(),
-            systemPrompt: "You are Dorothy.",
-            includePartialMessages: false,
-            outputFormat: { type: "json_schema", schema: { type: "object" } },
-        });
-        expect(fake.closed).toBe(true);
-    });
-
-    it("answers with the output, the model and the cost", async () => {
-        const fake = fakeQuery([init("claude-x"), success({ a: 1 }, 0.3)]);
-        expect(await structuredCall({ queryFn: fake.fn })(REQUEST)).toEqual({
+    it("answers with the output, the entry's label and its cost", async () => {
+        const { call, model } = callWith([
+            {
+                chunks: textChunks(
+                    '{"ok":true}',
+                    mockUsage(1_000_000, 1_000_000),
+                ),
+            },
+        ]);
+        expect(await call(REQUEST)).toEqual({
             ok: true,
-            output: { a: 1 },
-            model: "claude-x",
-            costUsd: 0.3,
+            output: { ok: true },
+            model: "anthropic:claude-sonnet-5-5",
+            costUsd: 12,
+        });
+        const sent = model.doStreamCalls[0];
+        expect(sent?.prompt[0]).toEqual({ role: "system", content: "persona" });
+        expect(sent?.responseFormat).toMatchObject({
+            type: "json",
+            schema: SCHEMA,
+        });
+        expect(sent?.providerOptions).toEqual({
+            anthropic: { thinking: { type: "disabled" } },
         });
     });
 
-    it("fails with the errors, keeping the cost", async () => {
-        const fake = fakeQuery([init(), failure(["bad output"])]);
-        expect(await structuredCall({ queryFn: fake.fn })(REQUEST)).toEqual({
+    it("fails output that is not JSON", async () => {
+        const { call } = callWith([{ chunks: textChunks("not json") }]);
+        expect(await call(REQUEST)).toMatchObject({
             ok: false,
-            reason: "bad output",
-            costUsd: 0.5,
+            reason: "the review ended without a result",
         });
     });
 
-    it("names itself when it ends without a result", async () => {
-        const fake = fakeQuery([init()]);
-        expect(await structuredCall({ queryFn: fake.fn })(REQUEST)).toEqual({
+    it("fails JSON of another shape than the schema's", async () => {
+        const { call } = callWith([{ chunks: textChunks("[1,2]") }]);
+        expect(await call(REQUEST)).toMatchObject({
             ok: false,
-            reason: "the compaction ended without a result",
+            reason: "the review ended without a result",
+        });
+    });
+
+    it("fails without a key, calling no model", async () => {
+        const model = mockModel([{ chunks: textChunks("{}") }]);
+        const call = structuredCall({
+            route: [SONNET],
+            env: {},
+            model: () => model,
+        });
+        expect(await call(REQUEST)).toEqual({
+            ok: false,
+            reason: "ANTHROPIC_API_KEY is not set",
             costUsd: 0,
         });
+        expect(model.doStreamCalls).toHaveLength(0);
     });
 
-    it("fails with what the query threw", async () => {
-        const fake = fakeQuery(new Error("offline"));
-        expect(await structuredCall({ queryFn: fake.fn })(REQUEST)).toEqual({
+    it("ends an attempt that stalls", async () => {
+        const timers = manualTimers();
+        const { call, model } = callWith(
+            [{ chunks: [{ type: "stream-start", warnings: [] }], hang: true }],
+            { timers },
+        );
+        const pending = call(REQUEST);
+        await until(() => model.doStreamCalls.length === 1);
+        timers.fire(STALL_MS);
+        expect(await pending).toMatchObject({
             ok: false,
-            reason: "offline",
-            costUsd: 0,
+            reason: "no response for 60s",
         });
     });
 
-    it("fails when the query cannot start", async () => {
-        const throwing: StructuredQueryFn = () => {
-            throw new Error("bad options");
-        };
-        expect(await structuredCall({ queryFn: throwing })(REQUEST)).toEqual({
-            ok: false,
-            reason: "bad options",
-            costUsd: 0,
-        });
-    });
-
-    it("times out, closing the query", async () => {
-        const fake = fakeQuery("hang");
-        const { timers, fire } = manualTimers();
-        const answer = structuredCall({ queryFn: fake.fn, timers })(REQUEST);
-        fire();
-        expect(await answer).toEqual({
+    it("ends the call at its deadline", async () => {
+        const timers = manualTimers();
+        const { call, model } = callWith(
+            [{ chunks: [{ type: "stream-start", warnings: [] }], hang: true }],
+            { timers },
+        );
+        const pending = call(REQUEST);
+        await until(() => model.doStreamCalls.length === 1);
+        timers.fire(120_000);
+        expect(await pending).toMatchObject({
             ok: false,
             reason: "timed out after 120s",
-            costUsd: 0,
         });
-        expect(fake.closed).toBe(true);
     });
 
-    it("stops when cancelled, before or during", async () => {
+    it("ends the call when cancelled", async () => {
+        const controller = new AbortController();
+        const { call, model } = callWith([
+            { chunks: [{ type: "stream-start", warnings: [] }], hang: true },
+        ]);
+        const pending = call({ ...REQUEST, signal: controller.signal });
+        await until(() => model.doStreamCalls.length === 1);
+        controller.abort();
+        expect(await pending).toMatchObject({ ok: false, reason: "cancelled" });
+    });
+
+    it("calls nothing when already cancelled", async () => {
         const controller = new AbortController();
         controller.abort();
-        const before = fakeQuery([init(), success({})]);
-        expect(
-            await structuredCall({ queryFn: before.fn })({
-                ...REQUEST,
-                signal: controller.signal,
-            }),
-        ).toEqual({ ok: false, reason: "cancelled", costUsd: 0 });
-        expect(before.prompt).toBeNull();
-        const during = new AbortController();
-        const hang = fakeQuery("hang");
-        const { timers, pending } = manualTimers();
-        const answer = structuredCall({ queryFn: hang.fn, timers })({
-            ...REQUEST,
-            signal: during.signal,
-        });
-        during.abort();
-        expect(await answer).toEqual({
+        const { call, model } = callWith([{ chunks: textChunks("{}") }]);
+        expect(await call({ ...REQUEST, signal: controller.signal })).toEqual({
             ok: false,
             reason: "cancelled",
             costUsd: 0,
         });
-        expect(pending.size).toBe(0);
-        expect(hang.closed).toBe(true);
+        expect(model.doStreamCalls).toHaveLength(0);
     });
 
-    it("fails with the result's text when a success is flagged an error", async () => {
-        const flagged = (result: string) =>
-            ({
-                type: "result",
-                subtype: "success",
-                is_error: true,
-                result,
-                structured_output: { a: 1 },
-                total_cost_usd: 0.4,
-            }) as unknown as SDKMessage;
-        const named = fakeQuery([init(), flagged("overloaded")]);
-        expect(await structuredCall({ queryFn: named.fn })(REQUEST)).toEqual({
-            ok: false,
-            reason: "overloaded",
-            costUsd: 0.4,
+    it("says a provider's refusal", async () => {
+        const refusal = new APICallError({
+            message: "slow down",
+            url: "u",
+            requestBodyValues: {},
+            statusCode: 429,
+            responseHeaders: { "retry-after": "41" },
         });
-        const bare = fakeQuery([init(), flagged("")]);
-        expect(await structuredCall({ queryFn: bare.fn })(REQUEST)).toEqual({
+        const { call } = callWith([refusal]);
+        expect(await call(REQUEST)).toMatchObject({
             ok: false,
-            reason: "error",
-            costUsd: 0.4,
+            reason: "slow down",
+        });
+    });
+
+    it("answers from the next entry after a refusal, with a note", async () => {
+        const refusal = new APICallError({
+            message: "slow down",
+            url: "u",
+            requestBodyValues: {},
+            statusCode: 429,
+        });
+        const first = mockModel([refusal], "claude-sonnet-5-5");
+        const second = mockModel(
+            [{ chunks: textChunks('{"ok":true}') }],
+            "claude-haiku-5-5",
+        );
+        const HAIKU = anthropicEntry("claude-haiku-5-5");
+        const call = structuredCall({
+            route: [SONNET, HAIKU],
+            env,
+            model: (entry) => (entry.model === SONNET.model ? first : second),
+        });
+        const outcome = await call(REQUEST);
+        expect(outcome).toMatchObject({
+            ok: true,
+            output: { ok: true },
+            model: "anthropic:claude-haiku-5-5",
+        });
+        expect(outcome.notes).toEqual([
+            "anthropic:claude-sonnet-5-5 refused (rate-limit: slow down); answering with anthropic:claude-haiku-5-5",
+        ]);
+    });
+});
+
+describe("structuredCall's shared time", () => {
+    it("leaves a second entry its time after a first that stalls", async () => {
+        const timers = manualTimers();
+        const first = mockModel(
+            [{ chunks: [{ type: "stream-start", warnings: [] }], hang: true }],
+            "claude-sonnet-5-5",
+        );
+        const second = mockModel(
+            [{ chunks: textChunks('{"ok":true}') }],
+            "claude-haiku-5-5",
+        );
+        const HAIKU = anthropicEntry("claude-haiku-5-5");
+        const call = structuredCall({
+            route: [SONNET, HAIKU],
+            env,
+            timers,
+            model: (entry) => (entry.model === SONNET.model ? first : second),
+        });
+        const pending = call(REQUEST);
+        await until(() => first.doStreamCalls.length === 1);
+        timers.fire(STALL_MS);
+        expect(await pending).toMatchObject({
+            ok: true,
+            model: "anthropic:claude-haiku-5-5",
+        });
+        expect(timers.pending()).toEqual([]);
+    });
+});
+
+describe("structuredCall on the wire", () => {
+    const stops: (() => void)[] = [];
+    afterEach(() => {
+        for (const stop of stops.splice(0)) {
+            stop();
+        }
+    });
+
+    it("ends an attempt on a server that never sends an event", async () => {
+        const server = fakeMessages([{ silent: true }]);
+        stops.push(server.stop);
+        const call = structuredCall({
+            route: [{ ...SONNET, baseUrl: server.url }],
+            env,
+            stallMs: 50,
+        });
+        expect(await call(REQUEST)).toMatchObject({
+            ok: false,
+            reason: "no response for 0.05s",
         });
     });
 });
