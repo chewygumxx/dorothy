@@ -38,6 +38,12 @@ below. It declares `niceware` alone, and never imports another
   turns' abstracts) to a system prompt.
 - `contracts/structured.ts`: `StructuredCall`, the one-shot call reviews
   and compaction take.
+- `contracts/model.ts`: the routing contracts: `ROLES`, `KINDS`, a
+  `RouteEntry`, `Routes`, `Failure` and `AttemptResult`, and `label`.
+- `models/prices.ts`: `ANTHROPIC_PRICES` and `stepCost`, what a step's
+  tokens cost, or null for a model with no known price.
+- `models/routes.ts`: `DEFAULT_MODELS` and `defaultRoutes`, each role's
+  Anthropic route until config routes it.
 - `contracts/notices.ts`: `Notice` and `NoticeSource`, what memory and
   history show on screen.
 - `contracts/editor.ts`: `Editor`, the external editor's contract.
@@ -58,7 +64,7 @@ below. It declares `niceware` alone, and never imports another
 - `xdg.ts`: the XDG directories (`xdgDir`), the state directory among
   them.
 - `session-id.ts`: session phrases, and `isUuid` for the ids that name
-  files; `timers.ts`: injectable timers.
+  files; `timers.ts`: injectable timers and a `Clock`.
 
 ## Invariants
 

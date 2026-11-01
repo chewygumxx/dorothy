@@ -20,6 +20,12 @@ export const REAL_TIMERS: Timers = {
     clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 };
 
+// Injected so whatever compares times, a cooldown among them, is tested
+// without real time.
+export type Clock = { now(): number };
+
+export const REAL_CLOCK: Clock = { now: () => Date.now() };
+
 // A wait that ends early, and quietly, when the signal aborts.
 export function sleep(
     timers: Timers,
