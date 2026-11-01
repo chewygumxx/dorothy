@@ -85,6 +85,8 @@ from `config.toml` and the other provider kinds, has its own plan.
 
 - Every new file carries the house header, copied from a sibling;
   `bun run lint:header` syncs headers.
+- The plan's code is not in biome's layout: run `bun run format` before
+  every check; `bun run check` runs `format:check` first.
 - `packages/cli/AGENTS.md` and `packages/memory/AGENTS.md` are at their
   150-line budget, the root `AGENTS.md` at 100: a line added means a
   line saved nearby.
@@ -114,19 +116,26 @@ Ruled while planning, each with its cost if wrong:
    `firstChunkMs` and `chunkMs` start only after a provider's first
    event, so a server that never answers is not caught. `Watchdog`
    aborts an attempt when no stream part has arrived for `STALL_MS`,
-   from the request on; reasoning parts count, so a long hidden think
-   is not a stall. Cost: one small module.
-2. **Thinking.** Every call sends `thinking: { type: "disabled" }`; the
-   provider turns it into each model's lowest setting
-   (`between_tools` on Sonnet 5.5; adaptive at its default effort on
-   Opus 5.5, which always thinks). No `display` is set, as the watchdog
-   counts every part. Cost: Opus thinks at its default effort.
+   from the request on. It also runs while a tool executes, when no
+   part arrives; her tools answer in well under a minute. Cost: one
+   small module.
+2. **Thinking.** Models that always think, `claude-opus-5-5` and
+   `claude-fable-5-1`, are sent `thinking: { type: "adaptive", display:
+   "summarized" }`: the API's default display on them is `omitted`,
+   which streams nothing during a think, and the provider drops `ping`
+   events, so the watchdog would end a long think as a stall; a summary
+   streams as reasoning parts and keeps it fed. Every other model is
+   sent `{ type: "disabled" }`, which the provider turns into its
+   lowest (`between_tools` on Sonnet 5.5). Opus keeps its default
+   effort, `medium`; `effort: "low"` would trim her replies too, a
+   quality call left to the user. Cost: Opus's thinking tokens.
 3. **An interrupted turn keeps its streamed text only** in the session's
    messages, not its complete steps' tool calls. Cost: the model
    forgets an interrupted turn's lookups.
 4. **Notes.** `StructuredOutcome.notes` is optional and set only when
    there are notes; memory's forwarding of them is Part B's, as Part A's
-   routes have one entry. Cost: none until Part B.
+   routes have one entry, and so is a structured call's unpriced-model
+   notice, as every default model is priced. Cost: none until Part B.
 5. **`turn-end.model`** is shown in the header; the transcript does not
    record it in Part A. Cost: a turn's model is not in the transcript.
 6. **The chat persona is unchanged**, its pin too: its plumbing sentence
@@ -148,6 +157,11 @@ Ruled while planning, each with its cost if wrong:
 11. **The roadmap** is revised when Part B merges, as the phase's
     Revising step asks; Part A's report says what is left. Cost: the
     roadmap lags one merge.
+12. **Each caller's route** is checked by Task 13's live run (chat on
+    `anthropic:claude-opus-5-5`, reviews and compactions on
+    `anthropic:claude-sonnet-5-5`), not by a unit test: `run-tui.ts`,
+    `reviewAgent` and the hook build their calls inline. Cost: a
+    misrouted call is found live, before the merge.
 
 ---
 
@@ -778,7 +792,7 @@ describe("the AI SDK under Bun", () => {
                 "search",
                 "tags",
             ]);
-            const execute = tools.search?.execute as (
+            const execute = tools.search?.execute as unknown as (
                 input: unknown,
                 options: unknown,
             ) => Promise<{ content: { text: string }[] }>;
@@ -807,7 +821,8 @@ Expected: 5 pass. Any failure: stop, report BLOCKED with the output.
 
 - [ ] **Step 6: Run the checks and commit**
 
-Run: `bun run lint:header && bun run check` on temporary XDG roots
+Run: `bun run format && bun run lint:header && bun run check`
+on temporary XDG roots
 (Global Constraints).
 Expected: all pass.
 
@@ -941,7 +956,11 @@ describe("defaultRoutes", () => {
     });
 
     it("labels an entry by provider and model", () => {
-        expect(label(defaultRoutes().chat[0]!)).toBe("anthropic:claude-opus-5-5");
+        const [entry] = defaultRoutes().chat;
+        if (entry === undefined) {
+            throw new Error("no chat entry");
+        }
+        expect(label(entry)).toBe("anthropic:claude-opus-5-5");
     });
 });
 ```
@@ -1049,7 +1068,9 @@ type Priced = Price & { over?: { tokens: number; price: Price } };
 // Anthropic's prices, from
 // https://platform.claude.com/docs/en/about-claude/pricing on
 // 2026-11-01. Cache writes are at the five-minute rate, which Dorothy's
-// breakpoints use; Haiku 5.5 costs more for prompts over 100,000 tokens.
+// breakpoints use; cache hits on Opus 5.5 and Sonnet 5.5 are 0.05 of
+// input, as the page's footnote says; Haiku 5.5 costs more for prompts
+// over 100,000 tokens.
 export const ANTHROPIC_PRICES: Readonly<Record<string, Priced>> = {
     "claude-fable-5-1": { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 },
     "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 },
@@ -1165,7 +1186,8 @@ Expected: PASS.
 
 - [ ] **Step 9: Commit**
 
-Run `bun run lint:header && bun run check` on temporary XDG roots
+Run `bun run format && bun run lint:header && bun run check`
+on temporary XDG roots
 first.
 
 ```bash
@@ -1627,8 +1649,9 @@ Expected: PASS.
 
 - [ ] **Step 7: Commit**
 
-Run `bun run lint:header && bun run check` on temporary XDG roots
-first; `bun run format` if biome asks.
+Run `bun run format && bun run lint:header && bun run check`
+on temporary XDG roots
+first.
 
 ```bash
 git add packages/core
@@ -1697,6 +1720,12 @@ and in the `turn-end` member, after `contextTokens?: number;`:
 
 - [ ] **Step 3: Update the tests**
 
+Two a search misses: the multi-line `ready` in
+`packages/memory/src/memory/open.test.ts` (around line 207), found by
+its `type` line alone, and the header's expected `"sdk 3f2a…c91"` in
+`packages/tui/src/components.test.tsx:50`, which becomes `"session
+3f2a…c91"`.
+
 In every test, a `ready` event's `sdkSessionId:` becomes `sessionId:`,
 and the TUI state's and header's likewise; a transcript record's
 (`kind: "session"`) `sdkSessionId` stays. A header test expecting
@@ -1724,7 +1753,7 @@ it("names the model a turn-end says answered", () => {
 
 - [ ] **Step 4: Run the checks**
 
-Run: `bun run check` on temporary XDG roots.
+Run: `bun run format && bun run check` on temporary XDG roots.
 Expected: PASS, and `grep -rn sdkSessionId packages/*/src` lists only
 the transcript's `SessionEvent`, its writers in `memory` and tests
 reading transcript records.
@@ -1763,15 +1792,15 @@ that compacts: pass `calls: { review: wrong("review"), compaction: call }`
 in place of `call`, with, at the top of the file:
 
 ```ts
-// A call that fails the test if anything but its role reaches it.
+// A call that says so if anything but its role reaches it; the test
+// asserts no such reason is ever warned of or logged.
 const wrong =
     (role: string): StructuredCall =>
-    async (request) => {
-        if (request.what !== role) {
-            throw new Error(`${request.what} reached the ${role} call`);
-        }
-        return { ok: false, reason: "not under test", costUsd: 0 };
-    };
+    async (request) => ({
+        ok: false,
+        reason: request.what === role ? "not under test" : `${request.what} reached the ${role} call`,
+        costUsd: 0,
+    });
 ```
 
 and, where it reviews (`open.test.ts`'s review tests, or any that waits
@@ -1850,12 +1879,12 @@ specific.
 
 - [ ] **Step 7: Run the checks and commit**
 
-Run: `bun run check` on temporary XDG roots.
+Run: `bun run format && bun run check` on temporary XDG roots.
 Expected: PASS.
 
 ```bash
 git add packages/memory packages/cli
-git commit -m "refactor(memory): Take review and compaction calls apart"
+git commit -m "refactor(memory): Split review from compaction"
 ```
 
 ---
@@ -2119,12 +2148,40 @@ describe("keyOf", () => {
 
 describe("providerOptions", () => {
     it("asks Anthropic models for no thinking, which each takes as its lowest", () => {
-        expect(providerOptions(anthropicEntry("m"))).toEqual({
+        expect(providerOptions(anthropicEntry("claude-sonnet-5-5"))).toEqual({
             anthropic: { thinking: { type: "disabled" } },
         });
     });
+
+    it("asks models that always think for a summary, so a think streams", () => {
+        for (const model of ["claude-opus-5-5", "claude-fable-5-1"]) {
+            expect(providerOptions(anthropicEntry(model))).toEqual({
+                anthropic: { thinking: { type: "adaptive", display: "summarized" } },
+            });
+        }
+    });
+
+    it("sends the summary on the wire", async () => {
+        const server = serve([{ text: "hello" }]);
+        const entry = { ...anthropicEntry("claude-opus-5-5"), baseUrl: server.url };
+        const result = streamText({
+            model: languageModel(entry, "test-key"),
+            prompt: "hi",
+            maxRetries: 0,
+            onError: () => {},
+            providerOptions: providerOptions(entry),
+        });
+        for await (const _ of result.fullStream) {
+            // Drained.
+        }
+        expect(server.bodies[0]?.thinking).toMatchObject({ type: "adaptive", display: "summarized" });
+    });
 });
 ```
+
+If the provider writes the display under another field on the wire,
+read `@ai-sdk/anthropic`'s request builder and assert what it sends;
+the summary must reach the request.
 
 - [ ] **Step 2: Run them to see them fail**
 
@@ -2185,15 +2242,27 @@ export function keyOf(entry: RouteEntry, env: Env): string | null {
     return value === undefined || value === "" ? null : value;
 }
 
+// Models that always think. Their default display is "omitted", which
+// streams nothing while they think, and the provider drops pings, so a
+// long think would look like a stall: they stream a summary instead.
+const ALWAYS_THINKS = new Set(["claude-opus-5-5", "claude-fable-5-1"]);
+
+type Thinking = { type: "disabled" } | { type: "adaptive"; display: "summarized" };
+
 // Thinking at each model's lowest: "disabled", which the provider turns
-// into the lowest setting a model allows, between_tools on Sonnet 5.5,
-// adaptive on models that always think, as Opus 5.5.
-export function providerOptions(
-    entry: RouteEntry,
-): Record<string, { thinking: { type: "disabled" } }> {
-    return entry.kind === "anthropic"
-        ? { anthropic: { thinking: { type: "disabled" } } }
-        : {};
+// into the lowest a model allows, between_tools on Sonnet 5.5; adaptive,
+// summarised, on models that always think.
+export function providerOptions(entry: RouteEntry): Record<string, { thinking: Thinking }> {
+    if (entry.kind !== "anthropic") {
+        return {};
+    }
+    return {
+        anthropic: {
+            thinking: ALWAYS_THINKS.has(entry.model)
+                ? { type: "adaptive", display: "summarized" }
+                : { type: "disabled" },
+        },
+    };
 }
 ```
 
@@ -2352,7 +2421,8 @@ fails, print the error part's `statusCode`, `data` and `message` and fit
 
 - [ ] **Step 7: Commit**
 
-Run `bun run lint:header && bun run check` on temporary XDG roots
+Run `bun run format && bun run lint:header && bun run check`
+on temporary XDG roots
 first.
 
 ```bash
@@ -2540,6 +2610,26 @@ describe("structuredCall", () => {
         expect(outcome.notes).toEqual([
             "anthropic:claude-sonnet-5-5 refused (rate-limit: slow down); answering with anthropic:claude-haiku-5-5",
         ]);
+    });
+});
+
+describe("structuredCall's shared time", () => {
+    it("leaves a second entry its time after a first that stalls", async () => {
+        const timers = manualTimers();
+        const first = mockModel([{ chunks: [{ type: "stream-start", warnings: [] }], hang: true }], "claude-sonnet-5-5");
+        const second = mockModel([{ chunks: textChunks('{"ok":true}') }], "claude-haiku-5-5");
+        const HAIKU = anthropicEntry("claude-haiku-5-5");
+        const call = structuredCall({
+            route: [SONNET, HAIKU],
+            env,
+            timers,
+            model: (entry) => (entry.model === SONNET.model ? first : second),
+        });
+        const pending = call(REQUEST);
+        await until(() => first.doStreamCalls.length === 1);
+        timers.fire(60_000);
+        expect(await pending).toMatchObject({ ok: true, model: "anthropic:claude-haiku-5-5" });
+        expect(timers.pending()).toEqual([]);
     });
 });
 
@@ -2817,7 +2907,8 @@ argument, which takes the review route; it compiles unchanged.
 
 - [ ] **Step 7: Commit**
 
-Run `bun run lint:header && bun run check` on temporary XDG roots
+Run `bun run format && bun run lint:header && bun run check`
+on temporary XDG roots
 first.
 
 ```bash
@@ -2840,9 +2931,10 @@ git commit -m "feat(agent): Run structured calls on the AI SDK"
   `SERVER_NAME`, `RecallLaunch`, `Route`, `Env` from core.
 - Produces: `type RecallTools = { tools: ToolSet; close(): Promise<void> }`;
   `type ConnectRecall = (launch: RecallLaunch, recollect: boolean, env:
-  Record<string, string>) => Promise<RecallTools>`; `connectRecall:
-  ConnectRecall`; `recallEnv(env: Env, route: Route): Record<string,
-  string>`.
+  Record<string, string>, startMs?: number) => Promise<RecallTools>`;
+  `connectRecall: ConnectRecall`; `RECALL_START_MS = 10_000`;
+  `recallCwd(env): string`; `recallEnv(env: Env, route: Route):
+  Record<string, string>`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -2850,12 +2942,18 @@ git commit -m "feat(agent): Run structured calls on the AI SDK"
 
 ```ts
 import { describe, expect, it } from "bun:test";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { anthropicEntry } from "@dorothy/core";
-import { connectRecall, recallEnv } from "./recall-tools.js";
+import { connectRecall, recallCwd, recallEnv } from "./recall-tools.js";
 
 const launch = { command: process.execPath, args: [join(import.meta.dir, "fake-mcp.ts")] };
-const ENV = { PATH: process.env.PATH ?? "", XDG_DATA_HOME: "/tmp/recall-data" };
+const ENV = {
+    PATH: process.env.PATH ?? "",
+    XDG_DATA_HOME: "/tmp/recall-data",
+    XDG_CACHE_HOME: join(tmpdir(), "dorothy-recall-tools-test"),
+};
 
 type Execute = (input: unknown, options: unknown) => Promise<{ content: { text: string }[]; isError: boolean }>;
 const run = (tool: unknown, input: unknown) =>
@@ -2928,6 +3026,23 @@ describe("connectRecall", () => {
             connectRecall({ command: process.execPath, args: ["-e", "process.exit(3)"] }, false, ENV),
         ).rejects.toThrow();
     });
+
+    it("gives up on a server that never answers", async () => {
+        const silent = { command: process.execPath, args: ["-e", "setInterval(() => {}, 1000)"] };
+        const began = Date.now();
+        await expect(connectRecall(silent, false, ENV, 200)).rejects.toThrow();
+        expect(Date.now() - began).toBeLessThan(2_000);
+    });
+
+    it("runs the server in a directory of Dorothy's, not the caller's", async () => {
+        const cache = mkdtempSync(join(tmpdir(), "dorothy-recall-cwd-"));
+        try {
+            expect(recallCwd({ XDG_CACHE_HOME: cache })).toBe(join(cache, "dorothy"));
+            expect(existsSync(join(cache, "dorothy"))).toBe(true);
+        } finally {
+            rmSync(cache, { recursive: true, force: true });
+        }
+    });
 });
 ```
 
@@ -2945,6 +3060,8 @@ House header with this file's path, then:
 // over MCP stdio, its tools named as the model calls them,
 // mcp__memory__search and so on, and only those a session may use.
 
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { createMCPClient } from "@ai-sdk/mcp";
 import { StdioMCPTransport } from "@ai-sdk/mcp/mcp-stdio";
 import {
@@ -2954,6 +3071,7 @@ import {
     type RecallLaunch,
     type Route,
     SERVER_NAME,
+    xdgDir,
 } from "@dorothy/core";
 import type { ToolSet } from "ai";
 
@@ -2963,6 +3081,7 @@ export type ConnectRecall = (
     launch: RecallLaunch,
     recollect: boolean,
     env: Record<string, string>,
+    startMs?: number,
 ) => Promise<RecallTools>;
 
 // What the recall server may see: the caller's environment, its XDG
@@ -2985,19 +3104,43 @@ export function recallEnv(env: Env, route: Route): Record<string, string> {
     return kept;
 }
 
+// How long the server has to start and list its tools: one that never
+// answers must not hold chat, or quitting, forever.
+export const RECALL_START_MS = 10_000;
+
+// Where the server runs: a directory of Dorothy's, never the user's
+// project, whose .env and bunfig.toml Bun would otherwise read.
+export function recallCwd(env: Record<string, string>): string {
+    const dir = join(xdgDir(env, "XDG_CACHE_HOME", ".cache"), "dorothy");
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    return dir;
+}
+
+function within<T>(work: Promise<T>, ms: number, what: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    return Promise.race([
+        work,
+        new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => reject(new Error(`${what} took over ${ms / 1000}s`)), ms);
+        }),
+    ]).finally(() => clearTimeout(timer));
+}
+
 // Its stderr is ignored, so that nothing it says lands on the TUI's
 // screen.
-export const connectRecall: ConnectRecall = async (launch, recollect, env) => {
+export const connectRecall: ConnectRecall = async (launch, recollect, env, startMs = RECALL_START_MS) => {
     const client = await createMCPClient({
         transport: new StdioMCPTransport({
             command: launch.command,
             args: recollect ? [...launch.args, "--recollect"] : launch.args,
             env,
+            cwd: recallCwd(env),
             stderr: "ignore",
         }),
+        initializationOptions: { timeout: startMs },
     });
     try {
-        const listed = await client.tools();
+        const listed = await within(client.tools(), startMs, "listing the recall tools");
         const allowed = new Set<string>(recollect ? [...ALLOWED_TOOLS, RECOLLECT_TOOL] : ALLOWED_TOOLS);
         const tools: ToolSet = {};
         for (const [name, tool] of Object.entries(listed)) {
@@ -3021,7 +3164,8 @@ Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
-Run `bun run lint:header && bun run check` on temporary XDG roots
+Run `bun run format && bun run lint:header && bun run check`
+on temporary XDG roots
 first.
 
 ```bash
@@ -3077,7 +3221,11 @@ Move `conversationOptions`, with its imports, from
 `packages/agent/src/conversation.ts` into a new
 `packages/agent/src/legacy.ts` (house header), unchanged, its comment
 gaining: `// The Agent SDK's options, for --dump-context until it moves
-onto Conversation; removed then.` Export it from `index.ts` from there;
+onto Conversation; removed then.` It imports `type SessionSetup` from
+the new `./conversation.js`, and `withSection`, `SERVER_NAME`,
+`ALLOWED_TOOLS` and `RECOLLECT_TOOL` from `@dorothy/core`, beside the
+Agent SDK's `Options` and `persona.ts`'s `baseOptions`, `cliOptions`,
+`personaPrompt` and `withHistory`. Export it from `index.ts` from there;
 `packages/cli/src/dump.ts` keeps importing it from `@dorothy/agent`.
 
 - [ ] **Step 2: Write `turn.test.ts` and `conversation.test.ts`, failing**
@@ -3199,7 +3347,7 @@ import {
 } from "./conversation.js";
 import { personaPrompt, withHistory } from "./persona.js";
 import type { RecallTools } from "./recall-tools.js";
-import { manualTimers, mockModel, mockUsage, type Script, textChunks, toolChunks } from "./testing.js";
+import { fakeMessages, manualTimers, mockModel, mockUsage, type Script, textChunks, toolChunks } from "./testing.js";
 
 const env = { ANTHROPIC_API_KEY: "test-key" };
 const OPUS = anthropicEntry("claude-opus-5-5");
@@ -3317,7 +3465,9 @@ describe("Conversation", () => {
         expect(marked).toHaveLength(2);
         expect(last?.prompt.at(-1)).toMatchObject({ role: "user", content: [{ type: "text", text: "message 5" }] });
         expect(JSON.stringify(last?.prompt)).toContain("reply 4");
-        expect(last?.providerOptions).toEqual({ anthropic: { thinking: { type: "disabled" } } });
+        expect(last?.providerOptions).toEqual({
+            anthropic: { thinking: { type: "adaptive", display: "summarized" } },
+        });
     });
 
     it("keeps an interrupted partial reply", async () => {
@@ -3481,12 +3631,63 @@ describe("Conversation with recall", () => {
         expect(of(events, "turn-end")[0]).toMatchObject({ interrupted: true });
     });
 
+    it("lets a tool call in flight finish when the session closes", async () => {
+        let finished = false;
+        const slow = tool({
+            inputSchema: jsonSchema({ type: "object" }),
+            execute: async () => {
+                await new Promise((resolve) => setTimeout(resolve, 50));
+                finished = true;
+                return { content: [{ type: "text", text: "{}" }], isError: false };
+            },
+        });
+        let closed = false;
+        const { conversation, events } = session(
+            [{ chunks: toolChunks("c1", "mcp__memory__search", {}) }, { chunks: textChunks("done") }],
+            {
+                recall: RECALL,
+                connect: async () => ({
+                    tools: { mcp__memory__search: slow },
+                    close: async () => {
+                        closed = true;
+                    },
+                }),
+            },
+        );
+        conversation.send("look");
+        await until(() => of(events, "sdk").some((event) => event.message.type === "tool-call"));
+        await conversation.close();
+        expect(finished).toBe(true);
+        expect(of(events, "lookup")[0]).toMatchObject({ id: "c1", ok: true });
+        expect(closed).toBe(true);
+    });
+
     it("closes the recall server when the session closes", async () => {
         const fake = fakeRecall({});
         const { conversation, events } = session([{ chunks: textChunks("hi") }], { recall: RECALL, connect: async () => fake.recall });
         await until(() => of(events, "ready").length === 1);
         await conversation.close();
         expect(fake.closed()).toBe(true);
+    });
+});
+
+describe("Conversation on the wire", () => {
+    it("carries two cache breakpoints after six turns, under Anthropic's four", async () => {
+        const server = fakeMessages(Array.from({ length: 6 }, (_, index) => ({ text: `reply ${index}` })));
+        try {
+            const conversation = new Conversation({ env, route: [{ ...OPUS, baseUrl: server.url }] });
+            const events: ConversationEvent[] = [];
+            conversation.subscribe((event) => events.push(event));
+            conversation.start();
+            for (let index = 0; index < 6; index += 1) {
+                conversation.send(`message ${index}`);
+                await until(() => ended(events, index + 1));
+            }
+            await conversation.close();
+            expect(JSON.stringify(server.bodies[5]).match(/cache_control/g) ?? []).toHaveLength(2);
+        } finally {
+            server.stop();
+        }
     });
 });
 
@@ -3742,7 +3943,7 @@ export class TurnState {
 
     // Calls the turn ended without answering, as when it was interrupted.
     settleCalls(): void {
-        for (const id of [...this.#remembers.keys(), ...this.#calls.keys()]) {
+        for (const id of [...this.#calls.keys(), ...this.#remembers.keys()]) {
             this.#settle(id, false, "");
         }
         this.#afterLookup = false;
@@ -3778,8 +3979,9 @@ export class TurnState {
 }
 ```
 
-`settleCalls` settles remembers first, so their events come before the
-lookups', as `turn.test.ts` expects; a remember's failed output is `""`.
+`settleCalls` settles lookups first, then remembers, as today's
+`Conversation` does and `turn.test.ts` expects; a remember's failed
+output is `""`.
 
 - [ ] **Step 5: Change `packages/agent/src/persona.ts`**
 
@@ -4018,7 +4220,8 @@ export class Conversation implements ChatSession {
             await settleWithin(this.#work, CLOSE_GRACE_MS);
             this.#turn?.abort();
             await settleWithin(this.#work, CLOSE_GRACE_MS);
-            await this.#started;
+            // A recall server still starting is closed by #begin.
+            await settleWithin(this.#started ?? Promise.resolve(), CLOSE_GRACE_MS);
             const recall = this.#recall;
             this.#recall = null;
             await recall?.close().catch(() => {});
@@ -4044,6 +4247,9 @@ export class Conversation implements ChatSession {
             }
         }
         if (this.#closed !== null) {
+            const late = this.#recall;
+            this.#recall = null;
+            await late?.close().catch(() => {});
             return;
         }
         const first = this.#route[0];
@@ -4255,7 +4461,8 @@ part's field differs from the AI SDK's types, read
 
 - [ ] **Step 9: Commit**
 
-Run `bun run lint:header && bun run check` on temporary XDG roots
+Run `bun run format && bun run lint:header && bun run check`
+on temporary XDG roots
 first.
 
 ```bash
@@ -4589,8 +4796,7 @@ export async function dumpRequest({
 ```
 
 `recallEnv` drops `DOROTHY_DUMP_KEY` from the recall server's
-environment only if it ends `_API_KEY`; it does not, and it holds no
-secret, so it may pass.
+environment, as the dump's route entry names it.
 
 - [ ] **Step 5: Write `packages/cli/src/models.ts`**
 
@@ -4650,12 +4856,13 @@ Expected: PASS.
 
 - [ ] **Step 9: Commit**
 
-Run `bun run lint:header && bun run check` on temporary XDG roots
+Run `bun run format && bun run lint:header && bun run check`
+on temporary XDG roots
 first.
 
 ```bash
 git add packages/agent packages/cli
-git commit -m "feat(agent): Send one-shots and dumps as a chat does"
+git commit -m "feat(agent): Send one-shots and dumps as chat"
 ```
 
 ---
@@ -4731,9 +4938,26 @@ describe("her recall server, through the agent's client", () => {
 ```
 
 Run: `bun test packages/cli/src/recall-tools.test.ts`
-Expected: FAIL until `models.ts` exists (it does, from Task 10), then
-PASS: this test pins what Tasks 8 and 10 built against the real server.
-If it fails, the fault is in `connectRecall` or `recallEnv`; fix there.
+Expected: the first test passes at once, pinning what Tasks 8 and 10
+built against the real server (if it fails, the fault is in
+`connectRecall` or `recallEnv`; fix there); the second fails until
+`recall-launch.ts` passes `--no-env-file`.
+
+Add to it, after the first test:
+
+```ts
+    it("hands the server no key, and Bun no project .env", () => {
+        const env = { ANTHROPIC_API_KEY: "k", PATH: "/bin" };
+        expect(recallEnv(env, ROUTES.chat).ANTHROPIC_API_KEY).toBeUndefined();
+        expect(recallLaunch("phrase", null).args[0]).toBe("--no-env-file");
+    });
+```
+
+importing `recallLaunch` from `./recall-launch.js`, and in
+`packages/cli/src/recall-launch.ts` put `"--no-env-file"` first in
+`args`, before the script's path, its comment gaining: "Bun reads no
+.env of the directory it starts in; the recall server runs in one of
+Dorothy's anyway (`recallCwd`)." Update `recall-launch`'s own test.
 
 - [ ] **Step 2: Hand each caller its route in `packages/cli/src/index.ts`**
 
@@ -4810,16 +5034,20 @@ and `connect`:
 
 - [ ] **Step 4: Retire the hook's environment surgery**
 
+`loadAgent` takes the environment `runOnce` loaded the secrets into,
+`loadAgent(env)`, and passes it as `structuredCall`'s `env`, so an
+injected environment is the one reviews read.
+
 In `packages/cli/src/claude-hook.ts`, delete `REVIEW_BASE_URL`,
 `REVIEW_DROPPED`, `dropped`, `reviewEnv` and `stripClaude`, and the
 `stripClaude(env)` call near line 200; `loadCheckoutSecrets` returns
 `failure` without `chooseClaudeToken`; `loadAgent` becomes:
 
 ```ts
-async function loadAgent(): Promise<Agent> {
+async function loadAgent(env: Env): Promise<Agent> {
     const { structuredCall, systemPrompt } = await import("@dorothy/agent");
     return {
-        call: structuredCall({ route: ROUTES.review, cooldowns: COOLDOWNS }),
+        call: structuredCall({ route: ROUTES.review, cooldowns: COOLDOWNS, env }),
         persona: systemPrompt,
     };
 }
@@ -4844,9 +5072,34 @@ In `packages/cli/src/claude.ts`, delete `withReviewBaseUrl` and its use:
 loses that sentence), and `catchUpEnv` is `passSopsKey({ ...env },
 env)`, its comment losing the proxy. In
 `packages/cli/src/review-backfill.ts`, the comment on `BackfillAgent`
-loses "which drops Claude Code's variables". Delete the tests of the
-removed names; a test asserting `DOROTHY_ANTHROPIC_BASE_URL` in a
-launch's environment now asserts its absence.
+loses "which drops Claude Code's variables".
+
+The tests these removals break, each by name:
+
+- `claude-hook.test.ts`, "the account Claude spends": keep its first
+  case if it still holds without `chooseClaudeToken`, delete the rest
+  (the `reviewEnv` case and the `it.each` "refuses a choice of %s",
+  whose `SECRETS_INVALID` only `chooseClaudeToken` returned); the eval's
+  own tests keep the token choice covered.
+- `claude-hook.test.ts`, runHook "awaits Dorothy's secrets by checkout
+  path once claude's variables are gone": claude's variables now stay;
+  assert only the load path and that the agent loads lazily, and
+  retitle it "awaits Dorothy's secrets by checkout path".
+- `claude-hook.test.ts`, "sends a review through the user's proxy, and
+  tells memory the environment it was given": delete.
+- `index.test.ts`, "awaits the checkout loader before preparing the
+  model" and the `it.each` "still prepares the model": drop `prepare`,
+  the "prepared" event and the `prepared` flag.
+- `index.test.ts`, "disables service reviews with a coded failure after
+  stripping Claude variables": remove the two stripped-variable
+  expectations inside its `load` fake, which would now throw and be
+  taken for the `SOPS_FAILED` the test expects; retitle it "disables
+  service reviews with a coded failure".
+- `claude.test.ts`, "passes the user's own base URL on to the hook's
+  reviews, and no other" and "starts its catch-ups where reviews find
+  the user's own proxy": replace both with one test that a launch's and
+  a catch-up's environments, with `ANTHROPIC_BASE_URL` set, carry no
+  `DOROTHY_ANTHROPIC_BASE_URL`.
 
 - [ ] **Step 5: Drop the Agent SDK from the agent**
 
@@ -4856,7 +5109,10 @@ cd packages/agent && bun remove @anthropic-ai/claude-agent-sdk && cd ../..
 
 Delete `packages/agent/src/result.ts`. In `persona.ts`, delete
 `baseOptions`, `cliHome`, `cliOptions` and `prepareCliHome`, with their
-imports and comments, and their tests in `persona.test.ts`. `index.ts`
+imports and comments, and their tests in `persona.test.ts`, whose
+imports then left unused (`afterEach`, `beforeEach`, `chmodSync`,
+`mkdirSync`, `mkdtempSync`, `rmSync`, `statSync`, `tmpdir`, `join`)
+go too. `index.ts`
 stops exporting `prepareCliHome`. `grep -rn
 "claude-agent-sdk\|prepareCliHome\|cliOptions\|baseOptions" packages`
 finds nothing outside `docs`.
@@ -4905,14 +5161,14 @@ still expected to throw, with one more:
 rm -rf node_modules packages/*/node_modules && bun install
 ```
 
-Run: `bun run check` on temporary XDG roots.
+Run: `bun run format && bun run check` on temporary XDG roots.
 Expected: PASS.
 
 - [ ] **Step 8: Commit**
 
 ```bash
 git add -A packages workspace.test.ts bun.lock
-git commit -m "feat(cli): Route each call and retire the Agent SDK"
+git commit -m "feat(cli): Route calls and retire the Agent SDK"
 ```
 
 ---
@@ -4930,8 +5186,12 @@ git commit -m "feat(cli): Route each call and retire the Agent SDK"
 
 - [ ] **Step 1: The README**
 
-`README.md:25`'s "built for now on the Claude Agent SDK" becomes "on
-her own runtime, the Vercel AI SDK, reaching Anthropic's Messages API".
+`README.md:25`'s sentence on the Claude Agent SDK, with its "A later
+iteration moves to Anthropic's Messages API.", is rewritten whole: she
+runs on her own runtime, the Vercel AI SDK, reaching Anthropic's
+Messages API with her own system prompt. `README.md:646-648`, on
+`--dump-context` showing "whatever the SDK adds", now says the dump
+shows exactly what Dorothy builds, her recall tools' schemas included.
 Authentication's list and the paragraph after it become:
 
 ```markdown
@@ -4985,8 +5245,9 @@ persona's pin and `promptHash`.
 - `packages/cli/AGENTS.md` (at its 150-line budget: reword, never add
   net lines): lines 31-33 and 131-132, on the Agent SDK's per-call
   environment, become the routes (`models.ts`) and the recall launch's
-  environment (`recallEnv`); line 72 and 99-100, on
-  `DOROTHY_ANTHROPIC_BASE_URL`, go.
+  environment (`recallEnv`, `recallCwd`, `--no-env-file`); line 47's
+  "`openMemory` gets `structuredCall`" names its review and compaction
+  calls; line 72 and 99-100, on `DOROTHY_ANTHROPIC_BASE_URL`, go.
 - `packages/tui/AGENTS.md:24`: the `sdk` event is a stream part's type,
   with a text part's text.
 - `AGENTS.md` (at 100 lines): "`workspace.test.ts` pins the graph, the
