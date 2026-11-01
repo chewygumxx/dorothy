@@ -17,13 +17,15 @@ import type { Failure, FailureClass } from "@dorothy/core";
 // trouble: spent credits, billing, a spending or usage limit.
 const USAGE = /credit|billing|spend(ing)? limit|usage limit/i;
 
-// A mid-stream error's type, as the status it would have had.
-const STATUS_OF_TYPE: Readonly<Record<string, number>> = {
-    rate_limit_error: 429,
-    overloaded_error: 529,
-    api_error: 500,
-    billing_error: 402,
-};
+// An error's type, as the status it would have had. Read before the
+// status: the provider gives a streamed error a status of its own (a
+// billing_error comes as 400), which would hide the 402 it means.
+const STATUS_OF_TYPE: ReadonlyMap<string, number> = new Map([
+    ["rate_limit_error", 429],
+    ["overloaded_error", 529],
+    ["api_error", 500],
+    ["billing_error", 402],
+]);
 
 // retry-after, in seconds or as an HTTP date.
 export function retryAfterMs(
@@ -71,20 +73,23 @@ type Wire = {
     message?: unknown;
 };
 
-function statusOf(error: Wire): number | null {
-    if (typeof error.statusCode === "number") {
-        return error.statusCode;
-    }
+function typeOf(error: Wire): string | null {
     const data = error.data as
         | { type?: unknown; error?: { type?: unknown } }
         | undefined;
-    const type =
-        typeof data?.error?.type === "string"
-            ? data.error.type
-            : typeof data?.type === "string"
-              ? data.type
-              : null;
-    return type === null ? null : (STATUS_OF_TYPE[type] ?? null);
+    if (typeof data?.error?.type === "string") {
+        return data.error.type;
+    }
+    return typeof data?.type === "string" ? data.type : null;
+}
+
+function statusOf(error: Wire): number | null {
+    const type = typeOf(error);
+    const mapped = type === null ? undefined : STATUS_OF_TYPE.get(type);
+    if (mapped !== undefined) {
+        return mapped;
+    }
+    return typeof error.statusCode === "number" ? error.statusCode : null;
 }
 
 // An error the AI SDK threw or streamed; one with no status never

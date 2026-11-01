@@ -54,7 +54,8 @@ export function keyOf(entry: RouteEntry, env: Env): string | null {
 
 // Models that always think. Their default display is "omitted", which
 // streams nothing while they think, and the provider drops pings, so a
-// long think would look like a stall: they stream a summary instead.
+// long think would look like a stall: they stream a summary instead. A
+// new always-thinking model must be added here, or it gets "disabled".
 const ALWAYS_THINKS = new Set(["claude-opus-5-5", "claude-fable-5-1"]);
 
 type Thinking =

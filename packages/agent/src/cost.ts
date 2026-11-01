@@ -16,10 +16,17 @@ import type { LanguageModelUsage } from "ai";
 
 export function stepUsage(usage: LanguageModelUsage): StepUsage {
     const details = usage.inputTokenDetails;
+    const cacheRead = details?.cacheReadTokens ?? 0;
+    const cacheWrite = details?.cacheWriteTokens ?? 0;
+    // Without the uncached count, the rest of inputTokens, which also
+    // counts the cache's reads and writes.
+    const noCache =
+        details?.noCacheTokens ??
+        Math.max(0, (usage.inputTokens ?? 0) - cacheRead - cacheWrite);
     return {
-        noCache: details?.noCacheTokens ?? usage.inputTokens ?? 0,
-        cacheRead: details?.cacheReadTokens ?? 0,
-        cacheWrite: details?.cacheWriteTokens ?? 0,
+        noCache,
+        cacheRead,
+        cacheWrite,
         output: usage.outputTokens ?? 0,
     };
 }

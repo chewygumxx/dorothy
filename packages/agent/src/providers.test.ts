@@ -140,6 +140,16 @@ describe("languageModel", () => {
             "overload",
             null,
         ],
+        [
+            {
+                midstream: {
+                    type: "billing_error",
+                    message: "Account problem",
+                },
+            },
+            "usage",
+            null,
+        ],
     ] as const)("classes the wire's %o as %s", async (reply, kind, retry) => {
         const server = serve([reply as Reply]);
         const failure = failureOf(await firstError(server.url));
@@ -152,6 +162,15 @@ describe("languageModel", () => {
         const url = server.url;
         server.stop();
         expect(failureOf(await firstError(url)).class).toBe("network");
+    });
+});
+
+describe("the AI SDK's console", () => {
+    it("is silenced by providers.ts", () => {
+        expect(
+            (globalThis as { AI_SDK_LOG_WARNINGS?: boolean })
+                .AI_SDK_LOG_WARNINGS,
+        ).toBe(false);
     });
 });
 

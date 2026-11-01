@@ -28,6 +28,15 @@ describe("stepUsage", () => {
             } as never),
         ).toEqual({ noCache: 11, cacheRead: 7, cacheWrite: 3, output: 5 });
     });
+    it("takes the uncached input from the total less the cache", () => {
+        expect(
+            stepUsage({
+                inputTokens: 30,
+                inputTokenDetails: { cacheReadTokens: 20, cacheWriteTokens: 4 },
+                outputTokens: 1,
+            } as never),
+        ).toEqual({ noCache: 6, cacheRead: 20, cacheWrite: 4, output: 1 });
+    });
     it("counts missing details as uncached input", () => {
         expect(stepUsage({ inputTokens: 9, outputTokens: 2 } as never)).toEqual(
             {

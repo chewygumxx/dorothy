@@ -98,10 +98,26 @@ describe("failureOf", () => {
         });
         expect(failureOf(limited).class).toBe("rate-limit");
     });
+    it("takes a streamed billing error as usage, whatever its status", () => {
+        // The provider gives a streamed billing_error a status of 400, and
+        // its message names no usage words.
+        const error = Object.assign(new Error("Account problem"), {
+            statusCode: 400,
+            data: { type: "error", error: { type: "billing_error" } },
+        });
+        expect(failureOf(error).class).toBe("usage");
+    });
     it("takes an error with no status for the network", () => {
         expect(failureOf(new TypeError("Unable to connect"))).toEqual({
             class: "network",
             message: "Unable to connect",
+            retryAfterMs: null,
+        });
+    });
+    it("takes a thrown non-Error value for the network, by its text", () => {
+        expect(failureOf("connection reset")).toEqual({
+            class: "network",
+            message: "connection reset",
             retryAfterMs: null,
         });
     });
