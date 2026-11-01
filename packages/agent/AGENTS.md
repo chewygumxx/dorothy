@@ -81,7 +81,8 @@ unused.
   held here, a turn per message through `runRoute` on the chat route,
   with at most `MAX_STEPS` tool steps. Events: `ready` (its `model` a
   label), `delta`, `turn-end`, `sdk` (a stream part), `lookup`,
-  `remember`, `warning` and `error`. Cache breakpoints sit on the system
+  `remember`, `warning` (a fallback, ten tool steps, or a reply cut at the
+  model's output limit) and `error`. Cache breakpoints sit on the system
   prompt and the latest user message, the second never stored. Reasoning
   is kept to the model that made it; an assistant message left empty
   without it is not sent. `conversationSetup()` builds what a

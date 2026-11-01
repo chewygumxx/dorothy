@@ -23,6 +23,7 @@ import {
     type ConversationDeps,
     conversationSetup,
     MAX_STEPS,
+    OUTPUT_LIMIT_WARNING,
     type SessionSetup,
     STEP_LIMIT_WARNING,
 } from "./conversation.js";
@@ -615,6 +616,47 @@ describe("Conversation", () => {
         expect(of(events, "warning").map((event) => event.message)).toContain(
             STEP_LIMIT_WARNING,
         );
+        expect(of(events, "turn-end")).toHaveLength(1);
+    });
+
+    it("warns once when a reply stops at the model's output limit", async () => {
+        const { conversation, events } = session([
+            {
+                chunks: [
+                    START,
+                    { type: "reasoning-start", id: "r" },
+                    { type: "reasoning-delta", id: "r", delta: "thinking on" },
+                    { type: "reasoning-end", id: "r" },
+                    {
+                        type: "finish",
+                        finishReason: { unified: "length", raw: "length" },
+                        usage: mockUsage(),
+                    },
+                ],
+            },
+            { chunks: textChunks("fine") },
+        ]);
+        conversation.send("hi");
+        await until(() => ended(events));
+        expect(
+            of(events, "warning").filter(
+                (event) => event.message === OUTPUT_LIMIT_WARNING,
+            ),
+        ).toHaveLength(1);
+        expect(of(events, "error")).toHaveLength(0);
+        expect(events.at(-1)?.type).toBe("turn-end");
+        conversation.send("again");
+        await until(() => ended(events, 2));
+        expect(of(events, "warning")).toHaveLength(1);
+    });
+
+    it("does not warn of the output limit on a reply that stopped", async () => {
+        const { conversation, events } = session([
+            { chunks: textChunks("done") },
+        ]);
+        conversation.send("hi");
+        await until(() => ended(events));
+        expect(of(events, "warning")).toEqual([]);
         expect(of(events, "turn-end")).toHaveLength(1);
     });
 });

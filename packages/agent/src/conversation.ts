@@ -59,6 +59,8 @@ import { TurnState } from "./turn.js";
 
 export const MAX_STEPS = 10;
 export const STEP_LIMIT_WARNING = "the reply stopped after ten tool steps";
+export const OUTPUT_LIMIT_WARNING =
+    "the reply stopped at the model's output limit";
 
 // A session's start and the persona it speaks with. Every field may be
 // left out, for tests and the dump.
@@ -121,7 +123,7 @@ export type ConversationDeps = {
 // A message, and the label of the model that made it, null for the
 // user's and for text kept from an interrupted turn.
 type Stored = { message: ModelMessage; by: string | null };
-type Answer = { messages: ModelMessage[]; limited: boolean };
+type Answer = { messages: ModelMessage[]; limited: boolean; cut: boolean };
 
 const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
@@ -399,6 +401,9 @@ export class Conversation implements ChatSession {
             if (outcome.value.limited) {
                 this.#emit({ type: "warning", message: STEP_LIMIT_WARNING });
             }
+            if (outcome.value.cut) {
+                this.#emit({ type: "warning", message: OUTPUT_LIMIT_WARNING });
+            }
             this.#emit({
                 type: "turn-end",
                 reply: turn.reply,
@@ -472,6 +477,7 @@ export class Conversation implements ChatSession {
         }
         const watchdog = new Watchdog(signal, this.#stallMs, this.#timers);
         let limited = false;
+        let cut = false;
         let costUsd = 0;
         try {
             const read = await readStream(
@@ -519,6 +525,7 @@ export class Conversation implements ChatSession {
                             case "finish-step":
                                 turn.step(stepUsage(part.usage));
                                 limited = part.finishReason === "tool-calls";
+                                cut = part.finishReason === "length";
                                 break;
                         }
                     },
@@ -541,6 +548,7 @@ export class Conversation implements ChatSession {
                 value: {
                     messages: steps.flatMap((step) => step.response.messages),
                     limited,
+                    cut,
                 },
                 costUsd,
             };

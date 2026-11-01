@@ -224,6 +224,13 @@ whose wait ends first is tried.
 - A model later in a list needs a context window no smaller than
   `compaction.hard` (128,000 tokens by default), or a long chat fails on
   it.
+- The Chat Completions kinds send no output limit, so each provider's
+  default applies (featherless's is 4,096 tokens), and a model that
+  thinks at length may spend it all before answering; Dorothy then warns
+  that the reply stopped at the model's output limit.
+- A plan's concurrency limit, such as featherless's, can refuse a chat
+  while a review or a compaction is running on the same model; a second
+  entry in the role's list answers instead.
 
 A mistake in these tables is an error, and so is a `config.toml` that
 cannot be read at all, as one with routing tables that does not parse
