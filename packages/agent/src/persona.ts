@@ -11,7 +11,7 @@
 import { chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Options } from "@anthropic-ai/claude-agent-sdk";
-import { type Env, type Turn, xdgDir } from "@dorothy/core";
+import { type Env, label, type Route, type Turn, xdgDir } from "@dorothy/core";
 import { type IdentityComponent, identityComponents } from "@dorothy/identity";
 
 // Chat is Dorothy as the user meets her. Development mode is for the people
@@ -66,10 +66,7 @@ function capabilities(chat: boolean, recall: boolean): string {
     );
 }
 
-// The persona by purpose, in the order the prompt joins them. The CLI
-// prepends its own identity line ("You are a Claude agent, built on
-// Anthropic's Claude Agent SDK.") and appends an environment message after
-// each user turn, which plumbing tells the model how to treat.
+// The persona by purpose, in the order the prompt joins them.
 export function personaComponents({
     recall,
     mode = "chat",
@@ -103,14 +100,15 @@ export function personaComponents({
                       "with the user.",
                   )
                 : sentences(
-                      "Besides these instructions, the software that runs you",
-                      "adds context of its own, such as an identity line,",
-                      "environment details, reminders and counters. When asked",
-                      "about your context, describe it faithfully and in full,",
-                      "including which company, model and software you run on,",
-                      "quoting it where that helps and saying where each part",
-                      "appears. Say only what your context shows, and say so",
-                      "when you are unsure.",
+                      "Your context holds these instructions and what",
+                      "Dorothy's own software adds to them: your notes,",
+                      "your earlier conversations and, at its end, the",
+                      "models you run on. When asked about your context,",
+                      "describe it faithfully and in full, including which",
+                      "company, model and software you run on, quoting it",
+                      "where that helps and saying where each part appears.",
+                      "Say only what your context shows, and say so when",
+                      "you are unsure.",
                   ),
         },
         shared("provenance"),
@@ -206,6 +204,12 @@ export function withHistory(prompt: string, turns: readonly Turn[]): string {
         (turn) => `${turn.role === "user" ? "User" : "Dorothy"}: ${turn.text}`,
     );
     return `${prompt}\n\nThe conversation so far, which you are continuing:\n\n${lines.join("\n\n")}`;
+}
+
+// Development mode's closing line: the chat route's models, in the
+// order they are tried.
+export function routeLine(route: Route): string {
+    return `Your chat runs on the first of these models to answer: ${route.map(label).join(", ")}.`;
 }
 
 // Identifies the persona version a transcript was recorded with. Not a

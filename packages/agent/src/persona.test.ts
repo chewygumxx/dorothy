@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { anthropicEntry } from "@dorothy/core";
 import { identityComponents } from "@dorothy/identity";
 import {
     baseOptions,
@@ -21,6 +22,7 @@ import {
     personaPrompt,
     prepareCliHome,
     promptHash,
+    routeLine,
     systemPrompt,
     withHistory,
 } from "./persona.js";
@@ -54,6 +56,19 @@ describe("withHistory", () => {
         expect(result).toContain("Dorothy: Hello, Miso!");
         expect(result.indexOf("User:")).toBeLessThan(
             result.indexOf("Dorothy:"),
+        );
+    });
+});
+
+describe("routeLine", () => {
+    it("names the route's models in a line", () => {
+        expect(
+            routeLine([
+                anthropicEntry("claude-opus-5-5"),
+                { ...anthropicEntry("x"), provider: "other" },
+            ]),
+        ).toBe(
+            "Your chat runs on the first of these models to answer: anthropic:claude-opus-5-5, other:x.",
         );
     });
 });

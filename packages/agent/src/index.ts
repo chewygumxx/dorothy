@@ -9,8 +9,9 @@
 //
 
 // @dorothy/agent: Dorothy's model side, the only package that talks to
-// the Agent SDK. A session, a structured call, her persona's prompts,
-// the one-shot reply, and the request capture behind --dump-context.
+// a model provider's SDK: a session, a structured call, her persona's
+// prompts, the one-shot reply, and the request capture behind
+// --dump-context.
 
 export {
     type CaptureQueryFn,
@@ -19,15 +20,26 @@ export {
 } from "./capture.js";
 export {
     Conversation,
-    conversationOptions,
+    type ConversationDeps,
+    type ConversationSetup,
+    conversationSetup,
+    MAX_STEPS,
     type SessionSetup,
 } from "./conversation.js";
+export { conversationOptions } from "./legacy.js";
 export { runOneShot } from "./one-shot.js";
 export {
     type PersonaMode,
     personaPrompt,
     prepareCliHome,
     promptHash,
+    routeLine,
     systemPrompt,
 } from "./persona.js";
+export {
+    type ConnectRecall,
+    connectRecall,
+    type RecallTools,
+    recallEnv,
+} from "./recall-tools.js";
 export { structuredCall } from "./structured.js";

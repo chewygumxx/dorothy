@@ -13,7 +13,7 @@
 
 import {
     Conversation,
-    conversationOptions,
+    conversationSetup,
     type PersonaMode,
     personaPrompt,
     promptHash,
@@ -39,8 +39,7 @@ export async function runTui(
             compaction: personaPrompt({ recall: false, mode: persona }),
             hash: (recall) =>
                 promptHash(personaPrompt({ recall, mode: persona })),
-            session: (start) =>
-                String(conversationOptions({ ...start, persona }).systemPrompt),
+            session: (start) => conversationSetup({ ...start, persona }).system,
         },
         connect: (start) => {
             const conversation = new Conversation({ ...start, persona });
