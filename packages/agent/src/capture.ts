@@ -63,12 +63,14 @@ export function captureServer(): {
     };
 }
 
-// The first request a chat on this entry would send, as it would send
-// it, recall tools included: a session of its own, pointed at the
-// capture server with a stand-in key and no fallback, closed once the
-// server has answered. Its warnings go to report, and the error that
-// kept a request from being sent, if one did; the stand-in's own refusal
-// of the request it captured is not reported.
+// The first request a chat would send on its route's first entry, as it
+// would send it, its development prompt naming the whole route and the
+// recall server withheld every provider's key (`keys`) and the route's
+// own: a session of its own, pointed at the capture server with a
+// stand-in key and no fallback, closed once the server has answered. Its
+// warnings go to report, and the error that kept a request from being
+// sent, if one did; the stand-in's own refusal of the request it
+// captured is not reported.
 export async function dumpRequest({
     setup,
     message,

@@ -197,11 +197,13 @@ A call that fails on one model moves to the next and says so, unless it
 was cancelled or her reply had begun: once text has streamed or she has
 kept a fact, a failure ends the turn. A provider out of credit is skipped
 until its `retry-after`, or for five minutes, and a rate-limited model
-likewise, for as long as the process runs.
+likewise. Each process (chat, the memory service) remembers its own
+refusals while it runs; when every model in a list is cooling, the one
+whose wait ends first is tried.
 
 | Kind | Reaches | What keeps her prompts |
 | --- | --- | --- |
-| `anthropic` | The Messages API, or a loopback `base-url` written as `ANTHROPIC_BASE_URL` is | Anthropic's commercial terms |
+| `anthropic` | The Messages API, or a loopback `base-url`, written without the `/v1` Dorothy appends | Anthropic's commercial terms |
 | `openrouter` | `https://openrouter.ai/api/v1` | Only endpoints with zero data retention and data collection denied, asked on every request |
 | `featherless` | `https://api.featherless.ai/v1`, on its paid API plan | Featherless stores no prompts |
 | `huggingface` | `https://router.huggingface.co/v1` | Whichever provider Hugging Face routes to, some of which keep prompts; a suffix such as `org/model:featherless-ai` chooses one |
@@ -216,16 +218,19 @@ likewise, for as long as the process runs.
   each call's cost, and Anthropic's models are priced from a table; any
   other model costs $0, with a warning.
 - With no `[providers]`, `anthropic` is implied. A role left out of
-  `[models]` takes its default model on the provider named `anthropic`.
+  `[models]` takes its default model on the provider named `anthropic`,
+  which must be of kind `anthropic`; without one, leaving a role out is
+  an error.
 - A model later in a list needs a context window no smaller than
   `compaction.hard` (128,000 tokens by default), or a long chat fails on
   it.
 
-A mistake in these tables is an error, as a default could send her
-requests where you did not mean: chat, a one-shot reply and
-`--dump-context` print it and exit 1; the memory service and Claude
-Code's hooks log it and review nothing; `--review-backfill` prints it and
-exits 1.
+A mistake in these tables is an error, and so is a `config.toml` that
+cannot be read at all, as one with routing tables that does not parse
+is, because a default could send her requests where you did not mean:
+chat, a one-shot reply and `--dump-context` print it and exit 1; the
+memory service and Claude Code's hooks log it and review nothing;
+`--review-backfill` prints it and exits 1.
 
 ### Memory
 

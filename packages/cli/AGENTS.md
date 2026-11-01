@@ -123,10 +123,10 @@ SDK. Keep every new mode's import lazy.
 
 ## Invariants
 
-- Auth comes from `ANTHROPIC_API_KEY` in `secrets.json`, decrypted by
-  core's async `loadSecrets` through sops. The model modes, mirror and
-  recover await `loadCredentials`. A failed load warns by code; mirror
-  refuses to create a key after a failed load.
+- Auth comes from the `secrets.json` keys config.toml's providers name
+  (`ANTHROPIC_API_KEY` by default), decrypted by core's async `loadSecrets`
+  through sops. The model modes, mirror and recover await `loadCredentials`.
+  A failed load warns by code; mirror won't create a key after one.
 - Routes (`models.ts`) name their own base URL and key; no provider reads
   its variables. The recall server runs with `recallEnv`, withheld every
   provider's key and OAuth token, in `recallCwd`, never the user's project.
