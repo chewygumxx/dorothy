@@ -180,6 +180,14 @@ function readProvider(
         faults.push(
             `${at}.base-url must be a loopback http or https URL, such as "${BASE_URL_EXAMPLE[kind]}"`,
         );
+    } else if (kind === "anthropic" && typeof baseUrl === "string") {
+        // Dorothy appends /v1 to an anthropic root, so one that has it
+        // would send requests to /v1/v1/messages.
+        if (new URL(baseUrl).pathname.replace(/\/+$/, "").endsWith("/v1")) {
+            faults.push(
+                `${at}.base-url is written without /v1, which Dorothy appends, such as "${BASE_URL_EXAMPLE[kind]}"`,
+            );
+        }
     }
     if (faults.length > before) {
         return null;

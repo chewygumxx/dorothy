@@ -333,6 +333,37 @@ describe("parseRouting", () => {
         ]);
     });
 
+    it.each(["http://127.0.0.1:8080/v1", "http://localhost:8080/v1/"])(
+        "refuses an anthropic base-url ending in /v1: %s",
+        (url) => {
+            expect(
+                faultsOf(
+                    `[providers.anthropic]\nkind = "anthropic"\nkey = "ANTHROPIC_API_KEY"\nbase-url = "${url}"`,
+                ),
+            ).toEqual([
+                'config.toml: providers.anthropic.base-url is written without /v1, which Dorothy appends, such as "http://127.0.0.1:8080"',
+            ]);
+        },
+    );
+
+    it("takes an anthropic base-url with another path", () => {
+        const routing = routingOf(
+            '[providers.anthropic]\nkind = "anthropic"\nkey = "ANTHROPIC_API_KEY"\nbase-url = "http://127.0.0.1:8080/proxy"',
+        );
+        expect(routing.routes.chat[0]?.baseUrl).toBe(
+            "http://127.0.0.1:8080/proxy",
+        );
+    });
+
+    it("keeps /v1 on a local base-url", () => {
+        const routing = routingOf(
+            `${PROVIDERS}\n[models]\nmaintenance = ["ollama:qwen"]`,
+        );
+        expect(routing.routes.maintenance[0]?.baseUrl).toBe(
+            "http://127.0.0.1:11434/v1",
+        );
+    });
+
     it("refuses a remote anthropic base-url", () => {
         expect(
             faultsOf(
