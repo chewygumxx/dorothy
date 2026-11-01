@@ -9,30 +9,12 @@
 //
 
 import { describe, expect, it } from "bun:test";
-import { type CaptureQueryFn, captureServer, dumpRequest } from "./capture.js";
-
-// Stands in for the CLI: sends the system prompt to whatever API the
-// options name, as the CLI would send the whole request.
-const posting = (
-    body: (options: Parameters<CaptureQueryFn>[0]["options"]) => unknown = (
-        o,
-    ) => ({
-        system: o.systemPrompt,
-    }),
-): CaptureQueryFn & { options?: Parameters<CaptureQueryFn>[0]["options"] } => {
-    const fn = (({ options }) => {
-        fn.options = options;
-        return (async function* () {
-            await fetch(`${options.env?.ANTHROPIC_BASE_URL}/v1/messages`, {
-                method: "POST",
-                body: JSON.stringify(body(options)),
-            }).catch(() => {});
-        })();
-    }) as CaptureQueryFn & {
-        options?: Parameters<CaptureQueryFn>[0]["options"];
-    };
-    return fn;
-};
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { anthropicEntry } from "@dorothy/core";
+import { captureServer, dumpRequest } from "./capture.js";
+import { personaPrompt } from "./persona.js";
 
 describe("captureServer", () => {
     it("records the request bodies it is sent, and answers every call with an error", async () => {
@@ -68,36 +50,81 @@ describe("captureServer", () => {
             server.stop();
         }
     });
+
+    it("records a Chat Completions request too, answering in its shape", async () => {
+        const server = captureServer();
+        try {
+            const response = await fetch(`${server.url}/v1/chat/completions`, {
+                method: "POST",
+                body: JSON.stringify({ model: "m" }),
+            });
+            expect(response.status).toBe(400);
+            expect(await response.json()).toEqual({
+                error: {
+                    type: "invalid_request_error",
+                    message: "dorothy --dump-context",
+                },
+            });
+            expect(server.bodies).toEqual([{ model: "m" }]);
+        } finally {
+            server.stop();
+        }
+    });
 });
 
 describe("dumpRequest", () => {
-    it("returns the first request, sent to a stand-in for the API", async () => {
-        const fake = posting();
-        const body = await dumpRequest({
-            prompt: "hi",
-            options: { systemPrompt: "SYSTEM", env: { HOME: "/home/u" } },
-            queryFn: fake,
-        });
-        expect(body).toEqual({ system: "SYSTEM" });
-        expect(fake.options?.env?.ANTHROPIC_BASE_URL).toMatch(
-            /^http:\/\/127\.0\.0\.1:\d+$/,
-        );
-        expect(fake.options?.env?.HOME).toBe("/home/u");
+    const FAKE_MCP = join(import.meta.dir, "fake-mcp.ts");
+    const OPUS = anthropicEntry("claude-opus-5-5");
+
+    it("returns the first request a chat would send, captured on loopback", async () => {
+        const body = (await dumpRequest({
+            setup: {},
+            message: "hi",
+            entry: OPUS,
+            env: {},
+        })) as Record<string, unknown>;
+        expect(body.model).toBe("claude-opus-5-5");
+        expect(body.system).toEqual([
+            {
+                type: "text",
+                text: personaPrompt({ recall: false, mode: "chat" }),
+                cache_control: { type: "ephemeral" },
+            },
+        ]);
+        expect(body.messages).toEqual([
+            {
+                role: "user",
+                content: [
+                    {
+                        type: "text",
+                        text: "hi",
+                        cache_control: { type: "ephemeral" },
+                    },
+                ],
+            },
+        ]);
     });
 
-    it("returns null when nothing was sent", async () => {
-        const silent: CaptureQueryFn = () => (async function* () {})();
-        expect(
-            await dumpRequest({ prompt: "hi", options: {}, queryFn: silent }),
-        ).toBeNull();
-    });
-
-    it("stops the stand-in afterwards", async () => {
-        const fake = posting();
-        await dumpRequest({ prompt: "hi", options: {}, queryFn: fake });
-        const url = fake.options?.env?.ANTHROPIC_BASE_URL;
-        await expect(
-            fetch(`${url}/v1/messages`, { method: "POST" }),
-        ).rejects.toThrow();
+    it("carries the recall tools a chat would offer", async () => {
+        // The recall server runs in the cache root: a temporary one, never the user's.
+        const cache = mkdtempSync(join(tmpdir(), "dorothy-capture-"));
+        try {
+            const body = (await dumpRequest({
+                setup: {
+                    recall: { command: process.execPath, args: [FAKE_MCP] },
+                },
+                message: "hi",
+                entry: OPUS,
+                env: { PATH: process.env.PATH ?? "", XDG_CACHE_HOME: cache },
+            })) as { tools: { name: string }[] };
+            expect(body.tools.map((tool) => tool.name).sort()).toEqual([
+                "mcp__memory__open",
+                "mcp__memory__remember",
+                "mcp__memory__search",
+                "mcp__memory__tags",
+            ]);
+        } finally {
+            rmSync(cache, { recursive: true, force: true });
+        }
     });
 });

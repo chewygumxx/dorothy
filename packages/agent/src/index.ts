@@ -13,11 +13,7 @@
 // prompts, the one-shot reply, and the request capture behind
 // --dump-context.
 
-export {
-    type CaptureQueryFn,
-    captureServer,
-    dumpRequest,
-} from "./capture.js";
+export { captureServer, DUMP_KEY, dumpRequest } from "./capture.js";
 export {
     Conversation,
     type ConversationDeps,
@@ -26,8 +22,7 @@ export {
     MAX_STEPS,
     type SessionSetup,
 } from "./conversation.js";
-export { conversationOptions } from "./legacy.js";
-export { runOneShot } from "./one-shot.js";
+export { type OneShotDeps, runOneShot } from "./one-shot.js";
 export {
     type PersonaMode,
     personaPrompt,

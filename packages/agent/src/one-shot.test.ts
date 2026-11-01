@@ -9,70 +9,25 @@
 //
 
 import { afterEach, describe, expect, it } from "bun:test";
-import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import { type OneShotQuery, runOneShot } from "./one-shot.js";
+import { defaultRoutes } from "@dorothy/core";
+import { APICallError } from "ai";
+import { runOneShot } from "./one-shot.js";
+import { personaPrompt, routeLine } from "./persona.js";
+import { mockModel, mockUsage, textChunks } from "./testing.js";
 
-const delta = (text: string) =>
-    ({
-        type: "stream_event",
-        event: {
-            type: "content_block_delta",
-            index: 0,
-            delta: { type: "text_delta", text },
+const env = { ANTHROPIC_API_KEY: "test-key" };
+
+function writer() {
+    const out: string[] = [];
+    const err: string[] = [];
+    return {
+        out,
+        err,
+        write: {
+            out: (text: string) => out.push(text),
+            err: (text: string) => err.push(text),
         },
-    }) as unknown as SDKMessage;
-const success = () =>
-    ({
-        type: "result",
-        subtype: "success",
-        is_error: false,
-        result: "Hello",
-    }) as unknown as SDKMessage;
-const apiError = (text: string) =>
-    ({
-        type: "result",
-        subtype: "success",
-        is_error: true,
-        result: text,
-    }) as unknown as SDKMessage;
-const executionError = (errors: string[]) =>
-    ({
-        type: "result",
-        subtype: "error_during_execution",
-        is_error: true,
-        errors,
-    }) as unknown as SDKMessage;
-
-const scripted =
-    (...messages: SDKMessage[]): OneShotQuery =>
-    () =>
-        (async function* () {
-            yield* messages;
-        })();
-
-// What a run writes to stdout and stderr, and the exit code it set.
-async function ran(queryFn: OneShotQuery) {
-    const write = process.stdout.write;
-    const writeError = process.stderr.write;
-    let stdout = "";
-    let stderr = "";
-    process.stdout.write = ((text: string) => {
-        stdout += text;
-        return true;
-    }) as typeof process.stdout.write;
-    process.stderr.write = ((text: string) => {
-        stderr += text;
-        return true;
-    }) as typeof process.stderr.write;
-    process.exitCode = 0;
-    try {
-        await runOneShot("hi", "chat", queryFn);
-        return { stdout, stderr, exitCode: process.exitCode };
-    } finally {
-        process.stdout.write = write;
-        process.stderr.write = writeError;
-        process.exitCode = 0;
-    }
+    };
 }
 
 describe("runOneShot", () => {
@@ -81,42 +36,94 @@ describe("runOneShot", () => {
     });
 
     it("streams a reply and ends the line", async () => {
-        const out = await ran(scripted(delta("Hel"), delta("lo"), success()));
-        expect(out).toEqual({ stdout: "Hello\n", stderr: "", exitCode: 0 });
+        const model = mockModel([{ chunks: textChunks("Hello") }]);
+        const output = writer();
+        await runOneShot("hi", "chat", {
+            env,
+            model: () => model,
+            write: output.write,
+        });
+        expect(output.out.join("")).toBe("Hello\n");
+        expect(output.err).toEqual([]);
+        expect(process.exitCode).not.toBe(1);
     });
 
-    it("fails on an API error result, saying why on stderr", async () => {
-        const out = await ran(scripted(apiError("Invalid API key")));
-        expect(out).toEqual({
-            stdout: "",
-            stderr: "Invalid API key\n",
-            exitCode: 1,
+    it("speaks with the persona it is given, offering no tools", async () => {
+        const model = mockModel([{ chunks: textChunks("Hello") }]);
+        await runOneShot("hi", "development", {
+            env,
+            model: () => model,
+            write: writer().write,
         });
+        expect(model.doStreamCalls[0]?.prompt[0]).toMatchObject({
+            role: "system",
+            content: `${personaPrompt({ recall: false, mode: "development" })}\n\n${routeLine(defaultRoutes().chat)}`,
+        });
+        expect(model.doStreamCalls[0]?.tools ?? []).toHaveLength(0);
     });
 
-    it("fails on an execution error result with its errors", async () => {
-        const out = await ran(scripted(executionError(["one", "two"])));
-        expect(out).toEqual({
-            stdout: "",
-            stderr: "one; two\n",
-            exitCode: 1,
+    it("fails on a refusal, saying why on stderr", async () => {
+        const model = mockModel([
+            new APICallError({
+                message: "overloaded",
+                url: "u",
+                requestBodyValues: {},
+                statusCode: 529,
+            }),
+        ]);
+        const output = writer();
+        await runOneShot("hi", "chat", {
+            env,
+            model: () => model,
+            write: output.write,
         });
+        expect(output.err).toEqual(["overloaded\n"]);
+        expect(process.exitCode).toBe(1);
     });
 
     it("keeps the reply streamed before a failure", async () => {
-        const out = await ran(scripted(delta("Chec"), apiError("Overloaded")));
-        expect(out.stdout).toBe("Chec");
-        expect(out.stderr).toBe("Overloaded\n");
-        expect(out.exitCode).toBe(1);
+        const model = mockModel([
+            {
+                chunks: [
+                    { type: "stream-start", warnings: [] },
+                    { type: "text-start", id: "t" },
+                    { type: "text-delta", id: "t", delta: "Half" },
+                    {
+                        type: "error",
+                        error: new APICallError({
+                            message: "reset",
+                            url: "u",
+                            requestBodyValues: {},
+                            statusCode: 500,
+                        }),
+                    },
+                    {
+                        type: "finish",
+                        usage: mockUsage(),
+                        finishReason: { unified: "error", raw: undefined },
+                    },
+                ],
+            },
+        ]);
+        const output = writer();
+        await runOneShot("hi", "chat", {
+            env,
+            model: () => model,
+            write: output.write,
+        });
+        expect(output.out.join("")).toBe("Half");
+        expect(output.err).toEqual(["reset\n"]);
+        expect(process.exitCode).toBe(1);
     });
 
-    it("fails when the query throws", async () => {
-        const out = await ran(() =>
-            // biome-ignore lint/correctness/useYield: it fails at once
-            (async function* () {
-                throw new Error("boom");
-            })(),
-        );
-        expect(out).toEqual({ stdout: "", stderr: "boom\n", exitCode: 1 });
+    it("fails without a key", async () => {
+        const output = writer();
+        await runOneShot("hi", "chat", {
+            env: {},
+            model: () => mockModel([]),
+            write: output.write,
+        });
+        expect(output.err).toEqual(["ANTHROPIC_API_KEY is not set\n"]);
+        expect(process.exitCode).toBe(1);
     });
 });
