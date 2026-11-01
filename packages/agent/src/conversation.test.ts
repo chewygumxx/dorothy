@@ -237,6 +237,49 @@ describe("Conversation", () => {
         expect(of(events, "error")).toHaveLength(0);
     });
 
+    it("keeps working when a listener throws on turn-end", async () => {
+        const { conversation, model, events } = session([
+            { chunks: textChunks("one") },
+            { chunks: textChunks("two") },
+        ]);
+        let thrown = false;
+        conversation.subscribe((event) => {
+            if (event.type === "turn-end" && !thrown) {
+                thrown = true;
+                throw new Error("listener bug");
+            }
+        });
+        conversation.send("a");
+        await until(() => of(events, "error").length === 1);
+        expect(of(events, "error")[0]).toMatchObject({
+            message: "listener bug",
+        });
+        conversation.send("b");
+        await until(() => of(events, "turn-end").length === 2);
+        expect(of(events, "turn-end")[1]).toMatchObject({ reply: "two" });
+        expect(model.doStreamCalls).toHaveLength(2);
+        await conversation.close();
+    });
+
+    it("is not looped by a listener that throws on error too", async () => {
+        const { conversation, events } = session([
+            { chunks: textChunks("one") },
+            { chunks: textChunks("two") },
+        ]);
+        conversation.subscribe((event) => {
+            if (event.type === "turn-end" || event.type === "error") {
+                throw new Error("always");
+            }
+        });
+        conversation.send("a");
+        await until(() => of(events, "error").length === 1);
+        conversation.send("b");
+        await until(() => of(events, "error").length === 2);
+        await conversation.close();
+        expect(of(events, "turn-end")).toHaveLength(2);
+        expect(of(events, "error")).toHaveLength(2);
+    });
+
     it("ignores interrupt while idle", async () => {
         const { conversation, events } = session([
             { chunks: textChunks("hi") },
@@ -635,6 +678,44 @@ describe("Conversation with recall", () => {
         expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
             "Let me look.",
         );
+    });
+
+    it("ends the attempt as cancelled, not thrown, when a listener throws on a lookup settled by an interrupt", async () => {
+        const slow = tool({
+            inputSchema: jsonSchema({ type: "object" }),
+            execute: (_input, { abortSignal }) =>
+                new Promise((_resolve, reject) => {
+                    abortSignal?.addEventListener("abort", () =>
+                        reject(new Error("aborted")),
+                    );
+                }),
+        });
+        const { conversation, events } = session(
+            [{ chunks: toolChunks("c1", "mcp__memory__search", {}) }],
+            {
+                recall: RECALL,
+                connect: async () => ({
+                    tools: { mcp__memory__search: slow },
+                    close: async () => {},
+                }),
+            },
+        );
+        conversation.subscribe((event) => {
+            if (event.type === "lookup") {
+                throw new Error("lookup listener bug");
+            }
+        });
+        conversation.send("look");
+        await until(() =>
+            of(events, "sdk").some(
+                (event) => event.message.type === "tool-call",
+            ),
+        );
+        await conversation.interrupt();
+        await until(() => ended(events));
+        expect(of(events, "turn-end")[0]).toMatchObject({ interrupted: true });
+        expect(of(events, "error")).toHaveLength(0);
+        await conversation.close();
     });
 
     it("lets a tool call in flight finish when the session closes", async () => {

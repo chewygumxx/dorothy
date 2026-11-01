@@ -226,7 +226,7 @@ export class Conversation implements ChatSession {
 
     send(text: string): void {
         this.start();
-        this.#work = this.#work.then(() => this.#runTurn(text));
+        this.#work = this.#work.then(() => this.#runTurn(text)).catch(() => {});
     }
 
     async interrupt(): Promise<void> {
@@ -294,11 +294,31 @@ export class Conversation implements ChatSession {
         });
     }
 
+    // A listener may throw: the turn then ends in an error event, and
+    // later messages still run.
     async #runTurn(text: string): Promise<void> {
         await this.#started;
         if (this.#closed !== null) {
             return;
         }
+        try {
+            await this.#turnOf(text);
+        } catch (error) {
+            this.#turn = null;
+            if (this.#closed === null) {
+                try {
+                    this.#emit({
+                        type: "error",
+                        message: describeError(error),
+                    });
+                } catch {
+                    // A listener that throws on error is not told twice.
+                }
+            }
+        }
+    }
+
+    async #turnOf(text: string): Promise<void> {
         const turn = new TurnState((event) => this.#emit(event), this.#now());
         const controller = new AbortController();
         this.#turn = controller;
@@ -504,7 +524,10 @@ export class Conversation implements ChatSession {
             };
         } finally {
             watchdog.dispose();
-            turn.settleCalls();
+            // An Attempt never throws: a listener may, on a lookup.
+            try {
+                turn.settleCalls();
+            } catch {}
         }
     }
 }

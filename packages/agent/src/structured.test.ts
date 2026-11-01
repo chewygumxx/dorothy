@@ -117,6 +117,21 @@ describe("structuredCall", () => {
         expect(model.doStreamCalls).toHaveLength(0);
     });
 
+    it("fails, rather than throws, when the model factory throws", async () => {
+        const call = structuredCall({
+            route: [SONNET],
+            env,
+            model: () => {
+                throw new Error("no such model");
+            },
+        });
+        expect(await call(REQUEST)).toMatchObject({
+            ok: false,
+            reason: expect.stringContaining("no such model"),
+            costUsd: 0,
+        });
+    });
+
     it("ends an attempt that stalls", async () => {
         const timers = manualTimers();
         const { call, model } = callWith(
