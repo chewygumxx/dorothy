@@ -33,7 +33,7 @@ export async function runTui(
     const cwd = userShell(process.env).cwd ?? process.cwd();
     const opened = await openMemory({
         resume,
-        call: structuredCall(),
+        calls: { review: structuredCall(), compaction: structuredCall() },
         prompts: {
             review: systemPrompt,
             compaction: personaPrompt({ recall: false, mode: persona }),

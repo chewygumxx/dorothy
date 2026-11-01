@@ -501,7 +501,9 @@ export type MemoryPrompts = {
 export type OpenMemoryOptions = {
     // The chat to resume, or null for a new one.
     resume: string | null;
-    call: StructuredCall;
+    // Each background job's model call: reviews in the service, the
+    // chat's own compactions.
+    calls: { review: StructuredCall; compaction: StructuredCall };
     prompts: MemoryPrompts;
     // A new session from memory's start, untracked and unrecorded.
     connect(start: SessionStart): ChatSession;
@@ -532,7 +534,7 @@ export type OpenedMemory =
 
 export async function openMemory({
     resume,
-    call,
+    calls,
     prompts,
     connect,
     recallLaunch,
@@ -585,7 +587,7 @@ export async function openMemory({
                   history,
                   config,
                   versions: launched?.history.handle() ?? null,
-                  call,
+                  call: calls.review,
                   persona: prompts.review,
                   transcript,
                   warnings,
@@ -627,7 +629,7 @@ export async function openMemory({
               clusters,
               prompts,
               recollect: recall !== null,
-              call,
+              call: calls.compaction,
               dir,
               phrase,
               path,

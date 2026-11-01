@@ -14,6 +14,7 @@ import { afterEach, beforeEach } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { StructuredCall } from "@dorothy/core";
 
 // openMemory reads the config and opens the transcript and the index from
 // these, so every one points into the test's directory, made before each
@@ -47,3 +48,16 @@ export function useXdgDir(): void {
         await rm(dir, { recursive: true, force: true });
     });
 }
+
+// A call that says so if anything but its role reaches it: a misrouted
+// call fails its job, which the test's own expectations catch.
+export const wrong =
+    (role: string): StructuredCall =>
+    async (request) => ({
+        ok: false,
+        reason:
+            request.what === role
+                ? "not under test"
+                : `${request.what} reached the ${role} call`,
+        costUsd: 0,
+    });

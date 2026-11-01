@@ -30,7 +30,7 @@ import { readTranscript, transcriptDir } from "../transcript.js";
 import { escapeXml } from "./block.js";
 import { FakeSession } from "./fake-session.js";
 import { type MemoryPrompts, openMemory } from "./open.js";
-import { useXdgDir } from "./open-testing.js";
+import { useXdgDir, wrong } from "./open-testing.js";
 import { readSidecar } from "./sidecar.js";
 
 useXdgDir();
@@ -115,7 +115,7 @@ describe("a chat compacted end to end", () => {
         const inners: FakeSession[] = [];
         const opened = await openMemory({
             resume: null,
-            call,
+            calls: { review: wrong("review"), compaction: call },
             prompts,
             connect: (start) => {
                 starts.push(start);

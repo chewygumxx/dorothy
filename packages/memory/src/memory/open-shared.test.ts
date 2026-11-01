@@ -126,7 +126,7 @@ describe("openMemory with two chats on one conversation", () => {
             const inners: FakeSession[] = [];
             const opened = await openMemory({
                 resume: phrase,
-                call,
+                calls: { review: call, compaction: call },
                 prompts,
                 connect: () => {
                     const inner = new FakeSession();

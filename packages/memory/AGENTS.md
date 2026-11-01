@@ -21,8 +21,8 @@ tags:
 
 `@dorothy/memory` holds transcripts, notes, facts, projects, recall,
 compaction, tags and history. It imports neither the agent nor a model
-provider's SDK: reviews and compaction take core's `StructuredCall`
-and prompts as text (`MemoryPrompts`).
+provider's SDK: reviews and compaction each take core's `StructuredCall`
+(`calls`) and prompts as text (`MemoryPrompts`).
 
 ## Entry points and imports
 
