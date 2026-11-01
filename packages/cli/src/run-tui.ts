@@ -21,16 +21,26 @@ import {
     structuredCall,
     systemPrompt,
 } from "@dorothy/agent";
+import type { Routing } from "@dorothy/core";
 import { openMemory } from "@dorothy/memory";
 import { runApp } from "@dorothy/tui";
 import { userShell } from "./claude.js";
-import { COOLDOWNS, ROUTES } from "./models.js";
+import { COOLDOWNS } from "./models.js";
 import { recallLaunch } from "./recall-launch.js";
+
+// What each chat session takes from the routes: the chat route, every
+// provider's key names, which its recall server is withheld, and the
+// process's cooldowns.
+export function chatDeps({ routes, keys }: Routing) {
+    return { route: routes.chat, keys, cooldowns: COOLDOWNS };
+}
 
 export async function runTui(
     resume: string | null,
-    persona: PersonaMode = "chat",
+    persona: PersonaMode,
+    routing: Routing,
 ): Promise<number> {
+    const { routes } = routing;
     // The directory the user ran dorothy from, under bun run dev too.
     const cwd = userShell(process.env).cwd ?? process.cwd();
     const compactionPrompt = personaPrompt({ recall: false, mode: persona });
@@ -38,11 +48,11 @@ export async function runTui(
         resume,
         calls: {
             review: structuredCall({
-                route: ROUTES.review,
+                route: routes.review,
                 cooldowns: COOLDOWNS,
             }),
             compaction: structuredCall({
-                route: ROUTES.compaction,
+                route: routes.compaction,
                 cooldowns: COOLDOWNS,
             }),
         },
@@ -52,18 +62,17 @@ export async function runTui(
             compaction:
                 persona === "chat"
                     ? compactionPrompt
-                    : `${compactionPrompt}\n\n${routeLine(ROUTES.chat)}`,
+                    : `${compactionPrompt}\n\n${routeLine(routes.chat)}`,
             hash: (recall) =>
                 promptHash(personaPrompt({ recall, mode: persona })),
             session: (start) =>
-                conversationSetup({ ...start, persona }, ROUTES.chat).system,
+                conversationSetup({ ...start, persona }, routes.chat).system,
         },
         connect: (start) => {
             const conversation = new Conversation({
                 ...start,
                 persona,
-                route: ROUTES.chat,
-                cooldowns: COOLDOWNS,
+                ...chatDeps(routing),
             });
             conversation.start();
             return conversation;

@@ -28,7 +28,7 @@ import {
     xdgDir,
 } from "@dorothy/core";
 import type { HookDeps, HookLog, HookMode } from "@dorothy/memory/claude-hook";
-import { COOLDOWNS, ROUTES } from "./models.js";
+import { COOLDOWNS, loadRouting, type RoutingDeps } from "./models.js";
 
 // The checkout this program runs from: three up from packages/cli/src.
 export const checkoutRoot = resolve(import.meta.dir, "..", "..", "..");
@@ -55,26 +55,30 @@ export async function loadCheckoutSecrets(
 
 type Agent = { call: StructuredCall; persona: string };
 
-export type HookCliDeps = CheckoutSecretsDeps & {
-    // process.env: claude's environment, into which her secrets load, and
-    // which reviews read their keys from.
-    env?: Env;
-    // This program as a command, for the detached catch-up.
-    self?: readonly string[];
-    agent?: () => Promise<Agent>;
-    run?: (mode: HookMode, deps: HookDeps) => Promise<number>;
-    // Memory's hook entry point, imported once it is needed.
-    memory?: () => Promise<typeof import("@dorothy/memory/claude-hook")>;
-};
+export type HookCliDeps = CheckoutSecretsDeps &
+    RoutingDeps & {
+        // process.env: claude's environment, into which her secrets load, and
+        // which reviews read their keys from.
+        env?: Env;
+        // This program as a command, for the detached catch-up.
+        self?: readonly string[];
+        agent?: () => Promise<Agent>;
+        run?: (mode: HookMode, deps: HookDeps) => Promise<number>;
+        // Memory's hook entry point, imported once it is needed.
+        memory?: () => Promise<typeof import("@dorothy/memory/claude-hook")>;
+    };
 
 const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
 
-async function loadAgent(env: Env): Promise<Agent> {
+// config.toml's review route, then the agent; a routing fault fails it,
+// so each review fails, saying the fault in the log, and the hook goes on.
+async function loadAgent(env: Env, deps: HookCliDeps): Promise<Agent> {
+    const routing = await loadRouting({ ...deps, env });
     const { structuredCall, systemPrompt } = await import("@dorothy/agent");
     return {
         call: structuredCall({
-            route: ROUTES.review,
+            route: routing.routes.review,
             cooldowns: COOLDOWNS,
             env,
         }),
@@ -202,7 +206,7 @@ function reviewingAgent(
     }
     let loading: Promise<Agent> | undefined;
     return () => {
-        loading ??= (deps.agent ?? (() => loadAgent(env)))().catch(
+        loading ??= (deps.agent ?? (() => loadAgent(env, deps)))().catch(
             (error: unknown) => ({
                 call: refusing(
                     `the agent could not load (${describeError(error)})`,

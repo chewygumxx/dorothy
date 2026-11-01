@@ -19,7 +19,12 @@ import {
     checkoutRoot,
     loadCheckoutSecrets,
 } from "./claude-hook.js";
-import { COOLDOWNS, ROUTES } from "./models.js";
+import {
+    COOLDOWNS,
+    chatRouting,
+    loadRouting,
+    type RoutingDeps,
+} from "./models.js";
 import { selfServe } from "./self.js";
 
 // What runs each mode, and the code it exits with; nothing where it set
@@ -44,11 +49,11 @@ const writeError = (text: string): void => {
     process.stderr.write(text);
 };
 
-// Reviews for the service: Dorothy's secrets by path from this
-// checkout, then the agent, whose calls name their own base URL and
-// key, so nothing Claude Code exported reaches them. Off, and said, when
-// either fails; the service keeps the reason in its log, as its stderr
-// may be ignored.
+// Reviews for the service: config.toml's review route, Dorothy's
+// secrets by path from this checkout, then the agent, whose calls name
+// their own base URL and key, so nothing Claude Code exported reaches
+// them. Off, and said, when any fails; the service keeps the reason in
+// its log, as its stderr may be ignored.
 export async function reviewAgent(
     deps: CredentialDeps = {},
 ): Promise<
@@ -58,6 +63,7 @@ export async function reviewAgent(
     const write = deps.write ?? writeError;
     try {
         const env = deps.env ?? process.env;
+        const routing = await loadRouting({ ...deps, env });
         const failure = await loadCheckoutSecrets(env, deps);
         if (failure !== null) {
             throw new Error(`secrets.json did not load (${failure})`);
@@ -66,7 +72,7 @@ export async function reviewAgent(
         return {
             review: {
                 call: structuredCall({
-                    route: ROUTES.review,
+                    route: routing.routes.review,
                     cooldowns: COOLDOWNS,
                     env,
                 }),
@@ -81,10 +87,11 @@ export async function reviewAgent(
     }
 }
 
-export type CredentialDeps = CheckoutSecretsDeps & {
-    env?: Env;
-    write?: (text: string) => void;
-};
+export type CredentialDeps = CheckoutSecretsDeps &
+    RoutingDeps & {
+        env?: Env;
+        write?: (text: string) => void;
+    };
 
 // Decrypt only for modes that need credentials. A failed load warns by
 // code and leaves the mode to report its missing credential as before.
@@ -110,28 +117,41 @@ const RUNNERS: Runners = {
         return 2;
     },
     oneshot: async (mode) => {
-        // The modes that talk to the model load their credentials first.
+        // The modes that talk to the model stop on a routing fault, then
+        // load their credentials.
+        const routing = await chatRouting(writeError);
+        if (routing === null) {
+            return 1;
+        }
         await loadCredentials();
         const { runOneShot } = await import("@dorothy/agent");
         // It sets the exit code itself, should the reply fail.
         await runOneShot(mode.prompt, mode.persona, {
-            route: ROUTES.chat,
+            route: routing.routes.chat,
             cooldowns: COOLDOWNS,
         });
         return undefined;
     },
     tui: async (mode) => {
+        const routing = await chatRouting(writeError);
+        if (routing === null) {
+            return 1;
+        }
         await loadCredentials();
         // Loaded only for chat, so one-shot replies never pay for React.
         const { runTui } = await import("./run-tui.js");
         // runTui has closed everything by now. A push or a repack still
         // running must not hold the terminal after the chat is gone.
-        process.exit(await runTui(mode.resume, mode.persona));
+        process.exit(await runTui(mode.resume, mode.persona, routing));
     },
     dump: async (mode) => {
+        const routing = await chatRouting(writeError);
+        if (routing === null) {
+            return 1;
+        }
         await loadCredentials();
         const { runDump } = await import("./dump.js");
-        return runDump(mode);
+        return runDump(mode, { routing });
     },
     list: async () => {
         const { commandHistory, runList } = await commands();

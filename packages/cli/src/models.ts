@@ -8,27 +8,50 @@
 //
 //
 
-// The routes Dorothy's calls take, each role's default model on
-// Anthropic until config.toml routes them, and the refusals this process
-// has met: one record, shared by every call, so that a refusal one call
-// meets is skipped by the next.
+// The routes Dorothy's calls take, from config.toml, and the refusals
+// this process has met: one record, shared by every call, so that a
+// refusal one call meets is skipped by the next.
 
 import {
     Cooldowns,
-    defaultRoutes,
-    type RouteEntry,
-    type Routes,
+    type Env,
+    type Routing,
+    type RoutingResult,
+    readRouting,
 } from "@dorothy/core";
-
-export const ROUTES: Routes = defaultRoutes();
 
 export const COOLDOWNS = new Cooldowns();
 
-// The entry a chat starts on, which --dump-context shows.
-export function chatEntry(): RouteEntry {
-    const entry = ROUTES.chat[0];
-    if (entry === undefined) {
-        throw new Error("the chat route has no entry");
+export type RoutingDeps = {
+    env?: Env;
+    readRouting?: (env: Env) => Promise<RoutingResult>;
+};
+
+// The routes, or an error naming every fault, for the entry points that
+// go on without reviews: the service, the backfill and the hook.
+export async function loadRouting({
+    env = process.env,
+    readRouting: read = readRouting,
+}: RoutingDeps = {}): Promise<Routing> {
+    const result = await read(env);
+    if (!result.ok) {
+        throw new Error(result.faults.join("; "));
     }
-    return entry;
+    return result.routing;
+}
+
+// The routes, or null once each fault is said: chat, the one-shot reply
+// and the dump stop there.
+export async function chatRouting(
+    write: (text: string) => void,
+    { env = process.env, readRouting: read = readRouting }: RoutingDeps = {},
+): Promise<Routing | null> {
+    const result = await read(env);
+    if (result.ok) {
+        return result.routing;
+    }
+    for (const fault of result.faults) {
+        write(`dorothy: ${fault}\n`);
+    }
+    return null;
 }
