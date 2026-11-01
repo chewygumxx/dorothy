@@ -1,0 +1,15 @@
+# vim:set expandtab shiftwidth=4 filetype=conf foldlevel=3:
+# SPDX-License-Identifier: GPL-3.0-only
+
+#
+#
+# ~chewygumxx/dorothy.git
+# ::: :/.shellcheckrc
+#
+#
+
+# https://www.shellcheck.net/wiki/Directive
+#
+# Follow sourced files, as `shellcheck -x` does, so a script checks on its
+# own when it alone changes.
+external-sources=true
