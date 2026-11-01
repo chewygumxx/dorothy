@@ -52,7 +52,11 @@ unused.
   chunk timeouts miss a server that never answers; `secretFailure`.
 - `structured.ts`: `structuredCall`, the `StructuredCall` reviews and
   compaction take: `streamText` with `Output.object` on a route, run by
-  `runRoute`, all attempts sharing the request's `timeoutMs`.
+  `runRoute`, all attempts sharing the request's `timeoutMs`. Anthropic
+  does not enforce `maxLength` and the like, so an answer is validated
+  with zod's `fromJSONSchema` (a schema it cannot read keeps the
+  top-level type check), and one that fails is put back to the model up
+  to `STRUCTURED_REPAIRS` times within the attempt.
 - `recall-tools.ts`: `connectRecall`, an MCP stdio client of the recall
   server (this program again, from `RecallLaunch`), its tools named
   `mcp__memory__<name>` and only those a session may use. `recallEnv`
