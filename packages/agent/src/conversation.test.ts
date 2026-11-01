@@ -1027,6 +1027,50 @@ describe("Conversation on a route of two", () => {
         expect(sent).toContain("A says hi");
         expect(sent).not.toContain("thinking hard");
     });
+
+    it("sends another model no message that held reasoning alone", async () => {
+        const cooldowns = new Cooldowns({ now: () => 0 });
+        const first = mockModel([
+            {
+                chunks: [
+                    START,
+                    { type: "reasoning-start", id: "r" },
+                    { type: "reasoning-delta", id: "r", delta: "only this" },
+                    { type: "reasoning-end", id: "r" },
+                    {
+                        type: "finish",
+                        finishReason: { unified: "stop", raw: "end_turn" },
+                        usage: mockUsage(),
+                    },
+                ],
+            },
+        ]);
+        const second = mockModel(
+            [{ chunks: textChunks("B says hi") }],
+            B.model,
+        );
+        const conversation = new Conversation({
+            env,
+            route: [OPUS, B],
+            cooldowns,
+            model: (entry) => (entry.model === OPUS.model ? first : second),
+        });
+        const events: ConversationEvent[] = [];
+        conversation.subscribe((event) => events.push(event));
+        conversation.start();
+        conversation.send("one");
+        await until(() => ended(events));
+        cooldowns.note(OPUS, {
+            class: "usage",
+            message: "spent",
+            retryAfterMs: 60_000,
+        });
+        conversation.send("two");
+        await until(() => ended(events, 2));
+        expect(
+            second.doStreamCalls[0]?.prompt.map((message) => message.role),
+        ).toEqual(["system", "user", "user"]);
+    });
 });
 
 describe("conversationSetup", () => {

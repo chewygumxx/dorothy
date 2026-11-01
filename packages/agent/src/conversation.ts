@@ -103,6 +103,12 @@ export function conversationSetup(
 
 export type ConversationDeps = {
     route?: Route;
+    // The route development mode's prompt names, when it is not the one
+    // tried: the dump's, which tries its first entry alone.
+    shown?: Route;
+    // Every secrets.json name a provider gives, every role's, which the
+    // recall server must not see; the route's own are never seen either.
+    keys?: readonly string[];
     cooldowns?: Cooldowns;
     env?: Env;
     model?: ModelFactory;
@@ -139,15 +145,14 @@ function rawOf(part: { type: string; text?: unknown }): RawMessage {
         : { type: part.type };
 }
 
-// Reasoning belongs to the model that made it; another is sent none.
-function withoutReasoning(message: ModelMessage): ModelMessage {
+// Reasoning belongs to the model that made it; another is sent none,
+// and an assistant message that held nothing else is not sent at all.
+function withoutReasoning(message: ModelMessage): ModelMessage | null {
     if (message.role !== "assistant" || typeof message.content === "string") {
         return message;
     }
-    return {
-        ...message,
-        content: message.content.filter((part) => part.type !== "reasoning"),
-    };
+    const content = message.content.filter((part) => part.type !== "reasoning");
+    return content.length === 0 ? null : { ...message, content };
 }
 
 // The user's message as sent: on Anthropic it carries the second cache
@@ -169,6 +174,7 @@ export class Conversation implements ChatSession {
     readonly #listeners = new Set<(event: ConversationEvent) => void>();
     readonly #setup: ConversationSetup;
     readonly #route: Route;
+    readonly #keys: readonly string[];
     readonly #cooldowns: Cooldowns;
     readonly #env: Env;
     readonly #model: ModelFactory;
@@ -190,6 +196,8 @@ export class Conversation implements ChatSession {
 
     constructor({
         route = defaultRoutes().chat,
+        shown = route,
+        keys = [],
         cooldowns = new Cooldowns(),
         env = process.env,
         model = languageModel,
@@ -200,6 +208,7 @@ export class Conversation implements ChatSession {
         ...setup
     }: SessionSetup & ConversationDeps = {}) {
         this.#route = route;
+        this.#keys = keys;
         this.#cooldowns = cooldowns;
         this.#env = env;
         this.#model = model;
@@ -207,7 +216,7 @@ export class Conversation implements ChatSession {
         this.#timers = timers;
         this.#stallMs = stallMs;
         this.#now = now;
-        this.#setup = conversationSetup(setup, route);
+        this.#setup = conversationSetup(setup, shown);
     }
 
     start(): void {
@@ -293,7 +302,7 @@ export class Conversation implements ChatSession {
                 this.#recall = await this.#connect(
                     recall,
                     recollect,
-                    recallEnv(this.#env, this.#route),
+                    recallEnv(this.#env, this.#route, this.#keys),
                 );
             } catch (error) {
                 this.#notify({
@@ -432,14 +441,18 @@ export class Conversation implements ChatSession {
 
     #outgoing(entry: RouteEntry, text: string): ModelMessage[] {
         const by = label(entry);
-        return [
-            ...this.#messages.map(({ message, by: from }) =>
+        const sent: ModelMessage[] = [];
+        for (const { message, by: from } of this.#messages) {
+            const kept =
                 from === null || from === by
                     ? message
-                    : withoutReasoning(message),
-            ),
-            outgoingUser(text, entry),
-        ];
+                    : withoutReasoning(message);
+            if (kept !== null) {
+                sent.push(kept);
+            }
+        }
+        sent.push(outgoingUser(text, entry));
+        return sent;
     }
 
     async #attempt(

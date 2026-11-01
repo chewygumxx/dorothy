@@ -15,7 +15,7 @@ import { join } from "node:path";
 import type { dumpRequest } from "@dorothy/agent";
 import { newPhrase } from "@dorothy/core";
 import { runDump } from "./dump.js";
-import { chatEntry } from "./models.js";
+import { ROUTES } from "./models.js";
 
 const recording = (
     body: unknown = { model: "claude-opus-5-5" },
@@ -73,7 +73,7 @@ describe("runDump", () => {
         expect(fake.seen).toHaveLength(1);
         expect(fake.seen[0]).toMatchObject({
             message: "hi",
-            entry: chatEntry(),
+            route: ROUTES.chat,
             setup: { persona: "chat", history: [] },
         });
         expect(fake.seen[0]?.setup.recall).toHaveProperty("command");

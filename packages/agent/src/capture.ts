@@ -8,7 +8,7 @@
 //
 //
 
-import type { Env, RouteEntry } from "@dorothy/core";
+import type { Env, Route } from "@dorothy/core";
 import { Conversation, type SessionSetup } from "./conversation.js";
 import type { ConnectRecall } from "./recall-tools.js";
 
@@ -72,22 +72,36 @@ export function captureServer(): {
 export async function dumpRequest({
     setup,
     message,
-    entry,
+    route,
+    keys = [],
     env = process.env,
     connect,
     report = () => {},
 }: {
     setup: SessionSetup;
     message: string;
-    entry: RouteEntry;
+    // The chat's route: its first entry is dumped, and development mode's
+    // prompt names every entry, as a chat's does.
+    route: Route;
+    // Every provider's key names, which the recall server must not see.
+    keys?: readonly string[];
     env?: Env;
     connect?: ConnectRecall;
     report?: (kind: "warning" | "error", message: string) => void;
 }): Promise<unknown | null> {
+    const entry = route[0];
+    if (entry === undefined) {
+        report("error", "the chat route has no entry");
+        return null;
+    }
     const server = captureServer();
     const conversation = new Conversation({
         ...setup,
         route: [{ ...entry, baseUrl: server.url, key: DUMP_KEY }],
+        shown: route,
+        // The stand-in takes the entry's key's place, which the recall
+        // server is withheld all the same.
+        keys: [...keys, ...(entry.key === null ? [] : [entry.key])],
         env: { ...env, [DUMP_KEY]: "dorothy --dump-context" },
         ...(connect === undefined ? {} : { connect }),
     });

@@ -11,7 +11,7 @@
 import { dumpRequest, type PersonaMode } from "@dorothy/agent";
 import type { Env } from "@dorothy/core";
 import { previewStart } from "@dorothy/memory";
-import { chatEntry } from "./models.js";
+import { ROUTES } from "./models.js";
 import { recallLaunch } from "./recall-launch.js";
 
 export type DumpRequest = {
@@ -56,7 +56,7 @@ export async function runDump(
     const body = await dump({
         setup: { ...preview.start, persona: request.persona },
         message: request.message,
-        entry: chatEntry(),
+        route: ROUTES.chat,
         env,
         report: (kind, message) => {
             if (kind === "error") {

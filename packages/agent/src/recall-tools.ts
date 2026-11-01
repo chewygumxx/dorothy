@@ -37,12 +37,17 @@ export type ConnectRecall = (
 ) => Promise<RecallTools>;
 
 // What the recall server may see: the caller's environment, its XDG
-// roots among it, less every credential: the keys a route names, any
-// *_API_KEY and Claude's OAuth tokens.
-export function recallEnv(env: Env, route: Route): Record<string, string> {
-    const named = new Set(
-        route.flatMap((entry) => (entry.key === null ? [] : [entry.key])),
-    );
+// roots among it, less every credential: the keys a route names, those
+// every provider gives, any *_API_KEY and Claude's OAuth tokens.
+export function recallEnv(
+    env: Env,
+    route: Route,
+    keys: readonly string[] = [],
+): Record<string, string> {
+    const named = new Set([
+        ...keys,
+        ...route.flatMap((entry) => (entry.key === null ? [] : [entry.key])),
+    ]);
     const kept: Record<string, string> = {};
     for (const [name, value] of Object.entries(env)) {
         if (
