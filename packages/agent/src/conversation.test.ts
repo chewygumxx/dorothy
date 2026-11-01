@@ -293,6 +293,80 @@ describe("Conversation", () => {
         await conversation.close();
     });
 
+    it("keeps working when a listener throws on ready", async () => {
+        const unhandled: unknown[] = [];
+        const catcher = (reason: unknown) => unhandled.push(reason);
+        process.on("unhandledRejection", catcher);
+        try {
+            const model = mockModel([{ chunks: textChunks("hello") }]);
+            const conversation = new Conversation({
+                env,
+                model: () => model,
+            });
+            const events: ConversationEvent[] = [];
+            conversation.subscribe((event) => events.push(event));
+            let thrown = false;
+            conversation.subscribe((event) => {
+                if (event.type === "ready" && !thrown) {
+                    thrown = true;
+                    throw new Error("ready bug");
+                }
+            });
+            conversation.send("a");
+            await until(() => of(events, "turn-end").length === 1);
+            expect(of(events, "error")[0]).toMatchObject({
+                message: "ready bug",
+            });
+            expect(of(events, "turn-end")[0]).toMatchObject({
+                reply: "hello",
+            });
+            await conversation.close();
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            expect(unhandled).toEqual([]);
+        } finally {
+            process.off("unhandledRejection", catcher);
+        }
+    });
+
+    it("keeps working when a listener throws on a warning at start", async () => {
+        const unhandled: unknown[] = [];
+        const catcher = (reason: unknown) => unhandled.push(reason);
+        process.on("unhandledRejection", catcher);
+        try {
+            const model = mockModel([{ chunks: textChunks("hello") }]);
+            const conversation = new Conversation({
+                env,
+                model: () => model,
+                recall: RECALL,
+                connect: async () => {
+                    throw new Error("spawn failed");
+                },
+            });
+            const events: ConversationEvent[] = [];
+            conversation.subscribe((event) => events.push(event));
+            conversation.subscribe((event) => {
+                if (event.type === "warning") {
+                    throw new Error("warning bug");
+                }
+            });
+            conversation.send("a");
+            await until(() => of(events, "turn-end").length === 1);
+            expect(of(events, "ready")).toHaveLength(1);
+            expect(of(events, "error")[0]).toMatchObject({
+                message: "warning bug",
+            });
+            expect(of(events, "turn-end")[0]).toMatchObject({
+                reply: "hello",
+            });
+            expect(model.doStreamCalls).toHaveLength(1);
+            await conversation.close();
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            expect(unhandled).toEqual([]);
+        } finally {
+            process.off("unhandledRejection", catcher);
+        }
+    });
+
     it("is not looped by a listener that throws on error too", async () => {
         const { conversation, events } = session([
             { chunks: textChunks("one") },

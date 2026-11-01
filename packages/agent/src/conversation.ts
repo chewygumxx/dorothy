@@ -267,6 +267,28 @@ export class Conversation implements ChatSession {
         }
     }
 
+    // A listener that throws is told of as an error event, once; it never
+    // stops the code that was emitting.
+    #notify(event: ConversationEvent): void {
+        try {
+            this.#emit(event);
+        } catch (error) {
+            this.#fail(error);
+        }
+    }
+
+    #fail(error: unknown): void {
+        if (this.#closed !== null) {
+            return;
+        }
+        try {
+            this.#emit({ type: "error", message: describeError(error) });
+        } catch {
+            // A listener that throws on error is not told twice.
+        }
+    }
+
+    // Never rejects: a listener throwing at start must not wedge the turns.
     async #begin(): Promise<void> {
         // ready is never emitted inside start(): callers subscribe after.
         await Promise.resolve();
@@ -279,7 +301,7 @@ export class Conversation implements ChatSession {
                     recallEnv(this.#env, this.#route),
                 );
             } catch (error) {
-                this.#emit({
+                this.#notify({
                     type: "warning",
                     message: `memory: recall is unavailable (${describeError(error)})`,
                 });
@@ -292,7 +314,7 @@ export class Conversation implements ChatSession {
             return;
         }
         const first = this.#route[0];
-        this.#emit({
+        this.#notify({
             type: "ready",
             model: first === undefined ? "none" : label(first),
             sessionId: this.#id,
@@ -302,25 +324,16 @@ export class Conversation implements ChatSession {
     // A listener may throw: the turn then ends in an error event, and
     // later messages still run.
     async #runTurn(text: string): Promise<void> {
-        await this.#started;
-        this.#queued -= 1;
-        if (this.#closed !== null) {
-            return;
-        }
         try {
+            await this.#started;
+            this.#queued -= 1;
+            if (this.#closed !== null) {
+                return;
+            }
             await this.#turnOf(text);
         } catch (error) {
             this.#turn = null;
-            if (this.#closed === null) {
-                try {
-                    this.#emit({
-                        type: "error",
-                        message: describeError(error),
-                    });
-                } catch {
-                    // A listener that throws on error is not told twice.
-                }
-            }
+            this.#fail(error);
         }
     }
 
