@@ -247,9 +247,17 @@ export function mockModel(
                         for (const chunk of script.chunks) {
                             controller.enqueue(chunk as never);
                         }
-                        abortSignal?.addEventListener("abort", () => {
+                        if (abortSignal?.aborted === true) {
                             controller.error(abortSignal.reason);
-                        });
+                            return;
+                        }
+                        abortSignal?.addEventListener(
+                            "abort",
+                            () => {
+                                controller.error(abortSignal.reason);
+                            },
+                            { once: true },
+                        );
                     },
                 }),
             };
