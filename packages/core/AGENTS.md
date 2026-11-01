@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-21
+mtime: 2026-11-01
 spdx: GPL-3.0-only
 title: packages/core/AGENTS.md
 description: >-
@@ -32,20 +32,24 @@ below. It declares `niceware` alone, and never imports another
 ## Files
 
 - `contracts/session.ts`: `ChatSession`, its `ConversationEvent`s, `Turn`
-  and `RawMessage`, the structural stand-in for an SDK message.
+  and `RawMessage`, the type of any stream part, its text a text part's.
 - `contracts/start.ts`: `SessionStart`, the values a session starts from,
   and `withSection`, which joins a section (the memory block, the earlier
   turns' abstracts) to a system prompt.
 - `contracts/structured.ts`: `StructuredCall`, the one-shot call reviews
   and compaction take.
 - `contracts/model.ts`: the routing contracts: `ROLES`, `KINDS`, a
-  `RouteEntry`, `Routes`, `Failure` and `AttemptResult`, and `label`.
+  `RouteEntry` (base URL always explicit, key a `secrets.json` name),
+  `Routes`, `Failure` and `AttemptResult`, and `label`
+  (`<provider>:<model>`).
 - `models/cooldowns.ts`: `Cooldowns`, the usage and rate-limit refusals
-  a process skips until their time is up.
+  a process skips until their time is up; one per process, shared by
+  every call.
 - `models/fallback.ts`: `runRoute`, a call's entries in order, skipping
-  cooldowns and deciding on each Failure; `CANCELLED` and `timedOut`.
-- `models/prices.ts`: `ANTHROPIC_PRICES` and `stepCost`, what a step's
-  tokens cost, or null for a model with no known price.
+  cooldowns and deciding on each Failure, never reading HTTP (agent
+  turns errors into Failures); `CANCELLED` and `timedOut`.
+- `models/prices.ts`: `ANTHROPIC_PRICES`, dated with their source, and
+  `stepCost`, what a step's tokens cost, or null for no known price.
 - `models/routes.ts`: `DEFAULT_MODELS` and `defaultRoutes`, each role's
   Anthropic route until config routes it.
 - `contracts/notices.ts`: `Notice` and `NoticeSource`, what memory and
@@ -62,13 +66,15 @@ below. It declares `niceware` alone, and never imports another
   and updates existing files with `sops set`. Failures carry codes alone.
   Names needing escapes or brackets in sops paths fail before any write.
   Both take a runner; the default closes unused stdin and discards stderr.
-  `chooseClaudeToken` sets `CLAUDE_CODE_OAUTH_TOKEN` to the entry
-  `DOROTHY_CLAUDE_TOKEN_VAR` names, or fails with `SECRETS_INVALID`.
+  `chooseClaudeToken`, for the eval alone, sets `CLAUDE_CODE_OAUTH_TOKEN`
+  to the entry `DOROTHY_CLAUDE_TOKEN_VAR` names, or fails with
+  `SECRETS_INVALID`.
 - `config.ts`: `config.toml` (`readConfig`, `parseConfig`).
 - `xdg.ts`: the XDG directories (`xdgDir`), the state directory among
   them.
 - `session-id.ts`: session phrases, and `isUuid` for the ids that name
-  files; `timers.ts`: injectable timers and a `Clock`.
+  files; `timers.ts`: injectable timers and a `Clock`, which `Cooldowns`
+  takes.
 
 ## Invariants
 

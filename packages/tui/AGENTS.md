@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-20
+mtime: 2026-11-01
 spdx: GPL-3.0-only
 title: packages/tui/AGENTS.md
 description: >-
@@ -21,7 +21,8 @@ tags:
 
 `@dorothy/tui` is the Ink chat. It knows a session only as core's
 `ChatSession`, made by the `createSession` it is given, and needs no SDK
-types: the `sdk` event carries core's structural `RawMessage`.
+types: the `sdk` event carries core's `RawMessage`, a stream part's type,
+with a text part's text.
 
 ## Entry points and imports
 
@@ -43,7 +44,7 @@ the `@dorothy` packages it depends on `core` alone.
 - `layout.ts`: the minimum size and the Too Small screen.
 - `Header.tsx`, `statusline.ts`: the header and its status line.
 - `History.tsx`, `LiveReply.tsx`, `RawPane.tsx`: past turns, the reply
-  streaming in, and the raw SDK messages.
+  streaming in, and the raw stream parts.
 - `Markdown.tsx` and `markdown/`: replies rendered as Markdown
   (`render.ts`, `spans.ts`), code highlighted by lowlight
   (`highlight.ts`).

@@ -22,13 +22,13 @@ tags:
 Conversational LLM interface
 
 Dorothy is a conversational assistant in the spirit of <https://claude.ai>,
-built for now on the Claude Agent SDK with a custom system prompt. A later
-iteration moves to Anthropic's Messages API.
+running on her own runtime, the Vercel AI SDK, which reaches Anthropic's
+Messages API with her own system prompt.
 
 ## Prerequisites
 
 - Bun >=1.4
-- Either an Anthropic API key or a Claude Pro/Max subscription
+- An Anthropic API key; `--claude` also needs Claude Code, signed in
 
 [mise](https://mise.jdx.dev) supplies Bun, sops, age and jq from
 `mise.toml`:
@@ -51,11 +51,15 @@ bun install
 `$XDG_CONFIG_HOME/sops/age/keys.txt` (default `~/.config/sops/age/keys.txt`).
 Dorothy loads it when a command needs credentials, keeping any nonempty
 value already set in the environment.
-Use sops's editor to set either credential as a JSON string:
+Use sops's editor to set a credential as a JSON string:
 
-- `ANTHROPIC_API_KEY`: pay-per-token API credits.
-- `CLAUDE_CODE_OAUTH_TOKEN`: a Claude Pro/Max subscription token, minted by
-  running `claude setup-token`.
+- `ANTHROPIC_API_KEY`: the key Dorothy's own calls spend, her chat, her
+  reviews and her compactions, through Anthropic's Messages API. A Max
+  plan's monthly API credits cover it.
+- `CLAUDE_CODE_OAUTH_TOKEN`: a Claude Pro/Max subscription token, minted
+  by running `claude setup-token`, for the eval's `via = "claude"`
+  clients, which run Claude Code itself. `dorothy --claude` needs none: it
+  signs in as your own Claude Code does.
 
 ```sh
 sops edit secrets.json
@@ -63,12 +67,9 @@ sops edit secrets.json
 
 With more than one Claude account, keep each token under its own name
 beginning `CLAUDE_CODE_OAUTH_TOKEN`, such as
-`CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2`, and choose the one to spend by
-setting `DOROTHY_CLAUDE_TOKEN_VAR` to its name. Reviews strip Claude
-Code's own variables, so an exported `CLAUDE_CODE_OAUTH_TOKEN` does not
-reach them; this does, and eval honours it too. A name with no such
-token fails rather than spend another account: a review fails, and eval
-stops before any model call.
+`CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2`, and choose the one eval spends by
+setting `DOROTHY_CLAUDE_TOKEN_VAR` to its name. A name with no such
+token stops eval before any model call.
 
 Back up that age-key file somewhere off this machine: without it,
 `secrets.json` cannot be read. Never commit the age key. Sops also accepts
@@ -108,7 +109,7 @@ Enter sends and Shift+Enter starts a new line (in terminals with the kitty
 keyboard protocol). Arrows, Home, End and the usual readline keys move and
 edit; Up and Down past the first or last line recall earlier messages, and
 Ctrl+G opens the draft in `$VISUAL` or `$EDITOR`. You can keep writing while
-a reply streams; Esc or Ctrl+C stops it. Ctrl+R shows the raw SDK messages.
+a reply streams; Esc or Ctrl+C stops it. Ctrl+R shows the raw stream parts.
 Ctrl+C clears the draft, then quits; Ctrl+D or `/exit` quits too.
 Each reply ends with its tokens, timings, cost and what the chat has cost so
 far, and the statusline under the input shows the latest of them. Each chat
@@ -444,9 +445,8 @@ A conversation recorded by `--sweep --backfill` carries that durable mark,
 and its notes stay empty: no title, abstract, tags or knowledge. `dorothy
 --review-backfill [-n | --count <count | all>]` reviews them in batches,
 the newest `-n` (25 by default) by their last event, on the reviewer's
-model and with the credentials her other reviews use, the Claude plan's
-token where that is what `secrets.json` holds. Each batch spends plan
-usage, so run one, watch your limits, then run the next:
+model and with the credentials her other reviews use, her API key. Each
+batch spends API credits, so run one, watch your spend, then run the next:
 
 ```sh
 bun run dev -- --review-backfill -n 3    # a small batch first
@@ -644,9 +644,10 @@ bun run dev -- --dump-context [--resume <phrase>] [message...]
 ```
 
 `--dump-context` prints, as JSON, the exact request a chat would send first:
-the same notes, history and memory tools, and whatever the SDK adds. It goes
-to a stand-in on a local port, so nothing reaches the API and no tokens are
-spent. `--dev --dump-context` dumps development mode.
+the same notes, history and memory tools, exactly as Dorothy builds them,
+her recall tools' schemas included. It goes to a stand-in on a local port,
+so nothing reaches the API and no tokens are spent. `--dev --dump-context`
+dumps development mode.
 
 ## CI
 
