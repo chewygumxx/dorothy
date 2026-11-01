@@ -143,7 +143,7 @@ describe("a chat compacted end to end", () => {
             const session = memory.createSession([]);
             session.send(text(words[0] as string));
             const first = inners[0] as FakeSession;
-            first.emit({ type: "ready", model: "m", sdkSessionId: "s" });
+            first.emit({ type: "ready", model: "m", sessionId: "s" });
             reply(first, text(words[1] as string), 900);
             session.send(text(words[2] as string));
             reply(first, text(words[3] as string), 1800);

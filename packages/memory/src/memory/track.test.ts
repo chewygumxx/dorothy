@@ -63,7 +63,7 @@ describe("trackMemory", () => {
     it("passes every event to the chat before memory hears of it", () => {
         const { log, tracked, emit } = setup();
         tracked.subscribe((event) => log.push(`chat ${event.type}`));
-        emit({ type: "ready", model: "m", sdkSessionId: "s" });
+        emit({ type: "ready", model: "m", sessionId: "s" });
         emit({ type: "delta", text: "Hi" });
         emit({ type: "turn-end", reply: "Hi", interrupted: false, stats });
         emit({ type: "error", message: "gone" });

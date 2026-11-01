@@ -35,19 +35,19 @@ const stats: TurnStats = {
 };
 
 describe("Header", () => {
-    it("shows phrase, model, short SDK id and status", () => {
+    it("shows phrase, model, short session id and status", () => {
         const { lastFrame } = render(
             <Header
                 phrase="tumble-orchid-vapor-lantern"
                 model="test-model"
-                sdkSessionId="3f2a0000-0000-0000-0000-000000000c91"
+                sessionId="3f2a0000-0000-0000-0000-000000000c91"
                 status="ready"
             />,
         );
         const frame = lastFrame() ?? "";
         expect(frame).toContain("tumble-orchid-vapor-lantern");
         expect(frame).toContain("test-model");
-        expect(frame).toContain("sdk 3f2a…c91");
+        expect(frame).toContain("session 3f2a…c91");
         expect(frame).toContain("ready");
     });
 
@@ -57,7 +57,7 @@ describe("Header", () => {
                 <Header
                     phrase="tumble-orchid-vapor-lantern"
                     model="claude-sonnet-5-5"
-                    sdkSessionId="3f2a0000-0000-0000-0000-000000000c91"
+                    sessionId="3f2a0000-0000-0000-0000-000000000c91"
                     status="disconnected"
                 />
             </Box>,

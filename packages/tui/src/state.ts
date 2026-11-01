@@ -48,7 +48,7 @@ export type ChatState = {
     streaming: boolean;
     status: Status;
     model: string | null;
-    sdkSessionId: string | null;
+    sessionId: string | null;
     raw: RawEntry[];
     rawCount: number;
     showRaw: boolean;
@@ -251,7 +251,7 @@ export function initialState(
         streaming: false,
         status: "starting",
         model: null,
-        sdkSessionId: null,
+        sessionId: null,
         raw: [],
         rawCount: 0,
         showRaw: false,
@@ -326,7 +326,7 @@ function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
                 ...state,
                 status: "ready",
                 model: event.model,
-                sdkSessionId: event.sdkSessionId,
+                sessionId: event.sessionId,
             };
         case "delta":
             return { ...state, live: state.live + event.text };
@@ -347,6 +347,7 @@ function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
                 }),
                 costUsd,
                 lastStats: event.stats,
+                ...(event.model === undefined ? {} : { model: event.model }),
                 live: "",
                 streaming: false,
                 split: false,
@@ -443,7 +444,7 @@ export function reduce(state: ChatState, action: Action): ChatState {
                 ...state,
                 status: "starting",
                 model: null,
-                sdkSessionId: null,
+                sessionId: null,
             };
         case "closing":
             return { ...state, status: "closing" };

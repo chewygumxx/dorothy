@@ -212,7 +212,7 @@ describe("Conversation", () => {
         expect(of(events, "ready")[0]).toEqual({
             type: "ready",
             model: "test-model",
-            sdkSessionId: "sdk-1",
+            sessionId: "sdk-1",
         });
     });
 

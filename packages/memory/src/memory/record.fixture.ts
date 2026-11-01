@@ -36,7 +36,7 @@ export type Step =
     | { emit: ConversationEvent; session?: number };
 
 export const SCRIPT: Step[] = [
-    { emit: { type: "ready", model: "m", sdkSessionId: "sdk-1" } },
+    { emit: { type: "ready", model: "m", sessionId: "sdk-1" } },
     { send: "hello" },
     {
         emit: {
@@ -58,7 +58,7 @@ export const SCRIPT: Step[] = [
     { send: "again" },
     { emit: { type: "error", message: "boom", partial: "Par" } },
     { send: "third" },
-    { emit: { type: "ready", model: "m", sdkSessionId: "sdk-2" } },
+    { emit: { type: "ready", model: "m", sessionId: "sdk-2" } },
     // The first session, closed by the reconnect, is heard no more.
     {
         emit: {

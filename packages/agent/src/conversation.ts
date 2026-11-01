@@ -328,7 +328,7 @@ export class Conversation implements ChatSession {
             this.#emit({
                 type: "ready",
                 model: message.model,
-                sdkSessionId: message.session_id,
+                sessionId: message.session_id,
             });
         }
     }

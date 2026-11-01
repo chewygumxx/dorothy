@@ -207,7 +207,7 @@ describe("openMemory", () => {
             idle.emit({
                 type: "ready",
                 model: "synthetic",
-                sdkSessionId: "idle",
+                sessionId: "idle",
             });
             await untouched.close();
             expect(
@@ -306,7 +306,7 @@ describe("openMemory", () => {
         const { memory } = opened;
         try {
             memory.createSession([]).send("hello");
-            inner.emit({ type: "ready", model: "m", sdkSessionId: "s" });
+            inner.emit({ type: "ready", model: "m", sessionId: "s" });
             expect(starts).toHaveLength(1);
             expect(starts[0]).toMatchObject({
                 history: [],
@@ -465,7 +465,7 @@ describe("openMemory", () => {
         phrase = memory.phrase;
         try {
             memory.createSession([]).send("hello");
-            inner.emit({ type: "ready", model: "m", sdkSessionId: "s" });
+            inner.emit({ type: "ready", model: "m", sessionId: "s" });
             inner.emit({
                 type: "turn-end",
                 reply: "a reply to review",

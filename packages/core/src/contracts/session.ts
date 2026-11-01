@@ -36,7 +36,7 @@ export type RawMessage = {
 };
 
 export type ConversationEvent =
-    | { type: "ready"; model: string; sdkSessionId: string }
+    | { type: "ready"; model: string; sessionId: string }
     | { type: "delta"; text: string }
     | {
           type: "turn-end";
@@ -47,6 +47,8 @@ export type ConversationEvent =
           // request read, plus the reply it added. Conversation always sets
           // it.
           contextTokens?: number;
+          // The <provider>:<model> that answered, where the session says.
+          model?: string;
       }
     | { type: "sdk"; message: RawMessage }
     // A lookup Dorothy made; offset is where in the reply it happened.

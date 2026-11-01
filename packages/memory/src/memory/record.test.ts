@@ -139,7 +139,7 @@ describe("sessionRecorder", () => {
             );
             const inner = new FakeSession();
             wrap(inner);
-            inner.emit({ type: "ready", model: "m", sdkSessionId: "s" });
+            inner.emit({ type: "ready", model: "m", sessionId: "s" });
             await settle();
             if (project === undefined) {
                 expect(entries[0]).not.toHaveProperty("project");
@@ -153,7 +153,7 @@ describe("sessionRecorder", () => {
         const { entries, wrap } = recorded({ resumed: true });
         const inner = new FakeSession();
         wrap(inner);
-        inner.emit({ type: "ready", model: "m", sdkSessionId: "s" });
+        inner.emit({ type: "ready", model: "m", sessionId: "s" });
         await settle();
         expect(entries[0]).toMatchObject({ kind: "session", resumed: true });
     });
