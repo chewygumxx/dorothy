@@ -55,9 +55,11 @@ Part B, amended in this plan's branch for the `huggingface` kind.
 
 Every task's tests and code are given whole, as unified diffs against
 the tree the earlier tasks leave. They were prototyped and checked on
-2026-11-01: applied in order to `origin/main` at `955abd3`, each task's
-tests fail before its code and pass after, and the final tree passes
-`bun run check` on temporary XDG roots (3944 pass, 1 skip, 0 fail).
+2026-11-01, and again after the plan's review: applied in order to
+`origin/main` at `955abd3`, each task's tests fail before its code and
+pass after, and the final tree passes `bun run check` on temporary XDG
+roots with 0 failures (3971 tests; how many skip depends on the
+machine).
 
 Apply a diff from the repository root, by its number, with this
 function; never retype one. The diffs' blank context lines carry no
@@ -151,8 +153,10 @@ left: stop and report it, never edit the diff to fit.
 - A Chat Completions provider answering with a redirect: the key never
   follows it (Task 4's `wire.test.ts`, each kind).
 - `HF_TOKEN` or a local server's key, neither ending `_API_KEY`: still
-  withheld from the recall server, as every provider's key is (Task 5's
-  `recall-tools.test.ts`).
+  withheld from the recall server, as every provider's key is, in chat
+  and in `--dump-context`, which puts a stand-in in its route's key's
+  place (Task 5's `recall-tools.test.ts` and `capture.test.ts`; Task 6's
+  `chatDeps` test).
 
 ## Rulings
 
@@ -164,9 +168,9 @@ Made while planning, each with its cost if wrong:
    branch. Cost: some of its providers keep prompts, so this kind alone
    is not held to no retention; the README says so.
 2. **Local servers are tested on loopback fakes only.** The user has no
-   local model (2026-11-01); Task 8 verifies OpenRouter and featherless
-   live instead. Cost: the `local` kind is unproven against a real
-   server.
+   local model (2026-11-01); Task 8 verifies OpenRouter, featherless and
+   Hugging Face live instead, `HF_TOKEN` being in `secrets.json`. Cost:
+   the `local` kind is unproven against a real server.
 3. **Thinking on the other kinds is the provider's default.** There is
    no portable lowest setting, and a refused one would fail every
    attempt. Cost: reasoning models on OpenRouter, featherless or Hugging
@@ -176,10 +180,14 @@ Made while planning, each with its cost if wrong:
    that made it, and an attempt always starts from the user's message,
    so carrying one gains nothing a fallback needs. Cost: none seen; a
    model switch loses earlier turns' reasoning, as it does now.
-5. **A `config.toml` that does not parse is a routing fault**, so chat
-   stops where it used to warn: the routes it meant cannot be known.
-   Cost: a typo in any table stops chat until it is fixed; the error
-   names the line.
+5. **A `config.toml` that does not parse is a routing fault if it
+   routes**: when any line opens or sets `[providers]` or `[models]`,
+   the routes it meant cannot be known, so chat stops where it used to
+   warn, and the service, the hook and the backfill review nothing. A
+   broken file with no such line keeps the default routes, and
+   `parseConfig`'s warning names the line. Cost: with routing tables in
+   the file, a typo in any table stops chat and turns every review off,
+   which the service only logs, until it is fixed.
 6. **Every fault is reported, not the first**, and a role left out is a
    fault only when every provider was read, so one bad provider is not
    followed by four "missing" lines. Cost: none.
@@ -205,11 +213,29 @@ Made while planning, each with its cost if wrong:
     none.
 12. **`ModelFactory` takes the call's use**, `chat` or `structured`, as
     OpenRouter's `require_parameters` is a model setting. Cost: none.
-13. **`runTui` defaults its routing** to the default routes, so its
-    tests call it bare; the CLI always passes config's. Cost: none.
+13. **`runTui` requires its routing**, as `runDump` does, so no caller
+    falls back to the default routes unseen; `chatDeps` builds what each
+    chat session takes from it, and is tested. Cost: none.
 14. **Structured calls gain a cache breakpoint** on their system prompt
-    on Anthropic, a constraint Part A's review left. Cost: one cache
-    write per prompt, repaid by every repair and every later review.
+    on Anthropic, a constraint Part A's review left. Cost: a cache write
+    costs 1.25 times the input price and lasts five minutes, so a
+    service review alone pays it for nothing; repairs and backfill runs
+    reuse it, and a prompt under the model's minimum is not cached at
+    all. Cheap either way.
+15. **Routes are read apart from the other tables.** The spec has
+    `parseConfig` return the routing fault beside its warnings; the
+    plan gives `core` `routingOf` and `readRouting` instead, so the
+    other tables' readers, memory's among them, cannot meet a fault
+    they would have to ignore. Cost: the TUI reads `config.toml` twice.
+16. **A message of reasoning alone is dropped, not merged**, so another
+    model may be sent two user messages in a row. Some local servers'
+    chat templates refuse roles that do not alternate; that attempt
+    fails as `rejected` and the next entry answers. Cost: rare, and a
+    fallback, not a failure.
+17. **A step an error ended prices nothing and warns of nothing**: the
+    AI SDK reports such a step with no usage, which would otherwise
+    raise a false "reported no usage" notice and spend the model's one.
+    Cost: none.
 
 ## File structure
 
@@ -283,7 +309,7 @@ Run: `patch_of 1 | git apply`
 
 ````diff
 diff --git a/packages/core/src/config.test.ts b/packages/core/src/config.test.ts
-index 0226f06..70bc221 100644
+index 0226f06..0a645bc 100644
 --- a/packages/core/src/config.test.ts
 +++ b/packages/core/src/config.test.ts
 @@ -17,7 +17,10 @@ import {
@@ -297,7 +323,7 @@ index 0226f06..70bc221 100644
 
  describe("parseConfig", () => {
      it("gives the defaults for an empty file", () => {
-@@ -534,3 +537,70 @@ describe("readConfig", () => {
+@@ -534,3 +537,96 @@ describe("readConfig", () => {
          }
      });
  });
@@ -326,8 +352,34 @@ index 0226f06..70bc221 100644
 +        expect(routingOf(text).ok).toBe(false);
 +    });
 +
-+    it("faults a file that does not parse, naming its line", () => {
++    it("keeps the default routes for a broken file that routes nothing", () => {
 +        expect(routingOf('[memory]\nenabled = true\nbudget = "\n')).toEqual({
++            ok: true,
++            routing: { routes: defaultRoutes(), keys: ["ANTHROPIC_API_KEY"] },
++        });
++    });
++
++    it.each([
++        '[providers.anthropic]\nkind = "anthropic"\nbudget = "\n',
++        '[memory]\nbudget = "\n[models]\nchat = ["anthropic:x"]\n',
++        'models = { chat = ["anthropic:x"] }\nbudget = "\n',
++        'providers.anthropic.kind = "anthropic"\nbudget = "\n',
++        '[ "models" ]\nchat = ["anthropic:x"]\nbudget = "\n',
++    ])("faults a broken file that routes, naming its line: %j", (text) => {
++        expect(routingOf(text)).toEqual({
++            ok: false,
++            faults: [
++                expect.stringMatching(
++                    /^config\.toml line \d+: .+; its routes cannot be read$/,
++                ),
++            ],
++        });
++    });
++
++    it("faults a file that does not parse, naming its line", () => {
++        expect(
++            routingOf('[models]\nchat = ["anthropic:x"]\nbudget = "\n'),
++        ).toEqual({
 +            ok: false,
 +            faults: [
 +                expect.stringMatching(
@@ -387,7 +439,7 @@ index 9042249..7bb72d1 100644
          expect(stepCost(entry, usage(10))).toBeNull();
 diff --git a/packages/core/src/models/routing.test.ts b/packages/core/src/models/routing.test.ts
 new file mode 100644
-index 0000000..636fbde
+index 0000000..ef92bca
 --- /dev/null
 +++ b/packages/core/src/models/routing.test.ts
 @@ -0,0 +1,370 @@
@@ -647,12 +699,12 @@ index 0000000..636fbde
 +        [
 +            "a setting its kind does not take",
 +            '[providers.anthropic]\nkind = "openrouter"\nkey = "OPENROUTER_API_KEY"\nbase-url = "http://127.0.0.1:1"',
-+            "config.toml: providers.anthropic: a openrouter provider takes no base-url",
++            "config.toml: providers.anthropic: an openrouter provider takes no base-url",
 +        ],
 +        [
 +            "a setting no kind takes",
 +            '[providers.anthropic]\nkind = "anthropic"\nkey = "ANTHROPIC_API_KEY"\nmodel = "x"',
-+            "config.toml: providers.anthropic: a anthropic provider takes no model",
++            "config.toml: providers.anthropic: an anthropic provider takes no model",
 +        ],
 +        [
 +            "a missing key",
@@ -732,7 +784,7 @@ index 0000000..636fbde
 +                '[providers.anthropic]\nkind = "anthropic"\nkey = "ANTHROPIC_API_KEY"\nbase-url = "https://proxy.example.com"',
 +            ),
 +        ).toEqual([
-+            'config.toml: providers.anthropic.base-url must be a loopback http or https URL, such as "http://127.0.0.1:11434/v1"',
++            'config.toml: providers.anthropic.base-url must be a loopback http or https URL, such as "http://127.0.0.1:8080"',
 +        ]);
 +    });
 +});
@@ -780,7 +832,7 @@ Run: `patch_of 2 | git apply`
 
 ````diff
 diff --git a/packages/core/src/config.ts b/packages/core/src/config.ts
-index a12bf2f..780f223 100644
+index a12bf2f..2679ab9 100644
 --- a/packages/core/src/config.ts
 +++ b/packages/core/src/config.ts
 @@ -11,6 +11,7 @@
@@ -809,18 +861,27 @@ index a12bf2f..780f223 100644
          } else {
              warnings.push(`config.toml: unknown key ${key}`);
          }
-@@ -463,6 +466,25 @@ export function parseConfig(text: string): {
+@@ -463,6 +466,34 @@ export function parseConfig(text: string): {
      return { config, warnings };
  }
 
++// A line that opens or sets [providers] or [models], in any of TOML's
++// forms: a table header, a dotted key or an inline table.
++const ROUTING_LINE =
++    /^\s*(\[\s*"?(providers|models)"?\s*[\].]|"?(providers|models)"?\s*[.=])/m;
++
 +// The routes config.toml gives, or its faults. A file that does not
-+// parse is a fault here, where it is a warning to parseConfig: the routes
-+// it meant cannot be known.
++// parse is a fault here only if it routes: the routes it meant cannot be
++// known. One that names no routes keeps the default routes, and
++// parseConfig's warning names its line.
 +export function routingOf(text: string): RoutingResult {
 +    let data: unknown;
 +    try {
 +        data = Bun.TOML.parse(text);
 +    } catch (error) {
++        if (!ROUTING_LINE.test(text)) {
++            return parseRouting({});
++        }
 +        const reason = describeError(error).replace(/^TOML Parse error: /, "");
 +        return {
 +            ok: false,
@@ -835,7 +896,7 @@ index a12bf2f..780f223 100644
  export function configPath(env: Env = process.env): string {
      return join(
          xdgDir(env, "XDG_CONFIG_HOME", ".config"),
-@@ -489,3 +511,25 @@ export async function readConfig(
+@@ -489,3 +520,25 @@ export async function readConfig(
      }
      return parseConfig(text);
  }
@@ -944,10 +1005,10 @@ index 6b73741..4cb4ccb 100644
          provider: "anthropic",
 diff --git a/packages/core/src/models/routing.ts b/packages/core/src/models/routing.ts
 new file mode 100644
-index 0000000..5fa53b1
+index 0000000..4de4640
 --- /dev/null
 +++ b/packages/core/src/models/routing.ts
-@@ -0,0 +1,356 @@
+@@ -0,0 +1,374 @@
 +// vim:set expandtab shiftwidth=4 filetype=typescript:
 +// SPDX-License-Identifier: GPL-3.0-only
 +
@@ -1009,6 +1070,22 @@ index 0000000..5fa53b1
 +type Rule = {
 +    key: "required" | "optional";
 +    baseUrl: "none" | "optional" | "required";
++};
++
++// Each kind as a fault names it, and the base-url it would take.
++const ARTICLE: Readonly<Record<Kind, string>> = {
++    anthropic: "an",
++    openrouter: "an",
++    featherless: "a",
++    huggingface: "a",
++    local: "a",
++};
++const BASE_URL_EXAMPLE: Readonly<Record<Kind, string>> = {
++    anthropic: "http://127.0.0.1:8080",
++    openrouter: "",
++    featherless: "",
++    huggingface: "",
++    local: "http://127.0.0.1:11434/v1",
 +};
 +
 +const RULES: Readonly<Record<Kind, Rule>> = {
@@ -1087,7 +1164,9 @@ index 0000000..5fa53b1
 +            setting !== "key" &&
 +            !(setting === "base-url" && rule.baseUrl !== "none")
 +        ) {
-+            faults.push(`${at}: a ${kind} provider takes no ${setting}`);
++            faults.push(
++                `${at}: ${ARTICLE[kind]} ${kind} provider takes no ${setting}`,
++            );
 +        }
 +    }
 +    const key = value.key;
@@ -1110,7 +1189,7 @@ index 0000000..5fa53b1
 +        (typeof baseUrl !== "string" || !isLoopback(baseUrl))
 +    ) {
 +        faults.push(
-+            `${at}.base-url must be a loopback http or https URL, such as "http://127.0.0.1:11434/v1"`,
++            `${at}.base-url must be a loopback http or https URL, such as "${BASE_URL_EXAMPLE[kind]}"`,
 +        );
 +    }
 +    if (faults.length > before) {
@@ -1309,7 +1388,7 @@ index 0000000..5fa53b1
 - [ ] **Step 4: Run them to see them pass**
 
 Run: `bun test packages/core`
-Expected: PASS, 208 tests.
+Expected: PASS, 214 tests, 0 fail.
 
 - [ ] **Step 5: Check**
 
@@ -1550,7 +1629,7 @@ index ab6e69d..11e7ce1 100644
                      now,
                      entries: () => loaded.entries,
 diff --git a/packages/memory/src/memory/open.ts b/packages/memory/src/memory/open.ts
-index ab38776..40dc0fc 100644
+index ab38776..d95c1c8 100644
 --- a/packages/memory/src/memory/open.ts
 +++ b/packages/memory/src/memory/open.ts
 @@ -21,6 +21,7 @@ import {
@@ -1561,18 +1640,19 @@ index ab38776..40dc0fc 100644
  } from "@dorothy/core";
  import { startNotices } from "../bodies/unread.js";
  import { COMPACTION_TIMEOUT_MS } from "../compaction/compact.js";
-@@ -555,6 +556,10 @@ export async function openMemory({
-     // history restores a broken file first. The index serves compaction
-     // whenever the config lets it, since this chat's notes are not read
-     // yet.
+@@ -551,6 +552,11 @@ export async function openMemory({
+     // told at chat's start as at dorothy --claude's.
+     warnings.push(...(await startNotices(env).catch(() => [])));
+
 +    // What memory tells the chat as it runs, its calls' fallback notes
 +    // among it.
 +    const channel = noticeChannel();
 +    const say = (message: string) => channel.warn(`memory: ${message}`);
-     const opened = openChatIndex(config, config.compaction.enabled, env);
-     const index = opened.index;
-     if (opened.warning !== null) {
-@@ -587,7 +592,7 @@ export async function openMemory({
++
+     // The index and history open before anything is read, so that
+     // history restores a broken file first. The index serves compaction
+     // whenever the config lets it, since this chat's notes are not read
+@@ -587,7 +593,7 @@ export async function openMemory({
                    history,
                    config,
                    versions: launched?.history.handle() ?? null,
@@ -1581,7 +1661,7 @@ index ab38776..40dc0fc 100644
                    persona: prompts.review,
                    transcript,
                    warnings,
-@@ -614,7 +619,6 @@ export async function openMemory({
+@@ -614,7 +620,6 @@ export async function openMemory({
      // Canonical writers prefer history's combined lock, falling back
      // to the index when history is unavailable.
      const writeLock = launched?.history.lock ?? claims?.lock;
@@ -1589,7 +1669,7 @@ index ab38776..40dc0fc 100644
      // Chat syncs its project at its start and after each turn; with
      // memory off, or without a lock to sync under, it does not.
      const syncer =
-@@ -629,7 +633,7 @@ export async function openMemory({
+@@ -629,7 +634,7 @@ export async function openMemory({
                clusters,
                prompts,
                recollect: recall !== null,
@@ -1787,7 +1867,7 @@ index 6ca2996..141a6d9 100644
 +    });
 +});
 diff --git a/packages/agent/src/failures.test.ts b/packages/agent/src/failures.test.ts
-index e1a6248..bf30b17 100644
+index e1a6248..8616459 100644
 --- a/packages/agent/src/failures.test.ts
 +++ b/packages/agent/src/failures.test.ts
 @@ -9,7 +9,14 @@
@@ -1806,7 +1886,7 @@ index e1a6248..bf30b17 100644
  import { classOf, failureOf, retryAfterMs } from "./failures.js";
 
  const apiError = (
-@@ -114,6 +121,36 @@ describe("failureOf", () => {
+@@ -114,6 +121,47 @@ describe("failureOf", () => {
              retryAfterMs: null,
          });
      });
@@ -1820,23 +1900,34 @@ index e1a6248..bf30b17 100644
 +        expect(failureOf(error).class).toBe("network");
 +    });
 +    it.each([
-+        [new JSONParseError({ text: "{not json", cause: null }), "server"],
 +        [
++            "AI_JSONParseError",
++            new JSONParseError({ text: "{not json", cause: null }),
++            "server",
++        ],
++        [
++            "AI_InvalidResponseDataError",
 +            new InvalidResponseDataError({ data: {}, message: "no choices" }),
 +            "server",
 +        ],
-+        [new InvalidPromptError({ prompt: "", message: "bad" }), "rejected"],
 +        [
++            "AI_InvalidPromptError",
++            new InvalidPromptError({ prompt: "", message: "bad" }),
++            "rejected",
++        ],
++        [
++            "AI_UnsupportedFunctionalityError",
 +            new UnsupportedFunctionalityError({ functionality: "audio" }),
 +            "rejected",
 +        ],
 +        [
++            "AI_NoSuchModelError",
 +            new NoSuchModelError({ modelId: "x", modelType: "languageModel" }),
 +            "rejected",
 +        ],
 +    ] as const)(
-+        "classes %p, which has no status, by its name",
-+        (error, kind) => {
++        "classes %s, which has no status, by its name",
++        (_name, error, kind) => {
 +            expect(failureOf(error).class).toBe(kind);
 +        },
 +    );
@@ -1866,7 +1957,7 @@ index c7e4dc1..8c463cb 100644
              maxRetries: 0,
              onError: () => {},
 diff --git a/packages/agent/src/structured.test.ts b/packages/agent/src/structured.test.ts
-index f7a48a5..9cf22d7 100644
+index f7a48a5..8aeec18 100644
 --- a/packages/agent/src/structured.test.ts
 +++ b/packages/agent/src/structured.test.ts
 @@ -76,7 +76,13 @@ describe("structuredCall", () => {
@@ -1884,6 +1975,51 @@ index f7a48a5..9cf22d7 100644
          expect(sent?.responseFormat).toMatchObject({
              type: "json",
              schema: SCHEMA,
+@@ -94,6 +100,44 @@ describe("structuredCall", () => {
+         });
+     });
+
++    it("says nothing of usage on a step an error ended", async () => {
++        const entry = { ...SONNET, model: "claude-error-step-test" };
++        const model = mockModel(
++            [
++                {
++                    chunks: [
++                        { type: "stream-start", warnings: [] },
++                        { type: "error", error: new Error("boom") },
++                        {
++                            type: "finish",
++                            usage: {
++                                inputTokens: {
++                                    total: undefined,
++                                    noCache: undefined,
++                                    cacheRead: undefined,
++                                    cacheWrite: undefined,
++                                },
++                                outputTokens: {
++                                    total: undefined,
++                                    text: undefined,
++                                    reasoning: undefined,
++                                },
++                            },
++                            finishReason: { unified: "error", raw: undefined },
++                        },
++                    ],
++                },
++            ],
++            entry.model,
++        );
++        const outcome = await structuredCall({
++            route: [entry],
++            env,
++            model: () => model,
++        })(REQUEST);
++        expect(outcome).toEqual({ ok: false, reason: "boom", costUsd: 0 });
++    });
++
+     it("fails JSON of another shape than the schema's", async () => {
+         const { call } = callWith([{ chunks: textChunks("[1,2]") }]);
+         expect(await call(REQUEST)).toMatchObject({
 ````
 
 - [ ] **Step 2: Run them to see them fail**
@@ -1894,7 +2030,8 @@ bun test packages/agent/src/cost.test.ts \
 ```
 
 Expected: FAIL: `stepPrice` is not exported; the named errors come out
-`network`; the structured call's system message has no breakpoint.
+`network`; the structured call's system message has no breakpoint; a
+step an error ended raises a no-usage notice.
 
 - [ ] **Step 3: Add the code**
 
@@ -2302,10 +2439,10 @@ index b7ee8bc..40b6b04 100644
  export function keyOf(entry: RouteEntry, env: Env): string | null {
 diff --git a/packages/agent/src/stream.ts b/packages/agent/src/stream.ts
 new file mode 100644
-index 0000000..99cf712
+index 0000000..1cab9fe
 --- /dev/null
 +++ b/packages/agent/src/stream.ts
-@@ -0,0 +1,101 @@
+@@ -0,0 +1,110 @@
 +// vim:set expandtab shiftwidth=4 filetype=typescript:
 +// SPDX-License-Identifier: GPL-3.0-only
 +
@@ -2380,6 +2517,15 @@ index 0000000..99cf712
 +            } else if (part.type === "abort") {
 +                aborted = true;
 +            } else if (part.type === "finish-step") {
++                // A step an error ended has no usage of its own: it costs
++                // nothing, and is no sign of a provider that reports none.
++                if (
++                    part.finishReason === "error" &&
++                    part.usage.inputTokens === undefined &&
++                    part.usage.outputTokens === undefined
++                ) {
++                    continue;
++                }
 +                const step = stepPrice(
 +                    entry,
 +                    part.usage,
@@ -2552,7 +2698,7 @@ index 11b3ded..84b00de 100644
 - [ ] **Step 4: Run them to see them pass**
 
 Run: `bun test packages/agent`
-Expected: PASS, 163 tests.
+Expected: PASS, 164 tests, 0 fail.
 
 - [ ] **Step 5: Check**
 
@@ -2562,7 +2708,7 @@ Run `bun run format`, then the check on temporary roots. Expected: PASS.
 
 ```bash
 git add -A packages/agent
-git commit -m "refactor(agent): Read every stream in one place" \
+git commit -m "feat(agent): Read every stream through one helper" \
     -m "readStream feeds the watchdog, turns error and abort parts into
 Failures and costs each step, for chat and structured calls alike.
 OpenRouter's own cost is taken where given, a response with no usage
@@ -2761,10 +2907,10 @@ index cd90694..d4b16d0 100644
      output = 5,
 diff --git a/packages/agent/src/wire.test.ts b/packages/agent/src/wire.test.ts
 new file mode 100644
-index 0000000..dcfbce8
+index 0000000..e23aa30
 --- /dev/null
 +++ b/packages/agent/src/wire.test.ts
-@@ -0,0 +1,326 @@
+@@ -0,0 +1,361 @@
 +// vim:set expandtab shiftwidth=4 filetype=typescript:
 +// SPDX-License-Identifier: GPL-3.0-only
 +
@@ -3035,6 +3181,41 @@ index 0000000..dcfbce8
 +        });
 +        expect(cooldowns.until(route[0] as RouteEntry)).not.toBeNull();
 +    });
++
++    it.each(
++        (
++            ["openrouter", "featherless", "huggingface", "local"] as const
++        ).flatMap((kind) =>
++            (
++                [
++                    [429, "rate-limit"],
++                    ["429", "rate-limit"],
++                    [402, "usage"],
++                    [500, "server"],
++                ] as const
++            ).map(([code, failure]) => [kind, code, failure] as const),
++        ),
++    )(
++        "%s classes an error with code %p after a 200 as %s, saying nothing of usage",
++        async (kind, code, failure) => {
++            const failing = serve([{ midstream: { message: "boom", code } }]);
++            const answering = serve([{ text: '{"ok":true}' }]);
++            const outcome = await structured([
++                entry(kind, failing.url, {
++                    provider: "first",
++                    model: `m-${code}`,
++                }),
++                entry("local", answering.url, {
++                    provider: "next",
++                    price: [0, 0],
++                }),
++            ]);
++            expect(outcome).toMatchObject({ ok: true });
++            expect(outcome.notes).toEqual([
++                `first:m-${code} refused (${failure}: boom); answering with next:org/model`,
++            ]);
++        },
++    );
 +});
 +
 +describe("fallback across kinds", () => {
@@ -3095,7 +3276,10 @@ index 0000000..dcfbce8
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `bun test packages/agent/src/wire.test.ts packages/agent/src/capture.test.ts`
+```bash
+bun test packages/agent/src/wire.test.ts packages/agent/src/capture.test.ts
+```
+
 Expected: FAIL: every non-Anthropic kind throws "no provider for
 openrouter entries" and the like, so no request reaches the fakes.
 
@@ -3179,7 +3363,7 @@ index 40b6b04..ec86fac 100644
 - [ ] **Step 4: Run them to see them pass**
 
 Run: `bun test packages/agent`
-Expected: PASS, 184 tests.
+Expected: PASS, 201 tests, 0 fail.
 
 - [ ] **Step 5: Check**
 
@@ -3217,8 +3401,10 @@ dump's development prompt naming the whole chat route.
     names, withheld from the recall server; `ConversationDeps.shown?:
     Route`, the route development mode's prompt names.
   - `recallEnv(env, route, keys?: readonly string[])`.
-  - `dumpRequest({ setup, message, route, env?, connect?, report? })`,
-    its `route` the chat's, of which it dumps the first entry.
+  - `dumpRequest({ setup, message, route, keys?, env?, connect?,
+    report? })`, its `route` the chat's, of which it dumps the first
+    entry; its `keys`, every provider's, are withheld from the recall
+    server with the route's own.
 
 - [ ] **Step 1: Add the failing tests**
 
@@ -3226,7 +3412,7 @@ Run: `patch_of 9 | git apply`
 
 ````diff
 diff --git a/packages/agent/src/capture.test.ts b/packages/agent/src/capture.test.ts
-index efdc395..4e35308 100644
+index efdc395..bb77e17 100644
 --- a/packages/agent/src/capture.test.ts
 +++ b/packages/agent/src/capture.test.ts
 @@ -80,7 +80,7 @@ describe("dumpRequest", () => {
@@ -3256,7 +3442,7 @@ index efdc395..4e35308 100644
              env: {},
              connect: async () => {
                  throw new Error("spawn failed");
-@@ -147,12 +147,46 @@ describe("dumpRequest", () => {
+@@ -147,12 +147,92 @@ describe("dumpRequest", () => {
          ]);
      });
 
@@ -3279,6 +3465,52 @@ index efdc395..4e35308 100644
 +        expect(body.system[0]?.text).toEndWith(
 +            "Your chat runs on the first of these models to answer: anthropic:claude-opus-5-5, openrouter:x/y.",
 +        );
++    });
++
++    it("withholds the route's key and every provider's from the recall server", async () => {
++        let seen: Record<string, string> = {};
++        await dumpRequest({
++            setup: { recall: { command: "recall", args: [] } },
++            message: "hi",
++            route: [
++                {
++                    ...OPUS,
++                    provider: "hf",
++                    kind: "huggingface",
++                    model: "org/model",
++                    key: "HF_TOKEN",
++                },
++            ],
++            keys: ["VLLM_KEY"],
++            env: { PATH: "/bin", HF_TOKEN: "hf-secret", VLLM_KEY: "v" },
++            connect: async (_launch, _recollect, env) => {
++                seen = env;
++                throw new Error("spawn failed");
++            },
++        });
++        expect(seen).toEqual({ PATH: "/bin" });
++    });
++
++    it("dumps a Chat Completions entry, OpenRouter's retention in its body", async () => {
++        const body = (await dumpRequest({
++            setup: {},
++            message: "hi",
++            route: [
++                {
++                    ...OPUS,
++                    provider: "openrouter",
++                    kind: "openrouter",
++                    model: "x/y",
++                    key: "OPENROUTER_API_KEY",
++                },
++            ],
++            env: {},
++        })) as Record<string, unknown>;
++        expect(body).toMatchObject({
++            model: "x/y",
++            provider: { data_collection: "deny", zdr: true },
++            messages: [{ role: "system" }, { role: "user", content: "hi" }],
++        });
 +    });
 +
 +    it("reports a route with no entry, sending nothing", async () => {
@@ -3414,8 +3646,8 @@ bun test packages/agent/src/conversation.test.ts \
 ```
 
 Expected: FAIL: the second model is sent an empty assistant message;
-`HF_TOKEN` reaches the recall server's environment; `dumpRequest` takes
-no `route`.
+`HF_TOKEN` reaches the recall server's environment, in chat and in the
+dump; `dumpRequest` takes no `route`.
 
 - [ ] **Step 3: Add the code**
 
@@ -3423,7 +3655,7 @@ Run: `patch_of 10 | git apply`
 
 ````diff
 diff --git a/packages/agent/src/capture.ts b/packages/agent/src/capture.ts
-index d5b2ec5..77b3312 100644
+index d5b2ec5..7d19783 100644
 --- a/packages/agent/src/capture.ts
 +++ b/packages/agent/src/capture.ts
 @@ -8,7 +8,7 @@
@@ -3435,12 +3667,13 @@ index d5b2ec5..77b3312 100644
  import { Conversation, type SessionSetup } from "./conversation.js";
  import type { ConnectRecall } from "./recall-tools.js";
 
-@@ -72,22 +72,30 @@ export function captureServer(): {
+@@ -72,22 +72,36 @@ export function captureServer(): {
  export async function dumpRequest({
      setup,
      message,
 -    entry,
 +    route,
++    keys = [],
      env = process.env,
      connect,
      report = () => {},
@@ -3451,6 +3684,8 @@ index d5b2ec5..77b3312 100644
 +    // The chat's route: its first entry is dumped, and development mode's
 +    // prompt names every entry, as a chat's does.
 +    route: Route;
++    // Every provider's key names, which the recall server must not see.
++    keys?: readonly string[];
      env?: Env;
      connect?: ConnectRecall;
      report?: (kind: "warning" | "error", message: string) => void;
@@ -3465,6 +3700,9 @@ index d5b2ec5..77b3312 100644
          ...setup,
          route: [{ ...entry, baseUrl: server.url, key: DUMP_KEY }],
 +        shown: route,
++        // The stand-in takes the entry's key's place, which the recall
++        // server is withheld all the same.
++        keys: [...keys, ...(entry.key === null ? [] : [entry.key])],
          env: { ...env, [DUMP_KEY]: "dorothy --dump-context" },
          ...(connect === undefined ? {} : { connect }),
      });
@@ -3669,9 +3907,12 @@ the spec's table says.
     message.
   - `chatRouting(write, deps?): Promise<Routing | null>`, saying each
     fault as `dorothy: <fault>`.
-  - `runTui(resume, persona?, routing?)`; `runDump(request, { routing,
-    env?, dump?, write? })`; `CredentialDeps` and `HookCliDeps` take
-    `RoutingDeps`.
+  - `chatDeps(routing: Routing): { route; keys; cooldowns }`, what each
+    chat session takes.
+  - `runTui(resume, persona, routing)`, all three required;
+    `runDump(request, { routing, env?, dump?, write? })`, passing
+    `routing.keys` to `dumpRequest`; `CredentialDeps` and `HookCliDeps`
+    take `RoutingDeps`.
 
 - [ ] **Step 1: Add the failing tests**
 
@@ -3714,7 +3955,7 @@ index 67a521b..c10048c 100644
          const { seen, deps } = harness();
          deps.agent = async () => {
 diff --git a/packages/cli/src/dump.test.ts b/packages/cli/src/dump.test.ts
-index d1895eb..59934b2 100644
+index d1895eb..834a8e4 100644
 --- a/packages/cli/src/dump.test.ts
 +++ b/packages/cli/src/dump.test.ts
 @@ -13,9 +13,10 @@ import { mkdtemp, rm } from "node:fs/promises";
@@ -3730,7 +3971,7 @@ index d1895eb..59934b2 100644
 
  const recording = (
      body: unknown = { model: "claude-opus-5-5" },
-@@ -66,14 +67,14 @@ describe("runDump", () => {
+@@ -66,14 +67,15 @@ describe("runDump", () => {
          const fake = recording();
          const code = await runDump(
              { resume: null, message: "hi", persona: "chat" },
@@ -3744,10 +3985,11 @@ index d1895eb..59934b2 100644
              message: "hi",
 -            route: ROUTES.chat,
 +            route: ROUTING.routes.chat,
++            keys: ROUTING.keys,
              setup: { persona: "chat", history: [] },
          });
          expect(fake.seen[0]?.setup.recall).toHaveProperty("command");
-@@ -83,7 +84,7 @@ describe("runDump", () => {
+@@ -83,7 +85,7 @@ describe("runDump", () => {
          const fake = recording();
          await runDump(
              { resume: null, message: "hi", persona: "development" },
@@ -3756,7 +3998,7 @@ index d1895eb..59934b2 100644
          );
          expect(fake.seen[0]?.setup.persona).toBe("development");
      });
-@@ -93,7 +94,7 @@ describe("runDump", () => {
+@@ -93,7 +95,7 @@ describe("runDump", () => {
          const phrase = newPhrase();
          const code = await runDump(
              { resume: phrase, message: "hi", persona: "chat" },
@@ -3765,7 +4007,7 @@ index d1895eb..59934b2 100644
          );
          expect(code).toBe(1);
          expect(out).toBe("");
-@@ -104,7 +105,7 @@ describe("runDump", () => {
+@@ -104,7 +106,7 @@ describe("runDump", () => {
      it("fails when the chat sent no request", async () => {
          const code = await runDump(
              { resume: null, message: "hi", persona: "chat" },
@@ -3774,7 +4016,7 @@ index d1895eb..59934b2 100644
          );
          expect(code).toBe(1);
          expect(err).toBe("dorothy: the chat sent no request to dump\n");
-@@ -116,7 +117,7 @@ describe("runDump", () => {
+@@ -116,7 +118,7 @@ describe("runDump", () => {
          ]);
          const code = await runDump(
              { resume: null, message: "hi", persona: "chat" },
@@ -3783,7 +4025,7 @@ index d1895eb..59934b2 100644
          );
          expect(code).toBe(0);
          expect(JSON.parse(out)).toEqual({ model: "m" });
-@@ -131,7 +132,7 @@ describe("runDump", () => {
+@@ -131,7 +133,7 @@ describe("runDump", () => {
          ]);
          const code = await runDump(
              { resume: null, message: "hi", persona: "chat" },
@@ -3952,13 +4194,64 @@ index 0e9f92a..789cb42 100644
          expect(recallLaunch("phrase", null).args[0]).toBe("--no-env-file");
      });
  });
+diff --git a/packages/cli/src/run-tui.test.ts b/packages/cli/src/run-tui.test.ts
+index 138c8b5..663fbac 100644
+--- a/packages/cli/src/run-tui.test.ts
++++ b/packages/cli/src/run-tui.test.ts
+@@ -12,10 +12,26 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+ import { mkdtemp, rm } from "node:fs/promises";
+ import { tmpdir } from "node:os";
+ import { join } from "node:path";
+-import { DEFAULT_CONFIG, newPhrase } from "@dorothy/core";
++import { DEFAULT_CONFIG, defaultRoutes, newPhrase } from "@dorothy/core";
+ import * as memoryModule from "@dorothy/memory";
+ import * as tui from "@dorothy/tui";
+-import { runTui } from "./run-tui.js";
++import { COOLDOWNS } from "./models.js";
++import { chatDeps, runTui } from "./run-tui.js";
++
++const ROUTING = {
++    routes: defaultRoutes(),
++    keys: ["ANTHROPIC_API_KEY", "HF_TOKEN"],
++};
++
++describe("chatDeps", () => {
++    it("gives a session the chat route, every provider's keys and the cooldowns", () => {
++        expect(chatDeps(ROUTING)).toEqual({
++            route: ROUTING.routes.chat,
++            keys: ["ANTHROPIC_API_KEY", "HF_TOKEN"],
++            cooldowns: COOLDOWNS,
++        });
++    });
++});
+
+ // runTui opens memory from these, so every one points into the test's
+ // directory.
+@@ -82,7 +98,7 @@ describe("runTui", () => {
+                 if (fails) throw new Error("fixture render failure");
+             });
+             let settled = false;
+-            const result = runTui(null).then(
++            const result = runTui(null, "chat", ROUTING).then(
+                 (code) => {
+                     settled = true;
+                     return { code };
+@@ -120,7 +136,7 @@ describe("runTui", () => {
+             },
+         );
+         try {
+-            expect(await runTui(phrase)).toBe(1);
++            expect(await runTui(phrase, "chat", ROUTING)).toBe(1);
+         } finally {
+             write.mockRestore();
+         }
 ````
 
 - [ ] **Step 2: Run them to see them fail**
 
 Run: `bun test packages/cli`
 Expected: FAIL: `models.ts` exports neither `chatRouting` nor
-`loadRouting`; `runDump` takes no `routing`; a routing fault leaves
+`loadRouting`, and `run-tui.ts` no `chatDeps`; a routing fault leaves
 reviews on.
 
 - [ ] **Step 3: Add the code**
@@ -4033,7 +4326,7 @@ index 48dbe6b..e635f84 100644
                  call: refusing(
                      `the agent could not load (${describeError(error)})`,
 diff --git a/packages/cli/src/dump.ts b/packages/cli/src/dump.ts
-index 56d522c..98265a2 100644
+index 56d522c..620095f 100644
 --- a/packages/cli/src/dump.ts
 +++ b/packages/cli/src/dump.ts
 @@ -9,9 +9,8 @@
@@ -4069,12 +4362,13 @@ index 56d522c..98265a2 100644
  ): Promise<number> {
      const preview = await previewStart({
          resume: request.resume,
-@@ -56,7 +58,7 @@ export async function runDump(
+@@ -56,7 +58,8 @@ export async function runDump(
      const body = await dump({
          setup: { ...preview.start, persona: request.persona },
          message: request.message,
 -        route: ROUTES.chat,
 +        route: routing.routes.chat,
++        keys: routing.keys,
          env,
          report: (kind, message) => {
              if (kind === "error") {
@@ -4263,14 +4557,14 @@ index 509c05a..72ff5be 100644
 +    return null;
  }
 diff --git a/packages/cli/src/run-tui.ts b/packages/cli/src/run-tui.ts
-index ed2ed7d..800d811 100644
+index ed2ed7d..a00d28c 100644
 --- a/packages/cli/src/run-tui.ts
 +++ b/packages/cli/src/run-tui.ts
-@@ -21,15 +21,17 @@ import {
+@@ -21,16 +21,26 @@ import {
      structuredCall,
      systemPrompt,
  } from "@dorothy/agent";
-+import { defaultRoutes, type Routing } from "@dorothy/core";
++import type { Routing } from "@dorothy/core";
  import { openMemory } from "@dorothy/memory";
  import { runApp } from "@dorothy/tui";
  import { userShell } from "./claude.js";
@@ -4278,14 +4572,24 @@ index ed2ed7d..800d811 100644
 +import { COOLDOWNS } from "./models.js";
  import { recallLaunch } from "./recall-launch.js";
 
++// What each chat session takes from the routes: the chat route, every
++// provider's key names, which its recall server is withheld, and the
++// process's cooldowns.
++export function chatDeps({ routes, keys }: Routing) {
++    return { route: routes.chat, keys, cooldowns: COOLDOWNS };
++}
++
  export async function runTui(
      resume: string | null,
-     persona: PersonaMode = "chat",
-+    { routes, keys }: Routing = { routes: defaultRoutes(), keys: [] },
+-    persona: PersonaMode = "chat",
++    persona: PersonaMode,
++    routing: Routing,
  ): Promise<number> {
++    const { routes } = routing;
      // The directory the user ran dorothy from, under bun run dev too.
      const cwd = userShell(process.env).cwd ?? process.cwd();
-@@ -38,11 +40,11 @@ export async function runTui(
+     const compactionPrompt = personaPrompt({ recall: false, mode: persona });
+@@ -38,11 +48,11 @@ export async function runTui(
          resume,
          calls: {
              review: structuredCall({
@@ -4299,7 +4603,7 @@ index ed2ed7d..800d811 100644
                  cooldowns: COOLDOWNS,
              }),
          },
-@@ -52,17 +54,18 @@ export async function runTui(
+@@ -52,18 +62,17 @@ export async function runTui(
              compaction:
                  persona === "chat"
                      ? compactionPrompt
@@ -4316,11 +4620,11 @@ index ed2ed7d..800d811 100644
                  ...start,
                  persona,
 -                route: ROUTES.chat,
-+                route: routes.chat,
-+                keys,
-                 cooldowns: COOLDOWNS,
+-                cooldowns: COOLDOWNS,
++                ...chatDeps(routing),
              });
              conversation.start();
+             return conversation;
 ````
 
 - [ ] **Step 4: Run them to see them pass**
@@ -4331,7 +4635,7 @@ Expected: PASS.
 - [ ] **Step 5: Check**
 
 Run `bun run format`, then the check on temporary roots. Expected: PASS,
-3944 tests, 1 skip.
+3971 tests, 0 fail.
 
 - [ ] **Step 6: Commit**
 
@@ -4357,7 +4661,7 @@ Run: `patch_of 13 | git apply`
 
 ````diff
 diff --git a/README.md b/README.md
-index e9d3bbb..434ce37 100644
+index e9d3bbb..aa02182 100644
 --- a/README.md
 +++ b/README.md
 @@ -23,7 +23,8 @@ Conversational LLM interface
@@ -4386,8 +4690,8 @@ index e9d3bbb..434ce37 100644
  frees its rows, so the window then needs only 19 lines. A mistake in the
 -file shows as a warning, naming its line, and the defaults apply.
 +file shows as a warning, naming its line, and the defaults apply, but for
-+the routing tables below: a mistake there, or a file that does not parse
-+at all, is an error.
++the routing tables below: a mistake there, or a file holding them that
++does not parse, is an error.
 +
 +### Models and providers
 +
@@ -4568,7 +4872,7 @@ index 38913a8..fe016f8 100644
  ## See also
 
 diff --git a/packages/cli/AGENTS.md b/packages/cli/AGENTS.md
-index 4841774..be10520 100644
+index 4841774..8bcd1a3 100644
 --- a/packages/cli/AGENTS.md
 +++ b/packages/cli/AGENTS.md
 @@ -49,8 +49,9 @@ SDK. Keep every new mode's import lazy.
@@ -4583,6 +4887,19 @@ index 4841774..be10520 100644
  - `dump.ts`: `runDump` composes `previewStart` with `dumpRequest` for
    `--dump-context`.
  - `claude.ts`: `launchClaude`, for `--claude` and its dump, starts the gateway
+@@ -126,9 +127,9 @@ SDK. Keep every new mode's import lazy.
+   core's async `loadSecrets` through sops. The model modes, mirror and
+   recover await `loadCredentials`. A failed load warns by code; mirror
+   refuses to create a key after a failed load.
+-- Routes (`models.ts`) name their own base URL and key, and nothing reads
+-  the provider variables. The agent runs the recall server with `recallEnv`,
+-  without any key or OAuth token, in `recallCwd`, never the user's project.
++- Routes (`models.ts`) name their own base URL and key; no provider reads
++  its variables. The recall server runs with `recallEnv`, withheld every
++  provider's key and OAuth token, in `recallCwd`, never the user's project.
+ - `--claude` loads no secrets: `claude` signs in as the user's own Claude
+   Code does, and memory is read without credentials. `--claude-hook`
+   loads the checkout's `secrets.json` by path for reviews, never the
 diff --git a/packages/core/AGENTS.md b/packages/core/AGENTS.md
 index 81a1e6c..8db21d3 100644
 --- a/packages/core/AGENTS.md
@@ -4675,19 +4992,39 @@ review = ["proxy:none", "openrouter:<model>"]
 reply streams, exit 0. Record the note, the reply and OpenRouter's
 reported cost.
 
-- [ ] **Step 4: One chat turn on it**
+- [ ] **Step 4: A chat, a review and a compaction on it**
 
-In a herdr tab with the temporary roots exported, one TUI turn: the
-fallback warning shows, the header names `openrouter:<model>`, the
-reply stats carry OpenRouter's cost; after the idle wait, the review
-runs on the review route and its note shows as `memory: review: …`.
+Add to `config.toml`:
 
-- [ ] **Step 5: One featherless call**
+```toml
+compaction = ["proxy:none", "openrouter:<model>"]
 
-With `chat = [{ model = "featherless:<model>", price = [<in>, <out>]
-}]`, `bun run dev -- "Say hello in five words."`: the reply, exit 0, its
-cost by the entry's price. A Chat plan, which excludes API use, fails
-here as `rejected` or `usage`; say so, never work around it.
+[compaction]
+soft = 2000
+hard = 4000
+tail = 500
+```
+
+In a herdr tab with the temporary roots exported, chat on the TUI until
+compaction runs: the fallback warning shows, the header names
+`openrouter:<model>`, the reply stats carry OpenRouter's cost, and the
+compaction's note shows as `memory: compaction: …`. After the idle
+wait, the review runs and its note shows as `memory: review: …`. The
+structured output must pass memory's own judges: record that the
+sidecar holds the review's notes (`validateReview` passed) and the
+clusters (`validateClusters` passed), or the warning that says why
+not. A model that ignores the schemas' limits fails here; investigate
+before the merge, as Part A did.
+
+- [ ] **Step 5: featherless and Hugging Face**
+
+With every role on `[{ model = "featherless:<model>", price = [<in>,
+<out>] }]`, a one-shot reply, then a TUI chat that reaches a
+compaction and a review, judged as in Step 4, each with its cost by the
+entry's price. A Chat plan, which excludes API use, fails here as
+`rejected` or `usage`; say so, never work around it. Then one one-shot
+reply with `chat = ["hf:<org/model>:<provider>"]` on
+`[providers.hf]`, `kind = "huggingface"`, `key = "HF_TOKEN"`.
 
 - [ ] **Step 6: Report**
 
