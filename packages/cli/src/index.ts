@@ -256,7 +256,7 @@ const RUNNERS: Runners = {
         return runSweepDismiss(mode.host, mode.session);
     },
     "review-backfill": async (mode) => {
-        // Reviews as the hooks and the service get them, on the plan's token.
+        // Reviews as the hooks and the service get them, on her API key.
         const { runBackfillReview } = await import("./review-backfill.js");
         return runBackfillReview(mode.count, { agent: reviewAgent });
     },
