@@ -56,10 +56,11 @@ Past 85%, at a turn boundary:
    `$XDG_STATE_HOME/dorothy-agents/compact.md`.
 2. Run `compact-self.sh <file>` detached, as Claude Code's background
    Bash does: it waits for your turn to end, then for your pane,
-   `$HERDR_PANE_ID`, to idle.
+   `$HERDR_PANE_ID`, to read idle, or done: herdr says done of a
+   finished turn in a pane no one is looking at.
 3. Tell the user you are compacting, and end the turn.
 
-The script then takes the pane's lock, checks the agent is still idle
+The script then takes the pane's lock, checks the agent is still so
 (exit 5 if not), and types `/compact` and a space, the instructions,
 then Enter, each apart and three seconds between
 (`DOROTHY_COMPACT_PAUSE`). The pane shows `/compact [Pasted text #1]`

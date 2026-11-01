@@ -47,10 +47,16 @@ case $instructions in
 -*) instructions=" $instructions" ;;
 esac
 
-herdr agent wait "$pane" --until idle >/dev/null || die 1 'wait failed'
+# A finished turn reads idle in a pane someone is looking at, and done in
+# one no one is: either is a turn boundary.
+herdr agent wait "$pane" --until idle --until "done" >/dev/null ||
+    die 1 'wait failed'
 sleep "$pause"
 lock_pane "$pane"
-[ "$(agent_status "$pane")" = idle ] || die 5 "agent on $pane is not idle"
+case $(agent_status "$pane") in
+idle | done) ;;
+*) die 5 "agent on $pane is not idle" ;;
+esac
 
 herdr pane send-text "$pane" '/compact ' >/dev/null 2>&1 ||
     die 1 "cannot write to pane $pane"

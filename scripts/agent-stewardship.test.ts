@@ -539,7 +539,16 @@ describe("compact-self.sh", () => {
         expect(code).toBe(0);
         expect(await calls()).toEqual([
             ["herdr", "agent", "get", pane],
-            ["herdr", "agent", "wait", pane, "--until", "idle"],
+            [
+                "herdr",
+                "agent",
+                "wait",
+                pane,
+                "--until",
+                "idle",
+                "--until",
+                "done",
+            ],
             ["herdr", "agent", "get", pane],
             ["herdr", "pane", "send-text", pane, "/compact "],
             ["herdr", "pane", "send-text", pane, text.trimEnd()],
@@ -558,6 +567,20 @@ describe("compact-self.sh", () => {
         ]);
     });
 
+    it("compacts an agent whose turn is done but unseen", async () => {
+        // herdr says done, not idle, of a finished turn in a pane no one
+        // is looking at.
+        await setStatus("done");
+        const file = await instructions("go on");
+        const { code } = await run(compact, [file], "", quick);
+        expect(code).toBe(0);
+        expect((await writes()).map((write) => write[0])).toEqual([
+            "send-text",
+            "send-text",
+            "send-keys",
+        ]);
+    });
+
     it("sends nothing when the agent is no longer idle", async () => {
         await setStatus("working");
         const file = await instructions("go on");
@@ -573,7 +596,16 @@ describe("compact-self.sh", () => {
         expect(code).toBe(0);
         expect(await calls()).toEqual([
             ["herdr", "agent", "get", pane],
-            ["herdr", "agent", "wait", "w1:p2", "--until", "idle"],
+            [
+                "herdr",
+                "agent",
+                "wait",
+                "w1:p2",
+                "--until",
+                "idle",
+                "--until",
+                "done",
+            ],
             ["herdr", "agent", "get", "w1:p2"],
             ["herdr", "pane", "send-text", "w1:p2", "/compact "],
             ["herdr", "pane", "send-text", "w1:p2", "go on"],
