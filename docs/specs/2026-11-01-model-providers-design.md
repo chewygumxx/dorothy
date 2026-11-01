@@ -5,8 +5,9 @@ spdx: GPL-3.0-only
 title: Model Providers
 description: >-
   Design spec for model providers: Dorothy's own runtime on the Vercel AI
-  SDK, the Messages API on an API key, OpenRouter, featherless.ai and
-  local servers, routed per role with fallback, retiring the Agent SDK.
+  SDK, the Messages API on an API key, OpenRouter, featherless.ai,
+  Hugging Face's router and local servers, routed per role with
+  fallback, retiring the Agent SDK.
 tags:
   - dorothy
   - spec
@@ -41,8 +42,9 @@ contracts in `core`, in two parts, each with its own plan and merge:
   reply move onto the AI SDK, reaching Anthropic's Messages API on
   `ANTHROPIC_API_KEY`, one model per role. The Agent SDK leaves the
   workspace.
-- **Part B, routing.** `config.toml` declares providers of four kinds,
-  Anthropic, OpenRouter, featherless.ai and local servers, and gives
+- **Part B, routing.** `config.toml` declares providers of five kinds,
+  Anthropic, OpenRouter, featherless.ai, Hugging Face's router and
+  local servers, and gives
   each role an ordered list of models; a call that fails on one moves
   to the next, so a spent Anthropic budget no longer stops her. Only
   the providers the user accepted may receive her requests, and the
@@ -67,7 +69,8 @@ brainstorm:
 - Only providers the user accepted as keeping no prompts may receive
   her requests: Anthropic's API on its commercial terms, OpenRouter
   with data collection denied and zero retention, featherless, and
-  local servers.
+  local servers. Added after the spec's approval: Hugging Face's
+  router, whichever provider it chooses (below).
 - Existing packages are surveyed before anything bespoke; new
   subsystems speak standard protocols, with SDK types at a thin edge.
 
@@ -83,7 +86,7 @@ Assumed, and put to the user in the brainstorm's design sections:
 Success: Dorothy's own calls on an API key, with no package depending on
 the Agent SDK (Part A); every role routable, a refused call answered by
 the next model in its list with a warning saying so, and no provider
-reachable outside the accepted four (Part B); no test reaching a real
+reachable outside the accepted five (Part B); no test reaching a real
 provider.
 
 ## Decisions
@@ -97,7 +100,8 @@ wrong:
 | Runtime | Vercel AI SDK 7 (`ai`), in `agent` | A probe failing under Bun stops the build |
 | LangChain.js | Not used here | Its fallback middleware is ours to write |
 | Delivery | Two parts, two plans, two merges | Fallback arrives a merge later |
-| Retention | Four fixed provider kinds | A fifth provider needs a kind added |
+| Retention | Fixed provider kinds, four at approval | A further provider needs a kind added |
+| Hugging Face | A fifth kind, `huggingface`, taking any provider its router chooses; ruled by the user on 2026-11-01, after approval | Some of its providers keep prompts, so this kind alone is not held to no retention |
 | Config faults | `[providers]` and `[models]` faults are errors, unlike other tables | A typo stops chat until fixed |
 | Fallback trigger | Every failure but cancellation | One wasted attempt on a request that fails everywhere |
 | Chat mid-reply | Fallback until text has streamed or `remember` has run | A turn the user asks again |
@@ -133,7 +137,7 @@ In `core/src/contracts/model.ts`, no SDK:
 ```ts
 export const ROLES = ["chat", "review", "compaction", "maintenance"] as const;
 export type Role = (typeof ROLES)[number];
-export const KINDS = ["anthropic", "openrouter", "featherless", "local"] as const;
+export const KINDS = ["anthropic", "openrouter", "featherless", "huggingface", "local"] as const;
 export type Kind = (typeof KINDS)[number];
 
 // One model a role may use, with what reaching it needs.
@@ -196,7 +200,7 @@ wire and behaviour tests of multi-entry routes.
 ## Configuration (Part B)
 
 Two tables join `config.toml`. `[providers.<name>]` declares a provider
-of one of four kinds; `[models]` gives each role an ordered list.
+of one of five kinds; `[models]` gives each role an ordered list.
 
 ```toml
 [providers.anthropic]
@@ -210,6 +214,10 @@ key = "OPENROUTER_API_KEY"
 [providers.featherless]
 kind = "featherless"
 key = "FEATHERLESS_API_KEY"
+
+[providers.hf]
+kind = "huggingface"
+key = "HF_TOKEN"
 
 [providers.ollama]
 kind = "local"
@@ -230,6 +238,7 @@ maintenance = ["anthropic:claude-haiku-5-5"]
 | `anthropic` | Messages API | `https://api.anthropic.com`, or a loopback `base-url` | Anthropic's commercial terms, accepted by the user |
 | `openrouter` | OpenRouter's API | `https://openrouter.ai/api/v1`, fixed | `provider: { data_collection: "deny", zdr: true }` on every request |
 | `featherless` | Chat Completions | `https://api.featherless.ai/v1`, fixed | "Prompts stored: Never"; its paid API plan, as the flat chat plan excludes API use |
+| `huggingface` | Chat Completions | `https://router.huggingface.co/v1`, fixed | Hugging Face keeps no request bodies; the provider it routes to may, as the user accepted. A `:provider` suffix on the model, such as `org/model:featherless-ai`, chooses one |
 | `local` | Chat Completions | `base-url`, required, loopback | Never leaves the machine |
 
 Rules:
@@ -245,7 +254,8 @@ Rules:
   an IPv4 address in `127.0.0.0/8`, or `[::1]`; no user or password;
   `http` or `https`. `127.0.0.1.example.com`, `localhost.example.com`
   and `http://127.0.0.1@example.com` are refused.
-- `price` is allowed only on `featherless` and `local` entries;
+- `price` is allowed only on `featherless`, `huggingface` and `local`
+  entries;
   `[0, 0]` means free. Cache reads and writes on a priced entry cost
   its input price.
 - With no `[providers]` table, one provider is implied: `anthropic`,
@@ -256,7 +266,7 @@ Rules:
 - A route entry splits at its first colon, so `openrouter:x/y:free`
   names model `x/y:free`.
 - Faults: a `[models]` key outside the four roles, a kind outside the
-  four, a setting a kind does not take, a
+  five, a setting a kind does not take, a
   non-loopback URL where loopback is required, a malformed key name or
   route entry, a route naming an undeclared provider, an empty route, a
   misplaced price. Unlike the other tables, whose faults are warnings
@@ -490,8 +500,8 @@ one rejects a long session, and the README says so.
   plan is written, and the plan names its date.
 - `openrouter`: `providerMetadata.openrouter.usage.cost`, summed over
   the steps, with the provider's `usage: { include: true }` set.
-- `featherless` and `local`: the entry's `price`, with `includeUsage`
-  set so streams report usage.
+- `featherless`, `huggingface` and `local`: the entry's `price`, with
+  `includeUsage` set so streams report usage.
 - A model with no price, an Anthropic model missing from the table or a
   response with no usage costs $0, with a `warning` once per
   `<provider>:<model>` per process; `[0, 0]` warns of nothing.
