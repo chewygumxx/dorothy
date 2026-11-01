@@ -14,7 +14,7 @@ import type { Status } from "./state.js";
 export type HeaderProps = {
     phrase: string;
     model: string | null;
-    sdkSessionId: string | null;
+    sessionId: string | null;
     status: Status;
 };
 
@@ -29,12 +29,12 @@ export function shortId(id: string): string {
     return id.length > 10 ? `${id.slice(0, 4)}…${id.slice(-3)}` : id;
 }
 
-export function Header({ phrase, model, sdkSessionId, status }: HeaderProps) {
+export function Header({ phrase, model, sessionId, status }: HeaderProps) {
     const parts = [
         "dorothy",
         phrase,
         model ?? "…",
-        `sdk ${sdkSessionId ? shortId(sdkSessionId) : "…"}`,
+        `session ${sessionId ? shortId(sessionId) : "…"}`,
     ];
     return (
         <Text wrap="truncate">

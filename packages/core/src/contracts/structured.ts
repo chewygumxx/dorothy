@@ -10,8 +10,8 @@
 
 // One question to a model, answered as JSON matching schema. Memory's
 // reviews and compaction are both given an implementation, so neither
-// depends on the Agent SDK; after the move to the Messages API only the
-// implementation changes.
+// depends on a provider's SDK; agent's `structuredCall` implements it on
+// a route.
 export type StructuredRequest = {
     // Names the call in its errors: "the review ended without a result".
     what: string;
@@ -23,9 +23,17 @@ export type StructuredRequest = {
 };
 
 // A failed call still reports what it cost.
+// notes: what the call's route said on its way, a fallback's warning
+// among them; set only when there is one.
 export type StructuredOutcome =
-    | { ok: true; output: unknown; model: string; costUsd: number }
-    | { ok: false; reason: string; costUsd: number };
+    | {
+          ok: true;
+          output: unknown;
+          model: string;
+          costUsd: number;
+          notes?: string[];
+      }
+    | { ok: false; reason: string; costUsd: number; notes?: string[] };
 
 export type StructuredCall = (
     request: StructuredRequest,

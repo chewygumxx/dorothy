@@ -58,7 +58,7 @@ export function sessionRecorder({
             record({
                 kind: "session",
                 phrase,
-                sdkSessionId: event.sdkSessionId,
+                sdkSessionId: event.sessionId,
                 model: event.model,
                 promptHash,
                 resumed: wasResumed,

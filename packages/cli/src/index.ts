@@ -18,13 +18,13 @@ import {
     type CheckoutSecretsDeps,
     checkoutRoot,
     loadCheckoutSecrets,
-    stripClaude,
 } from "./claude-hook.js";
+import { COOLDOWNS, ROUTES } from "./models.js";
 import { selfServe } from "./self.js";
 
 // What runs each mode, and the code it exits with; nothing where it set
 // its own. Each loads its packages as it runs, so a mode pays only for
-// what it uses: --help, --list and --recall-server never load the SDK.
+// what it uses: --help, --list and --recall-server never load the agent.
 type Runners = {
     [K in Mode["kind"]]: (
         mode: Extract<Mode, { kind: K }>,
@@ -44,11 +44,11 @@ const writeError = (text: string): void => {
     process.stderr.write(text);
 };
 
-// Reviews for the service: Claude Code's variables dropped first, as a
-// service --mcp starts inside her Claude Code would inherit its gateway,
-// which dies with the session; then Dorothy's secrets by path from this
-// checkout, then the agent. Off, and said, when either fails; the
-// service keeps the reason in its log, as its stderr may be ignored.
+// Reviews for the service: Dorothy's secrets by path from this
+// checkout, then the agent, whose calls name their own base URL and
+// key, so nothing Claude Code exported reaches them. Off, and said, when
+// either fails; the service keeps the reason in its log, as its stderr
+// may be ignored.
 export async function reviewAgent(
     deps: CredentialDeps = {},
 ): Promise<
@@ -58,16 +58,21 @@ export async function reviewAgent(
     const write = deps.write ?? writeError;
     try {
         const env = deps.env ?? process.env;
-        stripClaude(env);
         const failure = await loadCheckoutSecrets(env, deps);
         if (failure !== null) {
             throw new Error(`secrets.json did not load (${failure})`);
         }
-        const { prepareCliHome, structuredCall, systemPrompt } = await import(
-            "@dorothy/agent"
-        );
-        prepareCliHome();
-        return { review: { call: structuredCall(), persona: systemPrompt } };
+        const { structuredCall, systemPrompt } = await import("@dorothy/agent");
+        return {
+            review: {
+                call: structuredCall({
+                    route: ROUTES.review,
+                    cooldowns: COOLDOWNS,
+                    env,
+                }),
+                persona: systemPrompt,
+            },
+        };
     } catch (error) {
         const noReviews =
             error instanceof Error ? error.message : String(error);
@@ -95,19 +100,6 @@ export async function loadCredentials(
     return failure;
 }
 
-// The modes that talk to the model, which alone pay for the Agent SDK.
-export async function forTheModel(
-    deps: CredentialDeps & { prepare?: () => Promise<void> } = {},
-): Promise<void> {
-    await loadCredentials(deps);
-    if (deps.prepare !== undefined) {
-        await deps.prepare();
-    } else {
-        const { prepareCliHome } = await import("@dorothy/agent");
-        prepareCliHome();
-    }
-}
-
 const RUNNERS: Runners = {
     help: async () => {
         process.stdout.write(`${USAGE}\n`);
@@ -118,14 +110,18 @@ const RUNNERS: Runners = {
         return 2;
     },
     oneshot: async (mode) => {
-        await forTheModel();
+        // The modes that talk to the model load their credentials first.
+        await loadCredentials();
         const { runOneShot } = await import("@dorothy/agent");
         // It sets the exit code itself, should the reply fail.
-        await runOneShot(mode.prompt, mode.persona);
+        await runOneShot(mode.prompt, mode.persona, {
+            route: ROUTES.chat,
+            cooldowns: COOLDOWNS,
+        });
         return undefined;
     },
     tui: async (mode) => {
-        await forTheModel();
+        await loadCredentials();
         // Loaded only for chat, so one-shot replies never pay for React.
         const { runTui } = await import("./run-tui.js");
         // runTui has closed everything by now. A push or a repack still
@@ -133,7 +129,7 @@ const RUNNERS: Runners = {
         process.exit(await runTui(mode.resume, mode.persona));
     },
     dump: async (mode) => {
-        await forTheModel();
+        await loadCredentials();
         const { runDump } = await import("./dump.js");
         return runDump(mode);
     },
@@ -260,7 +256,7 @@ const RUNNERS: Runners = {
         return runSweepDismiss(mode.host, mode.session);
     },
     "review-backfill": async (mode) => {
-        // Reviews as the hooks and the service get them, on the plan's token.
+        // Reviews as the hooks and the service get them, on her API key.
         const { runBackfillReview } = await import("./review-backfill.js");
         return runBackfillReview(mode.count, { agent: reviewAgent });
     },

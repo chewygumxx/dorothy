@@ -9,901 +9,1067 @@
 //
 
 import { describe, expect, it } from "bun:test";
-import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import { type ConversationEvent, type Turn, withSection } from "@dorothy/core";
 import {
-    COMPACTED_BY_CLI,
+    anthropicEntry,
+    type ConversationEvent,
+    Cooldowns,
+    type RouteEntry,
+    withSection,
+} from "@dorothy/core";
+import { APICallError, jsonSchema, tool } from "ai";
+import { MockLanguageModelV4 } from "ai/test";
+import {
     Conversation,
-    cliCompactFailed,
-    conversationOptions,
-    type QueryFn,
+    type ConversationDeps,
+    conversationSetup,
+    MAX_STEPS,
+    type SessionSetup,
+    STEP_LIMIT_WARNING,
 } from "./conversation.js";
+import { personaPrompt, withHistory } from "./persona.js";
+import type { RecallTools } from "./recall-tools.js";
 import {
-    cliOptions,
-    personaPrompt,
-    systemPrompt,
-    withHistory,
-} from "./persona.js";
+    fakeMessages,
+    manualTimers,
+    mockModel,
+    mockUsage,
+    type Script,
+    textChunks,
+    toolChunks,
+} from "./testing.js";
 
-const WAIT_FOR_INTERRUPT = "wait-for-interrupt";
-type Step = SDKMessage | typeof WAIT_FOR_INTERRUPT;
+const env = { ANTHROPIC_API_KEY: "test-key" };
+const OPUS = anthropicEntry("claude-opus-5-5");
+const START = { type: "stream-start", warnings: [] };
 
-const init = () =>
-    ({
-        type: "system",
-        subtype: "init",
-        model: "test-model",
-        session_id: "sdk-1",
-    }) as unknown as SDKMessage;
-const delta = (text: string) =>
-    ({
-        type: "stream_event",
-        event: {
-            type: "content_block_delta",
-            index: 0,
-            delta: { type: "text_delta", text },
-        },
-    }) as unknown as SDKMessage;
-const result = (totalCostUsd: number, subtype = "success") =>
-    ({
-        type: "result",
-        subtype,
-        usage: {
-            input_tokens: 10,
-            output_tokens: 20,
-            cache_read_input_tokens: 3000,
-            cache_creation_input_tokens: 400,
-        },
-        total_cost_usd: totalCostUsd,
-        duration_ms: 1500,
-        ttft_ms: 300,
-    }) as unknown as SDKMessage;
-// How the CLI ends a turn the API refused (auth, rate limit, overload): a
-// result flagged is_error, with the error text in place of the reply.
-const apiError = (text: string) =>
-    ({
-        ...(result(0) as object),
-        is_error: true,
-        result: text,
-    }) as unknown as SDKMessage;
-const executionError = (errors: string[]) =>
-    ({
-        ...(result(0, "error_during_execution") as object),
-        is_error: true,
-        errors,
-    }) as unknown as SDKMessage;
-// What the CLI says each time a request's response arrives: the usage of
-// that one request, not the turn's.
-const usage = (input: number, cacheRead: number, cacheWrite: number) =>
-    ({
-        type: "assistant",
-        message: {
-            content: [],
-            usage: {
-                input_tokens: input,
-                cache_read_input_tokens: cacheRead,
-                cache_creation_input_tokens: cacheWrite,
-                output_tokens: 1,
-            },
-        },
-        parent_tool_use_id: null,
-    }) as unknown as SDKMessage;
-const compactBoundary = () =>
-    ({
-        type: "system",
-        subtype: "compact_boundary",
-        compact_metadata: { trigger: "auto", pre_tokens: 100 },
-    }) as unknown as SDKMessage;
-
-const compactStatus = (
-    status: "compacting" | null,
-    fields: { compact_result?: "success" | "failed"; compact_error?: string },
-) =>
-    ({
-        type: "system",
-        subtype: "status",
-        status,
-        ...fields,
-        uuid: "u",
-        session_id: "sdk-1",
-    }) as unknown as SDKMessage;
-
-type Fake = {
-    fn: QueryFn;
-    options: Options | null;
-    prompts: string[];
-    interrupts: number;
-    closed: boolean;
-    inputEnded: boolean;
-};
-
-// One turn's steps, pausing at WAIT_FOR_INTERRUPT until interrupted.
-async function* play(
-    steps: readonly Step[],
-    interrupted: () => Promise<void>,
-): AsyncGenerator<SDKMessage> {
-    for (const step of steps) {
-        if (step === WAIT_FOR_INTERRUPT) {
-            await interrupted();
-        } else {
-            yield step;
-        }
-    }
-}
-
-// Replays one scripted batch of messages per user message. WAIT_FOR_INTERRUPT
-// pauses the batch until interrupt() is called.
-function fakeQuery(
-    turns: Step[][],
-    { fail, endEarly }: { fail?: Error; endEarly?: boolean } = {},
-): Fake {
-    let release = () => {};
-    const fake: Fake = {
-        fn: (({ prompt, options }) => {
-            fake.options = options;
-            async function* run(): AsyncGenerator<SDKMessage> {
-                yield init();
-                if (endEarly) {
-                    return;
-                }
-                let turn = 0;
-                for await (const message of prompt) {
-                    fake.prompts.push(String(message.message.content));
-                    yield* play(
-                        turns[turn++] ?? [],
-                        () =>
-                            new Promise<void>((resolve) => {
-                                release = resolve;
-                            }),
-                    );
-                    if (fail) {
-                        throw fail;
-                    }
-                }
-                fake.inputEnded = true;
-            }
-            return Object.assign(run(), {
-                interrupt: async () => {
-                    fake.interrupts++;
-                    release();
-                },
-                close: () => {
-                    fake.closed = true;
-                },
-            });
-        }) as QueryFn,
-        options: null,
-        prompts: [],
-        interrupts: 0,
-        closed: false,
-        inputEnded: false,
-    };
-    return fake;
-}
-
-function started(fake: Fake, history: Turn[] = []) {
-    const conversation = new Conversation({ history, queryFn: fake.fn });
+function session(
+    scripts: Script[],
+    options: SessionSetup & ConversationDeps = {},
+) {
+    const model = mockModel(scripts);
+    const conversation = new Conversation({
+        env,
+        model: () => model,
+        ...options,
+    });
     const events: ConversationEvent[] = [];
     conversation.subscribe((event) => events.push(event));
     conversation.start();
-    return { conversation, events };
+    return { conversation, model, events };
 }
 
-async function until(predicate: () => boolean): Promise<void> {
-    for (let i = 0; i < 200 && !predicate(); i++) {
-        await new Promise((resolve) => setTimeout(resolve, 5));
+async function until(done: () => boolean): Promise<void> {
+    const end = Date.now() + 2000;
+    while (!done()) {
+        if (Date.now() > end) {
+            throw new Error("timed out waiting");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1));
     }
-    expect(predicate()).toBe(true);
 }
+
+const ended = (events: ConversationEvent[], count = 1) =>
+    events.filter(
+        (event) => event.type === "turn-end" || event.type === "error",
+    ).length >= count;
 
 const of = <T extends ConversationEvent["type"]>(
     events: ConversationEvent[],
     type: T,
 ) =>
-    events.filter((e) => e.type === type) as Extract<
-        ConversationEvent,
-        { type: T }
-    >[];
+    events.filter((event): event is Extract<ConversationEvent, { type: T }> => {
+        return event.type === type;
+    });
+
+// Recall tools that answer each call as results says, recording calls.
+function fakeRecall(
+    results: Record<string, { text: string; isError?: boolean }>,
+) {
+    const calls: string[] = [];
+    let closed = false;
+    const recall: RecallTools = {
+        tools: Object.fromEntries(
+            Object.entries(results).map(([name, result]) => [
+                name,
+                tool({
+                    inputSchema: jsonSchema({ type: "object" }),
+                    execute: async () => {
+                        calls.push(name);
+                        return {
+                            content: [{ type: "text", text: result.text }],
+                            isError: result.isError ?? false,
+                        };
+                    },
+                }),
+            ]),
+        ),
+        close: async () => {
+            closed = true;
+        },
+    };
+    return { recall, calls, closed: () => closed };
+}
+
+const RECALL = { command: "dorothy", args: ["--recall-server"] };
 
 describe("Conversation", () => {
-    it("emits ready from system/init", async () => {
-        const { events } = started(fakeQuery([]));
-        await until(() => of(events, "ready").length === 1);
-        expect(of(events, "ready")[0]).toEqual({
+    it("emits ready after start returns, naming the first entry", async () => {
+        const model = mockModel([{ chunks: textChunks("hi") }]);
+        const conversation = new Conversation({ env, model: () => model });
+        const events: ConversationEvent[] = [];
+        conversation.start();
+        conversation.subscribe((event) => events.push(event));
+        await until(() => events.length > 0);
+        expect(events[0]).toMatchObject({
             type: "ready",
-            model: "test-model",
-            sdkSessionId: "sdk-1",
+            model: "anthropic:claude-opus-5-5",
+        });
+        expect(of(events, "ready")[0]?.sessionId).toMatch(/^[0-9a-f-]{36}$/);
+    });
+
+    it("streams deltas and ends the turn with its reply, stats and model", async () => {
+        const { conversation, events } = session([
+            {
+                chunks: textChunks(
+                    "Hello there",
+                    mockUsage(1_000_000, 1_000_000),
+                ),
+            },
+        ]);
+        conversation.send("hi");
+        await until(() => ended(events));
+        expect(
+            of(events, "delta")
+                .map((event) => event.text)
+                .join(""),
+        ).toBe("Hello there");
+        const end = of(events, "turn-end")[0];
+        expect(end).toMatchObject({
+            reply: "Hello there",
+            interrupted: false,
+            model: "anthropic:claude-opus-5-5",
+        });
+        expect(end?.stats).toMatchObject({
+            inputTokens: 1_000_000,
+            outputTokens: 1_000_000,
+            costUsd: 24,
+            sessionCostUsd: 24,
+        });
+        expect(end?.contextTokens).toBe(1_000_000 + 3);
+    });
+
+    it("keeps a running session cost", async () => {
+        const { conversation, events } = session([
+            { chunks: textChunks("one", mockUsage(1_000_000, 0)) },
+            { chunks: textChunks("two", mockUsage(1_000_000, 0)) },
+        ]);
+        conversation.send("a");
+        await until(() => ended(events));
+        conversation.send("b");
+        await until(() => ended(events, 2));
+        expect(
+            of(events, "turn-end").map((event) => event.stats.sessionCostUsd),
+        ).toEqual([4, 8]);
+    });
+
+    it("re-emits each stream part as an sdk event, with a text part's text", async () => {
+        const { conversation, events } = session([
+            { chunks: textChunks("hi") },
+        ]);
+        conversation.send("hi");
+        await until(() => ended(events));
+        expect(of(events, "sdk").map((event) => event.message)).toContainEqual({
+            type: "text-delta",
+            event: { delta: "hi" },
         });
     });
 
-    it("streams deltas and ends the turn with reply and stats", async () => {
-        const fake = fakeQuery([[delta("Hel"), delta("lo"), result(0.002)]]);
-        const { conversation, events } = started(fake);
-        conversation.send("hi");
-        await until(() => of(events, "turn-end").length === 1);
-        expect(fake.prompts).toEqual(["hi"]);
-        expect(of(events, "delta").map((e) => e.text)).toEqual(["Hel", "lo"]);
-        expect(of(events, "turn-end")[0]).toEqual({
-            type: "turn-end",
-            reply: "Hello",
-            interrupted: false,
-            contextTokens: 3412,
-            stats: {
-                inputTokens: 10,
-                cacheReadTokens: 3000,
-                cacheWriteTokens: 400,
-                outputTokens: 20,
-                ttftMs: 300,
-                durationMs: 1500,
-                costUsd: 0.002,
-                sessionCostUsd: 0.002,
+    it("sends the system prompt and the latest message with cache breakpoints, storing neither", async () => {
+        const scripts = Array.from({ length: 6 }, (_, index) => ({
+            chunks: textChunks(`reply ${index}`),
+        }));
+        const { conversation, model, events } = session(scripts);
+        for (let index = 0; index < 6; index += 1) {
+            conversation.send(`message ${index}`);
+            await until(() => ended(events, index + 1));
+        }
+        const last = model.doStreamCalls[5];
+        expect(last?.prompt[0]).toMatchObject({
+            role: "system",
+            providerOptions: {
+                anthropic: { cacheControl: { type: "ephemeral" } },
+            },
+        });
+        const marked =
+            JSON.stringify(last?.prompt).match(/cacheControl/g) ?? [];
+        expect(marked).toHaveLength(2);
+        expect(last?.prompt.at(-1)).toMatchObject({
+            role: "user",
+            content: [{ type: "text", text: "message 5" }],
+        });
+        expect(JSON.stringify(last?.prompt)).toContain("reply 4");
+        expect(last?.providerOptions).toEqual({
+            anthropic: {
+                thinking: { type: "adaptive", display: "summarized" },
             },
         });
     });
 
-    it("costs a turn as the difference of running totals", async () => {
-        const fake = fakeQuery([[result(0.002)], [result(0.005)]]);
-        const { conversation, events } = started(fake);
-        conversation.send("one");
-        await until(() => of(events, "turn-end").length === 1);
-        conversation.send("two");
-        await until(() => of(events, "turn-end").length === 2);
-        const second = of(events, "turn-end")[1]?.stats;
-        expect(second?.costUsd).toBeCloseTo(0.003, 10);
-        expect(second?.sessionCostUsd).toBe(0.005);
-    });
-
-    it("never costs a turn below zero", async () => {
-        const fake = fakeQuery([[result(0.005)], [result(0)], [result(0.007)]]);
-        const { conversation, events } = started(fake);
-        for (const [index, text] of ["one", "two", "three"].entries()) {
-            conversation.send(text);
-            await until(() => of(events, "turn-end").length === index + 1);
-        }
-        const costs = of(events, "turn-end").map((e) => e.stats.costUsd);
-        expect(costs[0]).toBe(0.005);
-        expect(costs[1]).toBe(0);
-        expect(costs[2]).toBeCloseTo(0.002, 10);
-    });
-
-    it("re-emits every SDK message as an sdk event", async () => {
-        const fake = fakeQuery([[delta("a"), result(0.001)]]);
-        const { conversation, events } = started(fake);
-        conversation.send("hi");
-        await until(() => of(events, "turn-end").length === 1);
-        expect(of(events, "sdk")).toHaveLength(3);
-    });
-
     it("keeps an interrupted partial reply", async () => {
-        const fake = fakeQuery([
-            [
-                delta("Part"),
-                WAIT_FOR_INTERRUPT,
-                executionError(["Request was aborted."]),
-            ],
+        const { conversation, events } = session([
+            {
+                chunks: [
+                    START,
+                    { type: "text-start", id: "t" },
+                    { type: "text-delta", id: "t", delta: "Partial" },
+                ],
+                hang: true,
+            },
         ]);
-        const { conversation, events } = started(fake);
         conversation.send("hi");
         await until(() => of(events, "delta").length === 1);
         await conversation.interrupt();
-        await until(() => of(events, "turn-end").length === 1);
-        expect(fake.interrupts).toBe(1);
+        await until(() => ended(events));
         expect(of(events, "turn-end")[0]).toMatchObject({
-            reply: "Part",
+            reply: "Partial",
             interrupted: true,
-            stats: { ttftMs: null },
         });
-    });
-
-    it("ignores interrupt while idle", async () => {
-        const fake = fakeQuery([]);
-        const { conversation, events } = started(fake);
-        await until(() => of(events, "ready").length === 1);
-        await conversation.interrupt();
-        expect(fake.interrupts).toBe(0);
-    });
-
-    it("closes by ending the input, without an error", async () => {
-        const fake = fakeQuery([[result(0.001)]]);
-        const { conversation, events } = started(fake);
-        conversation.send("hi");
-        await until(() => of(events, "turn-end").length === 1);
-        await conversation.close();
-        await conversation.close();
-        expect(fake.inputEnded).toBe(true);
-        expect(fake.closed).toBe(true);
         expect(of(events, "error")).toHaveLength(0);
     });
 
-    it("emits error when the query throws", async () => {
-        const fake = fakeQuery([[delta("x")]], { fail: new Error("boom") });
-        const { conversation, events } = started(fake);
+    it("ends a message queued behind recall's start as interrupted, calling no model", async () => {
+        let start: (tools: RecallTools) => void = () => {};
+        const recall = fakeRecall({});
+        const { conversation, model, events } = session(
+            [{ chunks: textChunks("later") }],
+            {
+                recall: RECALL,
+                connect: () =>
+                    new Promise<RecallTools>((resolve) => {
+                        start = resolve;
+                    }),
+            },
+        );
         conversation.send("hi");
-        await until(() => of(events, "error").length === 1);
-        expect(of(events, "error")[0]?.message).toBe("boom");
-    });
-
-    it("emits error when the session ends unexpectedly", async () => {
-        const { events } = started(fakeQuery([], { endEarly: true }));
-        await until(() => of(events, "error").length === 1);
-        expect(of(events, "error")[0]?.message).toContain("ended unexpectedly");
-    });
-
-    it("uses the persona prompt unchanged without history", () => {
-        const fake = fakeQuery([]);
-        started(fake);
-        expect(fake.options?.systemPrompt).toBe(systemPrompt);
-        expect(fake.options?.tools).toEqual([]);
-    });
-
-    it("puts the persona in development mode when asked", () => {
-        const fake = fakeQuery([]);
-        const conversation = new Conversation({
-            queryFn: fake.fn,
-            persona: "development",
+        await conversation.interrupt();
+        start(recall.recall);
+        await until(() => ended(events));
+        expect(of(events, "turn-end")[0]).toMatchObject({
+            reply: "",
+            interrupted: true,
         });
-        conversation.start();
-        expect(fake.options?.systemPrompt).toBe(
-            personaPrompt({ recall: false, mode: "development" }),
-        );
+        expect(model.doStreamCalls).toHaveLength(0);
+        conversation.send("again");
+        await until(() => ended(events, 2));
+        expect(of(events, "turn-end")[1]).toMatchObject({
+            reply: "later",
+            interrupted: false,
+        });
+        expect(model.doStreamCalls).toHaveLength(1);
+        expect(JSON.stringify(model.doStreamCalls[0]?.prompt)).toContain("hi");
     });
 
-    it("starts with exactly the options conversationOptions gives", () => {
-        const fake = fakeQuery([]);
-        const setup = {
-            history: [{ role: "user" as const, text: "Hi." }],
-            memory: "<memory/>",
-            recall: RECALL,
-            persona: "development" as const,
-        };
-        const conversation = new Conversation({ ...setup, queryFn: fake.fn });
-        conversation.start();
-        expect(fake.options).toEqual(conversationOptions(setup));
-    });
-
-    it("keeps the CLI out of the user's Claude Code setup", () => {
-        const fake = fakeQuery([]);
-        started(fake);
-        expect(fake.options).toMatchObject(cliOptions());
-    });
-
-    it("appends history to the system prompt", () => {
-        const fake = fakeQuery([]);
-        started(fake, [
-            { role: "user", text: "My cat is Miso." },
-            { role: "assistant", text: "Hello, Miso!" },
+    it("keeps working when a listener throws on turn-end", async () => {
+        const { conversation, model, events } = session([
+            { chunks: textChunks("one") },
+            { chunks: textChunks("two") },
         ]);
-        const prompt = String(fake.options?.systemPrompt);
-        expect(prompt.startsWith(systemPrompt)).toBe(true);
-        expect(prompt).toContain("User: My cat is Miso.");
-    });
-
-    it("starts with the memory block between the persona and the history", () => {
-        const fake = fakeQuery([]);
-        const history: Turn[] = [{ role: "user", text: "Earlier" }];
-        new Conversation({
-            history,
-            memory: "<memory/>",
-            queryFn: fake.fn,
-        }).start();
-        expect(fake.options?.systemPrompt).toBe(
-            withHistory(withSection(systemPrompt, "<memory/>"), history),
-        );
-    });
-
-    it("emits ready once, though the CLI sends init every turn", async () => {
-        const fake = fakeQuery([
-            [init(), result(0.001)],
-            [init(), result(0.002)],
-        ]);
-        const { conversation, events } = started(fake);
-        conversation.send("one");
-        await until(() => of(events, "turn-end").length === 1);
-        conversation.send("two");
-        await until(() => of(events, "turn-end").length === 2);
-        expect(of(events, "ready")).toHaveLength(1);
-    });
-
-    it("reports an API error result as an error, not an empty reply", async () => {
-        const fake = fakeQuery([[apiError("Invalid API key")]]);
-        const { conversation, events } = started(fake);
-        conversation.send("hi");
-        await until(() => of(events, "error").length === 1);
-        expect(of(events, "error")[0]?.message).toBe("Invalid API key");
-        expect(of(events, "turn-end")).toHaveLength(0);
-    });
-
-    it("carries a failed turn's cost with its error", async () => {
-        const failed = {
-            ...(executionError(["network unavailable"]) as object),
-            total_cost_usd: 0.25,
-        } as unknown as SDKMessage;
-        const fake = fakeQuery([[delta("Checking..."), failed]]);
-        const { conversation, events } = started(fake);
-        conversation.send("hi");
+        let thrown = false;
+        conversation.subscribe((event) => {
+            if (event.type === "turn-end" && !thrown) {
+                thrown = true;
+                throw new Error("listener bug");
+            }
+        });
+        conversation.send("a");
         await until(() => of(events, "error").length === 1);
         expect(of(events, "error")[0]).toMatchObject({
-            message: "network unavailable",
-            partial: "Checking...",
-            stats: { costUsd: 0.25, sessionCostUsd: 0.25 },
+            message: "listener bug",
+        });
+        conversation.send("b");
+        await until(() => of(events, "turn-end").length === 2);
+        expect(of(events, "turn-end")[1]).toMatchObject({ reply: "two" });
+        expect(model.doStreamCalls).toHaveLength(2);
+        await conversation.close();
+    });
+
+    it("keeps working when a listener throws on ready", async () => {
+        const unhandled: unknown[] = [];
+        const catcher = (reason: unknown) => unhandled.push(reason);
+        process.on("unhandledRejection", catcher);
+        try {
+            const model = mockModel([{ chunks: textChunks("hello") }]);
+            const conversation = new Conversation({
+                env,
+                model: () => model,
+            });
+            const events: ConversationEvent[] = [];
+            conversation.subscribe((event) => events.push(event));
+            let thrown = false;
+            conversation.subscribe((event) => {
+                if (event.type === "ready" && !thrown) {
+                    thrown = true;
+                    throw new Error("ready bug");
+                }
+            });
+            conversation.send("a");
+            await until(() => of(events, "turn-end").length === 1);
+            expect(of(events, "error")[0]).toMatchObject({
+                message: "ready bug",
+            });
+            expect(of(events, "turn-end")[0]).toMatchObject({
+                reply: "hello",
+            });
+            await conversation.close();
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            expect(unhandled).toEqual([]);
+        } finally {
+            process.off("unhandledRejection", catcher);
+        }
+    });
+
+    it("keeps working when a listener throws on a warning at start", async () => {
+        const unhandled: unknown[] = [];
+        const catcher = (reason: unknown) => unhandled.push(reason);
+        process.on("unhandledRejection", catcher);
+        try {
+            const model = mockModel([{ chunks: textChunks("hello") }]);
+            const conversation = new Conversation({
+                env,
+                model: () => model,
+                recall: RECALL,
+                connect: async () => {
+                    throw new Error("spawn failed");
+                },
+            });
+            const events: ConversationEvent[] = [];
+            conversation.subscribe((event) => events.push(event));
+            conversation.subscribe((event) => {
+                if (event.type === "warning") {
+                    throw new Error("warning bug");
+                }
+            });
+            conversation.send("a");
+            await until(() => of(events, "turn-end").length === 1);
+            expect(of(events, "ready")).toHaveLength(1);
+            expect(of(events, "error")[0]).toMatchObject({
+                message: "warning bug",
+            });
+            expect(of(events, "turn-end")[0]).toMatchObject({
+                reply: "hello",
+            });
+            expect(model.doStreamCalls).toHaveLength(1);
+            await conversation.close();
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            expect(unhandled).toEqual([]);
+        } finally {
+            process.off("unhandledRejection", catcher);
+        }
+    });
+
+    it("is not looped by a listener that throws on error too", async () => {
+        const { conversation, events } = session([
+            { chunks: textChunks("one") },
+            { chunks: textChunks("two") },
+        ]);
+        conversation.subscribe((event) => {
+            if (event.type === "turn-end" || event.type === "error") {
+                throw new Error("always");
+            }
+        });
+        conversation.send("a");
+        await until(() => of(events, "error").length === 1);
+        conversation.send("b");
+        await until(() => of(events, "error").length === 2);
+        await conversation.close();
+        expect(of(events, "turn-end")).toHaveLength(2);
+        expect(of(events, "error")).toHaveLength(2);
+    });
+
+    it("ignores interrupt while idle", async () => {
+        const { conversation, events } = session([
+            { chunks: textChunks("hi") },
+        ]);
+        await conversation.interrupt();
+        expect(of(events, "error")).toHaveLength(0);
+        conversation.send("hello");
+        await until(() => ended(events));
+        expect(of(events, "error")).toHaveLength(0);
+        expect(of(events, "turn-end")[0]).toMatchObject({
+            reply: "hi",
+            interrupted: false,
         });
     });
 
-    it("reports an execution error result with its errors", async () => {
-        const fake = fakeQuery([[executionError(["one", "two"])]]);
-        const { conversation, events } = started(fake);
-        conversation.send("hi");
-        await until(() => of(events, "error").length === 1);
-        expect(of(events, "error")[0]?.message).toBe("one; two");
-    });
-
-    it("measures the context from the last request, plus the reply", async () => {
-        const fake = fakeQuery([
-            [
-                usage(5, 1000, 100),
-                usage(7, 2000, 300),
-                delta("12345678"),
-                result(0.001),
-            ],
-        ]);
-        const { conversation, events } = started(fake);
-        conversation.send("hi");
-        await until(() => of(events, "turn-end").length === 1);
-        // 7 + 2000 + 300, and 8 characters of reply at 4 a token.
-        expect(of(events, "turn-end")[0]?.contextTokens).toBe(2309);
-    });
-
-    it("falls back on the turn's usage when no request reported any", async () => {
-        const fake = fakeQuery([[delta("Hello"), result(0.001)]]);
-        const { conversation, events } = started(fake);
-        conversation.send("hi");
-        await until(() => of(events, "turn-end").length === 1);
-        // 10 + 3000 + 400 from the result, and 5 characters of reply.
-        expect(of(events, "turn-end")[0]?.contextTokens).toBe(3412);
-    });
-
-    it("measures each turn afresh", async () => {
-        const fake = fakeQuery([
-            [usage(1, 100, 0), result(0.001)],
-            [result(0.002)],
-        ]);
-        const { conversation, events } = started(fake);
-        conversation.send("one");
-        await until(() => of(events, "turn-end").length === 1);
-        conversation.send("two");
-        await until(() => of(events, "turn-end").length === 2);
-        expect(of(events, "turn-end").map((e) => e.contextTokens)).toEqual([
-            101, 3410,
-        ]);
-    });
-
-    it("measures the main context, not a subagent's", async () => {
-        const fake = fakeQuery([
-            [
-                usage(7, 2000, 300),
-                {
-                    ...(usage(50, 90000, 900) as object),
-                    parent_tool_use_id: "toolu_1",
-                } as unknown as SDKMessage,
-                delta("12345678"),
-                result(0.001),
-            ],
-        ]);
-        const { conversation, events } = started(fake);
-        conversation.send("hi");
-        await until(() => of(events, "turn-end").length === 1);
-        expect(of(events, "turn-end")[0]?.contextTokens).toBe(2309);
-    });
-
-    it("warns of the CLI compacting on its own, and the turn goes on", async () => {
-        const fake = fakeQuery([
-            [
-                usage(5, 1000, 100),
-                delta("Hel"),
-                compactBoundary(),
-                delta("lo"),
-                result(0.001),
-            ],
-        ]);
-        const { conversation, events } = started(fake);
-        conversation.send("hi");
-        await until(() => of(events, "turn-end").length === 1);
-        expect(of(events, "warning").map((e) => e.message)).toEqual([
-            COMPACTED_BY_CLI,
-        ]);
-        expect(of(events, "error")).toEqual([]);
-        const end = of(events, "turn-end")[0];
-        expect(end?.reply).toBe("Hello");
-        // The measurement before the boundary is stale: the result's usage,
-        // 10 + 3000 + 400, and 5 characters of reply.
-        expect(end?.contextTokens).toBe(3412);
-    });
-
-    it("warns of a compaction the CLI tried and failed, by its status", async () => {
-        const fake = fakeQuery([
-            [
-                compactStatus("compacting", {}),
-                compactStatus(null, {
-                    compact_result: "failed",
-                    compact_error: "prompt too long",
-                }),
-                delta("Hello"),
-                result(0.001),
-            ],
-        ]);
-        const { conversation, events } = started(fake);
-        conversation.send("hi");
-        await until(() => of(events, "turn-end").length === 1);
-        expect(of(events, "warning").map((e) => e.message)).toEqual([
-            cliCompactFailed("prompt too long"),
-        ]);
-        expect(cliCompactFailed("prompt too long")).toContain(
-            "DISABLE_COMPACT",
+    it("closes without an error, mid-reply too, and the recall server with it", async () => {
+        const fake = fakeRecall({});
+        const { conversation, events } = session(
+            [{ chunks: [START], hang: true }],
+            { recall: RECALL, connect: async () => fake.recall },
         );
-        expect(cliCompactFailed("prompt too long")).toContain(
-            "prompt too long",
+        conversation.send("hi");
+        await until(() => of(events, "sdk").length > 0);
+        await conversation.close();
+        await conversation.close();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(events.filter((event) => event.type === "error")).toHaveLength(
+            0,
         );
-        expect(of(events, "error")).toEqual([]);
-        expect(of(events, "turn-end")[0]?.reply).toBe("Hello");
+        expect(of(events, "turn-end")).toHaveLength(0);
+        expect(fake.closed()).toBe(true);
     });
 
-    it("says nothing of other statuses, or a failure with no error text", async () => {
-        const fake = fakeQuery([
-            [
-                compactStatus("compacting", {}),
-                compactStatus(null, { compact_result: "success" }),
-                compactStatus(null, { compact_result: "failed" }),
-                delta("Hi"),
-                result(0.001),
-            ],
-        ]);
-        const { conversation, events } = started(fake);
+    it("reports a provider's refusal as an error", async () => {
+        const refusal = new APICallError({
+            message: "overloaded",
+            url: "u",
+            requestBodyValues: {},
+            statusCode: 529,
+        });
+        const { conversation, events } = session([refusal]);
         conversation.send("hi");
-        await until(() => of(events, "turn-end").length === 1);
-        expect(of(events, "warning").map((e) => e.message)).toEqual([
-            cliCompactFailed(undefined),
-        ]);
-    });
-
-    it("hands the partial reply to the error when the session dies", async () => {
-        const fake = fakeQuery([[delta("Par")]], { fail: new Error("boom") });
-        const { conversation, events } = started(fake);
-        conversation.send("hi");
-        await until(() => of(events, "error").length === 1);
+        await until(() => ended(events));
         expect(of(events, "error")[0]).toEqual({
             type: "error",
-            message: "boom",
-            partial: "Par",
+            message: "overloaded",
         });
+    });
+
+    it("hands a partial reply and its stats to the error when the stream fails", async () => {
+        const { conversation, events } = session([
+            {
+                chunks: [
+                    START,
+                    { type: "text-start", id: "t" },
+                    { type: "text-delta", id: "t", delta: "Half" },
+                    {
+                        type: "error",
+                        error: new APICallError({
+                            message: "reset",
+                            url: "u",
+                            requestBodyValues: {},
+                            statusCode: 500,
+                        }),
+                    },
+                    {
+                        type: "finish",
+                        usage: mockUsage(),
+                        finishReason: { unified: "error", raw: undefined },
+                    },
+                ],
+            },
+        ]);
+        conversation.send("hi");
+        await until(() => ended(events));
+        expect(of(events, "error")[0]).toMatchObject({
+            message: "reset",
+            partial: "Half",
+        });
+        expect(of(events, "error")[0]?.stats).toBeDefined();
+    });
+
+    it("fails a turn without a key, calling no model", async () => {
+        const model = mockModel([{ chunks: textChunks("hi") }]);
+        const conversation = new Conversation({ env: {}, model: () => model });
+        const events: ConversationEvent[] = [];
+        conversation.subscribe((event) => events.push(event));
+        conversation.start();
+        conversation.send("hi");
+        await until(() => ended(events));
+        expect(of(events, "error")[0]).toEqual({
+            type: "error",
+            message: "ANTHROPIC_API_KEY is not set",
+        });
+        expect(model.doStreamCalls).toHaveLength(0);
+    });
+
+    it("ends a turn that stalls", async () => {
+        const timers = manualTimers();
+        const { conversation, model, events } = session(
+            [{ chunks: [START], hang: true }],
+            { timers },
+        );
+        conversation.send("hi");
+        await until(() => model.doStreamCalls.length === 1);
+        timers.fire(60_000);
+        await until(() => ended(events));
+        expect(of(events, "error")[0]).toMatchObject({
+            message: "no response for 60s",
+        });
+    });
+
+    it("ends a turn whose provider never sends an event as a timeout", async () => {
+        const timers = manualTimers();
+        const { conversation, model, events } = session(
+            [{ chunks: [], hang: true }],
+            { timers },
+        );
+        conversation.send("hi");
+        await until(() => model.doStreamCalls.length === 1);
+        expect(timers.pending()).toEqual([60_000]);
+        timers.fire(60_000);
+        await until(() => ended(events));
+        expect(of(events, "error")).toEqual([
+            { type: "error", message: "no response for 60s" },
+        ]);
+    });
+
+    it("does not stall on a long reasoning-only start", async () => {
+        const timers = manualTimers();
+        let rearmed = 0;
+        let controller!: ReadableStreamDefaultController;
+        const model = new MockLanguageModelV4({
+            provider: "anthropic.messages",
+            modelId: "claude-opus-5-5",
+            doStream: async () => ({
+                stream: new ReadableStream({
+                    start(started) {
+                        controller = started;
+                    },
+                }),
+            }),
+        });
+        const { conversation, events } = session([], {
+            model: () => model,
+            timers: {
+                ...timers,
+                set: (fn, ms) => {
+                    rearmed += 1;
+                    return timers.set(fn, ms);
+                },
+            },
+        });
+        const push = async (chunk: unknown) => {
+            const seen = of(events, "sdk").length;
+            controller.enqueue(chunk as never);
+            await until(() => of(events, "sdk").length > seen);
+        };
+        conversation.send("think");
+        await until(() => controller !== undefined);
+        controller.enqueue(START as never);
+        const parts = [
+            { type: "reasoning-start", id: "r" },
+            { type: "reasoning-delta", id: "r", delta: "hmm" },
+            { type: "reasoning-delta", id: "r", delta: "hmm, hmm" },
+            { type: "reasoning-end", id: "r" },
+        ];
+        for (const part of parts) {
+            const before = rearmed;
+            await push(part);
+            expect(rearmed).toBeGreaterThan(before);
+            expect(timers.pending()).toEqual([60_000]);
+        }
+        for (const chunk of textChunks("Done thinking.").slice(1)) {
+            controller.enqueue(chunk as never);
+        }
+        controller.close();
+        await until(() => ended(events));
+        expect(of(events, "error")).toHaveLength(0);
+        expect(of(events, "turn-end")[0]).toMatchObject({
+            reply: "Done thinking.",
+            interrupted: false,
+        });
+    });
+
+    it("disposes the stall timer when a turn ends, however it ends", async () => {
+        const timers = manualTimers();
+        const refusal = new APICallError({
+            message: "overloaded",
+            url: "u",
+            requestBodyValues: {},
+            statusCode: 529,
+        });
+        const { conversation, events } = session(
+            [
+                { chunks: textChunks("fine") },
+                refusal,
+                { chunks: [START], hang: true },
+            ],
+            { timers },
+        );
+        conversation.send("one");
+        await until(() => ended(events));
+        expect(of(events, "turn-end")).toHaveLength(1);
+        expect(timers.pending()).toEqual([]);
+        conversation.send("two");
+        await until(() => ended(events, 2));
+        expect(of(events, "error")).toHaveLength(1);
+        expect(timers.pending()).toEqual([]);
+        conversation.send("three");
+        await until(() => timers.pending().length === 1);
+        await conversation.interrupt();
+        await until(() => ended(events, 3));
+        expect(of(events, "turn-end")[1]).toMatchObject({ interrupted: true });
+        expect(timers.pending()).toEqual([]);
+    });
+
+    it("warns when ten steps end in a tool call, and ends on the text it has", async () => {
+        const { recall } = fakeRecall({ mcp__memory__search: { text: "{}" } });
+        const { conversation, events } = session(
+            [{ chunks: toolChunks("c", "mcp__memory__search", {}) }],
+            { recall: RECALL, connect: async () => recall },
+        );
+        conversation.send("hi");
+        await until(() => ended(events));
+        expect(of(events, "lookup")).toHaveLength(MAX_STEPS);
+        expect(of(events, "warning").map((event) => event.message)).toContain(
+            STEP_LIMIT_WARNING,
+        );
+        expect(of(events, "turn-end")).toHaveLength(1);
     });
 });
 
-const toolUse = (id: string, name: string, input: object) =>
-    ({
-        type: "assistant",
-        message: { content: [{ type: "tool_use", id, name, input }] },
-    }) as unknown as SDKMessage;
-const toolResult = (id: string, text: string, isError = false) =>
-    ({
-        type: "user",
-        message: {
-            role: "user",
-            content: [
+describe("Conversation with recall", () => {
+    it("offers the recall tools, emitting each lookup where it happened", async () => {
+        const fake = fakeRecall({
+            mcp__memory__search: { text: '{"results":[]}' },
+        });
+        const { conversation, events } = session(
+            [
                 {
-                    type: "tool_result",
-                    tool_use_id: id,
-                    content: [{ type: "text", text }],
-                    is_error: isError,
+                    chunks: [
+                        START,
+                        { type: "text-start", id: "t" },
+                        { type: "text-delta", id: "t", delta: "Let me look." },
+                        { type: "text-end", id: "t" },
+                        {
+                            type: "tool-call",
+                            toolCallId: "c1",
+                            toolName: "mcp__memory__search",
+                            input: '{"query":"kiln"}',
+                        },
+                        {
+                            type: "finish",
+                            usage: mockUsage(),
+                            finishReason: {
+                                unified: "tool-calls",
+                                raw: "tool_use",
+                            },
+                        },
+                    ],
                 },
+                { chunks: textChunks("Nothing on kilns.") },
             ],
-        },
-        parent_tool_use_id: null,
-    }) as unknown as SDKMessage;
-const servers = (status: string) =>
-    ({
-        type: "system",
-        subtype: "init",
-        model: "test-model",
-        session_id: "sdk-1",
-        mcp_servers: [{ name: "memory", status }],
-    }) as unknown as SDKMessage;
-const RECALL = { command: "/bin/bun", args: ["index.ts", "--recall-server"] };
-const SEARCHED = JSON.stringify({
-    results: [
-        {
-            "@type": "Conversation",
-            identifier: "a",
-            dateCreated: "2026-10-04",
-            dateModified: "2026-10-04",
-            matches: [],
-        },
-    ],
-    more: 1,
+            { recall: RECALL, connect: async () => fake.recall },
+        );
+        conversation.send("kiln?");
+        await until(() => ended(events));
+        expect(fake.calls).toEqual(["mcp__memory__search"]);
+        expect(of(events, "lookup")[0]).toMatchObject({
+            id: "c1",
+            ok: true,
+            offset: 12,
+        });
+        expect(of(events, "turn-end")[0]?.reply).toBe(
+            "Let me look.\n\nNothing on kilns.",
+        );
+    });
+
+    it("emits a call to remember as a remember event", async () => {
+        const fake = fakeRecall({ mcp__memory__remember: { text: "kept" } });
+        const { conversation, events } = session(
+            [
+                {
+                    chunks: toolChunks("r1", "mcp__memory__remember", {
+                        fact: "x",
+                    }),
+                },
+                { chunks: textChunks("Noted.") },
+            ],
+            { recall: RECALL, connect: async () => fake.recall },
+        );
+        conversation.send("remember x");
+        await until(() => ended(events));
+        expect(of(events, "remember")[0]).toMatchObject({
+            id: "r1",
+            ok: true,
+            input: { fact: "x" },
+            output: "kept",
+        });
+        expect(of(events, "lookup")).toHaveLength(0);
+    });
+
+    it("warns once and chats on when recall fails to start", async () => {
+        const { conversation, model, events } = session(
+            [{ chunks: textChunks("hi") }],
+            {
+                recall: RECALL,
+                connect: async () => {
+                    throw new Error("spawn failed");
+                },
+            },
+        );
+        conversation.send("hi");
+        await until(() => ended(events));
+        expect(of(events, "warning").map((event) => event.message)).toEqual([
+            "memory: recall is unavailable (spawn failed)",
+        ]);
+        expect(model.doStreamCalls[0]?.tools ?? []).toHaveLength(0);
+        expect(of(events, "turn-end")).toHaveLength(1);
+    });
+
+    it("settles a lookup cut short by an interrupt as failed, keeping the partial reply", async () => {
+        const slow = tool({
+            inputSchema: jsonSchema({ type: "object" }),
+            execute: (_input, { abortSignal }) =>
+                new Promise((_resolve, reject) => {
+                    abortSignal?.addEventListener("abort", () =>
+                        reject(new Error("aborted")),
+                    );
+                }),
+        });
+        const { conversation, model, events } = session(
+            [
+                {
+                    chunks: [
+                        START,
+                        { type: "text-start", id: "t" },
+                        { type: "text-delta", id: "t", delta: "Let me look." },
+                        { type: "text-end", id: "t" },
+                        {
+                            type: "tool-call",
+                            toolCallId: "c1",
+                            toolName: "mcp__memory__search",
+                            input: "{}",
+                        },
+                        {
+                            type: "finish",
+                            usage: mockUsage(),
+                            finishReason: {
+                                unified: "tool-calls",
+                                raw: "tool_use",
+                            },
+                        },
+                    ],
+                },
+                { chunks: textChunks("Back.") },
+            ],
+            {
+                recall: RECALL,
+                connect: async () => ({
+                    tools: { mcp__memory__search: slow },
+                    close: async () => {},
+                }),
+            },
+        );
+        conversation.send("look");
+        await until(() =>
+            of(events, "sdk").some(
+                (event) => event.message.type === "tool-call",
+            ),
+        );
+        await conversation.interrupt();
+        await until(() => ended(events));
+        expect(of(events, "lookup")[0]).toMatchObject({ id: "c1", ok: false });
+        expect(of(events, "turn-end")[0]).toMatchObject({
+            reply: "Let me look.",
+            interrupted: true,
+        });
+        expect(of(events, "error")).toHaveLength(0);
+        // The session keeps the user's message and the partial text only.
+        conversation.send("again");
+        await until(() => ended(events, 2));
+        const kept = model.doStreamCalls[1]?.prompt.map((message) => [
+            message.role,
+            typeof message.content === "string"
+                ? message.content
+                : message.content.map((part) => part.type),
+        ]);
+        expect(kept).toEqual([
+            ["system", expect.any(String)],
+            ["user", ["text"]],
+            ["assistant", ["text"]],
+            ["user", ["text"]],
+        ]);
+        expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
+            "Let me look.",
+        );
+    });
+
+    it("ends the attempt as cancelled, not thrown, when a listener throws on a lookup settled by an interrupt", async () => {
+        const slow = tool({
+            inputSchema: jsonSchema({ type: "object" }),
+            execute: (_input, { abortSignal }) =>
+                new Promise((_resolve, reject) => {
+                    abortSignal?.addEventListener("abort", () =>
+                        reject(new Error("aborted")),
+                    );
+                }),
+        });
+        const { conversation, events } = session(
+            [{ chunks: toolChunks("c1", "mcp__memory__search", {}) }],
+            {
+                recall: RECALL,
+                connect: async () => ({
+                    tools: { mcp__memory__search: slow },
+                    close: async () => {},
+                }),
+            },
+        );
+        conversation.subscribe((event) => {
+            if (event.type === "lookup") {
+                throw new Error("lookup listener bug");
+            }
+        });
+        conversation.send("look");
+        await until(() =>
+            of(events, "sdk").some(
+                (event) => event.message.type === "tool-call",
+            ),
+        );
+        await conversation.interrupt();
+        await until(() => ended(events));
+        expect(of(events, "turn-end")[0]).toMatchObject({ interrupted: true });
+        expect(of(events, "error")).toHaveLength(0);
+        await conversation.close();
+    });
+
+    it("lets a tool call in flight finish when the session closes", async () => {
+        let finished = false;
+        const slow = tool({
+            inputSchema: jsonSchema({ type: "object" }),
+            execute: async () => {
+                await new Promise((resolve) => setTimeout(resolve, 50));
+                finished = true;
+                return {
+                    content: [{ type: "text", text: "{}" }],
+                    isError: false,
+                };
+            },
+        });
+        let closed = false;
+        const { conversation, events } = session(
+            [
+                { chunks: toolChunks("c1", "mcp__memory__search", {}) },
+                { chunks: textChunks("done") },
+            ],
+            {
+                recall: RECALL,
+                connect: async () => ({
+                    tools: { mcp__memory__search: slow },
+                    close: async () => {
+                        closed = true;
+                    },
+                }),
+            },
+        );
+        conversation.send("look");
+        await until(() =>
+            of(events, "sdk").some(
+                (event) => event.message.type === "tool-call",
+            ),
+        );
+        await conversation.close();
+        expect(finished).toBe(true);
+        expect(of(events, "lookup")[0]).toMatchObject({ id: "c1", ok: true });
+        expect(closed).toBe(true);
+    });
+
+    it("closes the recall server when the session closes", async () => {
+        const fake = fakeRecall({});
+        const { conversation, events } = session(
+            [{ chunks: textChunks("hi") }],
+            { recall: RECALL, connect: async () => fake.recall },
+        );
+        await until(() => of(events, "ready").length === 1);
+        await conversation.close();
+        expect(fake.closed()).toBe(true);
+    });
 });
 
-function startedWithRecall(fake: Fake) {
-    const conversation = new Conversation({ queryFn: fake.fn, recall: RECALL });
-    const events: ConversationEvent[] = [];
-    conversation.subscribe((event) => events.push(event));
-    conversation.start();
-    return { conversation, events };
-}
+describe("Conversation on the wire", () => {
+    it("carries two cache breakpoints after six turns, under Anthropic's four", async () => {
+        const server = fakeMessages(
+            Array.from({ length: 6 }, (_, index) => ({
+                text: `reply ${index}`,
+            })),
+        );
+        try {
+            const conversation = new Conversation({
+                env,
+                route: [{ ...OPUS, baseUrl: server.url }],
+            });
+            const events: ConversationEvent[] = [];
+            conversation.subscribe((event) => events.push(event));
+            conversation.start();
+            for (let index = 0; index < 6; index += 1) {
+                conversation.send(`message ${index}`);
+                await until(() => ended(events, index + 1));
+            }
+            await conversation.close();
+            expect(
+                JSON.stringify(server.bodies[5]).match(/cache_control/g) ?? [],
+            ).toHaveLength(2);
+        } finally {
+            server.stop();
+        }
+    });
+});
 
-describe("Conversation with recall", () => {
-    // A rendered earlier section; memory's tests pin how it is rendered.
-    const EARLIER = "Earlier in this conversation:\n\n<earlier>\n</earlier>";
+describe("Conversation on a route of two", () => {
+    const B: RouteEntry = {
+        ...anthropicEntry("claude-sonnet-5-5"),
+        provider: "other",
+    };
 
-    it("seeds clusters between the memory and the tail, and offers recollect", () => {
-        const fake = fakeQuery([]);
-        const history: Turn[] = [{ role: "user", text: "Later" }];
-        new Conversation({
-            queryFn: fake.fn,
+    it("replays a turn that failed after lookups alone on the next entry", async () => {
+        const fake = fakeRecall({ mcp__memory__search: { text: "{}" } });
+        const first = mockModel([
+            { chunks: toolChunks("c1", "mcp__memory__search", {}) },
+            new APICallError({
+                message: "overloaded",
+                url: "u",
+                requestBodyValues: {},
+                statusCode: 529,
+            }),
+        ]);
+        const second = mockModel([{ chunks: textChunks("From B.") }], B.model);
+        const conversation = new Conversation({
+            env,
+            route: [OPUS, B],
             recall: RECALL,
-            memory: "<memory/>",
-            earlier: EARLIER,
-            recollect: true,
-            history,
-        }).start();
-        expect(fake.options?.systemPrompt).toBe(
+            connect: async () => fake.recall,
+            model: (entry) => (entry.model === OPUS.model ? first : second),
+        });
+        const events: ConversationEvent[] = [];
+        conversation.subscribe((event) => events.push(event));
+        conversation.start();
+        conversation.send("look");
+        await until(() => ended(events));
+        expect(of(events, "turn-end")[0]).toMatchObject({
+            reply: "From B.",
+            model: "other:claude-sonnet-5-5",
+        });
+        expect(
+            of(events, "warning").map((event) => event.message)[0],
+        ).toStartWith("anthropic:claude-opus-5-5 refused (overload:");
+    });
+
+    it("never replays a turn whose text has streamed", async () => {
+        const first = mockModel([
+            {
+                chunks: [
+                    START,
+                    { type: "text-start", id: "t" },
+                    { type: "text-delta", id: "t", delta: "Half" },
+                    {
+                        type: "error",
+                        error: new APICallError({
+                            message: "reset",
+                            url: "u",
+                            requestBodyValues: {},
+                            statusCode: 500,
+                        }),
+                    },
+                    {
+                        type: "finish",
+                        usage: mockUsage(),
+                        finishReason: { unified: "error", raw: undefined },
+                    },
+                ],
+            },
+        ]);
+        const second = mockModel([{ chunks: textChunks("never") }], B.model);
+        const conversation = new Conversation({
+            env,
+            route: [OPUS, B],
+            model: (entry) => (entry.model === OPUS.model ? first : second),
+        });
+        const events: ConversationEvent[] = [];
+        conversation.subscribe((event) => events.push(event));
+        conversation.start();
+        conversation.send("hi");
+        await until(() => ended(events));
+        expect(of(events, "error")[0]).toMatchObject({ partial: "Half" });
+        expect(second.doStreamCalls).toHaveLength(0);
+    });
+
+    it("sends another model no reasoning the first one made", async () => {
+        const cooldowns = new Cooldowns({ now: () => 0 });
+        const first = mockModel([
+            {
+                chunks: [
+                    START,
+                    { type: "reasoning-start", id: "r" },
+                    {
+                        type: "reasoning-delta",
+                        id: "r",
+                        delta: "thinking hard",
+                    },
+                    { type: "reasoning-end", id: "r" },
+                    ...textChunks("A says hi").slice(1),
+                ],
+            },
+        ]);
+        const second = mockModel(
+            [{ chunks: textChunks("B says hi") }],
+            B.model,
+        );
+        const conversation = new Conversation({
+            env,
+            route: [OPUS, B],
+            cooldowns,
+            model: (entry) => (entry.model === OPUS.model ? first : second),
+        });
+        const events: ConversationEvent[] = [];
+        conversation.subscribe((event) => events.push(event));
+        conversation.start();
+        conversation.send("one");
+        await until(() => ended(events));
+        cooldowns.note(OPUS, {
+            class: "usage",
+            message: "spent",
+            retryAfterMs: 60_000,
+        });
+        conversation.send("two");
+        await until(() => ended(events, 2));
+        const sent = JSON.stringify(second.doStreamCalls[0]?.prompt);
+        expect(sent).toContain("A says hi");
+        expect(sent).not.toContain("thinking hard");
+    });
+});
+
+describe("conversationSetup", () => {
+    it("is the persona alone, without history", () => {
+        expect(conversationSetup().system).toBe(
+            personaPrompt({ recall: false, mode: "chat" }),
+        );
+    });
+
+    it("puts the memory block and earlier sessions between the persona and the history", () => {
+        const history = [{ role: "user" as const, text: "hi" }];
+        expect(
+            conversationSetup({ memory: "MEMORY", earlier: "EARLIER", history })
+                .system,
+        ).toBe(
             withHistory(
                 withSection(
-                    withSection(personaPrompt({ recall: true }), "<memory/>"),
-                    EARLIER,
+                    withSection(
+                        personaPrompt({ recall: false, mode: "chat" }),
+                        "MEMORY",
+                    ),
+                    "EARLIER",
                 ),
                 history,
             ),
         );
-        expect(fake.options?.mcpServers).toEqual({
-            memory: {
-                type: "stdio",
-                command: RECALL.command,
-                args: [...RECALL.args, "--recollect"],
-            },
-        });
-        expect(fake.options?.allowedTools).toEqual([
-            "mcp__memory__search",
-            "mcp__memory__open",
-            "mcp__memory__tags",
-            "mcp__memory__remember",
-            "mcp__memory__recollect",
-        ]);
     });
 
-    it("seeds clusters without recall, offering no tool", () => {
-        const fake = fakeQuery([]);
-        new Conversation({
-            queryFn: fake.fn,
-            earlier: EARLIER,
-            recollect: true,
-        }).start();
-        expect(fake.options?.systemPrompt).toBe(
-            withHistory(withSection(systemPrompt, EARLIER), []),
-        );
-        expect(fake.options?.mcpServers).toBeUndefined();
-    });
-
-    it("offers recollect only when the session asks for it", () => {
-        const fake = fakeQuery([]);
-        new Conversation({
-            queryFn: fake.fn,
-            recall: RECALL,
-            earlier: EARLIER,
-            recollect: false,
-        }).start();
-        expect(fake.options?.mcpServers).toEqual({
-            memory: { type: "stdio", ...RECALL },
-        });
-        expect(fake.options?.allowedTools).not.toContain(
-            "mcp__memory__recollect",
-        );
-    });
-
-    it("launches the recall server and allows only its tools", () => {
-        const fake = fakeQuery([]);
-        startedWithRecall(fake);
-        expect(fake.options?.mcpServers).toEqual({
-            memory: { type: "stdio", ...RECALL },
-        });
-        expect(fake.options?.allowedTools).toEqual([
-            "mcp__memory__search",
-            "mcp__memory__open",
-            "mcp__memory__tags",
-            "mcp__memory__remember",
-        ]);
-        expect(fake.options?.systemPrompt).toBe(
-            withHistory(withSection(personaPrompt({ recall: true }), ""), []),
-        );
-    });
-
-    it("launches nothing without recall", () => {
-        const fake = fakeQuery([]);
-        started(fake);
-        expect(fake.options?.mcpServers).toBeUndefined();
-        expect(fake.options?.allowedTools).toBeUndefined();
-    });
-
-    it("emits each lookup where it happened, and joins the reply's steps", async () => {
-        const fake = fakeQuery([
-            [
-                delta("Let me check."),
-                toolUse("toolu_1", "mcp__memory__search", { query: "render" }),
-                toolResult("toolu_1", SEARCHED),
-                delta("We were keeping"),
-                delta(" artefacts down."),
-                result(0.01),
-            ],
-        ]);
-        const { conversation, events } = startedWithRecall(fake);
-        conversation.send("what did we say?");
-        await until(() => of(events, "turn-end").length === 1);
-        expect(of(events, "lookup")).toEqual([
-            {
-                type: "lookup",
-                id: "toolu_1",
-                ok: true,
-                offset: 13,
-                lookup: { tool: "search", query: "render", hits: 2 },
-            },
-        ]);
-        expect(of(events, "turn-end")[0]?.reply).toBe(
-            "Let me check.\n\nWe were keeping artefacts down.",
-        );
+    it("offers recollect only with recall and when asked", () => {
         expect(
-            events.findIndex((event) => event.type === "lookup"),
-        ).toBeLessThan(
-            events.findIndex(
-                (event) =>
-                    event.type === "delta" && event.text.includes("We were"),
+            conversationSetup({ recall: RECALL, recollect: true }).recollect,
+        ).toBe(true);
+        expect(conversationSetup({ recall: RECALL }).recollect).toBe(false);
+        expect(conversationSetup({ recollect: true }).recollect).toBe(false);
+    });
+
+    it("names the route's models at the end in development mode", () => {
+        const system = conversationSetup({ persona: "development" }).system;
+        expect(
+            system.endsWith(
+                "Your chat runs on the first of these models to answer: anthropic:claude-opus-5-5.",
             ),
-        );
-    });
-
-    it("adds no blank line when nothing came before the lookup", async () => {
-        const fake = fakeQuery([
-            [
-                toolUse("toolu_1", "mcp__memory__search", { query: "x" }),
-                toolResult("toolu_1", SEARCHED),
-                delta("Found it."),
-                result(0.01),
-            ],
-        ]);
-        const { conversation, events } = startedWithRecall(fake);
-        conversation.send("?");
-        await until(() => of(events, "turn-end").length === 1);
-        expect(of(events, "turn-end")[0]?.reply).toBe("Found it.");
-        expect(of(events, "lookup")[0]?.offset).toBe(0);
-    });
-
-    it("reports a failed lookup, and ignores other tools", async () => {
-        const fake = fakeQuery([
-            [
-                toolUse("toolu_1", "mcp__memory__open", {
-                    conversation: "x",
-                    purpose: "p",
-                }),
-                toolUse("toolu_2", "mcp__other__thing", {}),
-                toolResult("toolu_1", "No conversation by that name.", true),
-                toolResult("toolu_2", "whatever"),
-                result(0.01),
-            ],
-        ]);
-        const { conversation, events } = startedWithRecall(fake);
-        conversation.send("?");
-        await until(() => of(events, "turn-end").length === 1);
-        expect(of(events, "lookup")).toEqual([
-            {
-                type: "lookup",
-                id: "toolu_1",
-                ok: false,
-                offset: 0,
-                lookup: {
-                    tool: "open",
-                    conversation: "x",
-                    name: "x",
-                    purpose: "p",
-                    turns: null,
-                },
-            },
-        ]);
-    });
-
-    it("reports a lookup cut short by an interruption", async () => {
-        const fake = fakeQuery([
-            [
-                delta("Checking."),
-                toolUse("toolu_1", "mcp__memory__search", { query: "x" }),
-                WAIT_FOR_INTERRUPT,
-                result(0.01),
-            ],
-        ]);
-        const { conversation, events } = startedWithRecall(fake);
-        conversation.send("?");
-        await until(() => of(events, "delta").length === 1);
-        await conversation.interrupt();
-        await until(() => of(events, "turn-end").length === 1);
-        expect(of(events, "lookup")).toEqual([
-            {
-                type: "lookup",
-                id: "toolu_1",
-                ok: false,
-                offset: 9,
-                lookup: { tool: "search", query: "x", hits: 0 },
-            },
-        ]);
-        expect(
-            events.findIndex((event) => event.type === "lookup"),
-        ).toBeLessThan(events.findIndex((event) => event.type === "turn-end"));
-    });
-
-    it("emits a call to remember as a remember event, not a lookup", async () => {
-        const input = { action: "write", name: "tea" };
-        const output = '{"action":"written","id":"personal/tea"}';
-        const fake = fakeQuery([
-            [
-                toolUse("t1", "mcp__memory__remember", input),
-                toolResult("t1", output),
-                result(0.01),
-            ],
-        ]);
-        const { conversation, events } = startedWithRecall(fake);
-        conversation.send("I like tea");
-        await until(() => of(events, "turn-end").length === 1);
-        expect(of(events, "remember")).toEqual([
-            { type: "remember", id: "t1", ok: true, offset: 0, input, output },
-        ]);
-        expect(events.some((event) => event.type === "lookup")).toBe(false);
-    });
-
-    it("reports a remember the turn ended without answering", async () => {
-        const input = { action: "write", name: "tea" };
-        const fake = fakeQuery([
-            [
-                delta("Noting."),
-                toolUse("t1", "mcp__memory__remember", input),
-                WAIT_FOR_INTERRUPT,
-                result(0.01),
-            ],
-        ]);
-        const { conversation, events } = startedWithRecall(fake);
-        conversation.send("I like tea");
-        await until(() => of(events, "delta").length === 1);
-        await conversation.interrupt();
-        await until(() => of(events, "turn-end").length === 1);
-        expect(of(events, "remember")).toEqual([
-            {
-                type: "remember",
-                id: "t1",
-                ok: false,
-                offset: 7,
-                input,
-                output: "",
-            },
-        ]);
-    });
-
-    it("warns once when the recall server failed", async () => {
-        const fake = fakeQuery([
-            [servers("failed"), result(0.01)],
-            [servers("failed"), result(0.02)],
-        ]);
-        const { conversation, events } = startedWithRecall(fake);
-        conversation.send("one");
-        await until(() => of(events, "turn-end").length === 1);
-        conversation.send("two");
-        await until(() => of(events, "turn-end").length === 2);
-        expect(of(events, "warning")).toEqual([
-            {
-                type: "warning",
-                message: "memory: recall is unavailable (failed)",
-            },
-        ]);
-    });
-
-    it("does not warn of a server still starting", async () => {
-        const fake = fakeQuery([[servers("pending"), result(0.01)]]);
-        const { conversation, events } = startedWithRecall(fake);
-        conversation.send("one");
-        await until(() => of(events, "turn-end").length === 1);
-        expect(of(events, "warning")).toEqual([]);
+        ).toBe(true);
+        expect(conversationSetup().system).not.toContain("models to answer");
     });
 });

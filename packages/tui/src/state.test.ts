@@ -127,13 +127,29 @@ describe("reduce", () => {
     it("tracks ready", () => {
         const state = reduce(initialState([]), {
             type: "event",
-            event: { type: "ready", model: "m", sdkSessionId: "s" },
+            event: { type: "ready", model: "m", sessionId: "s" },
         });
         expect(state).toMatchObject({
             status: "ready",
             model: "m",
-            sdkSessionId: "s",
+            sessionId: "s",
         });
+    });
+
+    it("names the model a turn-end says answered", () => {
+        const state = run(
+            initialState([]),
+            event({ type: "ready", model: "anthropic:a", sessionId: "s" }),
+            event({
+                type: "turn-end",
+                reply: "hi",
+                interrupted: false,
+                stats,
+                model: "anthropic:b",
+            }),
+        );
+        expect(state.model).toBe("anthropic:b");
+        expect(state.sessionId).toBe("s");
     });
 
     it("accumulates deltas, then finishes the turn", () => {
@@ -244,7 +260,7 @@ describe("reduce", () => {
         expect(state).toMatchObject({
             status: "starting",
             model: null,
-            sdkSessionId: null,
+            sessionId: null,
         });
     });
 

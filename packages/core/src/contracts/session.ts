@@ -27,8 +27,9 @@ export type TurnStats = {
     sessionCostUsd: number;
 };
 
-// The fields of an SDK message the raw pane reads. Every SDKMessage fits it,
-// so the TUI shows them without depending on the SDK's types.
+// The fields of a stream part the raw pane reads, which the agent shapes
+// from the model's stream, so the TUI shows them without depending on
+// any SDK's types.
 export type RawMessage = {
     type: string;
     subtype?: string;
@@ -36,7 +37,7 @@ export type RawMessage = {
 };
 
 export type ConversationEvent =
-    | { type: "ready"; model: string; sdkSessionId: string }
+    | { type: "ready"; model: string; sessionId: string }
     | { type: "delta"; text: string }
     | {
           type: "turn-end";
@@ -47,6 +48,8 @@ export type ConversationEvent =
           // request read, plus the reply it added. Conversation always sets
           // it.
           contextTokens?: number;
+          // The <provider>:<model> that answered, where the session says.
+          model?: string;
       }
     | { type: "sdk"; message: RawMessage }
     // A lookup Dorothy made; offset is where in the reply it happened.
@@ -86,8 +89,8 @@ export interface ChatSession {
     close(): Promise<void>;
 }
 
-// How long a closed session waits for its subprocess to exit on its own
-// before terminating it. Compaction waits as long for the saves under way
+// How long a closed session waits for a turn under way to finish on its
+// own before stopping it. Compaction waits as long for the saves under way
 // when quitting.
 export const CLOSE_GRACE_MS = 2000;
 

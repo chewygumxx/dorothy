@@ -95,7 +95,7 @@ describe("sessionMaker with a real Compaction", () => {
         session.subscribe((event) => events.push(event));
         const first = inners[0] as FakeSession;
         session.send("one");
-        first.emit({ type: "ready", model: "m", sdkSessionId: "s" });
+        first.emit({ type: "ready", model: "m", sessionId: "s" });
         first.emit({
             type: "turn-end",
             reply: "abcd",
@@ -123,7 +123,7 @@ describe("sessionMaker with a real Compaction", () => {
         const second = inners[1] as FakeSession;
         expect(events.map((event) => event.type)).toContain("compacted");
         session.send("two");
-        second.emit({ type: "ready", model: "m", sdkSessionId: "t" });
+        second.emit({ type: "ready", model: "m", sessionId: "t" });
         expect(second.sent).toEqual(["two"]);
         expect(log.slice(3)).toEqual(["sent two", "ready"]);
         await session.close();

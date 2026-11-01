@@ -62,12 +62,11 @@ type Phase =
     | { kind: "closed" };
 
 // The reply to a message sent has started: its text, a lookup or a
-// remember, or the API's stream.
+// remember.
 const streams = (event: ConversationEvent) =>
     event.type === "delta" ||
     event.type === "lookup" ||
-    event.type === "remember" ||
-    (event.type === "sdk" && event.message.type === "stream_event");
+    event.type === "remember";
 
 // A launch's compaction. It outlives each session, so that reconnecting
 // starts from the clusters too.

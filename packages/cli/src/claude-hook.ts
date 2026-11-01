@@ -11,19 +11,16 @@
 // dorothy --claude-hook: memory's hook process, given what its reviews
 // need. Claude Code runs it with claude's environment: the gateway's
 // URL, the launch, and claude's own variables and sign-in. Memory keeps
-// that environment, to find the launch in it. Reviews run in
-// process.env, which the Agent SDK reads at each call: it loses those
-// variables, but for the user's own base URL, which the launch passed on
-// as DOROTHY_ANTHROPIC_BASE_URL, before Dorothy's secrets are loaded by
-// path from this checkout, never the working directory's. The launch
-// passes SOPS_AGE_KEY_FILE so another config directory cannot hide it.
-// A review is billed to her credentials, as chat's are, and never reaches the
-// stopped gateway or the live session.
+// that environment, to find the launch in it. Reviews name their own
+// base URL and key, so none of it reaches them; Dorothy's secrets are
+// loaded by path from this checkout, never the working directory's.
+// The launch passes SOPS_AGE_KEY_FILE so another config directory cannot
+// hide it. A review is billed to her API key, as chat is, and never
+// reaches the stopped gateway or the live session.
 
 import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
-    chooseClaudeToken,
     type Env,
     loadSecrets,
     type SecretsCode,
@@ -31,44 +28,7 @@ import {
     xdgDir,
 } from "@dorothy/core";
 import type { HookDeps, HookLog, HookMode } from "@dorothy/memory/claude-hook";
-
-// The base URL the user's own launch had, which a review takes as its
-// ANTHROPIC_BASE_URL: claude's hooks lose theirs, and the one they are
-// given is the gateway's, which is stopped by the time a review runs.
-export const REVIEW_BASE_URL = "DOROTHY_ANTHROPIC_BASE_URL";
-
-// What a review must not inherit from claude, beside every CLAUDE_CODE_
-// variable.
-export const REVIEW_DROPPED: readonly string[] = [
-    "ANTHROPIC_BASE_URL",
-    "ENABLE_TOOL_SEARCH",
-    "DOROTHY_LAUNCH",
-    "CLAUDECODE",
-];
-
-const dropped = (name: string) =>
-    REVIEW_DROPPED.includes(name) || name.startsWith("CLAUDE_CODE_");
-
-export function reviewEnv(env: Env): Env {
-    const review = { ...env };
-    stripClaude(review);
-    return review;
-}
-
-// reviewEnv in place, for process.env, which the Agent SDK reads; with
-// the user's own base URL, where their launch had one, as the base URL
-// of a proxy reviews must go through too.
-export function stripClaude(env: Env): void {
-    const proxy = env[REVIEW_BASE_URL];
-    for (const name of Object.keys(env)) {
-        if (dropped(name)) {
-            delete env[name];
-        }
-    }
-    if (proxy !== undefined && proxy !== "") {
-        env.ANTHROPIC_BASE_URL = proxy;
-    }
-}
+import { COOLDOWNS, ROUTES } from "./models.js";
 
 // The checkout this program runs from: three up from packages/cli/src.
 export const checkoutRoot = resolve(import.meta.dir, "..", "..", "..");
@@ -83,22 +43,21 @@ export async function loadCheckoutSecrets(
     env: Env,
     deps: CheckoutSecretsDeps = {},
 ): Promise<SecretsCode | null> {
-    let failure: SecretsCode | null;
     try {
-        failure = await (deps.load ?? loadSecrets)(
+        return await (deps.load ?? loadSecrets)(
             join(deps.root ?? checkoutRoot, "secrets.json"),
             env,
         );
     } catch {
         return "SOPS_FAILED";
     }
-    return failure ?? chooseClaudeToken(env);
 }
 
 type Agent = { call: StructuredCall; persona: string };
 
 export type HookCliDeps = CheckoutSecretsDeps & {
-    // process.env: claude's environment, which reviews read at each call.
+    // process.env: claude's environment, into which her secrets load, and
+    // which reviews read their keys from.
     env?: Env;
     // This program as a command, for the detached catch-up.
     self?: readonly string[];
@@ -111,12 +70,16 @@ export type HookCliDeps = CheckoutSecretsDeps & {
 const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
 
-async function loadAgent(): Promise<Agent> {
-    const { prepareCliHome, structuredCall, systemPrompt } = await import(
-        "@dorothy/agent"
-    );
-    prepareCliHome();
-    return { call: structuredCall(), persona: systemPrompt };
+async function loadAgent(env: Env): Promise<Agent> {
+    const { structuredCall, systemPrompt } = await import("@dorothy/agent");
+    return {
+        call: structuredCall({
+            route: ROUTES.review,
+            cooldowns: COOLDOWNS,
+            env,
+        }),
+        persona: systemPrompt,
+    };
 }
 
 // For the modes that never review, and for a hook whose agent cannot
@@ -197,12 +160,11 @@ async function runOnce(
     env: Env,
 ): Promise<number> {
     const given: Env = { ...env };
-    stripClaude(env);
     await loadDorothyEnv(env, deps);
     const run = deps.run ?? (await (deps.memory ?? loadMemory)()).runClaudeHook;
     return run(mode, {
         env: given,
-        agent: reviewingAgent(mode, deps),
+        agent: reviewingAgent(mode, deps, env),
         // As --claude passes it: Bun would otherwise load the .env of the
         // directory the catch-up starts in, the user's project.
         self: deps.self ?? [
@@ -230,6 +192,7 @@ async function loadDorothyEnv(env: Env, deps: HookCliDeps): Promise<void> {
 function reviewingAgent(
     mode: HookMode,
     deps: HookCliDeps,
+    env: Env,
 ): () => Promise<Agent> {
     if (mode.kind !== "hook" && mode.kind !== "catch-up") {
         return async () => ({
@@ -239,12 +202,14 @@ function reviewingAgent(
     }
     let loading: Promise<Agent> | undefined;
     return () => {
-        loading ??= (deps.agent ?? loadAgent)().catch((error: unknown) => ({
-            call: refusing(
-                `the agent could not load (${describeError(error)})`,
-            ),
-            persona: "",
-        }));
+        loading ??= (deps.agent ?? (() => loadAgent(env)))().catch(
+            (error: unknown) => ({
+                call: refusing(
+                    `the agent could not load (${describeError(error)})`,
+                ),
+                persona: "",
+            }),
+        );
         return loading;
     };
 }

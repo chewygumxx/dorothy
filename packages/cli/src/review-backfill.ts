@@ -16,7 +16,7 @@ import {
 } from "@dorothy/memory";
 
 // The reviewer the hooks and the service get: reviewAgent in index.ts,
-// which drops Claude Code's variables and loads this checkout's secrets.
+// which loads this checkout's secrets.
 export type BackfillAgent =
     | { review: { call: StructuredCall; persona: string } }
     | { review: null; noReviews: string };

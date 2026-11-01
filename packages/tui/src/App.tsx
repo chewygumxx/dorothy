@@ -318,7 +318,7 @@ export function App({
                 <Header
                     phrase={phrase}
                     model={state.model}
-                    sdkSessionId={state.sdkSessionId}
+                    sessionId={state.sessionId}
                     status={state.status}
                 />
             </Box>

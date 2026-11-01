@@ -370,7 +370,7 @@ describe("App", () => {
         session().emit({
             type: "ready",
             model: "test-model",
-            sdkSessionId: "sdk-1",
+            sessionId: "sdk-1",
         });
         await tick();
         expect(app.lastFrame()).toContain("test-model");

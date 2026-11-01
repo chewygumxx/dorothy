@@ -71,7 +71,7 @@ export type CompactionOptions = {
 
 // How long quitting waits for a save under way, and its record, before
 // it goes on without them. It is the session's grace by definition: the
-// time Conversation.close gives the CLI to exit.
+// time Conversation.close gives a turn under way to finish.
 export const QUIT_GRACE_MS = CLOSE_GRACE_MS;
 
 export const describeError = (error: unknown) =>

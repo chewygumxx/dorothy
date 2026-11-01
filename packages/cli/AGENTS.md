@@ -28,9 +28,9 @@ No entry points. `src/index.ts` runs each mode from `RUNNERS`, whose
 type has `tsc` require a runner for every mode, and each runner loads
 its package lazily (`await import(...)`): memory's commands, recall server
 and hooks through their own entry points (`@dorothy/memory/commands`,
-`/recall-server`, `/claude-hook`, `/host-hook`), and even `prepareCliHome`
-only for the model modes, so `--help`, `--list` and `--recall-server` never
-load the Agent SDK. Keep every new mode's import lazy.
+`/recall-server`, `/claude-hook`, `/host-hook`), and the agent only for the
+model modes, so `--help`, `--list` and `--recall-server` never load the AI
+SDK. Keep every new mode's import lazy.
 
 ## Files
 
@@ -44,10 +44,13 @@ load the Agent SDK. Keep every new mode's import lazy.
   options through `node:util`'s `parseArgs`.
 - `run-tui.ts`: `runTui` connects memory, the agent and `runApp`, with the
   directory the user ran it from (`userShell`), whose project chat records and
-  syncs. `openMemory` gets `structuredCall`, the persona's prompts as text and a
-  `connect` that starts a `Conversation`, and the screen runs over its
-  `createSession`. Once `runTui` resolves, everything is closed and the CLI ends
-  the process, so a push or repack still running never holds the terminal.
+  syncs. `openMemory` gets `calls` (a `structuredCall` on the review route and
+  one on compaction's), the persona's prompts as text and a `connect` that
+  starts a `Conversation`, and the screen runs over its `createSession`. Once
+  `runTui` resolves, everything is closed and the CLI ends the process, so a
+  push or repack still running never holds the terminal.
+- `models.ts`: `ROUTES` (core's `defaultRoutes`) and the process's one
+  `COOLDOWNS`, passed to the agent by every model mode; `chatEntry`, dump's.
 - `dump.ts`: `runDump` composes `previewStart` with `dumpRequest` for
   `--dump-context`.
 - `claude.ts`: `launchClaude`, for `--claude` and its dump, starts the gateway
@@ -69,10 +72,9 @@ load the Agent SDK. Keep every new mode's import lazy.
   hooks running `dorothy --claude-hook` (`hookSettings`) and, for a new session,
   `--session-id` (`claudeSession`: a resume decides wherever a `--session-id`
   stands, `-r<id>` counts, and a free-text flag's value is no flag); the block
-  leaves out a session resumed by id. It sets `DOROTHY_ANTHROPIC_BASE_URL` from
-  the user's `ANTHROPIC_BASE_URL`, and `SOPS_AGE_KEY_FILE` from the explicit
-  path or the existing default age key under the configuration directory
-  (`sops-key.ts`), without reading it. `runClaude` runs it through
+  leaves out a session resumed by id. It sets `SOPS_AGE_KEY_FILE` from the
+  explicit path or the existing default age key under the configuration
+  directory (`sops-key.ts`), without reading it. `runClaude` runs it through
   `runForwarding` and exits with `claude`'s code. Before `claude` starts it
   starts a detached catch-up of each launch a killed `dorothy` left behind,
   memory off or on, and says what hooks left to tell; once `claude` exits, or
@@ -91,49 +93,46 @@ load the Agent SDK. Keep every new mode's import lazy.
   print mode without saving its session, and is stopped at the first request,
   which is printed with a warning if the gateway injected nothing, with the
   block alone: no sync, recall or permissions. Imported lazily, so `--claude`
-  never loads the SDK.
+  never loads the AI SDK.
 - `claude-hook.ts`: `runHook`, for `--claude-hook`, gives memory's
   `runClaudeHook` the environment `claude` gave the hook, in which it finds the
-  launch, and reviews: `process.env` loses the gateway's URL,
-  `ENABLE_TOOL_SEARCH`, `DOROTHY_LAUNCH`, `CLAUDECODE` and every `CLAUDE_CODE_`
-  variable (`reviewEnv`), but for the user's own base URL, which the launch
-  passes on as `DOROTHY_ANTHROPIC_BASE_URL` and reviews take as
-  `ANTHROPIC_BASE_URL`; `loadCheckoutSecrets` awaits core's loader on this
-  checkout's `secrets.json`. `SOPS_AGE_KEY_FILE`, passed by the launch, keeps
-  the key discoverable if Claude Code changes its config directory. Failure is
-  logged by code alone, and the agent loads when a review asks. Memory gets the
-  original launch environment for catch-up; the agent gets the stripped
-  environment with loaded secrets. Hooks and catch-up log failures through
-  memory's `hookLog` and exit 0.
+  launch, and reviews on the review route, whose entries name their own base
+  URL and key, so nothing of `claude`'s reaches them. `loadCheckoutSecrets`
+  awaits core's loader on this checkout's `secrets.json`, into `process.env`.
+  `SOPS_AGE_KEY_FILE`, passed by the launch, keeps the key discoverable if
+  Claude Code changes its config directory. Failure is logged by code alone,
+  and the agent loads when a review asks. Memory gets the original launch
+  environment for catch-up, the agent the one with loaded secrets. Hooks and
+  catch-up log failures through memory's `hookLog` and exit 0.
 - `index.ts` also runs `--serve` (memory's service through
-  `@dorothy/memory/service`, with reviews from the agent, Claude Code's
-  variables dropped and Dorothy's `secrets.json` loaded by path from this
-  checkout; off, and said, if either fails), its token commands, `--sweep`
+  `@dorothy/memory/service`, with reviews from the agent, Dorothy's
+  `secrets.json` loaded by path from this checkout; off, and said, if either
+  fails), its token commands, `--sweep`
   (`runSweep`, `runSweepDismiss`), `--hook <host> <event>` (Codex's and Hermes's
   hooks, via `@dorothy/memory/host-hook`) and `--mcp`, memory's stdio bridge
   (`@dorothy/memory/bridge`), which starts `--serve` when none answers.
 - `review-backfill.ts`: `runBackfillReview`, for `--review-backfill`, runs
-  memory's `runReviewBackfill` on `reviewAgent`'s agent (Claude Code's variables
-  dropped, this checkout's secrets): the plan's token where `secrets.json` holds
-  it. It prints `<phrase>: <outcome>`, then a total; exits 1 if none was
-  reviewed or marked and one failed, or a failed call stopped it. `-n all`
-  repeats batches of 25; stopped exits 75.
+  memory's `runReviewBackfill` on `reviewAgent`'s agent (this checkout's
+  secrets, her API key). It prints `<phrase>: <outcome>`, then a total; exits
+  1 if none was reviewed or marked and one failed, or a failed call stopped
+  it. `-n all` repeats batches of 25; stopped exits 75.
 - `recall-launch.ts`: `recallLaunch` launches this program again as the recall
   server, leaving out the conversation it serves and, with `--project`, naming
-  the directory chat started in.
+  the directory chat started in. `--no-env-file` keeps the user's `.env` out.
 
 ## Invariants
 
-- Auth comes from `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` in
-  `secrets.json`, decrypted by core's async `loadSecrets` through sops.
-  `forTheModel`, mirror and recover await `loadCredentials`. A failed
-  load warns by code; mirror refuses to create a key after a failed load.
-- Children needing loaded secrets receive explicit environments after
-  loading; the Agent SDK's per-call environment reaches its recall server.
+- Auth comes from `ANTHROPIC_API_KEY` in `secrets.json`, decrypted by
+  core's async `loadSecrets` through sops. The model modes, mirror and
+  recover await `loadCredentials`. A failed load warns by code; mirror
+  refuses to create a key after a failed load.
+- Routes (`models.ts`) name their own base URL and key, and nothing reads
+  the provider variables. The agent runs the recall server with `recallEnv`,
+  without any key or OAuth token, in `recallCwd`, never the user's project.
 - `--claude` loads no secrets: `claude` signs in as the user's own Claude
   Code does, and memory is read without credentials. `--claude-hook`
-  loads the checkout's `secrets.json` by path for reviews, once `claude`'s
-  variables are gone, never the working directory's.
+  loads the checkout's `secrets.json` by path for reviews, never the
+  working directory's; `claude`'s variables stay, no provider reads them.
 - The CLI passes `ambient()` to memory's history commands, and
   `commandHistory(...)` of it to memory's commands, the fact and
   project commands among them, and `editInEditor` (from

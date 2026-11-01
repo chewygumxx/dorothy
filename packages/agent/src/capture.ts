@@ -8,18 +8,19 @@
 //
 //
 
-import { type Options, query } from "@anthropic-ai/claude-agent-sdk";
+import type { Env, RouteEntry } from "@dorothy/core";
+import { Conversation, type SessionSetup } from "./conversation.js";
+import type { ConnectRecall } from "./recall-tools.js";
 
-export type CaptureQueryFn = (params: {
-    prompt: string;
-    options: Options;
-}) => AsyncIterable<unknown>;
+// The stand-in key the dump's entry names: the capture server never
+// reads it, and no real key is ever sent there.
+export const DUMP_KEY = "DOROTHY_DUMP_KEY";
 
-// A stand-in for the Messages API on a loopback port: it records each
-// request body and answers every call with an error, so nothing reaches the
-// API and no tokens are spent. Headers, which carry the credentials, are
-// never read. first resolves with the first body, for a caller that stops
-// its client there.
+// A stand-in for the Messages API and Chat Completions on a loopback
+// port: it records each request body and answers every call with an
+// error, so nothing reaches the API and no tokens are spent. Headers,
+// which carry the credentials, are never read. first resolves with the
+// first body, for a caller that stops its client there.
 export function captureServer(): {
     url: string;
     bodies: unknown[];
@@ -32,22 +33,22 @@ export function captureServer(): {
         hostname: "127.0.0.1",
         port: 0,
         async fetch(request) {
+            const path = new URL(request.url).pathname;
+            const completions = path.endsWith("/chat/completions");
             if (
                 request.method === "POST" &&
-                new URL(request.url).pathname.endsWith("/messages")
+                (completions || path.endsWith("/messages"))
             ) {
                 const body = await request.json().catch(() => null);
                 bodies.push(body);
                 first.resolve(body);
             }
+            const error = {
+                type: "invalid_request_error",
+                message: "dorothy --dump-context",
+            };
             return Response.json(
-                {
-                    type: "error",
-                    error: {
-                        type: "invalid_request_error",
-                        message: "dorothy --dump-context",
-                    },
-                },
+                completions ? { error } : { type: "error", error },
                 { status: 400 },
             );
         },
@@ -62,39 +63,58 @@ export function captureServer(): {
     };
 }
 
-// The first request the CLI makes for these options, as it would send it.
+// The first request a chat on this entry would send, as it would send
+// it, recall tools included: a session of its own, pointed at the
+// capture server with a stand-in key and no fallback, closed once the
+// server has answered. Its warnings go to report, and the error that
+// kept a request from being sent, if one did; the stand-in's own refusal
+// of the request it captured is not reported.
 export async function dumpRequest({
-    prompt,
-    options,
-    queryFn = query,
+    setup,
+    message,
+    entry,
+    env = process.env,
+    connect,
+    report = () => {},
 }: {
-    prompt: string;
-    options: Options;
-    queryFn?: CaptureQueryFn;
+    setup: SessionSetup;
+    message: string;
+    entry: RouteEntry;
+    env?: Env;
+    connect?: ConnectRecall;
+    report?: (kind: "warning" | "error", message: string) => void;
 }): Promise<unknown | null> {
     const server = captureServer();
+    const conversation = new Conversation({
+        ...setup,
+        route: [{ ...entry, baseUrl: server.url, key: DUMP_KEY }],
+        env: { ...env, [DUMP_KEY]: "dorothy --dump-context" },
+        ...(connect === undefined ? {} : { connect }),
+    });
     try {
-        const handle = queryFn({
-            prompt,
-            options: {
-                ...options,
-                env: {
-                    ...(options.env ?? process.env),
-                    ANTHROPIC_BASE_URL: server.url,
-                },
-            },
-        });
-        try {
-            for await (const _ of handle) {
-                if (server.bodies.length > 0) {
-                    break;
+        let failure: string | null = null;
+        const done = new Promise<void>((resolve) => {
+            conversation.subscribe((event) => {
+                if (event.type === "warning") {
+                    report("warning", event.message);
+                } else if (event.type === "error") {
+                    failure = event.message;
                 }
-            }
-        } catch {
-            // The stand-in's error ends the query; the request is captured.
+                if (event.type === "turn-end" || event.type === "error") {
+                    resolve();
+                }
+            });
+        });
+        conversation.start();
+        conversation.send(message);
+        await done;
+        const body = server.bodies[0] ?? null;
+        if (body === null && failure !== null) {
+            report("error", failure);
         }
-        return server.bodies[0] ?? null;
+        return body;
     } finally {
+        await conversation.close();
         server.stop();
     }
 }

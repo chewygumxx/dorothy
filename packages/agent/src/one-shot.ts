@@ -8,57 +8,55 @@
 //
 //
 
-import {
-    type Options,
-    query,
-    type SDKMessage,
-} from "@anthropic-ai/claude-agent-sdk";
-import {
-    baseOptions,
-    cliOptions,
-    type PersonaMode,
-    personaPrompt,
-} from "./persona.js";
-import { failureText } from "./result.js";
-
-export type OneShotQuery = (params: {
-    prompt: string;
-    options: Options;
-}) => AsyncIterable<SDKMessage>;
-
 // One reply, streamed to stdout, for dorothy <prompt>: no memory, no
-// recall, no transcript.
+// recall, no transcript. A session of its own, so that it sends what a
+// chat sends; a failure is said on stderr, and the exit code set.
+
+import { Conversation, type ConversationDeps } from "./conversation.js";
+import type { PersonaMode } from "./persona.js";
+
+export type OneShotDeps = ConversationDeps & {
+    write?: { out: (text: string) => void; err: (text: string) => void };
+};
+
+const STDIO = {
+    out: (text: string) => {
+        process.stdout.write(text);
+    },
+    err: (text: string) => {
+        process.stderr.write(text);
+    },
+};
+
 export async function runOneShot(
     prompt: string,
     persona: PersonaMode,
-    queryFn: OneShotQuery = query,
+    { write = STDIO, ...deps }: OneShotDeps = {},
 ): Promise<void> {
-    try {
-        for await (const message of queryFn({
-            prompt,
-            options: {
-                ...baseOptions,
-                ...cliOptions(),
-                systemPrompt: personaPrompt({ recall: false, mode: persona }),
-            },
-        })) {
-            if (
-                message.type === "stream_event" &&
-                message.event.type === "content_block_delta" &&
-                message.event.delta.type === "text_delta"
-            ) {
-                process.stdout.write(message.event.delta.text);
-            } else if (message.type === "result" && message.is_error) {
-                // An API failure ends the turn with a result, not a throw.
-                throw new Error(failureText(message));
+    const conversation = new Conversation({ ...deps, persona });
+    const done = new Promise<void>((resolve) => {
+        conversation.subscribe((event) => {
+            switch (event.type) {
+                case "delta":
+                    write.out(event.text);
+                    break;
+                case "warning":
+                    write.err(`dorothy: ${event.message}\n`);
+                    break;
+                case "turn-end":
+                    write.out("\n");
+                    resolve();
+                    break;
+                case "error":
+                    write.err(`${event.message}\n`);
+                    process.exitCode = 1;
+                    resolve();
+                    break;
             }
-        }
-    } catch (error) {
-        process.stderr.write(
-            `${error instanceof Error ? error.message : String(error)}\n`,
-        );
-        process.exitCode = 1;
-        return;
-    }
-    process.stdout.write("\n");
+        });
+    });
+    conversation.start();
+    conversation.send(prompt);
+    await done;
+    await conversation.close();
 }

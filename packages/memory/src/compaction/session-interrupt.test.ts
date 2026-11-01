@@ -327,6 +327,9 @@ describe("Compaction: interrupts and Esc", () => {
             type: "sdk",
             message: { type: "stream_event", event: { type: "message_start" } },
         });
+        // A raw part alone is not the reply.
+        expect(h.sessions[0]?.interrupts).toBe(0);
+        h.sessions[0]?.emit({ type: "delta", text: "x" });
         expect(h.sessions[0]?.interrupts).toBe(1);
     });
 
@@ -345,10 +348,7 @@ describe("Compaction: interrupts and Esc", () => {
                 "compaction: couldn't send a held message: pipe closed",
             ),
         );
-        h.sessions[0]?.emit({
-            type: "sdk",
-            message: { type: "stream_event", event: { type: "message_start" } },
-        });
+        h.sessions[0]?.emit({ type: "delta", text: "x" });
         expect(h.sessions[0]?.interrupts).toBe(0);
     });
 });

@@ -13,7 +13,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Env, SecretsCode } from "@dorothy/core";
-import { forTheModel, loadCredentials, reviewAgent } from "./index.js";
+import { loadCredentials, reviewAgent } from "./index.js";
 
 let root: string;
 beforeEach(() => {
@@ -24,11 +24,11 @@ afterEach(() => {
 });
 
 describe("CLI secrets", () => {
-    it("awaits the checkout loader before preparing the model", async () => {
+    it("awaits the checkout loader", async () => {
         const env: Env = { HOME: root };
         const events: string[] = [];
         const err: string[] = [];
-        await forTheModel({
+        await loadCredentials({
             root,
             env,
             write: (text) => {
@@ -42,14 +42,9 @@ describe("CLI secrets", () => {
                 events.push("loaded");
                 return null;
             },
-            prepare: async () => {
-                expect(env.DOROTHY_RUNTIME_PROBE === "synthetic-value").toBe(
-                    true,
-                );
-                events.push("prepared");
-            },
         });
-        expect(events).toEqual(["loaded", "prepared"]);
+        expect(events).toEqual(["loaded"]);
+        expect(env.DOROTHY_RUNTIME_PROBE).toBe("synthetic-value");
         expect(err).toEqual([]);
     });
 
@@ -57,26 +52,18 @@ describe("CLI secrets", () => {
         "SOPS_MISSING",
         "SOPS_FAILED",
         "SECRETS_INVALID",
-    ] as SecretsCode[])(
-        "warns with only %s and still prepares the model",
-        async (code) => {
-            const err: string[] = [];
-            let prepared = false;
-            await forTheModel({
-                root,
-                env: { HOME: root },
-                load: async () => code,
-                write: (text) => {
-                    err.push(text);
-                },
-                prepare: async () => {
-                    prepared = true;
-                },
-            });
-            expect(err).toEqual([`dorothy: secrets not loaded (${code})\n`]);
-            expect(prepared).toBe(true);
-        },
-    );
+    ] as SecretsCode[])("warns with only %s", async (code) => {
+        const err: string[] = [];
+        await loadCredentials({
+            root,
+            env: { HOME: root },
+            load: async () => code,
+            write: (text) => {
+                err.push(text);
+            },
+        });
+        expect(err).toEqual([`dorothy: secrets not loaded (${code})\n`]);
+    });
 
     it("warns safely if a credential loader unexpectedly throws", async () => {
         const err: string[] = [];
@@ -94,7 +81,7 @@ describe("CLI secrets", () => {
         expect(err).toEqual(["dorothy: secrets not loaded (SOPS_FAILED)\n"]);
     });
 
-    it("disables service reviews with a coded failure after stripping Claude variables", async () => {
+    it("disables service reviews with a coded failure", async () => {
         const err: string[] = [];
         const env: Env = {
             HOME: root,
@@ -104,10 +91,8 @@ describe("CLI secrets", () => {
         const result = await reviewAgent({
             root,
             env,
-            load: async (path, into) => {
+            load: async (path) => {
                 expect(path).toBe(join(root, "secrets.json"));
-                expect(into.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
-                expect(into.ANTHROPIC_BASE_URL).toBeUndefined();
                 await Bun.sleep(5);
                 return "SOPS_FAILED";
             },

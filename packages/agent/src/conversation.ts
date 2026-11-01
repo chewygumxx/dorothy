@@ -8,118 +8,124 @@
 //
 //
 
+// Dorothy's chat session on her own runtime: the session's messages,
+// held here, and a turn per message on the chat route through
+// runRoute, streamed as core's ConversationEvents.
+
 import {
-    type Options,
-    query,
-    type SDKMessage,
-    type SDKUserMessage,
-} from "@anthropic-ai/claude-agent-sdk";
-import {
-    ALLOWED_TOOLS,
+    type AttemptResult,
     type ChatSession,
     CLOSE_GRACE_MS,
     type ConversationEvent,
-    describeLookup,
-    RECOLLECT_TOOL,
-    REMEMBER_TOOL,
-    SERVER_NAME,
+    Cooldowns,
+    defaultRoutes,
+    type Env,
+    type Failure,
+    label,
+    type RawMessage,
+    REAL_TIMERS,
+    type RecallLaunch,
+    type Route,
+    type RouteEntry,
+    runRoute,
     type SessionStart,
-    type Tool,
-    type TurnStats,
-    toolOf,
+    stepCost,
+    type Timers,
     withSection,
 } from "@dorothy/core";
+import { type ModelMessage, stepCountIs, streamText } from "ai";
+import { STALL_MS, secretFailure, Watchdog } from "./attempt.js";
+import { stepUsage, unpricedNotice } from "./cost.js";
+import { failureOf } from "./failures.js";
 import {
-    baseOptions,
-    cliOptions,
     type PersonaMode,
     personaPrompt,
+    routeLine,
     withHistory,
 } from "./persona.js";
-import { failureText, type ResultMessage } from "./result.js";
+import {
+    keyOf,
+    languageModel,
+    type ModelFactory,
+    providerOptions,
+} from "./providers.js";
+import {
+    type ConnectRecall,
+    connectRecall,
+    type RecallTools,
+    recallEnv,
+} from "./recall-tools.js";
+import { TurnState } from "./turn.js";
 
-export type QueryHandle = AsyncIterable<SDKMessage> & {
-    interrupt(): Promise<unknown>;
-    close(): void;
+export const MAX_STEPS = 10;
+export const STEP_LIMIT_WARNING = "the reply stopped after ten tool steps";
+
+// Anthropic's prompt cache: the system prompt, and the latest message.
+const BREAKPOINT = {
+    anthropic: { cacheControl: { type: "ephemeral" as const } },
 };
-export type QueryFn = (params: {
-    prompt: AsyncIterable<SDKUserMessage>;
-    options: Options;
-}) => QueryHandle;
 
-type PendingCall = { tool: Tool; input: unknown; offset: number };
-type PendingRemember = { input: unknown; offset: number };
+// A session's start and the persona it speaks with. Every field may be
+// left out, for tests and the dump.
+export type SessionSetup = Partial<SessionStart> & { persona?: PersonaMode };
 
-// DISABLE_COMPACT keeps the CLI from compacting. If it ever does, the
-// conversation it summarised is no longer the one Dorothy's compaction
-// planned, so the event is reported as a warning: an error would end the
-// turn on screen and lose its reply, while the turn continues as usual.
-export const COMPACTED_BY_CLI =
-    "the CLI compacted this session itself, despite DISABLE_COMPACT";
+export type ConversationSetup = {
+    system: string;
+    recall: RecallLaunch | null;
+    recollect: boolean;
+};
 
-// The CLI reports a compaction it tried and failed only in a status
-// message, with no boundary after it.
-export const cliCompactFailed = (error: string | undefined) =>
-    `the CLI tried to compact this session itself, despite DISABLE_COMPACT, and failed${
-        error === undefined || error === "" ? "" : `: ${error}`
-    }`;
-
-// Characters as the note limits count them, four to a token.
-const estimate = (text: string) => Math.ceil([...text].length / 4);
-
-// The prompt stream for streaming input mode: one consumer (the SDK), fed by
-// send(), finished by end().
-class MessageQueue implements AsyncIterable<SDKUserMessage> {
-    #items: SDKUserMessage[] = [];
-    #wake: (() => void) | null = null;
-    #ended = false;
-
-    push(message: SDKUserMessage): void {
-        if (this.#ended) {
-            return;
-        }
-        this.#items.push(message);
-        this.#wake?.();
-    }
-
-    end(): void {
-        this.#ended = true;
-        this.#wake?.();
-    }
-
-    async *[Symbol.asyncIterator](): AsyncGenerator<SDKUserMessage> {
-        for (;;) {
-            const next = this.#items.shift();
-            if (next) {
-                yield next;
-                continue;
-            }
-            if (this.#ended) {
-                return;
-            }
-            await new Promise<void>((resolve) => {
-                this.#wake = resolve;
-            });
-            this.#wake = null;
-        }
-    }
+// What a session starts with, shared with memory's estimate of a
+// compacted session and with --dump-context.
+export function conversationSetup(
+    {
+        history = [],
+        memory = "",
+        earlier = "",
+        recall = null,
+        recollect = false,
+        persona = "chat",
+    }: SessionSetup = {},
+    route: Route = defaultRoutes().chat,
+): ConversationSetup {
+    const prompt = withHistory(
+        withSection(
+            withSection(
+                personaPrompt({ recall: recall !== null, mode: persona }),
+                memory,
+            ),
+            earlier,
+        ),
+        history,
+    );
+    return {
+        system:
+            persona === "chat" ? prompt : `${prompt}\n\n${routeLine(route)}`,
+        recall,
+        recollect: recall !== null && recollect,
+    };
 }
 
-// A tool result's text: a string, or text blocks.
-function textOf(content: unknown): string {
-    if (typeof content === "string") {
-        return content;
-    }
-    return Array.isArray(content)
-        ? content
-              .map((block) =>
-                  typeof block?.text === "string" ? block.text : "",
-              )
-              .join("")
-        : "";
-}
+export type ConversationDeps = {
+    route?: Route;
+    cooldowns?: Cooldowns;
+    env?: Env;
+    model?: ModelFactory;
+    connect?: ConnectRecall;
+    timers?: Timers;
+    stallMs?: number;
+    now?: () => number;
+};
 
-async function settleWithin(work: Promise<void>, ms: number): Promise<void> {
+// A message, and the model that made it, null for the user's and for
+// text kept from an interrupted turn.
+type Stored = { message: ModelMessage; by: string | null };
+type Answer = { messages: ModelMessage[]; limited: boolean };
+
+const describeError = (error: unknown) =>
+    error instanceof Error ? error.message : String(error);
+
+async function settleWithin(work: Promise<unknown>, ms: number): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([
         work,
@@ -130,93 +136,87 @@ async function settleWithin(work: Promise<void>, ms: number): Promise<void> {
     clearTimeout(timer);
 }
 
-// A session's start and the persona it speaks with. Every field may be
-// left out, for tests and the dump.
-export type SessionSetup = Partial<SessionStart> & { persona?: PersonaMode };
+// A stream part as the raw pane shows it: its type, and a text part's
+// text; never a prompt, a header or a key.
+function rawOf(part: { type: string; text?: unknown }): RawMessage {
+    return part.type === "text-delta"
+        ? { type: part.type, event: { delta: part.text } }
+        : { type: part.type };
+}
 
-// What a session starts with, shared with --dump-context so that the dump
-// shows exactly what a chat would send.
-export function conversationOptions({
-    history = [],
-    memory = "",
-    earlier = "",
-    recall = null,
-    recollect = false,
-    persona = "chat",
-}: SessionSetup = {}): Options {
-    const offered = recall !== null && recollect;
+// Reasoning belongs to the model that made it; another is sent none.
+function withoutReasoning(message: ModelMessage): ModelMessage {
+    if (message.role !== "assistant" || typeof message.content === "string") {
+        return message;
+    }
     return {
-        ...baseOptions,
-        ...cliOptions(),
-        systemPrompt: withHistory(
-            withSection(
-                withSection(
-                    personaPrompt({ recall: recall !== null, mode: persona }),
-                    memory,
-                ),
-                earlier,
-            ),
-            history,
-        ),
-        ...(recall === null
-            ? {}
-            : {
-                  mcpServers: {
-                      [SERVER_NAME]: {
-                          type: "stdio",
-                          command: recall.command,
-                          args: offered
-                              ? [...recall.args, "--recollect"]
-                              : recall.args,
-                      },
-                  },
-                  allowedTools: offered
-                      ? [...ALLOWED_TOOLS, RECOLLECT_TOOL]
-                      : ALLOWED_TOOLS,
-              }),
+        ...message,
+        content: message.content.filter((part) => part.type !== "reasoning"),
     };
 }
 
+// The user's message as sent: on Anthropic it carries the second cache
+// breakpoint, in this copy only, never in the stored session.
+const outgoingUser = (text: string, entry: RouteEntry): ModelMessage => ({
+    role: "user",
+    content: [
+        {
+            type: "text",
+            text,
+            ...(entry.kind === "anthropic"
+                ? { providerOptions: BREAKPOINT }
+                : {}),
+        },
+    ],
+});
+
 export class Conversation implements ChatSession {
-    readonly #queue = new MessageQueue();
     readonly #listeners = new Set<(event: ConversationEvent) => void>();
-    readonly #queryFn: QueryFn;
-    readonly #options: Options;
-    readonly #recall: boolean;
-    #recallWarned = false;
-    // Tool calls awaiting their results, by id.
-    readonly #calls = new Map<string, PendingCall>();
-    // Calls to remember awaiting their results, by id.
-    readonly #remembers = new Map<string, PendingRemember>();
-    // The next text starts a new step of the reply.
-    #afterLookup = false;
-    #handle: QueryHandle | null = null;
-    #done: Promise<void> = Promise.resolve();
-    #closed: Promise<void> | null = null;
-    #reply = "";
-    #streaming = false;
+    readonly #setup: ConversationSetup;
+    readonly #route: Route;
+    readonly #cooldowns: Cooldowns;
+    readonly #env: Env;
+    readonly #model: ModelFactory;
+    readonly #connect: ConnectRecall;
+    readonly #timers: Timers;
+    readonly #stallMs: number;
+    readonly #now: () => number;
+    readonly #id = crypto.randomUUID();
+    readonly #messages: Stored[] = [];
+    #recall: RecallTools | null = null;
+    #started: Promise<void> | null = null;
+    #work: Promise<void> = Promise.resolve();
+    #turn: AbortController | null = null;
     #interrupted = false;
+    #queued = 0;
+    #stopQueued = false;
+    #closed: Promise<void> | null = null;
     #sessionCost = 0;
-    #ready = false;
-    // What the latest request of this turn read, from its usage.
-    #lastInput: number | null = null;
 
     constructor({
-        queryFn = query,
+        route = defaultRoutes().chat,
+        cooldowns = new Cooldowns(),
+        env = process.env,
+        model = languageModel,
+        connect = connectRecall,
+        timers = REAL_TIMERS,
+        stallMs = STALL_MS,
+        now = () => performance.now(),
         ...setup
-    }: SessionSetup & { queryFn?: QueryFn } = {}) {
-        this.#queryFn = queryFn;
-        this.#recall = (setup.recall ?? null) !== null;
-        this.#options = conversationOptions(setup);
+    }: SessionSetup & ConversationDeps = {}) {
+        this.#route = route;
+        this.#cooldowns = cooldowns;
+        this.#env = env;
+        this.#model = model;
+        this.#connect = connect;
+        this.#timers = timers;
+        this.#stallMs = stallMs;
+        this.#now = now;
+        this.#setup = conversationSetup(setup, route);
     }
 
     start(): void {
-        const handle = this.#queryFn({
-            prompt: this.#queue,
-            options: this.#options,
-        });
-        this.#handle = handle;
-        this.#done = this.#pump(handle);
+        this.#started ??= this.#begin();
     }
 
     subscribe(listener: (event: ConversationEvent) => void): () => void {
@@ -227,29 +227,36 @@ export class Conversation implements ChatSession {
     }
 
     send(text: string): void {
-        this.#streaming = true;
-        this.#queue.push({
-            type: "user",
-            message: { role: "user", content: text },
-            parent_tool_use_id: null,
-        });
+        this.start();
+        this.#queued += 1;
+        this.#work = this.#work.then(() => this.#runTurn(text)).catch(() => {});
     }
 
     async interrupt(): Promise<void> {
-        if (!this.#streaming || this.#handle === null) {
+        if (this.#turn === null) {
+            // A turn still waiting on recall's start ends as interrupted.
+            this.#stopQueued = this.#queued > 0;
             return;
         }
         this.#interrupted = true;
-        await this.#handle.interrupt();
+        this.#turn.abort();
     }
 
-    // Ending the prompt stream ends the session; the subprocess is terminated
-    // only if it has not exited within the grace period. Safe to call twice.
+    // A turn under way may finish within the grace period; then it is
+    // stopped, and the recall server closed. Safe to call twice.
     close(): Promise<void> {
         this.#closed ??= (async () => {
-            this.#queue.end();
-            await settleWithin(this.#done, CLOSE_GRACE_MS);
-            this.#handle?.close();
+            await settleWithin(this.#work, CLOSE_GRACE_MS);
+            this.#turn?.abort();
+            await settleWithin(this.#work, CLOSE_GRACE_MS);
+            // A recall server still starting is closed by #begin.
+            await settleWithin(
+                this.#started ?? Promise.resolve(),
+                CLOSE_GRACE_MS,
+            );
+            const recall = this.#recall;
+            this.#recall = null;
+            await recall?.close().catch(() => {});
         })();
         return this.#closed;
     }
@@ -260,288 +267,301 @@ export class Conversation implements ChatSession {
         }
     }
 
-    async #pump(handle: QueryHandle): Promise<void> {
+    // A listener that throws is told of as an error event, once; it never
+    // stops the code that was emitting.
+    #notify(event: ConversationEvent): void {
         try {
-            for await (const message of handle) {
-                this.#handleMessage(message);
-            }
-            if (this.#closed === null) {
-                this.#fail("Dorothy's session ended unexpectedly.");
-            }
+            this.#emit(event);
         } catch (error) {
-            if (this.#closed === null) {
-                this.#fail(
-                    error instanceof Error ? error.message : String(error),
-                );
-            }
-        } finally {
-            this.#streaming = false;
+            this.#fail(error);
         }
     }
 
-    #handleMessage(message: SDKMessage): void {
-        this.#emit({ type: "sdk", message });
-        switch (message.type) {
-            case "system":
-                this.#onSystem(message);
-                break;
-            case "stream_event":
-                this.#onStreamEvent(message);
-                break;
-            case "assistant":
-                this.#onAssistant(message);
-                break;
-            case "user":
-                this.#onToolResults(message);
-                break;
-            case "result":
-                this.#onResult(message);
-                break;
-        }
-    }
-
-    #onSystem(message: Extract<SDKMessage, { type: "system" }>): void {
-        if (message.subtype === "compact_boundary") {
-            // Its context is replaced, so what the last request read no
-            // longer measures it.
-            this.#lastInput = null;
-            this.#emit({ type: "warning", message: COMPACTED_BY_CLI });
+    #fail(error: unknown): void {
+        if (this.#closed !== null) {
             return;
         }
-        if (message.subtype === "status") {
-            if (message.compact_result === "failed") {
-                this.#emit({
+        try {
+            this.#emit({ type: "error", message: describeError(error) });
+        } catch {
+            // A listener that throws on error is not told twice.
+        }
+    }
+
+    // Never rejects: a listener throwing at start must not wedge the turns.
+    async #begin(): Promise<void> {
+        // ready is never emitted inside start(): callers subscribe after.
+        await Promise.resolve();
+        const { recall, recollect } = this.#setup;
+        if (recall !== null) {
+            try {
+                this.#recall = await this.#connect(
+                    recall,
+                    recollect,
+                    recallEnv(this.#env, this.#route),
+                );
+            } catch (error) {
+                this.#notify({
                     type: "warning",
-                    message: cliCompactFailed(message.compact_error),
+                    message: `memory: recall is unavailable (${describeError(error)})`,
                 });
             }
+        }
+        if (this.#closed !== null) {
+            const late = this.#recall;
+            this.#recall = null;
+            await late?.close().catch(() => {});
             return;
         }
-        if (message.subtype !== "init") {
-            return;
-        }
-        this.#checkRecall(message);
-        // The CLI sends init at the start of every turn; only the first one
-        // means the session is ready.
-        if (!this.#ready) {
-            this.#ready = true;
-            this.#emit({
-                type: "ready",
-                model: message.model,
-                sdkSessionId: message.session_id,
-            });
-        }
+        const first = this.#route[0];
+        this.#notify({
+            type: "ready",
+            model: first === undefined ? "none" : label(first),
+            sessionId: this.#id,
+        });
     }
 
-    #onStreamEvent(
-        message: Extract<SDKMessage, { type: "stream_event" }>,
-    ): void {
-        const { event } = message;
-        if (
-            event.type !== "content_block_delta" ||
-            event.delta.type !== "text_delta"
-        ) {
-            return;
-        }
-        // Text after a lookup starts a new step of the reply.
-        const text =
-            this.#afterLookup && this.#reply !== ""
-                ? `\n\n${event.delta.text}`
-                : event.delta.text;
-        this.#afterLookup = false;
-        this.#reply += text;
-        this.#emit({ type: "delta", text });
-    }
-
-    #onAssistant(message: Extract<SDKMessage, { type: "assistant" }>): void {
-        // A subagent's request reads its own context, not this one.
-        const usage = message.message.usage;
-        if (
-            message.parent_tool_use_id === null &&
-            usage !== undefined &&
-            usage !== null
-        ) {
-            this.#lastInput =
-                usage.input_tokens +
-                (usage.cache_read_input_tokens ?? 0) +
-                (usage.cache_creation_input_tokens ?? 0);
-        }
-        for (const block of message.message.content) {
-            if (block.type === "tool_use") {
-                this.#noteCall(block.id, block.name, block.input);
+    // A listener may throw: the turn then ends in an error event, and
+    // later messages still run.
+    async #runTurn(text: string): Promise<void> {
+        try {
+            await this.#started;
+            this.#queued -= 1;
+            if (this.#closed !== null) {
+                return;
             }
+            await this.#turnOf(text);
+        } catch (error) {
+            this.#turn = null;
+            this.#fail(error);
         }
     }
 
-    // A call of recall's or of remember, kept until its result comes.
-    #noteCall(id: string, name: string, input: unknown): void {
-        const pending = { input, offset: this.#reply.length };
-        const tool = toolOf(name);
-        if (tool !== null && !this.#calls.has(id)) {
-            this.#calls.set(id, { tool, ...pending });
-        }
-        if (name === REMEMBER_TOOL && !this.#remembers.has(id)) {
-            this.#remembers.set(id, pending);
-        }
-    }
-
-    #onToolResults(message: Extract<SDKMessage, { type: "user" }>): void {
-        const { content } = message.message;
-        for (const block of Array.isArray(content) ? content : []) {
-            if (block.type === "tool_result") {
-                this.#settle(
-                    block.tool_use_id,
-                    block.is_error !== true,
-                    block.content,
-                );
-            }
-        }
-    }
-
-    // A pending call's result, as a remember or a lookup event.
-    #settle(id: string, ok: boolean, content: unknown): void {
-        const kept = this.#remembers.get(id);
-        if (kept !== undefined) {
-            this.#remembers.delete(id);
-            this.#remembered(id, kept, ok, textOf(content));
-            return;
-        }
-        const call = this.#calls.get(id);
-        if (call !== undefined) {
-            this.#calls.delete(id);
-            this.#lookup(id, call, ok, ok ? textOf(content) : null);
-        }
-    }
-
-    #onResult(message: ResultMessage): void {
-        this.#settleCalls();
-        if (message.is_error && !this.#interrupted) {
-            this.#failTurn(message);
-        } else {
-            this.#endTurn(message);
-        }
-        this.#streaming = false;
-        this.#lastInput = null;
-    }
-
-    // API failures (auth, rate limit, overload) do not throw: the turn ends
-    // with an error result carrying the text instead of a reply.
-    // The failed turn still cost what the result says: it goes with the
-    // error, which the screen and the transcript account.
-    #failTurn(message: ResultMessage): void {
-        this.#fail(failureText(message), this.#stats(message));
-    }
-
-    #endTurn(message: ResultMessage): void {
-        const stats = this.#stats(message);
-        const read =
-            this.#lastInput ??
-            stats.inputTokens + stats.cacheReadTokens + stats.cacheWriteTokens;
-        this.#emit({
-            type: "turn-end",
-            reply: this.#reply,
-            interrupted: this.#interrupted,
-            stats,
-            contextTokens: read + estimate(this.#reply),
-        });
-        this.#reply = "";
-        this.#interrupted = false;
-    }
-
-    #lookup(
-        id: string,
-        call: PendingCall,
-        ok: boolean,
-        result: string | null,
-    ): void {
-        this.#afterLookup = true;
-        this.#emit({
-            type: "lookup",
-            id,
-            ok,
-            offset: call.offset,
-            lookup: describeLookup(call.tool, call.input, result),
-        });
-    }
-
-    #remembered(
-        id: string,
-        call: PendingRemember,
-        ok: boolean,
-        output: string,
-    ): void {
-        this.#afterLookup = true;
-        this.#emit({
-            type: "remember",
-            id,
-            ok,
-            offset: call.offset,
-            input: call.input,
-            output,
-        });
-    }
-
-    // Calls the turn ended without answering, as when it was interrupted.
-    #settleCalls(): void {
-        for (const [id, call] of this.#calls) {
-            this.#lookup(id, call, false, null);
-        }
-        this.#calls.clear();
-        for (const [id, call] of this.#remembers) {
-            this.#remembered(id, call, false, "");
-        }
-        this.#remembers.clear();
-        this.#afterLookup = false;
-    }
-
-    // The init message lists the MCP servers; a server still starting is
-    // not a failure, and init repeats every turn, so this warns once.
-    #checkRecall(message: {
-        mcp_servers?: { name: string; status: string }[];
-    }): void {
-        const servers = message.mcp_servers;
-        if (!this.#recall || this.#recallWarned || !Array.isArray(servers)) {
-            return;
-        }
-        const server = servers.find((entry) => entry.name === SERVER_NAME);
-        if (server === undefined || server.status === "failed") {
-            this.#recallWarned = true;
-            this.#emit({
-                type: "warning",
-                message: `memory: recall is unavailable (${server?.status ?? "not started"})`,
+    async #turnOf(text: string): Promise<void> {
+        const turn = new TurnState((event) => this.#emit(event), this.#now());
+        if (this.#stopQueued) {
+            this.#stopQueued = false;
+            this.#messages.push({
+                message: { role: "user", content: text },
+                by: null,
             });
+            this.#emit({
+                type: "turn-end",
+                reply: "",
+                interrupted: true,
+                stats: turn.stats(0, this.#sessionCost, this.#now()),
+                contextTokens: turn.contextTokens(),
+            });
+            return;
         }
-    }
-
-    #fail(message: string, stats?: TurnStats): void {
-        this.#settleCalls();
-        const partial = this.#reply;
-        this.#reply = "";
+        const controller = new AbortController();
+        this.#turn = controller;
         this.#interrupted = false;
+        const tried: RouteEntry[] = [];
+        const outcome = await runRoute(
+            this.#route,
+            (entry, signal) => {
+                tried.push(entry);
+                return this.#attempt(entry, signal, text, turn);
+            },
+            {
+                cooldowns: this.#cooldowns,
+                signal: controller.signal,
+                deadlineMs: null,
+                timers: this.#timers,
+            },
+        );
+        this.#turn = null;
+        turn.settleCalls();
+        for (const note of outcome.notes) {
+            this.#emit({ type: "warning", message: note });
+        }
+        this.#sessionCost += outcome.costUsd;
+        const stats = turn.stats(
+            outcome.costUsd,
+            this.#sessionCost,
+            this.#now(),
+        );
+        const user: Stored = {
+            message: { role: "user", content: text },
+            by: null,
+        };
+        if (outcome.ok) {
+            const by = label(outcome.entry);
+            this.#messages.push(
+                user,
+                ...outcome.value.messages.map((message) => ({ message, by })),
+            );
+            if (outcome.value.limited) {
+                this.#emit({ type: "warning", message: STEP_LIMIT_WARNING });
+            }
+            this.#emit({
+                type: "turn-end",
+                reply: turn.reply,
+                interrupted: false,
+                stats,
+                contextTokens: turn.contextTokens(),
+                model: by,
+            });
+            return;
+        }
+        if (outcome.failure.class === "cancelled" && this.#interrupted) {
+            this.#messages.push(user);
+            if (turn.reply !== "") {
+                this.#messages.push({
+                    message: { role: "assistant", content: turn.reply },
+                    by: null,
+                });
+            }
+            const last = tried.at(-1);
+            this.#emit({
+                type: "turn-end",
+                reply: turn.reply,
+                interrupted: true,
+                stats,
+                contextTokens: turn.contextTokens(),
+                ...(last === undefined ? {} : { model: label(last) }),
+            });
+            return;
+        }
+        if (this.#closed !== null) {
+            return;
+        }
         this.#emit({
             type: "error",
-            message,
-            ...(partial ? { partial } : {}),
-            ...(stats ? { stats } : {}),
+            message: outcome.reason,
+            ...(turn.reply === "" ? {} : { partial: turn.reply }),
+            ...(turn.steps === 0 ? {} : { stats }),
         });
     }
 
-    #stats(result: ResultMessage): TurnStats {
-        // total_cost_usd is the session's running total, so a turn costs the
-        // difference from the previous result. A total that went down is not
-        // trusted as a new baseline.
-        const costUsd = Math.max(0, result.total_cost_usd - this.#sessionCost);
-        this.#sessionCost = Math.max(this.#sessionCost, result.total_cost_usd);
-        return {
-            inputTokens: result.usage.input_tokens,
-            cacheReadTokens: result.usage.cache_read_input_tokens ?? 0,
-            cacheWriteTokens: result.usage.cache_creation_input_tokens ?? 0,
-            outputTokens: result.usage.output_tokens,
-            ttftMs:
-                result.subtype === "success" ? (result.ttft_ms ?? null) : null,
-            durationMs: result.duration_ms,
-            costUsd,
-            sessionCostUsd: result.total_cost_usd,
-        };
+    #outgoing(entry: RouteEntry, text: string): ModelMessage[] {
+        const by = label(entry);
+        return [
+            ...this.#messages.map(({ message, by: from }) =>
+                from === null || from === by
+                    ? message
+                    : withoutReasoning(message),
+            ),
+            outgoingUser(text, entry),
+        ];
+    }
+
+    async #attempt(
+        entry: RouteEntry,
+        signal: AbortSignal,
+        text: string,
+        turn: TurnState,
+    ): Promise<AttemptResult<Answer>> {
+        const key = keyOf(entry, this.#env);
+        if (key === null) {
+            return {
+                ok: false,
+                failure: secretFailure(entry),
+                started: false,
+                costUsd: 0,
+            };
+        }
+        const watchdog = new Watchdog(signal, this.#stallMs, this.#timers);
+        let costUsd = 0;
+        let failure: Failure | null = null;
+        let aborted = false;
+        let limited = false;
+        try {
+            const result = streamText({
+                model: this.#model(entry, key),
+                instructions:
+                    entry.kind === "anthropic"
+                        ? {
+                              role: "system",
+                              content: this.#setup.system,
+                              providerOptions: BREAKPOINT,
+                          }
+                        : this.#setup.system,
+                messages: this.#outgoing(entry, text),
+                ...(this.#recall === null ? {} : { tools: this.#recall.tools }),
+                stopWhen: stepCountIs(MAX_STEPS),
+                maxRetries: 0,
+                abortSignal: watchdog.signal,
+                providerOptions: providerOptions(entry),
+                onError: () => {},
+            });
+            for await (const part of result.fullStream) {
+                watchdog.touch();
+                this.#emit({ type: "sdk", message: rawOf(part) });
+                switch (part.type) {
+                    case "text-delta":
+                        turn.text(part.text, this.#now());
+                        break;
+                    case "tool-call":
+                        turn.call(part.toolCallId, part.toolName, part.input);
+                        break;
+                    case "tool-result":
+                        turn.result(part.toolCallId, part.output);
+                        break;
+                    case "tool-error":
+                        turn.error(part.toolCallId);
+                        break;
+                    case "finish-step": {
+                        const usage = stepUsage(part.usage);
+                        turn.step(usage);
+                        const cost = stepCost(entry, usage);
+                        if (cost === null) {
+                            const notice = unpricedNotice(entry);
+                            if (notice !== null) {
+                                this.#emit({
+                                    type: "warning",
+                                    message: notice,
+                                });
+                            }
+                        }
+                        costUsd += cost ?? 0;
+                        limited = part.finishReason === "tool-calls";
+                        break;
+                    }
+                    case "error":
+                        failure ??= failureOf(part.error);
+                        break;
+                    case "abort":
+                        aborted = true;
+                        break;
+                }
+            }
+            if (aborted) {
+                return {
+                    ok: false,
+                    failure: watchdog.failure(),
+                    started: turn.started,
+                    costUsd,
+                };
+            }
+            if (failure !== null) {
+                return { ok: false, failure, started: turn.started, costUsd };
+            }
+            const steps = await result.steps;
+            return {
+                ok: true,
+                value: {
+                    messages: steps.flatMap((step) => step.response.messages),
+                    limited,
+                },
+                costUsd,
+            };
+        } catch (error) {
+            return {
+                ok: false,
+                failure: watchdog.signal.aborted
+                    ? watchdog.failure()
+                    : failureOf(error),
+                started: turn.started,
+                costUsd,
+            };
+        } finally {
+            watchdog.dispose();
+            // An Attempt never throws: a listener may, on a lookup.
+            try {
+                turn.settleCalls();
+            } catch {}
+        }
     }
 }

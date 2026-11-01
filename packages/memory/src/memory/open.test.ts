@@ -30,7 +30,7 @@ import { transcriptDir, transcriptPath } from "../transcript.js";
 import { indexCatalogue } from "./catalogue.js";
 import { FakeSession } from "./fake-session.js";
 import { type MemoryPrompts, openMemory } from "./open.js";
-import { dir, useXdgDir } from "./open-testing.js";
+import { dir, useXdgDir, wrong } from "./open-testing.js";
 import { isStale } from "./service.js";
 import { readSidecar } from "./sidecar.js";
 
@@ -54,7 +54,7 @@ describe("openMemory", () => {
         const inner = new FakeSession();
         const opened = await openMemory({
             resume: null,
-            call: quiet,
+            calls: { review: quiet, compaction: quiet },
             prompts,
             connect: () => inner,
             recallLaunch: () => ({ command: "x", args: [] }),
@@ -109,7 +109,7 @@ describe("openMemory", () => {
         await addNotice(env, "memory: Claude Code ran no hooks in session x");
         const opened = await openMemory({
             resume: null,
-            call: quiet,
+            calls: { review: quiet, compaction: quiet },
             prompts,
             connect: () => new FakeSession(),
             recallLaunch: (phrase) => ({ command: "x", args: [phrase] }),
@@ -130,7 +130,7 @@ describe("openMemory", () => {
     it("fails to resume a chat that has no transcript", async () => {
         const opened = await openMemory({
             resume: "tumble-orchid-vapor-lantern",
-            call: quiet,
+            calls: { review: quiet, compaction: quiet },
             prompts,
             connect: () => {
                 throw new Error("no session expected");
@@ -192,7 +192,7 @@ describe("openMemory", () => {
             const open = async (inner: FakeSession) => {
                 const opened = await openMemory({
                     resume: phrase,
-                    call: quiet,
+                    calls: { review: quiet, compaction: quiet },
                     prompts,
                     connect: () => inner,
                     recallLaunch: () => ({ command: "x", args: [] }),
@@ -207,7 +207,7 @@ describe("openMemory", () => {
             idle.emit({
                 type: "ready",
                 model: "synthetic",
-                sdkSessionId: "idle",
+                sessionId: "idle",
             });
             await untouched.close();
             expect(
@@ -267,7 +267,7 @@ describe("openMemory", () => {
         const before = await readFile(transcriptPath(phrase, env), "utf8");
         const opened = await openMemory({
             resume: phrase,
-            call: quiet,
+            calls: { review: quiet, compaction: quiet },
             prompts,
             connect: () => {
                 throw new Error("no session expected");
@@ -291,7 +291,7 @@ describe("openMemory", () => {
         const inner = new FakeSession();
         const opened = await openMemory({
             resume: null,
-            call: quiet,
+            calls: { review: quiet, compaction: quiet },
             prompts,
             connect: (start) => {
                 starts.push(start);
@@ -306,7 +306,7 @@ describe("openMemory", () => {
         const { memory } = opened;
         try {
             memory.createSession([]).send("hello");
-            inner.emit({ type: "ready", model: "m", sdkSessionId: "s" });
+            inner.emit({ type: "ready", model: "m", sessionId: "s" });
             expect(starts).toHaveLength(1);
             expect(starts[0]).toMatchObject({
                 history: [],
@@ -361,7 +361,7 @@ describe("openMemory", () => {
         const openIn = async () => {
             const opened = await openMemory({
                 resume: null,
-                call: quiet,
+                calls: { review: quiet, compaction: quiet },
                 prompts,
                 connect: () => new FakeSession(),
                 recallLaunch: (phrase) => ({ command: "x", args: [phrase] }),
@@ -400,7 +400,7 @@ describe("openMemory", () => {
         const inner = new FakeSession();
         const opened = await openMemory({
             resume: null,
-            call: quiet,
+            calls: { review: quiet, compaction: quiet },
             prompts,
             connect: () => inner,
             recallLaunch: (phrase) => ({ command: "x", args: [phrase] }),
@@ -447,11 +447,16 @@ describe("openMemory", () => {
         });
         const opened = await openMemory({
             resume: null,
-            call: async (request) => {
-                // Reviews run on the review prompt, never compaction's.
-                system = request.system;
-                reviewed(await Bun.file(transcriptPath(phrase, env)).text());
-                return quiet(request);
+            calls: {
+                review: async (request) => {
+                    // Reviews run on the review prompt, never compaction's.
+                    system = request.system;
+                    reviewed(
+                        await Bun.file(transcriptPath(phrase, env)).text(),
+                    );
+                    return quiet(request);
+                },
+                compaction: wrong("compaction"),
             },
             prompts,
             connect: () => inner,
@@ -465,7 +470,7 @@ describe("openMemory", () => {
         phrase = memory.phrase;
         try {
             memory.createSession([]).send("hello");
-            inner.emit({ type: "ready", model: "m", sdkSessionId: "s" });
+            inner.emit({ type: "ready", model: "m", sessionId: "s" });
             inner.emit({
                 type: "turn-end",
                 reply: "a reply to review",

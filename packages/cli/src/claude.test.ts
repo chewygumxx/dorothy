@@ -215,23 +215,22 @@ describe("runClaude", () => {
         expect(calls.env.ANTHROPIC_BASE_URL).toBe("http://127.0.0.1:4321");
     });
 
-    it("passes the user's own base URL on to the hook's reviews, and no other", async () => {
-        const { calls, deps } = harness();
-        deps.env = { ...deps.env, ANTHROPIC_BASE_URL: "http://proxy/x" };
-        await runClaude([], deps);
-        expect(calls.env.DOROTHY_ANTHROPIC_BASE_URL).toBe("http://proxy/x");
-        // Without one, a variable of an outer launch is not passed on.
-        const bare = harness();
-        bare.deps.env = {
-            ...bare.deps.env,
-            DOROTHY_ANTHROPIC_BASE_URL: "http://outer/x",
+    it("passes no base URL on to the hook's reviews, which name their own", async () => {
+        const { calls, deps, memory } = harness(0, true);
+        deps.env = {
+            ...deps.env,
+            ANTHROPIC_BASE_URL: "http://proxy/x",
         };
-        await runClaude([], bare.deps);
-        expect("DOROTHY_ANTHROPIC_BASE_URL" in bare.calls.env).toBe(false);
-        const empty = harness();
-        empty.deps.env = { ...empty.deps.env, ANTHROPIC_BASE_URL: "" };
-        await runClaude([], empty.deps);
-        expect("DOROTHY_ANTHROPIC_BASE_URL" in empty.calls.env).toBe(false);
+        memory.stale = [OTHER];
+        await runClaude([], deps);
+        expect(calls.env.ANTHROPIC_BASE_URL).toBe("http://127.0.0.1:4321");
+        expect("DOROTHY_ANTHROPIC_BASE_URL" in calls.env).toBe(false);
+        // The stale launch's catch-up and its own.
+        expect(calls.spawnedEnv).toHaveLength(2);
+        for (const env of calls.spawnedEnv) {
+            expect("DOROTHY_ANTHROPIC_BASE_URL" in env).toBe(false);
+            expect(env.HOME).toBe(testHome);
+        }
     });
 
     it("passes the age key path to claude and its hooks", async () => {
@@ -578,33 +577,6 @@ describe("dorothy --claude records her sessions", () => {
         expect(calls.spawned).toEqual([
             [...SELF, "--claude-hook", "--catch-up", LAUNCH],
         ]);
-    });
-
-    it("starts its catch-ups where reviews find the user's own proxy", async () => {
-        const { calls, deps, memory } = harness(0, true);
-        deps.env = {
-            ...deps.env,
-            ANTHROPIC_BASE_URL: "http://proxy/x",
-            DOROTHY_ANTHROPIC_BASE_URL: "http://outer/x",
-        };
-        memory.stale = [OTHER];
-        await runClaude([], deps);
-        // The stale launch's and its own.
-        expect(calls.spawned).toHaveLength(2);
-        for (const env of calls.spawnedEnv) {
-            expect(env.DOROTHY_ANTHROPIC_BASE_URL).toBe("http://proxy/x");
-            expect(env.HOME).toBe(testHome);
-        }
-        // With no proxy of the user's, an outer launch's is not passed on.
-        const bare = harness(0, true);
-        bare.deps.env = {
-            ...bare.deps.env,
-            DOROTHY_ANTHROPIC_BASE_URL: "http://outer/x",
-        };
-        await runClaude([], bare.deps);
-        expect(
-            "DOROTHY_ANTHROPIC_BASE_URL" in (bare.calls.spawnedEnv[0] ?? {}),
-        ).toBe(false);
     });
 
     it("starts stale and current catch-ups with the age key path", async () => {

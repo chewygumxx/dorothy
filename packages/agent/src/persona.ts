@@ -8,10 +8,7 @@
 //
 //
 
-import { chmodSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
-import type { Options } from "@anthropic-ai/claude-agent-sdk";
-import { type Env, type Turn, xdgDir } from "@dorothy/core";
+import { label, type Route, type Turn } from "@dorothy/core";
 import { type IdentityComponent, identityComponents } from "@dorothy/identity";
 
 // Chat is Dorothy as the user meets her. Development mode is for the people
@@ -66,10 +63,7 @@ function capabilities(chat: boolean, recall: boolean): string {
     );
 }
 
-// The persona by purpose, in the order the prompt joins them. The CLI
-// prepends its own identity line ("You are a Claude agent, built on
-// Anthropic's Claude Agent SDK.") and appends an environment message after
-// each user turn, which plumbing tells the model how to treat.
+// The persona by purpose, in the order the prompt joins them.
 export function personaComponents({
     recall,
     mode = "chat",
@@ -103,14 +97,15 @@ export function personaComponents({
                       "with the user.",
                   )
                 : sentences(
-                      "Besides these instructions, the software that runs you",
-                      "adds context of its own, such as an identity line,",
-                      "environment details, reminders and counters. When asked",
-                      "about your context, describe it faithfully and in full,",
-                      "including which company, model and software you run on,",
-                      "quoting it where that helps and saying where each part",
-                      "appears. Say only what your context shows, and say so",
-                      "when you are unsure.",
+                      "Your context holds these instructions and what",
+                      "Dorothy's own software adds to them: your notes,",
+                      "your earlier conversations and, at its end, the",
+                      "models you run on. When asked about your context,",
+                      "describe it faithfully and in full, including which",
+                      "company, model and software you run on, quoting it",
+                      "where that helps and saying where each part appears.",
+                      "Say only what your context shows, and say so when",
+                      "you are unsure.",
                   ),
         },
         shared("provenance"),
@@ -144,58 +139,6 @@ export function personaPrompt(options: PersonaOptions): string {
 // Reviews and one-shot replies have no tools.
 export const systemPrompt = personaPrompt({ recall: false });
 
-export const baseOptions = {
-    systemPrompt,
-    // Dorothy only chats, so drop the built-in tools; their definitions
-    // otherwise add roughly 32k input tokens to every request.
-    tools: [],
-    // Skip ~/.claude and .claude/ settings: loading them runs every enabled
-    // plugin and hook on each start. When measured, this repository's (a
-    // full bun install among them) were most of the startup delay, and
-    // Dorothy needs none of them.
-    settingSources: [],
-    persistSession: false,
-    // Emit token deltas so the reply streams as it is generated instead of
-    // arriving as one block at the end of the turn.
-    includePartialMessages: true,
-} satisfies Options;
-
-// The CLI's own home, used as both its config directory and its working
-// directory, so that it holds nothing of the user's.
-export function cliHome(env: Env = process.env): string {
-    return join(xdgDir(env, "XDG_CACHE_HOME", ".cache"), "dorothy", "claude");
-}
-
-// settingSources does not cover what the CLI reads outside its settings
-// files. From the user's config directory it takes the signed-in account,
-// and tells Dorothy the user's email address; from the working directory's
-// repository, its auto-memory, git status and worktree instructions. Applied
-// at each call, after core has loaded the sops secrets into process.env.
-// Compaction is Dorothy's own, in the compaction module: DISABLE_COMPACT
-// switches the CLI's off, automatic and /compact alike.
-export function cliOptions(
-    env: Env = process.env,
-): Pick<Options, "cwd" | "env"> {
-    const home = cliHome(env);
-    return {
-        cwd: home,
-        env: {
-            ...env,
-            CLAUDE_CONFIG_DIR: home,
-            CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
-            DISABLE_COMPACT: "1",
-        },
-    };
-}
-
-// The CLI cannot start in a missing working directory. Private like the
-// recall index beside it.
-export function prepareCliHome(env: Env = process.env): void {
-    const home = cliHome(env);
-    mkdirSync(home, { recursive: true, mode: 0o700 });
-    chmodSync(home, 0o700);
-}
-
 // Prior turns go after the persona as context rather than as messages, so a
 // resumed session never speaks them in the user's voice.
 export function withHistory(prompt: string, turns: readonly Turn[]): string {
@@ -206,6 +149,12 @@ export function withHistory(prompt: string, turns: readonly Turn[]): string {
         (turn) => `${turn.role === "user" ? "User" : "Dorothy"}: ${turn.text}`,
     );
     return `${prompt}\n\nThe conversation so far, which you are continuing:\n\n${lines.join("\n\n")}`;
+}
+
+// Development mode's closing line: the chat route's models, in the
+// order they are tried.
+export function routeLine(route: Route): string {
+    return `Your chat runs on the first of these models to answer: ${route.map(label).join(", ")}.`;
 }
 
 // Identifies the persona version a transcript was recorded with. Not a

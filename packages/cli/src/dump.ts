@@ -8,14 +8,10 @@
 //
 //
 
-import {
-    type CaptureQueryFn,
-    conversationOptions,
-    dumpRequest,
-    type PersonaMode,
-} from "@dorothy/agent";
+import { dumpRequest, type PersonaMode } from "@dorothy/agent";
 import type { Env } from "@dorothy/core";
 import { previewStart } from "@dorothy/memory";
+import { chatEntry } from "./models.js";
 import { recallLaunch } from "./recall-launch.js";
 
 export type DumpRequest = {
@@ -31,7 +27,7 @@ export async function runDump(
     request: DumpRequest,
     {
         env = process.env,
-        queryFn,
+        dump = dumpRequest,
         write = {
             out: (text: string) => {
                 process.stdout.write(text);
@@ -42,7 +38,7 @@ export async function runDump(
         },
     }: {
         env?: Env;
-        queryFn?: CaptureQueryFn;
+        dump?: typeof dumpRequest;
         write?: { out: (text: string) => void; err: (text: string) => void };
     } = {},
 ): Promise<number> {
@@ -55,19 +51,28 @@ export async function runDump(
         write.err(`dorothy: ${preview.message}\n`);
         return 1;
     }
-    const body = await dumpRequest({
-        prompt: request.message,
-        options: conversationOptions({
-            ...preview.start,
-            persona: request.persona,
-        }),
-        ...(queryFn === undefined ? {} : { queryFn }),
+    const notes: string[] = [];
+    let failure: string | null = null;
+    const body = await dump({
+        setup: { ...preview.start, persona: request.persona },
+        message: request.message,
+        entry: chatEntry(),
+        env,
+        report: (kind, message) => {
+            if (kind === "error") {
+                failure = message;
+            } else {
+                notes.push(message);
+            }
+        },
     });
-    for (const warning of preview.warnings) {
+    for (const warning of [...preview.warnings, ...notes]) {
         write.err(`dorothy: ${warning}\n`);
     }
     if (body === null) {
-        write.err("dorothy: the CLI sent no request to dump\n");
+        write.err(
+            `dorothy: the chat sent no request to dump${failure === null ? "" : `: ${failure}`}\n`,
+        );
         return 1;
     }
     write.out(`${JSON.stringify(body, null, 2)}\n`);
