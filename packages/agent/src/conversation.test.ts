@@ -180,7 +180,7 @@ describe("Conversation", () => {
         await until(() => ended(events));
         expect(of(events, "sdk").map((event) => event.message)).toContainEqual({
             type: "text-delta",
-            event: { type: "text-delta", delta: "hi" },
+            event: { delta: "hi" },
         });
     });
 

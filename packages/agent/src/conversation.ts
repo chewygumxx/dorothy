@@ -140,7 +140,7 @@ async function settleWithin(work: Promise<unknown>, ms: number): Promise<void> {
 // text; never a prompt, a header or a key.
 function rawOf(part: { type: string; text?: unknown }): RawMessage {
     return part.type === "text-delta"
-        ? { type: part.type, event: { type: part.type, delta: part.text } }
+        ? { type: part.type, event: { delta: part.text } }
         : { type: part.type };
 }
 
