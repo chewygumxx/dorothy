@@ -1073,3 +1073,19 @@ describe("conversationSetup", () => {
         expect(conversationSetup().system).not.toContain("models to answer");
     });
 });
+
+describe("a model with no price", () => {
+    it("warns once, as chat's warning, that its cost shows as $0", async () => {
+        const { conversation, events } = session(
+            [{ chunks: textChunks("one") }, { chunks: textChunks("two") }],
+            { route: [anthropicEntry("claude-unpriced-chat-test")] },
+        );
+        conversation.send("hi");
+        await until(() => ended(events));
+        conversation.send("again");
+        await until(() => ended(events, 2));
+        expect(of(events, "warning").map((event) => event.message)).toEqual([
+            "no price is known for anthropic:claude-unpriced-chat-test; its cost shows as $0",
+        ]);
+    });
+});

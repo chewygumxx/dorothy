@@ -474,3 +474,28 @@ describe("structuredCall on the wire", () => {
         });
     });
 });
+
+describe("a model with no price", () => {
+    it("says so once in notes", async () => {
+        const entry = { ...SONNET, model: "claude-unpriced-structured-test" };
+        const model = mockModel(
+            [
+                { chunks: textChunks('{"ok":true}') },
+                { chunks: textChunks('{"ok":true}') },
+            ],
+            entry.model,
+        );
+        const call = structuredCall({
+            route: [entry],
+            env,
+            model: () => model,
+        });
+        expect(await call(REQUEST)).toMatchObject({
+            ok: true,
+            notes: [
+                "no price is known for anthropic:claude-unpriced-structured-test; its cost shows as $0",
+            ],
+        });
+        expect((await call(REQUEST)).notes).toBeUndefined();
+    });
+});
