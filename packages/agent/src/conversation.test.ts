@@ -237,6 +237,38 @@ describe("Conversation", () => {
         expect(of(events, "error")).toHaveLength(0);
     });
 
+    it("ends a message queued behind recall's start as interrupted, calling no model", async () => {
+        let start: (tools: RecallTools) => void = () => {};
+        const recall = fakeRecall({});
+        const { conversation, model, events } = session(
+            [{ chunks: textChunks("later") }],
+            {
+                recall: RECALL,
+                connect: () =>
+                    new Promise<RecallTools>((resolve) => {
+                        start = resolve;
+                    }),
+            },
+        );
+        conversation.send("hi");
+        await conversation.interrupt();
+        start(recall.recall);
+        await until(() => ended(events));
+        expect(of(events, "turn-end")[0]).toMatchObject({
+            reply: "",
+            interrupted: true,
+        });
+        expect(model.doStreamCalls).toHaveLength(0);
+        conversation.send("again");
+        await until(() => ended(events, 2));
+        expect(of(events, "turn-end")[1]).toMatchObject({
+            reply: "later",
+            interrupted: false,
+        });
+        expect(model.doStreamCalls).toHaveLength(1);
+        expect(JSON.stringify(model.doStreamCalls[0]?.prompt)).toContain("hi");
+    });
+
     it("keeps working when a listener throws on turn-end", async () => {
         const { conversation, model, events } = session([
             { chunks: textChunks("one") },

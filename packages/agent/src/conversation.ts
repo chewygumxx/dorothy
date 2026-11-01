@@ -188,6 +188,8 @@ export class Conversation implements ChatSession {
     #work: Promise<void> = Promise.resolve();
     #turn: AbortController | null = null;
     #interrupted = false;
+    #queued = 0;
+    #stopQueued = false;
     #closed: Promise<void> | null = null;
     #sessionCost = 0;
 
@@ -226,11 +228,14 @@ export class Conversation implements ChatSession {
 
     send(text: string): void {
         this.start();
+        this.#queued += 1;
         this.#work = this.#work.then(() => this.#runTurn(text)).catch(() => {});
     }
 
     async interrupt(): Promise<void> {
         if (this.#turn === null) {
+            // A turn still waiting on recall's start ends as interrupted.
+            this.#stopQueued = this.#queued > 0;
             return;
         }
         this.#interrupted = true;
@@ -298,6 +303,7 @@ export class Conversation implements ChatSession {
     // later messages still run.
     async #runTurn(text: string): Promise<void> {
         await this.#started;
+        this.#queued -= 1;
         if (this.#closed !== null) {
             return;
         }
@@ -320,6 +326,21 @@ export class Conversation implements ChatSession {
 
     async #turnOf(text: string): Promise<void> {
         const turn = new TurnState((event) => this.#emit(event), this.#now());
+        if (this.#stopQueued) {
+            this.#stopQueued = false;
+            this.#messages.push({
+                message: { role: "user", content: text },
+                by: null,
+            });
+            this.#emit({
+                type: "turn-end",
+                reply: "",
+                interrupted: true,
+                stats: turn.stats(0, this.#sessionCost, this.#now()),
+                contextTokens: turn.contextTokens(),
+            });
+            return;
+        }
         const controller = new AbortController();
         this.#turn = controller;
         this.#interrupted = false;
