@@ -20,7 +20,6 @@ import {
     Cooldowns,
     defaultRoutes,
     type Env,
-    type Failure,
     label,
     type RawMessage,
     REAL_TIMERS,
@@ -29,13 +28,12 @@ import {
     type RouteEntry,
     runRoute,
     type SessionStart,
-    stepCost,
     type Timers,
     withSection,
 } from "@dorothy/core";
 import { type ModelMessage, stepCountIs, streamText } from "ai";
 import { STALL_MS, secretFailure, Watchdog } from "./attempt.js";
-import { stepUsage, unpricedNotice } from "./cost.js";
+import { stepUsage } from "./cost.js";
 import { failureOf } from "./failures.js";
 import {
     type PersonaMode,
@@ -44,10 +42,11 @@ import {
     withHistory,
 } from "./persona.js";
 import {
+    BREAKPOINT,
+    instructionsFor,
     keyOf,
     languageModel,
     type ModelFactory,
-    providerOptions,
 } from "./providers.js";
 import {
     type ConnectRecall,
@@ -55,15 +54,13 @@ import {
     type RecallTools,
     recallEnv,
 } from "./recall-tools.js";
+import { readStream, requestBase } from "./stream.js";
 import { TurnState } from "./turn.js";
 
 export const MAX_STEPS = 10;
 export const STEP_LIMIT_WARNING = "the reply stopped after ten tool steps";
-
-// Anthropic's prompt cache: the system prompt, and the latest message.
-const BREAKPOINT = {
-    anthropic: { cacheControl: { type: "ephemeral" as const } },
-};
+export const OUTPUT_LIMIT_WARNING =
+    "the reply stopped at the model's output limit";
 
 // A session's start and the persona it speaks with. Every field may be
 // left out, for tests and the dump.
@@ -108,6 +105,12 @@ export function conversationSetup(
 
 export type ConversationDeps = {
     route?: Route;
+    // The route development mode's prompt names, when it is not the one
+    // tried: the dump's, which tries its first entry alone.
+    shown?: Route;
+    // Every secrets.json name a provider gives, every role's, which the
+    // recall server must not see; the route's own are never seen either.
+    keys?: readonly string[];
     cooldowns?: Cooldowns;
     env?: Env;
     model?: ModelFactory;
@@ -117,10 +120,10 @@ export type ConversationDeps = {
     now?: () => number;
 };
 
-// A message, and the model that made it, null for the user's and for
-// text kept from an interrupted turn.
+// A message, and the label of the model that made it, null for the
+// user's and for text kept from an interrupted turn.
 type Stored = { message: ModelMessage; by: string | null };
-type Answer = { messages: ModelMessage[]; limited: boolean };
+type Answer = { messages: ModelMessage[]; limited: boolean; cut: boolean };
 
 const describeError = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
@@ -144,15 +147,14 @@ function rawOf(part: { type: string; text?: unknown }): RawMessage {
         : { type: part.type };
 }
 
-// Reasoning belongs to the model that made it; another is sent none.
-function withoutReasoning(message: ModelMessage): ModelMessage {
+// Reasoning belongs to the model that made it; another is sent none,
+// and an assistant message that held nothing else is not sent at all.
+function withoutReasoning(message: ModelMessage): ModelMessage | null {
     if (message.role !== "assistant" || typeof message.content === "string") {
         return message;
     }
-    return {
-        ...message,
-        content: message.content.filter((part) => part.type !== "reasoning"),
-    };
+    const content = message.content.filter((part) => part.type !== "reasoning");
+    return content.length === 0 ? null : { ...message, content };
 }
 
 // The user's message as sent: on Anthropic it carries the second cache
@@ -174,6 +176,7 @@ export class Conversation implements ChatSession {
     readonly #listeners = new Set<(event: ConversationEvent) => void>();
     readonly #setup: ConversationSetup;
     readonly #route: Route;
+    readonly #keys: readonly string[];
     readonly #cooldowns: Cooldowns;
     readonly #env: Env;
     readonly #model: ModelFactory;
@@ -195,6 +198,8 @@ export class Conversation implements ChatSession {
 
     constructor({
         route = defaultRoutes().chat,
+        shown = route,
+        keys = [],
         cooldowns = new Cooldowns(),
         env = process.env,
         model = languageModel,
@@ -205,6 +210,7 @@ export class Conversation implements ChatSession {
         ...setup
     }: SessionSetup & ConversationDeps = {}) {
         this.#route = route;
+        this.#keys = keys;
         this.#cooldowns = cooldowns;
         this.#env = env;
         this.#model = model;
@@ -212,7 +218,7 @@ export class Conversation implements ChatSession {
         this.#timers = timers;
         this.#stallMs = stallMs;
         this.#now = now;
-        this.#setup = conversationSetup(setup, route);
+        this.#setup = conversationSetup(setup, shown);
     }
 
     start(): void {
@@ -298,7 +304,7 @@ export class Conversation implements ChatSession {
                 this.#recall = await this.#connect(
                     recall,
                     recollect,
-                    recallEnv(this.#env, this.#route),
+                    recallEnv(this.#env, this.#route, this.#keys),
                 );
             } catch (error) {
                 this.#notify({
@@ -395,6 +401,9 @@ export class Conversation implements ChatSession {
             if (outcome.value.limited) {
                 this.#emit({ type: "warning", message: STEP_LIMIT_WARNING });
             }
+            if (outcome.value.cut) {
+                this.#emit({ type: "warning", message: OUTPUT_LIMIT_WARNING });
+            }
             this.#emit({
                 type: "turn-end",
                 reply: turn.reply,
@@ -437,14 +446,18 @@ export class Conversation implements ChatSession {
 
     #outgoing(entry: RouteEntry, text: string): ModelMessage[] {
         const by = label(entry);
-        return [
-            ...this.#messages.map(({ message, by: from }) =>
+        const sent: ModelMessage[] = [];
+        for (const { message, by: from } of this.#messages) {
+            const kept =
                 from === null || from === by
                     ? message
-                    : withoutReasoning(message),
-            ),
-            outgoingUser(text, entry),
-        ];
+                    : withoutReasoning(message);
+            if (kept !== null) {
+                sent.push(kept);
+            }
+        }
+        sent.push(outgoingUser(text, entry));
+        return sent;
     }
 
     async #attempt(
@@ -463,87 +476,79 @@ export class Conversation implements ChatSession {
             };
         }
         const watchdog = new Watchdog(signal, this.#stallMs, this.#timers);
-        let costUsd = 0;
-        let failure: Failure | null = null;
-        let aborted = false;
         let limited = false;
+        let cut = false;
+        let costUsd = 0;
         try {
-            const result = streamText({
-                model: this.#model(entry, key),
-                instructions:
-                    entry.kind === "anthropic"
-                        ? {
-                              role: "system",
-                              content: this.#setup.system,
-                              providerOptions: BREAKPOINT,
-                          }
-                        : this.#setup.system,
-                messages: this.#outgoing(entry, text),
-                ...(this.#recall === null ? {} : { tools: this.#recall.tools }),
-                stopWhen: stepCountIs(MAX_STEPS),
-                maxRetries: 0,
-                abortSignal: watchdog.signal,
-                providerOptions: providerOptions(entry),
-                onError: () => {},
-            });
-            for await (const part of result.fullStream) {
-                watchdog.touch();
-                this.#emit({ type: "sdk", message: rawOf(part) });
-                switch (part.type) {
-                    case "text-delta":
-                        turn.text(part.text, this.#now());
-                        break;
-                    case "tool-call":
-                        turn.call(part.toolCallId, part.toolName, part.input);
-                        break;
-                    case "tool-result":
-                        turn.result(part.toolCallId, part.output);
-                        break;
-                    case "tool-error":
-                        turn.error(part.toolCallId);
-                        break;
-                    case "finish-step": {
-                        const usage = stepUsage(part.usage);
-                        turn.step(usage);
-                        const cost = stepCost(entry, usage);
-                        if (cost === null) {
-                            const notice = unpricedNotice(entry);
-                            if (notice !== null) {
-                                this.#emit({
-                                    type: "warning",
-                                    message: notice,
-                                });
-                            }
+            const read = await readStream(
+                entry,
+                watchdog,
+                () =>
+                    streamText({
+                        ...requestBase(
+                            entry,
+                            key,
+                            "chat",
+                            this.#model,
+                            watchdog,
+                        ),
+                        instructions: instructionsFor(
+                            entry,
+                            this.#setup.system,
+                        ),
+                        messages: this.#outgoing(entry, text),
+                        ...(this.#recall === null
+                            ? {}
+                            : { tools: this.#recall.tools }),
+                        stopWhen: stepCountIs(MAX_STEPS),
+                    }),
+                {
+                    onPart: (part) => {
+                        this.#emit({ type: "sdk", message: rawOf(part) });
+                        switch (part.type) {
+                            case "text-delta":
+                                turn.text(part.text, this.#now());
+                                break;
+                            case "tool-call":
+                                turn.call(
+                                    part.toolCallId,
+                                    part.toolName,
+                                    part.input,
+                                );
+                                break;
+                            case "tool-result":
+                                turn.result(part.toolCallId, part.output);
+                                break;
+                            case "tool-error":
+                                turn.error(part.toolCallId);
+                                break;
+                            case "finish-step":
+                                turn.step(stepUsage(part.usage));
+                                limited = part.finishReason === "tool-calls";
+                                cut = part.finishReason === "length";
+                                break;
                         }
-                        costUsd += cost ?? 0;
-                        limited = part.finishReason === "tool-calls";
-                        break;
-                    }
-                    case "error":
-                        failure ??= failureOf(part.error);
-                        break;
-                    case "abort":
-                        aborted = true;
-                        break;
-                }
-            }
-            if (aborted) {
+                    },
+                    notice: (message) =>
+                        this.#emit({ type: "warning", message }),
+                },
+            );
+            costUsd = read.costUsd;
+            if (!read.ok) {
                 return {
                     ok: false,
-                    failure: watchdog.failure(),
+                    failure: read.failure,
                     started: turn.started,
                     costUsd,
                 };
             }
-            if (failure !== null) {
-                return { ok: false, failure, started: turn.started, costUsd };
-            }
-            const steps = await result.steps;
+            const steps = await read.result.steps;
             return {
                 ok: true,
                 value: {
                     messages: steps.flatMap((step) => step.response.messages),
                     limited,
+                    cut,
                 },
                 costUsd,
             };

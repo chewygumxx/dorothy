@@ -81,6 +81,34 @@ describe("CLI secrets", () => {
         expect(err).toEqual(["dorothy: secrets not loaded (SOPS_FAILED)\n"]);
     });
 
+    it("disables service reviews on a routing fault, loading no secrets", async () => {
+        const err: string[] = [];
+        let loaded = false;
+        const result = await reviewAgent({
+            root,
+            env: { HOME: root },
+            readRouting: async () => ({
+                ok: false,
+                faults: ["config.toml: models.review: no provider is named x"],
+            }),
+            load: async () => {
+                loaded = true;
+                return null;
+            },
+            write: (text) => {
+                err.push(text);
+            },
+        });
+        expect(result).toEqual({
+            review: null,
+            noReviews: "config.toml: models.review: no provider is named x",
+        });
+        expect(err).toEqual([
+            "dorothy: reviews are off: config.toml: models.review: no provider is named x\n",
+        ]);
+        expect(loaded).toBe(false);
+    });
+
     it("disables service reviews with a coded failure", async () => {
         const err: string[] = [];
         const env: Env = {

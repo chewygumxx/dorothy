@@ -8,8 +8,9 @@
 //
 //
 
-// Part A's routes: each role's default model on Anthropic's Messages
-// API, one entry each, until config.toml routes them.
+// Each role's default model on Anthropic's Messages API, one entry
+// each: the routes when config.toml names none, and the API roots of
+// the kinds whose root is fixed.
 
 import {
     ROLES,
@@ -28,6 +29,14 @@ export const DEFAULT_MODELS: Readonly<Record<Role, string>> = {
 // Written as ANTHROPIC_BASE_URL is, without /v1, which agent appends.
 export const ANTHROPIC_API_ROOT = "https://api.anthropic.com";
 export const ANTHROPIC_KEY = "ANTHROPIC_API_KEY";
+
+// The kinds whose root no config may change: their API roots, as each
+// provider documents them.
+export const FIXED_ROOTS = {
+    openrouter: "https://openrouter.ai/api/v1",
+    featherless: "https://api.featherless.ai/v1",
+    huggingface: "https://router.huggingface.co/v1",
+} as const;
 
 export function anthropicEntry(model: string): RouteEntry {
     return {

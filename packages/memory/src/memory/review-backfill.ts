@@ -15,6 +15,7 @@ import {
     isPhrase,
     readConfig,
     type StructuredCall,
+    withNotes,
 } from "@dorothy/core";
 import { dataRoot } from "../facts/store.js";
 import { indexPath, RecallIndex } from "../recall/store.js";
@@ -168,7 +169,7 @@ export async function runReviewBackfill({
             index,
             vocabulary,
             versions,
-            call,
+            call: withNotes(call, (message) => warn(`memory: ${message}`)),
             persona,
             now,
             entries: () => entries.values(),

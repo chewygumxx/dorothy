@@ -8,7 +8,7 @@
 //
 //
 
-import type { Env, RouteEntry } from "@dorothy/core";
+import type { Env, Route } from "@dorothy/core";
 import { Conversation, type SessionSetup } from "./conversation.js";
 import type { ConnectRecall } from "./recall-tools.js";
 
@@ -63,31 +63,47 @@ export function captureServer(): {
     };
 }
 
-// The first request a chat on this entry would send, as it would send
-// it, recall tools included: a session of its own, pointed at the
-// capture server with a stand-in key and no fallback, closed once the
-// server has answered. Its warnings go to report, and the error that
-// kept a request from being sent, if one did; the stand-in's own refusal
-// of the request it captured is not reported.
+// The first request a chat would send on its route's first entry, as it
+// would send it, its development prompt naming the whole route and the
+// recall server withheld every provider's key (`keys`) and the route's
+// own: a session of its own, pointed at the capture server with a
+// stand-in key and no fallback, closed once the server has answered. Its
+// warnings go to report, and the error that kept a request from being
+// sent, if one did; the stand-in's own refusal of the request it
+// captured is not reported.
 export async function dumpRequest({
     setup,
     message,
-    entry,
+    route,
+    keys = [],
     env = process.env,
     connect,
     report = () => {},
 }: {
     setup: SessionSetup;
     message: string;
-    entry: RouteEntry;
+    // The chat's route: its first entry is dumped, and development mode's
+    // prompt names every entry, as a chat's does.
+    route: Route;
+    // Every provider's key names, which the recall server must not see.
+    keys?: readonly string[];
     env?: Env;
     connect?: ConnectRecall;
     report?: (kind: "warning" | "error", message: string) => void;
 }): Promise<unknown | null> {
+    const entry = route[0];
+    if (entry === undefined) {
+        report("error", "the chat route has no entry");
+        return null;
+    }
     const server = captureServer();
     const conversation = new Conversation({
         ...setup,
         route: [{ ...entry, baseUrl: server.url, key: DUMP_KEY }],
+        shown: route,
+        // The stand-in takes the entry's key's place, which the recall
+        // server is withheld all the same.
+        keys: [...keys, ...(entry.key === null ? [] : [entry.key])],
         env: { ...env, [DUMP_KEY]: "dorothy --dump-context" },
         ...(connect === undefined ? {} : { connect }),
     });

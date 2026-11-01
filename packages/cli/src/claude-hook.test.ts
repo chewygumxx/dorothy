@@ -158,6 +158,30 @@ describe("runHook", () => {
         expect(seen.agents).toBe(0);
     });
 
+    it("still runs the hook on a routing fault, its reviews failing with it", async () => {
+        const { seen, deps } = harness();
+        delete deps.agent;
+        deps.readRouting = async () => ({
+            ok: false,
+            faults: [
+                "config.toml: models.review must be a list of one model or more",
+            ],
+        });
+        expect(await runHook({ kind: "hook" }, deps)).toBe(0);
+        const outcome = await (await seen.deps?.agent())?.call({
+            what: "a review",
+            system: "",
+            prompt: "",
+            schema: {},
+            timeoutMs: 1,
+        });
+        expect(outcome).toEqual({
+            ok: false,
+            reason: "the agent could not load (config.toml: models.review must be a list of one model or more)",
+            costUsd: 0,
+        });
+    });
+
     it("still runs the hook when the agent cannot load, its reviews failing", async () => {
         const { seen, deps } = harness();
         deps.agent = async () => {

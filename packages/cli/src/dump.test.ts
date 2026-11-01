@@ -13,9 +13,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { dumpRequest } from "@dorothy/agent";
-import { newPhrase } from "@dorothy/core";
+import { defaultRoutes, newPhrase } from "@dorothy/core";
 import { runDump } from "./dump.js";
-import { chatEntry } from "./models.js";
+
+const ROUTING = { routes: defaultRoutes(), keys: ["ANTHROPIC_API_KEY"] };
 
 const recording = (
     body: unknown = { model: "claude-opus-5-5" },
@@ -66,14 +67,15 @@ describe("runDump", () => {
         const fake = recording();
         const code = await runDump(
             { resume: null, message: "hi", persona: "chat" },
-            { env, dump: fake.dump, write },
+            { routing: ROUTING, env, dump: fake.dump, write },
         );
         expect(code).toBe(0);
         expect(JSON.parse(out)).toEqual({ model: "claude-opus-5-5" });
         expect(fake.seen).toHaveLength(1);
         expect(fake.seen[0]).toMatchObject({
             message: "hi",
-            entry: chatEntry(),
+            route: ROUTING.routes.chat,
+            keys: ROUTING.keys,
             setup: { persona: "chat", history: [] },
         });
         expect(fake.seen[0]?.setup.recall).toHaveProperty("command");
@@ -83,7 +85,7 @@ describe("runDump", () => {
         const fake = recording();
         await runDump(
             { resume: null, message: "hi", persona: "development" },
-            { env, dump: fake.dump, write },
+            { routing: ROUTING, env, dump: fake.dump, write },
         );
         expect(fake.seen[0]?.setup.persona).toBe("development");
     });
@@ -93,7 +95,7 @@ describe("runDump", () => {
         const phrase = newPhrase();
         const code = await runDump(
             { resume: phrase, message: "hi", persona: "chat" },
-            { env, dump: fake.dump, write },
+            { routing: ROUTING, env, dump: fake.dump, write },
         );
         expect(code).toBe(1);
         expect(out).toBe("");
@@ -104,7 +106,7 @@ describe("runDump", () => {
     it("fails when the chat sent no request", async () => {
         const code = await runDump(
             { resume: null, message: "hi", persona: "chat" },
-            { env, dump: recording(null).dump, write },
+            { routing: ROUTING, env, dump: recording(null).dump, write },
         );
         expect(code).toBe(1);
         expect(err).toBe("dorothy: the chat sent no request to dump\n");
@@ -116,7 +118,7 @@ describe("runDump", () => {
         ]);
         const code = await runDump(
             { resume: null, message: "hi", persona: "chat" },
-            { env, dump: fake.dump, write },
+            { routing: ROUTING, env, dump: fake.dump, write },
         );
         expect(code).toBe(0);
         expect(JSON.parse(out)).toEqual({ model: "m" });
@@ -131,7 +133,7 @@ describe("runDump", () => {
         ]);
         const code = await runDump(
             { resume: null, message: "hi", persona: "chat" },
-            { env, dump: fake.dump, write },
+            { routing: ROUTING, env, dump: fake.dump, write },
         );
         expect(code).toBe(1);
         expect(err).toBe(

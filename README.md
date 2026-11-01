@@ -23,7 +23,8 @@ Conversational LLM interface
 
 Dorothy is a conversational assistant in the spirit of <https://claude.ai>,
 running on her own runtime, the Vercel AI SDK, which reaches Anthropic's
-Messages API with her own system prompt.
+Messages API with her own system prompt, and the other providers
+`config.toml` names.
 
 ## Prerequisites
 
@@ -56,6 +57,9 @@ Use sops's editor to set a credential as a JSON string:
 - `ANTHROPIC_API_KEY`: the key Dorothy's own calls spend, her chat, her
   reviews and her compactions, through Anthropic's Messages API. A Max
   plan's monthly API credits cover it.
+- `OPENROUTER_API_KEY`, `FEATHERLESS_API_KEY` and `HF_TOKEN`: keys for
+  the other providers her calls may be routed to (Models and providers,
+  below). A provider in `config.toml` names the one it uses.
 - `CLAUDE_CODE_OAUTH_TOKEN`: a Claude Pro/Max subscription token, minted
   by running `claude setup-token`, for the eval's `via = "claude"`
   clients, which run Claude Code itself. `dorothy --claude` needs none: it
@@ -148,7 +152,92 @@ Modules show left to right as far as the width allows, then on up to
 `max-lines` lines (at most 5); those that still do not fit are left out from
 the right. An empty `modules` hides the line; for the statusline it also
 frees its rows, so the window then needs only 19 lines. A mistake in the
-file shows as a warning, naming its line, and the defaults apply.
+file shows as a warning, naming its line, and the defaults apply, but for
+the routing tables below: a mistake there, or a file holding them that
+does not parse, is an error.
+
+### Models and providers
+
+Each of her calls has a role: `chat`, `review`, `compaction`, and
+`maintenance`, for work to come. By default each runs on one Anthropic
+model: chat on `claude-opus-5-5`, reviews and compaction on
+`claude-sonnet-5-5`, maintenance on `claude-haiku-5-5`. `config.toml`
+can declare other providers and give each role an ordered list:
+
+```toml
+[providers.anthropic]
+kind = "anthropic"
+key = "ANTHROPIC_API_KEY"
+
+[providers.openrouter]
+kind = "openrouter"
+key = "OPENROUTER_API_KEY"
+
+[providers.featherless]
+kind = "featherless"
+key = "FEATHERLESS_API_KEY"
+
+[providers.hf]
+kind = "huggingface"
+key = "HF_TOKEN"
+
+[providers.ollama]
+kind = "local"
+base-url = "http://127.0.0.1:11434/v1"
+
+[models]
+chat = ["anthropic:claude-opus-5-5", "openrouter:<model>"]
+review = [
+  "anthropic:claude-sonnet-5-5",
+  { model = "featherless:<model>", price = [0.1, 0.1] },
+]
+```
+
+A call that fails on one model moves to the next and says so, unless it
+was cancelled or her reply had begun: once text has streamed or she has
+kept a fact, a failure ends the turn. A provider out of credit is skipped
+until its `retry-after`, or for five minutes, and a rate-limited model
+likewise. Each process (chat, the memory service) remembers its own
+refusals while it runs; when every model in a list is cooling, the one
+whose wait ends first is tried.
+
+| Kind | Reaches | What keeps her prompts |
+| --- | --- | --- |
+| `anthropic` | The Messages API, or a loopback `base-url`, written without the `/v1` Dorothy appends | Anthropic's commercial terms |
+| `openrouter` | `https://openrouter.ai/api/v1` | Only endpoints with zero data retention and data collection denied, asked on every request |
+| `featherless` | `https://api.featherless.ai/v1`, on its paid API plan | Featherless stores no prompts |
+| `huggingface` | `https://router.huggingface.co/v1` | Whichever provider Hugging Face routes to, some of which keep prompts; a suffix such as `org/model:featherless-ai` chooses one |
+| `local` | A loopback `base-url`, the server's full API root | This machine |
+
+- `key` names a `secrets.json` entry, never a value; only `local` may
+  leave it out. A key unset when a call runs fails that entry alone.
+- An entry is `provider:model`, split at the first colon, so
+  `openrouter:x/y:free` names the model `x/y:free`.
+- `price`, dollars per million tokens in and out, is for `featherless`,
+  `huggingface` and `local` entries; `[0, 0]` is free. OpenRouter reports
+  each call's cost, and Anthropic's models are priced from a table; any
+  other model costs $0, with a warning.
+- With no `[providers]`, `anthropic` is implied. A role left out of
+  `[models]` takes its default model on the provider named `anthropic`,
+  which must be of kind `anthropic`; without one, leaving a role out is
+  an error.
+- A model later in a list needs a context window no smaller than
+  `compaction.hard` (128,000 tokens by default), or a long chat fails on
+  it.
+- The Chat Completions kinds send no output limit, so each provider's
+  default applies (featherless's is 4,096 tokens), and a model that
+  thinks at length may spend it all before answering; Dorothy then warns
+  that the reply stopped at the model's output limit.
+- A plan's concurrency limit, such as featherless's, can refuse a chat
+  while a review or a compaction is running on the same model; a second
+  entry in the role's list answers instead.
+
+A mistake in these tables is an error, and so is a `config.toml` that
+cannot be read at all, as one with routing tables that does not parse
+is, because a default could send her requests where you did not mean:
+chat, a one-shot reply and `--dump-context` print it and exit 1; the
+memory service and Claude Code's hooks log it and review nothing;
+`--review-backfill` prints it and exits 1.
 
 ### Memory
 

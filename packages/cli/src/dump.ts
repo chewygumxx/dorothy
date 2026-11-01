@@ -9,9 +9,8 @@
 //
 
 import { dumpRequest, type PersonaMode } from "@dorothy/agent";
-import type { Env } from "@dorothy/core";
+import type { Env, Routing } from "@dorothy/core";
 import { previewStart } from "@dorothy/memory";
-import { chatEntry } from "./models.js";
 import { recallLaunch } from "./recall-launch.js";
 
 export type DumpRequest = {
@@ -26,6 +25,7 @@ export type DumpRequest = {
 export async function runDump(
     request: DumpRequest,
     {
+        routing,
         env = process.env,
         dump = dumpRequest,
         write = {
@@ -37,10 +37,12 @@ export async function runDump(
             },
         },
     }: {
+        // config.toml's, whose chat route the dump shows.
+        routing: Routing;
         env?: Env;
         dump?: typeof dumpRequest;
         write?: { out: (text: string) => void; err: (text: string) => void };
-    } = {},
+    },
 ): Promise<number> {
     const preview = await previewStart({
         resume: request.resume,
@@ -56,7 +58,8 @@ export async function runDump(
     const body = await dump({
         setup: { ...preview.start, persona: request.persona },
         message: request.message,
-        entry: chatEntry(),
+        route: routing.routes.chat,
+        keys: routing.keys,
         env,
         report: (kind, message) => {
             if (kind === "error") {

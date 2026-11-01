@@ -21,6 +21,7 @@ import {
     type SessionStart,
     type StructuredCall,
     type Turn,
+    withNotes,
 } from "@dorothy/core";
 import { startNotices } from "../bodies/unread.js";
 import { COMPACTION_TIMEOUT_MS } from "../compaction/compact.js";
@@ -551,6 +552,11 @@ export async function openMemory({
     // told at chat's start as at dorothy --claude's.
     warnings.push(...(await startNotices(env).catch(() => [])));
 
+    // What memory tells the chat as it runs, its calls' fallback notes
+    // among it.
+    const channel = noticeChannel();
+    const say = (message: string) => channel.warn(`memory: ${message}`);
+
     // The index and history open before anything is read, so that
     // history restores a broken file first. The index serves compaction
     // whenever the config lets it, since this chat's notes are not read
@@ -587,7 +593,7 @@ export async function openMemory({
                   history,
                   config,
                   versions: launched?.history.handle() ?? null,
-                  call: calls.review,
+                  call: withNotes(calls.review, say),
                   persona: prompts.review,
                   transcript,
                   warnings,
@@ -614,7 +620,6 @@ export async function openMemory({
     // Canonical writers prefer history's combined lock, falling back
     // to the index when history is unavailable.
     const writeLock = launched?.history.lock ?? claims?.lock;
-    const channel = noticeChannel();
     // Chat syncs its project at its start and after each turn; with
     // memory off, or without a lock to sync under, it does not.
     const syncer =
@@ -629,7 +634,7 @@ export async function openMemory({
               clusters,
               prompts,
               recollect: recall !== null,
-              call: calls.compaction,
+              call: withNotes(calls.compaction, say),
               dir,
               phrase,
               path,

@@ -23,6 +23,7 @@ import {
     type RecordResponse,
     SERVICE_PATHS,
     type StructuredCall,
+    withNotes,
 } from "@dorothy/core";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { hookLog } from "../bodies/log.js";
@@ -181,7 +182,9 @@ export async function startService(
                       index,
                       vocabulary,
                       versions: launched?.history.handle() ?? null,
-                      call: options.review.call,
+                      call: withNotes(options.review.call, (message) =>
+                          warn(`memory: ${message}`),
+                      ),
                       persona: options.review.persona,
                       now,
                       entries: () => entries,

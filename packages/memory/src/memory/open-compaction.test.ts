@@ -109,6 +109,8 @@ describe("a chat compacted end to end", () => {
                 },
                 model: "claude-test",
                 costUsd: 0.1,
+                // A fallback on the way, which the chat is told of.
+                notes: ["a:m refused (usage: spent); answering with b:m"],
             };
         };
         const starts: SessionStart[] = [];
@@ -130,6 +132,12 @@ describe("a chat compacted end to end", () => {
             throw new Error(opened.message);
         }
         const { memory } = opened;
+        const warned: string[] = [];
+        memory.notices?.subscribe((notice) => {
+            if (notice.type === "warning") {
+                warned.push(notice.message);
+            }
+        });
         const words = ["walnut", "kiln", "ember", "loom", "quill", "tarn"];
         const reply = (inner: FakeSession, replied: string, context: number) =>
             inner.emit({
@@ -186,6 +194,9 @@ describe("a chat compacted end to end", () => {
         // The call was sent the transcript's own turns, under their
         // transcript numbers.
         expect(compactions).toHaveLength(1);
+        expect(warned).toContain(
+            "memory: compaction: a:m refused (usage: spent); answering with b:m",
+        );
         for (const [at, turn] of turns.slice(0, 4).entries()) {
             const who = turn.role === "user" ? "User" : "Dorothy";
             expect(compactions[0]?.prompt).toContain(

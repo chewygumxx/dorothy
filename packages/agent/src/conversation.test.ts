@@ -23,6 +23,7 @@ import {
     type ConversationDeps,
     conversationSetup,
     MAX_STEPS,
+    OUTPUT_LIMIT_WARNING,
     type SessionSetup,
     STEP_LIMIT_WARNING,
 } from "./conversation.js";
@@ -617,6 +618,47 @@ describe("Conversation", () => {
         );
         expect(of(events, "turn-end")).toHaveLength(1);
     });
+
+    it("warns once when a reply stops at the model's output limit", async () => {
+        const { conversation, events } = session([
+            {
+                chunks: [
+                    START,
+                    { type: "reasoning-start", id: "r" },
+                    { type: "reasoning-delta", id: "r", delta: "thinking on" },
+                    { type: "reasoning-end", id: "r" },
+                    {
+                        type: "finish",
+                        finishReason: { unified: "length", raw: "length" },
+                        usage: mockUsage(),
+                    },
+                ],
+            },
+            { chunks: textChunks("fine") },
+        ]);
+        conversation.send("hi");
+        await until(() => ended(events));
+        expect(
+            of(events, "warning").filter(
+                (event) => event.message === OUTPUT_LIMIT_WARNING,
+            ),
+        ).toHaveLength(1);
+        expect(of(events, "error")).toHaveLength(0);
+        expect(events.at(-1)?.type).toBe("turn-end");
+        conversation.send("again");
+        await until(() => ended(events, 2));
+        expect(of(events, "warning")).toHaveLength(1);
+    });
+
+    it("does not warn of the output limit on a reply that stopped", async () => {
+        const { conversation, events } = session([
+            { chunks: textChunks("done") },
+        ]);
+        conversation.send("hi");
+        await until(() => ended(events));
+        expect(of(events, "warning")).toEqual([]);
+        expect(of(events, "turn-end")).toHaveLength(1);
+    });
 });
 
 describe("Conversation with recall", () => {
@@ -1027,6 +1069,50 @@ describe("Conversation on a route of two", () => {
         expect(sent).toContain("A says hi");
         expect(sent).not.toContain("thinking hard");
     });
+
+    it("sends another model no message that held reasoning alone", async () => {
+        const cooldowns = new Cooldowns({ now: () => 0 });
+        const first = mockModel([
+            {
+                chunks: [
+                    START,
+                    { type: "reasoning-start", id: "r" },
+                    { type: "reasoning-delta", id: "r", delta: "only this" },
+                    { type: "reasoning-end", id: "r" },
+                    {
+                        type: "finish",
+                        finishReason: { unified: "stop", raw: "end_turn" },
+                        usage: mockUsage(),
+                    },
+                ],
+            },
+        ]);
+        const second = mockModel(
+            [{ chunks: textChunks("B says hi") }],
+            B.model,
+        );
+        const conversation = new Conversation({
+            env,
+            route: [OPUS, B],
+            cooldowns,
+            model: (entry) => (entry.model === OPUS.model ? first : second),
+        });
+        const events: ConversationEvent[] = [];
+        conversation.subscribe((event) => events.push(event));
+        conversation.start();
+        conversation.send("one");
+        await until(() => ended(events));
+        cooldowns.note(OPUS, {
+            class: "usage",
+            message: "spent",
+            retryAfterMs: 60_000,
+        });
+        conversation.send("two");
+        await until(() => ended(events, 2));
+        expect(
+            second.doStreamCalls[0]?.prompt.map((message) => message.role),
+        ).toEqual(["system", "user", "user"]);
+    });
 });
 
 describe("conversationSetup", () => {
@@ -1071,5 +1157,21 @@ describe("conversationSetup", () => {
             ),
         ).toBe(true);
         expect(conversationSetup().system).not.toContain("models to answer");
+    });
+});
+
+describe("a model with no price", () => {
+    it("warns once, as chat's warning, that its cost shows as $0", async () => {
+        const { conversation, events } = session(
+            [{ chunks: textChunks("one") }, { chunks: textChunks("two") }],
+            { route: [anthropicEntry("claude-unpriced-chat-test")] },
+        );
+        conversation.send("hi");
+        await until(() => ended(events));
+        conversation.send("again");
+        await until(() => ended(events, 2));
+        expect(of(events, "warning").map((event) => event.message)).toEqual([
+            "no price is known for anthropic:claude-unpriced-chat-test; its cost shows as $0",
+        ]);
     });
 });

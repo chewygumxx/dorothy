@@ -37,8 +37,8 @@ below. It declares `niceware` alone, and never imports another
   and `withSection`, which joins a section (the memory block, the earlier
   turns' abstracts) to a system prompt.
 - `contracts/structured.ts`: `StructuredCall`, the one-shot call reviews
-  and compaction take.
-- `contracts/model.ts`: the routing contracts: `ROLES`, `KINDS`, a
+  and compaction take, and `withNotes`, which says an outcome's notes.
+- `contracts/model.ts`: the routing contracts: `ROLES`, the five `KINDS`, a
   `RouteEntry` (base URL always explicit, key a `secrets.json` name),
   `Routes`, `Failure` and `AttemptResult`, and `label`
   (`<provider>:<model>`).
@@ -51,7 +51,11 @@ below. It declares `niceware` alone, and never imports another
 - `models/prices.ts`: `ANTHROPIC_PRICES`, dated with their source, and
   `stepCost`, what a step's tokens cost, or null for no known price.
 - `models/routes.ts`: `DEFAULT_MODELS` and `defaultRoutes`, each role's
-  Anthropic route until config routes it.
+  Anthropic route when config names none, and `FIXED_ROOTS`.
+- `models/routing.ts`: `parseRouting`, `config.toml`'s `[providers]` and
+  `[models]` as a `Routing` (every role's route, every provider's key
+  names) or every fault, and `isLoopback`. `config.ts`'s `routingOf` and
+  `readRouting` read them; `parseConfig` leaves both tables alone.
 - `contracts/notices.ts`: `Notice` and `NoticeSource`, what memory and
   history show on screen.
 - `contracts/editor.ts`: `Editor`, the external editor's contract.

@@ -384,7 +384,9 @@ The stream becomes the events the TUI draws:
   the `<provider>:<model>` that answered;
 - `warning` for each fallback note, and when ten steps end in a tool
   call: "the reply stopped after ten tool steps", the turn ending on
-  the text it has.
+  the text it has; likewise when the last step ends at the model's
+  output limit: "the reply stopped at the model's output limit"
+  (added by Part B's live run).
 
 When the turn ends, the response's messages join the session's. An
 interrupted turn keeps its complete steps and the text it streamed. A

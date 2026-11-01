@@ -34,7 +34,7 @@ const entryAt = (url: string) => ({
 // The first error part of a one-message stream, or null.
 async function firstError(url: string): Promise<unknown> {
     const result = streamText({
-        model: languageModel(entryAt(url), "test-key"),
+        model: languageModel(entryAt(url), "test-key", "chat"),
         prompt: "hi",
         maxRetries: 0,
         onError: () => {},
@@ -212,7 +212,7 @@ describe("providerOptions", () => {
             baseUrl: server.url,
         };
         const result = streamText({
-            model: languageModel(entry, "test-key"),
+            model: languageModel(entry, "test-key", "chat"),
             prompt: "hi",
             maxRetries: 0,
             onError: () => {},

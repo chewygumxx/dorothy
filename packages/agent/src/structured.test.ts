@@ -76,7 +76,13 @@ describe("structuredCall", () => {
             costUsd: 12,
         });
         const sent = model.doStreamCalls[0];
-        expect(sent?.prompt[0]).toEqual({ role: "system", content: "persona" });
+        expect(sent?.prompt[0]).toEqual({
+            role: "system",
+            content: "persona",
+            providerOptions: {
+                anthropic: { cacheControl: { type: "ephemeral" } },
+            },
+        });
         expect(sent?.responseFormat).toMatchObject({
             type: "json",
             schema: SCHEMA,
@@ -92,6 +98,44 @@ describe("structuredCall", () => {
             ok: false,
             reason: "the review ended without a result",
         });
+    });
+
+    it("says nothing of usage on a step an error ended", async () => {
+        const entry = { ...SONNET, model: "claude-error-step-test" };
+        const model = mockModel(
+            [
+                {
+                    chunks: [
+                        { type: "stream-start", warnings: [] },
+                        { type: "error", error: new Error("boom") },
+                        {
+                            type: "finish",
+                            usage: {
+                                inputTokens: {
+                                    total: undefined,
+                                    noCache: undefined,
+                                    cacheRead: undefined,
+                                    cacheWrite: undefined,
+                                },
+                                outputTokens: {
+                                    total: undefined,
+                                    text: undefined,
+                                    reasoning: undefined,
+                                },
+                            },
+                            finishReason: { unified: "error", raw: undefined },
+                        },
+                    ],
+                },
+            ],
+            entry.model,
+        );
+        const outcome = await structuredCall({
+            route: [entry],
+            env,
+            model: () => model,
+        })(REQUEST);
+        expect(outcome).toEqual({ ok: false, reason: "boom", costUsd: 0 });
     });
 
     it("fails JSON of another shape than the schema's", async () => {
@@ -428,5 +472,30 @@ describe("structuredCall on the wire", () => {
             ok: false,
             reason: "no response for 0.05s",
         });
+    });
+});
+
+describe("a model with no price", () => {
+    it("says so once in notes", async () => {
+        const entry = { ...SONNET, model: "claude-unpriced-structured-test" };
+        const model = mockModel(
+            [
+                { chunks: textChunks('{"ok":true}') },
+                { chunks: textChunks('{"ok":true}') },
+            ],
+            entry.model,
+        );
+        const call = structuredCall({
+            route: [entry],
+            env,
+            model: () => model,
+        });
+        expect(await call(REQUEST)).toMatchObject({
+            ok: true,
+            notes: [
+                "no price is known for anthropic:claude-unpriced-structured-test; its cost shows as $0",
+            ],
+        });
+        expect((await call(REQUEST)).notes).toBeUndefined();
     });
 });

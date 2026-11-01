@@ -73,6 +73,18 @@ describe("recallEnv", () => {
     });
 });
 
+describe("recallEnv, given every provider's keys", () => {
+    it("withholds keys other roles' providers give, whatever their names", () => {
+        expect(
+            recallEnv(
+                { PATH: "/bin", HF_TOKEN: "a", LOCAL_SECRET: "b" },
+                [anthropicEntry("m")],
+                ["HF_TOKEN", "LOCAL_SECRET"],
+            ),
+        ).toEqual({ PATH: "/bin" });
+    });
+});
+
 describe("connectRecall", () => {
     it("offers her tools by the names the model calls, and no others", async () => {
         const recall = await connectRecall(launch, false, ENV);

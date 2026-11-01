@@ -80,7 +80,7 @@ describe("dumpRequest", () => {
         const body = (await dumpRequest({
             setup: {},
             message: "hi",
-            entry: OPUS,
+            route: [OPUS],
             env: {},
         })) as Record<string, unknown>;
         expect(body.model).toBe("claude-opus-5-5");
@@ -114,7 +114,7 @@ describe("dumpRequest", () => {
                     recall: { command: process.execPath, args: [FAKE_MCP] },
                 },
                 message: "hi",
-                entry: OPUS,
+                route: [OPUS],
                 env: { PATH: process.env.PATH ?? "", XDG_CACHE_HOME: cache },
             })) as { tools: { name: string }[] };
             expect(body.tools.map((tool) => tool.name).sort()).toEqual([
@@ -133,7 +133,7 @@ describe("dumpRequest", () => {
         const body = (await dumpRequest({
             setup: { recall: { command: "recall", args: [] } },
             message: "hi",
-            entry: OPUS,
+            route: [OPUS],
             env: {},
             connect: async () => {
                 throw new Error("spawn failed");
@@ -147,18 +147,98 @@ describe("dumpRequest", () => {
         ]);
     });
 
+    it("names every entry of the chat route in development mode", async () => {
+        const body = (await dumpRequest({
+            setup: { persona: "development" },
+            message: "hi",
+            route: [
+                OPUS,
+                {
+                    ...OPUS,
+                    provider: "openrouter",
+                    kind: "openrouter",
+                    model: "x/y",
+                },
+            ],
+            env: {},
+        })) as { model: string; system: { text: string }[] };
+        expect(body.model).toBe("claude-opus-5-5");
+        expect(body.system[0]?.text).toEndWith(
+            "Your chat runs on the first of these models to answer: anthropic:claude-opus-5-5, openrouter:x/y.",
+        );
+    });
+
+    it("withholds the route's key and every provider's from the recall server", async () => {
+        let seen: Record<string, string> = {};
+        await dumpRequest({
+            setup: { recall: { command: "recall", args: [] } },
+            message: "hi",
+            route: [
+                {
+                    ...OPUS,
+                    provider: "hf",
+                    kind: "huggingface",
+                    model: "org/model",
+                    key: "HF_TOKEN",
+                },
+            ],
+            keys: ["VLLM_KEY"],
+            env: { PATH: "/bin", HF_TOKEN: "hf-secret", VLLM_KEY: "v" },
+            connect: async (_launch, _recollect, env) => {
+                seen = env;
+                throw new Error("spawn failed");
+            },
+        });
+        expect(seen).toEqual({ PATH: "/bin" });
+    });
+
+    it("dumps a Chat Completions entry, OpenRouter's retention in its body", async () => {
+        const body = (await dumpRequest({
+            setup: {},
+            message: "hi",
+            route: [
+                {
+                    ...OPUS,
+                    provider: "openrouter",
+                    kind: "openrouter",
+                    model: "x/y",
+                    key: "OPENROUTER_API_KEY",
+                },
+            ],
+            env: {},
+        })) as Record<string, unknown>;
+        expect(body).toMatchObject({
+            model: "x/y",
+            provider: { data_collection: "deny", zdr: true },
+            messages: [{ role: "system" }, { role: "user", content: "hi" }],
+        });
+    });
+
+    it("reports a route with no entry, sending nothing", async () => {
+        const reports: [string, string][] = [];
+        const body = await dumpRequest({
+            setup: {},
+            message: "hi",
+            route: [],
+            env: {},
+            report: (kind, message) => reports.push([kind, message]),
+        });
+        expect(body).toBeNull();
+        expect(reports).toEqual([["error", "the chat route has no entry"]]);
+    });
+
     it("reports why no request was sent, when none was", async () => {
         const reports: [string, string][] = [];
         const body = await dumpRequest({
             setup: {},
             message: "hi",
-            entry: { ...OPUS, kind: "local" },
+            route: [{ ...OPUS, kind: "unknown" as never }],
             env: {},
             report: (kind, message) => reports.push([kind, message]),
         });
         expect(body).toBeNull();
         expect(reports).toEqual([
-            ["error", expect.stringContaining("no provider for local")],
+            ["error", expect.stringContaining("no provider for unknown")],
         ]);
     });
 });

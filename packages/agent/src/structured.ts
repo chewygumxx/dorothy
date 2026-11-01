@@ -28,20 +28,19 @@ import {
     runRoute,
     type StructuredCall,
     type StructuredRequest,
-    stepCost,
     type Timers,
 } from "@dorothy/core";
 import { jsonSchema, type ModelMessage, Output, streamText } from "ai";
 import { z } from "zod";
 import { STALL_MS, secretFailure, Watchdog } from "./attempt.js";
-import { stepUsage } from "./cost.js";
 import { failureOf } from "./failures.js";
 import {
+    instructionsFor,
     keyOf,
     languageModel,
     type ModelFactory,
-    providerOptions,
 } from "./providers.js";
+import { readStream, requestBase } from "./stream.js";
 
 // Times a model is asked again after an answer that breaks its schema.
 export const STRUCTURED_REPAIRS = 2;
@@ -60,7 +59,7 @@ export type StructuredDeps = {
 
 type AttemptDeps = Required<
     Pick<StructuredDeps, "env" | "model" | "timers" | "stallMs">
->;
+> & { notice: (message: string) => void };
 
 // JSON of the schema's top-level type; the caller judges the rest.
 function fits(value: unknown, schema: Record<string, unknown>): boolean {
@@ -112,11 +111,19 @@ export function structuredCall({
     timers = REAL_TIMERS,
     stallMs = STALL_MS,
 }: StructuredDeps = {}): StructuredCall {
-    const deps: AttemptDeps = { env, model, timers, stallMs };
     return async (request) => {
         if (request.signal?.aborted) {
             return { ok: false, reason: "cancelled", costUsd: 0 };
         }
+        // A cost unknown is said beside the route's own notes.
+        const notices: string[] = [];
+        const deps: AttemptDeps = {
+            env,
+            model,
+            timers,
+            stallMs,
+            notice: (message) => notices.push(message),
+        };
         const outcome = await runRoute(
             route,
             (entry, signal) => attempt(entry, signal, request, deps),
@@ -129,8 +136,8 @@ export function structuredCall({
                     : { signal: request.signal }),
             },
         );
-        const notes =
-            outcome.notes.length === 0 ? {} : { notes: outcome.notes };
+        const said = [...outcome.notes, ...notices];
+        const notes = said.length === 0 ? {} : { notes: said };
         return outcome.ok
             ? {
                   ok: true,
@@ -164,51 +171,30 @@ async function ask(
     messages: ModelMessage[],
     deps: AttemptDeps,
 ): Promise<Round> {
-    let costUsd = 0;
-    let streamed: Failure | null = null;
-    let aborted = false;
-    try {
-        const result = streamText({
-            model: deps.model(entry, key),
-            instructions: system,
-            messages,
-            output: Output.object({ schema: jsonSchema(schema) }),
-            maxRetries: 0,
-            abortSignal: watchdog.signal,
-            providerOptions: providerOptions(entry),
-            onError: () => {},
-        });
-        for await (const part of result.fullStream) {
-            watchdog.touch();
-            if (part.type === "error") {
-                streamed ??= failureOf(part.error);
-            } else if (part.type === "abort") {
-                aborted = true;
-            } else if (part.type === "finish-step") {
-                costUsd += stepCost(entry, stepUsage(part.usage)) ?? 0;
-            }
-        }
-        if (aborted || streamed !== null) {
-            return {
-                output: undefined,
-                failure: aborted ? watchdog.failure() : streamed,
-                costUsd,
-            };
-        }
-        const output = await result.output.then(
-            (value) => value as unknown,
-            () => undefined,
-        );
-        return { output, failure: null, costUsd };
-    } catch (error) {
+    const read = await readStream(
+        entry,
+        watchdog,
+        () =>
+            streamText({
+                ...requestBase(entry, key, "structured", deps.model, watchdog),
+                instructions: instructionsFor(entry, system),
+                messages,
+                output: Output.object({ schema: jsonSchema(schema) }),
+            }),
+        { notice: deps.notice },
+    );
+    if (!read.ok) {
         return {
             output: undefined,
-            failure: watchdog.signal.aborted
-                ? watchdog.failure()
-                : failureOf(error),
-            costUsd,
+            failure: read.failure,
+            costUsd: read.costUsd,
         };
     }
+    const output = await read.result.output.then(
+        (value) => value as unknown,
+        () => undefined,
+    );
+    return { output, failure: null, costUsd: read.costUsd };
 }
 
 const unparsed = (message: string): Failure => ({

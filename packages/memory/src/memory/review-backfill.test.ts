@@ -191,6 +191,23 @@ describe("runReviewBackfill", () => {
         });
     });
 
+    it("warns of a call's fallback notes, reviewing all the same", async () => {
+        await conversation(1, NOW.getTime());
+        const warnings: string[] = [];
+        const result = await runReviewBackfill({
+            ...options(async (request) => ({
+                ...(await good(request)),
+                notes: ["a:m refused (usage: spent); answering with b:m"],
+            })),
+            count: 1,
+            warn: (message) => warnings.push(message),
+        });
+        expect(result).toEqual({ ...emptyCounts, reviewed: 1 });
+        expect(warnings).toEqual([
+            "memory: review: a:m refused (usage: spent); answering with b:m",
+        ]);
+    });
+
     it("defaults to the newest 25 and leaves the rest marked", async () => {
         const ids: string[] = [];
         for (let n = 1; n <= 26; n++)

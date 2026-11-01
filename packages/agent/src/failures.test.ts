@@ -9,7 +9,14 @@
 //
 
 import { describe, expect, it } from "bun:test";
-import { APICallError } from "ai";
+import {
+    APICallError,
+    InvalidPromptError,
+    InvalidResponseDataError,
+    JSONParseError,
+    NoSuchModelError,
+    UnsupportedFunctionalityError,
+} from "ai";
 import { classOf, failureOf, retryAfterMs } from "./failures.js";
 
 const apiError = (
@@ -114,6 +121,47 @@ describe("failureOf", () => {
             retryAfterMs: null,
         });
     });
+    it("takes a connection the SDK could not make for the network", () => {
+        const error = new APICallError({
+            message: "Cannot connect to API: Unable to connect",
+            url: "http://127.0.0.1:1/v1/chat/completions",
+            requestBodyValues: {},
+            isRetryable: true,
+        });
+        expect(failureOf(error).class).toBe("network");
+    });
+    it.each([
+        [
+            "AI_JSONParseError",
+            new JSONParseError({ text: "{not json", cause: null }),
+            "server",
+        ],
+        [
+            "AI_InvalidResponseDataError",
+            new InvalidResponseDataError({ data: {}, message: "no choices" }),
+            "server",
+        ],
+        [
+            "AI_InvalidPromptError",
+            new InvalidPromptError({ prompt: "", message: "bad" }),
+            "rejected",
+        ],
+        [
+            "AI_UnsupportedFunctionalityError",
+            new UnsupportedFunctionalityError({ functionality: "audio" }),
+            "rejected",
+        ],
+        [
+            "AI_NoSuchModelError",
+            new NoSuchModelError({ modelId: "x", modelType: "languageModel" }),
+            "rejected",
+        ],
+    ] as const)(
+        "classes %s, which has no status, by its name",
+        (_name, error, kind) => {
+            expect(failureOf(error).class).toBe(kind);
+        },
+    );
     it("takes a thrown non-Error value for the network, by its text", () => {
         expect(failureOf("connection reset")).toEqual({
             class: "network",

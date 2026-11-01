@@ -12,10 +12,26 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_CONFIG, newPhrase } from "@dorothy/core";
+import { DEFAULT_CONFIG, defaultRoutes, newPhrase } from "@dorothy/core";
 import * as memoryModule from "@dorothy/memory";
 import * as tui from "@dorothy/tui";
-import { runTui } from "./run-tui.js";
+import { COOLDOWNS } from "./models.js";
+import { chatDeps, runTui } from "./run-tui.js";
+
+const ROUTING = {
+    routes: defaultRoutes(),
+    keys: ["ANTHROPIC_API_KEY", "HF_TOKEN"],
+};
+
+describe("chatDeps", () => {
+    it("gives a session the chat route, every provider's keys and the cooldowns", () => {
+        expect(chatDeps(ROUTING)).toEqual({
+            route: ROUTING.routes.chat,
+            keys: ["ANTHROPIC_API_KEY", "HF_TOKEN"],
+            cooldowns: COOLDOWNS,
+        });
+    });
+});
 
 // runTui opens memory from these, so every one points into the test's
 // directory.
@@ -82,7 +98,7 @@ describe("runTui", () => {
                 if (fails) throw new Error("fixture render failure");
             });
             let settled = false;
-            const result = runTui(null).then(
+            const result = runTui(null, "chat", ROUTING).then(
                 (code) => {
                     settled = true;
                     return { code };
@@ -120,7 +136,7 @@ describe("runTui", () => {
             },
         );
         try {
-            expect(await runTui(phrase)).toBe(1);
+            expect(await runTui(phrase, "chat", ROUTING)).toBe(1);
         } finally {
             write.mockRestore();
         }

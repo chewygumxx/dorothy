@@ -8,9 +8,10 @@
 //
 //
 
-// Stand-ins for tests: the Messages API on a loopback port, answering
-// each request with the next scripted reply and keeping its body; mock
-// models scripted by stream parts; and timers fired by hand.
+// Stand-ins for tests: the Messages API and Chat Completions on
+// loopback ports, answering each request with the next scripted reply
+// and keeping its body; mock models scripted by stream parts; and
+// timers fired by hand.
 
 import type { Timers } from "@dorothy/core";
 import { simulateReadableStream } from "ai";
@@ -160,6 +161,125 @@ export function fakeMessages(replies: Reply[]): {
         url: `http://127.0.0.1:${server.port}`,
         bodies,
         keys,
+        stop: () => {
+            server.stop(true);
+        },
+    };
+}
+
+export type CompletionUsage = {
+    prompt_tokens: number;
+    completion_tokens: number;
+    cached_tokens?: number;
+    // OpenRouter's own figure, in dollars.
+    cost?: number;
+};
+
+export type CompletionReply =
+    // usage null: a stream that reports none.
+    | { text: string; usage?: CompletionUsage | null }
+    | { status: number; message: string; headers?: Record<string, string> }
+    | { midstream: { message: string; code?: number | string } }
+    | { redirect: string };
+
+const COMPLETION_USAGE: CompletionUsage = {
+    prompt_tokens: 10,
+    completion_tokens: 5,
+};
+
+const chunk = (data: unknown) => `data: ${JSON.stringify(data)}\n\n`;
+
+function completion(reply: CompletionReply): Response {
+    if ("status" in reply) {
+        return Response.json(
+            { error: { message: reply.message, code: reply.status } },
+            { status: reply.status, headers: reply.headers ?? {} },
+        );
+    }
+    if ("redirect" in reply) {
+        return new Response(null, {
+            status: 307,
+            headers: { location: reply.redirect },
+        });
+    }
+    const base = { id: "c", object: "chat.completion.chunk", created: 1 };
+    if ("midstream" in reply) {
+        return new Response(
+            chunk({
+                ...base,
+                choices: [{ index: 0, delta: { content: "" } }],
+            }) + chunk({ error: reply.midstream }),
+            { headers: STREAM },
+        );
+    }
+    const usage = reply.usage === undefined ? COMPLETION_USAGE : reply.usage;
+    let body =
+        chunk({
+            ...base,
+            choices: [
+                {
+                    index: 0,
+                    delta: { role: "assistant", content: reply.text },
+                    finish_reason: null,
+                },
+            ],
+        }) +
+        chunk({
+            ...base,
+            choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+        });
+    if (usage !== null) {
+        const { cached_tokens, ...rest } = usage;
+        body += chunk({
+            ...base,
+            choices: [],
+            usage: {
+                ...rest,
+                total_tokens: usage.prompt_tokens + usage.completion_tokens,
+                ...(cached_tokens === undefined
+                    ? {}
+                    : { prompt_tokens_details: { cached_tokens } }),
+            },
+        });
+    }
+    return new Response(`${body}data: [DONE]\n\n`, { headers: STREAM });
+}
+
+// Chat Completions on a loopback port, as OpenRouter, featherless,
+// Hugging Face's router and local servers speak it: each request takes
+// the next reply, the last repeating, and its path, body and
+// Authorization header are kept.
+export function fakeCompletions(replies: CompletionReply[]): {
+    url: string;
+    paths: string[];
+    bodies: Record<string, unknown>[];
+    auth: (string | null)[];
+    stop: () => void;
+} {
+    const paths: string[] = [];
+    const bodies: Record<string, unknown>[] = [];
+    const auth: (string | null)[] = [];
+    let next = 0;
+    const server = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        idleTimeout: 0,
+        async fetch(request) {
+            paths.push(new URL(request.url).pathname);
+            bodies.push((await request.json()) as Record<string, unknown>);
+            auth.push(request.headers.get("authorization"));
+            const reply = replies[Math.min(next, replies.length - 1)];
+            next += 1;
+            return reply === undefined
+                ? new Response("no reply scripted", { status: 500 })
+                : completion(reply);
+        },
+    });
+    return {
+        url: `http://127.0.0.1:${server.port}`,
+        paths,
+        bodies,
+        auth,
         stop: () => {
             server.stop(true);
         },

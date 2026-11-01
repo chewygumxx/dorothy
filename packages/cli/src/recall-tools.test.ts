@@ -13,7 +13,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connectRecall, recallEnv } from "@dorothy/agent";
-import { ROUTES } from "./models.js";
+import { defaultRoutes } from "@dorothy/core";
 import { recallLaunch } from "./recall-launch.js";
 
 type Execute = (
@@ -53,7 +53,7 @@ describe("her recall server, through the agent's client", () => {
         const recall = await connectRecall(
             launch,
             false,
-            recallEnv(env, ROUTES.chat),
+            recallEnv(env, defaultRoutes().chat),
         );
         try {
             expect(Object.keys(recall.tools).sort()).toEqual([
@@ -89,7 +89,9 @@ describe("her recall server, through the agent's client", () => {
 
     it("hands the server no key, and Bun no project .env", () => {
         const env = { ANTHROPIC_API_KEY: "k", PATH: "/bin" };
-        expect(recallEnv(env, ROUTES.chat).ANTHROPIC_API_KEY).toBeUndefined();
+        expect(
+            recallEnv(env, defaultRoutes().chat).ANTHROPIC_API_KEY,
+        ).toBeUndefined();
         expect(recallLaunch("phrase", null).args[0]).toBe("--no-env-file");
     });
 });

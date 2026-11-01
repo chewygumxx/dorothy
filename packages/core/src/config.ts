@@ -11,6 +11,7 @@
 import { readFile } from "node:fs/promises";
 import { isIP } from "node:net";
 import { isAbsolute, join } from "node:path";
+import { parseRouting, type RoutingResult } from "./models/routing.js";
 import { type Env, xdgDir } from "./xdg.js";
 
 export const MODULE_NAMES = [
@@ -418,7 +419,7 @@ function errorLine(text: string): number {
 }
 
 // A broken file never stops Dorothy: each problem is a warning, and whatever
-// it spoils falls back to the default.
+// it spoils falls back to the default. Its routes are routingOf's.
 export function parseConfig(text: string): {
     config: Config;
     warnings: string[];
@@ -456,11 +457,41 @@ export function parseConfig(text: string): {
             config.service = parseService(value, warnings);
         } else if (key === "recording") {
             config.recording = parseRecording(value, warnings);
+        } else if (key === "providers" || key === "models") {
+            // Read by parseRouting, whose faults are errors.
         } else {
             warnings.push(`config.toml: unknown key ${key}`);
         }
     }
     return { config, warnings };
+}
+
+// A line that opens or sets [providers] or [models], in any of TOML's
+// forms: a table header, an array of tables, a dotted key or an inline
+// table, its key bare or quoted either way.
+const ROUTING_LINE = /^\s*\[*\s*["']?(providers|models)["']?\s*[\].=]/m;
+
+// The routes config.toml gives, or its faults. A file that does not
+// parse is a fault here only if it routes: the routes it meant cannot be
+// known. One that names no routes keeps the default routes, and
+// parseConfig's warning names its line.
+export function routingOf(text: string): RoutingResult {
+    let data: unknown;
+    try {
+        data = Bun.TOML.parse(text);
+    } catch (error) {
+        if (!ROUTING_LINE.test(text)) {
+            return parseRouting({});
+        }
+        const reason = describeError(error).replace(/^TOML Parse error: /, "");
+        return {
+            ok: false,
+            faults: [
+                `config.toml line ${errorLine(text)}: ${reason}; its routes cannot be read`,
+            ],
+        };
+    }
+    return parseRouting(data as Record<string, unknown>);
 }
 
 export function configPath(env: Env = process.env): string {
@@ -488,4 +519,26 @@ export async function readConfig(
         };
     }
     return parseConfig(text);
+}
+
+// No file routes every role to its default on Anthropic; a file that
+// cannot be read is a fault.
+export async function readRouting(
+    env: Env = process.env,
+): Promise<RoutingResult> {
+    let text: string;
+    try {
+        text = await readFile(configPath(env), "utf8");
+    } catch (error) {
+        if ((error as { code?: unknown }).code === "ENOENT") {
+            return parseRouting({});
+        }
+        return {
+            ok: false,
+            faults: [
+                `config.toml: ${describeError(error)}; its routes cannot be read`,
+            ],
+        };
+    }
+    return routingOf(text);
 }

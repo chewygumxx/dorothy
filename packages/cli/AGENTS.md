@@ -49,8 +49,9 @@ SDK. Keep every new mode's import lazy.
   starts a `Conversation`, and the screen runs over its `createSession`. Once
   `runTui` resolves, everything is closed and the CLI ends the process, so a
   push or repack still running never holds the terminal.
-- `models.ts`: `ROUTES` (core's `defaultRoutes`) and the process's one
-  `COOLDOWNS`, passed to the agent by every model mode; `chatEntry`, dump's.
+- `models.ts`: the process's one `COOLDOWNS`; `chatRouting`, config's routes
+  or each fault said, on which chat, one-shot and dump exit 1, and
+  `loadRouting`, which throws them, so the service's and hook's reviews fail.
 - `dump.ts`: `runDump` composes `previewStart` with `dumpRequest` for
   `--dump-context`.
 - `claude.ts`: `launchClaude`, for `--claude` and its dump, starts the gateway
@@ -122,13 +123,13 @@ SDK. Keep every new mode's import lazy.
 
 ## Invariants
 
-- Auth comes from `ANTHROPIC_API_KEY` in `secrets.json`, decrypted by
-  core's async `loadSecrets` through sops. The model modes, mirror and
-  recover await `loadCredentials`. A failed load warns by code; mirror
-  refuses to create a key after a failed load.
-- Routes (`models.ts`) name their own base URL and key, and nothing reads
-  the provider variables. The agent runs the recall server with `recallEnv`,
-  without any key or OAuth token, in `recallCwd`, never the user's project.
+- Auth comes from the `secrets.json` keys config.toml's providers name
+  (`ANTHROPIC_API_KEY` by default), decrypted by core's async `loadSecrets`
+  through sops. The model modes, mirror and recover await `loadCredentials`.
+  A failed load warns by code; mirror won't create a key after one.
+- Routes (`models.ts`) name their own base URL and key; no provider reads
+  its variables. The recall server runs with `recallEnv`, withheld every
+  provider's key and OAuth token, in `recallCwd`, never the user's project.
 - `--claude` loads no secrets: `claude` signs in as the user's own Claude
   Code does, and memory is read without credentials. `--claude-hook`
   loads the checkout's `secrets.json` by path for reviews, never the

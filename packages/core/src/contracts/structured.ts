@@ -38,3 +38,16 @@ export type StructuredOutcome =
 export type StructuredCall = (
     request: StructuredRequest,
 ) => Promise<StructuredOutcome>;
+
+// call, saying each outcome's notes as they come, with what the call was
+// for: "review: anthropic:claude-sonnet-5-5 refused (...); answering
+// with ...". Memory says them where it says that call's failures.
+export const withNotes =
+    (call: StructuredCall, say: (message: string) => void): StructuredCall =>
+    async (request) => {
+        const outcome = await call(request);
+        for (const note of outcome.notes ?? []) {
+            say(`${request.what}: ${note}`);
+        }
+        return outcome;
+    };
