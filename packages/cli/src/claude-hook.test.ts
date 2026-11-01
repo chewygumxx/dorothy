@@ -25,7 +25,6 @@ import {
     checkoutRoot,
     type HookCliDeps,
     loadCheckoutSecrets,
-    reviewEnv,
     runHook,
 } from "./claude-hook.js";
 
@@ -47,31 +46,6 @@ const fromClaude = (): Env => ({
     CLAUDE_CODE_OAUTH_TOKEN: "claude's",
 });
 
-const OURS = { HOME: "/home/u", XDG_DATA_HOME: "/home/u/data", PATH: "/bin" };
-
-describe("reviewEnv", () => {
-    it("drops the gateway, the launch and claude's own variables", () => {
-        expect(reviewEnv(fromClaude())).toEqual(OURS);
-    });
-
-    it("takes the user's own base URL, which the launch passed on, as its own", () => {
-        const proxied = {
-            ...fromClaude(),
-            DOROTHY_ANTHROPIC_BASE_URL: "http://proxy.example/v1",
-        };
-        expect(reviewEnv(proxied)).toEqual({
-            ...OURS,
-            DOROTHY_ANTHROPIC_BASE_URL: "http://proxy.example/v1",
-            ANTHROPIC_BASE_URL: "http://proxy.example/v1",
-        });
-        // An empty one is none, and the gateway's is never kept.
-        expect(
-            reviewEnv({ ...fromClaude(), DOROTHY_ANTHROPIC_BASE_URL: "" })
-                .ANTHROPIC_BASE_URL,
-        ).toBeUndefined();
-    });
-});
-
 describe("the account Claude spends", () => {
     // A fake secrets.json holding two accounts' tokens, as loadSecrets
     // would set them: a name already set is kept.
@@ -85,27 +59,6 @@ describe("the account Claude spends", () => {
         const env: Env = {};
         expect(await loadCheckoutSecrets(env, { load })).toBeNull();
         expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe("reserve-token");
-    });
-
-    it("is the entry DOROTHY_CLAUDE_TOKEN_VAR names", async () => {
-        const env: Env = {
-            DOROTHY_CLAUDE_TOKEN_VAR: "CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2",
-        };
-        // As a review's environment is: claude's variables stripped.
-        const review = reviewEnv(env);
-        expect(await loadCheckoutSecrets(review, { load })).toBeNull();
-        expect(review.CLAUDE_CODE_OAUTH_TOKEN).toBe("primary-token");
-    });
-
-    it.each([
-        "CLAUDE_CODE_OAUTH_TOKEN_ABSENT",
-        "OPENROUTER_API_KEY",
-        "lower case",
-    ])("refuses a choice of %s rather than spend another", async (name) => {
-        const env: Env = { DOROTHY_CLAUDE_TOKEN_VAR: name };
-        expect(await loadCheckoutSecrets(env, { load })).toBe(
-            "SECRETS_INVALID",
-        );
     });
 });
 
@@ -147,11 +100,10 @@ describe("runHook", () => {
         return { env, seen, deps };
     }
 
-    it("awaits Dorothy's secrets by checkout path once claude's variables are gone", async () => {
-        const { env, seen, deps } = harness();
+    it("awaits Dorothy's secrets by checkout path", async () => {
+        const { seen, deps } = harness();
         expect(await runHook({ kind: "hook" }, deps)).toBe(0);
         expect(seen.loaded).toEqual(["/d/secrets.json"]);
-        expect(env).toEqual({ ...OURS, CLAUDE_CODE_OAUTH_TOKEN: "dorothy's" });
         // Loaded when a review asks, and once.
         expect(seen.agents).toBe(0);
         expect((await seen.deps?.agent())?.persona).toBe("You are Dorothy.");
@@ -161,21 +113,6 @@ describe("runHook", () => {
             "/bin/bun",
             "/d/packages/cli/src/index.ts",
         ]);
-    });
-
-    it("sends a review through the user's proxy, and tells memory the environment it was given", async () => {
-        const { env, seen, deps } = harness();
-        env.DOROTHY_ANTHROPIC_BASE_URL = "http://proxy.example/v1";
-        await runHook({ kind: "hook" }, deps);
-        // The SDK reads process.env, here env.
-        expect(env.ANTHROPIC_BASE_URL).toBe("http://proxy.example/v1");
-        // What memory spawns a catch-up in is what claude gave, which
-        // holds neither Dorothy's credentials nor the review's URL.
-        expect(seen.deps?.env).toMatchObject({
-            ANTHROPIC_BASE_URL: "http://127.0.0.1:4321",
-            DOROTHY_ANTHROPIC_BASE_URL: "http://proxy.example/v1",
-        });
-        expect(seen.deps?.env?.CLAUDE_CODE_OAUTH_TOKEN).toBe("claude's");
     });
 
     it("keeps the launch's age key path despite another config directory", async () => {

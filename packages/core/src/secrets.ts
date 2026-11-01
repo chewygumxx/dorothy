@@ -184,8 +184,8 @@ export async function saveSecret(
 }
 
 // The name of the secrets.json entry whose token Claude is to spend, for
-// a user with more than one account: stripClaude drops an exported
-// CLAUDE_CODE_OAUTH_TOKEN, but not this, which carries a name alone.
+// a user with more than one account. It carries a name alone, never a
+// token.
 export const CLAUDE_TOKEN_VAR = "DOROTHY_CLAUDE_TOKEN_VAR";
 
 // A choice naming no such token fails, rather than spend another account.

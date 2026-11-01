@@ -26,7 +26,6 @@ export { type OneShotDeps, runOneShot } from "./one-shot.js";
 export {
     type PersonaMode,
     personaPrompt,
-    prepareCliHome,
     promptHash,
     routeLine,
     systemPrompt,

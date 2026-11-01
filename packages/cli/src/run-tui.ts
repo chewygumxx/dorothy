@@ -17,12 +17,14 @@ import {
     type PersonaMode,
     personaPrompt,
     promptHash,
+    routeLine,
     structuredCall,
     systemPrompt,
 } from "@dorothy/agent";
 import { openMemory } from "@dorothy/memory";
 import { runApp } from "@dorothy/tui";
 import { userShell } from "./claude.js";
+import { COOLDOWNS, ROUTES } from "./models.js";
 import { recallLaunch } from "./recall-launch.js";
 
 export async function runTui(
@@ -31,18 +33,38 @@ export async function runTui(
 ): Promise<number> {
     // The directory the user ran dorothy from, under bun run dev too.
     const cwd = userShell(process.env).cwd ?? process.cwd();
+    const compactionPrompt = personaPrompt({ recall: false, mode: persona });
     const opened = await openMemory({
         resume,
-        calls: { review: structuredCall(), compaction: structuredCall() },
+        calls: {
+            review: structuredCall({
+                route: ROUTES.review,
+                cooldowns: COOLDOWNS,
+            }),
+            compaction: structuredCall({
+                route: ROUTES.compaction,
+                cooldowns: COOLDOWNS,
+            }),
+        },
         prompts: {
             review: systemPrompt,
-            compaction: personaPrompt({ recall: false, mode: persona }),
+            // Development mode names the models, as its chat's does.
+            compaction:
+                persona === "chat"
+                    ? compactionPrompt
+                    : `${compactionPrompt}\n\n${routeLine(ROUTES.chat)}`,
             hash: (recall) =>
                 promptHash(personaPrompt({ recall, mode: persona })),
-            session: (start) => conversationSetup({ ...start, persona }).system,
+            session: (start) =>
+                conversationSetup({ ...start, persona }, ROUTES.chat).system,
         },
         connect: (start) => {
-            const conversation = new Conversation({ ...start, persona });
+            const conversation = new Conversation({
+                ...start,
+                persona,
+                route: ROUTES.chat,
+                cooldowns: COOLDOWNS,
+            });
             conversation.start();
             return conversation;
         },

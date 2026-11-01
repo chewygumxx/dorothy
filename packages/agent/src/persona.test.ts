@@ -8,38 +8,17 @@
 //
 //
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { describe, expect, it } from "bun:test";
 import { anthropicEntry } from "@dorothy/core";
 import { identityComponents } from "@dorothy/identity";
 import {
-    baseOptions,
-    cliHome,
-    cliOptions,
     personaComponents,
     personaPrompt,
-    prepareCliHome,
     promptHash,
     routeLine,
     systemPrompt,
     withHistory,
 } from "./persona.js";
-
-describe("baseOptions", () => {
-    // No tools (some 32k input tokens), no settings, hooks or plugins, no
-    // saved sessions, and the reply streamed as it is generated.
-    it("runs the persona lean", () => {
-        expect(baseOptions).toEqual({
-            systemPrompt,
-            tools: [],
-            settingSources: [],
-            persistSession: false,
-            includePartialMessages: true,
-        });
-    });
-});
 
 describe("withHistory", () => {
     it("returns the prompt unchanged without history", () => {
@@ -226,76 +205,5 @@ describe("personaPrompt", () => {
         expect(prompt).toContain(
             "cover, look it up; if you cannot find it, say you do not remember it rather than invent detail.",
         );
-    });
-});
-
-describe("cliHome", () => {
-    it("is a directory of its own in the XDG cache", () => {
-        expect(cliHome({ XDG_CACHE_HOME: "/cache", HOME: "/home/u" })).toBe(
-            "/cache/dorothy/claude",
-        );
-        expect(cliHome({ HOME: "/home/u" })).toBe(
-            "/home/u/.cache/dorothy/claude",
-        );
-    });
-});
-
-describe("cliOptions", () => {
-    const env = {
-        HOME: "/home/u",
-        XDG_CACHE_HOME: "/cache",
-        CLAUDE_CODE_OAUTH_TOKEN: "token",
-        CLAUDE_CONFIG_DIR: "/home/u/.claude",
-        CLAUDE_CODE_DISABLE_AUTO_MEMORY: "0",
-    };
-
-    it("runs the CLI in its own home, outside any repository", () => {
-        expect(cliOptions(env).cwd).toBe("/cache/dorothy/claude");
-    });
-
-    it("keeps the CLI out of the user's Claude Code config and auto-memory", () => {
-        expect(cliOptions(env).env).toMatchObject({
-            CLAUDE_CONFIG_DIR: "/cache/dorothy/claude",
-            CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
-        });
-    });
-
-    it("switches off the CLI's own compaction, automatic and manual", () => {
-        expect(cliOptions(env).env).toMatchObject({ DISABLE_COMPACT: "1" });
-    });
-
-    it("passes the rest of the environment through, untouched", () => {
-        expect(cliOptions(env).env).toMatchObject({
-            HOME: "/home/u",
-            CLAUDE_CODE_OAUTH_TOKEN: "token",
-        });
-        expect(env.CLAUDE_CONFIG_DIR).toBe("/home/u/.claude");
-    });
-});
-
-describe("prepareCliHome", () => {
-    let dir: string;
-
-    beforeEach(() => {
-        dir = mkdtempSync(join(tmpdir(), "dorothy-cli-home-"));
-    });
-
-    afterEach(() => {
-        rmSync(dir, { recursive: true, force: true });
-    });
-
-    it("creates the home private to the user", () => {
-        prepareCliHome({ XDG_CACHE_HOME: dir });
-        expect(statSync(join(dir, "dorothy", "claude")).mode & 0o777).toBe(
-            0o700,
-        );
-    });
-
-    it("tightens a home that already exists", () => {
-        const home = join(dir, "dorothy", "claude");
-        mkdirSync(home, { recursive: true });
-        chmodSync(home, 0o755);
-        prepareCliHome({ XDG_CACHE_HOME: dir });
-        expect(statSync(home).mode & 0o777).toBe(0o700);
     });
 });

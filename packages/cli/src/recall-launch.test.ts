@@ -13,17 +13,21 @@ import { recallLaunch } from "./recall-launch.js";
 
 describe("recallLaunch", () => {
     it("gives the server the conversation to leave out and the project", () => {
-        expect(recallLaunch("a-b-c-d", "/work").args.slice(1)).toEqual([
+        expect(recallLaunch("a-b-c-d", "/work").args.slice(2)).toEqual([
             "--recall-server",
             "--exclude",
             "a-b-c-d",
             "--project",
             "/work",
         ]);
-        expect(recallLaunch("a-b-c-d", null).args.slice(1)).toEqual([
+        expect(recallLaunch("a-b-c-d", null).args.slice(2)).toEqual([
             "--recall-server",
             "--exclude",
             "a-b-c-d",
         ]);
+    });
+
+    it("has Bun read no .env, before the script", () => {
+        expect(recallLaunch("a-b-c-d", null).args[0]).toBe("--no-env-file");
     });
 });

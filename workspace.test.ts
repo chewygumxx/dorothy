@@ -57,7 +57,10 @@ const ENTRIES: Record<string, string[]> = {
     tui: [".", "./editor"],
 };
 
-const SDK = "@anthropic-ai/claude-agent-sdk";
+// The Agent SDK, which nothing may declare now, and the AI SDK's
+// packages, which only the agent may.
+const AGENT_SDK = "@anthropic-ai/claude-agent-sdk";
+const AI_SDK = /^(ai|@ai-sdk\/.+|@openrouter\/.+)$/;
 
 const manifest = async (name: string): Promise<Manifest> =>
     Bun.file(join(PACKAGES, name, "package.json")).json();
@@ -97,10 +100,24 @@ describe("the workspace", () => {
         });
     }
 
-    it("leaves the Agent SDK to the agent", async () => {
+    it("declares the Agent SDK nowhere", async () => {
         const holders: string[] = [];
         for (const name of Object.keys(GRAPH)) {
-            if (SDK in declared(await manifest(name))) {
+            if (AGENT_SDK in declared(await manifest(name))) {
+                holders.push(name);
+            }
+        }
+        expect(holders).toEqual([]);
+    });
+
+    it("leaves the AI SDK to the agent", async () => {
+        const holders: string[] = [];
+        for (const name of Object.keys(GRAPH)) {
+            if (
+                Object.keys(declared(await manifest(name))).some((dependency) =>
+                    AI_SDK.test(dependency),
+                )
+            ) {
                 holders.push(name);
             }
         }
@@ -127,8 +144,9 @@ describe("the workspace", () => {
         expect(() =>
             Bun.resolveSync("@dorothy/agent", from("memory")),
         ).toThrow();
-        expect(() => Bun.resolveSync(SDK, from("memory"))).toThrow();
-        expect(() => Bun.resolveSync(SDK, from("tui"))).toThrow();
+        expect(() => Bun.resolveSync("ai", from("memory"))).toThrow();
+        expect(() => Bun.resolveSync("ai", from("tui"))).toThrow();
+        expect(() => Bun.resolveSync("ai", from("agent"))).not.toThrow();
         expect(() =>
             Bun.resolveSync("@dorothy/tui/editor", from("cli")),
         ).not.toThrow();
@@ -141,11 +159,11 @@ describe("the workspace", () => {
         expect(() =>
             Bun.resolveSync("@dorothy/identity", from("agent")),
         ).not.toThrow();
-        expect(() => Bun.resolveSync(SDK, from("identity"))).toThrow();
+        expect(() => Bun.resolveSync("ai", from("identity"))).toThrow();
         expect(() =>
             Bun.resolveSync("@dorothy/core", from("identity")),
         ).toThrow();
-        expect(() => Bun.resolveSync(SDK, from("gateway"))).toThrow();
+        expect(() => Bun.resolveSync("ai", from("gateway"))).toThrow();
         expect(() =>
             Bun.resolveSync("@dorothy/agent", from("gateway")),
         ).toThrow();

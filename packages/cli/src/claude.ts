@@ -735,9 +735,7 @@ function launchSettings(
 }
 
 // The environment claude runs in: the user's shell's, pointed at the
-// gateway. The user's own base URL, which claude's hooks lose, goes on
-// as DOROTHY_ANTHROPIC_BASE_URL for the reviews of the hook, and the
-// path of the age key as SOPS_AGE_KEY_FILE.
+// gateway, and the path of the age key as SOPS_AGE_KEY_FILE.
 function launchEnv(
     shellEnv: Env,
     env: Env,
@@ -761,7 +759,6 @@ function launchEnv(
         delete launchEnv.DOROTHY_LAUNCH;
     }
     bypassGatewayProxy(launchEnv, url);
-    withReviewBaseUrl(launchEnv, env);
     passSopsKey(launchEnv, env);
     return launchEnv;
 }
@@ -792,18 +789,6 @@ function bypassGatewayProxy(env: Env, gateway: string): void {
         .filter(Boolean);
     env.NO_PROXY = [...new Set(hosts)].join(",");
     env.no_proxy = env.NO_PROXY;
-}
-
-// The user's own base URL, taken from env, as the one reviews use; none
-// is none, and an outer launch's is not this one's.
-function withReviewBaseUrl(target: Env, env: Env): Env {
-    const proxy = env.ANTHROPIC_BASE_URL;
-    if (proxy === undefined || proxy === "") {
-        delete target.DOROTHY_ANTHROPIC_BASE_URL;
-    } else {
-        target.DOROTHY_ANTHROPIC_BASE_URL = proxy;
-    }
-    return target;
 }
 
 function removeAll(
@@ -845,10 +830,8 @@ export async function runClaude(
         self = selfCommand(),
         spawnDetached: detach = spawnDetached,
     } = deps;
-    // Its reviews go through the user's own proxy, which the hook finds
-    // in DOROTHY_ANTHROPIC_BASE_URL, as it does in a launch's, and find
-    // the age key through SOPS_AGE_KEY_FILE.
-    const catchUpEnv = passSopsKey(withReviewBaseUrl({ ...env }, env), env);
+    // Its reviews find the age key through SOPS_AGE_KEY_FILE.
+    const catchUpEnv = passSopsKey({ ...env }, env);
     const catchUp = (launch: string) =>
         detach([...self, "--claude-hook", "--catch-up", launch], catchUpEnv);
     // Launches whose dorothy was killed before its catch-up, with memory
