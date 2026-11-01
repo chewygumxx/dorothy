@@ -78,7 +78,8 @@ unused.
   voice and provenance from `@dorothy/identity`; capabilities, plumbing
   and memory its own, memory telling her to keep lasting facts with
   `remember` when she has recall) in chat mode or development mode
-  (`--dev`: a mode component, and Dorothy describes her context);
+  (`--dev`: a mode component, Dorothy describes her context, and
+  `routeLine` ends it with the chat route's models);
   `promptHash` (`xxh3:<hex>`), which transcripts record and nothing
   reads back.
 - `capture.ts`: `captureServer`, a loopback stand-in for the API that
