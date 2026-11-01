@@ -66,7 +66,24 @@ export function classOf(status: number, message: string): FailureClass {
     return "rejected";
 }
 
+// An error with no status, by the AI SDK's name for it: a call that
+// never reached a provider is network; an answer the SDK could not read
+// is the provider's, as a 5xx is; a request it would not send is
+// rejected. An error it does not name stays network.
+const CLASS_OF_NAME: ReadonlyMap<string, FailureClass> = new Map([
+    ["AI_JSONParseError", "server"],
+    ["AI_InvalidResponseDataError", "server"],
+    ["AI_TypeValidationError", "server"],
+    ["AI_EmptyResponseBodyError", "server"],
+    ["AI_NoContentGeneratedError", "server"],
+    ["AI_InvalidPromptError", "rejected"],
+    ["AI_InvalidArgumentError", "rejected"],
+    ["AI_UnsupportedFunctionalityError", "rejected"],
+    ["AI_NoSuchModelError", "rejected"],
+]);
+
 type Wire = {
+    name?: unknown;
     statusCode?: unknown;
     responseHeaders?: Record<string, string>;
     data?: unknown;
@@ -106,7 +123,11 @@ export function failureOf(error: unknown, now = Date.now()): Failure {
               : String(error);
     const status = statusOf(wire);
     if (status === null) {
-        return { class: "network", message, retryAfterMs: null };
+        const named =
+            typeof wire.name === "string"
+                ? CLASS_OF_NAME.get(wire.name)
+                : undefined;
+        return { class: named ?? "network", message, retryAfterMs: null };
     }
     const kind = classOf(status, message);
     return {

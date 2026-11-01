@@ -20,7 +20,6 @@ import {
     Cooldowns,
     defaultRoutes,
     type Env,
-    type Failure,
     label,
     type RawMessage,
     REAL_TIMERS,
@@ -29,13 +28,12 @@ import {
     type RouteEntry,
     runRoute,
     type SessionStart,
-    stepCost,
     type Timers,
     withSection,
 } from "@dorothy/core";
 import { type ModelMessage, stepCountIs, streamText } from "ai";
 import { STALL_MS, secretFailure, Watchdog } from "./attempt.js";
-import { stepUsage, unpricedNotice } from "./cost.js";
+import { stepUsage } from "./cost.js";
 import { failureOf } from "./failures.js";
 import {
     type PersonaMode,
@@ -44,10 +42,11 @@ import {
     withHistory,
 } from "./persona.js";
 import {
+    BREAKPOINT,
+    instructionsFor,
     keyOf,
     languageModel,
     type ModelFactory,
-    providerOptions,
 } from "./providers.js";
 import {
     type ConnectRecall,
@@ -55,15 +54,11 @@ import {
     type RecallTools,
     recallEnv,
 } from "./recall-tools.js";
+import { readStream, requestBase } from "./stream.js";
 import { TurnState } from "./turn.js";
 
 export const MAX_STEPS = 10;
 export const STEP_LIMIT_WARNING = "the reply stopped after ten tool steps";
-
-// Anthropic's prompt cache: the system prompt, and the latest message.
-const BREAKPOINT = {
-    anthropic: { cacheControl: { type: "ephemeral" as const } },
-};
 
 // A session's start and the persona it speaks with. Every field may be
 // left out, for tests and the dump.
@@ -117,8 +112,8 @@ export type ConversationDeps = {
     now?: () => number;
 };
 
-// A message, and the model that made it, null for the user's and for
-// text kept from an interrupted turn.
+// A message, and the label of the model that made it, null for the
+// user's and for text kept from an interrupted turn.
 type Stored = { message: ModelMessage; by: string | null };
 type Answer = { messages: ModelMessage[]; limited: boolean };
 
@@ -463,82 +458,71 @@ export class Conversation implements ChatSession {
             };
         }
         const watchdog = new Watchdog(signal, this.#stallMs, this.#timers);
-        let costUsd = 0;
-        let failure: Failure | null = null;
-        let aborted = false;
         let limited = false;
+        let costUsd = 0;
         try {
-            const result = streamText({
-                model: this.#model(entry, key),
-                instructions:
-                    entry.kind === "anthropic"
-                        ? {
-                              role: "system",
-                              content: this.#setup.system,
-                              providerOptions: BREAKPOINT,
-                          }
-                        : this.#setup.system,
-                messages: this.#outgoing(entry, text),
-                ...(this.#recall === null ? {} : { tools: this.#recall.tools }),
-                stopWhen: stepCountIs(MAX_STEPS),
-                maxRetries: 0,
-                abortSignal: watchdog.signal,
-                providerOptions: providerOptions(entry),
-                onError: () => {},
-            });
-            for await (const part of result.fullStream) {
-                watchdog.touch();
-                this.#emit({ type: "sdk", message: rawOf(part) });
-                switch (part.type) {
-                    case "text-delta":
-                        turn.text(part.text, this.#now());
-                        break;
-                    case "tool-call":
-                        turn.call(part.toolCallId, part.toolName, part.input);
-                        break;
-                    case "tool-result":
-                        turn.result(part.toolCallId, part.output);
-                        break;
-                    case "tool-error":
-                        turn.error(part.toolCallId);
-                        break;
-                    case "finish-step": {
-                        const usage = stepUsage(part.usage);
-                        turn.step(usage);
-                        const cost = stepCost(entry, usage);
-                        if (cost === null) {
-                            const notice = unpricedNotice(entry);
-                            if (notice !== null) {
-                                this.#emit({
-                                    type: "warning",
-                                    message: notice,
-                                });
-                            }
+            const read = await readStream(
+                entry,
+                watchdog,
+                () =>
+                    streamText({
+                        ...requestBase(
+                            entry,
+                            key,
+                            "chat",
+                            this.#model,
+                            watchdog,
+                        ),
+                        instructions: instructionsFor(
+                            entry,
+                            this.#setup.system,
+                        ),
+                        messages: this.#outgoing(entry, text),
+                        ...(this.#recall === null
+                            ? {}
+                            : { tools: this.#recall.tools }),
+                        stopWhen: stepCountIs(MAX_STEPS),
+                    }),
+                {
+                    onPart: (part) => {
+                        this.#emit({ type: "sdk", message: rawOf(part) });
+                        switch (part.type) {
+                            case "text-delta":
+                                turn.text(part.text, this.#now());
+                                break;
+                            case "tool-call":
+                                turn.call(
+                                    part.toolCallId,
+                                    part.toolName,
+                                    part.input,
+                                );
+                                break;
+                            case "tool-result":
+                                turn.result(part.toolCallId, part.output);
+                                break;
+                            case "tool-error":
+                                turn.error(part.toolCallId);
+                                break;
+                            case "finish-step":
+                                turn.step(stepUsage(part.usage));
+                                limited = part.finishReason === "tool-calls";
+                                break;
                         }
-                        costUsd += cost ?? 0;
-                        limited = part.finishReason === "tool-calls";
-                        break;
-                    }
-                    case "error":
-                        failure ??= failureOf(part.error);
-                        break;
-                    case "abort":
-                        aborted = true;
-                        break;
-                }
-            }
-            if (aborted) {
+                    },
+                    notice: (message) =>
+                        this.#emit({ type: "warning", message }),
+                },
+            );
+            costUsd = read.costUsd;
+            if (!read.ok) {
                 return {
                     ok: false,
-                    failure: watchdog.failure(),
+                    failure: read.failure,
                     started: turn.started,
                     costUsd,
                 };
             }
-            if (failure !== null) {
-                return { ok: false, failure, started: turn.started, costUsd };
-            }
-            const steps = await result.steps;
+            const steps = await read.result.steps;
             return {
                 ok: true,
                 value: {

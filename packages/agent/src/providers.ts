@@ -27,20 +27,48 @@ export const noRedirect: typeof fetch = Object.assign(
     { preconnect: fetch.preconnect },
 );
 
-export type ModelFactory = (entry: RouteEntry, key: string) => LanguageModel;
+// What a model is asked for: a chat's reply, or structured output, for
+// which OpenRouter chooses only endpoints that honour the schema.
+export type Use = "chat" | "structured";
+
+export type ModelFactory = (
+    entry: RouteEntry,
+    key: string,
+    use: Use,
+) => LanguageModel;
 
 export const languageModel: ModelFactory = (entry, key) => {
+    const root = entry.baseUrl.replace(/\/+$/, "");
     switch (entry.kind) {
         case "anthropic":
             return createAnthropic({
-                baseURL: `${entry.baseUrl.replace(/\/+$/, "")}/v1`,
+                baseURL: `${root}/v1`,
                 apiKey: key,
                 fetch: noRedirect,
             })(entry.model);
         default:
-            throw new Error(`no provider for ${entry.kind} entries yet`);
+            throw new Error(
+                `no provider for ${(entry as { kind: string }).kind} entries`,
+            );
     }
 };
+
+// Anthropic's prompt cache: a breakpoint closes the prefix it caches.
+export const BREAKPOINT = {
+    anthropic: { cacheControl: { type: "ephemeral" as const } },
+};
+
+// A request's system prompt: on Anthropic, a system message carrying a
+// breakpoint, so that the prompt is cached; elsewhere its text.
+export function instructionsFor(entry: RouteEntry, system: string) {
+    return entry.kind === "anthropic"
+        ? {
+              role: "system" as const,
+              content: system,
+              providerOptions: BREAKPOINT,
+          }
+        : system;
+}
 
 // The key an entry names, from env: "" for a keyless entry, null when
 // the key it names is not set.
