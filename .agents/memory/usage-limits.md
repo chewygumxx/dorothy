@@ -4,7 +4,7 @@ description: "Route work by usage budget: Codex if it fits, else Claude on the p
 metadata:
   node_type: memory
   ctime: 2026-10-29
-  mtime: 2026-10-31
+  mtime: 2026-11-02
   spdx: GPL-3.0-only
   type: feedback
   originSessionId: 23f06ef0-8bfb-4a45-b87d-d5ac8dcf1296
@@ -21,8 +21,8 @@ metadata:
 The user's Claude and Codex plans hit their usage limits often, and the
 user wants the agent to account for that: estimate what a job will
 spend, then route it to Codex if it fits, else a Claude subagent on the
-primary account that leaves room for `dorothy-main`, else the reserve
-account, else wait for the first reset. The user lets the agent juggle
+primary account that leaves room for the coordinating agent, else the
+reserve account, else wait for the first reset. The user lets the agent juggle
 both Claude accounts. In late October 2026 Codex's limits were reset
 often by a promotion, so the user said to spend them freely.
 

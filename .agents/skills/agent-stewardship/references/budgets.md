@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-31
-mtime: 2026-10-31
+mtime: 2026-11-02
 spdx: GPL-3.0-only
 title: Budgets
 description: >-
@@ -37,11 +37,13 @@ will not fit before it starts.
 Two accounts, each a `CLAUDE_CONFIG_DIR`, each with an OAuth token in
 `secrets.json`:
 
-- The primary, `claude-2`, which `dorothy-main` runs on and spends
-  first; its token is `CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2`.
+- The primary, `claude-2`, which the coordinating agent,
+  `dorothydev-claude-cgumxx`, runs on and spends first; its token is
+  `CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2`.
   `DOROTHY_CLAUDE_PRIMARY` and `DOROTHY_CLAUDE_PRIMARY_TOKEN_VAR`
   override the two names.
-- The reserve, `claude`, for when the primary is spent; its token is
+- The reserve, `claude`, for when the primary is spent, which
+  `dorothydev-claude-vtracey` runs on; its token is
   `CLAUDE_CODE_OAUTH_TOKEN`.
 
 `with-claude.sh <command> [args]` runs a command on the account to
@@ -78,14 +80,14 @@ session, each try choosing its account anew:
 S=.agents/skills/agent-stewardship/scripts
 W=~/eval M=~/eval/eval.baseline.toml
 E="bun run eval -- run --work $W --models $M"
-"$S/job.sh" rerun --notify dorothy-main -- "$S/at-limit.sh" \
+"$S/job.sh" rerun --notify dorothydev-claude-cgumxx -- "$S/at-limit.sh" \
     --retry "$S/with-claude.sh $E --resume latest" \
     -- "$S/with-claude.sh" sh -c "$E"
 ```
 
 - `job.sh` runs the rest as a systemd unit in the current directory,
-  so start it from the checkout, and prompts `dorothy-main` when it
-  stops ([recovery](./recovery.md)).
+  so start it from the checkout, and prompts the coordinating agent when
+  it stops ([recovery](./recovery.md)).
 - `at-limit.sh` reruns on 75 alone. Its first try starts the run; each
   retry runs `--retry` instead, resuming the latest run.
 - `with-claude.sh` stands inside each try, so the account is chosen
@@ -97,6 +99,6 @@ A review of every backfilled conversation is the same shape, with no
 resume to name, as `-n all` takes up what is still marked:
 
 ```sh
-"$S/job.sh" backfill --notify dorothy-main -- "$S/at-limit.sh" \
+"$S/job.sh" backfill --notify dorothydev-claude-cgumxx -- "$S/at-limit.sh" \
     -- "$S/with-claude.sh" bun run dev -- --review-backfill -n all
 ```

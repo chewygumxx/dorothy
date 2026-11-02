@@ -4,7 +4,7 @@ description: The coordinating agent may compact itself through herdr past 85% co
 metadata:
   node_type: memory
   ctime: 2026-10-31
-  mtime: 2026-10-31
+  mtime: 2026-11-02
   spdx: GPL-3.0-only
   type: feedback
 ---
@@ -17,9 +17,9 @@ metadata:
    -->
 
 On 2026-10-31 the user approved a standing rule: once its context passes
-85%, the coordinating agent, `dorothy-main`, compacts itself by typing
-`/compact` with instructions into its own pane, at a turn boundary, and
-tells the user each time.
+85%, the coordinating agent, `dorothydev-claude-cgumxx`, compacts itself
+by typing `/compact` with instructions into its own pane, at a turn
+boundary, and tells the user each time.
 
 **Why:** no API compacts a running session, but input typed into its
 terminal does; the user would rather the agent manage its own context

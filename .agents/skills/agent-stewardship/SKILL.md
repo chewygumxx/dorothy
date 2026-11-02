@@ -6,7 +6,7 @@ description: >-
   a wake-up, messaging another agent in herdr, or when your context
   passes 85% and you would compact yourself.
 ctime: 2026-10-31
-mtime: 2026-10-31
+mtime: 2026-11-02
 spdx: GPL-3.0-only
 tags:
   - agents
@@ -22,8 +22,18 @@ tags:
 # Agent stewardship
 
 Running agents within their context and budgets, and recovering when
-either runs out. The agents live in herdr panes: `dorothy-main`, the
-Claude Code session that coordinates, and `dorothy-codex`, Codex. The
+either runs out. The agents live in herdr panes, named for harness and
+account (as of 2026-11-02):
+
+- The coordinating agent, `dorothydev-claude-cgumxx`: Claude Code on the
+  `claude-2` account.
+- Its reserve, `dorothydev-claude-vtracey`: Claude Code on the `claude`
+  account, which resumes the work when the coordinator is limited by
+  usage or billing.
+- `dorothydev-codex`: Codex.
+
+Elsewhere here, "the coordinating agent" is the first of these; after a
+rename, edit this list, then search the skill for the old name. The
 user's preferences behind these rules are in agent memory:
 [usage limits](../../memory/usage-limits.md),
 [Codex full send](../../memory/codex-full-send.md) and
@@ -39,8 +49,8 @@ user's preferences behind these rules are in agent memory:
    through `send-prompt.sh`.
 2. **Route by budget.** Estimate what a job will spend, then send it to
    the first that fits: Codex, if the job fits its 5-hour budget; else
-   a Claude subagent on the primary account, leaving room for
-   `dorothy-main`; else the reserve account; else wait for the first
+   a Claude subagent on the primary account, leaving room for the
+   coordinating agent; else the reserve account; else wait for the first
    reset, on a timer, never a polling loop. Split a job that fits
    nowhere whole, and say so before it starts, not midway.
 3. **Arm a wake-up before a limit can stop you.** Past 80% of the

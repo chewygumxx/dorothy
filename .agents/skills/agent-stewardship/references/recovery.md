@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-31
-mtime: 2026-10-31
+mtime: 2026-11-02
 spdx: GPL-3.0-only
 title: Recovery
 description: >-
@@ -32,12 +32,13 @@ The message is a pointer to the resume note, never its content:
 
 ```sh
 S=.agents/skills/agent-stewardship/scripts
-f=$XDG_RUNTIME_DIR/claude-usage-claude-2.json
-note=${XDG_STATE_HOME:-$HOME/.local/state}/dorothy-agents/dorothy-main.md
+me=dorothydev-claude-cgumxx account=claude-2  # your name and account
+f=$XDG_RUNTIME_DIR/claude-usage-$account.json
+note=${XDG_STATE_HOME:-$HOME/.local/state}/dorothy-agents/$me.md
 t=$(jq -er '.rate_limits.five_hour.resets_at | numbers | . + 300' \
     "$f") &&
     printf 'Woken at the reset: read %s\n' "$note" |
-    "$S/send-prompt.sh" --at "@$t" dorothy-main
+    "$S/send-prompt.sh" --at "@$t" "$me"
 ```
 
 A missing or non-numeric `resets_at` leaves `numbers` nothing to pass,
@@ -45,7 +46,7 @@ so `jq -e` prints nothing and fails; a past one `send-prompt.sh`
 refuses. Either way nothing is armed, and you say so.
 
 For Codex, once its limit is met, its footer's warning gives the reset
-([Codex](./codex.md)): arm a prompt to `dorothy-codex` for five minutes
+([Codex](./codex.md)): arm a prompt to `dorothydev-codex` for five minutes
 after it, pointing at its brief or report, with the date in the time.
 
 `--at` takes a time with its date, `YYYY-MM-DD HH:MM` or `@<epoch>`, as
