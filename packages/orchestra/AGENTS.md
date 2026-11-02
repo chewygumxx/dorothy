@@ -90,6 +90,12 @@ never on a model provider's SDK: the judge reaches a model as core's
   built-in and configured rules. Explicit denials outrank unparsed
   commands; unparsed commands ask, and unmatched requests need a judge.
 
+- `gate.ts`: `createGate`, raw ACP requests through rules, a judge and
+  an injected `Ask`, logged and answered with the first exact once-only
+  option. `judge.ts`: `judgeRequest`, core's `StructuredCall` with fenced
+  untrusted input and a checked result. `deadline.ts`: `beforeDeadline`,
+  injected timeouts and cancellation even when a callback ignores abort.
+
 ## Invariants
 
 - Every root, environment and clock is passed in; tests use temporary
