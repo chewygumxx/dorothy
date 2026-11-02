@@ -101,7 +101,8 @@ export type WorkerBoxInput = {
     adapter: Adapter;
 };
 
-const CONFIG_HOMES: Readonly<
+// Each agent's config home in the box, and the login file it holds.
+export const CONFIG_HOMES: Readonly<
     Record<Agent, { variable: string; dir: string; login: string }>
 > = {
     claude: {

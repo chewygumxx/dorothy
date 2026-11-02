@@ -19,6 +19,7 @@
         "scripts/**/*.mjs",
         "scripts/**/*.ts",
         "packages/*/src",
+        "packages/*/scripts",
         "test-setup.ts",
         "agents.test.ts",
         "workspace.test.ts",

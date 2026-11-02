@@ -55,10 +55,21 @@ never on a model provider's SDK: the judge reaches a model as core's
   key: the provider's model paths alone, the box's placeholder replaced
   by the real key, sent to the fixed upstream, usage logged, never a
   key or a body. Not `@dorothy/gateway`, which serves Dorothy's chat.
+- `fixtures/fake-agent.ts`: an ACP agent of no dependency, in place of
+  an adapter in tests: Claude's or Codex's modes, permission options
+  and key variables (`--as`), and misbehaviour on cue
+  (`--ignore-answers`, `--pin-mode`).
+- The package's `scripts/real-agent-gate.ts`: the real-agent gate, run
+  live outside CI, every root under a temporary one: a signed-in agent
+  boxed and driven through acpx with fixed prompts, each check judged
+  by its effects (the proxy's and gateway's logs, files in the clone,
+  the process table), one line each; `runGate`, and `processTree` and
+  `survivors` for a box's processes. Its header gives the flags.
 
 ## Invariants
 
 - Every root, environment and clock is passed in; tests use temporary
-  ones and never reach a real agent or provider.
+  ones and never reach a real agent or provider. Only the real-agent
+  gate does, run by hand, and it never reads `secrets.json`.
 - A box mounts nothing of the host but what `BoxSpec` names; tests of
   real boxes skip where bubblewrap cannot make a user namespace.
