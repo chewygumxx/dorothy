@@ -161,6 +161,39 @@ describe("parseRouting", () => {
         });
     });
 
+    it("leaves approval's route empty, no fault, with no anthropic default", () => {
+        const routing = routingOf(
+            [
+                "[providers.featherless]",
+                'kind = "featherless"',
+                'key = "FEATHERLESS_API_KEY"',
+                "",
+                "[models]",
+                'chat = ["featherless:org/chat"]',
+                'review = ["featherless:org/chat"]',
+                'compaction = ["featherless:org/chat"]',
+                'maintenance = ["featherless:org/chat"]',
+            ].join("\n"),
+        );
+        expect(routing.routes.approval).toEqual([]);
+    });
+
+    it("routes approval as any other role when config names it", () => {
+        const routing = routingOf(
+            `${PROVIDERS}\n[models]\napproval = ["featherless:deepseek-ai/DeepSeek-V4.1-Flash-1017"]`,
+        );
+        expect(routing.routes.approval).toEqual([
+            {
+                provider: "featherless",
+                kind: "featherless",
+                model: "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+                baseUrl: "https://api.featherless.ai/v1",
+                key: "FEATHERLESS_API_KEY",
+                price: null,
+            },
+        ]);
+    });
+
     it("faults a route on an anthropic provider not named anthropic, left out", () => {
         expect(
             faultsOf(
@@ -182,9 +215,9 @@ describe("parseRouting", () => {
 
     it.each([
         [
-            "a role outside the four",
+            "a role outside the five",
             '[models]\nsummary = ["anthropic:claude-haiku-5-5"]',
-            "config.toml: models.summary: the roles are chat, review, compaction, maintenance",
+            "config.toml: models.summary: the roles are chat, review, compaction, maintenance, approval",
         ],
         [
             "an empty route",
