@@ -14,8 +14,9 @@
 // reaches a real agent, a provider or the network.
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import {
+    chmod,
     mkdir,
     readdir,
     readFile,
@@ -426,6 +427,41 @@ describe.if(available)("the engine, on the fake agent in real boxes", () => {
 });
 
 describe("the engine, closing", () => {
+    it("cancels a startup broker process before close returns", async () => {
+        const git = resolveGit(repos.env);
+        const wrapper = join(repos.root, "git-wrapper");
+        const pidfile = join(repos.root, "startup.pid");
+        await writeFile(
+            wrapper,
+            `#!/bin/sh\ncase " $* " in *" ls-remote "*) echo $$ > '${pidfile}'; exec sleep 60;; esac\nexec '${git}' "$@"\n`,
+        );
+        await chmod(wrapper, 0o755);
+        const { engine, time } = harness({}, { git: wrapper });
+        await start(engine);
+        await until(() => existsSync(pidfile));
+        const pid = Number(await readFile(pidfile, "utf8"));
+        try {
+            const closing = engine.close();
+            time.advance(10_000);
+            await Bun.sleep(50);
+            time.advance(10_000);
+            await closing;
+            const stat = readFileSync(`/proc/${pid}/stat`, "utf8").split(
+                ") ",
+            )[1];
+            expect(stat?.startsWith("Z") ?? true).toBe(true);
+            expect(engine.list()[0]?.clone).toBeNull();
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+                throw error;
+            }
+        } finally {
+            try {
+                process.kill(pid, "SIGKILL");
+            } catch {}
+        }
+    });
+
     it("refuses a start begun as the server closes, naming no worker", async () => {
         const { engine } = harness();
         await engine.close();

@@ -136,6 +136,25 @@ describe("the base and the worker's clone", () => {
         expect(await readdir(outside)).toEqual([]);
     });
 
+    it("rejects an existing worker leaf symlink without touching its target", async () => {
+        const broker = await open();
+        const base = await fetchBase(broker, "s1", "codex-1");
+        const outside = join(repos.root, "outside-leaf");
+        await mkdir(outside);
+        await mkdir(join(repos.worktrees, "s1"));
+        await symlink(outside, join(repos.worktrees, "s1", "codex-1"));
+        await expect(
+            makeClone(broker, {
+                root: repos.worktrees,
+                server: "s1",
+                worker: "codex-1",
+                branch: "feature",
+                base: base.oid,
+            }),
+        ).rejects.toThrow();
+        expect(await readdir(outside)).toEqual([]);
+    });
+
     it("clones a hostile checkout and starts its worker with none of its config acting", async () => {
         const marks = join(repos.root, "marks");
         const bin = join(repos.root, "bin");

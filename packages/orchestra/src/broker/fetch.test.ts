@@ -76,16 +76,55 @@ describe.if(available)("bringing a worker's branch back", () => {
         const { broker, clone } = await start();
         const oid = repos.commit(clone, "a");
         expect(await fetch(broker, clone)).toEqual({
-            ref: "refs/orchestra/s1/codex-1/feature",
+            ref: "refs/orchestra/s1/codex-1/work/feature",
             oid,
         });
         expect(
             repos.git(
-                ["rev-parse", "refs/orchestra/s1/codex-1/feature"],
+                ["rev-parse", "refs/orchestra/s1/codex-1/work/feature"],
                 broker.repo,
             ),
         ).toBe(oid);
     });
+
+    for (const branch of ["base", "base/topic"]) {
+        it(`fetches and pushes ${branch} without moving the pinned base`, async () => {
+            const { broker, base, clone } = await start();
+            repos.git(["switch", "-c", branch], clone);
+            const oid = repos.commit(clone, "work");
+            const work = await fetchWork(broker, {
+                git,
+                server: "s1",
+                worker: "codex-1",
+                clone,
+                branch,
+            });
+            expect(work.ref).toBe(`refs/orchestra/s1/codex-1/work/${branch}`);
+            expect(
+                repos.git(
+                    ["rev-parse", "refs/orchestra/s1/codex-1/base"],
+                    broker.repo,
+                ),
+            ).toBe(base);
+            const record = await recordPush(broker, {
+                branch,
+                oid,
+                last: null,
+                forceWithLease: false,
+            });
+            expect(
+                (
+                    await pushWork(broker, record, {
+                        base,
+                        ask: async () => "deny",
+                    })
+                ).status,
+            ).toBe("succeeded");
+            expect(
+                repos.git(["rev-parse", `refs/heads/${branch}`], repos.remote),
+            ).toBe(oid);
+        });
+    }
 
     it("fetches a rewritten branch over the last one fetched", async () => {
         const { broker, base, clone } = await start();

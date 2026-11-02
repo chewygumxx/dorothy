@@ -24,7 +24,7 @@ import { GIT_DEADLINE, resolveGit } from "./git.js";
 import type { Ask } from "./push.js";
 import { type Broker, openBroker } from "./repository.js";
 
-const WORK = "refs/orchestra/s1/codex-1/feature";
+const WORK = "refs/orchestra/s1/codex-1/work/feature";
 
 // Gone, or a zombie awaiting its reaper.
 function alive(pid: number): boolean {
@@ -296,6 +296,96 @@ describe("the branches' operations", () => {
                 detail: `the remote holds ${oid} at refs/heads/feature`,
             });
             expect(alive(pid)).toBe(false);
+        });
+    }
+
+    for (const phase of ["preparation", "reconciliation"]) {
+        it(`closes with a blocked ${phase} process group dead and no later effects`, async () => {
+            const hang = join(repos.root, "blocked");
+            const mark = join(repos.root, "later-effect");
+            await writeFile(
+                hang,
+                `#!/bin/sh\nsleep 60 &\necho $! > '${hang}.child'\necho $$ > '${pidFile()}'\nwait\ntouch '${mark}'\n`,
+            );
+            await chmod(hang, 0o755);
+            work("a");
+            const oid = await fetched();
+            const original = broker.git.run;
+            if (phase === "reconciliation") {
+                broker.git.run = (args, cwd, signal) =>
+                    args[0] === "push"
+                        ? Promise.resolve({
+                              code: 137,
+                              timedOut: false,
+                              stdout: "",
+                              stderr: "lost",
+                          })
+                        : args[0] === "ls-remote"
+                          ? original(
+                                [
+                                    "ls-remote",
+                                    `--upload-pack=${hang}`,
+                                    repos.remote,
+                                ],
+                                cwd,
+                                signal,
+                            )
+                          : original(args, cwd, signal);
+            }
+            operations.begin(
+                {
+                    operationId: "blocked",
+                    tool: "push_worker",
+                    args: {},
+                    worker: "codex-1",
+                },
+                branches.push(broker, {
+                    branch: "feature",
+                    base,
+                    forceWithLease: false,
+                    ask: never,
+                    fetch:
+                        phase === "preparation"
+                            ? async (signal) =>
+                                  broker.git.out(
+                                      [
+                                          "ls-remote",
+                                          `--upload-pack=${hang}`,
+                                          repos.remote,
+                                      ],
+                                      broker.repo,
+                                      signal,
+                                  )
+                            : async () => oid,
+                }),
+            );
+            const pid = await hookPid();
+            const child = Number(readFileSync(`${hang}.child`, "utf8"));
+            const fields =
+                readFileSync(`/proc/${pid}/stat`, "utf8")
+                    .split(") ")[1]
+                    ?.split(" ") ?? [];
+            const group = Number(fields[2]);
+            try {
+                const closing = operations.close();
+                timers.advance(GRACE_MS);
+                await Bun.sleep(100);
+                timers.advance(GRACE_MS);
+                await closing;
+                expect(alive(pid)).toBe(false);
+                expect(alive(child)).toBe(false);
+                expect(operations.read("blocked").status).toBe(
+                    phase === "reconciliation" ? "unknown" : "failed",
+                );
+                expect(existsSync(mark)).toBe(false);
+                await Bun.sleep(50);
+                expect(existsSync(mark)).toBe(false);
+            } finally {
+                try {
+                    process.kill(-group, "SIGKILL");
+                } catch {}
+                deadlines.advance(GIT_DEADLINE);
+            }
         });
     }
 

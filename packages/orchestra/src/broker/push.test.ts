@@ -27,7 +27,7 @@ import {
 } from "./push.js";
 import { type Broker, openBroker } from "./repository.js";
 
-const WORK = "refs/orchestra/s1/codex-1/feature";
+const WORK = "refs/orchestra/s1/codex-1/work/feature";
 
 describe("the broker's push", () => {
     let repos: Repos;
@@ -109,6 +109,33 @@ describe("the broker's push", () => {
         };
         return { ask, questions };
     };
+
+    for (const unreadable of [false, true]) {
+        it(`reconciles a remote acceptance followed by disconnect${unreadable ? " with an unreadable remote" : ""}`, async () => {
+            const oid = work("disconnect");
+            const record = await recordPush(broker, {
+                branch: "feature",
+                oid,
+                last: null,
+                forceWithLease: false,
+            });
+            const hook = join(repos.remote, "hooks", "post-receive");
+            await writeFile(
+                hook,
+                `#!/bin/sh\n${unreadable ? `mv '${repos.remote}' '${repos.remote}.gone'\n` : ""}kill -KILL "$PPID"\n`,
+            );
+            await chmod(hook, 0o755);
+            expect(
+                (await pushWork(broker, record, { base, ask: never })).status,
+            ).toBe(unreadable ? "unknown" : "succeeded");
+            expect(
+                repos.git(
+                    ["rev-parse", "refs/heads/feature"],
+                    unreadable ? `${repos.remote}.gone` : repos.remote,
+                ),
+            ).toBe(oid);
+        });
+    }
 
     it("records the push and sends exactly the fetched commit to exactly that ref", async () => {
         const oid = work("a");

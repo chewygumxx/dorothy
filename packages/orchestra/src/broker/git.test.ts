@@ -112,6 +112,23 @@ describe("sealedGit", () => {
         ).rejects.toThrow(/git rev-parse --verify refs\/heads\/none/);
     });
 
+    it("refuses to spawn an already-aborted command", async () => {
+        const marker = join(repos.root, "spawned");
+        const script = join(repos.root, "spawn.sh");
+        await writeFile(script, `#!/bin/sh\ntouch '${marker}'\n`);
+        await chmod(script, 0o755);
+        const { runGroup } = await import("./git.js");
+        await expect(
+            runGroup([script], {
+                cwd: repos.root,
+                env: repos.env,
+                deadline: 1000,
+                signal: AbortSignal.abort(),
+            }),
+        ).rejects.toThrow();
+        expect(() => readFileSync(marker)).toThrow();
+    });
+
     it("kills a process past its deadline with its whole group", async () => {
         const hang = join(repos.root, "hang.sh");
         await writeFile(

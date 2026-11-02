@@ -9,8 +9,20 @@
 //
 
 import { describe, expect, it } from "bun:test";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { BOX_HOME, BOX_SOCKETS, BRIDGE_PATH } from "./box.js";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import {
+    BOX_HOME,
+    BOX_SOCKETS,
+    BRIDGE_PATH,
+    boxArgs,
+    boxAvailable,
+    bridgeSource,
+    systemLayout,
+} from "./box.js";
 import {
     type Adapter,
     adapterFor,
@@ -38,12 +50,12 @@ const input = (over: Partial<WorkerBoxInput> = {}): WorkerBoxInput => ({
     ...over,
 });
 
-const mounted = (spec: ReturnType<typeof workerBox>, target: string) =>
+const mounted = (spec: Awaited<ReturnType<typeof workerBox>>, target: string) =>
     spec.files.find((file) => file.target === target)?.source;
 
 describe("workerBox", () => {
-    it("runs the adapter behind the bridge, the proxy on its port", () => {
-        const spec = workerBox(input());
+    it("runs the adapter behind the bridge, the proxy on its port", async () => {
+        const spec = await workerBox(input());
         expect(spec.command).toEqual([
             ADAPTER.runtime,
             BRIDGE_PATH,
@@ -59,16 +71,16 @@ describe("workerBox", () => {
         );
     });
 
-    it("mounts the runtime, the store and the borrowed objects read-only", () => {
-        expect(workerBox(input()).readOnly).toEqual([
+    it("mounts the runtime, the store and the borrowed objects read-only", async () => {
+        expect((await workerBox(input())).readOnly).toEqual([
             "/opt/bun/bin",
             "/repo/node_modules/.bun",
             "/state/repos/o/n.git/objects",
         ]);
     });
 
-    it("admits Codex's subscription login alone, read-only, in its home", () => {
-        const spec = workerBox(input());
+    it("admits Codex's subscription login alone, read-only, in its home", async () => {
+        const spec = await workerBox(input());
         expect(mounted(spec, `${BOX_HOME}/.codex/auth.json`)).toBe(
             "/h/.codex/auth.json",
         );
@@ -77,8 +89,8 @@ describe("workerBox", () => {
         expect(spec.env.OPENAI_API_KEY).toBeUndefined();
     });
 
-    it("admits Claude's subscription login alone, read-only, in its home", () => {
-        const spec = workerBox(
+    it("admits Claude's subscription login alone, read-only, in its home", async () => {
+        const spec = await workerBox(
             input({
                 agent: "claude",
                 login: { kind: "subscription", source: "/h/.config/claude" },
@@ -91,8 +103,8 @@ describe("workerBox", () => {
         expect(spec.env.ANTHROPIC_API_KEY).toBeUndefined();
     });
 
-    it("points an API key's agent at the gateway, with the placeholder", () => {
-        const claude = workerBox(
+    it("points an API key's agent at the gateway, with the placeholder", async () => {
+        const claude = await workerBox(
             input({ agent: "claude", login: { kind: "api-key" } }),
         );
         expect(claude.env.ANTHROPIC_BASE_URL).toBe(
@@ -101,26 +113,15 @@ describe("workerBox", () => {
         expect(claude.env.ANTHROPIC_API_KEY).toBe("dorothy-gateway");
         expect(claude.command).toContain(`${KEY_PORT}=${BOX_SOCKETS}/key.sock`);
         expect(claude.files).toHaveLength(1);
-        const codex = workerBox(input({ login: { kind: "api-key" } }));
+        const codex = await workerBox(input({ login: { kind: "api-key" } }));
         expect(codex.env.OPENAI_BASE_URL).toBe(
             `http://127.0.0.1:${KEY_PORT}/v1`,
         );
         expect(codex.env.OPENAI_API_KEY).toBe("dorothy-gateway");
     });
 
-    it("admits a key into the box only where the gate found the gateway ignored", () => {
-        const spec = workerBox(
-            input({ login: { kind: "admitted-key", key: "sk-real" } }),
-        );
-        expect(spec.env.OPENAI_API_KEY).toBe("sk-real");
-        expect(spec.env.OPENAI_BASE_URL).toBeUndefined();
-        expect(spec.command).not.toContain(
-            `${KEY_PORT}=${BOX_SOCKETS}/key.sock`,
-        );
-    });
-
-    it("sends the proxy variables, both cases, and spares loopback", () => {
-        const { env } = workerBox(input());
+    it("sends the proxy variables, both cases, and spares loopback", async () => {
+        const { env } = await workerBox(input());
         for (const name of [
             "HTTPS_PROXY",
             "HTTP_PROXY",
@@ -181,4 +182,47 @@ describe("adapterFor", () => {
             );
         }
     });
+});
+
+it("delivers an admitted key privately with no secret in argv or launch records", async () => {
+    const root = await mkdtemp(join(tmpdir(), "admitted-key-"));
+    try {
+        const sockets = join(root, "sockets");
+        await mkdir(sockets, { mode: 0o700 });
+        const runtime = await realpath(process.execPath);
+        const entry = join(root, "agent.ts");
+        await writeFile(
+            entry,
+            'import { createHash } from "node:crypto"; console.log(createHash("sha256").update(process.env.OPENAI_API_KEY ?? "").digest("hex"));',
+        );
+        const bridge = join(root, "bridge.ts");
+        await writeFile(bridge, bridgeSource());
+        const key = "synthetic-r1-private-key";
+        const spec = await workerBox(
+            input({
+                login: { kind: "admitted-key", key },
+                clone: root,
+                sockets,
+                bridge,
+                objects: root,
+                adapter: { runtime, entry, readOnly: [dirname(runtime)] },
+            }),
+        );
+        const argv = boxArgs(spec, await systemLayout());
+        expect(JSON.stringify({ argv, spec })).not.toContain(key);
+        if (await boxAvailable()) {
+            const child = Bun.spawn(argv, {
+                env: {},
+                stdout: "pipe",
+                stderr: "pipe",
+            });
+            const output = await new Response(child.stdout).text();
+            expect(await child.exited).toBe(0);
+            expect(output.trim()).toBe(
+                createHash("sha256").update(key).digest("hex"),
+            );
+        }
+    } finally {
+        await rm(root, { recursive: true, force: true });
+    }
 });

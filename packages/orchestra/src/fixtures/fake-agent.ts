@@ -181,11 +181,21 @@ async function prompt(sessionId: string, text: string) {
             status: "pending",
             ...toolCall,
         });
-        const answer = await request("session/request_permission", {
-            sessionId,
-            toolCall,
-            options,
-        });
+        const answer = args.includes("--never-ask")
+            ? {
+                  result: {
+                      outcome: {
+                          outcome: "selected",
+                          optionId: options.find((o) => o.kind === "allow_once")
+                              ?.optionId,
+                      },
+                  },
+              }
+            : await request("session/request_permission", {
+                  sessionId,
+                  toolCall,
+                  options,
+              });
         const outcome = answer.result?.outcome as
             | { outcome: string; optionId?: string }
             | undefined;

@@ -153,6 +153,18 @@ describe.if(available)("the real-agent gate, on the fake agent", () => {
         );
     }, 60_000);
 
+    it("fails mandatory permission checks when the adapter never asks", async () => {
+        const checks = await gate({ agentArgs: ["--never-ask"] });
+        for (const name of [
+            "permission allowed once by exact option",
+            "permission denied by exact option",
+            "permission cancelled",
+        ]) {
+            expect(statuses(checks)[name]).toBe("FAIL");
+            expect(detail(checks, name)).toContain("the command ran");
+        }
+    }, 60_000);
+
     it("stops at a box that cannot start", async () => {
         const checks = await gate({
             adapter: { ...adapter, entry: join(root, "missing.ts") },
