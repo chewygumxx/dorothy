@@ -24,8 +24,8 @@ import { dirname, join } from "node:path";
 import {
     BOX_HOME,
     BOX_SOCKETS,
-    BRIDGE_PATH,
     type BoxSpec,
+    BRIDGE_PATH,
     boxArgs,
     boxAvailable,
     bridgeSource,

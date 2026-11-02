@@ -14,8 +14,8 @@ import { BOX_HOME, BOX_SOCKETS, BRIDGE_PATH } from "./box.js";
 import {
     type Adapter,
     adapterFor,
-    PROXY_PORT,
     KEY_PORT,
+    PROXY_PORT,
     providerHosts,
     type WorkerBoxInput,
     workerBox,
