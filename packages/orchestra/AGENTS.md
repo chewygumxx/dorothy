@@ -37,6 +37,8 @@ never on a model provider's SDK: the judge reaches a model as core's
 - `config.ts`: `[orchestra]` in `config.toml` (`parseOrchestra`,
   `readOrchestra`), every fault an error; `hostName` and
   `isPlainWords`, which the proxy and the rules share.
+- `environment.ts`: `reexecClean`, the server running again with the
+  allowlist of `serverEnvironment` alone, whoever started it.
 
 ## Invariants
 
