@@ -41,8 +41,9 @@ never on a model provider's SDK: the judge reaches a model as core's
   allowlist of `serverEnvironment` alone, whoever started it.
 - `box/box.ts`: `boxArgs`, bubblewrap's arguments for a box from an
   empty root (`systemLayout` the host's `/usr` links and `/etc`
-  entries), and `boxAvailable`. `box/bridge.ts` runs inside a box,
-  never imported: loopback ports forwarded to the box's sockets.
+  entries), its clone the one read-write mount, or none; and
+  `boxAvailable`. `box/bridge.ts` runs inside a box, never imported:
+  loopback ports forwarded to the box's sockets.
 - `box/worker-box.ts`: `workerBox`, a worker's `BoxSpec`: its adapter
   (`adapterFor`) behind the bridge, the proxy's variables, and its
   login (`WorkerLogin`) alone: a subscription's files read-only, an API
@@ -65,12 +66,23 @@ never on a model provider's SDK: the judge reaches a model as core's
   (`repoIdentity`; `localRemotes` admits a bare path, in tests alone).
 - `broker/repository.ts`: `openBroker`, a `Broker` per identity: its
   bare clone of the checkout under the state root, made once, no
-  remote, gc and maintenance off; its global config beside it.
+  remote, gc and maintenance off; its global config beside it, and the
+  sealed environment gh shares.
 - `broker/base.ts`: `fetchBase`, the remote's default branch into
   `refs/orchestra/<server>/<worker>/base`. `broker/reservation.ts`:
   `reserveBranch`, a file made exclusively per branch, refused if taken
   or on the remote. `broker/clone.ts`: `makeClone`, a shared clone
   under the worktree root on the new branch, the last host git in it.
+- `broker/fetch.ts`: `fetchWork`, a worker's branch into
+  `refs/orchestra/<server>/<worker>/<branch>`, its upload-pack boxed:
+  the clone and the broker's objects read-only, nothing writable.
+- `broker/push.ts`: `recordPush`, a push's values fixed before it is
+  sent; `pushWork`, that OID to that ref under the lease, a plain push
+  a fast-forward of the last, asking the user (`Ask`) for a forced
+  lease or a change to `DEPENDENCY_FILES`; `reconcilePush`, a lost
+  push's `Outcome` read from the remote.
+- `broker/pull-request.ts`: `openPullRequest`, `gh pr create` for the
+  branch (`resolveGh`), and `reconcilePullRequest` by `gh pr list`.
 - `fixtures/repos.ts`: a bare remote, a checkout one commit ahead and
   a user's home, for the broker's tests.
 - `fixtures/fake-agent.ts`: an ACP agent of no dependency, in place of
@@ -93,4 +105,7 @@ never on a model provider's SDK: the judge reaches a model as core's
   real boxes skip where bubblewrap cannot make a user namespace.
 - Every host git process runs through `sealedGit`, in the broker
   repository but for the steps that make a clone; none runs in a
-  worker's clone after `makeClone`.
+  worker's clone after `makeClone`, which only a boxed upload-pack
+  reads.
+- The broker pushes one recorded OID to one branch of the remote's
+  URL: never another branch, a tag, a deletion or a submodule.

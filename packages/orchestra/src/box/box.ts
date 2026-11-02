@@ -67,8 +67,9 @@ export async function systemLayout(root = "/"): Promise<SystemLayout> {
 }
 
 export type BoxSpec = {
-    // Read-write, at its own path; the box works in it.
-    clone: string;
+    // Read-write, at its own path; the box works in it. None for a box
+    // that writes nothing of the host's, which works in /.
+    clone: string | null;
     // Read-only, each at its own path: the runtime, the adapter's store,
     // the borrowed objects.
     readOnly: string[];
@@ -109,7 +110,9 @@ export function boxArgs(spec: BoxSpec, layout: SystemLayout): string[] {
     for (const path of spec.readOnly) {
         args.push("--ro-bind", path, path);
     }
-    args.push("--bind", spec.clone, spec.clone);
+    if (spec.clone !== null) {
+        args.push("--bind", spec.clone, spec.clone);
+    }
     for (const { source, target } of spec.files) {
         args.push("--ro-bind", source, target);
     }
@@ -119,7 +122,7 @@ export function boxArgs(spec: BoxSpec, layout: SystemLayout): string[] {
     for (const [name, value] of Object.entries(spec.env)) {
         args.push("--setenv", name, value);
     }
-    args.push("--chdir", spec.clone, "--", ...spec.command);
+    args.push("--chdir", spec.clone ?? "/", "--", ...spec.command);
     return args;
 }
 

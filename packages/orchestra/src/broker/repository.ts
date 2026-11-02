@@ -20,7 +20,7 @@ import { existsSync } from "node:fs";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { type Env, xdgDir } from "@dorothy/core";
-import { type Git, sealedGit } from "./git.js";
+import { type Git, sealedEnvironment, sealedGit } from "./git.js";
 import { readIdentity } from "./identity.js";
 
 export type BrokerDeps = {
@@ -45,6 +45,8 @@ export type Broker = {
     repo: string;
     // Sealed, in the broker repository.
     git: Git;
+    // The sealed environment, which gh shares.
+    env: Record<string, string>;
 };
 
 const quoted = (value: string) =>
@@ -147,5 +149,12 @@ export async function openBroker(deps: BrokerDeps): Promise<Broker> {
     if (!existsSync(repo)) {
         await makeRepository(git, deps.checkout, repo);
     }
-    return { identity, url, state, repo, git };
+    return {
+        identity,
+        url,
+        state,
+        repo,
+        git,
+        env: sealedEnvironment(env, config),
+    };
 }
