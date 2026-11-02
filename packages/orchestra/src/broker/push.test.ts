@@ -17,6 +17,9 @@ import { makeClone } from "./clone.js";
 import { resolveGit } from "./git.js";
 import {
     type Ask,
+    capDiff,
+    DIFF_BYTES,
+    DIFF_LINES,
     type PushRecord,
     pushWork,
     reconcilePush,
@@ -276,6 +279,29 @@ describe("the broker's push", () => {
         expect(remoteFeature()).toBe(oid);
     });
 
+    it("caps the dependency diff it shows", async () => {
+        const lock = Array.from({ length: 1000 }, (_, n) => `line ${n}`);
+        await writeFile(join(clone, "bun.lock"), `${lock.join("\n")}\n`);
+        repos.git(["add", "bun.lock"], clone);
+        repos.git(["commit", "-q", "-m", "lock"], clone);
+        const denying = asking("deny");
+        await pushWork(
+            broker,
+            await recordPush(broker, {
+                branch: "feature",
+                oid: fetched(),
+                last: null,
+                forceWithLease: false,
+            }),
+            { base, ask: denying.ask },
+        );
+        const [question = ""] = denying.questions;
+        expect(question).toContain("+line 0\n");
+        expect(question).not.toContain("+line 999");
+        expect(question).toMatch(/\n\[cut: \d+ more lines, \d+ bytes\]$/);
+        expect(question.split("\n").length).toBeLessThan(DIFF_LINES + 10);
+    });
+
     it("asks before a forceWithLease, naming every recorded value", async () => {
         const first = work("a");
         await pushWork(
@@ -410,5 +436,23 @@ describe("the broker's push", () => {
             expect(outcome.status).toBe("failed");
             expect(remoteFeature()).toBe("");
         });
+    });
+});
+
+describe("capDiff", () => {
+    it("leaves a diff within its caps whole", () => {
+        expect(capDiff("+a\n+b")).toBe("+a\n+b");
+    });
+
+    it("keeps its first lines, then says how much was cut", () => {
+        const lines = Array.from({ length: DIFF_LINES + 100 }, () => "+x");
+        expect(capDiff(lines.join("\n"))).toBe(
+            `${lines.slice(0, DIFF_LINES).join("\n")}\n[cut: 100 more lines, 299 bytes]`,
+        );
+        const wide = Array.from({ length: 100 }, () => "x".repeat(1024));
+        const kept = Math.floor(DIFF_BYTES / 1025);
+        expect(capDiff(wide.join("\n"))).toBe(
+            `${wide.slice(0, kept).join("\n")}\n[cut: ${100 - kept} more lines, ${100 * 1025 - 1 - kept * 1025} bytes]`,
+        );
     });
 });
