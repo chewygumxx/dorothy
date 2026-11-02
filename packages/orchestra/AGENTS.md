@@ -84,6 +84,12 @@ never on a model provider's SDK: the judge reaches a model as core's
   the process table), one line each; `runGate`, and `processTree` and
   `survivors` for a box's processes. Its header gives the flags.
 
+- `shell.ts`: `parseShell`, a conservative grammar for literal shell lists,
+  pipelines and redirections; unsupported constructs stay unparsed.
+- `rules.ts`: `ruleRequest`, ACP tool inputs and clone paths under the
+  built-in and configured rules. Explicit denials outrank unparsed
+  commands; unparsed commands ask, and unmatched requests need a judge.
+
 ## Invariants
 
 - Every root, environment and clock is passed in; tests use temporary
