@@ -36,7 +36,6 @@ import {
     copyFile,
     mkdir,
     mkdtemp,
-    readdir,
     readFile,
     realpath,
     rm,
@@ -56,11 +55,13 @@ import {
     createFileSessionStore,
 } from "acpx/runtime";
 import { boxArgs, bridgeSource, systemLayout } from "../src/box/box.js";
+import { processTree, survivors } from "../src/box/processes.js";
 import {
     type Adapter,
     adapterFor,
     CONFIG_HOMES,
     KEY_SOCKET,
+    MODES,
     PROXY_SOCKET,
     providerHosts,
     workerBox,
@@ -73,13 +74,11 @@ import {
     startProxy,
 } from "../src/net/proxy.js";
 
-// The mode each agent keeps in its box, so that it still asks.
-const MODES: Readonly<Record<Agent, string>> = {
-    claude: "default",
-    codex: "workspace-write",
-};
 // [orchestra] network-allow's default, which the subprocess check fetches.
 const ALLOWED = "registry.npmjs.org";
+
+// The box's processes, which the gate's own tests import from here.
+export { processTree, survivors };
 
 export type Check = {
     name: string;
@@ -113,7 +112,6 @@ type Turn = {
     proxy: ProxyEntry[];
     gateway: GatewayEntry[];
 };
-type Proc = { pid: number; start: string };
 
 const errorText = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
@@ -123,64 +121,6 @@ const turnText = ({ status, reply }: Turn) =>
 
 const run = (command: string) =>
     `Run this exact shell command with your shell tool, once, then reply with its output: \`${command}\` If a sandbox blocks it, ask for approval to run it outside the sandbox.`;
-
-// A process's state, parent and start time, from /proc; null once gone.
-async function stat(pid: number) {
-    const text = await readFile(`/proc/${pid}/stat`, "utf8").catch(() => null);
-    // The fields after the command's name, which may hold spaces.
-    const fields = text?.slice(text.lastIndexOf(")") + 2).split(" ");
-    return fields === undefined
-        ? null
-        : {
-              state: fields[0],
-              ppid: Number(fields[1]),
-              start: fields[19] ?? "",
-          };
-}
-
-// The process and every descendant it has now.
-export async function processTree(root: number): Promise<Proc[]> {
-    const all = new Map<number, { ppid: number; start: string }>();
-    for (const name of await readdir("/proc")) {
-        const found = /^\d+$/.test(name) ? await stat(Number(name)) : null;
-        if (found !== null) {
-            all.set(Number(name), found);
-        }
-    }
-    const tree: Proc[] = [];
-    const queue = [root];
-    for (let pid = queue.shift(); pid !== undefined; pid = queue.shift()) {
-        const found = all.get(pid);
-        if (found !== undefined) {
-            tree.push({ pid, start: found.start });
-            for (const [child, { ppid }] of all) {
-                if (ppid === pid) {
-                    queue.push(child);
-                }
-            }
-        }
-    }
-    return tree;
-}
-
-// Those of a tree still running, waiting up to ms for them to go; a pid
-// reused by another process, or a zombie, is gone.
-export async function survivors(tree: Proc[], ms = 15_000): Promise<Proc[]> {
-    const deadline = Date.now() + ms;
-    for (;;) {
-        const left: Proc[] = [];
-        for (const proc of tree) {
-            const found = await stat(proc.pid);
-            if (found?.start === proc.start && found.state !== "Z") {
-                left.push(proc);
-            }
-        }
-        if (left.length === 0 || Date.now() >= deadline) {
-            return left;
-        }
-        await Bun.sleep(200);
-    }
-}
 
 // Marks a copied login expired, so that the agent must refresh it:
 // Claude's OAuth expiry, Codex's last refresh. False where it has none.

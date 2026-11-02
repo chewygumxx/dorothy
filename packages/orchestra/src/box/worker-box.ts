@@ -117,11 +117,20 @@ export const CONFIG_HOMES: Readonly<
     },
 };
 
-const KEY_VARIABLES: Readonly<
+// Each agent's provider variables; the key's name is also its secret's.
+export const KEY_VARIABLES: Readonly<
     Record<Agent, { base: string; key: string; root: string }>
 > = {
     claude: { base: "ANTHROPIC_BASE_URL", key: "ANTHROPIC_API_KEY", root: "" },
     codex: { base: "OPENAI_BASE_URL", key: "OPENAI_API_KEY", root: "/v1" },
+};
+
+// The mode each agent keeps in its box, so that it still asks: Codex's
+// workspace-write, whose reviewer is the user, never its agent mode;
+// Claude's default, Manual.
+export const MODES: Readonly<Record<Agent, string>> = {
+    claude: "default",
+    codex: "workspace-write",
 };
 
 export function workerBox(input: WorkerBoxInput): BoxSpec {

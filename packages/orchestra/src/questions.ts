@@ -65,6 +65,11 @@ export function createQuestions(
         closed = true;
         await settle([...pending.values()]);
     };
+    // A worker's questions waiting on the user, by their ids.
+    const waiting = (workerId: string) =>
+        [...pending]
+            .filter(([, question]) => question.workerId === workerId)
+            .map(([questionId]) => questionId);
     const stop = async (workerId: string) => {
         await settle(
             [...pending.values()].filter(
@@ -209,5 +214,5 @@ export function createQuestions(
         };
         return outer;
     };
-    return { ask, stop, close, transport };
+    return { ask, stop, close, transport, pending: waiting };
 }

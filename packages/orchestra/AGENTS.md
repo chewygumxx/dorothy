@@ -48,7 +48,7 @@ never on a model provider's SDK: the judge reaches a model as core's
   (`adapterFor`) behind the bridge, the proxy's variables, and its
   login (`WorkerLogin`) alone: a subscription's files read-only, an API
   key's agent pointed at the gateway with the placeholder;
-  `providerHosts`, what the proxy admits for each login.
+  `providerHosts`, what the proxy admits for each login; `MODES`.
 - `net/proxy.ts`: `startProxy`, a box's egress on its own socket: one
   `CONNECT` to an exact host on port 443, resolved here, every address
   public (`net/addresses.ts`), bounded in size, time and number.
@@ -95,6 +95,8 @@ never on a model provider's SDK: the judge reaches a model as core's
   `GRACE_MS`, the kill and reconciliation, the rest `unknown`;
   `closeOn`, the client's EOF or a signal. `log.ts`: `openLog`, the
   server's log at `logPath`, one JSON object a line.
+- `engine/`: workers, their sessions, turns and waits:
+  [guide](./src/engine/AGENTS.md)
 - `fixtures/repos.ts`: a bare remote, a checkout one commit ahead and
   a user's home, for the broker's tests.
 - `fixtures/timers.ts`: `FakeTimers`, a grace or deadline advanced by
@@ -102,13 +104,14 @@ never on a model provider's SDK: the judge reaches a model as core's
 - `fixtures/fake-agent.ts`: an ACP agent of no dependency, in place of
   an adapter in tests: Claude's or Codex's modes, permission options
   and key variables (`--as`), and misbehaviour on cue
-  (`--ignore-answers`, `--pin-mode`).
+  (`--ignore-answers`, `--pin-mode`, `--exit-after-prompt`).
 - The package's `scripts/real-agent-gate.ts`: the real-agent gate, run
   live outside CI, every root under a temporary one: a signed-in agent
   boxed and driven through acpx with fixed prompts, each check judged
   by its effects (the proxy's and gateway's logs, files in the clone,
-  the process table), one line each; `runGate`, and `processTree` and
-  `survivors` for a box's processes. Its header gives the flags.
+  the process table), one line each; `runGate`. Its header gives the
+  flags. `box/processes.ts`: `processTree` and `survivors`, a box's
+  processes from /proc, for the gate and the engine's tests.
 
 - `shell.ts`: `parseShell`, a conservative grammar for literal shell lists,
   pipelines and redirections; unsupported constructs stay unparsed.
@@ -123,9 +126,10 @@ never on a model provider's SDK: the judge reaches a model as core's
   injected timeouts and cancellation even when a callback ignores abort.
 
 - `questions.ts`: `createQuestions`, an MCP server's injected `Ask`,
-  worker stop and close. Connect through its `transport` wrapper to add
-  JSON-RPC ids to question metadata and cancel before closing. It uses
-  the same MCP SDK version as memory, with the 2025-06-18 form shape.
+  a worker's `pending` ids, worker stop and close. Connect through its
+  `transport` wrapper to add JSON-RPC ids to question metadata and
+  cancel before closing. It uses the same MCP SDK version as memory,
+  with the 2025-06-18 form shape.
 
 ## Invariants
 

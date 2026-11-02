@@ -25,8 +25,8 @@ import {
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { StructuredCall, StructuredRequest } from "@dorothy/core";
-import { processTree, survivors } from "../../scripts/real-agent-gate.js";
 import { boxAvailable } from "../box/box.js";
+import { processTree, survivors } from "../box/processes.js";
 import type { Adapter } from "../box/worker-box.js";
 import { resolveGit } from "../broker/git.js";
 import { DEFAULT_ORCHESTRA, type OrchestraConfig } from "../config.js";
@@ -423,4 +423,13 @@ describe.if(available)("the engine, on the fake agent in real boxes", () => {
         expect(replies(report.events)).toEqual([]);
         expect(existsSync(join(clones, "codex-1", "ran"))).toBe(false);
     }, 60_000);
+});
+
+describe("the engine, closing", () => {
+    it("refuses a start begun as the server closes, naming no worker", async () => {
+        const { engine } = harness();
+        await engine.close();
+        await expect(start(engine)).rejects.toThrow("the server is closing");
+        expect(engine.list()).toEqual([]);
+    });
 });
