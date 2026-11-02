@@ -61,22 +61,27 @@ async function uploadPack(broker: Broker, input: FetchInput) {
 export async function fetchWork(
     broker: Broker,
     input: FetchInput,
+    signal?: AbortSignal,
 ): Promise<Work> {
-    const ref = `refs/orchestra/${input.server}/${input.worker}/${input.branch}`;
-    await broker.git.out([
-        "fetch",
-        "--no-tags",
-        "--no-recurse-submodules",
-        "--no-write-fetch-head",
-        `--upload-pack=${await uploadPack(broker, input)}`,
-        "--",
-        input.clone,
-        `+refs/heads/${input.branch}:${ref}`,
-    ]);
-    const oid = await broker.git.out([
-        "rev-parse",
-        "--verify",
-        `${ref}^{commit}`,
-    ]);
+    const ref = `refs/orchestra/${input.server}/${input.worker}/work/${input.branch}`;
+    await broker.git.out(
+        [
+            "fetch",
+            "--no-tags",
+            "--no-recurse-submodules",
+            "--no-write-fetch-head",
+            `--upload-pack=${await uploadPack(broker, input)}`,
+            "--",
+            input.clone,
+            `+refs/heads/${input.branch}:${ref}`,
+        ],
+        undefined,
+        signal,
+    );
+    const oid = await broker.git.out(
+        ["rev-parse", "--verify", `${ref}^{commit}`],
+        undefined,
+        signal,
+    );
     return { ref, oid };
 }

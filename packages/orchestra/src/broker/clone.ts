@@ -33,6 +33,7 @@ export type CloneInput = {
 export async function makeClone(
     broker: Broker,
     { root, server, worker, branch, base }: CloneInput,
+    signal?: AbortSignal,
 ): Promise<string> {
     if (!NAME.test(server) || !NAME.test(worker)) {
         throw new Error(`no clone for ${server}/${worker}: not plain names`);
@@ -42,14 +43,17 @@ export async function makeClone(
     if (!clone.startsWith(`${await realpath(root)}${sep}`)) {
         throw new Error(`${clone} lies outside the worktree root`);
     }
-    await broker.git.out([
-        "clone",
-        "--shared",
-        "--no-checkout",
-        "--",
-        broker.repo,
-        clone,
-    ]);
-    await broker.git.out(["switch", "--create", branch, base], clone);
+    await mkdir(clone);
+    const canonical = await realpath(clone);
+    if (!canonical.startsWith(`${await realpath(root)}${sep}`)) {
+        throw new Error(`${canonical} lies outside the worktree root`);
+    }
+    signal?.throwIfAborted();
+    await broker.git.out(
+        ["clone", "--shared", "--no-checkout", "--", broker.repo, clone],
+        undefined,
+        signal,
+    );
+    await broker.git.out(["switch", "--create", branch, base], clone, signal);
     return clone;
 }

@@ -44,10 +44,11 @@ never on a model provider's SDK: the judge reaches a model as core's
   entries), its clone the one read-write mount, or none; and
   `boxAvailable`. `box/bridge.ts` runs inside a box, never imported:
   loopback ports forwarded to the box's sockets.
-- `box/worker-box.ts`: `workerBox`, a worker's `BoxSpec`: its adapter
+- `box/worker-box.ts`: `workerBox`, async, a worker's `BoxSpec`: its adapter
   (`adapterFor`) behind the bridge, the proxy's variables, and its
   login (`WorkerLogin`) alone: a subscription's files read-only, an API
-  key's agent pointed at the gateway with the placeholder;
+  key's agent pointed at the gateway with the placeholder; admitted keys
+  enter through a private file removed with the sockets directory;
   `providerHosts`, what the proxy admits for each login; `MODES`.
 - `net/proxy.ts`: `startProxy`, a box's egress on its own socket: one
   `CONNECT` to an exact host on port 443, resolved here, every address
@@ -61,7 +62,8 @@ never on a model provider's SDK: the judge reaches a model as core's
   system one, hooks, maintenance, gc and submodules off, no `GIT_*`
   variable of the caller's (`sealedEnvironment`); `runGroup`, each
   process in a session of its own, its group killed at the deadline
-  (`Timers`, which `openBroker` takes) or on its operation's abort.
+  (`Timers`, which `openBroker` takes) or on its operation's abort;
+  `drainGroups` waits for its scope's killed groups.
 - `broker/identity.ts`: `readIdentity`, `<owner>/<name>` from the
   checkout's origin URL as written, in GitHub's forms alone
   (`repoIdentity`; `localRemotes` admits a bare path, in tests alone).
@@ -75,7 +77,7 @@ never on a model provider's SDK: the judge reaches a model as core's
   or on the remote. `broker/clone.ts`: `makeClone`, a shared clone
   under the worktree root on the new branch, the last host git in it.
 - `broker/fetch.ts`: `fetchWork`, a worker's branch into
-  `refs/orchestra/<server>/<worker>/<branch>`, its upload-pack boxed:
+  `refs/orchestra/<server>/<worker>/work/<branch>`, its upload-pack boxed:
   the clone and the broker's objects read-only, nothing writable.
 - `broker/push.ts`: `recordPush`, a push's values fixed before it is
   sent; `pushWork`, that OID to that ref under the lease, a plain push
@@ -93,6 +95,7 @@ never on a model provider's SDK: the judge reaches a model as core's
   run again, on a repeat; a queue's run in order, `cancel` dropping a
   worker's pending; `close` stopping every worker, then the grace,
   `GRACE_MS`, the kill and reconciliation, the rest `unknown`;
+  `Run.signal` covers preparation, `reconcileSignal` the second grace;
   `closeOn`, the client's EOF or a signal. `log.ts`: `openLog`, the
   server's log at `logPath`, one JSON object a line.
 - `engine/`: workers, their sessions, turns and waits:
@@ -109,22 +112,20 @@ never on a model provider's SDK: the judge reaches a model as core's
   live outside CI, every root under a temporary one: a signed-in agent
   boxed and driven through acpx with fixed prompts, each check judged
   by its effects (the proxy's and gateway's logs, files in the clone,
-  the process table), one line each; `runGate`. Its header gives the
+  the process table), one line each; mandatory permission evidence
+  absent is FAIL; `runGate`. Its header gives the
   flags. `box/processes.ts`: `processTree` and `survivors`, a box's
   processes from /proc, for the gate and the engine's tests.
-
 - `shell.ts`: `parseShell`, a conservative grammar for literal shell lists,
   pipelines and redirections; unsupported constructs stay unparsed.
 - `rules.ts`: `ruleRequest`, ACP tool inputs and clone paths under the
   built-in and configured rules. Explicit denials outrank unparsed
   commands; unparsed commands ask, and unmatched requests need a judge.
-
 - `gate.ts`: `createGate`, raw ACP requests through rules, a judge and
   an injected `Ask`, logged and answered with the first exact once-only
   option. `judge.ts`: `judgeRequest`, core's `StructuredCall` with fenced
   untrusted input and a checked result. `deadline.ts`: `beforeDeadline`,
   injected timeouts and cancellation even when a callback ignores abort.
-
 - `questions.ts`: `createQuestions`, an MCP server's injected `Ask`,
   a worker's `pending` ids, worker stop and close. Connect through its
   `transport` wrapper to add JSON-RPC ids to question metadata and

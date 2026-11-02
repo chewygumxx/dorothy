@@ -12,7 +12,7 @@
 // API key, the key gateway on loopback ports, and its agent's own login
 // alone. The engine and the real-agent gate both build boxes here.
 
-import { realpath } from "node:fs/promises";
+import { realpath, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { Agent } from "../config.js";
 import { PLACEHOLDER_KEY } from "../net/key-gateway.js";
@@ -133,7 +133,7 @@ export const MODES: Readonly<Record<Agent, string>> = {
     codex: "workspace-write",
 };
 
-export function workerBox(input: WorkerBoxInput): BoxSpec {
+export async function workerBox(input: WorkerBoxInput): Promise<BoxSpec> {
     const { agent, login, adapter } = input;
     const home = CONFIG_HOMES[agent];
     const keys = KEY_VARIABLES[agent];
@@ -163,7 +163,11 @@ export function workerBox(input: WorkerBoxInput): BoxSpec {
         env[keys.key] = PLACEHOLDER_KEY;
         forwards.push(`${KEY_PORT}=${BOX_SOCKETS}/${KEY_SOCKET}`);
     } else {
-        env[keys.key] = login.key;
+        const source = join(input.sockets, "credential");
+        await writeFile(source, login.key, { mode: 0o600, flag: "wx" });
+        files.push({ source, target: "/run/dorothy-key" });
+        env.DOROTHY_KEY_FILE = "/run/dorothy-key";
+        env.DOROTHY_KEY_NAME = keys.key;
     }
     return {
         clone: input.clone,

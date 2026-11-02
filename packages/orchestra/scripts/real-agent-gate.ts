@@ -228,7 +228,7 @@ export async function runGate(options: GateOptions): Promise<Check[]> {
                   upstream: options.upstream,
               })
             : null;
-    const spec = workerBox({
+    const spec = await workerBox({
         agent,
         login:
             login === "subscription"
@@ -341,7 +341,11 @@ export async function runGate(options: GateOptions): Promise<Check[]> {
         );
         const done = ran(marker);
         if (as === undefined) {
-            return record(name, null, "the agent asked nothing");
+            return record(
+                name,
+                false,
+                `incomplete: the agent asked nothing; the command ${done ? "ran" : "did not run"}`,
+            );
         }
         if (missing !== undefined) {
             const kind = as === "allow" ? "allow_once" : "reject_once";
@@ -468,7 +472,7 @@ export async function runGate(options: GateOptions): Promise<Check[]> {
         }
         record(
             "escalation stays in the box",
-            probe.asked.length === 0 ? null : inside,
+            probe.asked.length > 0 && inside,
             probe.asked.length === 0
                 ? "the agent asked nothing"
                 : `${probe.asked.length} allowed; ${inside ? "nothing reached past the box" : "an effect reached past the box"}`,

@@ -33,6 +33,7 @@ export type BrokerDeps = {
     // start_worker's repo.
     checkout: string;
     deadline?: number;
+    signal?: AbortSignal;
     // Its processes' deadlines.
     timers?: Timers;
     // Tests alone: a local bare remote as origin.
@@ -57,20 +58,28 @@ const quoted = (value: string) =>
 
 // user.name and user.email from the user's global config, includes and
 // all, read by file so that nothing else of it applies.
-async function userOf(reader: Git, env: Env): Promise<Map<string, string>> {
+async function userOf(
+    reader: Git,
+    env: Env,
+    signal?: AbortSignal,
+): Promise<Map<string, string>> {
     const user = new Map<string, string>();
     for (const file of [
         join(xdgDir(env, "XDG_CONFIG_HOME", ".config"), "git", "config"),
         join(env.HOME ?? "/", ".gitconfig"),
     ]) {
-        const result = await reader.run([
-            "config",
-            "--file",
-            file,
-            "--includes",
-            "--get-regexp",
-            "^user\\.(name|email)$",
-        ]);
+        const result = await reader.run(
+            [
+                "config",
+                "--file",
+                file,
+                "--includes",
+                "--get-regexp",
+                "^user\\.(name|email)$",
+            ],
+            undefined,
+            signal,
+        );
         for (const line of result.stdout.split("\n")) {
             const [, key, value] = /^user\.(name|email) (.*)$/.exec(line) ?? [];
             if (key !== undefined && value !== undefined) {
@@ -102,7 +111,12 @@ async function replace(path: string, text: string): Promise<void> {
 
 // Made aside, then renamed into place: a launch that dies midway leaves
 // no half repository, and of two launches at once, one's is kept.
-async function makeRepository(git: Git, checkout: string, repo: string) {
+async function makeRepository(
+    git: Git,
+    checkout: string,
+    repo: string,
+    signal?: AbortSignal,
+) {
     const temp = `${repo}.${randomUUID()}`;
     await git.out(
         [
@@ -118,8 +132,13 @@ async function makeRepository(git: Git, checkout: string, repo: string) {
             temp,
         ],
         dirname(repo),
+        signal,
     );
-    await git.out(["config", "--remove-section", "remote.origin"], temp);
+    await git.out(
+        ["config", "--remove-section", "remote.origin"],
+        temp,
+        signal,
+    );
     try {
         await rename(temp, repo);
     } catch (error) {
@@ -145,11 +164,15 @@ export async function openBroker(deps: BrokerDeps): Promise<Broker> {
         reader,
         deps.checkout,
         deps.localRemotes,
+        deps.signal,
     );
     const repo = join(state, "repos", `${identity}.git`);
     const config = join(state, "repos", `${identity}.gitconfig`);
     await mkdir(dirname(repo), { recursive: true });
-    await replace(config, globalConfig(await userOf(reader, env), url));
+    await replace(
+        config,
+        globalConfig(await userOf(reader, env, deps.signal), url),
+    );
     const git = sealedGit({
         git: path,
         env,
@@ -159,7 +182,7 @@ export async function openBroker(deps: BrokerDeps): Promise<Broker> {
         timers,
     });
     if (!existsSync(repo)) {
-        await makeRepository(git, deps.checkout, repo);
+        await makeRepository(git, deps.checkout, repo, deps.signal);
     }
     return {
         identity,

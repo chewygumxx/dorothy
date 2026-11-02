@@ -49,7 +49,14 @@ await Promise.all(
     ),
 );
 
+const env = { ...process.env };
+if (env.DOROTHY_KEY_FILE && env.DOROTHY_KEY_NAME) {
+    env[env.DOROTHY_KEY_NAME] = await Bun.file(env.DOROTHY_KEY_FILE).text();
+    delete env.DOROTHY_KEY_FILE;
+    delete env.DOROTHY_KEY_NAME;
+}
 const child = Bun.spawn(command, {
+    env,
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",

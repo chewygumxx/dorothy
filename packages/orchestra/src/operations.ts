@@ -22,6 +22,7 @@ import { createHash } from "node:crypto";
 import type { EventEmitter } from "node:events";
 import type { Readable } from "node:stream";
 import type { Clock, Timers } from "@dorothy/core";
+import { drainGroups } from "./broker/git.js";
 import type { Outcome } from "./broker/push.js";
 import type { Log } from "./log.js";
 
@@ -57,6 +58,8 @@ export type Run = {
     operationId: string;
     // Aborted when the close abandons it, killing its processes.
     signal: AbortSignal;
+    // Separate scope, killed after the second grace.
+    reconcileSignal: AbortSignal;
     // Values fixed before its effect is sent, recorded and logged.
     record(values: Record<string, unknown>): void;
 };
@@ -74,6 +77,7 @@ export type OperationsDeps = {
 type Entry = {
     record: OperationRecord;
     abort: AbortController;
+    reconcileAbort: AbortController;
     // Its turn taken, never rejected.
     done: Promise<void>;
 };
@@ -140,6 +144,7 @@ export class Operations {
         const entry: Entry = {
             record,
             abort: new AbortController(),
+            reconcileAbort: new AbortController(),
             done: previous.then(() => this.#run(entry, work)),
         };
         this.#entries.set(input.operationId, entry);
@@ -191,7 +196,7 @@ export class Operations {
         }
     }
 
-    async #run({ record, abort }: Entry, work: Work) {
+    async #run({ record, abort, reconcileAbort }: Entry, work: Work) {
         if (record.status !== "pending") {
             return;
         }
@@ -202,16 +207,25 @@ export class Operations {
             outcome = await work({
                 operationId: record.operationId,
                 signal: abort.signal,
+                reconcileSignal: reconcileAbort.signal,
                 record: (values) => {
                     record.values = values;
                     this.#log(record);
                 },
             });
         } catch (error) {
-            outcome = {
-                status: "failed",
-                detail: error instanceof Error ? error.message : String(error),
-            };
+            outcome = reconcileAbort.signal.aborted
+                ? {
+                      status: "unknown",
+                      detail: "the server closed before its outcome was known",
+                  }
+                : {
+                      status: "failed",
+                      detail:
+                          error instanceof Error
+                              ? error.message
+                              : String(error),
+                  };
         }
         // Unless the close has logged it unknown meanwhile.
         if (record.status === "running") {
@@ -240,6 +254,15 @@ export class Operations {
         if (await this.#within(done)) {
             return;
         }
+        for (const { reconcileAbort } of running) {
+            reconcileAbort.abort();
+        }
+        await Promise.all(
+            running.flatMap(({ abort, reconcileAbort }) => [
+                drainGroups(abort.signal),
+                drainGroups(reconcileAbort.signal),
+            ]),
+        );
         for (const { record } of running) {
             if (record.status === "running") {
                 this.#settle(record, {

@@ -20,32 +20,35 @@ export async function fetchBase(
     broker: Broker,
     server: string,
     worker: string,
+    signal?: AbortSignal,
 ): Promise<Base> {
-    const head = await broker.git.out([
-        "ls-remote",
-        "--symref",
-        "--",
-        broker.url,
-        "HEAD",
-    ]);
+    const head = await broker.git.out(
+        ["ls-remote", "--symref", "--", broker.url, "HEAD"],
+        undefined,
+        signal,
+    );
     const branch = /^ref: (refs\/heads\/\S+)\tHEAD$/m.exec(head)?.[1];
     if (branch === undefined) {
         throw new Error(`${broker.identity}'s remote names no default branch`);
     }
     const ref = `refs/orchestra/${server}/${worker}/base`;
-    await broker.git.out([
-        "fetch",
-        "--no-tags",
-        "--no-recurse-submodules",
-        "--no-write-fetch-head",
-        "--",
-        broker.url,
-        `${branch}:${ref}`,
-    ]);
-    const oid = await broker.git.out([
-        "rev-parse",
-        "--verify",
-        `${ref}^{commit}`,
-    ]);
+    await broker.git.out(
+        [
+            "fetch",
+            "--no-tags",
+            "--no-recurse-submodules",
+            "--no-write-fetch-head",
+            "--",
+            broker.url,
+            `${branch}:${ref}`,
+        ],
+        undefined,
+        signal,
+    );
+    const oid = await broker.git.out(
+        ["rev-parse", "--verify", `${ref}^{commit}`],
+        undefined,
+        signal,
+    );
     return { ref, oid };
 }

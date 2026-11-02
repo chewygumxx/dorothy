@@ -60,6 +60,7 @@ export async function openPullRequest(
     broker: Broker,
     input: PullRequestInput,
     signal?: AbortSignal,
+    reconcileSignal?: AbortSignal,
 ): Promise<Outcome> {
     const result = await runGh(
         broker,
@@ -79,7 +80,7 @@ export async function openPullRequest(
         signal,
     );
     if (result.timedOut || result.code > 128) {
-        return reconcilePullRequest(broker, input);
+        return reconcilePullRequest(broker, input, reconcileSignal);
     }
     return result.code === 0
         ? { status: "succeeded", detail: result.stdout.trim() }
@@ -105,19 +106,25 @@ function listed(text: string): Listed | null {
 export async function reconcilePullRequest(
     broker: Broker,
     input: GhInput,
+    signal?: AbortSignal,
 ): Promise<Outcome> {
-    const result = await runGh(broker, input, [
-        "pr",
-        "list",
-        "--repo",
-        broker.identity,
-        "--head",
-        input.branch,
-        "--state",
-        "all",
-        "--json",
-        "url,isCrossRepository",
-    ]);
+    const result = await runGh(
+        broker,
+        input,
+        [
+            "pr",
+            "list",
+            "--repo",
+            broker.identity,
+            "--head",
+            input.branch,
+            "--state",
+            "all",
+            "--json",
+            "url,isCrossRepository",
+        ],
+        signal,
+    );
     const requests =
         result.code === 0 && !result.timedOut ? listed(result.stdout) : null;
     if (requests === null) {

@@ -105,8 +105,13 @@ async function remoteOid(
     broker: Broker,
     url: string,
     ref: string,
+    signal?: AbortSignal,
 ): Promise<string | null | undefined> {
-    const result = await broker.git.run(["ls-remote", "--", url, ref]);
+    const result = await broker.git.run(
+        ["ls-remote", "--", url, ref],
+        undefined,
+        signal,
+    );
     if (result.code !== 0 || result.timedOut) {
         return undefined;
     }
@@ -119,13 +124,14 @@ async function remoteOid(
 export async function recordPush(
     broker: Broker,
     { branch, oid, last, forceWithLease }: PushInput,
+    signal?: AbortSignal,
 ): Promise<PushRecord> {
     if (!OID.test(oid)) {
         throw new Error(`${oid} is no commit to push`);
     }
     const ref = `refs/heads/${branch}`;
     const expected = forceWithLease
-        ? await remoteOid(broker, broker.url, ref)
+        ? await remoteOid(broker, broker.url, ref, signal)
         : last;
     if (expected === undefined) {
         throw new Error(`${broker.identity}'s remote cannot be read`);
@@ -142,29 +148,41 @@ const question = (record: PushRecord, reasons: string[]) =>
         ...reasons,
     ].join("\n\n");
 
-const dependencyDiff = (broker: Broker, base: string, oid: string) =>
-    broker.git.out([
-        "diff",
-        "--no-ext-diff",
-        "--no-textconv",
-        "--no-color",
-        base,
-        oid,
-        "--",
-        ...DEPENDENCY_FILES.map((name) => `:(glob)**/${name}`),
-    ]);
+const dependencyDiff = (
+    broker: Broker,
+    base: string,
+    oid: string,
+    signal?: AbortSignal,
+) =>
+    broker.git.out(
+        [
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            base,
+            oid,
+            "--",
+            ...DEPENDENCY_FILES.map((name) => `:(glob)**/${name}`),
+        ],
+        undefined,
+        signal,
+    );
 
 // A first push, or one whose commit descends from the last.
-async function fastForward(broker: Broker, record: PushRecord) {
+async function fastForward(
+    broker: Broker,
+    record: PushRecord,
+    signal?: AbortSignal,
+) {
     if (record.expected === null) {
         return true;
     }
-    const result = await broker.git.run([
-        "merge-base",
-        "--is-ancestor",
-        record.expected,
-        record.oid,
-    ]);
+    const result = await broker.git.run(
+        ["merge-base", "--is-ancestor", record.expected, record.oid],
+        undefined,
+        signal,
+    );
     return result.code === 0;
 }
 
@@ -175,8 +193,9 @@ export async function pushWork(
     record: PushRecord,
     { base, ask, reasons: given = [] }: PushChecks,
     signal?: AbortSignal,
+    reconcileSignal?: AbortSignal,
 ): Promise<Outcome> {
-    if (!record.force && !(await fastForward(broker, record))) {
+    if (!record.force && !(await fastForward(broker, record, signal))) {
         return {
             status: "failed",
             detail: "no fast-forward of the last push; push with forceWithLease",
@@ -186,7 +205,7 @@ export async function pushWork(
     if (record.force) {
         reasons.push("It replaces the branch, under the lease, as asked.");
     }
-    const diff = await dependencyDiff(broker, base, record.oid);
+    const diff = await dependencyDiff(broker, base, record.oid, signal);
     if (diff !== "") {
         reasons.push(
             `It changes dependency manifests or lockfiles:\n\n${capDiff(diff)}`,
@@ -212,13 +231,13 @@ export async function pushWork(
         broker.repo,
         signal,
     );
-    // Killed by its deadline or a signal: its effect may have been sent.
-    if (result.timedOut || result.code > 128) {
-        return reconcilePush(broker, record);
-    }
     const line = result.stdout
         .split("\n")
         .find((entry) => entry.includes(`:${record.ref}\t`));
+    // Only an explicit porcelain rejection proves no update was accepted.
+    if ((result.timedOut || result.code !== 0) && !line?.startsWith("!\t")) {
+        return reconcilePush(broker, record, reconcileSignal);
+    }
     return result.code === 0
         ? { status: "succeeded", detail: line ?? "" }
         : {
@@ -232,8 +251,9 @@ export async function pushWork(
 export async function reconcilePush(
     broker: Broker,
     record: PushRecord,
+    signal?: AbortSignal,
 ): Promise<Outcome> {
-    const remote = await remoteOid(broker, record.url, record.ref);
+    const remote = await remoteOid(broker, record.url, record.ref, signal);
     if (remote === undefined) {
         return { status: "unknown", detail: "the remote cannot be read" };
     }

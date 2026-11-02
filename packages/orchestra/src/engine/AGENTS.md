@@ -52,3 +52,6 @@ The workers, and the functions the server's tools call.
   questions, and every decision reaches the server's log.
 - A worker's turns are operations queued under its name, so they run in
   order, and `stop` cancels those pending.
+- Startup broker reads and preparation carry cancellation through every
+  process; close cancels preflight reads too. Each worker shares one
+  cleanup promise, including resources acquired as startup unwinds.

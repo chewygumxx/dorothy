@@ -26,7 +26,7 @@ import {
 } from "../box/worker-box.js";
 import { fetchBase } from "../broker/base.js";
 import { makeClone } from "../broker/clone.js";
-import { sealedGit } from "../broker/git.js";
+import { drainGroups, sealedGit } from "../broker/git.js";
 import { readIdentity } from "../broker/identity.js";
 import type { Outcome } from "../broker/push.js";
 import { openBroker } from "../broker/repository.js";
@@ -155,6 +155,9 @@ type Worker = {
     operations: Set<string>;
     // What its close undoes, the latest first.
     closers: (() => Promise<unknown>)[];
+    closing: Promise<void> | null;
+    preparing: Promise<void>;
+    prepared: () => void;
 };
 
 const errorText = (error: unknown) =>
@@ -186,6 +189,7 @@ export class Engine {
     readonly #deps: EngineDeps;
     readonly #gate: ReturnType<typeof createGate>;
     readonly #workers = new Map<string, Worker>();
+    readonly #startup = new AbortController();
     readonly #named: Record<Agent, number> = { claude: 0, codex: 0 };
     readonly #waiters = new Set<{ worker?: string; wake: () => void }>();
 
@@ -242,6 +246,9 @@ export class Engine {
         if (!config.agents.includes(agent)) {
             throw new Error(`${agent} is not among [orchestra] agents`);
         }
+        if (this.#startup.signal.aborted) {
+            throw new Error("the server is closing");
+        }
         const access = this.#access(agent);
         await mkdir(state, { recursive: true });
         const reader = sealedGit({ git, env, config: "/dev/null", cwd: state });
@@ -249,6 +256,7 @@ export class Engine {
             reader,
             repo,
             this.#deps.localRemotes,
+            this.#startup.signal,
         );
         const again = repeat();
         if (again) {
@@ -264,6 +272,7 @@ export class Engine {
             );
         }
         this.#named[agent] += 1;
+        const preparation = Promise.withResolvers<void>();
         const worker: Worker = {
             name: `${agent}-${this.#named[agent]}`,
             agent,
@@ -281,12 +290,15 @@ export class Engine {
             recent: "",
             operations: new Set(),
             closers: [],
+            closing: null,
+            preparing: preparation.promise,
+            prepared: preparation.resolve,
         };
         this.#workers.set(worker.name, worker);
         try {
             const operation = this.operations.begin(
                 { ...tool, args, worker: worker.name, queue: worker.name },
-                () => this.#begin(worker, repo, access),
+                (run) => this.#begin(worker, repo, access, run.signal),
             );
             return { worker: worker.name, operation };
         } catch (error) {
@@ -392,11 +404,21 @@ export class Engine {
 
     // At the client's EOF or a signal: every worker stopped, running
     // operations given their grace.
-    close(): Promise<void> {
-        return this.operations.close();
+    async close(): Promise<void> {
+        this.#startup.abort();
+        await Promise.all([
+            this.operations.close(),
+            drainGroups(this.#startup.signal),
+        ]);
     }
 
-    async #begin(worker: Worker, repo: string, access: Access) {
+    async #begin(
+        worker: Worker,
+        repo: string,
+        access: Access,
+        operation: AbortSignal,
+    ) {
+        const signal = AbortSignal.any([operation, worker.end.signal]);
         const deps = this.#deps;
         const { config, server } = deps;
         const { name, agent, branch } = worker;
@@ -408,24 +430,37 @@ export class Engine {
                 checkout: repo,
                 timers: deps.timers,
                 localRemotes: deps.localRemotes,
+                signal,
             });
-            const base = await fetchBase(broker, server, name);
-            await reserveBranch(broker, {
-                server,
-                worker: name,
-                branch,
-                base: base.oid,
-            }).catch(async (error) => {
-                await broker.git.run(["update-ref", "-d", base.ref]);
+            const base = await fetchBase(broker, server, name, signal);
+            await reserveBranch(
+                broker,
+                {
+                    server,
+                    worker: name,
+                    branch,
+                    base: base.oid,
+                },
+                signal,
+            ).catch(async (error) => {
+                await broker.git.run(
+                    ["update-ref", "-d", base.ref],
+                    undefined,
+                    signal,
+                );
                 throw error;
             });
-            const clone = await makeClone(broker, {
-                root: config.worktreeRoot,
-                server,
-                worker: name,
-                branch,
-                base: base.oid,
-            });
+            const clone = await makeClone(
+                broker,
+                {
+                    root: config.worktreeRoot,
+                    server,
+                    worker: name,
+                    branch,
+                    base: base.oid,
+                },
+                signal,
+            );
             worker.clone = clone;
             this.#live(worker);
             const session = await openSession({
@@ -464,11 +499,12 @@ export class Engine {
             });
             this.#live(worker);
             worker.session = session;
+            worker.prepared();
             this.#changed(worker);
             return await this.#turn(worker, worker.task);
         } catch (error) {
-            this.#fail(worker, errorText(error));
-            await this.#close(worker);
+            worker.prepared();
+            await this.#fail(worker, errorText(error));
             throw error;
         } finally {
             worker.turns -= 1;
@@ -487,7 +523,7 @@ export class Engine {
         const mode = await session.mode();
         if (mode !== MODES[agent]) {
             const reason = `its session reports mode ${mode}, not ${MODES[agent]}`;
-            this.#fail(worker, reason);
+            await this.#fail(worker, reason);
             throw new Error(reason);
         }
         let reply = "";
@@ -506,7 +542,7 @@ export class Engine {
         }
         if (end.status === "failed") {
             const reason = `its turn failed: ${end.error}; its session is lost`;
-            this.#fail(worker, reason);
+            await this.#fail(worker, reason);
             return { status: "failed", detail: reason };
         }
         return end.status === "completed"
@@ -614,10 +650,9 @@ export class Engine {
         return true;
     }
 
-    #fail(worker: Worker, reason: string) {
-        if (this.#end(worker, "failed", reason)) {
-            void this.#close(worker);
-        }
+    #fail(worker: Worker, reason: string): Promise<void> {
+        this.#end(worker, "failed", reason);
+        return this.#close(worker);
     }
 
     async #stop(worker: Worker) {
@@ -634,13 +669,25 @@ export class Engine {
 
     // Its questions settled, its turn cancelled, then whatever it holds
     // closed, its session, runtime and box first.
-    async #close(worker: Worker) {
+    #close(worker: Worker): Promise<void> {
+        worker.closing ??= this.#cleanup(worker);
+        return worker.closing;
+    }
+
+    async #cleanup(worker: Worker) {
         await this.#deps.questions.stop(worker.name);
         await worker.session?.cancel().catch(() => {});
-        while (worker.closers.length > 0) {
-            await worker.closers
-                .pop()?.()
-                .catch(() => {});
-        }
+        const drain = async () => {
+            while (worker.closers.length > 0) {
+                await worker.closers
+                    .pop()?.()
+                    .catch(() => {});
+            }
+        };
+        await drain();
+        // Startup can acquire a resource while an earlier close is waiting.
+        // hold registers it before observing that the worker has ended.
+        await worker.preparing;
+        await drain();
     }
 }

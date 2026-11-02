@@ -16,6 +16,7 @@
 // prompt on, and its whole process group is killed at its deadline, or
 // when its operation is abandoned.
 
+import { readdir, readFile } from "node:fs/promises";
 import { type Env, REAL_TIMERS, type Timers } from "@dorothy/core";
 import { serverEnvironment } from "../environment.js";
 
@@ -64,12 +65,49 @@ export type GroupOptions = {
     signal?: AbortSignal;
 };
 
+// Groups owned by a cancellation scope, including descendants whose pipes
+// still keep the runner alive after the leading process exits.
+const GROUPS = new WeakMap<AbortSignal, Set<Promise<unknown>>>();
+
+export async function drainGroups(signal: AbortSignal): Promise<void> {
+    const groups = GROUPS.get(signal);
+    while (groups && groups.size > 0) {
+        await Promise.allSettled([...groups]);
+    }
+}
+
+// A killed leader can release its pipes before a descendant has exited.
+// Wait for every live member of that session's group, ignoring zombies.
+async function groupGone(group: number): Promise<void> {
+    for (;;) {
+        const states = await Promise.all(
+            (await readdir("/proc"))
+                .filter((name) => /^\d+$/.test(name))
+                .map(async (name) => {
+                    const text = await readFile(
+                        `/proc/${name}/stat`,
+                        "utf8",
+                    ).catch(() => "");
+                    const fields = text
+                        .slice(text.lastIndexOf(")") + 2)
+                        .split(" ");
+                    return Number(fields[2]) === group && fields[0] !== "Z";
+                }),
+        );
+        if (!states.some(Boolean)) {
+            return;
+        }
+        await Bun.sleep(5);
+    }
+}
+
 // A process leading a session of its own, its group killed at the
 // deadline or on the signal. gh runs here too.
 export async function runGroup(
     argv: readonly string[],
     { cwd, env, deadline, timers = REAL_TIMERS, signal }: GroupOptions,
 ): Promise<RunResult> {
+    signal?.throwIfAborted();
     const proc = Bun.spawn([...argv], {
         cwd,
         env,
@@ -79,7 +117,9 @@ export async function runGroup(
         stderr: "pipe",
     });
     let timedOut = false;
+    let killed = false;
     const kill = () => {
+        killed = true;
         try {
             process.kill(-proc.pid, "SIGKILL");
         } catch {}
@@ -92,14 +132,31 @@ export async function runGroup(
     if (signal?.aborted) {
         kill();
     }
-    const [stdout, stderr, code] = await Promise.all([
+    const finished = Promise.all([
         new Response(proc.stdout).text(),
         new Response(proc.stderr).text(),
         proc.exited,
-    ]);
-    timers.clear(timer);
-    signal?.removeEventListener("abort", kill);
-    return { code, stdout, stderr, timedOut };
+    ]).then(async (result) => {
+        if (killed) {
+            await groupGone(proc.pid);
+        }
+        return result;
+    });
+    const groups = signal
+        ? (GROUPS.get(signal) ?? new Set<Promise<unknown>>())
+        : undefined;
+    if (signal && groups) {
+        GROUPS.set(signal, groups);
+        groups.add(finished);
+    }
+    try {
+        const [stdout, stderr, code] = await finished;
+        return { code, stdout, stderr, timedOut };
+    } finally {
+        groups?.delete(finished);
+        timers.clear(timer);
+        signal?.removeEventListener("abort", kill);
+    }
 }
 
 export type GitDeps = {
@@ -121,7 +178,11 @@ export type Git = {
         signal?: AbortSignal,
     ): Promise<RunResult>;
     // Its trimmed output, or an error naming the command.
-    out(args: readonly string[], cwd?: string): Promise<string>;
+    out(
+        args: readonly string[],
+        cwd?: string,
+        signal?: AbortSignal,
+    ): Promise<string>;
 };
 
 export function sealedGit(deps: GitDeps): Git {
@@ -141,8 +202,8 @@ export function sealedGit(deps: GitDeps): Git {
         });
     return {
         run,
-        out: async (args, cwd) => {
-            const result = await run(args, cwd);
+        out: async (args, cwd, signal) => {
+            const result = await run(args, cwd, signal);
             if (result.code !== 0 || result.timedOut) {
                 const why = result.timedOut
                     ? "passed its deadline"

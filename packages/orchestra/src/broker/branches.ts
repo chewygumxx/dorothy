@@ -32,7 +32,7 @@ export type BranchPush = {
     forceWithLease: boolean;
     ask: Ask;
     // The worker's branch brought back: fetchWork's OID.
-    fetch: () => Promise<string>;
+    fetch: (signal: AbortSignal) => Promise<string>;
 };
 
 type Unknown = { operationId: string; record: PushRecord };
@@ -44,8 +44,12 @@ type Branch = {
 };
 
 // The unknown push's record, and what the remote holds now.
-async function lost(broker: Broker, { operationId, record }: Unknown) {
-    const now = await reconcilePush(broker, record);
+async function lost(
+    broker: Broker,
+    { operationId, record }: Unknown,
+    signal: AbortSignal,
+) {
+    const now = await reconcilePush(broker, record, signal);
     return (
         `Operation ${operationId}'s push of ${record.oid} to ${record.ref}, ` +
         `expecting ${record.expected ?? "no branch"}, ended unknown; ` +
@@ -67,23 +71,28 @@ export class Branches {
     push(broker: Broker, input: BranchPush): Work {
         const branch = this.#branch(broker, input.branch);
         return async (run) => {
-            const oid = await input.fetch();
-            const record = await recordPush(broker, {
-                branch: input.branch,
-                oid,
-                last: branch.last,
-                forceWithLease: input.forceWithLease,
-            });
+            const oid = await input.fetch(run.signal);
+            const record = await recordPush(
+                broker,
+                {
+                    branch: input.branch,
+                    oid,
+                    last: branch.last,
+                    forceWithLease: input.forceWithLease,
+                },
+                run.signal,
+            );
             run.record(record);
             const reasons =
                 branch.unknown === null
                     ? []
-                    : [await lost(broker, branch.unknown)];
+                    : [await lost(broker, branch.unknown, run.signal)];
             const outcome = await pushWork(
                 broker,
                 record,
                 { base: input.base, ask: input.ask, reasons },
                 run.signal,
+                run.reconcileSignal,
             );
             if (outcome.status === "succeeded") {
                 branch.last = oid;
@@ -100,6 +109,7 @@ export class Branches {
         if (this.#branch(broker, input.branch).last === null) {
             throw new Error(`no push of ${input.branch} has succeeded`);
         }
-        return (run) => openPullRequest(broker, input, run.signal);
+        return (run) =>
+            openPullRequest(broker, input, run.signal, run.reconcileSignal);
     }
 }

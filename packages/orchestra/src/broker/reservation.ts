@@ -29,17 +29,22 @@ export type Reservation = { path: string };
 export async function reserveBranch(
     broker: Broker,
     { server, worker, branch, base }: ReservationInput,
+    signal?: AbortSignal,
 ): Promise<Reservation> {
-    const checked = await broker.git.run([
-        "check-ref-format",
-        "--branch",
-        branch,
-    ]);
+    const checked = await broker.git.run(
+        ["check-ref-format", "--branch", branch],
+        undefined,
+        signal,
+    );
     if (checked.code !== 0 || checked.stdout.trim() !== branch) {
         throw new Error(`${branch} is no valid branch name`);
     }
     const ref = `refs/heads/${branch}`;
-    const remote = await broker.git.out(["ls-remote", "--", broker.url, ref]);
+    const remote = await broker.git.out(
+        ["ls-remote", "--", broker.url, ref],
+        undefined,
+        signal,
+    );
     if (remote.split("\n").some((line) => line.endsWith(`\t${ref}`))) {
         throw new Error(`${branch} is on the remote already`);
     }
@@ -51,6 +56,7 @@ export async function reserveBranch(
     );
     await mkdir(dirname(path), { recursive: true });
     try {
+        signal?.throwIfAborted();
         await writeFile(path, `${JSON.stringify({ server, worker, base })}\n`, {
             flag: "wx",
         });

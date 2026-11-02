@@ -151,7 +151,7 @@ export async function openSession(input: SessionInput): Promise<Session> {
         });
         hold(() => gateway.close());
     }
-    const spec = workerBox({
+    const spec = await workerBox({
         agent,
         login: access.login,
         clone,

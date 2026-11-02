@@ -46,14 +46,19 @@ export async function readIdentity(
     git: Git,
     checkout: string,
     localRemotes = false,
+    signal?: AbortSignal,
 ): Promise<Identity> {
-    const result = await git.run([
-        "config",
-        "--file",
-        join(checkout, ".git", "config"),
-        "--get",
-        "remote.origin.url",
-    ]);
+    const result = await git.run(
+        [
+            "config",
+            "--file",
+            join(checkout, ".git", "config"),
+            "--get",
+            "remote.origin.url",
+        ],
+        undefined,
+        signal,
+    );
     const url = result.stdout.trim();
     if (result.code !== 0 || url === "") {
         throw new Error(`${checkout} is no git checkout with an origin`);
