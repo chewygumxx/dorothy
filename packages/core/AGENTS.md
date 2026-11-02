@@ -38,7 +38,8 @@ below. It declares `niceware` alone, and never imports another
   turns' abstracts) to a system prompt.
 - `contracts/structured.ts`: `StructuredCall`, the one-shot call reviews
   and compaction take, and `withNotes`, which says an outcome's notes.
-- `contracts/model.ts`: the routing contracts: `ROLES`, the five `KINDS`, a
+- `contracts/model.ts`: the routing contracts: `ROLES` (`approval`, the
+  orchestra's judge, among them), the five `KINDS`, a
   `RouteEntry` (base URL always explicit, key a `secrets.json` name),
   `Routes`, `Failure` and `AttemptResult`, and `label`
   (`<provider>:<model>`).
@@ -51,7 +52,9 @@ below. It declares `niceware` alone, and never imports another
 - `models/prices.ts`: `ANTHROPIC_PRICES`, dated with their source, and
   `stepCost`, what a step's tokens cost, or null for no known price.
 - `models/routes.ts`: `DEFAULT_MODELS` and `defaultRoutes`, each role's
-  Anthropic route when config names none, and `FIXED_ROOTS`.
+  Anthropic route when config names none, and `FIXED_ROOTS`. With no
+  `anthropic` provider, `parseRouting` leaves `approval` an empty route
+  rather than a fault, as only the orchestra server takes it.
 - `models/routing.ts`: `parseRouting`, `config.toml`'s `[providers]` and
   `[models]` as a `Routing` (every role's route, every provider's key
   names) or every fault, and `isLoopback`. `config.ts`'s `routingOf` and

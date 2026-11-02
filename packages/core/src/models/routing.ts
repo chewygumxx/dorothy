@@ -362,6 +362,11 @@ export function parseRouting(data: Record<string, unknown>): RoutingResult {
             routes[role] = route;
         } else if (anthropic?.kind === "anthropic") {
             routes[role] = [entryOf(anthropic, DEFAULT_MODELS[role], null)];
+        } else if (role === "approval") {
+            // Only the orchestra server takes it, and refuses to start on
+            // an empty route, so a config.toml written before the role
+            // still routes chat.
+            routes[role] = [];
         } else if (providersRead) {
             faults.push(
                 `config.toml: models.${role} is missing, and no anthropic provider named anthropic gives its default`,

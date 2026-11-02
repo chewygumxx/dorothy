@@ -24,6 +24,7 @@ export const DEFAULT_MODELS: Readonly<Record<Role, string>> = {
     review: "claude-sonnet-5-5",
     compaction: "claude-sonnet-5-5",
     maintenance: "claude-haiku-5-5",
+    approval: "claude-haiku-5-5",
 };
 
 // Written as ANTHROPIC_BASE_URL is, without /v1, which agent appends.

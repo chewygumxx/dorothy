@@ -13,7 +13,14 @@
 // here knows a provider's SDK or wire; agent turns its errors into
 // Failures, and runRoute decides on them.
 
-export const ROLES = ["chat", "review", "compaction", "maintenance"] as const;
+// approval: the orchestra server's judge of workers' permission requests.
+export const ROLES = [
+    "chat",
+    "review",
+    "compaction",
+    "maintenance",
+    "approval",
+] as const;
 export type Role = (typeof ROLES)[number];
 
 export const KINDS = [
