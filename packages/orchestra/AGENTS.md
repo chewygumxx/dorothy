@@ -43,6 +43,9 @@ never on a model provider's SDK: the judge reaches a model as core's
   empty root (`systemLayout` the host's `/usr` links and `/etc`
   entries), and `boxAvailable`. `box/bridge.ts` runs inside a box,
   never imported: loopback ports forwarded to the box's sockets.
+- `net/proxy.ts`: `startProxy`, a box's egress on its own socket: one
+  `CONNECT` to an exact host on port 443, resolved here, every address
+  public (`net/addresses.ts`), bounded in size, time and number.
 
 ## Invariants
 
