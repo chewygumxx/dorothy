@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-11-01
+mtime: 2026-11-02
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -248,6 +248,34 @@ Links between conversations and semantic search beside FTS5.
 ## Candidates
 
 Found but not scheduled, each with its source.
+
+- A registry of herdr agents. Unscheduled, but high priority: it has no
+  place in Ahead's order, waits on no phase, and is taken up when the
+  user says. It is not Dorothy's own orchestration
+  ([spec](./specs/2026-11-02-orchestration-design.md)), a feature of
+  hers; this is how the agents that develop Dorothy are coordinated
+  today, through herdr. Their names, roles and availability
+  are written into the stewardship skill, agent memory and handover
+  notes, and went stale when herdr's names changed on 2026-11-02; the
+  skill now names the current agents in one list, but a rename or a new
+  reset still leaves text to hunt down. The ideal: the skill hard-codes
+  no herdr agent name, and a git-ignored registry in the repository,
+  `.agents/registry/herdr.json` (which that work adds to `.gitignore`),
+  lists the agents that exist now and may be trusted to exist for a stated
+  time. Each entry gives its name; its harness (Claude Code or Codex);
+  its account or config directory; its role (coordinating, reserve that
+  resumes when the coordinator is limited by usage or billing, reviewer
+  or worker); its availability (limits, resets, hibernation until a
+  time); and whatever else is presently relevant, such as the model or
+  the pane. The skill's scripts and references read it, and agents
+  update it whenever a name, role or availability changes. It replaces
+  the names written into the skill, memory and handover notes. Done
+  looks like: no `dorothydev-` or other herdr name in the skill, its
+  scripts or agent memory; `send-prompt.sh`, `job.sh` and the
+  references resolve a role (the coordinator, the reserve, a reviewer)
+  through the registry; a missing or expired entry is refused, not
+  guessed; the registry's shape is tested; and a rename is one edit to
+  the registry.
 
 - Model Providers' deferred findings
   ([record](./deferred/2026-11-01_model-providers-deferred.md)): stream
@@ -570,3 +598,7 @@ In order of completion.
   from one model to the next. Dorothy's Gateway and Cyclical
   Maintenance no longer wait on it. Candidates gain its deferred
   findings.
+- 2026-11-02: Candidates gain a registry of herdr agents, unscheduled
+  but high priority, as herdr's agent names changed and the names
+  written into the stewardship skill, memory and handover notes went
+  stale.

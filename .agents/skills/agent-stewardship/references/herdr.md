@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-31
-mtime: 2026-10-31
+mtime: 2026-11-02
 spdx: GPL-3.0-only
 title: herdr
 description: >-
@@ -25,9 +25,11 @@ it.
 
 ## Agents and panes
 
-Each agent runs in a pane under a name: `dorothy-main`, the coordinating
-Claude Code session, and `dorothy-codex`, Codex. Inside a pane,
-`$HERDR_PANE_ID` names your own.
+Each agent runs in a pane under a name, listed in
+[the skill](../SKILL.md): the coordinating agent
+`dorothydev-claude-cgumxx`, its reserve `dorothydev-claude-vtracey` and
+Codex, `dorothydev-codex`. Inside a pane, `$HERDR_PANE_ID` names your
+own.
 
 - `herdr agent get <name>`: its `pane_id` and `agent_status`, such as
   `idle` or `blocked` (waiting on a dialog). The name or the pane's id
@@ -60,7 +62,7 @@ without `--from`, the script prints its usage and touches nothing.
 ```sh
 S=.agents/skills/agent-stewardship/scripts
 printf '%s\n' "Brief ready: ~/briefs/task-3.md" |
-    "$S/send-prompt.sh" dorothy-codex
+    "$S/send-prompt.sh" dorothydev-codex
 ```
 
 A send now resolves the agent to its pane, takes the pane's lock, then

@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-31
-mtime: 2026-10-31
+mtime: 2026-11-02
 spdx: GPL-3.0-only
 title: Claude Code
 description: >-
@@ -73,7 +73,7 @@ nothing.
 
 A subagent started with the Agent tool spends the coordinating session's
 own plan, the account of its `CLAUDE_CONFIG_DIR`: route to one only when
-the job leaves `dorothy-main` room to finish its own work. A command
+the job leaves the coordinating agent room to finish its own work. A command
 that calls Claude itself, such as `eval run` or
 `dorothy --review-backfill`, spends the token it is given instead:
 start it through `with-claude.sh`, which chooses the account
