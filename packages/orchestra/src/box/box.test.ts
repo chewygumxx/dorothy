@@ -39,7 +39,7 @@ const LAYOUT: SystemLayout = {
     etc: ["/etc/ssl", "/etc/passwd"],
 };
 
-const SPEC: BoxSpec = {
+const SPEC = {
     clone: "/w/s1/codex-1",
     readOnly: ["/opt/bun/bin", "/repo/node_modules"],
     files: [
@@ -51,7 +51,7 @@ const SPEC: BoxSpec = {
     sockets: "/state/boxes/codex-1",
     env: { PATH: "/usr/bin", HOME: BOX_HOME },
     command: ["/opt/bun/bin/bun", "/repo/adapter.js"],
-};
+} satisfies BoxSpec;
 
 describe("boxArgs", () => {
     const args = boxArgs(SPEC, LAYOUT);
@@ -87,6 +87,13 @@ describe("boxArgs", () => {
     it("binds the clone alone read-write, and works in it", () => {
         expect(pairs("--bind")).toEqual([[SPEC.clone, SPEC.clone]]);
         expect(pairs("--chdir")).toEqual([[SPEC.clone, expect.any(String)]]);
+    });
+
+    it("binds nothing read-write for a box without a clone, and works in /", () => {
+        const none = boxArgs({ ...SPEC, clone: null }, LAYOUT);
+        expect(none).not.toContain("--bind");
+        const chdir = none.indexOf("--chdir");
+        expect(none.slice(chdir, chdir + 2)).toEqual(["--chdir", "/"]);
     });
 
     it("binds the runtime, the login and the sockets read-only", () => {
