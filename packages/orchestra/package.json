@@ -1,0 +1,8 @@
+{
+    "name": "@dorothy/orchestra",
+    "private": true,
+    "type": "module",
+    "dependencies": {
+        "@dorothy/core": "workspace:*"
+    }
+}

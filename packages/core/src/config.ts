@@ -407,7 +407,7 @@ function parseCompaction(value: unknown, warnings: string[]): CompactionConfig {
 // Bun's TOML errors carry no position. The mistake is on the line after the
 // longest run of whole lines that parses: a shorter run can fail only
 // because it cuts a list or string that spans lines.
-function errorLine(text: string): number {
+export function errorLine(text: string): number {
     const lines = text.split("\n");
     for (let count = lines.length - 1; count > 0; count--) {
         try {
@@ -459,6 +459,8 @@ export function parseConfig(text: string): {
             config.recording = parseRecording(value, warnings);
         } else if (key === "providers" || key === "models") {
             // Read by parseRouting, whose faults are errors.
+        } else if (key === "orchestra") {
+            // Read by the orchestra server, whose faults are errors.
         } else {
             warnings.push(`config.toml: unknown key ${key}`);
         }

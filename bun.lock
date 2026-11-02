@@ -90,6 +90,12 @@
         "zod": "^4.6.7",
       },
     },
+    "packages/orchestra": {
+      "name": "@dorothy/orchestra",
+      "dependencies": {
+        "@dorothy/core": "workspace:*",
+      },
+    },
     "packages/tui": {
       "name": "@dorothy/tui",
       "dependencies": {
@@ -213,6 +219,8 @@
     "@dorothy/identity": ["@dorothy/identity@workspace:packages/identity"],
 
     "@dorothy/memory": ["@dorothy/memory@workspace:packages/memory"],
+
+    "@dorothy/orchestra": ["@dorothy/orchestra@workspace:packages/orchestra"],
 
     "@dorothy/tui": ["@dorothy/tui@workspace:packages/tui"],
 
