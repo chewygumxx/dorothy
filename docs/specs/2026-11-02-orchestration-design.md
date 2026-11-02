@@ -36,7 +36,8 @@ toolset of her own, in two parts, each with its own plan and merge:
   worker, adapter and agent together, runs in a bubblewrap box: a clone
   of its repository of its own, no file of the user's beyond what its
   agent needs to run, and no network but an allowlist through the
-  server's proxy. Workers never push: a sealed broker brings a worker's
+  server's proxy and, for an API key, the server's gateway, which holds
+  the key outside the box. Workers never push: a sealed broker brings a worker's
   branch into the main checkout and pushes it. Every permission request
   a worker makes is answered by rules, then a judging model on a new
   `approval` role, then the user by MCP elicitation. It is served over
@@ -47,7 +48,8 @@ toolset of her own, in two parts, each with its own plan and merge:
 
 Two layers, kept apart. The constraints, the box and the broker, hold
 whatever anyone answers: a worker holds no credential of the user's but
-its agent's own login, opens no connection but to the allowlist, writes
+its agent's own subscription login, opens no connection but to the
+allowlist and the gateway, writes
 nothing on the host but its clone, and reaches the user's repositories
 and remotes only through the broker. The policy, rules then judge then
 user, answers the permission requests the agents send, and so steers
@@ -127,7 +129,10 @@ wrong:
 | The boundary | A bubblewrap box around each worker and its agent, and a sealed broker | Linux and bubblewrap required; an agent that cannot run boxed blocks the build |
 | Worker repositories | A shared clone each of the broker's own repository, its objects read-only | One full copy of each repository, the broker's, at first use |
 | Pushes | The broker's, from its own repository, of a worker's own reserved branch, by rule; force-with-lease and dependency changes to the user | A push is a tool call, asynchronous |
-| The agents' logins | Admitted into their own box only | A hostile worker can read its own agent's login and send it out through an admitted host |
+| The agents' logins | Subscriptions by default, admitted into their own box only; an API key by choice, held by the gateway outside the box | A hostile worker can read a subscription login and send it out through an admitted host |
+| The gateway | A key-holding reverse proxy per box, for API keys only; subscriptions cannot use it | A subscription's login stays exposed until a later design |
+| An agent ignoring the gateway | Its API key admitted into its box as a subscription login is, the gap reported | That agent's key as exposed as a subscription |
+| Leftover clones | `remove_worker` deletes a stopped worker's clone and reservation, asking first if anything is unpushed | A removal the user confirmed cannot be undone |
 | Policy and constraint | The box and broker hold regardless; the gate answers only the requests agents send | A worker that never asks meets only the box and the broker |
 | Reaching the user | Elicitation through Dorothy's own transport wrapper, cancelled when settled | Other clients see only what their MCP version allows |
 | Who decides approvals | Rules, then a judge on the `approval` role, then the user; never the chat model | A judge call per unsettled request |
@@ -148,6 +153,7 @@ dorothy --orchestra-server      (re-execs itself with a clean environment)
         ├── engine: workers on acpx's embedded runtime
         ├── box: bubblewrap around each worker
         ├── proxy: the allowlist, on a Unix socket per box
+        ├── gateway: API keys held outside the box, a socket per box
         ├── gate: rules → judge → elicitation
         ├── broker: fetch, push and pull requests, sealed
         └── log: $XDG_STATE_HOME/dorothy/orchestra/<server>.jsonl
@@ -192,10 +198,11 @@ runs, is started inside `bwrap` with:
   `localtime` and `hosts`; read-only, the installed adapter and the
   runtime it runs on, each by its resolved path; read-write, the
   worker's clone; read-only, the broker repository's object store, for
-  the clone's alternates; read-only, its agent's own login (Logins);
-  and the box's own proxy socket. Nothing else of the host: no `/run`,
-  `/var`, `/home`, `/mnt`, `/media`, `/srv` or `/opt` beyond a path
-  named above, so no host service's socket, D-Bus among them;
+  the clone's alternates; read-only, its agent's subscription login
+  (Logins); and the box's own proxy and gateway sockets. Nothing else
+  of the host: no `/run`, `/var`, `/home`, `/mnt`, `/media`, `/srv` or
+  `/opt` beyond a path named above, so no host service's socket, D-Bus
+  among them;
 - the home directory and `/tmp` fresh tmpfs, `/dev` and `/proc` its
   own;
 - `--unshare-all` (user, IPC, PID, network, UTS and cgroup namespaces),
@@ -204,12 +211,13 @@ runs, is started inside `bwrap` with:
 - **persistent host writes:** the clone alone; the scratch tmpfs vanish
   with the box;
 - **network:** the new, empty network namespace; a bridge inside it
-  listens on `127.0.0.1:<port>` and forwards to the box's proxy socket;
-  `HTTPS_PROXY` and `HTTP_PROXY` point at it. The bridge is the
-  worker's to use, bypass or kill: every check is the proxy's;
+  listens on two ports of `127.0.0.1`, forwarding one to the box's proxy
+  socket, which `HTTPS_PROXY` and `HTTP_PROXY` name, and the other to
+  its gateway socket. The bridge is the worker's to use, bypass or kill:
+  every check is the proxy's or the gateway's;
 - an environment set from an allowlist: `PATH`, `HOME`, `LANG`, `TERM`,
-  the proxy variables, and the agent's own login variables if it has
-  them; nothing else.
+  the proxy variables, and the login's variables (Logins); nothing
+  else.
 
 **The proxy,** on the host, one listener per box, is an egress
 restriction on TCP destinations, not an inspection of HTTPS:
@@ -217,10 +225,11 @@ restriction on TCP destinations, not an inspection of HTTPS:
 - it reads one `CONNECT host:443` request, its line and headers within
   8 KiB and 10 seconds, and refuses any other method or port;
 - the host is lowercased, stripped of one trailing dot, and matched
-  exactly, with no wildcard, against the agent's provider hosts
-  (`api.anthropic.com` and Claude's sign-in hosts for Claude;
-  `api.openai.com` and `chatgpt.com` for Codex) and `[orchestra]
-  network-allow` (default `registry.npmjs.org`);
+  exactly, with no wildcard, against the agent's provider hosts when
+  it is signed in by subscription (`api.anthropic.com` and Claude's
+  sign-in hosts for Claude; `api.openai.com` and `chatgpt.com` for
+  Codex), and `[orchestra] network-allow` (default `registry.npmjs.org`);
+  with an API key, the provider's hosts are the gateway's alone;
 - it resolves the host itself, refuses if any address is loopback,
   private, link-local, carrier-grade NAT, multicast, unique-local or
   unspecified, and connects to the address it checked, never resolving
@@ -243,18 +252,50 @@ holds the constraints either way. A repository's own settings, skills,
 hooks or MCP servers then run inside the box and reach nothing it
 withholds.
 
-**Logins.** An agent's login must reach the agent, and whatever the box
-admits, every command inside can read. So the box admits only the
-agent's own login: Claude's stored subscription login, mounted
-read-only, or a token in its environment; Codex's `~/.codex/auth.json`,
-read-only, or the OpenAI API key, which codex-acp accepts. Any code the
-worker runs can read that login and send it out through an admitted
-host, in a request, its output or a commit; the box does not prevent
-that, and keeping a login from the code its agent runs would need a
-provider gateway outside the box, which is later work. So each login
-is the narrowest the agent allows, and no box holds a key to the
-remote, the user's secrets or any other service. `[orchestra]
-codex-login` chooses `"chatgpt"` (default) or `"api-key"`.
+**Logins.** `[orchestra] claude-login` and `codex-login` each choose
+`"subscription"` (default) or `"api-key"`.
+
+- **A subscription** must reach the agent, and whatever the box admits,
+  every command inside can read. So the box admits only the agent's own
+  login: Claude's stored subscription login, mounted read-only;
+  Codex's `~/.codex/auth.json` from its ChatGPT sign-in, read-only. Any
+  code the worker runs can read it and send it out through an admitted
+  host, in a request, its output or a commit; the box does not prevent
+  that. A subscription's own sign-in flow, with its refresh and its own
+  headers, cannot be completed from outside the client without
+  impersonating it, so no gateway holds it.
+- **An API key** never enters the box. The box's environment names the
+  gateway's port as the provider's base URL, `ANTHROPIC_BASE_URL` for
+  Claude and `OPENAI_BASE_URL` for Codex, with a placeholder key,
+  `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` set to `dorothy-gateway`; the
+  gateway puts the real key, from Dorothy's secrets, on each request.
+  If the real-agent gate finds an agent ignores the base URL, that
+  agent's key is admitted into its box as its variable, as exposed as a
+  subscription, and the report records it.
+
+Either way no box holds a key to the remote, the user's secrets or any
+other service.
+
+**The gateway,** on the host, one listener per box signed in by API
+key, is a reverse proxy for that one provider:
+
+- it accepts plain HTTP from the bridge and only the provider's model
+  paths: `POST /v1/messages` and `/v1/messages/count_tokens` and `GET
+  /v1/models` for Anthropic; `POST /v1/responses` and `GET /v1/models`
+  for OpenAI; anything else is refused with 403;
+- it drops the request's `authorization`, `x-api-key`, `cookie`,
+  `proxy-*` and hop-by-hop headers, sets the real key (`x-api-key` for
+  Anthropic, `Authorization: Bearer` for OpenAI), and sends the request
+  over TLS to the fixed upstream, `https://api.anthropic.com` or
+  `https://api.openai.com`, never to a host the request names;
+- it streams the response back unchanged but for hop-by-hop headers,
+  with request headers within 32 KiB, bodies within 32 MiB, 10 seconds
+  to the headers, and 10 minutes idle;
+- it logs each request's path, status, size and, where the response
+  reports it, usage, never a header's value or a body.
+
+It keeps the key from the worker, not the worker's use of it: a worker
+can still spend on the key through the gateway, as its agent does.
 
 ## Worker repositories
 
@@ -400,6 +441,7 @@ twice.
 | `push_worker(worker, operationId, forceWithLease?)` | Starts a push of the worker's branch (The broker) |
 | `open_pull_request(worker, title, body, operationId)` | Starts a pull request for the worker's pushed branch |
 | `stop_worker(worker, operationId)` | Cancels and closes its session; its clone and branch stay |
+| `remove_worker(worker, operationId)` | For a stopped worker: deletes its clone, its broker refs and its branch reservation; first asks the user by elicitation, showing the commits not on the remote, if its branch holds any |
 
 There is no tool that answers a permission request or merges.
 
@@ -494,7 +536,8 @@ enabled = true
 worktree-root = "~/dev/_worktree"   # default $XDG_DATA_HOME/dorothy/workers
 agents = ["claude", "codex"]
 max-workers = 4
-codex-login = "chatgpt"             # or "api-key"
+claude-login = "subscription"       # or "api-key"
+codex-login = "subscription"        # or "api-key"
 network-allow = ["registry.npmjs.org"]
 ask-timeout-seconds = 600
 judge-timeout-seconds = 30
@@ -561,6 +604,9 @@ approval = ["featherless:deepseek-ai/DeepSeek-V4.1-Flash-1017"]
 | A broker operation's outcome is lost | Reconciled against the remote; otherwise `unknown`, and the branch's next push asks the user |
 | A Codex session reports a mode other than `workspace-write` | The worker fails before its turn |
 | The proxy refuses a host | The agent's request fails; the refusal is logged |
+| The gateway refuses a path, or its upstream fails | The agent's request fails with the status; logged |
+| `api-key` chosen without that key in Dorothy's secrets | `start_worker` fails, naming the key |
+| `remove_worker` on a running worker, or its question denied or unanswered | Refused; nothing removed |
 | The server dies under Dorothy's chat | One warning; its tools fail, as recall's do |
 
 ## Testing
@@ -573,8 +619,9 @@ tests alone.
 - **The real-agent gate, Part A's first task,** with real agents signed
   in by the user once the weekly limits allow: each agent boxed, its
   model traffic and its subprocesses' through the proxy's variables;
-  signed in by each login the spec admits, with the login's refresh and
-  persistence under a read-only mount; whether its own sandbox runs
+  signed in by each login the spec admits, a subscription's refresh and
+  persistence under a read-only mount, and an API key's agent honouring
+  the gateway's base URL and placeholder key; whether its own sandbox runs
   nested, and an escalation it asks for staying inside the box; a
   permission request delivered, answered once by exact option, then
   cancelled, and the session reloaded; a command inside reading what
@@ -590,6 +637,16 @@ tests alone.
   symlink out of the clone; an inherited descriptor, absent; and the
   environment's allowlist (an `ACPX_AUTH_*`, a `*_API_KEY`,
   `SOPS_AGE_KEY` and `GIT_DIR` set outside, absent inside).
+- **The gateway,** against a fake upstream on loopback that the tests
+  name as its upstream: the real key arriving and the placeholder, a
+  smuggled `authorization` and a cookie gone; a path outside the
+  provider's, an absolute-form request naming another host and an
+  oversized header or body, each refused; a streamed response arriving
+  whole and in order; the key absent from the box's environment, files
+  and logs.
+- **Removal:** a stopped worker with nothing unpushed removed without a
+  question; one with unpushed commits asking, and kept on a denial or a
+  timeout; a running worker refused; its reservation free afterwards.
 - **The proxy:** a direct connection, refused; an unlisted host, a
   listed host on another port, a host resolving to a private or
   loopback address, an oversized or slow `CONNECT`, and a 33rd
@@ -661,7 +718,7 @@ a report. Each run asserts effects, not decisions.
 ## Documentation
 
 - `packages/orchestra/AGENTS.md`: the engine, the box, the proxy, the
-  gate, the broker, the server.
+  gateway, the gate, the broker, the server.
 - `packages/core/AGENTS.md`: `QuestionSource` and the `approval` role.
 - `packages/memory/AGENTS.md`: sessions borrowing the launch's tools,
   within its budget.
@@ -683,6 +740,6 @@ a report. Each run asserts effects, not decisions.
 - A request-bound elicitation path, for clients of newer MCP versions.
 - herdr's panes for workers the server starts, for the user to watch.
 - Platforms without bubblewrap.
-- Releasing a worker's clone and branch reservation.
-- A provider gateway outside the box, holding the agents' logins, if
-  keeping them from worker code becomes a requirement.
+- Keeping subscription logins from worker code, which needs the
+  clients' own support for an outside sign-in.
+- Spending limits per worker at the gateway, from the usage it logs.
