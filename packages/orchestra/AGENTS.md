@@ -46,6 +46,10 @@ never on a model provider's SDK: the judge reaches a model as core's
 - `net/proxy.ts`: `startProxy`, a box's egress on its own socket: one
   `CONNECT` to an exact host on port 443, resolved here, every address
   public (`net/addresses.ts`), bounded in size, time and number.
+- `net/key-gateway.ts`: `startKeyGateway`, for a box signed in by API
+  key: the provider's model paths alone, the box's placeholder replaced
+  by the real key, sent to the fixed upstream, usage logged, never a
+  key or a body. Not `@dorothy/gateway`, which serves Dorothy's chat.
 
 ## Invariants
 
