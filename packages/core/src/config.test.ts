@@ -547,6 +547,13 @@ describe("routing in config.toml", () => {
         await rm(dir, { recursive: true, force: true });
     });
 
+    it("leaves [orchestra] to the orchestra server, unwarned", () => {
+        expect(parseConfig("[orchestra]\nenabled = 7\n")).toEqual({
+            config: DEFAULT_CONFIG,
+            warnings: [],
+        });
+    });
+
     it("leaves [providers] and [models] to routingOf, unwarned", () => {
         const text = [
             "[providers.anthropic]",

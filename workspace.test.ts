@@ -33,6 +33,7 @@ const GRAPH: Record<string, string[]> = {
     gateway: ["core", "identity"],
     identity: [],
     memory: ["core"],
+    orchestra: ["core"],
     tui: ["core"],
 };
 
@@ -54,6 +55,7 @@ const ENTRIES: Record<string, string[]> = {
         "./recall-server",
         "./service",
     ],
+    orchestra: [],
     tui: [".", "./editor"],
 };
 
