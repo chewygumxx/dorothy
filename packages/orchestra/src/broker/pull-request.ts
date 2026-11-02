@@ -40,29 +40,44 @@ export type GhInput = {
 // After a push of the branch, which the operations layer checks.
 export type PullRequestInput = GhInput & { title: string; body: string };
 
-const runGh = (broker: Broker, input: GhInput, args: string[]) =>
+const runGh = (
+    broker: Broker,
+    input: GhInput,
+    args: string[],
+    signal?: AbortSignal,
+) =>
     runGroup([input.gh, ...args], {
         cwd: broker.repo,
         env: broker.env,
         deadline: input.deadline ?? GH_DEADLINE,
+        timers: broker.timers,
+        signal,
     });
 
+// The signal kills gh when its operation is abandoned; the
+// reconciliation that follows runs regardless.
 export async function openPullRequest(
     broker: Broker,
     input: PullRequestInput,
+    signal?: AbortSignal,
 ): Promise<Outcome> {
-    const result = await runGh(broker, input, [
-        "pr",
-        "create",
-        "--repo",
-        broker.identity,
-        "--head",
-        input.branch,
-        "--title",
-        input.title,
-        "--body",
-        input.body,
-    ]);
+    const result = await runGh(
+        broker,
+        input,
+        [
+            "pr",
+            "create",
+            "--repo",
+            broker.identity,
+            "--head",
+            input.branch,
+            "--title",
+            input.title,
+            "--body",
+            input.body,
+        ],
+        signal,
+    );
     if (result.timedOut || result.code > 128) {
         return reconcilePullRequest(broker, input);
     }

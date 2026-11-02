@@ -60,7 +60,8 @@ never on a model provider's SDK: the judge reaches a model as core's
   resolved once (`resolveGit`), the broker's own global config and no
   system one, hooks, maintenance, gc and submodules off, no `GIT_*`
   variable of the caller's (`sealedEnvironment`); `runGroup`, each
-  process in a session of its own, its group killed at the deadline.
+  process in a session of its own, its group killed at the deadline
+  (`Timers`, which `openBroker` takes) or on its operation's abort.
 - `broker/identity.ts`: `readIdentity`, `<owner>/<name>` from the
   checkout's origin URL as written, in GitHub's forms alone
   (`repoIdentity`; `localRemotes` admits a bare path, in tests alone).
@@ -79,12 +80,25 @@ never on a model provider's SDK: the judge reaches a model as core's
 - `broker/push.ts`: `recordPush`, a push's values fixed before it is
   sent; `pushWork`, that OID to that ref under the lease, a plain push
   a fast-forward of the last, asking the user (`Ask`) for a forced
-  lease or a change to `DEPENDENCY_FILES`; `reconcilePush`, a lost
-  push's `Outcome` read from the remote.
+  lease or a change to `DEPENDENCY_FILES`, its diff capped (`capDiff`);
+  `reconcilePush`, a lost push's `Outcome` read from the remote.
 - `broker/pull-request.ts`: `openPullRequest`, `gh pr create` for the
   branch (`resolveGh`), and `reconcilePullRequest` by `gh pr list`.
+- `broker/branches.ts`: `Branches`, each branch's last pushed OID, the
+  `last` its next push expects, and an unknown push, which that next
+  push asks the user about; `push` and `pullRequest` the operations'
+  works, a pull request refused before a successful push.
+- `operations.ts`: `Operations`, every changing tool's operation by its
+  `operationId` and digest, recorded before it runs and returned, never
+  run again, on a repeat; a queue's run in order, `cancel` dropping a
+  worker's pending; `close` stopping every worker, then the grace,
+  `GRACE_MS`, the kill and reconciliation, the rest `unknown`;
+  `closeOn`, the client's EOF or a signal. `log.ts`: `openLog`, the
+  server's log at `logPath`, one JSON object a line.
 - `fixtures/repos.ts`: a bare remote, a checkout one commit ahead and
   a user's home, for the broker's tests.
+- `fixtures/timers.ts`: `FakeTimers`, a grace or deadline advanced by
+  the test.
 - `fixtures/fake-agent.ts`: an ACP agent of no dependency, in place of
   an adapter in tests: Claude's or Codex's modes, permission options
   and key variables (`--as`), and misbehaviour on cue
@@ -109,3 +123,5 @@ never on a model provider's SDK: the judge reaches a model as core's
   reads.
 - The broker pushes one recorded OID to one branch of the remote's
   URL: never another branch, a tag, a deletion or a submodule.
+- An operation acts once per `operationId`, and nothing is retried: an
+  outcome lost is reconciled against the remote or stays `unknown`.

@@ -19,7 +19,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { type Env, xdgDir } from "@dorothy/core";
+import { type Env, REAL_TIMERS, type Timers, xdgDir } from "@dorothy/core";
 import { type Git, sealedEnvironment, sealedGit } from "./git.js";
 import { readIdentity } from "./identity.js";
 
@@ -33,6 +33,8 @@ export type BrokerDeps = {
     // start_worker's repo.
     checkout: string;
     deadline?: number;
+    // Its processes' deadlines.
+    timers?: Timers;
     // Tests alone: a local bare remote as origin.
     localRemotes?: boolean;
 };
@@ -45,8 +47,9 @@ export type Broker = {
     repo: string;
     // Sealed, in the broker repository.
     git: Git;
-    // The sealed environment, which gh shares.
+    // The sealed environment, which gh shares, and its deadlines.
     env: Record<string, string>;
+    timers: Timers;
 };
 
 const quoted = (value: string) =>
@@ -129,12 +132,14 @@ async function makeRepository(git: Git, checkout: string, repo: string) {
 
 export async function openBroker(deps: BrokerDeps): Promise<Broker> {
     const { git: path, env, state, deadline } = deps;
+    const timers = deps.timers ?? REAL_TIMERS;
     const reader = sealedGit({
         git: path,
         env,
         config: "/dev/null",
         cwd: state,
         deadline,
+        timers,
     });
     const { identity, url } = await readIdentity(
         reader,
@@ -145,7 +150,14 @@ export async function openBroker(deps: BrokerDeps): Promise<Broker> {
     const config = join(state, "repos", `${identity}.gitconfig`);
     await mkdir(dirname(repo), { recursive: true });
     await replace(config, globalConfig(await userOf(reader, env), url));
-    const git = sealedGit({ git: path, env, config, cwd: repo, deadline });
+    const git = sealedGit({
+        git: path,
+        env,
+        config,
+        cwd: repo,
+        deadline,
+        timers,
+    });
     if (!existsSync(repo)) {
         await makeRepository(git, deps.checkout, repo);
     }
@@ -156,5 +168,6 @@ export async function openBroker(deps: BrokerDeps): Promise<Broker> {
         repo,
         git,
         env: sealedEnvironment(env, config),
+        timers,
     };
 }

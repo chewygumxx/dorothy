@@ -52,6 +52,8 @@ export type PushChecks = {
     // The worker's base OID, which dependency changes are measured from.
     base: string;
     ask: Ask;
+    // What else makes it ask: the branch's unknown push, shown first.
+    reasons?: string[];
 };
 
 // At any depth.
@@ -72,6 +74,30 @@ export const DEPENDENCY_FILES = [
 ];
 
 const OID = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
+
+// A lockfile's diff would flood the question.
+export const DIFF_LINES = 200;
+export const DIFF_BYTES = 16 * 1024;
+
+// The diff's first lines within both caps, then how much was cut.
+export function capDiff(diff: string): string {
+    const lines = diff.split("\n");
+    let kept = 0;
+    let bytes = 0;
+    for (const line of lines.slice(0, DIFF_LINES)) {
+        const size = Buffer.byteLength(line) + 1;
+        if (bytes + size > DIFF_BYTES) {
+            break;
+        }
+        bytes += size;
+        kept++;
+    }
+    if (kept === lines.length) {
+        return diff;
+    }
+    const cut = Buffer.byteLength(diff) - bytes;
+    return `${lines.slice(0, kept).join("\n")}\n[cut: ${lines.length - kept} more lines, ${cut} bytes]`;
+}
 
 // The remote's OID for the ref, null for none; undefined where it cannot
 // be read.
@@ -142,10 +168,13 @@ async function fastForward(broker: Broker, record: PushRecord) {
     return result.code === 0;
 }
 
+// The signal kills the push when its operation is abandoned; the
+// reconciliation that follows runs regardless.
 export async function pushWork(
     broker: Broker,
     record: PushRecord,
-    { base, ask }: PushChecks,
+    { base, ask, reasons: given = [] }: PushChecks,
+    signal?: AbortSignal,
 ): Promise<Outcome> {
     if (!record.force && !(await fastForward(broker, record))) {
         return {
@@ -153,13 +182,14 @@ export async function pushWork(
             detail: "no fast-forward of the last push; push with forceWithLease",
         };
     }
-    const reasons = record.force
-        ? ["It replaces the branch, under the lease, as asked."]
-        : [];
+    const reasons = [...given];
+    if (record.force) {
+        reasons.push("It replaces the branch, under the lease, as asked.");
+    }
     const diff = await dependencyDiff(broker, base, record.oid);
     if (diff !== "") {
         reasons.push(
-            `It changes dependency manifests or lockfiles:\n\n${diff}`,
+            `It changes dependency manifests or lockfiles:\n\n${capDiff(diff)}`,
         );
     }
     if (
@@ -168,16 +198,20 @@ export async function pushWork(
     ) {
         return { status: "failed", detail: "denied by the user" };
     }
-    const result = await broker.git.run([
-        "push",
-        "--porcelain",
-        "--no-follow-tags",
-        "--no-recurse-submodules",
-        `--force-with-lease=${record.ref}:${record.expected ?? ""}`,
-        "--",
-        record.url,
-        `${record.oid}:${record.ref}`,
-    ]);
+    const result = await broker.git.run(
+        [
+            "push",
+            "--porcelain",
+            "--no-follow-tags",
+            "--no-recurse-submodules",
+            `--force-with-lease=${record.ref}:${record.expected ?? ""}`,
+            "--",
+            record.url,
+            `${record.oid}:${record.ref}`,
+        ],
+        broker.repo,
+        signal,
+    );
     // Killed by its deadline or a signal: its effect may have been sent.
     if (result.timedOut || result.code > 128) {
         return reconcilePush(broker, record);
