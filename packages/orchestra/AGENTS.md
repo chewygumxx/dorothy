@@ -55,6 +55,24 @@ never on a model provider's SDK: the judge reaches a model as core's
   key: the provider's model paths alone, the box's placeholder replaced
   by the real key, sent to the fixed upstream, usage logged, never a
   key or a body. Not `@dorothy/gateway`, which serves Dorothy's chat.
+- `broker/git.ts`: `sealedGit`, the one runner of host git: `git`
+  resolved once (`resolveGit`), the broker's own global config and no
+  system one, hooks, maintenance, gc and submodules off, no `GIT_*`
+  variable of the caller's (`sealedEnvironment`); `runGroup`, each
+  process in a session of its own, its group killed at the deadline.
+- `broker/identity.ts`: `readIdentity`, `<owner>/<name>` from the
+  checkout's origin URL as written, in GitHub's forms alone
+  (`repoIdentity`; `localRemotes` admits a bare path, in tests alone).
+- `broker/repository.ts`: `openBroker`, a `Broker` per identity: its
+  bare clone of the checkout under the state root, made once, no
+  remote, gc and maintenance off; its global config beside it.
+- `broker/base.ts`: `fetchBase`, the remote's default branch into
+  `refs/orchestra/<server>/<worker>/base`. `broker/reservation.ts`:
+  `reserveBranch`, a file made exclusively per branch, refused if taken
+  or on the remote. `broker/clone.ts`: `makeClone`, a shared clone
+  under the worktree root on the new branch, the last host git in it.
+- `fixtures/repos.ts`: a bare remote, a checkout one commit ahead and
+  a user's home, for the broker's tests.
 - `fixtures/fake-agent.ts`: an ACP agent of no dependency, in place of
   an adapter in tests: Claude's or Codex's modes, permission options
   and key variables (`--as`), and misbehaviour on cue
@@ -73,3 +91,6 @@ never on a model provider's SDK: the judge reaches a model as core's
   gate does, run by hand, and it never reads `secrets.json`.
 - A box mounts nothing of the host but what `BoxSpec` names; tests of
   real boxes skip where bubblewrap cannot make a user namespace.
+- Every host git process runs through `sealedGit`, in the broker
+  repository but for the steps that make a clone; none runs in a
+  worker's clone after `makeClone`.
