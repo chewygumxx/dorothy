@@ -6,6 +6,7 @@
         "@agentclientprotocol/claude-agent-acp": "0.99.1",
         "@agentclientprotocol/codex-acp": "2.5.0",
         "@dorothy/core": "workspace:*",
+        "@modelcontextprotocol/sdk": "^1.32.1",
         "acpx": "0.21.1"
     }
 }

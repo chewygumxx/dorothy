@@ -96,6 +96,11 @@ never on a model provider's SDK: the judge reaches a model as core's
   untrusted input and a checked result. `deadline.ts`: `beforeDeadline`,
   injected timeouts and cancellation even when a callback ignores abort.
 
+- `questions.ts`: `createQuestions`, an MCP server's injected `Ask`,
+  worker stop and close. Connect through its `transport` wrapper to add
+  JSON-RPC ids to question metadata and cancel before closing. It uses
+  the same MCP SDK version as memory, with the 2025-06-18 form shape.
+
 ## Invariants
 
 - Every root, environment and clock is passed in; tests use temporary
