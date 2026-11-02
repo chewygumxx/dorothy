@@ -1,11 +1,11 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-18
+mtime: 2026-11-03
 spdx: GPL-3.0-only
 title: docs/AGENTS.md
 description: >-
-  Where Dorothy's documents go, how they are named and how they are
-  written.
+  Agentic instructions regarding the organisational conventions of the docs
+  directory with respect documentation storage, filename, and essay structure.
 tags:
   - agents
 ---
@@ -19,18 +19,25 @@ tags:
 
 # docs/AGENTS.md
 
-## Where things go
+Documentation pertaining to the development of this repository.
 
-- `specs/`: designs, `YYYY-MM-DD-<topic>-design.md`.
-- `plans/`: implementation plans, `YYYY-MM-DD-<topic>.md`.
-- `reports/`: a phase's probes, rulings and verification,
-  `YYYY-MM-DD-<topic>.md`, with any captured output in a directory beside
-  it of the same name.
-- `notes/`: research kept for reference, `YYYY-MM-DD_<topic>.md`.
-- `deferred/`: findings left for later, `YYYY-MM-DD_<topic>.md`.
-- `roadmap.md`: the phases in order, revised as its Revising section says.
+## Filename Convention
 
-## How they are written
+Filename format conforms to `YYYY-MM-DD_<abbreviated-title>.md` where
+`YYYY-MM-DD` is the creation time (ctime) of the document.
+
+## Subdirectory Organisation
+
+| Subdirectory | Content                                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `specs/`     | Design Proposals                                                                                                         |
+| `plans/`     | Implementation Strategy                                                                                                  |
+| `reports/`   | Implementation phase probes, rulings and verification with any captured output in a directory beside it of the same name |
+| `notes/`     | Research kept for reference                                                                                              |
+| `deferred/`  | findings left for later                                                                                                  |
+| `roadmap.md` | Projected order of phase implementation                                                                                  |
+
+## Essay Structure
 
 - Each file opens with frontmatter (`ctime`, `mtime`, `spdx`, `title`,
   `description`, `tags`) and the breadcrumb comment; copy both from a
@@ -42,13 +49,3 @@ tags:
 - A spec says what and why; a plan says how, task by task, with the code.
 - A report records each probe and how it was run, the rulings made on the
   spec, and the verification, with commands and their output.
-
-## The AGENTS.md files
-
-`agents.test.ts` pins them: the root at most 100 lines, this file 60 and
-each package's 150, header included; every relative link resolves; and no
-`CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` exists anywhere, as
-one switches Claude Code's `AGENTS.md` off. A package's file that
-outgrows its budget gains a nested `src/<subdir>/AGENTS.md`, read on
-demand; the root moves detail into the file where it is needed. No
-budget grows.
