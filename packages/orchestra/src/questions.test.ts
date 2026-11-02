@@ -207,7 +207,7 @@ describe("MCP questions", () => {
         expect(h.cancellations()).toHaveLength(1);
         expect(h.time.size).toBe(0);
     });
-    it("stops only the named worker's questions", async () => {
+    it("stops only the named worker's questions, and names those pending", async () => {
         const h = await pair();
         const replies: ((result: ElicitResult) => void)[] = [];
         h.client.setRequestHandler(
@@ -225,7 +225,10 @@ describe("MCP questions", () => {
         await tick();
         const ids = h.elicitations().map((r) => r.params?._meta?.questionId);
         expect(new Set(ids).size).toBe(2);
+        expect(h.questions.pending("one")).toEqual(["question-1"]);
         await h.questions.stop("one");
+        expect(h.questions.pending("one")).toEqual([]);
+        expect(h.questions.pending("two")).toEqual(["question-2"]);
         expect(await first).toMatchObject({ decision: "deny" });
         expect(h.cancellations()).toHaveLength(1);
         replies[1]?.(answer("allow_once"));

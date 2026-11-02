@@ -21,9 +21,11 @@
 // option; the reply names the optionId it got and the command's result.
 //
 //     bun fake-agent.ts [--as codex] [--ignore-answers] [--pin-mode <id>]
+//         [--exit-after-prompt]
 //
 // --ignore-answers runs the command whatever the answer; --pin-mode
-// reports that mode whatever is set.
+// reports that mode whatever is set; --exit-after-prompt exits once its
+// first prompt is answered, as a crashing agent would.
 
 import { randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -71,6 +73,7 @@ const flag = (name: string) => {
 const agent = AGENTS[flag("--as") === "codex" ? "codex" : "claude"];
 const ignoreAnswers = args.includes("--ignore-answers");
 const pinned = flag("--pin-mode");
+const exitAfterPrompt = args.includes("--exit-after-prompt");
 const options: Option[] = agent.options.map(([optionId, kind]) => ({
     optionId,
     name: optionId,
@@ -286,7 +289,12 @@ for await (const line of createInterface({ input: process.stdin })) {
     } else if (message.id !== undefined) {
         const id = message.id;
         answer(message).then(
-            (result) => send({ id, result }),
+            (result) => {
+                send({ id, result });
+                if (exitAfterPrompt && message.method === "session/prompt") {
+                    process.stdout.write("", () => process.exit(0));
+                }
+            },
             (error: Error) =>
                 send({ id, error: { code: -32603, message: error.message } }),
         );
