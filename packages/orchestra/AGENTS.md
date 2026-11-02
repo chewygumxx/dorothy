@@ -39,8 +39,14 @@ never on a model provider's SDK: the judge reaches a model as core's
   `isPlainWords`, which the proxy and the rules share.
 - `environment.ts`: `reexecClean`, the server running again with the
   allowlist of `serverEnvironment` alone, whoever started it.
+- `box/box.ts`: `boxArgs`, bubblewrap's arguments for a box from an
+  empty root (`systemLayout` the host's `/usr` links and `/etc`
+  entries), and `boxAvailable`. `box/bridge.ts` runs inside a box,
+  never imported: loopback ports forwarded to the box's sockets.
 
 ## Invariants
 
 - Every root, environment and clock is passed in; tests use temporary
   ones and never reach a real agent or provider.
+- A box mounts nothing of the host but what `BoxSpec` names; tests of
+  real boxes skip where bubblewrap cannot make a user namespace.
