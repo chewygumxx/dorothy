@@ -126,6 +126,23 @@ describe("the workspace", () => {
         expect(holders).toEqual(["agent"]);
     });
 
+    it("leaves the MCP SDK to memory and orchestra", async () => {
+        const holders: string[] = [];
+        for (const name of Object.keys(GRAPH)) {
+            if ("@modelcontextprotocol/sdk" in declared(await manifest(name)))
+                holders.push(name);
+        }
+        expect(holders).toEqual(["memory", "orchestra"]);
+        const memory = (await manifest("memory")).dependencies?.[
+            "@modelcontextprotocol/sdk"
+        ];
+        expect(
+            (await manifest("orchestra")).dependencies?.[
+                "@modelcontextprotocol/sdk"
+            ],
+        ).toBe(memory);
+    });
+
     it("lints an import of what a package does not declare", async () => {
         const biome = await Bun.file(
             join(import.meta.dir, ".biome.json"),
