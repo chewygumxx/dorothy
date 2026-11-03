@@ -23,12 +23,19 @@ tags:
 
 [Wiki home](../../README.md)
 
-"Orchestration" names two subjects in this repository, and they are
-unrelated. The first is a feature of Dorothy's own: a toolset by which she
-would run Claude Code and Codex workers. It is designed and not built. The
-second is how the agents that develop Dorothy are coordinated today, with
-herdr, a skill and some scripts. Neither is the other's step towards. The
-dated records of both are listed under
+"Orchestration" names two different subjects in this repository. The
+first is a feature of Dorothy's own: a toolset by which she would run
+Claude Code and Codex workers. It is designed and not built. The second is
+how the agents that develop Dorothy are coordinated now, with herdr, a
+skill and some scripts. They are not the same work, but the spec places the
+first as an alternative to the second in time: it describes today's
+coordination through herdr, keeps long jobs going through herdr for now,
+and lists herdr's panes for workers the server starts as later work
+([summary](../../specs/2026-11-02-orchestration-design.md#summary),
+[decisions](../../specs/2026-11-02-orchestration-design.md#decisions),
+[later](../../specs/2026-11-02-orchestration-design.md#later)). The first
+note's finding that screen-scraping approvals through herdr does not scale
+motivated it. The dated records of both are listed under
 [records](../records.md#orchestration).
 
 ## Dorothy's own orchestration
@@ -130,8 +137,8 @@ is the user's to set. The probe's favourable result for it is a dated
 
 ## How her developers are coordinated today
 
-State: built, as a skill, its scripts and herdr; none of it is part of
-Dorothy's application.
+State: in use, as a skill, its scripts and herdr, which is third-party;
+none of it is part of Dorothy's application.
 
 The agents that develop Dorothy run in herdr panes, coordinated by a
 Claude Code session that types into the others' terminals and reads their
@@ -160,10 +167,9 @@ holds the rules and points to a reference for each client and topic:
 
 The skill names the roles that fill the panes: a coordinating agent, a
 reserve that resumes the work when the coordinator is limited by usage or
-billing, and Codex. Which herdr names and accounts fill them changes, and
-is private to the user's machine, so this page names none; read the skill
-for the current list. The user's preferences behind the rules are agent
-memory: [usage limits](../../../.agents/memory/usage-limits.md),
+billing, and Codex. Which herdr names and accounts fill them changes, so
+this page names none; the skill holds the current list. The user's
+preferences behind the rules are agent memory: [usage limits](../../../.agents/memory/usage-limits.md),
 [Codex full send](../../../.agents/memory/codex-full-send.md) and
 [self-compaction](../../../.agents/memory/self-compaction.md). The
 [herdr reference](../../../.agents/skills/agent-stewardship/references/herdr.md)
