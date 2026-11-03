@@ -259,8 +259,8 @@ have been checked live, belongs to
 - Cyclical maintenance, which revises and prunes the vocabulary and
   deep-tags conversations, has its design agreed and awaits a spec
   ([roadmap](../../roadmap.md#cyclical-maintenance-4a)).
-- Relations and embeddings are conditional on recall's falling short, which
-  the roadmap does not yet find
+- Relations and embeddings are conditional on recall's falling short; the
+  roadmap names the same questions as where a hybrid would be judged
   ([roadmap](../../roadmap.md#relations-and-embeddings-5)).
 - What awaits for each host is on
   [harnesses](../profiles/harnesses.md).

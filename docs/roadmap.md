@@ -246,10 +246,9 @@ Links between conversations and semantic search beside FTS5.
 - **Status**: Conditional
 - **Required**: Requisites Fulfilled
 - **Rationale**: Only worth building once recall shows FTS5 falling short;
-  the evaluation's first run and the engine's paid runs have happened, and
-  show no such shortfall as a whole: she passes 43 of 125 questions
-  strictly on FTS5, past lexical search's 27. Only the five questions
-  that lexical search alone passes are where a hybrid would be judged
+  the evaluation's first run and the engine's paid runs have happened. The
+  questions only lexical search passes, and the ten of its passes she
+  misses, are where a hybrid would be judged
   ([report](./reports/2026-10-31-memory-engine.md#left)). Dorothy's
   Memory may take it up, as an engine with embeddings would.
 
