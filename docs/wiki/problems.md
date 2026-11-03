@@ -63,10 +63,9 @@ what it is.
 - **Remedy**: Wait for the reset. `run` finishes with `--resume`, and
   `--resume latest` takes the newest run; `generate` is run again and keeps
   the drafts made.
-- **State**: Resolved defect for the scoring of limits as misses. What
-  remains is a limitation the spec names: a CLI that rewords its limit
-  message fails calls as before, and a reply misread as a limit stops a run
-  that could have gone on.
+- **State**: Resolved defect. A limitation the spec names remains: a CLI
+  that rewords its limit message fails calls as before, and a reply
+  misread as a limit stops a run that could have gone on.
 - **Evidence**:
   [the report](../reports/2026-10-30-eval-review-tools.md#summary), its
   [reviews](../reports/2026-10-30-eval-review-tools.md#reviews) (a retry
@@ -112,10 +111,10 @@ what it is.
   was handed the conversation's note, not the passage that held the fact.
   Knowledge hits crowded the passages out of the budget.
 - **Diagnosis**: The retrieval stages tell found, delivered and covered
-  apart. In the engine's research her search ranked a cited source among its
-  ten hits for 102 of 125 questions, but evidence reached the model for only
-  9; of the 58 questions whose evidence reached it before the fix, 49 had it
-  only as a note. In the first evaluation 77% of her answers declined where
+  apart. In the engine's research her search found a cited source for
+  102 of 125 questions, but evidence reached the model for only 9; of the 58
+  questions whose evidence reached it before the fix, 49 had it only as a
+  note. In the first evaluation 77% of her answers declined where
   the evidence existed. `--dump-context` prints exactly what a chat's first
   request holds ([models and routing](./topics/models-and-routing.md#the-calls)).
 - **Remedy**: Fixed in the engine's first step: `deliver` renders the
@@ -123,8 +122,8 @@ what it is.
   and evidence reached the model for 98 of 125 questions, past lexical
   search's 69
   ([what `deliver` hands over](./topics/memory.md#what-deliver-hands-over)).
-- **State**: Resolved defect for the cause above. A limitation remains and is
-  measured: at her defaults she answers 43 of 125 strictly against 85 for the
+- **State**: Resolved defect. A limitation remains and is measured: at her
+  defaults she answers 43 of 125 strictly against 85 for the
   `cited` ceiling, which is given the right evidence, and across sessions she
   passes 2 of 38. A chunk index or hybrid search is held by the roadmap for
   the questions only lexical search passes
@@ -168,13 +167,15 @@ what it is.
   Claude plan, so it is the user's or the agent's command and not a
   background job. A failed model call restores that conversation's mark and
   stops the batch, and a rerun resumes.
-- **State**: Known limitation, and a workflow step. How many conversations
-  stay unreviewed now is not recorded: the report's trial of three left 302
-  marked.
+- **State**: Known limitation. The 302 conversations backfilled by the first
+  snapshot were all reviewed before the second snapshot, and the roadmap
+  records the backfill as recorded and reviewed. A conversation backfilled
+  since stays without notes until the user runs the command.
 - **Evidence**:
   [the memory page](./topics/memory.md#what-is-stored),
   [backfill review report](../reports/2026-10-29-backfill-review.md#rulings),
-  [first evaluation](../reports/2026-10-31-first-evaluation.md#what-it-shows)
+  [first evaluation](../reports/2026-10-31-first-evaluation.md#summary),
+  [roadmap](../roadmap.md#dorothys-memory)
   and [the decision](./decisions.md#the-backfill-is-the-users-command-and-its-review-runs-in-capped-batches).
 
 ## A reply stops part way with an error
@@ -230,9 +231,10 @@ what it is.
 - **Remedy**: The warning is the fix. Sending an output limit of Dorothy's
   own waits, as a provider may refuse one, and a second route entry on
   another model is the workaround.
-- **State**: Resolved in part: the warning is shown by its test, and a rerun
-  of the turn answered in full, so the warning itself was not seen live. The
-  limit of her own is a known limitation, deferred.
+- **State**: Known limitation, deferred: no output limit of Dorothy's own is
+  sent. The missing warning was a defect, now fixed; the warning is shown by
+  its test, and a rerun of the turn answered in full, so the warning itself
+  was not seen live.
 - **Evidence**:
   [report findings](../reports/2026-11-01-model-providers.md#findings-1),
   [deferred](../deferred/2026-11-01_model-providers-deferred.md#behaviour)
@@ -283,20 +285,6 @@ what it is.
   [deferred findings](../deferred/2026-11-01_model-providers-deferred.md#behaviour)
   and [`failures.ts`](../../packages/agent/src/failures.ts).
 
-## A one-shot command prints a blank line and exits 0 after a model error
-
-- **Cause**: The Agent SDK could yield a result marked as an error instead of
-  throwing, and `runOneShot` handled text deltas alone, so bad credentials,
-  overload or an execution error produced a blank line, empty stderr and
-  success.
-- **Diagnosis**: An isolated mock reproduced both errors with those outputs.
-- **Remedy**: Error results now fail one-shot commands (`7417024`).
-- **State**: Resolved defect (finding F01). Its reproduction held at the
-  recheck of 2026-10-20 and the sweep closed it.
-- **Evidence**:
-  [code review F01](../reports/2026-10-19-code-review.md#f01-p2-one-shot-commands-silently-succeed-on-model-errors),
-  [the sweep's resolutions](../reports/2026-10-19-roadmap-sweep.md#code-review-resolutions).
-
 ## A resumed evaluation run skips questions
 
 - **Cause**: Resume intersected the run's question ids with the currently
@@ -323,7 +311,9 @@ what it is.
 - **Diagnosis**: Rejection reasons that cite evidence the draft's
   conversation holds beyond the first 1,500 characters.
 - **Remedy**: `review --evidence <chars>` defaults to 6,000, and the first
-  round of pre-screening was redone with more of each conversation.
+  round of pre-screening was
+  [redone](../reports/2026-10-31-first-evaluation.md#the-test-set) with more
+  of each conversation.
 - **State**: Resolved defect.
 - **Evidence**:
   [the report](../reports/2026-10-30-eval-review-tools.md#summary) and
@@ -347,23 +337,6 @@ what it is.
   [history](./topics/evaluation.md#history),
   [first evaluation corrections](../reports/2026-10-31-first-evaluation.md#what-it-shows).
 
-## Dorothy quotes the user's email address or a coding agent's notes
-
-- **Cause**: The Agent SDK spawned the Claude Code CLI for every query, and
-  the CLI added context of its own whatever `systemPrompt` said: the user's
-  email address and Claude Code's auto-memory for the working directory,
-  introduced as instructions that override defaults, and an environment
-  message after every user turn. Asked, she confirmed all of it.
-- **Diagnosis**: A throwaway server captured the body of each request.
-- **Remedy**: The CLI was run in a private home with auto-memory disabled
-  (`850fbd4`); the email and the memory went. The environment message
-  remained until the runtime left the Agent SDK for the Messages API.
-- **State**: Resolved defect. The Agent SDK is gone from the workspace, and
-  `workspace.test.ts` pins that no package declares it
-  ([why her own runtime](./topics/models-and-routing.md#why-her-own-runtime)).
-- **Evidence**:
-  [the context leak report](../reports/2026-10-07-context-leak.md#summary).
-
 ## Compaction summarised the wrong turns of a chat
 
 - **Cause**: Two TUIs resuming one conversation each kept a private turn
@@ -378,34 +351,6 @@ what it is.
 - **Evidence**:
   [code review F22](../reports/2026-10-19-code-review.md#f22-p2-concurrent-chats-compact-the-wrong-shared-transcript-turns),
   [the sweep's resolutions](../reports/2026-10-19-roadmap-sweep.md#code-review-resolutions).
-
-## The data directory and its history keep growing
-
-- **Cause**: Nothing is forgotten, as a preference. History and sealed
-  bundles accumulate, and retired facts and sync records stay by design.
-  Consolidation and pruning rewrite or remove history and need their own
-  design.
-- **Diagnosis**: The size of the data directory's git history.
-- **Remedy**: None built. The roadmap holds it as a candidate.
-- **State**: Known limitation, deferred.
-- **Evidence**:
-  [deferred](../deferred/2026-10-08_memory-history-deferred.md),
-  [the sweep's retained limits](../reports/2026-10-19-roadmap-sweep.md#deferred)
-  and [the decision](./decisions.md#nothing-is-forgotten-as-a-preference).
-
-## A chat hidden during a run is still reused by its reviews
-
-- **Cause**: A review receives the catalogue snapshot loaded at launch,
-  hidden flags included, and does not read the index. A concept carried only
-  by a chat hidden by another process since launch can still be reused until
-  the next launch.
-- **Diagnosis**: A tag or note that appears from a chat hidden after the
-  run began.
-- **Remedy**: Relaunch. Refreshing the snapshot needs a later design.
-- **State**: Known limitation, deferred; the sweep ruled the case moot under
-  its conditional ruling because the current snapshot cannot see the flag.
-- **Evidence**:
-  [deferred](../deferred/2026-10-08_tags-deferred.md).
 
 ## A resumed Claude Code session has no persona, or shows the marker
 
@@ -424,20 +369,6 @@ what it is.
   [spec risks](../specs/2026-10-15-identity-gateway-design.md#known-risks)
   and [the implementation report's limits](../reports/2026-10-15-identity-gateway-implementation.md).
 
-## A host does not seem to know her
-
-- **Cause**: Her persona, her recording and her memory each reach a host by
-  their own mechanism, and each is built, awaiting a live check or waiting
-  on the user in its own way. A built mechanism is not a checked one.
-- **Diagnosis**: Separate the four things a host's section separates:
-  persona, recording, memory access and live checks.
-- **Remedy**: Follow the host's section on
-  [harnesses](./profiles/harnesses.md), which holds each host's state and
-  any step waiting on the user.
-- **State**: Depends on the host; the page says which.
-- **Evidence**: [harnesses](./profiles/harnesses.md) and the
-  [delivery report](../reports/2026-11-01-delivery.md#waiting-for-the-user).
-
 ## Tests fail in a background session with colour codes
 
 - **Cause**: Claude Code background sessions (`claude --bg`) export
@@ -447,8 +378,9 @@ what it is.
   user's terminal: check the session's environment before the shell.
 - **Remedy**: `test-setup.ts`, a `bun test` preload, now sets
   `FORCE_COLOR=0` before Ink is imported.
-- **State**: Resolved for the tests, which is where it was met. As a
-  pitfall it stands for any other output a background session colours.
+- **State**: Workflow pitfall. The tests, where it was met, no longer suffer
+  from it, as the preload fixes their colour; other output a background
+  session colours may still differ.
 - **Evidence**:
   [the memory](../../.agents/memory/bg-session-force-color.md) and
   [`test-setup.ts`](../../test-setup.ts).

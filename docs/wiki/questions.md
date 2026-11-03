@@ -77,14 +77,12 @@ the entries cite.
 
 ### What comes next?
 
-The [roadmap](../roadmap.md) alone orders the work, in its Ahead section,
-and revises it between phases; the wiki does not reorder or schedule. As of
-2026-11-03 its Ahead begins with Dorothy's Memory, whose Delivery is built
-for Codex and Hermes with live probes waiting on the user, and goes on to
-Dorothy's Gateway, Cyclical Maintenance, Topic Overviews, Learning,
-Extensions, Reach and Relations and Embeddings. Findings not yet placed are
-its Candidates. What each topic still awaits is at the foot of its page,
-such as [what awaits](./topics/memory.md#what-awaits) for memory.
+The [roadmap](../roadmap.md) alone orders the work: its Ahead section is in
+order, and the first item is next. Its Candidates hold the findings not yet
+placed, and each topic page's closing section on what awaits, such as
+[what awaits](./topics/memory.md#what-awaits) for memory, holds that
+subject's remainder. Checks of a host that are still to run are on
+[harnesses](./profiles/harnesses.md). The wiki does not reorder or schedule.
 
 ## The shape of Dorothy
 
