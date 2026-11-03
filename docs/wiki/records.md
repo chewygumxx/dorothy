@@ -319,6 +319,8 @@ first.
   Specification. A maintained reference grounded in her code and records.
 - [Repository wiki plan](../plans/2026-11-03_repository-wiki.md): Plan. Task by
   task, the link test, catalogue, pages and navigation.
+- [Repository wiki report](../reports/2026-11-03_repository-wiki.md): Report.
+  The rulings, reviews, nine source conflicts, verification and known limits.
 
 ## Related
 
