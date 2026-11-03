@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-10-29
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: packages/memory/AGENTS.md
 description: >-
@@ -27,8 +27,8 @@ provider's SDK: reviews and compaction each take core's `StructuredCall`
 ## Entry points and imports
 
 - `"."` (`src/index.ts`): `openMemory`, `previewStart`, what `--claude` asks;
-  `"./claude-hook"` (`runClaudeHook`) and `"./host-hook"` (`runHostHook`),
-  guides: [bodies](./src/bodies/AGENTS.md), [hooks](./src/hooks/AGENTS.md).
+  `"./claude-hook"` (`runClaudeHook`), `"./host-hook"` (`runHostHook`, Pi's
+  `runPiHostHook`), guides: [bodies](./src/bodies/AGENTS.md), [hooks](./src/hooks/AGENTS.md).
 - `"./commands"` (`src/commands.ts`): `--list`, `--memory`, `--tags`,
   `--edit-tags`, `--facts`, `--retire`, `--revive`, `--verify`, `--sync`,
   `--projects`, the history commands and `commandHistory()`.

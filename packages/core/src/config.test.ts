@@ -137,8 +137,16 @@ describe("parseConfig", () => {
         );
         expect(config.recording.hosts).toEqual([]);
         expect(warnings).toEqual([
-            "config.toml: recording.hosts must be a list of hosts from claude-code, codex, hermes",
+            "config.toml: recording.hosts must be a list of hosts from claude-code, codex, hermes, pi",
         ]);
+    });
+
+    it("records Pi when it is named", () => {
+        const { config, warnings } = parseConfig(
+            '[recording]\nhosts = ["pi", "codex"]\n',
+        );
+        expect(warnings).toEqual([]);
+        expect(config.recording.hosts).toEqual(["pi", "codex"]);
     });
 
     it("warns of hosts that are no list", () => {

@@ -55,6 +55,15 @@ describe("host watermarks", () => {
         expect((await stat(watermarkPath(root))).mode & 0o777).toBe(0o600);
         expect(warnings).toEqual([]);
     });
+    it("keeps Pi's beside the other hosts'", async () => {
+        await hostWatermark(store, "codex", FIRST, warn);
+        expect(await hostWatermark(store, "pi", LATER, warn)).toBe(LATER);
+        expect(await hostWatermark(store, "pi", FIRST, warn)).toBe(LATER);
+        expect(
+            JSON.parse(await readFile(watermarkPath(root), "utf8")).watermarks,
+        ).toEqual({ codex: FIRST, pi: LATER });
+        expect(warnings).toEqual([]);
+    });
     it("commits a new watermark to history, and only a new one", async () => {
         await hostWatermark(store, "codex", FIRST, warn);
         await hostWatermark(store, "codex", LATER, warn);

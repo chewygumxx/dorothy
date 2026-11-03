@@ -35,6 +35,7 @@ import { readSidecar } from "../memory/sidecar.js";
 import { identify } from "../projects/identify.js";
 import { transcriptDir } from "../transcript.js";
 import { readCodex } from "./codex.js";
+import { piSource } from "./pi-source.js";
 import {
     claudeSource,
     codexSource,
@@ -123,6 +124,8 @@ export type HostSweep = {
     private: number;
     // New halts told during this sweep; standing halts stay unremembered.
     halted: number;
+    // Forks held until their parent's ancestry can be read.
+    held: number;
     // Sessions that could not be read at all.
     failed: number;
     // Why the host's sweep stopped, if it did.
@@ -132,12 +135,19 @@ export type HostSweep = {
 const describe = (error: unknown) =>
     error instanceof Error ? error.message : String(error);
 
-// What a reader found, whichever host's it is.
+// An archive conversation's share of a read: a host session's, or one
+// Pi segment's, linked to the one it continues.
+type Segment = {
+    session: string | null;
+    parent: string | null;
+    events: RecordEvent[];
+};
+// What a reader found, whichever host's it is: the segments to record,
+// in order, and the diagnostics of the session that names them.
 type View = {
     session: string | null;
     cwd: string | null;
-    parent: string | null;
-    events: RecordEvent[];
+    segments: Segment[];
     halt: {
         line: number;
         type: string | null;
@@ -148,17 +158,55 @@ type View = {
     unknown: { type: string; example: string }[];
     // A call unanswered holds the events after it.
     pending: boolean;
+    // A fork held for its parent's ancestry.
+    orphan: boolean;
 };
 
+// The type a malformed line names, if it names one.
+function typeAt(line: string | undefined): string | null {
+    try {
+        const type = (JSON.parse(line ?? "") as { type?: unknown })?.type;
+        return typeof type === "string" ? type : null;
+    } catch {
+        return null;
+    }
+}
+
 function view(read: SourceRead, ended: boolean, fallback: string | null): View {
+    if (read.kind === "pi") {
+        const { read: found, lines } = read;
+        return {
+            session: found.nativeSession,
+            cwd: found.cwd,
+            segments: found.segments.map(({ session, parent, events }) => ({
+                session,
+                parent,
+                events,
+            })),
+            halt:
+                found.halt === null
+                    ? null
+                    : {
+                          line: found.halt.line + 1,
+                          type: typeAt(lines[found.halt.line]),
+                          reason: found.halt.code,
+                          rest: lines.slice(found.halt.line),
+                      },
+            unknown: found.unknown.map(({ line, type }) => ({
+                type: `pi/${type}`,
+                example: lines[line] ?? "",
+            })),
+            pending: found.pending,
+            orphan: read.orphan,
+        };
+    }
     if (read.kind === "hermes") {
         const { read: found } = read;
         const session = found.session ?? fallback;
         return {
             session,
             cwd: found.cwd,
-            parent: found.parent,
-            events: found.events,
+            segments: [{ session, parent: found.parent, events: found.events }],
             halt:
                 found.halt === null
                     ? null
@@ -175,14 +223,16 @@ function view(read: SourceRead, ended: boolean, fallback: string | null): View {
                 example: JSON.stringify({ id }),
             })),
             pending: found.pending !== null,
+            orphan: false,
         };
     }
     const found = readCodex(read.lines, { ended });
     return {
         session: found.session,
         cwd: found.cwd,
-        parent: null,
-        events: found.events,
+        segments: [
+            { session: found.session, parent: null, events: found.events },
+        ],
         halt:
             found.halt === null
                 ? null
@@ -197,6 +247,7 @@ function view(read: SourceRead, ended: boolean, fallback: string | null): View {
             example: read.lines[line] ?? "",
         })),
         pending: found.pending !== null,
+        orphan: false,
     };
 }
 
@@ -261,19 +312,24 @@ function emptyResult(host: Host): HostSweep {
         waiting: 0,
         private: 0,
         halted: 0,
+        held: 0,
         failed: 0,
         error: null,
     };
 }
 function sourceOf(deps: SweepDeps, host: Host): Source {
-    return (
-        deps.sources?.[host] ??
-        (host === "claude-code"
-            ? claudeSource(deps.env, deps.claudeDirs)
-            : host === "codex"
-              ? codexSource(deps.env)
-              : hermesSource(deps.env))
-    );
+    const found = deps.sources?.[host];
+    if (found) return found;
+    switch (host) {
+        case "claude-code":
+            return claudeSource(deps.env, deps.claudeDirs);
+        case "codex":
+            return codexSource(deps.env);
+        case "hermes":
+            return hermesSource(deps.env);
+        case "pi":
+            return piSource(deps.env);
+    }
 }
 
 export async function sweep(deps: SweepDeps): Promise<HostSweep[]> {
@@ -409,9 +465,12 @@ async function recordRead(
         );
     }
     if (
-        id === null &&
-        found.events.length > 0 &&
-        !waits(deps, found.events, mark)
+        found.segments.some(
+            (segment) =>
+                segment.session === null &&
+                segment.events.length > 0 &&
+                !waits(deps, segment.events, mark),
+        )
     ) {
         result.failed += 1;
         if (await claimLog(deps.env, ["missing-session", session.key]))
@@ -420,43 +479,56 @@ async function recordRead(
             );
         return;
     }
+    if (found.orphan) {
+        result.held += 1;
+        if (await claimLog(deps.env, ["orphan", session.key]))
+            deps.log.warn(
+                `recording: ${host}: ${named} waits for its parent session's ancestry; held`,
+            );
+    }
     // Privacy first: a private session keeps nothing, not even aside; one
     // with no identity cannot be judged, and keeps pointers alone.
     const secret =
         id !== null &&
         (deps.isPrivate?.({ host, session: id, cwd: found.cwd }) ?? false);
+    // Segments wholly before the watermark wait for the backfill.
+    const recording = secret
+        ? found.segments
+        : found.segments.filter((segment) => {
+              const wait = waits(deps, segment.events, mark);
+              if (wait) result.waiting += 1;
+              return !wait;
+          });
     if (secret) {
         result.private += 1;
-    } else if (waits(deps, found.events, mark)) {
-        result.waiting += 1;
+    } else if (found.segments.length > 0 && recording.length === 0) {
         return settle(sweeping, session, read, named, found, ended, result);
     }
     const project = secret ? null : await projectOf(sweeping, found.cwd);
-    let response: SweepRecord = {
-        accepted: 0,
-        duplicates: 0,
-        through: null,
-        phrase: null,
-    };
-    if (id !== null && (secret || found.events.length > 0)) {
-        response = await deps.record(
+    let phrase: string | null = null;
+    // Each segment in order, a parent's before its children's; the read is
+    // remembered only once every one is recorded and its diagnostics kept.
+    for (const segment of recording) {
+        if (segment.session === null) continue;
+        if (!secret && segment.events.length === 0) continue;
+        const response = await deps.record(
             {
                 host,
-                session: id,
+                session: segment.session,
                 ...(project === null ? {} : { project }),
-                ...(found.parent === null ? {} : { parent: found.parent }),
-                ...(secret ? { private: true } : { events: found.events }),
+                ...(segment.parent === null ? {} : { parent: segment.parent }),
+                ...(secret ? { private: true } : { events: segment.events }),
             },
             deps.backfill,
         );
-    }
-    if (response.accepted > 0) {
+        phrase = response.phrase ?? phrase;
+        if (response.accepted === 0) continue;
         result.sessions += 1;
         result.events += response.accepted;
         if (response.phrase !== null) {
             deps.onRecorded?.({
                 host,
-                session: named,
+                session: segment.session,
                 phrase: response.phrase,
                 project,
                 accepted: response.accepted,
@@ -465,15 +537,15 @@ async function recordRead(
         }
     }
     await settle(sweeping, session, read, named, found, ended, result, {
-        phrase: response.phrase,
+        phrase,
         secret,
     });
 }
 
 // What a read leaves behind once its events are dealt with: halts and new
 // types kept aside, then the read remembered, unless it is torn or raced,
-// halted, holds events behind an unanswered call before the session is
-// over, or its diagnostics could not be kept. A torn or raced read may
+// halted, held for a parent, holds events behind an unanswered call
+// before the session is over, or its diagnostics could not be kept. A torn or raced read may
 // stop in the middle of a record that is whole next time: it keeps
 // nothing aside. A private session keeps nothing, and is remembered.
 async function settle(
@@ -508,7 +580,11 @@ async function settle(
             result,
         );
     }
-    const holding = !kept || found.halt !== null || (found.pending && !ended);
+    const holding =
+        !kept ||
+        found.halt !== null ||
+        found.orphan ||
+        (found.pending && !ended);
     if (secret || !holding) rememberRead(state, session.key, read);
 }
 
@@ -603,8 +679,7 @@ function claudeView(
     return {
         session,
         cwd: null,
-        parent: null,
-        events: [],
+        segments: [],
         halt:
             found.halt === null
                 ? null
@@ -620,6 +695,7 @@ function claudeView(
             example: lines[line] ?? "",
         })),
         pending: found.held,
+        orphan: false,
     };
 }
 

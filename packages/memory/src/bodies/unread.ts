@@ -285,7 +285,11 @@ const shellWord = (word: string) =>
     /^[A-Za-z0-9_.:@%+=,-]+$/.test(word)
         ? word
         : `'${word.replaceAll("'", `'\\''`)}'`;
-const HOSTS: Record<string, string> = { codex: "Codex", hermes: "Hermes" };
+const HOSTS: Record<string, string> = {
+    codex: "Codex",
+    hermes: "Hermes",
+    pi: "Pi",
+};
 // What a halt's number counts: Hermes keeps rows, the rest lines.
 export const unit = (host: string | undefined) =>
     host === "hermes" ? "row" : "line";

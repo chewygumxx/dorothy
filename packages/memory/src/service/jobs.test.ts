@@ -130,6 +130,7 @@ const swept = (host: HostSweep["host"], events: number): HostSweep => ({
     waiting: 0,
     private: 0,
     halted: 0,
+    held: 0,
     failed: 0,
     error: null,
 });

@@ -12,11 +12,12 @@ import { Database } from "bun:sqlite";
 import { type BigIntStats, constants } from "node:fs";
 import { open, readdir, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
-import type { Env } from "@dorothy/core";
+import type { Env, RecordingHost } from "@dorothy/core";
 import { hermesRoot } from "../hosts/hermes-root.js";
 import { type HermesRead, readHermes } from "./hermes.js";
+import type { PiRead } from "./pi.js";
 
-export type Host = "claude-code" | "codex" | "hermes";
+export type Host = RecordingHost;
 export type FileFingerprint = {
     kind: "file";
     size: number;
@@ -32,7 +33,11 @@ export type SourceRead = {
 } & (
     | { kind: "file"; lines: string[]; lineOffset: 0 }
     | { kind: "hermes"; read: HermesRead }
+    // A Pi file's segments; `orphan` when its header names a parent whose
+    // ancestry could not be resolved, so the read holds everything.
+    | { kind: "pi"; read: PiRead; lines: string[]; orphan: boolean }
 );
+export type FileRead = Extract<SourceRead, { kind: "file" }>;
 // The session is over: a call never answered is recorded failed.
 export type ReadOptions = { ended?: boolean };
 export type SourceSession = {
@@ -74,11 +79,11 @@ function hostRoot(env: Env, key: string, fallback: string): string {
     if (!env.HOME) throw new RangeError("missing recording root");
     return join(absolute(env.HOME), fallback);
 }
-const vanished = (error: unknown) =>
+export const vanished = (error: unknown) =>
     (error as NodeJS.ErrnoException).code === "ENOENT";
 // An entry removed between a listing and its use is skipped, never the
 // host: its session is either gone or listed again next sweep.
-async function existing(path: string): Promise<string | null> {
+export async function existing(path: string): Promise<string | null> {
     try {
         return await realpath(path);
     } catch (error) {
@@ -86,7 +91,7 @@ async function existing(path: string): Promise<string | null> {
         throw error;
     }
 }
-async function entries(path: string) {
+export async function entries(path: string) {
     try {
         return await readdir(path, { withFileTypes: true });
     } catch (error) {
@@ -94,7 +99,7 @@ async function entries(path: string) {
         throw error;
     }
 }
-function fileFingerprint(found: BigIntStats): FileFingerprint {
+export function fileFingerprint(found: BigIntStats): FileFingerprint {
     if (found.size > BigInt(Number.MAX_SAFE_INTEGER))
         throw new RangeError("recording file is too large");
     return {
@@ -105,20 +110,32 @@ function fileFingerprint(found: BigIntStats): FileFingerprint {
         device: String(found.dev),
     };
 }
-async function readFileSession(
+// A file read whole without following a symlink, or null when unchanged
+// since `previous`, gone, or no regular file; one past `maxBytes` throws.
+export async function readFileSession(
     path: string,
     previous?: Fingerprint,
-): Promise<SourceRead | null> {
+    maxBytes = Number.MAX_SAFE_INTEGER,
+): Promise<FileRead | null> {
     let handle: Awaited<ReturnType<typeof open>>;
     try {
-        handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+        // Non-blocking, so a FIFO put in a file's place is refused, not
+        // waited on; a regular file reads alike.
+        handle = await open(
+            path,
+            constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+        );
     } catch (error) {
         if (vanished(error)) return null;
         throw error;
     }
     try {
-        const before = fileFingerprint(await handle.stat({ bigint: true }));
+        const found = await handle.stat({ bigint: true });
+        if (!found.isFile()) return null;
+        const before = fileFingerprint(found);
         if (sameFingerprint(previous, before)) return null;
+        if (before.size > maxBytes)
+            throw new RangeError("recording file is too large");
         const bytes = await handle.readFile();
         const after = fileFingerprint(await handle.stat({ bigint: true }));
         const lines =
@@ -139,8 +156,11 @@ async function readFileSession(
     }
 }
 export async function fileSessions(
-    host: "claude-code" | "codex",
+    host: Host,
     paths: string[],
+    // Each path's reader: whole, as it is, by default.
+    reader: (path: string) => SourceSession["read"] = (path) => (previous) =>
+        readFileSession(path, previous),
 ): Promise<SourceSession[]> {
     const result: SourceSession[] = [];
     for (const path of paths.sort()) {
@@ -157,7 +177,7 @@ export async function fileSessions(
             path,
             fingerprint: fileFingerprint(found),
             at: new Date(Number(found.mtimeMs)).toISOString(),
-            read: (previous) => readFileSession(path, previous),
+            read: reader(path),
         });
     }
     return result;

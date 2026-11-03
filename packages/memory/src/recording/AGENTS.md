@@ -33,10 +33,10 @@ readers never open a Dorothy store; tests use temporary roots.
   SQLite read-only, selecting a session before fetching payloads; a read
   has the same fields plus `parent` and `source`. `since` floors stable
   source ids, exclusively; sources pass zero: those ids are not monotonic.
-- `pi.ts`, `pi-tree.ts`: `readPi`, Pi branch segments; invariants atop each.
+- `pi.ts`, `pi-tree.ts`, `pi-source.ts`: Pi; read [its guide](./AGENTS.pi.md).
 - `sources.ts`: `claudeSource`, `codexSource`, `hermesSource` (each profile's
   `state.db`); each lists descriptors: key, path, time, fingerprint, `read`.
-- `state.ts`: private `sweep.json`, per-key skip fingerprints alone.
+- `state.ts`: private `sweep.json`'s per-key skip hints; Pi's sidecars.
 - `watermark.ts`: a host's first sweep time, in the data directory's
   `recording.json`, committed to history, never in `sweep.json`.
 - `sweep.ts`: `sweep(deps)`, one pass over the hosts; read below.
@@ -140,10 +140,10 @@ readers never open a Dorothy store; tests use temporary roots.
   Live appends clear marks; live chats stay reviewable. Private sessions send
   only `private: true`; one with no identity cannot be judged: a halt keeps
   only its key and line or row, and no new type.
-- Remember a read (`rememberRead`) only after the archive took it and unread
-  diagnostics are saved. Never a halted or unstable read, one whose type was not
-  kept, nor one holding lines behind an unanswered call (Claude's `held`,
-  others' `pending`) until untouched an hour, including during backfill.
+- Remember a read (`rememberRead`) only once the archive took each segment
+  and unread diagnostics are saved: never a halted, unstable or held read,
+  one whose type was not kept, nor one holding lines behind an unanswered
+  call (Claude's `held`, else `pending`) until an hour untouched, backfill too.
 - A halt keeps its rest in `bodies/unread.ts` under its host (Hermes counts
   rows); `dorothy --sweep --reread` and `--dismiss` serve it. A record
   failure stops that host, not others. [The service](../service/AGENTS.md)

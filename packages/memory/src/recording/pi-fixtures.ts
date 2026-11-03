@@ -234,3 +234,18 @@ export const label = (id: string, parentId: string | null, targetId: string) =>
     entry("label", id, parentId, { targetId, label: "fixture-mark" });
 export const sessionInfo = (id: string, parentId: string | null) =>
     entry("session_info", id, parentId, { name: "Synthetic name" });
+
+// A session and a fork of it as createBranchedSession writes one, its
+// header naming the parent's file: for the source, the sweep and hooks.
+export const PARENT_LINES = [
+    header(),
+    user("user0001", null, "Synthetic parent question.", 1),
+    assistant("asst0001", "user0001", [text("Synthetic parent answer.")], 2),
+];
+export const forkLines = (parentPath: string, id = PI_FORK) => [
+    header(id, parentPath),
+    ...PARENT_LINES.slice(1),
+    user("user0002", "asst0001", "Synthetic fork question.", 3),
+    assistant("asst0002", "user0002", [text("Synthetic fork answer.")], 4),
+];
+export const piText = (lines: readonly string[]) => `${lines.join("\n")}\n`;
