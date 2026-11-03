@@ -17,7 +17,15 @@ import {
     expect,
     it,
 } from "bun:test";
-import { readdir, symlink } from "node:fs/promises";
+import {
+    mkdir,
+    mkdtemp,
+    readdir,
+    rm,
+    symlink,
+    writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Env, RecordRequest, RecordResponse } from "@dorothy/core";
 import { acceptRecord } from "../contract/record.js";
@@ -39,7 +47,7 @@ import {
 import { segmentId } from "../recording/pi-tree.js";
 import { type Rig, rig } from "../recording/sweep-testing.js";
 import { transcriptDir } from "../transcript.js";
-import { type PiHookRequest, runPiHostHook } from "./pi.js";
+import { type PiHookDeps, type PiHookRequest, runPiHostHook } from "./pi.js";
 
 let seen: { path: string; body: Record<string, unknown> }[] = [];
 let server: ReturnType<typeof Bun.serve>;
@@ -122,7 +130,7 @@ const deps = (
         return record(request);
     },
 });
-const ask = (over: Partial<PiHookRequest>, using = deps()) =>
+const ask = (over: Partial<PiHookRequest>, using: PiHookDeps = deps()) =>
     runPiHostHook(
         {
             event: "start",
@@ -140,7 +148,8 @@ const write = (name: string, lines: readonly string[]) =>
 const ROOT_SEGMENT = segmentId(PI_SESSION, "user0001");
 const RETRY_SEGMENT = segmentId(PI_SESSION, "asst0002");
 const branched = [
-    ...PARENT_LINES,
+    header(PI_SESSION, undefined, 3, PROJECT_A),
+    ...PARENT_LINES.slice(1),
     assistant("asst0002", "user0001", [text("Synthetic retry.")], 3),
 ];
 const sourceIds = async () =>
@@ -192,27 +201,86 @@ describe("runPiHostHook", () => {
     });
 
     it("rebinds a resumed session that enters another project", async () => {
+        const inB = [header(PI_FORK, undefined, 3, PROJECT_B)];
         await write("a.jsonl", PARENT_LINES);
+        const b = await write("b.jsonl", [
+            ...inB,
+            user("user0001", null, "Synthetic question in B.", 1),
+        ]);
         await ask({ leafId: "asst0001", reason: "resume" });
+        const resumed = { sessionId: PI_FORK, sessionFile: b, cwd: PROJECT_B };
+        await ask({ ...resumed, leafId: "user0001", reason: "resume" });
         await ask({
+            ...resumed,
             event: "prompt",
-            leafId: "asst0001",
-            cwd: PROJECT_B,
+            leafId: "user0001",
             prompt: "Synthetic prompt.",
         });
         expect(seen.map(({ path, body }) => [path, body.project])).toEqual([
             ["/v1/block", projectA],
+            ["/v1/block", projectB],
             ["/v1/recall", projectB],
         ]);
-        expect(seen[0]?.body.reason).toBe("resume");
-        expect(seen[1]?.body.prompt).toBe("Synthetic prompt.");
-        await write("a.jsonl", [
-            ...PARENT_LINES,
-            user("user0002", "asst0001", "Synthetic prompt.", 3),
-        ]);
-        await ask({ event: "settled", leafId: "user0002", cwd: PROJECT_B });
+        expect(seen[1]?.body.reason).toBe("resume");
+        expect(seen[2]?.body.prompt).toBe("Synthetic prompt.");
+        await ask({ ...resumed, event: "settled", leafId: "user0001" });
         const secondProjectRequest = recordCalls[0];
         expect(secondProjectRequest?.project).toBe(projectB);
+    });
+
+    it("records under the file's own project, as the sweep does", async () => {
+        // A real repository, so the hook and the sweep use one resolver.
+        const repo = await mkdtemp(join(tmpdir(), "dorothy-pi-repo-"));
+        try {
+            await mkdir(join(repo, ".git"));
+            await writeFile(
+                join(repo, ".git", "config"),
+                '[remote "origin"]\n\turl = https://github.com/fixture/b.git\n',
+            );
+            const lines = [
+                header(PI_SESSION, undefined, 3, repo),
+                ...PARENT_LINES.slice(1),
+            ];
+            const path = await write("a.jsonl", lines);
+            // The sweep first, then the hook told of a live directory Pi
+            // was given in place of the header's: one project for both.
+            await sweepPi();
+            const swept = r.requests.map((request) => request.project);
+            expect(swept).toEqual(["github.com/fixture/b"]);
+            const { identify: _, ...resolving } = deps();
+            await ask(
+                { event: "settled", leafId: "asst0001", sessionFile: path },
+                resolving,
+            );
+            expect(recordCalls.map((request) => request.project)).toEqual(
+                swept,
+            );
+        } finally {
+            await rm(repo, { recursive: true, force: true });
+        }
+    });
+
+    it("refuses a session id the file does not carry", async () => {
+        await write("a.jsonl", PARENT_LINES);
+        const other = { sessionId: PI_FORK, leafId: "asst0001" };
+        expect(await ask(other)).toEqual({
+            session: null,
+            context: "BLOCK",
+            recording: "pending",
+            warning: "pi_session_mismatch",
+        });
+        expect(seen[0]?.body.session).toBe(PI_FORK);
+        expect(await ask({ ...other, event: "settled" })).toEqual({
+            session: null,
+            context: "",
+            recording: "pending",
+            warning: "pi_session_mismatch",
+        });
+        expect(await ask({ ...other, event: "end" })).toMatchObject({
+            recording: "pending",
+            warning: "pi_session_mismatch",
+        });
+        expect(recordCalls).toEqual([]);
     });
 
     it("records the leaf's segment when settled, and all at the end", async () => {

@@ -15,7 +15,11 @@
 // the sweep's own source. Never a throw: a fault is a warning's stable
 // code, never content. Recording is `off` for a private, file-less or
 // refused session, `delivered` once the service took every segment sent
-// and the file holds nothing back, else `pending`.
+// and the file holds nothing back, else `pending`. Records take the
+// project of the file's own header, as the sweep does, so whichever
+// writes a conversation first gives it the same project; context takes
+// the live `cwd`. A file whose header names another session than the
+// request's is neither mapped nor sent (`pi_session_mismatch`).
 
 import {
     BLOCK_REASONS,
@@ -130,8 +134,9 @@ async function send(
             session === null ||
             segment.session === session,
     );
+    const cwd = found.file.read.cwd ?? request.cwd;
     const project = (
-        await (deps.identify ?? identifyProject)(request.cwd).catch(() => null)
+        await (deps.identify ?? identifyProject)(cwd).catch(() => null)
     )?.id;
     let taken = true;
     for (const segment of segments)
@@ -177,8 +182,14 @@ export async function runPiHostHook(
             warning = "pi_session_unreadable";
         }
     }
-    warning = warning ?? holdOf(found);
-    const session = leafSegment(found, request.leafId);
+    // The request's session and the file's own: one never stands for the
+    // other's leaf or archive.
+    const mismatch =
+        found.kind === "read" &&
+        found.file.read.nativeSession !== null &&
+        found.file.read.nativeSession !== request.sessionId;
+    warning = warning ?? (mismatch ? "pi_session_mismatch" : holdOf(found));
+    const session = mismatch ? null : leafSegment(found, request.leafId);
     const refused = off || found.kind === "outside";
     if (request.event === "start" || request.event === "prompt") {
         const context = await answer(request, session, deps);
@@ -190,7 +201,7 @@ export async function runPiHostHook(
                 warning ?? (context === null ? "pi_memory_unavailable" : null),
         };
     }
-    if (refused || found.kind !== "read")
+    if (refused || mismatch || found.kind !== "read")
         return {
             session,
             context: "",

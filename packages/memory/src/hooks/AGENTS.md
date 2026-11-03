@@ -39,8 +39,11 @@ hooks are in [bodies](../bodies/AGENTS.md).
   [the Pi source](../recording/AGENTS.pi.md) and sent through `record`,
   the CLI's client queue, in parts of 4 MiB at most. Private, file-less
   or refused sessions are `off`; `delivered` only when every part was
-  taken and the file holds nothing back. Warnings are stable codes:
-  `pi_request_invalid`, `pi_session_outside`, `pi_session_unreadable`,
-  `pi_ancestry_missing`, `pi_session_halted`, `pi_record_queued` and
-  `pi_memory_unavailable`. Never a throw.
+  taken and the file holds nothing back. Records take the project of the
+  file's header cwd, as the sweep's do; context the request's `cwd`. A
+  file of another session than `sessionId` is neither mapped nor sent.
+  Warnings are stable codes: `pi_request_invalid`, `pi_session_outside`,
+  `pi_session_unreadable`, `pi_session_mismatch`, `pi_ancestry_missing`,
+  `pi_session_halted`, `pi_record_queued` and `pi_memory_unavailable`.
+  Never a throw.
 - `fixtures.ts`: the payloads Task 1's probe recorded.
