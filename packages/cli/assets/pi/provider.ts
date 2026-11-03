@@ -9,8 +9,11 @@
 //
 
 // The launch's provider, as Pi's openai-completions API reaches it, and
-// the guard that keeps every request on its models. The key is named,
-// never held: Pi resolves `$<name>` from its own environment.
+// the guard that keeps every request on its models. The key is given as
+// a literal Pi holds in memory alone (pi 1.5.0 core/model-runtime.js
+// extensionProviders), never as `$<name>`: Pi resolves that from its
+// environment on every request (core/provider-composer.js), and the
+// environment is what its bash tool and MCP servers inherit.
 
 import type {
     ExtensionAPI,
@@ -42,7 +45,10 @@ const BINARY_THINKING = { minimal: null, low: null, medium: null } as const;
 const label = (model: { provider: string; id: string }) =>
     `${model.provider}/${model.id}`;
 
-export function providerConfig(manifest: PiManifest): ProviderConfig {
+export function providerConfig(
+    manifest: PiManifest,
+    apiKey: string,
+): ProviderConfig {
     const models: ProviderModelConfig[] = manifest.models.map((model) => ({
         id: model.id,
         name: model.id,
@@ -62,7 +68,7 @@ export function providerConfig(manifest: PiManifest): ProviderConfig {
     }));
     return {
         baseUrl: manifest.entry.baseUrl,
-        apiKey: `$${manifest.entry.key}`,
+        apiKey,
         api: "openai-completions",
         models,
     };
@@ -73,9 +79,13 @@ export function providerConfig(manifest: PiManifest): ProviderConfig {
 export function registerProvider(
     pi: ExtensionAPI,
     manifest: PiManifest,
+    apiKey: string,
     warn: (ctx: ExtensionContext, text: string, level: "error") => void,
 ): void {
-    pi.registerProvider(manifest.entry.provider, providerConfig(manifest));
+    pi.registerProvider(
+        manifest.entry.provider,
+        providerConfig(manifest, apiKey),
+    );
     const allowed = new Set(
         manifest.models.map((model) =>
             label({ provider: manifest.entry.provider, id: model.id }),

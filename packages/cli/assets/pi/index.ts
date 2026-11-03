@@ -14,6 +14,12 @@
 // `dorothy --pi-hook` (helper.ts) and her memory tools as the MCP server
 // `dorothy-memory`, run as `dorothy --mcp --host pi` in the live cwd.
 //
+// - The provider's key is taken out of Pi's environment as the extension
+//   loads, before any session starts a server or runs a command, so no
+//   child of Pi's inherits it: bash and every MCP server alike (pi 1.5.0
+//   utils/shell.js getShellEnv, pi-mcp transports/stdio.js). Pi holds it
+//   as the provider's literal key, in memory alone. A replaced runtime
+//   loads the extension again; the key it took first is kept for it.
 // - Her server's environment is the manifest's helper environment, with
 //   every other variable of Pi's own blanked, since Pi starts a server
 //   with its environment beneath the one configured.
@@ -131,12 +137,31 @@ export function readManifest(path: string | undefined): PiManifest {
 const literal = (value: string) =>
     value.replaceAll("$", () => "$$").replace(/^!/, () => "$!");
 
+// Keys taken from Pi's environment, by manifest and name, for the
+// instances a replaced runtime loads after the first took them.
+const TAKEN = Symbol.for("dorothy.pi.keys");
+type Taken = Map<string, string>;
+function takeKey(env: Env, path: string, name: string): string {
+    const store = globalThis as { [TAKEN]?: Taken };
+    store[TAKEN] ??= new Map();
+    const taken = store[TAKEN];
+    const id = `${path}\0${name}`;
+    const value = env[name];
+    delete env[name];
+    if (value !== undefined && value !== "") taken.set(id, value);
+    const key = taken.get(id);
+    if (key === undefined) throw new Error(`dorothy_pi_key: ${name}`);
+    return key;
+}
+
 export function memoryServer(manifest: PiManifest, env: Env, cwd: string) {
     const [command = "", ...args] = manifest.self;
     const serverEnv: Record<string, string> = {};
     for (const name of Object.keys(env)) serverEnv[name] = "";
     for (const [name, value] of Object.entries(manifest.helperEnv))
         if (value !== undefined) serverEnv[name] = literal(value);
+    // Never the provider's key, whatever the helper environment says.
+    if (manifest.entry.key) serverEnv[manifest.entry.key] = "";
     return {
         command,
         args: [...args, "--mcp", "--host", "pi"],
@@ -175,6 +200,10 @@ export function dorothyExtension(env: Env): (pi: ExtensionAPI) => void {
     return (pi) => {
         const path = env.DOROTHY_PI_MANIFEST;
         const manifest = readManifest(path);
+        // Before anything of Pi's can start a child with this environment.
+        const apiKey = literal(
+            takeKey(env, path ?? "", manifest.entry.key ?? ""),
+        );
         const prompt = capabilities();
         const agentDir =
             env.PI_CODING_AGENT_DIR || join(env.HOME ?? "", ".pi", "agent");
@@ -193,7 +222,7 @@ export function dorothyExtension(env: Env): (pi: ExtensionAPI) => void {
             } catch {}
         };
 
-        registerProvider(pi, manifest, notify);
+        registerProvider(pi, manifest, apiKey, notify);
         deliverMemory(
             pi,
             hookInvoker(manifest, dirname(path ?? "")),

@@ -18,6 +18,8 @@ tags:
    -
    -->
 
+# Your memory in Pi
+
 Your memory is shared with your other hosts and lasts beyond this session.
 
 - The `mcp__dorothy_memory__` tools are your memory: search past

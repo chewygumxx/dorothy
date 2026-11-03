@@ -212,8 +212,9 @@ afterEach(async () => {
 });
 
 describe("the provider", () => {
-    it("registers the manifest's models with an explicit key reference", () => {
-        const pi = start();
+    it("registers the manifest's models, the key held from Pi's env", () => {
+        const env = envOf();
+        const pi = start({}, env);
         expect(pi.seen.providers).toHaveLength(1);
         const [{ name, config }] = pi.seen.providers as [
             (typeof pi.seen.providers)[number],
@@ -222,8 +223,10 @@ describe("the provider", () => {
         expect(config).toMatchObject({
             api: "openai-completions",
             baseUrl: BASE,
-            apiKey: `$${KEY_NAME}`,
+            apiKey: SYNTHETIC_KEY,
         });
+        // Gone from the environment bash and MCP servers inherit.
+        expect(env).not.toHaveProperty(KEY_NAME);
         expect(config.models).toEqual([
             {
                 id: MODEL,
@@ -250,7 +253,32 @@ describe("the provider", () => {
                 },
             },
         ]);
-        expect(JSON.stringify(pi.seen)).not.toContain(SYNTHETIC_KEY);
+        const { providers: _, ...rest } = pi.seen;
+        expect(JSON.stringify(rest)).not.toContain(SYNTHETIC_KEY);
+    });
+
+    it("keeps the key it took for a replaced runtime, literally", () => {
+        const env = envOf({ [KEY_NAME]: "!run $HOME" });
+        const first = start({}, env);
+        // Pi loads the extension again into the same process.
+        const again = start({}, env);
+        for (const pi of [first, again])
+            expect(pi.seen.providers[0]?.config.apiKey).toBe("$!run $$HOME");
+        // Another launch's manifest has no key taken for it.
+        expect(() =>
+            start(
+                {},
+                { ...env, DOROTHY_PI_MANIFEST: join(roots.root, "x.json") },
+            ),
+        ).toThrow("dorothy_pi_manifest");
+    });
+
+    it("refuses to load without its key, naming the variable alone", async () => {
+        const other = join(roots.launchDir, "other.json");
+        await writeFile(other, JSON.stringify(manifest));
+        const env = { ...envOf({ DOROTHY_PI_MANIFEST: other }) };
+        delete (env as Record<string, string | undefined>)[KEY_NAME];
+        expect(() => start({}, env)).toThrow(`dorothy_pi_key: ${KEY_NAME}`);
     });
 
     it("refuses to load without a sound manifest", async () => {

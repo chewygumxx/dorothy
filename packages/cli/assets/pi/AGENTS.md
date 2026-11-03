@@ -28,13 +28,16 @@ with Bun code are re-declared, and `extension.test.ts` checks they agree.
 ## Files
 
 - `index.ts`: the factory. It reads the manifest `DOROTHY_PI_MANIFEST`
-  names (`readManifest`, refused as `dorothy_pi_manifest: <path>`), then
-  wires the rest. At each session start it registers the MCP server
-  `dorothy-memory` (`memoryServer`): the manifest's `self` with
+  names (`readManifest`, refused as `dorothy_pi_manifest: <path>`), takes
+  the provider's key out of Pi's environment (`takeKey`, refused as
+  `dorothy_pi_key: <name>`; kept per manifest for a replaced runtime's
+  next load), then wires the rest. At each session start it registers
+  the MCP server `dorothy-memory` (`memoryServer`): the manifest's `self` with
   `--mcp --host pi`, direct exposure, the live cwd, and the manifest's
   helper environment with every other variable of Pi's blanked, since Pi
   starts a server with its own environment beneath the configured one;
-  values are escaped from Pi's `$` and `!` interpolation. A project
+  values are escaped from Pi's `$` and `!` interpolation, and the key's
+  name is blanked whatever the helper environment holds. A project
   `.pi/mcp.json` naming her server has its trust declined
   (`project_trust`); a trusted or profile one keeps hers unregistered and
   its tools blocked (`pi_mcp_collision`). Other servers, tools from other
@@ -42,8 +45,9 @@ with Bun code are re-declared, and `extension.test.ts` checks they agree.
   outside her tested loadout. `capabilities.md` (after its header) is the
   `dorothy-capabilities` section of Pi's system prompt.
 - `provider.ts`: the manifest's provider with `api:
-  "openai-completions"`, `apiKey: "$<key name>"` and each model's checked
-  limits and prices (unknown cached input priced as input).
+  "openai-completions"`, the key as an escaped literal, which Pi keeps
+  in memory alone, and each model's checked limits and prices (unknown
+  cached input priced as input).
   `FEATHERLESS_COMPAT` sends thinking as `chat_template_kwargs.thinking`,
   true for any level but `off`, with system messages and no `store`;
   minimal, low and medium are unsupported, so Pi clamps them to high. A
@@ -78,8 +82,14 @@ with Bun code are re-declared, and `extension.test.ts` checks they agree.
   shown once by stable code (`pi_hook_timeout`, `pi_hook_failed`,
   `pi_reply_invalid`, `pi_reply_too_large`, `pi_request_too_large`, or
   memory's own), and the saved JSONL left for the sweep.
-- No credential is read, written or passed: the key reaches Pi's
-  provider by name, and neither the helper nor her server sees it.
+- The key is in Pi's environment only until the extension loads, which
+  is before any session spawns a child (Pi connects MCP servers from
+  `session_start`, and bash reads the environment as it runs). After
+  that only Pi's provider holds it, in memory, sending it to the
+  endpoint alone: bash, the helper, her server and any other MCP server
+  never inherit it, and no file, argv or log carries it. Code running in
+  Pi's process (another extension, say) can still reach it, as the spec
+  allows for ordinary local execution.
 
 ## Tests
 

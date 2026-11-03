@@ -113,7 +113,9 @@ describe("Pi on the wire", () => {
         const [firstRequest, secondRequest] = provider.requests;
         expect(provider.requests).toHaveLength(2);
         expect(firstRequest?.path).toBe("/v1/chat/completions");
-        expect(firstRequest?.authorization).toBe(`Bearer ${SYNTHETIC_KEY}`);
+        // Authenticated from the key Pi holds, the first time and after.
+        for (const request of provider.requests)
+            expect(request.authorization).toBe(`Bearer ${SYNTHETIC_KEY}`);
         expect(firstRequest?.body.chat_template_kwargs).toEqual({
             thinking: true,
         });
@@ -259,10 +261,47 @@ describe("Pi on the wire", () => {
                 .map((event) => (event.kind === "start" ? event.argv : [])),
         ).toEqual([["--mcp"]]);
         expect(mcp.filter((event) => event.kind === "call")).toEqual([]);
+        // The shadow, any server but hers, never inherits the key.
+        const shadow = mcp.find((event) => event.kind === "start");
+        expect(shadow?.kind === "start" && shadow.envNames).not.toContain(
+            KEY_NAME,
+        );
+        expect(JSON.stringify(mcp)).not.toContain(SYNTHETIC_KEY);
+        expect(await everything(roots.root)).not.toContain(SYNTHETIC_KEY);
         const result = messagesOf(provider.requests[1]).find(
             (message) => message.role === "tool",
         );
         expect(textOf(result as Message)).toContain("pi_mcp_collision");
+    }, 60_000);
+
+    it("keeps the key from what the model's shell sees", async () => {
+        provider = startFakeProvider([
+            [
+                called("call-1", "bash", { command: "env" }),
+                finish("tool_calls"),
+                usage,
+            ],
+            reply("Listed."),
+        ]);
+        const { path } = await fixtureManifest(roots, provider.baseUrl);
+        const run = await runPi(roots, path, ["list the environment"]);
+        expect(run.code).toBe(0);
+        const output = messagesOf(provider.requests[1]).find(
+            (message) => message.role === "tool",
+        );
+        // The shell ran, with Pi's environment less the key.
+        expect(textOf(output as Message)).toContain("PI_CODING_AGENT_DIR=");
+        expect(textOf(output as Message)).not.toContain(KEY_NAME);
+        expect(textOf(output as Message)).not.toContain(SYNTHETIC_KEY);
+        expect(provider.requests).toHaveLength(2);
+        for (const request of provider.requests)
+            expect(request.authorization).toBe(`Bearer ${SYNTHETIC_KEY}`);
+        for (const text of [
+            run.stdout,
+            run.stderr,
+            await everything(roots.root),
+        ])
+            expect(text).not.toContain(SYNTHETIC_KEY);
     }, 60_000);
 
     it("sends thinking off as false", async () => {
