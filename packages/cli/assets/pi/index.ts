@@ -28,6 +28,9 @@
 //   registered beside it, and calls to its tools are blocked.
 // - What else joins her tested loadout (other servers, tools other
 //   extensions register, codemode or tool search) is shown, once each.
+// - Her identity, the persona file the manifest names, and her
+//   capabilities are sections of Pi's system prompt beside Pi's own, so
+//   a discovered APPEND_SYSTEM.md still applies.
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -71,12 +74,14 @@ export type PiManifest = {
     extensions: string[];
     skills: string[];
     helperEnv: Env;
+    persona?: string;
     registryPath?: string;
 };
 
 export const MEMORY_SERVER = "dorothy-memory";
 const MEMORY_TOOLS = "mcp__dorothy_memory__";
 const CAPABILITIES = "dorothy-capabilities";
+const IDENTITY = "dorothy-identity";
 const VARIABLE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const INCIDENTAL = ["codemode", "tool_search"];
 
@@ -116,6 +121,7 @@ function sound(value: unknown): value is PiManifest {
                 (model.price?.cacheRead === null ||
                     number(model.price?.cacheRead)),
         ) &&
+        (m.persona === undefined || typeof m.persona === "string") &&
         typeof m.helperEnv === "object" &&
         m.helperEnv !== null &&
         Object.values(m.helperEnv).every((item) => typeof item === "string")
@@ -196,6 +202,18 @@ function capabilities(): string {
     return (end < 0 ? text : text.slice(end + 3)).trim();
 }
 
+// Her identity, from the persona file the manifest names: a section of
+// Pi's system prompt beside Pi's own, so Pi's discovered APPEND_SYSTEM.md
+// and context files stay as they are. "" where the manifest names none.
+function identity(path: string | undefined): string {
+    if (path === undefined) return "";
+    try {
+        return readFileSync(path, "utf8").trim();
+    } catch {
+        throw new Error(`dorothy_pi_persona: ${path}`);
+    }
+}
+
 export function dorothyExtension(env: Env): (pi: ExtensionAPI) => void {
     return (pi) => {
         const path = env.DOROTHY_PI_MANIFEST;
@@ -204,6 +222,7 @@ export function dorothyExtension(env: Env): (pi: ExtensionAPI) => void {
         const apiKey = literal(
             takeKey(env, path ?? "", manifest.entry.key ?? ""),
         );
+        const persona = identity(manifest.persona);
         const prompt = capabilities();
         const agentDir =
             env.PI_CODING_AGENT_DIR || join(env.HOME ?? "", ".pi", "agent");
@@ -277,7 +296,9 @@ export function dorothyExtension(env: Env): (pi: ExtensionAPI) => void {
                 return { block: true, reason: "pi_mcp_collision" };
         });
         pi.on("before_agent_start", (event, ctx) => {
-            event.systemPromptOptions.sections[CAPABILITIES] = prompt;
+            const { sections } = event.systemPromptOptions;
+            if (persona !== "") sections[IDENTITY] = persona;
+            sections[CAPABILITIES] = prompt;
             const deviations = [
                 ...servers(ctx)
                     .filter((server) => !isHers(server.name))

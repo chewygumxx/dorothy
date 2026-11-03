@@ -79,12 +79,13 @@ Dorothy in hosts other than Claude Code, whose launcher is `claude.ts`.
     Pi's, under the entry's variable name. Native `--help` and
     `--version`, and `--dump`, load none; help runs without her
     extension and model, which would ask for the key.
-  - `preparePiProfile` writes the manifest and persona; other MCP servers
-    it found are said before Pi starts, so before its project trust, and
-    a `--no-session` launch is said to record nothing.
-  - Pi gets `--offline`, `piProfileArgs`, `--append-system-prompt
-    <persona>` and `--model <provider>/<model>`, then the user's
-    arguments, through `runForwarding`; the launch files go in `finally`,
+  - `preparePiProfile` writes the persona and the manifest, which names
+    it (`persona`) for her extension; other MCP servers it found are said
+    before Pi starts, so before its project trust, and a `--no-session`
+    launch is said to record nothing.
+  - Pi gets `--offline`, `piProfileArgs` and `--model
+    <provider>/<model>`, then the user's arguments, through
+    `runForwarding`; the launch files go in `finally`,
     and a spawn failure is said by its code. Prompt templates and themes
     stay discoverable: they are Markdown and JSON, never executed. The
     dump prints the command, cwd and variable names, never a value.
@@ -111,4 +112,5 @@ Dorothy in hosts other than Claude Code, whose launcher is `claude.ts`.
   wire, with a synthetic key alone. `pi/launch.test.ts` injects every
   dependency of the launcher, then runs it through the published Pi:
   new, `-c`, `--fork` and `--session` launches, two paths Pi names
-  alike, preferences kept, and Bun's alias first on `PATH`.
+  alike, preferences kept, Pi's `APPEND_SYSTEM.md` beside her persona,
+  and Bun's alias first on `PATH`.

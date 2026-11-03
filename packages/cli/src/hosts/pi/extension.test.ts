@@ -330,6 +330,56 @@ describe("the provider", () => {
     });
 });
 
+describe("her identity", () => {
+    const options = () => ({
+        messageType: "user",
+        prompt: "hello",
+        systemPromptOptions: {
+            sections: { addendum: "THE USER'S APPEND" } as Record<
+                string,
+                string
+            >,
+        },
+    });
+
+    it("adds the persona as a section of its own, after Pi's", async () => {
+        const persona = join(roots.launchDir, "persona.md");
+        await writeFile(persona, "PERSONA MARKER\n");
+        await writeFile(manifestPath, JSON.stringify({ ...manifest, persona }));
+        const env = envOf();
+        const first = start({}, env);
+        const seen = options();
+        await first.emit("before_agent_start", seen);
+        const { sections } = seen.systemPromptOptions;
+        expect(sections["dorothy-identity"]).toBe("PERSONA MARKER");
+        // Nothing of Pi's is replaced.
+        expect(sections.addendum).toBe("THE USER'S APPEND");
+        expect(Object.keys(sections)).toEqual([
+            "addendum",
+            "dorothy-identity",
+            "dorothy-capabilities",
+        ]);
+        // A replaced runtime loads her again and has it still.
+        const again = start({}, env);
+        const later = options();
+        await again.emit("before_agent_start", later);
+        expect(later.systemPromptOptions.sections["dorothy-identity"]).toBe(
+            "PERSONA MARKER",
+        );
+    });
+
+    it("refuses to load without the persona its manifest names", async () => {
+        const persona = join(roots.launchDir, "gone.md");
+        await writeFile(manifestPath, JSON.stringify({ ...manifest, persona }));
+        expect(() => start()).toThrow(`dorothy_pi_persona: ${persona}`);
+        await writeFile(
+            manifestPath,
+            JSON.stringify({ ...manifest, persona: 7 }),
+        );
+        expect(() => start()).toThrow("dorothy_pi_manifest");
+    });
+});
+
 describe("the memory layer", () => {
     const prompt = (text: string) => ({
         messageType: "user",

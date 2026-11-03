@@ -109,9 +109,11 @@ it("places the profile, sessions and launch from the injected roots", async () =
     expect(await readFile(profile.personaPath, "utf8")).toBe(
         "You are Dorothy.",
     );
-    expect(JSON.parse(await readFile(profile.manifestPath, "utf8"))).toEqual(
-        manifest("launch-a", s.cwd),
-    );
+    // The manifest names the persona file, which her extension reads.
+    expect(JSON.parse(await readFile(profile.manifestPath, "utf8"))).toEqual({
+        ...manifest("launch-a", s.cwd),
+        persona: profile.personaPath,
+    });
 });
 
 it("uses the existing XDG defaults and a private temporary directory", async () => {

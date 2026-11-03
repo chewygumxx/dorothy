@@ -348,8 +348,6 @@ async function launch(
               ...run.runtime.command,
               "--offline",
               ...piProfileArgs(profile, manifest),
-              "--append-system-prompt",
-              profile.personaPath,
               "--model",
               `${entry.provider}/${entry.model}`,
               ...options.args,

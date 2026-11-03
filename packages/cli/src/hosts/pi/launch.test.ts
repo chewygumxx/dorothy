@@ -89,16 +89,15 @@ async function rig(over: { env?: Env; cwd?: string } = {}) {
         spawn: (cmd, childEnv, cwd) => {
             events.push("spawn");
             if (failSpawn !== null) throw failSpawn;
-            const at = cmd.indexOf("--append-system-prompt");
+            const manifest: PiLaunchManifest = JSON.parse(
+                readFileSync(childEnv.DOROTHY_PI_MANIFEST ?? "", "utf8"),
+            );
             calls.push({
                 cmd,
                 env: childEnv,
                 cwd,
-                manifest: JSON.parse(
-                    readFileSync(childEnv.DOROTHY_PI_MANIFEST ?? "", "utf8"),
-                ),
-                persona:
-                    at === -1 ? "" : readFileSync(cmd[at + 1] ?? "", "utf8"),
+                manifest,
+                persona: readFileSync(manifest.persona ?? "", "utf8"),
             });
             return { exited: Promise.resolve(exitCode), kill: () => {} };
         },
@@ -205,15 +204,16 @@ describe("dorothy --pi", () => {
             "builtin:mcp",
             "-e",
             EXTENSION,
-            "--append-system-prompt",
-            join(launchDir, "persona.md"),
             "--model",
             `${PROVIDER}/${MODEL}`,
             "--thinking",
             "high",
         ]);
         expect(call.cwd).toBe(r.roots.project);
+        // Her extension adds the persona; Pi's own append stays Pi's.
         expect(call.persona).toBe(PERSONA);
+        expect(call.manifest.persona).toBe(join(launchDir, "persona.md"));
+        expect(childArgs).not.toContain("--append-system-prompt");
         // The selected key under its own name; nothing else credential-like.
         expect(childEnv[KEY_NAME]).toBe(SYNTHETIC_KEY);
         expect(childEnv.OTHER_PROVIDER_KEY).toBeUndefined();
@@ -735,6 +735,67 @@ describe("Pi itself", () => {
             await provider.close();
         }
     }, 120_000);
+
+    it("keeps Pi's discovered APPEND_SYSTEM.md beside her persona", async () => {
+        const roots = await piRoots();
+        opened.push(roots);
+        const provider = startFakeProvider([
+            reply("one"),
+            reply("two"),
+            reply("three"),
+        ]);
+        try {
+            const { launch } = await real(roots, provider.baseUrl);
+            await mkdir(join(roots.project, ".pi"), { recursive: true });
+            await writeFile(
+                join(roots.project, ".pi", "APPEND_SYSTEM.md"),
+                "PROJECT APPEND MARKER\n",
+            );
+            // A project the user trusts for the run, as --approve does.
+            const first = await launch(roots.project, [
+                "--approve",
+                "-p",
+                "first",
+            ]);
+            expect(first.code).toBe(0);
+            // The profile's own, once Dorothy owns the profile.
+            await writeFile(
+                join(roots.agentDir, "APPEND_SYSTEM.md"),
+                "PROFILE APPEND MARKER\n",
+            );
+            const resumed = await launch(roots.project, [
+                "--approve",
+                "-c",
+                "-p",
+                "second",
+            ]);
+            expect(resumed.code).toBe(0);
+            const untrusted = await launch(roots.project, [
+                "--no-approve",
+                "-c",
+                "-p",
+                "third",
+            ]);
+            expect(untrusted.code).toBe(0);
+            const system = provider.requests.map((request) =>
+                JSON.stringify(
+                    (request.body.messages as { role: string }[]).filter(
+                        (message) => message.role === "system",
+                    ),
+                ),
+            );
+            expect(system).toHaveLength(3);
+            for (const prompt of system) expect(prompt).toContain(PERSONA);
+            expect(system[0]).toContain("PROJECT APPEND MARKER");
+            // Resumed, both are there still.
+            expect(system[1]).toContain("PROJECT APPEND MARKER");
+            // Untrusted, Pi takes the profile's file instead.
+            expect(system[2]).toContain("PROFILE APPEND MARKER");
+            expect(system[2]).not.toContain("PROJECT APPEND MARKER");
+        } finally {
+            await provider.close();
+        }
+    }, 60_000);
 
     it("shows Pi's help with no key decrypted", async () => {
         const roots = await piRoots();

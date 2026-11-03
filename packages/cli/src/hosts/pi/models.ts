@@ -42,6 +42,9 @@ export type PiLaunchManifest = {
     extensions: string[];
     skills: string[];
     helperEnv: Env;
+    // The persona file preparePiProfile writes beside the manifest, which
+    // the extension adds to Pi's system prompt as a section of its own.
+    persona?: string;
     registryPath?: string;
 };
 

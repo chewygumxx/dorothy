@@ -217,7 +217,10 @@ export async function preparePiProfile(input: {
     const manifestPath = join(launchDir, "manifest.json");
     try {
         await publish(personaPath, persona);
-        await publish(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+        await publish(
+            manifestPath,
+            `${JSON.stringify({ ...manifest, persona: personaPath }, null, 2)}\n`,
+        );
     } catch (error) {
         await cleanup();
         throw error;

@@ -42,8 +42,14 @@ with Bun code are re-declared, and `extension.test.ts` checks they agree.
   (`project_trust`); a trusted or profile one keeps hers unregistered and
   its tools blocked (`pi_mcp_collision`). Other servers, tools from other
   extensions, and an active `codemode` or `tool_search` are shown once as
-  outside her tested loadout. `capabilities.md` (after its header) is the
-  `dorothy-capabilities` section of Pi's system prompt.
+  outside her tested loadout. Before each run it sets two sections of
+  Pi's system prompt: `dorothy-identity`, the persona file the manifest's
+  `persona` names (read at load, refused as `dorothy_pi_persona:
+  <path>`), and `dorothy-capabilities`, `capabilities.md` after its
+  header. Sections are additive, after Pi's own (pi 1.5.0
+  core/system-prompt.js `buildSystemPromptSections`), so no CLI append
+  is passed and Pi's discovered `APPEND_SYSTEM.md`, trusted project's or
+  profile's, and its context files stay.
 - `provider.ts`: the manifest's provider with `api:
   "openai-completions"`, the key as an escaped literal, which Pi keeps
   in memory alone, and each model's checked limits and prices (unknown
@@ -69,7 +75,7 @@ with Bun code are re-declared, and `extension.test.ts` checks they agree.
   on stdout (64 KiB at most). The signal is the deadline: 2500 ms for
   start and prompt, 5000 ms for records, the helper SIGKILLed past it.
 - `capabilities.md`: what the model is told of her memory tools and
-  layer; her identity is the launcher's persona, apart from it.
+  layer; her identity is the launch's persona, a section apart.
 - `models.json`: the checked model manifest
   ([hosts guide](../../src/hosts/AGENTS.md)).
 
