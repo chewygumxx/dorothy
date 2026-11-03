@@ -82,6 +82,8 @@ Found but not scheduled, in the roadmap's order, which
 - The evaluation's answering prompt.
 - The consolidation's deferred minors.
 - Message provenance between agents.
+- The repository wiki's remaining parser, editorial and source-evidence
+  findings ([triage](../reports/2026-11-03_wiki-follow-up.md#deferred-work)).
 
 ## Blocked on the user
 

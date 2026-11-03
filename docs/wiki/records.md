@@ -325,6 +325,8 @@ first.
   Specification. Closing out the wiki and strengthening its checks.
 - [Wiki follow-up plan](../plans/2026-11-03_wiki-follow-up.md): Plan.
   Task by task, integrity fixtures and roadmap close-out.
+- [Wiki follow-up report](../reports/2026-11-03_wiki-follow-up.md): Report.
+  Integrity fixtures, roadmap close-out, verification and remaining findings.
 
 ## Related
 
