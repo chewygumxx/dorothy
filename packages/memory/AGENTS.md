@@ -28,7 +28,7 @@ provider's SDK: reviews and compaction each take core's `StructuredCall`
 
 - `"."` (`src/index.ts`): `openMemory`, `previewStart`, what `--claude` asks;
   `"./claude-hook"` (`runClaudeHook`), `"./host-hook"` (`runHostHook`, Pi's
-  `runPiHostHook`), guides: [bodies](./src/bodies/AGENTS.md), [hooks](./src/hooks/AGENTS.md).
+  `runPiHostHook`, `readPi`), guides: [bodies](./src/bodies/AGENTS.md), [hooks](./src/hooks/AGENTS.md).
 - `"./commands"` (`src/commands.ts`): `--list`, `--memory`, `--tags`,
   `--edit-tags`, `--facts`, `--retire`, `--revive`, `--verify`, `--sync`,
   `--projects`, the history commands and `commandHistory()`.

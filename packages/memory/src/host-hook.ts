@@ -32,3 +32,4 @@ export { hermesRoot } from "./hosts/hermes-root.js";
 export { piSessionRoot } from "./hosts/pi-root.js";
 // For the CLI's test that its hosts' profiles take hooks or a plugin.
 export { loadProfiles } from "./hosts/profiles.js";
+export { type PiRead, readPi } from "./recording/pi.js";
