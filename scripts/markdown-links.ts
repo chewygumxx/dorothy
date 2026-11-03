@@ -37,6 +37,9 @@ export const linkTargets = (markdown: string): string[] =>
         .map((link) => link.path)
         .filter((path) => path !== "");
 
+const underscoreEmphasis =
+    /(?<!\p{ID_Continue})(_+)(\S(?:.*?\S)?)\1(?!\p{ID_Continue})/gu;
+
 export const headingSlugs = (markdown: string): Set<string> => {
     const slugs = new Set<string>();
     const headings = withoutFences(markdown).matchAll(
@@ -45,7 +48,12 @@ export const headingSlugs = (markdown: string): Set<string> => {
     for (const heading of headings) {
         const base = (heading[1] as string)
             .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-            .replace(/[`*_]/g, "")
+            .replace(/`[^`\n]*`|[^`]+/g, (part) =>
+                part.startsWith("`")
+                    ? part
+                    : part.replace(underscoreEmphasis, "$2"),
+            )
+            .replace(/[`*]/g, "")
             .toLowerCase()
             .replace(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, "")
             .replace(/ /g, "-");

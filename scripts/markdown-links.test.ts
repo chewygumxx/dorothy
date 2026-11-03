@@ -42,3 +42,17 @@ it("slugs headings as GitHub does", () => {
 it("ignores a heading inside a fence", () => {
     expect([...headingSlugs("```\n# not\n```\n# yes\n")]).toEqual(["yes"]);
 });
+
+it("keeps underscores GitHub keeps", () => {
+    const md =
+        "# The `snake_case` key\n## An _emphatic_ word\n" +
+        "## `__init__` runs\n## Three\n## Three\n## Three\n";
+    expect([...headingSlugs(md)]).toEqual([
+        "the-snake_case-key",
+        "an-emphatic-word",
+        "__init__-runs",
+        "three",
+        "three-1",
+        "three-2",
+    ]);
+});
