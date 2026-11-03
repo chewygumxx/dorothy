@@ -26,3 +26,7 @@ as the evidence for what it says.
 ## Pages
 
 - [Records](./wiki/records.md): every dated record by subject.
+- [Packages](./wiki/profiles/packages.md): the eight workspace packages and
+  what each may import.
+- [Harnesses](./wiki/profiles/harnesses.md): Claude Code, Codex, OpenClaw and
+  Hermes, and the state of her delivery to each.
