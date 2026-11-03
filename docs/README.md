@@ -44,3 +44,8 @@ as the evidence for what it says.
   roles, providers, fallback and cost accounting.
 - [The terminal](./wiki/topics/terminal.md): the chat, input, Markdown
   replies, stats and layout of her TUI.
+- [Orchestration](./wiki/topics/orchestration.md): the toolset designed for
+  Dorothy, not built, and the herdr tools coordinating her developers today.
+- [Repository workflow](./wiki/topics/repository-workflow.md): package
+  boundaries, worktrees, checks, agent assets, secrets and keeping the
+  documentation current.

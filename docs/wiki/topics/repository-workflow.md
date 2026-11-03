@@ -1,0 +1,203 @@
+---
+ctime: 2026-11-03
+mtime: 2026-11-03
+spdx: GPL-3.0-only
+title: Repository workflow
+description: >-
+  How work on Dorothy's repository is done: package boundaries, worktrees,
+  the checks, agent assets, secrets and keeping documentation current.
+tags:
+  - wiki
+  - workflow
+---
+
+<!--
+   -
+   - ~chewygumxx/dorothy.git
+   - ::: :/docs/wiki/topics/repository-workflow.md
+   -
+   -->
+
+# Repository workflow
+
+[Wiki home](../../README.md)
+
+This page explains how the repository is worked in, as it stands. The rules
+themselves are the root [`AGENTS.md`](../../../AGENTS.md) and
+[`docs/AGENTS.md`](../../AGENTS.md), which agents read; this page gives
+the reasons and the machinery behind them, and links the dated records
+under [records](../records.md#repository-workflow). Where a rule has a
+test, the test is named, since a rule only prose states can drift.
+
+## Package boundaries
+
+Dorothy is eight Bun workspace packages under `packages/`. `core` holds the
+contracts the others meet on and `identity` who Dorothy is; `memory` and
+`tui` depend on `core` alone, and `agent` and `gateway` on those two and
+never on each other. `cli` wires them together. A package exports only the
+entry points its `package.json` names and imports only what it declares,
+as Bun's isolated linker fails an undeclared or internal import, and
+`workspace.test.ts` pins the graph and the entry points. The graph, each
+package's entry points and its guide are on
+[packages](../profiles/packages.md); the reason for the split is in the
+[workspace modularity spec](../../specs/2026-10-09-workspace-modularity-design.md#purpose).
+
+Before working in a package, read its `packages/<name>/AGENTS.md`. After
+removing a `@dorothy` dependency, reinstall from clean to see the boundary,
+because the old links linger:
+
+```sh
+rm -rf node_modules packages/*/node_modules && bun install
+```
+
+## Worktrees
+
+Work happens on a branch, in the main checkout or in a worktree. Where a
+worktree goes is the user's tools' to say: worktrunk's
+`wt switch --create <branch>`, Claude Code's worktree or herdr's. An agent
+never chooses a path itself, and never uses superpowers'
+`using-git-worktrees` or a `.worktrees/` directory; where a skill asks for
+either, `AGENTS.md` wins. The
+[worktrees skill](../../../.agents/skills/worktrees/SKILL.md) holds the
+procedure to make, check, repair and remove one.
+
+A worktree shares neither dependencies, git hooks nor skill links with the
+main checkout, so two declared steps set one up whichever tool made it:
+`.husky/post-checkout` runs `bun install`, and `.worktreeinclude` has
+Claude Code and worktrunk copy the skills that `skills add` installed
+and `bun install` cannot link. A worktree's auto memory points at its own
+`.agents/memory/`, so a memory written there is committed on its branch.
+
+## The checks
+
+`bun run check` runs everything CI runs, ending with the tests
+([`package.json`](../../../package.json)). In order, it runs:
+
+1. `typecheck`: `tsc`.
+2. `format:check`: Biome's formatter over the files git knows.
+3. `lint`: Biome's linter over the same files.
+4. `lint:md`: remark with `--frail`, then markdownlint, over every tracked
+   Markdown file.
+5. `lint:yaml`: Prettier and yamllint on YAML.
+6. `lint:secrets`: `scripts/check-secrets.sh`, refusing a plaintext
+   secret.
+7. `lint:emdash`: no em dash anywhere in tracked or untracked files.
+8. `lint:header`: every file's house header and breadcrumb match its path.
+9. `test`: `bun test`.
+
+`bun run test` runs the tests alone. The tests also pin conventions that
+are prose elsewhere: `workspace.test.ts` the package graph,
+`agents.test.ts` the guidance budgets (the root `AGENTS.md` at 100 lines
+and `docs/AGENTS.md` within 60), the skills and the memory index,
+`header.test.ts` the house header on every new file, and `docs.test.ts`
+the wiki's links, fragments and catalogue.
+
+The pre-commit hook runs a lighter set on what is staged: the secrets
+check, `tsc`, Biome, remark on Markdown, the YAML checks and a refusal of
+an em dash. The commit-msg hook runs commitlint. Commits are granular, in
+Conventional Commits, with the package names, `config`, `claude` and `api`
+as scopes and agent assets under the `ai` type, and no agent trailers. A
+header is at most 50 characters and a body line at most 72, limits that
+come from the shared commitlint config and that a plan's commit steps
+must keep too
+([plan commit headers](../../../.agents/memory/plan-commit-headers.md)).
+
+Branches are pushed and their pull requests opened by the agent, who
+merges its own once CI passes, as the user approved. Repository settings
+change only through `.repo-metadata.jsonc`, after confirming, and never
+through `gh repo edit` (root [`AGENTS.md`](../../../AGENTS.md)).
+
+## Agent assets
+
+Everything agents rely on is declared in the repository, so that it does
+not depend on one user's settings or a hand-made step. The rule was the
+aim of the
+[agentic asset refactor](../../specs/2026-10-11-agentic-asset-refactor-design.md#purpose),
+and the consolidation that followed moved the coordination procedures out
+of memory and scratch scripts into skills
+([consolidation spec](../../specs/2026-10-31-agentic-asset-consolidation-design.md#summary)).
+The assets are:
+
+- **Guidance** in `AGENTS.md` files: the root's, one in `docs/` and one per
+  package, which Claude Code and Codex both read. No `CLAUDE.md` may exist
+  in the tree, as one would switch `AGENTS.md` off for Claude Code
+  (`agents.test.ts` checks).
+- **Skills** in `.agents/skills/`. The repository commits three of its own:
+  `agent-stewardship`, `agent-pre-screening` and `worktrees`. Third-party
+  skills are dependencies, declared in `package.json`, recorded in
+  `skills-lock.json` and pinned to a commit: superpowers (less four
+  excluded skills) is linked by `bun install`, and herdr's, a remote one,
+  by `bun run skills`.
+- **Memory** in `.agents/memory/`, indexed by its `MEMORY.md`, each entry
+  a link with its hook on the next line. It holds the user's preferences and
+  their reasons, not procedures, which belong in skills. Memories link
+  one another by relative Markdown link, and carry no em dash and no line
+  over 80 characters, whatever a client's own memory instructions say.
+
+`bun install` points Claude's auto memory at `.agents/memory/`. The
+coordination of agents that the stewardship skill governs is the subject of
+[orchestration](./orchestration.md#how-her-developers-are-coordinated-today).
+
+## Secrets
+
+Dorothy's secrets are in `secrets.json` at the repository's root,
+encrypted by sops to an age key. `.sops.yaml` names the recipient; the key
+is at `~/.config/sops/age/keys.txt`, or where `SOPS_AGE_KEY_FILE` points,
+and the user backs it up off the machine, since without it the file cannot
+be read. The choice replaced a paid service that held the earlier key, and
+is recorded in the
+[sops spec](../../specs/2026-10-21-sops-secrets-design.md#summary) and
+[report](../../reports/2026-10-21-sops-secrets.md#summary).
+
+The rules for an agent:
+
+- Edit only with `sops edit secrets.json`, or through core's `saveSecret`,
+  which passes the value on standard input.
+- Never print a value, or put one in argv or a URL. A load failure returns
+  a code alone, never sops's own message, so a log holds no fragment.
+- A variable already set in the environment is kept over the file's.
+- `bunfig.toml` skips `.env` files, so a project's `.env` never reaches
+  Dorothy's environment. The pre-commit hook and `lint:secrets` reject a
+  plaintext value in `secrets.json`, any `.env` file and any age secret key.
+- Tests and probes never touch the user's key or real data: every root,
+  key and environment is passed in, and a test makes its own age key in a
+  temporary directory.
+
+This page names no secret, in keeping with the rules.
+
+## Keeping documentation current
+
+Documentation lives under `docs/`, in the directories
+[`docs/AGENTS.md`](../../AGENTS.md) names: specs for what and why, plans
+for how, reports for probes, rulings and verification, notes for research,
+deferred findings, and the roadmap. Dated records keep a
+`YYYY-MM-DD_<abbreviated-title>.md` name and are not rewritten; living pages
+take stable names. Each file opens with frontmatter and a breadcrumb that
+`lint:header` checks, and lines are at most 80 characters, inline code
+included.
+
+Design work starts with brainstorming and becomes a spec; a plan written
+from it is carried out with subagent-driven development; a bug starts with
+systematic debugging; nothing is claimed done without verification. The
+roadmap orders the phases, and after a phase merges it is
+revised as its own Revising section says, ending with a check of the root
+and each package's `AGENTS.md` against what merged
+([roadmap](../../roadmap.md#revising)).
+
+A change to a package's architecture updates that package's `AGENTS.md` in
+the same branch. The wiki has its own rule, from the
+[wiki's design](../../specs/2026-11-03_repository-wiki-design.md#maintenance):
+
+- The same branch that changes a subsystem updates its affected wiki pages.
+- A phase's roadmap revision also updates the priorities summary.
+- New records join the subject catalogue ([records](../records.md)), and a
+  changed decision updates its entry with the reason and source.
+- Package guides stay the coding instructions; the wiki explains and links
+  them rather than copying their inventories.
+- One page explains each subject; elsewhere a short answer and a link.
+  There is no second priority queue, since the roadmap alone orders work.
+- A page's `ctime` stays fixed and its `mtime` changes when the page does.
+
+`docs.test.ts` fails a broken link or fragment, an uncatalogued record or
+a page not linked from the wiki's home, so a renamed heading or a new
+record shows at once.
