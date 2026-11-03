@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-11-01
+mtime: 2026-11-03
 spdx: GPL-3.0-only
 title: AGENTS.md
 description: >-
@@ -62,8 +62,8 @@ isolated linker fails an undeclared or internal import.
   never leave one to a user's own settings or a hand-made step.
 - Every new file carries the house header, copied from a sibling;
   `lint:header` syncs headers, `header.test.ts` fails a missing one.
-- A change to a package's architecture updates its `AGENTS.md` in the
-  same branch.
+- A change to a package's architecture updates its `AGENTS.md`, and one
+  to behaviour, decisions or priorities the wiki's pages, in the same branch.
 
 ## Commits
 
@@ -97,4 +97,4 @@ instructions say: `lint:md` and `lint:emdash` reject them.
 ## Before you start
 
 Before working in a package, read `packages/<name>/AGENTS.md`; before
-writing docs, `docs/AGENTS.md`.
+writing docs, `docs/AGENTS.md`; to find a topic, `docs/README.md`.
