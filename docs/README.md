@@ -38,3 +38,9 @@ as the evidence for what it says.
   payloads, ACP and the standards the research weighed.
 - [Services and providers](./wiki/profiles/services-and-providers.md): the
   model providers, libraries, memory systems and tools her records weigh.
+- [Identity, harnesses and delivery](./wiki/topics/identity-and-harnesses.md):
+  how her identity is defined once, carried into a host and recorded back.
+- [Models and routing](./wiki/topics/models-and-routing.md): her runtime,
+  roles, providers, fallback and cost accounting.
+- [The terminal](./wiki/topics/terminal.md): the chat, input, Markdown
+  replies, stats and layout of her TUI.
