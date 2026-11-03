@@ -23,6 +23,12 @@ it("skips code and schemes", () => {
     expect(links(md)).toEqual([]);
 });
 
+it("skips tilde fences and keeps fragments in reference definitions", () => {
+    expect(links("~~~ts\n[x](./no.md)\n~~~\n[r]: ./yes.md#Part\n")).toEqual([
+        { path: "./yes.md", fragment: "Part" },
+    ]);
+});
+
 it("keeps linkTargets as it was", () => {
     expect(linkTargets("[a](<./a b.md>) [b](#x)\n[r]: ./r.md\n")).toEqual([
         "./a b.md",
@@ -41,6 +47,12 @@ it("slugs headings as GitHub does", () => {
 
 it("ignores a heading inside a fence", () => {
     expect([...headingSlugs("```\n# not\n```\n# yes\n")]).toEqual(["yes"]);
+});
+
+it("slugs Unicode heading links and closing hashes outside tilde fences", () => {
+    expect([
+        ...headingSlugs("~~~\n# no\n~~~\n# Café [世界](./x.md) ###\n"),
+    ]).toEqual(["café-世界"]);
 });
 
 it("keeps underscores GitHub keeps", () => {

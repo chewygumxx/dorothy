@@ -12,9 +12,14 @@
 // is catalogued and every wiki page is reachable from its home.
 
 import { describe, expect, it } from "bun:test";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
-import { headingSlugs, links } from "./scripts/markdown-links.js";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
+import {
+    catalogueFailures,
+    linkFailures,
+    resolveLink,
+} from "./scripts/docs-links.js";
+import { links } from "./scripts/markdown-links.js";
 
 const ROOT = import.meta.dir;
 const at = (...parts: string[]) => join(ROOT, ...parts);
@@ -46,27 +51,10 @@ const records = (): string[] =>
 
 const read = (path: string): string => readFileSync(path, "utf8");
 
-const decode = (path: string): string => {
-    try {
-        return decodeURIComponent(path);
-    } catch {
-        return path;
-    }
-};
-
-// Where a page's link points, a leading slash meaning the repository root.
-const resolveLink = (page: string, path: string): string => {
-    const target = decode(path);
-    if (target === "") return page;
-    return target.startsWith("/")
-        ? resolve(ROOT, `.${target}`)
-        : resolve(dirname(page), target);
-};
-
 const linkedFrom = (page: string): Set<string> =>
     new Set(
         links(read(page)).map((link) =>
-            relative(ROOT, resolveLink(page, link.path)),
+            relative(ROOT, resolveLink(ROOT, page, link.path)),
         ),
     );
 
@@ -77,34 +65,20 @@ describe("the wiki", () => {
             ...wikiPages(),
             at("docs", "roadmap.md"),
             at("README.md"),
+            at("AGENTS.md"),
+            at("docs", "AGENTS.md"),
         ];
-        const failures: string[] = [];
-        for (const page of pages) {
-            for (const link of links(read(page))) {
-                const target = resolveLink(page, link.path);
-                const name = `${relative(ROOT, page)}: ${link.path}${
-                    link.fragment === undefined ? "" : `#${link.fragment}`
-                }`;
-                if (!existsSync(target)) {
-                    failures.push(name);
-                } else if (
-                    link.fragment !== undefined &&
-                    target.endsWith(".md") &&
-                    statSync(target).isFile() &&
-                    !headingSlugs(read(target)).has(decode(link.fragment))
-                ) {
-                    failures.push(name);
-                }
-            }
-        }
-        expect(failures).toEqual([]);
+        expect(linkFailures(ROOT, pages)).toEqual([]);
     });
 
     it("catalogues every dated record", () => {
-        const catalogued = linkedFrom(at("docs", "wiki", "records.md"));
-        expect(records().filter((record) => !catalogued.has(record))).toEqual(
-            [],
-        );
+        expect(
+            catalogueFailures(
+                ROOT,
+                at("docs", "wiki", "records.md"),
+                records(),
+            ),
+        ).toEqual({ missing: [], duplicates: [] });
     });
 
     it("links every wiki page from home", () => {
