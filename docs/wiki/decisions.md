@@ -420,27 +420,6 @@ How the evaluation works, and what its results establish, is on
   [limits and review tools spec](../specs/2026-10-30-eval-review-tools-design.md#decisions),
   [evaluation report, ruling 6](../reports/2026-10-18-memory-evaluation.md#rulings).
 
-### Retrieval is counted in stages, beside a ceiling
-
-- **Context**: The first evaluation showed that finding evidence and
-  handing it over fail separately.
-- **Alternatives**: not recorded.
-- **Choice**: The engine spec's decisions: each question and system is
-  counted as found, delivered and covered; a diagnostic `cited` system
-  delivers the cited sources to show how far selection alone can go; and a
-  system name takes options so each change is measured on its own in one
-  run. The user chose the direction; the spec does not say who ruled each
-  of these rows.
-- **Reason**: Each change is measured on its own, beside the others, and
-  the ceiling shows the gap that selection leaves.
-- **Cost**: Coverage is a proxy: a paraphrased answer reads as missed, and
-  strict accuracy stays the verdict.
-- **Standing**: current
-  ([evaluation](./topics/evaluation.md#what-is-measured)).
-- **Sources**:
-  [engine spec](../specs/2026-10-31-memory-engine-design.md#decisions),
-  [engine report](../reports/2026-10-31-memory-engine.md#verification).
-
 ## Identity, harnesses and delivery
 
 Which host receives what, and what has been run against it, is on
@@ -521,16 +500,17 @@ Which host receives what, and what has been run against it, is on
 
 ### One provenance stance everywhere
 
-- **Context**: The chat persona deflected questions about what ran her; a
-  host's own identity line could otherwise be taken for hers.
+- **Context**: The chat persona's provenance was discreet and deflected
+  questions about what ran her; the identity package was to hold one
+  host-neutral stance.
 - **Alternatives**: The chat persona's earlier, more discreet provenance,
-  which deflected such questions.
+  which the decision replaces.
 - **Choice**: The identity spec's decision: she is Dorothy; an identity
   line from the software hosting her names her host, not her; she does not
   volunteer the model or vendor behind her, and answers plainly when asked.
   The chat prompt changes on purpose. The spec does not say who ruled.
-- **Reason**: One host-neutral stance in the identity package, with what a
-  host lets her do left to the host.
+- **Reason**: not recorded; the spec states the stance and does not give a
+  reason for it.
 - **Cost**: not recorded.
 - **Standing**: current; `identity.test.ts` pins the text byte for byte
   ([identity and harnesses](./topics/identity-and-harnesses.md#one-definition-of-her)).
@@ -570,8 +550,13 @@ Which host receives what, and what has been run against it, is on
   `dorothy --sweep --backfill` is run by the user and runs no extraction.
   On 2026-10-29 the user chose to review the backfilled conversations on
   the Claude plan the reviews already use, after a baseline evaluation on
-  the frozen snapshot: `--review-backfill`, 25 a batch, newest first.
-- **Reason**: Spending a plan's usage is a choice, and a plan's limits are
+  the frozen snapshot. The review's shape is from the backfill review
+  spec's decision table, which does not say who ruled it:
+  `--review-backfill`, run by the user or the agent, 25 a batch by default,
+  newest first.
+- **Reason**: The recording spec: recording a thousand sessions is the
+  user's call, and a review apiece would be costly. The review spec's
+  table: spending a plan's usage is a choice, and a plan's limits are
   watched between batches.
 - **Cost**: Backfilled sessions have no notes until reviewed, so recall
   finds little of them until then; a failed model call stops the batch.
@@ -620,8 +605,9 @@ them are on [services and providers](./profiles/services-and-providers.md).
 ### Resilience comes after memory, and fallback is a requirement
 
 - **Context**: The user wants Dorothy resilient to upstream hindrance, such
-  as vendor policy and quota. Anthropic's usage ran out, and a spent budget
-  stopped her.
+  as vendor policy and quota. The objectives anticipate the case fallback is
+  for: Anthropic's usage running out, when requests fall back to another
+  provider.
 - **Alternatives**: not recorded.
 - **Choice**: The objectives' rulings (the user and the coding agent,
   2026-10-15): the other objectives follow the memory work, in order
@@ -688,24 +674,6 @@ them are on [services and providers](./profiles/services-and-providers.md).
   [model providers spec](../specs/2026-11-01-model-providers-design.md#decisions),
   [report](../reports/2026-11-01-model-providers.md#rulings).
 
-### A fault in the routing tables is an error, not a warning
-
-- **Context**: Every other `config.toml` table warns and falls back to
-  defaults.
-- **Alternatives**: Warning and using the defaults, as the others do.
-- **Choice**: The spec: faults in `[providers]` and `[models]` are errors.
-  The build extended it: a broken `config.toml` faults whenever a line opens
-  or sets those tables in any of TOML's spellings.
-- **Reason**: The spec's table gives the rule and its cost, not this
-  reason; the build's ruling records that a missed spelling would have sent
-  her requests to the default routes.
-- **Cost**: A typo stops chat until fixed; a line inside a multi-line string
-  that looks like a table stops chat on an already broken file.
-- **Standing**: current.
-- **Sources**:
-  [model providers spec](../specs/2026-11-01-model-providers-design.md#decisions),
-  [rulings made during the build](../reports/2026-11-01-model-providers.md#rulings-made-during-the-build).
-
 ### Failures fall back, except cancellations and turns with effects
 
 - **Context**: A spent Anthropic budget should no longer stop her, but a
@@ -729,24 +697,6 @@ them are on [services and providers](./profiles/services-and-providers.md).
   [model providers spec](../specs/2026-11-01-model-providers-design.md#fallback),
   [decisions](../specs/2026-11-01-model-providers-design.md#decisions),
   [report](../reports/2026-11-01-model-providers.md).
-
-### Host launches keep their host's own model
-
-- **Context**: `dorothy --claude` and the other launchers run an agentic
-  client, not a route of hers.
-- **Alternatives**: Routing Claude Code to other models, which Dorothy's
-  Gateway, an idea, would address.
-- **Choice**: The spec put the hosts out of scope, assumed and put to the
-  user in the brainstorm's design sections.
-- **Reason**: `dorothy --claude` runs plain Claude Code on the user's own
-  login, which the terms allow, and Anthropic does not support routing
-  Claude Code to other models.
-- **Cost**: not recorded.
-- **Standing**: current. The roadmap's
-  [Dorothy's Gateway](../roadmap.md#dorothys-gateway) is an idea only.
-- **Sources**:
-  [model providers spec](../specs/2026-11-01-model-providers-design.md#understanding),
-  [roadmap](../roadmap.md#dorothys-gateway).
 
 ## Terminal
 
@@ -776,83 +726,30 @@ The chat as built is on [the terminal](./topics/terminal.md).
   [TUI chat spec](../specs/2026-10-03-tui-chat-design.md#constraints),
   [model providers spec](../specs/2026-11-01-model-providers-design.md#decisions).
 
-### Replies are rendered by her own renderer, once the turn ends
-
-- **Context**: The first live test showed her Markdown printed raw, with
-  literal `**` around bold text. She writes Markdown by habit.
-- **Alternatives**: Forbidding Markdown in the prompt, rejected in favour
-  of rendering it.
-- **Choice**: The Markdown spec's decisions: full Markdown, tables and links
-  included; plain text while streaming and rendered when the turn ends; her
-  own renderer on `marked`'s lexer, drawing rows she computes; wide content
-  wraps inside its block; `lowlight` for labelled code. The spec does not
-  say who ruled.
-- **Reason**: Rows computed by her own code make table borders line up
-  exactly and no row starts with the space Ink's wrapping breaks at. Plain
-  while streaming leaves streaming, `fitLayout` and `Conversation`
-  unchanged.
-- **Cost**: not recorded.
-- **Standing**: current. Rendering while streaming is not built and is a
-  roadmap candidate
-  ([terminal](./topics/terminal.md#not-built-and-conflicts-between-sources)).
-- **Sources**:
-  [Markdown replies spec](../specs/2026-10-03-markdown-replies-design.md#decisions).
-
-### Shift+Enter writes a newline, and a draft can be composed during a reply
-
-- **Context**: The first live test found the input too thin: Shift+Enter
-  sent the message, there was no cursor to move and no way to compose a long
-  message in a proper editor.
-- **Alternatives**: Where the terminal cannot report Shift+Enter apart from
-  Enter, a paste and Ctrl+G remain the ways to write several lines.
-- **Choice**: The input editor spec's decisions: newline is Shift+Enter
-  only, through the kitty keyboard protocol where the terminal speaks it;
-  Up and Down move by visual row first; typing works while a reply streams
-  and Enter then keeps the draft; Ctrl+C and Ctrl+D act like a shell's. The
-  spec does not say who ruled.
-- **Reason**: The live test's failure, in the spec's purpose.
-- **Cost**: not recorded.
-- **Standing**: current; the draft's height cap was amended on 2026-10-05
-  to a constant five rows by the statusline design
-  ([terminal](./topics/terminal.md#the-chat)).
-- **Sources**:
-  [input editor spec](../specs/2026-10-03-input-editor-design.md#decisions).
-
-### The statusline is configured by priority, and the header moves below
+### The statusline is configured by priority, and the window has a minimum
 
 - **Context**: The stats under each reply wrapped once the cache counts
-  appeared, and the user wanted a persistent statusline.
+  appeared, and the user wanted a persistent statusline. Below a set size
+  the live region no longer fits.
 - **Alternatives**: Modules overflow onto up to a configured number of
   lines, or the line is dropped from the right; configuring the header,
   colours, the separator or the input cap was ruled out.
 - **Choice**: The statusline spec's decisions: two lines from one
   catalogue of modules; the header moves to the bottom and is not
   configurable; strict priority, so the first module that does not fit ends
-  the line; TOML read once at startup with no live reload. The spec does not
-  say who ruled each row.
+  the line; TOML read once at startup with no live reload. The minimum is
+  the worst case, so it never depends on what is on screen: 40 columns and
+  `19 + statusline max-lines` lines, with the input cap a constant five
+  rows, and below it the TUI draws only a line naming the minimum. The spec
+  does not say who ruled each row.
 - **Reason**: The spec records the requests from the review of the deferred
-  minors and the rules; for the header's move and the strict priority it
-  gives no reason beyond them.
-- **Cost**: not recorded; live reload is not built.
+  minors; for the header's move and the strict priority it gives no reason
+  beyond them. For the minimum: at or above it every part fits however many
+  warnings there are, and nothing is squeezed.
+- **Cost**: not recorded; live reload and a setting for the minimum are not
+  built.
 - **Standing**: current
   ([terminal](./topics/terminal.md#layout-and-the-minimum-window)).
-- **Sources**:
-  [statusline and minimum size spec](../specs/2026-10-05-statusline-and-minimum-size-design.md#decisions).
-
-### The minimum window is the worst case
-
-- **Context**: Below a set size the live region no longer fits.
-- **Alternatives**: A layout that no longer fits, which the message
-  replaces.
-- **Choice**: The statusline and minimum size spec's decisions: the minimum
-  is 40 columns and `19 + statusline max-lines` lines, the worst case so it
-  never depends on what is on screen, and the input cap is a constant five
-  rows. Below it the TUI draws only a line naming the minimum. The spec
-  does not say who ruled.
-- **Reason**: At or above the minimum every part fits however many warnings
-  there are, and nothing is squeezed.
-- **Cost**: not recorded; a setting for the minimum is not built.
-- **Standing**: current.
 - **Sources**:
   [statusline and minimum size spec](../specs/2026-10-05-statusline-and-minimum-size-design.md#decisions).
 
@@ -876,8 +773,11 @@ develop her.
   with ACP for both workers, as an MCP stdio server,
   `@dorothy/orchestra`. For Claude's route, the user accepts that the
   terms are less clear-cut for the adapter on the Agent SDK than for the
-  plain `claude` binary.
-- **Reason**: One permission model across both agents.
+  plain `claude` binary. That adapter is separate from "She runs on her own
+  runtime", which retires the Agent SDK from Dorothy's own calls.
+- **Reason**: not recorded in the spec's table. The 2026-11-01 note,
+  written before the spike and the spec, offered acpx for one permission
+  model across both agents.
 - **Cost**: A pre-1.0 dependency and two adapters.
 - **Standing**: designed and not built. The roadmap has no ordered phase for
   it as of 2026-11-03; whether the user has accepted the whole design is not
