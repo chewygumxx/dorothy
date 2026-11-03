@@ -51,3 +51,7 @@ as the evidence for what it says.
 - [Repository workflow](./wiki/topics/repository-workflow.md): package
   boundaries, worktrees, checks, agent assets, secrets and keeping the
   documentation current.
+- [Questions](./wiki/questions.md): short answers to what a reader of the
+  repository asks, each linking the page that explains it.
+- [Problems](./wiki/problems.md): symptoms a reader meets, with cause,
+  diagnosis, remedy, state and evidence.
