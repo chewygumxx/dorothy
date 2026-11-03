@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-01
-mtime: 2026-11-01
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: packages/cli/src/hosts/AGENTS.md
 description: >-
@@ -42,3 +42,21 @@ Dorothy in hosts other than Claude Code, whose launcher is `claude.ts`.
   Failures expose codes and paths, without probe output or environment.
   The packaged executable test uses offline mode, private roots and
   an environment without inherited credentials.
+- `pi/models.ts`: `selectPiModel` picks the first Featherless entry of the
+  chat route, or the exact `provider:model` asked for. It offers only that
+  provider's checked models, never falls back, and names an unlisted
+  model. A route price overrides input and output prices and says so in
+  `sources`. `readPiCatalog` reads `../../assets/pi/models.json`, the
+  checked limits and prices; revalidate before a paid run, never update
+  silently. `sessionDirFor` is `<sha256(cwd)>/--<Pi's name>--`.
+  `PiLaunchManifest` holds no credential, only the key's variable name.
+- `pi/profile.ts`: `preparePiProfile` claims `$XDG_CONFIG_HOME/dorothy/pi`
+  with the exclusive marker `dorothy-owner.json`, refusing an unmarked
+  nonempty directory, and never touches settings, keybindings or trust.
+  Sessions go below `$XDG_DATA_HOME/dorothy/pi/sessions`. Each launch has
+  private files (0600, atomic) in `pi-<id>` of Dorothy's runtime directory;
+  `cleanup` removes that alone, also on setup failure. It reads Pi's MCP
+  files (`<agent dir>/mcp.json`, `<cwd>/.pi/mcp.json`) as data, refuses a
+  `dorothy-memory` name and lists the rest in `mcpServers`. `piProfileArgs`
+  gives `--session-dir`, discovered extensions and skills off, built-in MCP
+  kept, then Dorothy's by path.

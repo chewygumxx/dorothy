@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-11-01
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: packages/cli/AGENTS.md
 description: >-

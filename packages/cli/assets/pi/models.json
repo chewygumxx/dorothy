@@ -1,0 +1,15 @@
+[
+    {
+        "id": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        "contextWindow": 262144,
+        "maxTokens": 32768,
+        "reasoning": true,
+        "input": ["text"],
+        "price": { "input": 0.225, "output": 0.9, "cacheRead": 0.006 },
+        "checkedAt": "2026-11-03",
+        "sources": [
+            "https://api.featherless.ai/v1/models",
+            "https://featherless.ai/models/deepseek-ai/DeepSeek-V4.1-Flash-1017"
+        ]
+    }
+]
