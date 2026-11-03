@@ -33,8 +33,9 @@ Specs, plans, reports and notes describe successive phases. They preserve
 evidence well, but a reader must reconstruct the present from that history.
 The wiki supplies maintained explanations with links to those records.
 
-This is a proposed design. The user chose the wiki direction; the file
-layout and editorial rules below are the author's proposed implementation.
+The user chose the wiki direction; the file layout and editorial rules
+below are the author's implementation of it, amended after a review on
+2026-11-03.
 
 ## Approaches
 
@@ -77,7 +78,8 @@ All paths below are relative to `docs/`.
 - `wiki/topics/evaluation.md`: what is measured, review and comparison,
   what the results establish, and the limits of those results.
 - `wiki/topics/identity-and-harnesses.md`: identity, context delivery,
-  recording and the gateway, with each host's implementation and probe state.
+  recording and the gateway as mechanisms; each host's state is left to
+  the harnesses profile and linked.
 - `wiki/topics/models-and-routing.md`: roles, providers, routes, fallback
   and accounting; links to configuration instructions and provider profiles.
 - `wiki/topics/terminal.md`: chat, input, rendering, catalogue and layout.
@@ -91,8 +93,9 @@ All paths below are relative to `docs/`.
   records, plus distinctions a reader needs to navigate this repository.
 - `wiki/problems.md`: symptoms, cause, diagnosis, remedy or avoidance,
   resolution state and evidence for documented problems and mistakes.
-- `wiki/priorities.md`: a concise view of the roadmap's ordered work,
-  dependencies, reasons, blocked checks and unscheduled candidates.
+- `wiki/priorities.md`: an index of the roadmap, one line a phase or
+  candidate linking its roadmap heading, plus the checks blocked on the
+  user. Order, dependencies and reasons stay in the roadmap alone.
 - `wiki/profiles/packages.md`: all eight workspace packages, their purpose,
   boundary and authoritative package guide; important libraries where used.
 - `wiki/profiles/protocols.md`: protocols appearing in the architecture and
@@ -100,7 +103,8 @@ All paths below are relative to `docs/`.
 - `wiki/profiles/services-and-providers.md`: external systems, their role,
   integration points, limitations and whether used, proposed or compared.
 - `wiki/profiles/harnesses.md`: Claude Code, Codex, OpenClaw and Hermes,
-  separating persona delivery, recording, memory access and live checks.
+  separating persona delivery, recording, memory access and live checks;
+  the one page recording each host's state.
 - `wiki/records.md`: a subject catalogue of the existing dated records,
   retaining their distinction as research, specification, plan or evidence.
 
@@ -136,8 +140,13 @@ or a newer date alone does not establish a capability as working.
 - The roadmap remains the authority for priority. The wiki summarises and
   links it; this work does not silently reorder or schedule features.
 - Surface unresolved disagreement explicitly. For example, orchestration's
-  spec describes intended work, but the roadmap has no ordered phase for it.
-  The separate herdr registry is an unscheduled candidate.
+  spec describes intended work, but the roadmap has no ordered phase for it
+  (as of 2026-11-03; that work would add one). Its prototype is local and
+  unmerged, never cited as built. The separate herdr registry is an
+  unscheduled candidate.
+- The roadmap and the package guides are maintained guides, not records:
+  a statement the code or a later record clearly contradicts, such as the
+  roadmap's evaluation "not yet run", gets a narrow correction.
 - Give historical comparisons their date. A profile does not turn an old
   pricing, terms, model or availability claim into current advice. Verify
   any needed current external claim against official sources and date it.
@@ -150,21 +159,25 @@ or a newer date alone does not establish a capability as working.
 Use concrete questions and searchable symptoms as headings. Explain the
 answer on the page; a list of links alone does not satisfy the wiki's purpose.
 Do not label a question or fault frequent without evidence of recurrence.
+That evidence is the `feedback` memories in `.agents/memory/`, the files
+in `deferred/`, the repository code review and the reports' limitations.
 Distinguish a resolved defect, a known limitation and a workflow pitfall.
 Never describe an old workaround as necessary without checking its status.
 
 Initial examples to investigate include limits mistaken for failed
-evaluation answers, retrieval mistaken for delivery of evidence, provider
-fallback after a turn has already had effects, and lost worktree setup.
-These are candidates for synthesis, not findings accepted by this spec.
+evaluation answers, retrieval mistaken for delivery of evidence, and
+provider fallback after a turn has already had effects. These are
+candidates for synthesis, not findings accepted by this spec.
 
 ### Example: the memory engine decision
 
 The memory topic states what retrieval and evidence delivery do now. Its
 decision entry explains why Dorothy kept her engine: the evaluation found
 an evidence-delivery failure, and the subsequent changes improved the
-measured outcome. It gives the alternative considered, the limits of that
-comparison, and the condition for reconsidering a replacement.
+measured outcome. It records that the user overturned a first ruling on
+preference answers, and that the judges were changed before the rerun
+that kept the engine. It gives the alternative considered, the limits of
+that comparison, and the condition for reconsidering a replacement.
 
 The problems page explains how finding a conversation can still fail to
 deliver the passage an answer needs. The evaluation topic explains the
@@ -185,12 +198,18 @@ the existing `YYYY-MM-DD_<abbreviated-title>.md` convention. Every new page
 still carries the house frontmatter, breadcrumb and 80-character lines.
 Existing dated paths are retained even where their separator differs.
 
-Update the root README's documentation entry and its stale five-package
-description, checking the eight-package graph against the workspace.
-Keep user-facing command instructions there for this pass and link them.
-Add a navigation link from the roadmap without rewriting its priority order.
+Add a documentation entry to the root README and correct its stale
+five-package description, checking the eight-package graph against the
+workspace. Keep user-facing command instructions there for this pass and
+link them. Add a navigation link from the roadmap without rewriting its
+priority order, and a sixth step to its Revising section: update the
+wiki's priorities index and the pages the phase changed.
+
 Root agent instructions should direct readers to the wiki and require its
-affected pages to be updated when behaviour, decisions or priorities change.
+affected pages to be updated when behaviour, decisions or priorities
+change. Root `AGENTS.md` is at its 100-line budget (`agents.test.ts`):
+fold the rule into the existing architecture rule and the pointer into
+"Before you start", adding no line, rather than raising the budget.
 
 ## Maintenance
 
@@ -212,8 +231,11 @@ changes when the page does. Do not introduce a second priority queue.
 - Every dated Markdown record at the top of the five existing record
   directories is linked from the catalogue. Nested records and artifacts
   remain reachable through their parent records; check and repair gaps.
-- Check local links and heading fragments in new and edited reference
-  pages, and review the distinction between prose links and code examples.
+- A test checks that every local link and heading fragment in
+  `README.md` and `wiki/` resolves, and that the catalogue links every
+  dated record. No existing check does: `agents.test.ts` resolves links in
+  the two `AGENTS.md` files alone, remark validates none, and
+  markdownlint's fragment rule stays within a file.
 - Spot-check decisions, implementation claims and resolved problems against
   their sources; specifically check orchestration, host delivery, provider
   routing and corrected evaluation results.
@@ -229,8 +251,8 @@ changes when the page does. Do not introduce a second priority queue.
 
 No new application, generator, hosted wiki, provider integration or feature
 implementation. No deletion of evidence, bulk rewriting of historical
-proposals, invention of new priorities, or new research survey. Reusable
-documentation tooling is unnecessary unless existing checks prove inadequate.
+proposals, invention of new priorities, or new research survey. The link
+test above is the only new tooling.
 
 ## Builder discretion
 
