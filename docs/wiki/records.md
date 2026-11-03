@@ -319,3 +319,10 @@ first.
   Specification. A maintained reference grounded in her code and records.
 - [Repository wiki plan](../plans/2026-11-03_repository-wiki.md): Plan. Task by
   task, the link test, catalogue, pages and navigation.
+
+## Related
+
+- [Decisions](./decisions.md)
+- [Questions](./questions.md)
+- [Problems](./problems.md)
+- [Priorities](./priorities.md)

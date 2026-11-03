@@ -1048,3 +1048,12 @@ The machinery behind these rules is on
 - **Sources**:
   [trust to proceed](../../.agents/memory/trust-to-proceed.md),
   [root AGENTS.md](../../AGENTS.md).
+
+## Related
+
+- [Questions](./questions.md)
+- [Problems](./problems.md)
+- [Priorities](./priorities.md)
+- [Packages](./profiles/packages.md)
+- [Protocols](./profiles/protocols.md)
+- [Services and providers](./profiles/services-and-providers.md)

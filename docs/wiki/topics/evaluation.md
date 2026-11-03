@@ -284,3 +284,12 @@ Every dated record of the evaluation is under
 holds its figures is the
 [engine report](../../reports/2026-10-31-memory-engine.md). What the memory
 being measured does is under [memory](./memory.md).
+
+## Related
+
+- [Memory](./memory.md)
+- [Models and routing](./models-and-routing.md)
+- [Packages](../profiles/packages.md)
+- [Decisions](../decisions.md)
+- [Problems](../problems.md)
+- [Priorities](../priorities.md)

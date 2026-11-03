@@ -323,3 +323,12 @@ Every dated record of this subject is under
 [Part A](../../plans/2026-11-01-model-providers-runtime.md) and
 [Part B](../../plans/2026-11-01-model-providers-routing.md), and recorded in
 the [report](../../reports/2026-11-01-model-providers.md).
+
+## Related
+
+- [Services and providers](../profiles/services-and-providers.md)
+- [Protocols](../profiles/protocols.md)
+- [The terminal](./terminal.md)
+- [Packages](../profiles/packages.md)
+- [Decisions](../decisions.md)
+- [Problems](../problems.md)

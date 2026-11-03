@@ -259,3 +259,11 @@ Every dated record of this subject is under
 [Markdown replies](../../specs/2026-10-03-markdown-replies-design.md) and
 [statusline and minimum size](../../specs/2026-10-05-statusline-and-minimum-size-design.md)
 specs, each with its plan.
+
+## Related
+
+- [Models and routing](./models-and-routing.md)
+- [Memory](./memory.md)
+- [Packages](../profiles/packages.md)
+- [Decisions](../decisions.md)
+- [Problems](../problems.md)

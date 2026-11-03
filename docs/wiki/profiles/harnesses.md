@@ -262,3 +262,12 @@ lists it: whether the cloned profile signs in, whether her `SOUL.md` and
 block reach the system prompt, whether the answer says teal, whether
 Hermes passes a working directory, and whether the sweep records the
 session. No later report says it has run.
+
+## Related
+
+- [Identity, harnesses and delivery](../topics/identity-and-harnesses.md)
+- [Protocols](./protocols.md)
+- [Services and providers](./services-and-providers.md)
+- [Memory](../topics/memory.md)
+- [Decisions](../decisions.md)
+- [Problems](../problems.md)

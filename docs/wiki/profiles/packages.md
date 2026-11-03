@@ -67,13 +67,12 @@ order of `GRAPH`.
 
 ## agent
 
-Built. Dorothy's model side, and the only package that declares a model
-provider's SDK: the Vercel AI SDK's `ai`, `@ai-sdk/anthropic`,
-`@ai-sdk/openai-compatible`, `@openrouter/ai-sdk-provider` and
-`@ai-sdk/mcp`, each at a thin edge, since core's contracts carry no SDK
-type. It runs her chat on one route per role, reaching Anthropic's
-Messages API, OpenRouter and Chat Completions servers, and provides the
-structured call that reviews and compaction use.
+Built. Dorothy's model side, and the only package that declares the AI SDK:
+the Vercel AI SDK's `ai`, `@ai-sdk/anthropic`, `@ai-sdk/openai-compatible`,
+`@openrouter/ai-sdk-provider` and `@ai-sdk/mcp`, each at a thin edge, since
+core's contracts carry no SDK type. It runs her chat on one route per role,
+reaching Anthropic's Messages API, OpenRouter and Chat Completions servers,
+and provides the structured call that reviews and compaction use.
 
 - May import: `core` and `identity`.
 - Entry points: one, `"."`.
@@ -101,7 +100,7 @@ the XDG directories. Contracts are structural and free of SDK types, so
 no consumer of a session needs the SDK. It declares one library,
 `niceware`, for session phrases.
 
-- May import: no `@dorothy` package and no provider SDK.
+- May import: no `@dorothy` package and no AI SDK.
 - Entry points: one, `"."`.
 - Guide:
   [packages/core/AGENTS.md](../../../packages/core/AGENTS.md#entry-points-and-imports).
@@ -132,7 +131,7 @@ opaque text it places as given. The roadmap's
 [Dorothy's Gateway](../../roadmap.md#dorothys-gateway) is the idea of
 growing it with memory, budgets and model routing, which is not built.
 
-- May import: `core` and `identity`, never a model provider's SDK.
+- May import: `core` and `identity`, never the AI SDK.
 - Entry points: one, `"."`.
 - Guide:
   [packages/gateway/AGENTS.md](../../../packages/gateway/AGENTS.md#entry-points-and-imports).
@@ -155,7 +154,7 @@ carries it keeps its prompt cache.
 
 Built. Transcripts, notes, facts, projects, recall, compaction, tags and
 history, and the service that shares them with other harnesses. It imports
-neither the agent nor a model provider's SDK: reviews and compaction take
+neither the agent nor the AI SDK: reviews and compaction take
 core's `StructuredCall`, and prompts arrive as text. The subjects are
 listed under [memory](../records.md#memory) in the catalogue of
 records.
@@ -181,3 +180,12 @@ Markdown and highlighting, and `string-width` for layout.
   which `--memory` and `--edit-tags` use so that they load no Ink).
 - Guide:
   [packages/tui/AGENTS.md](../../../packages/tui/AGENTS.md#entry-points-and-imports).
+
+## Related
+
+- [Repository workflow](../topics/repository-workflow.md)
+- [Memory](../topics/memory.md)
+- [Models and routing](../topics/models-and-routing.md)
+- [Evaluation](../topics/evaluation.md)
+- [The terminal](../topics/terminal.md)
+- [Identity, harnesses and delivery](../topics/identity-and-harnesses.md)

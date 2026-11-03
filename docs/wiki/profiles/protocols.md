@@ -128,7 +128,7 @@ is why one adapter covers featherless, Hugging Face's router and a rented
 GPU alike. Its limits show in the records: Chat Completions kinds are sent
 no output limit, so a provider's default applies, and a reasoning model
 spent featherless's whole 4,096 on thinking in the live run of 2026-11-01
-([model providers report](../../reports/2026-11-01-model-providers.md#findings)).
+([model providers report](../../reports/2026-11-01-model-providers.md#findings-1)).
 
 ## The OpenAI Responses API and Open Responses
 
@@ -306,3 +306,12 @@ OASF) were also weighed and marked minor or off target for a personal
 assistant. The generators that write one configuration into many hosts,
 such as rulesync, are tools and not protocols; they are on
 [services and providers](./services-and-providers.md#cross-harness-generators-and-parsers).
+
+## Related
+
+- [Harnesses](./harnesses.md)
+- [Identity, harnesses and delivery](../topics/identity-and-harnesses.md)
+- [Models and routing](../topics/models-and-routing.md)
+- [Services and providers](./services-and-providers.md)
+- [Orchestration](../topics/orchestration.md)
+- [Memory](../topics/memory.md)

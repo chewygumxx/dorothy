@@ -72,7 +72,7 @@ All of it is `@dorothy/memory`, whose guide
 [packages/memory/AGENTS.md](../../../packages/memory/AGENTS.md) is the
 authority for its files and invariants. The packages page has its
 [boundary](../profiles/packages.md#memory): it imports `core` alone, and
-neither the agent nor a model provider's SDK. Subdirectories keep their
+neither the agent nor the AI SDK. Subdirectories keep their
 own guides, linked below where they matter. The evaluation reads it only
 through the `"./evaluation"` entry point.
 
@@ -272,3 +272,12 @@ Every dated record of memory, by kind and oldest first, is under
 the engine's first step is in the
 [engine report](../../reports/2026-10-31-memory-engine.md), and
 [evaluation](./evaluation.md) explains its figures.
+
+## Related
+
+- [Evaluation](./evaluation.md)
+- [Identity, harnesses and delivery](./identity-and-harnesses.md)
+- [Models and routing](./models-and-routing.md)
+- [Packages](../profiles/packages.md)
+- [Decisions](../decisions.md)
+- [Problems](../problems.md)

@@ -93,3 +93,12 @@ needs is on [harnesses](./profiles/harnesses.md).
 - Codex, a live probe with the user after 5 November 17:23, when its usage
   resets
   ([step 4](../reports/2026-11-01-delivery.md#waiting-for-the-user)).
+
+## Related
+
+- [Decisions](./decisions.md)
+- [Memory](./topics/memory.md)
+- [Evaluation](./topics/evaluation.md)
+- [Identity, harnesses and delivery](./topics/identity-and-harnesses.md)
+- [Orchestration](./topics/orchestration.md)
+- [Harnesses](./profiles/harnesses.md)

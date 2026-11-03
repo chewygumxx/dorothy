@@ -201,3 +201,12 @@ the same branch. The wiki has its own rule, from the
 `docs.test.ts` fails a broken link or fragment, an uncatalogued record or
 a page not linked from the wiki's home, so a renamed heading or a new
 record shows at once.
+
+## Related
+
+- [Packages](../profiles/packages.md)
+- [Orchestration](./orchestration.md)
+- [Services and providers](../profiles/services-and-providers.md)
+- [Decisions](../decisions.md)
+- [Problems](../problems.md)
+- [Questions](../questions.md)

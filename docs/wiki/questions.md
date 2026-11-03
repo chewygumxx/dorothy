@@ -246,3 +246,12 @@ puts one in argv or a URL; the pre-commit hook rejects a plaintext value. See
 [secrets](./topics/repository-workflow.md#secrets) and, for why dotenvx was
 replaced,
 [the decision](./decisions.md#secrets-move-from-dotenvx-to-sops-and-age).
+
+## Related
+
+- [Decisions](./decisions.md)
+- [Problems](./problems.md)
+- [Priorities](./priorities.md)
+- [Memory](./topics/memory.md)
+- [Models and routing](./topics/models-and-routing.md)
+- [Repository workflow](./topics/repository-workflow.md)

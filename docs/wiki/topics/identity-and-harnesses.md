@@ -275,3 +275,12 @@ The design and its evidence:
   [report](../../reports/2026-11-01-delivery.md).
 - [Recording design](../../specs/2026-10-20-recording-design.md) and its
   [report](../../reports/2026-10-20-recording.md).
+
+## Related
+
+- [Harnesses](../profiles/harnesses.md)
+- [Memory](./memory.md)
+- [Protocols](../profiles/protocols.md)
+- [Packages](../profiles/packages.md)
+- [Decisions](../decisions.md)
+- [Problems](../problems.md)

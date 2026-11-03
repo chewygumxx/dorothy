@@ -448,3 +448,12 @@ what it is.
 - **Evidence**:
   [the sweep's deferred findings](../reports/2026-10-19-roadmap-sweep.md#deferred)
   and [`package.json`](../../package.json).
+
+## Related
+
+- [Questions](./questions.md)
+- [Decisions](./decisions.md)
+- [Evaluation](./topics/evaluation.md)
+- [Models and routing](./topics/models-and-routing.md)
+- [Repository workflow](./topics/repository-workflow.md)
+- [Harnesses](./profiles/harnesses.md)

@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-11-02
+mtime: 2026-11-03
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -24,7 +24,9 @@ tags:
 Dorothy's work in phases, at the level of intent. Each phase gets its own
 spec, plan and report under `docs/`; this file only orders them and says
 why. It is revised between phases, so work found along the way can go
-ahead of what was planned.
+ahead of what was planned. The
+[wiki's priorities](./wiki/priorities.md) index this file;
+[the wiki](./README.md) explains each subject.
 
 ## Revising
 
@@ -41,6 +43,8 @@ After a phase merges:
    Revisions saying what moved and why.
 5. Check the root and each package's `AGENTS.md` against what merged,
    and correct any that no longer describe the code.
+6. Update [the wiki](./README.md): its priorities index, and the pages
+   the phase changed.
 
 Each phase in Ahead gives its **Status**, the phases it has as
 **Required**, and its **Rationale** for where it sits. It carries no dates
@@ -93,13 +97,14 @@ findings were all addressed; merged in #71 and #72. The roadmap sweep:
 The contract opened four more pieces, each with its own spec: the
 evaluation, which measures her memory against the field and chooses the
 engine; recording each harness's sessions; the engine; and delivery into
-the harnesses chosen. The evaluation is built as `@dorothy/eval` but not
-yet run: the owner generates and reviews its questions, then runs her
-memory beside the lexical baseline and full context, with models named
-in `eval.toml`. Recording is built too: her service sweeps the sessions
-of Claude Code, Codex and Hermes, and `dorothy --sweep --backfill`
-records what they already hold, with a durable mark preventing a review
-apiece until a live append.
+the harnesses chosen. The evaluation is built as `@dorothy/eval` and has
+run ([first run](./reports/2026-10-31-first-evaluation.md)): the owner
+generates and reviews its questions, then runs her memory beside the
+lexical baseline and full context, with models named in `eval.toml`.
+Recording is built too: her service sweeps the sessions of Claude Code,
+Codex and Hermes, and `dorothy --sweep --backfill` records what they
+already hold, with a durable mark preventing a review apiece until a live
+append.
 
 The harnesses she is provided for and tested against are Claude Code,
 Codex, OpenClaw and Hermes Agent, as the user chose. Claude Code is
@@ -241,9 +246,12 @@ Links between conversations and semantic search beside FTS5.
 - **Status**: Conditional
 - **Required**: Requisites Fulfilled
 - **Rationale**: Only worth building once recall shows FTS5 falling short;
-  there is no such evidence yet, and the evaluation's first run is where
-  it would show. Dorothy's Memory may take it up, as an engine with
-  embeddings would.
+  the evaluation's first run and the engine's paid runs have happened, and
+  show no such shortfall as a whole: she passes 43 of 125 questions
+  strictly on FTS5, past lexical search's 27. Only the five questions
+  that lexical search alone passes are where a hybrid would be judged
+  ([report](./reports/2026-10-31-memory-engine.md#left)). Dorothy's
+  Memory may take it up, as an engine with embeddings would.
 
 ## Candidates
 

@@ -189,6 +189,14 @@ git-ignored registry that the skill's scripts and references read, so that a
 rename is one edit. Its file, `.agents/registry/herdr.json`, does not
 exist yet. Until it does, the skill's list is where the roles are named.
 
+## Related
+
+- [Repository workflow](./repository-workflow.md)
+- [Services and providers](../profiles/services-and-providers.md)
+- [Models and routing](./models-and-routing.md)
+- [Decisions](../decisions.md)
+- [Priorities](../priorities.md)
+
 [layer]: ../../notes/2026-11-01_agent-orchestration.md
 [harness]: ../../notes/2026-11-02_featherless-orchestrator.md
 [probe]: ../../notes/2026-11-02_featherless-orchestrator.md#the-orchestration-spec-and-a-feasibility-probe

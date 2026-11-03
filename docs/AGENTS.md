@@ -24,7 +24,9 @@ Documentation pertaining to the development of this repository.
 ## Filename Convention
 
 Filename format conforms to `YYYY-MM-DD_<abbreviated-title>.md` where
-`YYYY-MM-DD` is the creation time (ctime) of the document.
+`YYYY-MM-DD` is the creation time (ctime) of the document. The living
+reference, `README.md` and `wiki/`, takes stable descriptive names, with
+no date; existing dated paths stay as they are.
 
 ## Subdirectory Organisation
 
@@ -35,6 +37,8 @@ Filename format conforms to `YYYY-MM-DD_<abbreviated-title>.md` where
 | `reports/`   | Implementation phase probes, rulings and verification with any captured output in a directory beside it of the same name |
 | `notes/`     | Research kept for reference                                                                                              |
 | `deferred/`  | findings left for later                                                                                                  |
+| `wiki/`      | Maintained reference on topics, profiles, decisions, questions, problems and priorities, linking the records as evidence |
+| `README.md`  | The front door to the wiki: its routes and pages, and how reference differs from records                                 |
 | `roadmap.md` | Projected order of phase implementation                                                                                  |
 
 ## Essay Structure

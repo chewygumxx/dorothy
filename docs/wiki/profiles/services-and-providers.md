@@ -101,7 +101,7 @@ stand-in and found her costs agreeing with OpenRouter's own count (chat $0.0006
 and memory $0.0019 shown, $0.0025 for the day; the model that day was
 `deepseek/deepseek-v4.1-flash-1017`, which had 31 endpoints on its
 zero-retention list)
-([report](../../reports/2026-11-01-model-providers.md#the-live-run)).
+([report](../../reports/2026-11-01-model-providers.md#the-live-run-1)).
 
 The research of 2026-10-18 described it as no markup on provider prices,
 5.5% on card purchases, with a `models` array for fallback and no prompt
@@ -129,7 +129,7 @@ have moved; read them dated.
   matches to Chat. In the live run of 2026-11-01 a review and a chat turn
   collided on it: GLM-5.3-Flash cost 4 units a request, and the chat was
   refused with "Concurrency limit exceeded"
-  ([report](../../reports/2026-11-01-model-providers.md#findings)).
+  ([report](../../reports/2026-11-01-model-providers.md#findings-1)).
   The README advises a second entry in a role's list.
 - Billing, from the pricing conversation of 2026-11-01: the Developer plan
   is a credit balance rather than a fee on top of usage, credits do not
@@ -179,7 +179,7 @@ that nothing leaves the machine. The README's example is Ollama; the code
 names no server, only the port its validation example uses. The report of
 2026-11-01 says the `local` kind "was reached only as the stand-in: the user
 has no local model"
-([report](../../reports/2026-11-01-model-providers.md#the-live-run)).
+([report](../../reports/2026-11-01-model-providers.md#the-live-run-1)).
 
 Other local servers, llama.cpp, vLLM and LM Studio, were noted by the
 research of 2026-10-18 as serving the Messages API or Chat Completions; she
@@ -341,3 +341,12 @@ Letta's `trajectory` transcript parser, Hindsight's adapters and the
   herdr agents as a candidate
   ([note](../../notes/2026-11-01_agent-orchestration.md#today),
   [candidates](../../roadmap.md#candidates)).
+
+## Related
+
+- [Models and routing](../topics/models-and-routing.md)
+- [Protocols](./protocols.md)
+- [Harnesses](./harnesses.md)
+- [Memory](../topics/memory.md)
+- [Orchestration](../topics/orchestration.md)
+- [Decisions](../decisions.md)
