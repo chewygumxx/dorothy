@@ -309,9 +309,13 @@ export const scriptHook = (fake: string, script: HookScript) =>
 // --host pi` is a stdio MCP server with one tool, `search`. Plain Node.
 const FAKE_DOROTHY = String.raw`
 import { appendFileSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
-const dir = process.env.FAKE_DOROTHY_DIR;
+import { fileURLToPath } from "node:url";
+// Its own directory where no FAKE_DOROTHY_DIR is passed, as a launcher's
+// helper environment never carries one.
+const dir =
+    process.env.FAKE_DOROTHY_DIR ?? dirname(fileURLToPath(import.meta.url));
 const log = (name, value) =>
     appendFileSync(join(dir, name), JSON.stringify(value) + "\n");
 const args = process.argv.slice(2);

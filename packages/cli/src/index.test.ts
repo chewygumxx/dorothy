@@ -13,7 +13,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Env, SecretsCode } from "@dorothy/core";
-import { loadCredentials, reviewAgent } from "./index.js";
+import { loadCredentials, piHook, reviewAgent } from "./index.js";
 
 let root: string;
 beforeEach(() => {
@@ -135,5 +135,70 @@ describe("CLI secrets", () => {
         expect(err).toEqual([
             "dorothy: reviews are off: secrets.json did not load (SOPS_FAILED)\n",
         ]);
+    });
+});
+
+describe("--pi-hook", () => {
+    const stream = (...parts: string[]) =>
+        new ReadableStream<Uint8Array>({
+            start(controller) {
+                for (const part of parts) {
+                    controller.enqueue(new TextEncoder().encode(part));
+                }
+                controller.close();
+            },
+        });
+    const answer = {
+        session: "s",
+        context: "the block",
+        recording: "pending" as const,
+        warning: null,
+    };
+
+    it("answers one JSON request with one JSON reply", async () => {
+        const seen: unknown[] = [];
+        const out = await piHook(stream('{"event":', '"start"}'), async (r) => {
+            seen.push(r);
+            return answer;
+        });
+        expect(seen).toEqual([{ event: "start" }]);
+        expect(JSON.parse(out)).toEqual(answer);
+    });
+
+    it("gives memory nothing it could parse past 128 KiB or as JSON", async () => {
+        const seen: unknown[] = [];
+        const run = async (request: unknown) => {
+            seen.push(request);
+            return answer;
+        };
+        const big = JSON.stringify({ prompt: "x".repeat(128 * 1024) });
+        await piHook(stream(big.slice(0, 70_000), big.slice(70_000)), run);
+        await piHook(stream("not json"), run);
+        expect(seen).toEqual([null, null]);
+    });
+
+    it("keeps the reply within 64 KiB, saying so by code", async () => {
+        const out = await piHook(stream("{}"), async () => ({
+            ...answer,
+            context: "y".repeat(64 * 1024),
+        }));
+        expect(Buffer.byteLength(out)).toBeLessThanOrEqual(64 * 1024);
+        expect(JSON.parse(out)).toEqual({
+            ...answer,
+            context: "",
+            warning: "pi_reply_too_large",
+        });
+    });
+
+    it("replies by code alone should memory throw", async () => {
+        const out = await piHook(stream("{}"), async () => {
+            throw new Error("untrusted diagnostic");
+        });
+        expect(JSON.parse(out)).toEqual({
+            session: null,
+            context: "",
+            recording: "pending",
+            warning: "pi_hook_failed",
+        });
     });
 });

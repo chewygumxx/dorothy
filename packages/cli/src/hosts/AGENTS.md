@@ -5,7 +5,7 @@ spdx: GPL-3.0-only
 title: packages/cli/src/hosts/AGENTS.md
 description: >-
   How the CLI runs Dorothy in hosts other than Claude Code: Codex's launcher,
-  Hermes's install, Pi's pinned runtime, profile and extension.
+  Hermes's install, and Pi's launcher, runtime, profile and extension.
 tags:
   - agents
 ---
@@ -60,10 +60,55 @@ Dorothy in hosts other than Claude Code, whose launcher is `claude.ts`.
   `dorothy-memory` name and lists the rest in `mcpServers`. `piProfileArgs`
   gives `--session-dir`, discovered extensions and skills off, built-in MCP
   kept, then Dorothy's by path.
+- `pi/launch.ts`: `runPi`, for `dorothy --pi [--model <provider:id>]
+  [--dump] [-- <Pi arguments>]` (`args.ts` reads hers before `--`). In
+  order:
+  - `readPiArgs` reads Pi's arguments with Pi 1.5.0's own arity, so an
+    option word that is a value (`--system-prompt --api-key`, `-p "say
+    --model"`) is not taken for one. It refuses by name alone, exit 2,
+    `--api-key`, `--provider`, `--model`, `--session-dir` and `--no-mcp`,
+    `--flag=value` forms too. A `--session` or `--fork` path, resolved as
+    Pi resolves it, must lie below the session root, links followed;
+    an id is Pi's to look up in the cwd's session directory.
+  - The route and `selectPiModel` are checked, and the selection printed,
+    before any secret is decrypted. Pi runs in the user shell's directory
+    (`userShell`), canonical, under the Node `resolvePiRuntime` finds on a
+    `PATH` without Bun's `node` alias (`nodePath`).
+  - `loadSecrets` fills an isolated environment, seeded with the caller's
+    own value of the selected key alone; only that key is copied into
+    Pi's, under the entry's variable name. Native `--help` and
+    `--version`, and `--dump`, load none; help runs without her
+    extension and model, which would ask for the key.
+  - `preparePiProfile` writes the manifest and persona; other MCP servers
+    it found are said before Pi starts, so before its project trust, and
+    a `--no-session` launch is said to record nothing.
+  - Pi gets `--offline`, `piProfileArgs`, `--append-system-prompt
+    <persona>` and `--model <provider>/<model>`, then the user's
+    arguments, through `runForwarding`; the launch files go in `finally`,
+    and a spawn failure is said by its code. Prompt templates and themes
+    stay discoverable: they are Markdown and JSON, never executed. The
+    dump prints the command, cwd and variable names, never a value.
+- `pi/env.ts`: the environments, each an allowlist (`passedEnv`):
+  terminal, `PATH`, home, `XDG_*`, locale (`LANG`, `LC_*`), proxies and
+  their certificates, and herdr's pane; never a provider key, OAuth
+  token, `NODE_OPTIONS`, `BUN_OPTIONS`, preload or foreign `PI_*`. Pi's
+  (`piEnvOf`) adds `PI_CODING_AGENT_DIR`, the profile's, without which Pi
+  reads the user's own `~/.pi/agent`, `DOROTHY_PI_MANIFEST` and the key.
+  The helpers' (`helperEnvOf`, the manifest's `helperEnv`) adds
+  `DOROTHY_MEMORY_URL` and the age key's path, and holds no key.
+- `--pi-hook` (`index.ts` `piHook`): one request of at most 128 KiB on
+  stdin, `runPiHostHook` with the memory client and `sendRecord`, one JSON
+  reply on stdout (64 KiB at most, else its context dropped as
+  `pi_reply_too_large`), exit 0. Too large or not JSON is `null`, which
+  memory answers `pi_request_invalid`.
 - `../../assets/pi/`: her extension, which Pi loads under Node with the
   manifest `DOROTHY_PI_MANIFEST` names: [its guide](../../assets/pi/AGENTS.md).
 - `pi/testing.ts`: `startFakeProvider`, a scripted Chat Completions
   endpoint on loopback; `piRoots`, private roots; a stand-in `dorothy`
-  for `--pi-hook` and `--mcp`; `runPi`, the published CLI under Node.
-  `pi/extension.test.ts` drives the extension through a fake Pi API,
-  `pi/wire.test.ts` the CLI on the wire, with a synthetic key alone.
+  for `--pi-hook` and `--mcp`, logging beside itself unless told where;
+  `runPi`, the published CLI under Node. `pi/extension.test.ts` drives
+  the extension through a fake Pi API, `pi/wire.test.ts` the CLI on the
+  wire, with a synthetic key alone. `pi/launch.test.ts` injects every
+  dependency of the launcher, then runs it through the published Pi:
+  new, `-c`, `--fork` and `--session` launches, two paths Pi names
+  alike, preferences kept, and Bun's alias first on `PATH`.

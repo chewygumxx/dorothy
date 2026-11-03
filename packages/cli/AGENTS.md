@@ -108,10 +108,10 @@ SDK. Keep every new mode's import lazy.
 - `index.ts` also runs `--serve` (memory's service through
   `@dorothy/memory/service`, with reviews from the agent, Dorothy's
   `secrets.json` loaded by path from this checkout; off, and said, if either
-  fails), its token commands, `--sweep`
-  (`runSweep`, `runSweepDismiss`), `--hook <host> <event>` (Codex's and Hermes's
-  hooks, via `@dorothy/memory/host-hook`) and `--mcp`, memory's stdio bridge
-  (`@dorothy/memory/bridge`), which starts `--serve` when none answers.
+  fails), its token commands, `--sweep` (`runSweep`, `runSweepDismiss`),
+  `--hook <host> <event>` and `--pi-hook` (`piHook`; Codex's, Hermes's and
+  Pi's hooks, via `@dorothy/memory/host-hook`) and `--mcp`, memory's stdio
+  bridge (`@dorothy/memory/bridge`), which starts `--serve` when none answers.
 - `review-backfill.ts`: `runBackfillReview`, for `--review-backfill`, runs
   memory's `runReviewBackfill` on `reviewAgent`'s agent (this checkout's
   secrets, her API key). It prints `<phrase>: <outcome>`, then a total; exits
