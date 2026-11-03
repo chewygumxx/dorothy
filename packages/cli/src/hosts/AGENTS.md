@@ -5,7 +5,7 @@ spdx: GPL-3.0-only
 title: packages/cli/src/hosts/AGENTS.md
 description: >-
   How the CLI runs Dorothy in hosts other than Claude Code: Codex's launcher,
-  Hermes's install and Pi's pinned runtime boundary.
+  Hermes's install, Pi's pinned runtime, profile and extension.
 tags:
   - agents
 ---
@@ -60,3 +60,10 @@ Dorothy in hosts other than Claude Code, whose launcher is `claude.ts`.
   `dorothy-memory` name and lists the rest in `mcpServers`. `piProfileArgs`
   gives `--session-dir`, discovered extensions and skills off, built-in MCP
   kept, then Dorothy's by path.
+- `../../assets/pi/`: her extension, which Pi loads under Node with the
+  manifest `DOROTHY_PI_MANIFEST` names: [its guide](../../assets/pi/AGENTS.md).
+- `pi/testing.ts`: `startFakeProvider`, a scripted Chat Completions
+  endpoint on loopback; `piRoots`, private roots; a stand-in `dorothy`
+  for `--pi-hook` and `--mcp`; `runPi`, the published CLI under Node.
+  `pi/extension.test.ts` drives the extension through a fake Pi API,
+  `pi/wire.test.ts` the CLI on the wire, with a synthetic key alone.
