@@ -132,30 +132,31 @@ The probes and their later repetition are weighed host by host on
 
 ### Session flags and a host's own persona slot
 
-Where a host has no base URL to point, her text goes into the slot the host
-reads. Two are built, and a third is designed.
+Where a client has no base URL to point, her text goes into the slot the
+client reads. The code has two such mechanisms, and the designs name a third.
+Which hosts each serves, and their state, is on
+[harnesses](../profiles/harnesses.md).
 
-- Codex. Built: `dorothy --codex` gives her identity as Codex's
+- The Codex launcher: `dorothy --codex` gives her identity as
   `developer_instructions`, followed by the user's own, as session flags
   that write none of Codex's files
   ([hosts guide](../../../packages/cli/src/hosts/AGENTS.md#files)). The
   user's own value is read from Codex's configuration, read-only, because a
   session flag replaces a key rather than adding to it
   ([spec](../../specs/2026-11-01-delivery-design.md#codex)).
-- Hermes Agent. Built: `dorothy --install hermes` makes a Hermes profile
+- The Hermes install: `dorothy --install hermes` makes a Hermes profile
   named `dorothy` and writes her identity as that profile's `SOUL.md`. The
-  user's default profile is left alone, so plain `hermes` stays without her.
-  The `SOUL.md` is overwritten only where it is still the clone's or still
-  hers by a recorded digest.
-- OpenClaw. Designed, not built: her text would go in OpenClaw's own
-  `SOUL.md` and `IDENTITY.md`
+  user's default profile is left alone. The `SOUL.md` is overwritten only
+  where it is still the clone's or still hers by a recorded digest.
+- Persona files in a host's own directory: the delivery design's route for
+  OpenClaw is `SOUL.md` and `IDENTITY.md`
   ([spec](../../specs/2026-11-01-delivery-design.md#openclaw)). Persona
   files as a protocol are under
   [protocols](../profiles/protocols.md#persona-files).
 
-Both built routes carry the same bytes as the gateway does, because all
-three read `identityPrompt()`. The delivery design records that rule: one
-source for her persona.
+These routes and the gateway carry the same text, because all read
+`identityPrompt()`. The delivery design records that rule: one source for
+her persona.
 
 ### What a host is given beside her identity
 
@@ -231,33 +232,34 @@ the sweep:
 - The first sweep of a host records a watermark. Sessions that finished
   before it are left to the backfill, `dorothy --sweep --backfill`, which
   the user runs and which records them without a paid review each.
-- A session its host marks private is not recorded. The code leaves a place
-  for OpenClaw's incognito marking.
+- A session its host marks private is not recorded. The rule is a seam:
+  no host currently reports a session as private (`isPrivate` is
+  `() => false` in
+  [`recording.ts`](../../../packages/memory/src/service/recording.ts)), and
+  the code leaves a place for OpenClaw's incognito marking.
 - A session that cannot be read halts at its first bad record: what
   precedes it is recorded, the rest kept aside and the user told.
 
-OpenClaw's reader is not built; the recording design waits until it is
-installed and its store probed. How recording is stored, reviewed and
+The recording design leaves OpenClaw's reader until it is installed and
+its store probed. How recording is stored, reviewed and
 searched is on [memory](./memory.md), and the readers' invariants are in
 the [recording guide](../../../packages/memory/src/recording/AGENTS.md).
 What each reader has met is on [harnesses](../profiles/harnesses.md).
 
-## Built, designed and not built
+## Mechanisms and what lies outside them
 
-- Built: the identity text and its pin; the gateway and its Anthropic
-  adapter; the launcher that starts the gateway and the client; Codex's
-  launcher; the Hermes install and provider; the hook command; the sweep
-  and its readers for three hosts.
-- Designed, not built: an OpenAI-protocol adapter for the gateway;
-  OpenClaw's plugin, persona files and reader; plain `codex` and `hermes`
-  carrying her without a launcher or profile; rulesync for hosts beyond the
-  four. The delivery design lists the last three under Later, and the
-  roadmap's candidates the first two.
+- The mechanisms above: the identity text and its pin; the gateway and its
+  Anthropic adapter; the Claude Code launcher; the Codex launcher; the
+  Hermes install and provider; the hook command; and the sweep with its
+  readers.
+- Not a mechanism yet: an OpenAI-protocol adapter for the gateway, named in
+  the identity spec's Later section.
 - Out of scope by the identity design: removing or rewriting anything a
   client sends beyond the marker, and subagents' prompts, which stay the
   client's own
   ([spec](../../specs/2026-10-15-identity-gateway-design.md#out-of-scope)).
-- Awaiting a live check and waiting on the user: not explained here. See
+- Which host each mechanism serves, what has been run against the real
+  host and what waits on the user: see
   [harnesses](../profiles/harnesses.md).
 
 ## Records

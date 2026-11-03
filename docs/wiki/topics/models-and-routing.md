@@ -147,9 +147,12 @@ passes the base URL and key explicitly and a `fetch` that follows no
 redirect, so no provider package reads `ANTHROPIC_BASE_URL`,
 `ANTHROPIC_API_KEY` or any variable of its own. It turns the SDK's console
 warnings off, as they would land on the TUI's screen, and puts the system
-prompt behind a cache breakpoint on Anthropic only. Reasoning is set at each
-model's lowest, summarised in the stream and never shown; the models that
-always think are listed in `providers.ts`, and a new one must be added.
+prompt behind a cache breakpoint on Anthropic only. Thinking is set only on
+Anthropic entries: each model's lowest, summarised in the stream and never
+shown, and the models that always think are listed in `providers.ts`, where
+a new one must be added. The other kinds get no thinking setting, so they
+use the provider's default (`providerOptions` returns nothing for them;
+[deferred](../../deferred/2026-11-01_model-providers-deferred.md#behaviour)).
 
 ## The calls
 
@@ -229,9 +232,10 @@ the invariant: no fallback once text has streamed or `remember` has run
 - Reasoning is kept only for the model that made it. Another model is sent
   none of it, and an assistant message left empty without it is not sent.
 
-Two tests pin the first two points on mock models: one replays a turn that
-failed after a lookup on the next entry, and one never replays a turn whose
-text has streamed
+Two tests pin the replay and the no-replay on mock models: one replays a
+turn that failed after a lookup on the next entry, and one never replays a
+turn whose text has streamed. The recording of both attempts' lookups, the
+partial reply and the reconnect rest on the spec
 ([`conversation.test.ts`](../../../packages/agent/src/conversation.test.ts));
 `fallback.test.ts` pins that `runRoute` stops after a started attempt fails.
 The report's live runs did not make a started turn fail on a real provider,
@@ -245,13 +249,17 @@ What the live runs did find bears on routes, and is recorded in the report's
   was refused with a route of a single entry. The README advises a second
   entry in the role's list.
 - A reasoning model can spend a provider's default output limit thinking.
-  The Chat Completions kinds send no limit, so a reply that stops at one now
-  warns, but sending a limit of Dorothy's own waits, as a provider may refuse
-  one.
-- After a tool call, Anthropic's reply text arrived whole rather than
-  streaming, which a raw request without the SDK reproduced
+  The Chat Completions kinds get no thinking setting, so a reasoning model
+  on them thinks at the provider's default, and they send no output limit,
+  so the provider's applies (featherless's is 4,096 tokens). A reply that
+  stops at the limit now warns, but sending a limit of Dorothy's own waits,
+  as a provider may refuse one.
+- After a tool call, Sonnet 5.5's reply text arrived whole rather than
+  streaming, which a raw request without the SDK reproduced; Haiku 5.5
+  streamed over 1.3 seconds after a tool result in the same check
   ([finding](../../reports/2026-11-01-model-providers.md#text-after-a-tool-call-arrives-at-once)).
-  That is the provider's behaviour, which she cannot change.
+  The report takes this to be Anthropic's behaviour for that model, which
+  she cannot change.
 
 The deferred findings list known gaps
 ([deferred](../../deferred/2026-11-01_model-providers-deferred.md#behaviour)):
@@ -296,7 +304,8 @@ Left for later in the spec, and not built:
 - Choosing a route by remaining budget, not only by failure.
 - Cooldowns shared between the TUI and the service.
 - A per-entry context window checked before the attempt.
-- Thinking set per role beyond each model's lowest.
+- Thinking set per role beyond each Anthropic model's lowest, and any
+  thinking setting for the other kinds.
 - The eval's clients moved onto these routes.
 - The gateway serving models other than Claude, for hosts whose vendor
   supports it. This is the roadmap's idea
