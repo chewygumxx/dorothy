@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-02
-mtime: 2026-11-02
+mtime: 2026-11-03
 spdx: GPL-3.0-only
 title: A harness for a featherless orchestrator
 description: >-
@@ -300,6 +300,16 @@ What it means for the spec:
   worker could damage for every branch; a clone borrowing the main
   checkout's objects read-only (`git clone --reference`, or alternates)
   gives each worker its own writable store at about a worktree's cost.
+
+## Pi follow-up
+
+The user's 3 November request reopens Pi research for stewardship of
+Claude Code and Codex through herdr. The [Pi study][pi-study] traces the
+October exclusion, checks v1.5.0 and proposes a bounded trial. Native MCP
+is now available; human elicitation remains an integration gap. The
+study records no live Pi or provider test.
+
+[pi-study]: ./2026-11-03_pi-stewardship.md
 
 ## Later
 
