@@ -83,12 +83,13 @@ openevals' correctness judge, unchanged, and a lenient one of ours:
 - Abstention: for a question whose answer is not in her memory, whether
   the answer declines. Any other question is counted as declined wrongly
   when its answer says it does not know.
-- A judge sees the question, the answer and the reference, and since
-  2026-11-01 a note that the answer comes from a memory of the user, so a
-  claim it attributes to the user is not invented where the reference
-  agrees (`MEMORY_NOTE` in
-  [`judges.ts`](../../../packages/eval/src/run/judges.ts), #102). A
-  contradicted or missing fact still fails.
+- A judge sees the question, the answer and the reference. Since
+  2026-11-01 the strict and lenient judges also see a note that the answer
+  comes from a memory of the user, so a claim it attributes to the user is
+  not invented where the reference agrees (`MEMORY_NOTE` in
+  [`judges.ts`](../../../packages/eval/src/run/judges.ts), #102). The
+  abstention judge does not get it. A contradicted or missing fact still
+  fails.
 
 A failed retrieval, answer or judgement counts as a miss, never as nothing,
 so a flaky system does not score higher for failing. A run that stops at a

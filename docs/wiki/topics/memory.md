@@ -24,15 +24,30 @@ tags:
 
 Dorothy's memory is a directory of files she owns, a search index derived
 from them, and the code that reads, writes, compacts, tags and versions
-them. Her chat, Claude Code, Codex and Hermes all read and write the one
-store, through a service on the same machine. This page says what exists
-now; how it is measured is under [evaluation](./evaluation.md), and each
-host's state under [harnesses](../profiles/harnesses.md).
+them. One service on the same machine serves the store to Dorothy's chat
+and to the harnesses she is built for (Claude Code, Codex, OpenClaw and
+Hermes). That the service and the store work is one claim; that each host
+reaches them, and has been checked doing so, is another, and
+[harnesses](../profiles/harnesses.md) records it host by host. This page
+says what the memory is and does; how it is measured is under
+[evaluation](./evaluation.md).
 
 ## What exists now
 
-Each capability below is built: code and tests exist, and the records
-named probed or measured it on real data.
+Each capability below is built: code and tests exist. How far each has
+been checked beyond tests differs:
+
+- Retrieval and delivery were measured on the user's own sessions by the
+  [evaluation](./evaluation.md).
+- Compaction, tags and history were each probed live
+  ([compaction](../../reports/2026-10-07-compaction.md),
+  [tags](../../reports/2026-10-08-tags.md),
+  [history](../../reports/2026-10-08-memory-history.md)).
+- Recording from other hosts was probed on copies of their sessions, and
+  Hermes's reader has met no real session
+  ([recording](../../reports/2026-10-20-recording.md)).
+- The rest, including the service's routes, rests on tests; the hosts'
+  live checks are on the harnesses page.
 
 - Conversations: every chat, and every session another host records, is
   one transcript with notes Dorothy writes about it.
@@ -99,14 +114,21 @@ the difference.
 
 Search is full-text, offline and local. It takes a query and returns hits
 of two kinds, conversations (episodes) and knowledge, each carrying up to
-three of the turns that matched, best first. Four tools reach it through
-MCP, from the contract's service or Dorothy's own recall server:
+three of the turns that matched, best first. Two MCP servers reach it, with
+different tools:
 
-- `search` finds, `open` reads a conversation or fact in full or at a
+- The contract's service, shared with other harnesses, has four:
+  `search` finds, `open` reads a conversation or fact in full or at a
   turn, `remember` writes a fact, and `brief` gives a host its opening
   block ([`tools.ts`](../../../packages/memory/src/contract/tools.ts)).
-- Scope is the service's to enforce: a request sees personal knowledge and
+  Scope is the service's to enforce: a request sees personal knowledge and
   its own project's, and `open` refuses another's with a 403.
+- Dorothy's own recall server, `dorothy --recall-server`, which her chat
+  starts, has `search`, `open`, `tags` (the vocabulary, below) and
+  `remember` where a knowledge root is given. It adds `recollect` only
+  with `--recollect`, for a chat with clusters (compaction, below). It has
+  no `brief`, as chat takes its block directly
+  ([`server.ts`](../../../packages/memory/src/recall/server.ts)).
 
 Dorothy opens past conversations on demand, never pushed, and afterwards
 appraises each read as none, slight, useful or essential. The appraisals
@@ -158,7 +180,8 @@ A conversation grows until it no longer fits. Past a soft threshold of
 tokens (`[compaction] soft`) Dorothy compacts at the next idle moment, and
 past the hard one before the next message. `compact()` splits the turns
 before a verbatim tail into topical clusters, each with an abstract that
-stays in context, and each can be read word for word with `recollect`.
+stays in context, and each can be read word for word with `recollect`, a
+tool of the recall server alone, served for a chat that has clusters.
 Dorothy's compaction replaces the CLI's own, which stays off. At each
 compaction the block's budget charges the earlier turns' abstracts first,
 so notes on other conversations fade as this one grows. The
@@ -175,7 +198,8 @@ conversation's concepts. At each review Dorothy tags the conversation
 shallowly, coining a concept only when none fits, inside the sidecar's
 lock so two runs never coin one label twice; a bad tag never fails the
 notes. The user browses with `--tags`, corrects with `--edit-tags`, and a
-deleted concept stays deleted. Tags are looked up through recall and do
+deleted concept stays deleted. Tags are looked up through the recall
+server's `tags` tool and `search`'s tag filter, and do
 not enter the opening block; hidden conversations carry none
 ([tags spec](../../specs/2026-10-07-tags-design.md#decisions),
 [tags probe](../../reports/2026-10-08-tags.md)).
@@ -238,9 +262,8 @@ have been checked live, belongs to
 - Relations and embeddings are conditional on recall's falling short, which
   the roadmap does not yet find
   ([roadmap](../../roadmap.md#relations-and-embeddings-5)).
-- The live probes of delivery to Codex and Hermes await the user's
-  sign-ins, and OpenClaw's its install
-  ([harnesses](../profiles/harnesses.md)).
+- What awaits for each host is on
+  [harnesses](../profiles/harnesses.md).
 
 ## Records
 
