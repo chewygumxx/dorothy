@@ -4,7 +4,7 @@ mtime: 2026-11-03
 spdx: GPL-3.0-only
 title: Dorothy in Pi
 description: >-
-  Proposed delivery of Dorothy through Pi's own interface, with her
+  Approved delivery of Dorothy through Pi's own interface, with her
   identity, shared memory, Featherless inference and a bounded trial
   coordinating Codex and Claude Code through herdr.
 tags:
@@ -25,7 +25,7 @@ tags:
 
 ## Status and intent
 
-Proposed design, awaiting the user's review. On 2026-11-03 the user
+Approved by the user on 2026-11-03. Earlier that day the user
 made Pi the highest priority and chose **Pi's own interface** over
 embedding its SDK behind Dorothy's interface. The earlier exclusion
 of Pi is superseded; the historical minutes remain unchanged.
@@ -43,9 +43,10 @@ Launching agents alone is not success.
 
 The [research][research] establishes source-level feasibility, not a
 working integration. No paid Pi inference or live Pi stewardship trial
-has yet run. This design proposes two increments: delivery, then a
-bounded stewardship trial. Their order and details below are the
-author's recommendations, not additional user rulings.
+has yet run. The approved design has two increments: delivery, then a
+bounded stewardship trial. Their details were proposed by the author
+and accepted with the design. The user subsequently authorised execution
+without another plan approval round.
 
 An independent builder check on 2026-11-03 found no important unanswered
 questions for planning. This checks the design's completeness, not the
@@ -65,7 +66,7 @@ a delivery target; it retires no package and does not replace the
 existing chat runtime. Open WebUI, a Pi fork, Pi Durable and an
 unattended coordinator are outside these increments.
 
-## Decisions proposed by the author
+## Approved implementation decisions
 
 - Launch with `dorothy --pi`, using the published Pi CLI as a
   subprocess and its own terminal UI. Bun continues to run Dorothy.

@@ -49,8 +49,9 @@ the historical minutes remain a record of the earlier decision.
 The user subsequently chose Pi's own interface over embedding its SDK
 behind Dorothy's existing interface. The
 [delivery design](../specs/2026-11-03_pi-delivery.md) proposes the
-launcher, extension, memory recording and bounded herdr trial; it is
-awaiting review. Full orchestra compatibility is separate work with
+launcher, extension, memory recording and bounded herdr trial. The user
+approved it and authorised execution. Full orchestra compatibility is
+separate work with
 the approval gap described in this study.
 
 ## What the earlier decision actually says

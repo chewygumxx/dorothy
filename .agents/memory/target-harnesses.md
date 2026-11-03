@@ -40,6 +40,7 @@ does not say to remove them or replace Dorothy's runtime. The
 
 The user then chose Pi's own interface over embedding its SDK behind
 Dorothy's existing interface. The
-[delivery design](../../docs/specs/2026-11-03_pi-delivery.md) proposes
-the launcher, extension, memory adapter and stewardship trial; it
-awaits review before implementation planning.
+[delivery design](../../docs/specs/2026-11-03_pi-delivery.md) covers
+the launcher, extension, memory adapter and stewardship trial. The user
+approved it, then authorised execution without another plan approval
+round. Follow the delivery and stewardship plans linked from the roadmap.
