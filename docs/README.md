@@ -26,6 +26,10 @@ as the evidence for what it says.
 ## Pages
 
 - [Records](./wiki/records.md): every dated record by subject.
+- [Memory](./wiki/topics/memory.md): what she stores, how recall finds and
+  delivers it, and how it is compacted, tagged, versioned and shared.
+- [Evaluation](./wiki/topics/evaluation.md): how her memory is measured, the
+  systems compared, what the results establish and their limits.
 - [Packages](./wiki/profiles/packages.md): the eight workspace packages and
   what each may import.
 - [Harnesses](./wiki/profiles/harnesses.md): Claude Code, Codex, OpenClaw and
