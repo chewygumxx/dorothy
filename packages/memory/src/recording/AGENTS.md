@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-20
-mtime: 2026-10-21
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: packages/memory/src/recording/AGENTS.md
 description: >-
@@ -33,6 +33,7 @@ readers never open a Dorothy store; tests use temporary roots.
   SQLite read-only, selecting a session before fetching payloads; a read
   has the same fields plus `parent` and `source`. `since` floors stable
   source ids, exclusively; sources pass zero: those ids are not monotonic.
+- `pi.ts`, `pi-tree.ts`: `readPi`, Pi branch segments; invariants atop each.
 - `sources.ts`: `claudeSource`, `codexSource`, `hermesSource` (each profile's
   `state.db`); each lists descriptors: key, path, time, fingerprint, `read`.
 - `state.ts`: private `sweep.json`, per-key skip fingerprints alone.
@@ -41,8 +42,8 @@ readers never open a Dorothy store; tests use temporary roots.
 - `sweep.ts`: `sweep(deps)`, one pass over the hosts; read below.
 - `report.ts`: `hostLines`, `sweepSummary`: a sweep told, a host and a count
   a line, for `--sweep` and the service's log.
-- `fixtures.ts`, `hermes-fixtures.ts`, `sweep-testing.ts`: synthetic
-  records, Hermes tables and the sweep's rig; nothing from a real store.
+- `fixtures.ts`, `hermes-fixtures.ts`, `pi-fixtures.ts`, `sweep-testing.ts`:
+  synthetic records, Hermes tables, Pi entries, the sweep's rig; none real.
 
 ## Invariants
 
@@ -53,15 +54,14 @@ readers never open a Dorothy store; tests use temporary roots.
 - Codex's `halt.line`, `unknown.line` and `pending` index supplied lines
   from zero. A malformed mapped record halts; unknown types are kept once per
   read. Diagnostics name the problem without quoting record contents.
-- Codex tool events use the call's pairing, timestamp and line ordinal.
-  Function and custom calls pair only with their own output family.
-  Repeated ids pair the nth call with the nth output in physical order;
-  an extra output cannot replace an earlier answer. `ok: true` means
-  answered, not execution success: outputs carry no success flag.
-  An unanswered call holds subsequent events, with `pending` naming it;
-  replay from there when its output arrives. Reused ids need their prior
-  occurrence counts too, so replay the full rollout in that case.
-  Only `ended: true` records an unanswered call as failed. Output
+- Codex tool events use the call's pairing, timestamp and line ordinal. Function
+  and custom calls pair only with their own output family. Repeated ids pair the
+  nth call with the nth output in physical order; an extra output cannot replace
+  an earlier answer. `ok: true` means answered, not execution success: outputs
+  carry no success flag. An unanswered call holds subsequent events, with
+  `pending` naming it; replay from there when its output arrives. Reused ids
+  need their prior occurrence counts too, so replay the full rollout in that
+  case. Only `ended: true` records an unanswered call as failed. Output
   lookahead stops at a halt.
 - Host prompts, reasoning and known bookkeeping yield no events.
   User-role environment and AGENTS/instruction wrappers are host context;
