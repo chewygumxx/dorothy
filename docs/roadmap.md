@@ -59,13 +59,13 @@ the development agents do through herdr, with Featherless inference
 and her shared identity and memory.
 
 This supersedes the old Pi exclusion and puts its integration ahead of
-the remaining delivery work. Whether she runs in Pi's terminal through
-extensions or embeds its SDK is still to be settled. The research
-proposes a bounded herdr trial before full compatibility with the
-[orchestra service](./specs/2026-11-02-orchestration-design.md); neither
-that sequence nor a runtime replacement is approved by priority alone.
+the remaining delivery work. The user chose Pi's own terminal interface.
+The [delivery design](./specs/2026-11-03_pi-delivery.md) proposes a
+launcher and extension, shared memory and a bounded herdr trial before
+full compatibility with the
+[orchestra service](./specs/2026-11-02-orchestration-design.md).
 
-- **Status**: Highest Priority; Research Recorded; Design Pending
+- **Status**: Highest Priority; Native Interface Chosen; Design in Review
 - **Required**: Existing Identity, Memory Service and Model Providers
 - **Rationale**: The user has selected Pi for the stewardship capability
   they most want. Its delivery and trial can build on the existing
@@ -630,3 +630,6 @@ In order of completion.
   and stewardship testing. The previous delivery targets remain;
   choosing a runtime replacement or a particular implementation path
   is left to the design.
+- 2026-11-03: The user chooses Pi's own interface. Its delivery design
+  proposes the native launcher, extension, shared memory and a bounded
+  herdr stewardship trial; review precedes implementation planning.

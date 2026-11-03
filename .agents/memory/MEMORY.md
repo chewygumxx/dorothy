@@ -18,7 +18,7 @@
 - [Protocol-diverse Dorothy](./protocol-diverse-dorothy.md)
   Shared identity and memory; Pi's old exclusion was superseded on 3 November
 - [Target harnesses](./target-harnesses.md)
-  Pi is highest priority, chiefly for stewardship of Claude Code and Codex
+  Pi comes first, in its own interface, to steward Claude Code and Codex
 - [Codex full send](./codex-full-send.md)
   Approve every Codex prompt yourself; never relay one to the user
 - [Trust to proceed](./trust-to-proceed.md)

@@ -46,11 +46,12 @@ This explicitly supersedes the earlier Pi exclusion. The
 [roadmap][roadmap] and current agent memories now give Pi priority;
 the historical minutes remain a record of the earlier decision.
 
-The priority is settled. The integration architecture is not: choosing
-Pi first does not itself approve replacing Dorothy's runtime, embedding
-Pi's SDK, or the particular trial proposed below. Herdr stewardship is
-the immediate capability of interest; full orchestra compatibility is
-separate work with the approval gap described in this study.
+The user subsequently chose Pi's own interface over embedding its SDK
+behind Dorothy's existing interface. The
+[delivery design](../specs/2026-11-03_pi-delivery.md) proposes the
+launcher, extension, memory recording and bounded herdr trial; it is
+awaiting review. Full orchestra compatibility is separate work with
+the approval gap described in this study.
 
 ## What the earlier decision actually says
 

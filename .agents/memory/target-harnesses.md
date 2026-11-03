@@ -8,7 +8,7 @@ metadata:
   spdx: GPL-3.0-only
   type: project
   originSessionId: fb965535-b7ef-4fd4-8065-6767fb16ee58
-  modified: 2026-11-03T06:48:59.000Z
+  modified: 2026-11-03T06:58:45.000Z
 ---
 
 <!--
@@ -36,5 +36,10 @@ herdr. This supersedes the earlier exclusion and the four-host priority.
 **How to apply:** Pi comes first for integration design and capability
 testing. The other four remain existing delivery targets; this decision
 does not say to remove them or replace Dorothy's runtime. The
-[roadmap](../../docs/roadmap.md) records the order. The integration's
-architecture and implementation plan still need to be settled.
+[roadmap](../../docs/roadmap.md) records the order.
+
+The user then chose Pi's own interface over embedding its SDK behind
+Dorothy's existing interface. The
+[delivery design](../../docs/specs/2026-11-03_pi-delivery.md) proposes
+the launcher, extension, memory adapter and stewardship trial; it
+awaits review before implementation planning.
