@@ -160,8 +160,9 @@ only the system varies
   selection alone could go.
 
 No other provider has been run. `makeSystem` refuses any name but these,
-so Hindsight, OpenViking, EverOS and Honcho, which the evaluation was
-designed to compare, are designed and not built
+so Hindsight, OpenViking, EverOS and Honcho, compared as engines, have
+evaluation adapters that are designed in the evaluation spec and listed
+among the roadmap's candidates, not built
 ([services](../profiles/services-and-providers.md#memory-systems)).
 
 ## The current results

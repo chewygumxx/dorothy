@@ -297,8 +297,9 @@ How the memory is built is on [memory](./topics/memory.md).
     five questions only lexical search passes, and the ten of its 27 passes
     she misses, as where a chunk index or hybrid search would be judged
     later, and the roadmap holds a chunk index as waiting on them. It also
-    makes embeddings conditional on recall's falling short, for which it
-    finds no evidence. No numeric threshold is recorded.
+    makes embeddings conditional on recall's falling short, and names the
+    same questions as where a hybrid would be judged. No numeric threshold
+    is recorded.
 - **Sources**:
   [engine spec](../specs/2026-10-31-memory-engine-design.md#decisions),
   [the first decision](../reports/2026-10-31-memory-engine.md#the-first-decision),

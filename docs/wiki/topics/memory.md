@@ -49,6 +49,8 @@ been checked beyond tests differs:
 - The rest, including the service's routes, rests on tests; the hosts'
   live checks are on the harnesses page.
 
+Those capabilities are these eight:
+
 - Conversations: every chat, and every session another host records, is
   one transcript with notes Dorothy writes about it.
 - Knowledge: facts about the user, their work and what has worked, as

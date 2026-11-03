@@ -33,9 +33,10 @@ coordination through herdr, keeps long jobs going through herdr for now,
 and lists herdr's panes for workers the server starts as later work
 ([summary](../../specs/2026-11-02-orchestration-design.md#summary),
 [decisions](../../specs/2026-11-02-orchestration-design.md#decisions),
-[later](../../specs/2026-11-02-orchestration-design.md#later)). The first
-note's finding that screen-scraping approvals through herdr does not scale
-motivated it. The dated records of both are listed under
+[later](../../specs/2026-11-02-orchestration-design.md#later)). [The first
+note](../../notes/2026-11-01_agent-orchestration.md) found that
+screen-scraping approvals through herdr does not scale, and it came before
+the spec. The dated records of both are listed under
 [records](../records.md#orchestration).
 
 ## Dorothy's own orchestration

@@ -67,7 +67,7 @@ characters for Codex, 2,048 for the others) because the hosts weigh it
 differently
 ([profiles](../../../packages/memory/src/hosts/)). Where the memory is
 served, and what a recall may return, is explained under
-[memory](../records.md#memory).
+[memory](../topics/memory.md).
 
 What MCP does not give her is a memory model: the research found no memory
 capability in the specification, with the memory proposals to the protocol
@@ -244,8 +244,8 @@ client over MCP stdio, with MCP elicitation reaching the user.
 
 That is a design only. The roadmap has no ordered phase for it as of
 2026-11-03, there is no `@dorothy/orchestra` package in `packages/`, and
-its prototype branches are local and unmerged, so nothing on this page
-treats orchestration as built. The orchestration subject is under
+any prototype is local and unmerged and is not cited here, so nothing on
+this page treats orchestration as built. The orchestration subject is under
 [records](../records.md#orchestration).
 
 For recording, the cross-harness research (2026-10-18) proposed an ACP

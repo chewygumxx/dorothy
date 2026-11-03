@@ -33,8 +33,9 @@ test, the test is named, since a rule only prose states can drift.
 
 Dorothy is eight Bun workspace packages under `packages/`. `core` holds the
 contracts the others meet on and `identity` who Dorothy is; `memory` and
-`tui` depend on `core` alone, and `agent` and `gateway` on those two and
-never on each other. `cli` wires them together. A package exports only the
+`tui` depend on `core` alone, `agent` and `gateway` on it and `identity`,
+never on each other, `eval` on `core` and `memory`; `cli` on all but
+`eval`, and wires them. A package exports only the
 entry points its `package.json` names and imports only what it declares,
 as Bun's isolated linker fails an undeclared or internal import, and
 `workspace.test.ts` pins the graph and the entry points. The graph, each

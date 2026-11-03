@@ -51,5 +51,7 @@ no date; existing dated paths stay as they are.
   goes in a fenced block. Links are Markdown links, never `[[...]]` wiki
   links. `lint:md` runs remark and markdownlint, which enforce both.
 - A spec says what and why; a plan says how, task by task, with the code.
+- Add each new record to `wiki/records.md` (`docs.test.ts` enforces it);
+  a changed decision updates its entry in `wiki/decisions.md`.
 - A report records each probe and how it was run, the rulings made on the
   spec, and the verification, with commands and their output.

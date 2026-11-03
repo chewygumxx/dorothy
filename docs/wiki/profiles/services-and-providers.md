@@ -42,7 +42,7 @@ it comes from and is a historical statement, never advice for today. The
 page was written from the records alone; nothing was looked up on the web
 for it, so a fact needed now must be checked at the provider. Routing
 itself, the five provider kinds and the fallback, is explained under
-[models and routing](../records.md#models-and-routing); the code is in the
+[models and routing](../topics/models-and-routing.md); the code is in the
 [`agent`](./packages.md#agent) and [`core`](./packages.md#core) packages.
 The wire formats are on [protocols](./protocols.md), and the four hosts on
 [harnesses](./harnesses.md).
@@ -274,10 +274,12 @@ its published results nearly all vendors' own
 ([scored](../../notes/2026-10-18_open-source-replacements.md#the-systems-scored),
 [candidates](../../notes/2026-10-18_open-source-replacements.md#the-candidates)):
 
-- Hindsight, OpenViking, EverOS and Honcho, the four candidates; Hindsight
-  was the one to beat and the roadmap's later work names adapters for all
-  four plus an improved Dorothy
-  ([roadmap](../../roadmap.md#candidates)).
+- Hindsight, OpenViking, EverOS and Honcho, the four candidates, compared
+  as engines; Hindsight was the one to beat. Their evaluation adapters are
+  designed in the
+  [evaluation spec](../../specs/2026-10-18-memory-evaluation-design.md)
+  and listed among the roadmap's
+  [candidates](../../roadmap.md#candidates), with an improved Dorothy.
 - Graphiti, held in reserve for facts that change; agentmemory, noted for
   breadth of native harness plugins.
 - Letta's MemFS, Mastra's observational memory, lossless-claw and
@@ -336,8 +338,9 @@ Letta's `trajectory` transcript parser, Hindsight's adapters and the
   superseded and nothing reads `.env`.
 - herdr: used, not as a runtime dependency. The repository declares its
   skill in `package.json`, and the stewardship skill coordinates agents
-  through it, typing into their terminals. Orchestration was designed to
-  replace that coordination with ACP, and the roadmap holds a registry of
+  through it, typing into their terminals. Orchestration, designed with ACP,
+  is an alternative to that coordination in time; long jobs stay on herdr
+  for now, and the roadmap holds a registry of
   herdr agents as a candidate
   ([note](../../notes/2026-11-01_agent-orchestration.md#today),
   [candidates](../../roadmap.md#candidates)).

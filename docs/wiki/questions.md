@@ -122,8 +122,9 @@ are on [services and providers](./profiles/services-and-providers.md).
 
 MCP for the memory tools, the Anthropic Messages API and OpenAI's Chat
 Completions for models, each host's hook payloads for recording, and the
-Agent Skills and `AGENTS.md` conventions for guidance. ACP and A2A were
-weighed for orchestration, and are not in her code. See
+Agent Skills and `AGENTS.md` conventions for guidance. ACP was
+weighed for orchestration, and A2A for exposing her as a peer and for
+message provenance; neither is in her code. See
 [protocols](./profiles/protocols.md).
 
 ### Can she run on a local model?

@@ -30,7 +30,7 @@ tested against: Claude Code, Codex, OpenClaw and Hermes Agent (the
 No one harness hosts her. One definition of her, from `@dorothy/identity`,
 is given to each, and one memory service serves them all; the mechanisms
 are explained under
-[identity, harnesses and delivery](../records.md#identity-harnesses-and-delivery).
+[identity, harnesses and delivery](../topics/identity-and-harnesses.md).
 
 This is the one page that holds each host's state. For every host it
 separates four things, because they differ in state even within one host:
@@ -56,7 +56,9 @@ each host has a block budget, a recall budget and a list of delivery
 mechanisms. The
 [memory contract spec](../../specs/2026-10-18-memory-contract-design.md#host-profiles)
 explains them. A profile is not a delivery: `openclaw.json` exists, but
-nothing delivers her to OpenClaw.
+nothing delivers her to OpenClaw. Its `"checked": ["2026.10.4"]` names a
+version, though OpenClaw was never installed or probed here and no record
+says what was checked.
 
 ## Claude Code
 
@@ -75,8 +77,9 @@ identity line, leaving its prompt-cache breakpoints in place. The
 (Claude Code 2.1.296, 2026-10-15) show that she answers as Dorothy, keeps
 her prompt cache across turns and leaves subagents to Claude Code. The
 [roadmap sweep's probes](../../reports/2026-10-19-roadmap-sweep.md#probes)
-(2026-10-19) repeated it in an interactive session and in a fork: one
-injection each, no drift. The design is the
+(2026-10-19) repeated it in an interactive session and in a fork: the
+interactive probe injected each main request once, the fork once, with no
+drift. The design is the
 [identity spec](../../specs/2026-10-15-identity-gateway-design.md).
 
 ### Recording
@@ -161,9 +164,9 @@ not captured from a running Codex, so it too is awaiting the live check.
 
 ### Live checks
 
-Waiting on the user. Codex's usage is spent until 5 November (17:23,
-Melbourne), and the probe needs the user to sign a temporary home in and
-trust the hooks. The
+Waiting on the user. As the delivery report recorded on 2026-11-01,
+Codex's usage was spent until 5 November (17:23, Melbourne), and the probe
+needs the user to sign a temporary home in and trust the hooks. The
 [delivery report's Waiting section](../../reports/2026-11-01-delivery.md#waiting-for-the-user)
 lists what the run will show: the trust screen, whether hooks given as
 session flags are offered for trust at all (otherwise a plugin route

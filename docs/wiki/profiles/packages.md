@@ -40,7 +40,7 @@ boundaries are in the
 and the
 [workspace modularity report](../../reports/2026-10-09-workspace-modularity.md);
 the wider workflow is under
-[repository workflow](../records.md#repository-workflow).
+[repository workflow](../topics/repository-workflow.md).
 
 An arrow below points from a package to one it may import.
 
@@ -113,7 +113,9 @@ mined and generated from it, systems asked them, answers judged and a
 report. Its design is the
 [memory evaluation spec](../../specs/2026-10-18-memory-evaluation-design.md).
 Only `snapshot` reads a data directory; every other command works in a
-directory it is given.
+directory it is given. Its libraries are LangChain (`@langchain/core` and
+`@langchain/openai`) for the model calls, `openevals` for judging and
+`zod` for schemas.
 
 - May import: `core` and `memory`, of memory only
   `@dorothy/memory/evaluation`.
@@ -157,7 +159,9 @@ history, and the service that shares them with other harnesses. It imports
 neither the agent nor the AI SDK: reviews and compaction take
 core's `StructuredCall`, and prompts arrive as text. The subjects are
 listed under [memory](../records.md#memory) in the catalogue of
-records.
+records. Its libraries are the MCP SDK for the service's tools,
+`isomorphic-git` for the history, `yaml` for fact files' front matter,
+and `zod` for schemas.
 
 - May import: `core`.
 - Entry points: nine. `"."`, `"./bridge"`, `"./claude-hook"`,
