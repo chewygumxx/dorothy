@@ -55,3 +55,5 @@ as the evidence for what it says.
   repository asks, each linking the page that explains it.
 - [Problems](./wiki/problems.md): symptoms a reader meets, with cause,
   diagnosis, remedy, state and evidence.
+- [Priorities](./wiki/priorities.md): the roadmap's phases ahead in order, its
+  candidates and the checks waiting on the user.
