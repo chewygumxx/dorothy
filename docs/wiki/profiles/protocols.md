@@ -94,8 +94,13 @@ both sides of Dorothy.
   everything else byte for byte
   ([the gateway guide](../../../packages/gateway/AGENTS.md)). The gateway
   names an OpenAI adapter as a place it could grow, not as existing.
-- As a base URL: an `anthropic` entry may name a loopback `base-url`, which
-  is how the live run's stand-in server was reached.
+- As a base URL: an `anthropic` entry may name a loopback `base-url`, so
+  that a loopback proxy, her gateway among them, can stand between her and
+  the API; it replaces the hook's `DOROTHY_ANTHROPIC_BASE_URL`
+  ([spec](../../specs/2026-11-01-model-providers-design.md#decisions)).
+  The AI SDK's Messages client was exercised against a stand-in Messages
+  server in the plan's first probe
+  ([report](../../reports/2026-11-01-model-providers.md#the-probe)).
 
 Clones matter for a later choice only. The conversation of 2026-11-01
 counted 12 of 20 surveyed providers documenting an Anthropic-compatible
@@ -253,9 +258,10 @@ and no ACP code exists in `packages/`.
 Agent-to-agent tasks, and how one agent knows who sent a message. State:
 compared; named in the roadmap as the way a candidate may be settled.
 
-A2A is an Apache-2.0 protocol, approved into the Agentic AI Foundation on
-2026-08-04, which the research found carries no memory or persona model
-and judged useful, later, for exposing her as a peer (2026-10-18). The
+A2A is an Apache-2.0 protocol whose proposal to the Agentic AI Foundation
+closed approved on 2026-08-04, which the research found carries no memory
+or persona model and judged useful, later, for exposing her as a peer
+(2026-10-18). The
 [2026-10-15 note on OpenClaw and Hermes](../../notes/2026-10-15_claude-conversation-openclaw-hermes-agent.md)
 reported that Hermes ships a plugin for it; this page has not checked
 that.

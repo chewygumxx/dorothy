@@ -33,6 +33,10 @@ profile is marked:
 - Proposed: a spec or the roadmap chooses it, and it is not in code.
 - Compared: research weighed it and nothing chose it.
 
+A profile may add that a system is superseded (replaced by a later
+choice), ruled out (a ruling excluded it) or untested (in code, never run
+against the real thing).
+
 Every price, term, model or availability claim keeps the date of the record
 it comes from and is a historical statement, never advice for today. The
 page was written from the records alone; nothing was looked up on the web
@@ -290,17 +294,22 @@ decision ([engine spec](../../specs/2026-10-31-memory-engine-design.md#later)).
 
 ## Assistant platforms
 
-Compared. Hermes Agent and OpenClaw are hosts she is delivered to, and are
-profiled on [harnesses](./harnesses.md); the objectives of 2026-10-15 had
-asked which of them should host her. The minutes of 2026-10-18 ruled that
-no one harness does. The replacements research tabulated, as platforms that
+Hermes Agent is used as a host: `packages/cli/src/hosts/hermes.ts` installs
+her profile and provider. OpenClaw is profiled as a host awaiting its
+install: its host profile is data in `packages/memory/src/hosts/` and
+nothing delivers her to it. Their state is on [harnesses](./harnesses.md).
+Only their comparison as platforms to replace or host her is "compared": the
+objectives of 2026-10-15 had asked which of them should host her, and the
+minutes of 2026-10-18 ruled that no one harness does. The replacements
+research tabulated, as platforms that
 might replace or host her, Letta Code, nanobot, SillyTavern, LibreChat, Open
 WebUI, AnythingLLM and LobeHub, and weighed Hermes to replace her, OpenClaw
 to host her code and Letta Code for files in git
 ([platforms](../../notes/2026-10-18_open-source-replacements.md#the-platforms)).
-None was chosen. The other terminal harnesses it surveyed, OpenCode, Qwen
-Code, Goose and the rest, are in the same research; four of them have host
-profiles in `packages/memory/src/hosts/` as data, without delivery.
+None of the platforms was chosen. The other terminal harnesses it surveyed,
+OpenCode, Qwen Code, Goose and the rest, are in the same research; four of
+them have host profiles in `packages/memory/src/hosts/` as data, without
+delivery.
 
 ## Cross-harness generators and parsers
 
