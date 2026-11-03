@@ -30,3 +30,7 @@ as the evidence for what it says.
   what each may import.
 - [Harnesses](./wiki/profiles/harnesses.md): Claude Code, Codex, OpenClaw and
   Hermes, and the state of her delivery to each.
+- [Protocols](./wiki/profiles/protocols.md): MCP, the model APIs, hook
+  payloads, ACP and the standards the research weighed.
+- [Services and providers](./wiki/profiles/services-and-providers.md): the
+  model providers, libraries, memory systems and tools her records weigh.
