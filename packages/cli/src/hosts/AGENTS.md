@@ -4,8 +4,8 @@ mtime: 2026-11-01
 spdx: GPL-3.0-only
 title: packages/cli/src/hosts/AGENTS.md
 description: >-
-  How the CLI runs Dorothy in hosts other than Claude Code: Codex's launcher
-  and Hermes's install.
+  How the CLI runs Dorothy in hosts other than Claude Code: Codex's launcher,
+  Hermes's install and Pi's pinned runtime boundary.
 tags:
   - agents
 ---
@@ -34,3 +34,11 @@ Dorothy in hosts other than Claude Code, whose launcher is `claude.ts`.
 - `../../assets/hermes/`: her provider, Python's standard library
   alone, running `--hook hermes`; `test_dorothy.py` stubs Hermes's
   base, and `hermes-plugin.test.ts` runs it under `bun test`.
+- `pi/runtime.ts`: `resolvePiRuntime(cliDir, env)` checks the CLI's
+  exact `1.5.0` dependency and installed package metadata as files,
+  resolves its public `node_modules/.bin/pi` link and checks the Node
+  selected by the passed `PATH` against `>=22.19.0`. The command uses
+  that Node and the resolved package binary, never a global `pi`.
+  Failures expose codes and paths, without probe output or environment.
+  The packaged executable test uses offline mode, private roots and
+  an environment without inherited credentials.

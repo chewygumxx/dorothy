@@ -88,7 +88,7 @@ SDK. Keep every new mode's import lazy.
   `mainEntry`, the main checkout's entry, which an install writes;
   `runForwarding`, shared by `--claude` and `--codex`: `SIGINT` ignored (the
   terminal sends it to the host too), `SIGTERM` and `SIGHUP` forwarded.
-- `hosts/`: Codex's launcher, Hermes's install: [guide](./src/hosts/AGENTS.md)
+- `hosts/`: Codex, Hermes and Pi: [guide](./src/hosts/AGENTS.md).
 - `claude-dump.ts`: `runClaudeDump` for `--claude --dump-context`: the gateway's
   upstream is `captureServer` from `@dorothy/agent`, `claude` runs quietly in
   print mode without saving its session, and is stopped at the first request,
