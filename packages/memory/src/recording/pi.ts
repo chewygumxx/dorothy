@@ -24,8 +24,10 @@
 // - A result pairs with the nearest assistant entry on its branch, with
 //   the first call of its id no earlier result there answered. The first
 //   result in append order emits the evidence, once, in its own segment.
-//   An unanswered call holds its segment after its entry (`pending`);
-//   only `ended`, with no halt or torn tail, records it failed there.
+//   A call Pi abandoned (its response aborted or errored, or a later
+//   user or assistant entry below it) is recorded failed at the call;
+//   any other unanswered call holds its segment after its entry
+//   (`pending`) until `ended`, with no halt or torn tail, fails it.
 // - A header naming `parentSession` without ancestry is held: `pending`,
 //   no segments. A partial last line waits; other faults halt at the last
 //   sound boundary, with a code that quotes no contents.
@@ -113,6 +115,8 @@ type Local = {
     calls: Call[];
     // The call a tool result answered, for later results on its branch.
     paired: string | null;
+    // Pi will never answer this entry's unanswered calls.
+    abandoned: boolean;
 };
 type Placed = { line: number; order: number; event: RecordEvent };
 type State = {
@@ -254,6 +258,23 @@ function pair(state: State, node: TreeNode, callId: string) {
     return undefined;
 }
 
+// Pi persists nothing between a call and its results (agent-session.js
+// defers custom and bash messages while streaming; agent-loop.js appends
+// a batch's results before the next turn). A user or assistant entry
+// below an assistant entry therefore abandons its unanswered calls.
+function moveOn(state: State, node: TreeNode) {
+    let id = node.parentId;
+    while (id !== null) {
+        const local = state.locals.get(id);
+        if (local?.role === "user") return;
+        if (local?.role === "assistant") {
+            local.abandoned = true;
+            return;
+        }
+        id = (local?.node ?? state.tree.node(id))?.parentId ?? null;
+    }
+}
+
 function place(state: State, local: Local, message: Message | null) {
     const { node, line, at } = local;
     state.locals.set(node.id, local);
@@ -265,6 +286,8 @@ function place(state: State, local: Local, message: Message | null) {
     };
     const id = (kind: RecordEvent["kind"], occurrence = 0) =>
         eventId(node.origin, node.id, kind, occurrence);
+    if (message?.role === "user" || message?.role === "assistant")
+        moveOn(state, node);
     switch (message?.role) {
         case "user":
             if (message.text.trim() !== "")
@@ -289,6 +312,8 @@ function place(state: State, local: Local, message: Message | null) {
                 sourceId: id("tool", occurrence),
                 at,
             }));
+            // agent-loop.js runs no call of an aborted or errored response.
+            local.abandoned = message.interrupted;
             return;
         case "bashExecution":
             emit({
@@ -362,20 +387,22 @@ function decodeEntry(record: unknown, line: number, state: State) {
             role: message?.role ?? null,
             calls: [],
             paired: null,
+            abandoned: false,
         },
         message,
     );
 }
 
-// Unanswered local calls: recorded failed once the session is over and
-// wholly read, else they hold their segment's later events.
+// Unanswered local calls: recorded failed once Pi abandoned them, or the
+// session is over and wholly read; else they hold their segment's later
+// events. Either way a failed call has its call's id and position.
 function settle(state: State, final: boolean): PiSegment[] {
     const held = new Map<string, number>();
-    for (const { node, line, at, calls } of state.locals.values()) {
+    for (const { node, line, at, calls, abandoned } of state.locals.values()) {
         if (node.inherited) continue;
         for (const [occurrence, call] of calls.entries()) {
             if (state.finalized.has(call.sourceId)) continue;
-            if (!final) {
+            if (!final && !abandoned) {
                 if (!held.has(node.owner)) held.set(node.owner, line);
                 continue;
             }

@@ -474,10 +474,18 @@ describe("readPi", () => {
                 2,
                 "toolUse",
             ),
-            user("user0002", "asst0001", "Never mind.", 3),
             user("user0003", "user0001", "Edited instead.", 4),
             assistant("asst0003", "user0003", [text("Sure.")], 5),
         ];
+        const failed = {
+            kind: "tool" as const,
+            name: "read",
+            input: "{}",
+            output: "",
+            ok: false,
+            sourceId: eid(PI_SESSION, "asst0001", "tool"),
+            at: piAt(2),
+        };
 
         it("holds a pending call's segment while other branches progress", () => {
             const r = read(aborted);
@@ -497,21 +505,11 @@ describe("readPi", () => {
 
         it("records an ended call once as failed, with its result's identity", () => {
             const ended = read(aborted, { ended: true });
-            const failed = {
-                kind: "tool" as const,
-                name: "read",
-                input: "{}",
-                output: "",
-                ok: false,
-                sourceId: eid(PI_SESSION, "asst0001", "tool"),
-                at: piAt(2),
-            };
             expect(ended.pending).toBe(false);
             expect(ended.segments[0]?.events).toEqual([
                 said("user", "user0001", "Look.", 1),
                 said("assistant", "asst0001", "Let me look.", 2),
                 failed,
-                said("user", "user0002", "Never mind.", 3),
             ]);
             const answered = read(
                 [
@@ -525,6 +523,55 @@ describe("readPi", () => {
             const tools = allEvents(answered).filter((e) => e.kind === "tool");
             expect(tools.map((e) => e.sourceId)).toEqual([failed.sourceId]);
         });
+
+        // pi-agent-core's agent-loop.js returns before executing the calls
+        // of an aborted or errored response, and a sequential batch breaks
+        // on abort; Pi persists nothing between a call and its results.
+        it.each([
+            [
+                "an aborted response's calls",
+                [
+                    ...aborted.slice(0, 2),
+                    assistant(
+                        "asst0001",
+                        "user0001",
+                        [text("Let me look."), toolCall("call_1", "read")],
+                        2,
+                        "aborted",
+                    ),
+                ],
+                "asst0001",
+            ],
+            [
+                "calls a later turn moved past",
+                [
+                    ...aborted.slice(0, 3),
+                    user("user0002", "asst0001", "Never mind.", 3),
+                ],
+                "user0002",
+            ],
+        ] as const)(
+            "records %s failed once, ended or not",
+            (_, lines, leaf) => {
+                const live = read(lines);
+                const ended = read(lines, { ended: true });
+                expect(live.pending).toBe(false);
+                expect(live.segments).toEqual(ended.segments);
+                const tools = allEvents(live).filter((e) => e.kind === "tool");
+                expect(tools).toEqual([failed]);
+                const resumed = read([
+                    ...lines,
+                    user("user0004", leaf, "Resumed.", 6),
+                ]);
+                expect(resumed.pending).toBe(false);
+                expect(
+                    allEvents(resumed).filter((e) => e.kind === "tool"),
+                ).toEqual([failed]);
+                expect(allEvents(resumed).at(-1)?.sourceId).toBe(
+                    eid(PI_SESSION, "user0004", "user"),
+                );
+            },
+        );
 
         it("keeps a pending call held when the read stops early", () => {
             const torn = read([...aborted.slice(0, 3), '{"type":"mess'], {
