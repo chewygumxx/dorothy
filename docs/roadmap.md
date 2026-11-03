@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-11-02
+mtime: 2026-11-03
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -49,6 +49,29 @@ or estimates.
 ## Ahead
 
 In order; the first is next.
+
+### Dorothy in Pi
+
+Pi is the user's highest priority, stated on 2026-11-03 after the
+[stewardship research](./notes/2026-11-03_pi-stewardship.md). The first
+design must address Dorothy coordinating Claude Code and Codex, like
+the development agents do through herdr, with Featherless inference
+and her shared identity and memory.
+
+This supersedes the old Pi exclusion and puts its integration ahead of
+the remaining delivery work. Whether she runs in Pi's terminal through
+extensions or embeds its SDK is still to be settled. The research
+proposes a bounded herdr trial before full compatibility with the
+[orchestra service](./specs/2026-11-02-orchestration-design.md); neither
+that sequence nor a runtime replacement is approved by priority alone.
+
+- **Status**: Highest Priority; Research Recorded; Design Pending
+- **Required**: Existing Identity, Memory Service and Model Providers
+- **Rationale**: The user has selected Pi for the stewardship capability
+  they most want. Its delivery and trial can build on the existing
+  services without waiting for every other host's live probes. The
+  integration design must settle recording, lifecycle and human
+  approval handling, then test actual coordination and recovery.
 
 ### Dorothy's Memory
 
@@ -101,8 +124,8 @@ of Claude Code, Codex and Hermes, and `dorothy --sweep --backfill`
 records what they already hold, with a durable mark preventing a review
 apiece until a live append.
 
-The harnesses she is provided for and tested against are Claude Code,
-Codex, OpenClaw and Hermes Agent, as the user chose. Claude Code is
+The earlier delivery targets are Claude Code, Codex, OpenClaw and
+Hermes Agent. Pi now takes priority in its phase above. Claude Code is
 recorded already; Codex offers hooks and its rollout files, and
 OpenClaw and Hermes a memory plugin each, in a slot that takes one
 provider, as the contract's host profiles record. Recording reads the
@@ -602,3 +625,8 @@ In order of completion.
   but high priority, as herdr's agent names changed and the names
   written into the stewardship skill, memory and handover notes went
   stale.
+- 2026-11-03: The user makes Pi the highest priority, superseding its
+  earlier exclusion. Dorothy in Pi goes first, for integration design
+  and stewardship testing. The previous delivery targets remain;
+  choosing a runtime replacement or a particular implementation path
+  is left to the design.

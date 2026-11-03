@@ -38,6 +38,20 @@ but records no failed capability test and no separate Pi-specific user
 rationale. The current interfaces fit much of the job; human approval
 elicitation is a concrete integration gap.
 
+## Priority decision after the research
+
+Later on 2026-11-03, the user made Pi "by far, our highest priority"
+after reviewing the available agents, and asked what must be done.
+This explicitly supersedes the earlier Pi exclusion. The
+[roadmap][roadmap] and current agent memories now give Pi priority;
+the historical minutes remain a record of the earlier decision.
+
+The priority is settled. The integration architecture is not: choosing
+Pi first does not itself approve replacing Dorothy's runtime, embedding
+Pi's SDK, or the particular trial proposed below. Herdr stewardship is
+the immediate capability of interest; full orchestra compatibility is
+separate work with the approval gap described in this study.
+
 ## What the earlier decision actually says
 
 The repository records two decisions, not a benchmark ranking:
@@ -74,8 +88,9 @@ facts or as the user's rationale.
 
 The [2 November survey][featherless-note] considered Pi again as a
 Featherless orchestrator using extensions. That survey did not explicitly
-repeal the October ruling. The present request reopens research into Pi;
-it does not require rewriting the historical record.
+repeal the October ruling. The initial research request reopened the
+question; the subsequent priority decision above supersedes the
+exclusion without rewriting the historical record.
 
 Testing Dorothy in Pi as an additional host preserves the principle
 that her identity and memory belong to no one harness. It is a narrower
