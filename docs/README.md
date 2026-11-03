@@ -26,6 +26,8 @@ as the evidence for what it says.
 ## Pages
 
 - [Records](./wiki/records.md): every dated record by subject.
+- [Decisions](./wiki/decisions.md): why her significant choices were made,
+  by subject, with who chose, the cost and whether each still stands.
 - [Memory](./wiki/topics/memory.md): what she stores, how recall finds and
   delivers it, and how it is compacted, tagged, versioned and shared.
 - [Evaluation](./wiki/topics/evaluation.md): how her memory is measured, the
