@@ -55,3 +55,9 @@ which holds what every host shares. No Pi package is imported here.
 - A file past 64 MiB is unreadable; a halt is kept under host `pi` and
   the native session, `--sweep --reread` and `--dismiss pi` serve it.
 - Pi's ended rule is the sweep's hour, or a hook's `end`.
+- A `dorothy.tool-final` custom entry (`{ entryId, toolCallId, content,
+  isError }`), written by the CLI's Pi extension for a call Pi finalized
+  without a saved result, answers that call with its own identity. It
+  counts only where the named assistant entry is its ancestor and no
+  ordinary result in the file answered the call; a malformed one is
+  ignored. So a result, a final and a failure never double-emit.

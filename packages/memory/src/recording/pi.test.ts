@@ -35,6 +35,7 @@ import {
     thinking,
     thinkingLevel,
     toolCall,
+    toolFinal,
     toolResult,
     usageEntry,
     user,
@@ -596,6 +597,122 @@ describe("readPi", () => {
                 kind: "tool",
                 output: "Found.",
                 sourceId: eid(PI_SESSION, "asst0001", "tool"),
+            });
+        });
+
+        describe("tool-final entries", () => {
+            const final = (
+                id: string,
+                parentId: string,
+                words = "Partial output.",
+                isError = true,
+                callId = "call_1",
+                entryId = "asst0001",
+            ) =>
+                toolFinal(
+                    id,
+                    parentId,
+                    entryId,
+                    callId,
+                    [text(words)],
+                    isError,
+                );
+            const finalized = {
+                ...failed,
+                output: "Partial output.",
+                at: piAt(4),
+            };
+            const toolsOf = (r: PiRead) =>
+                allEvents(r).filter((e) => e.kind === "tool");
+
+            it("answers a call Pi wrote no result for, at the call's identity", () => {
+                const lines = [
+                    ...aborted.slice(0, 3),
+                    final("finl0001", "asst0001"),
+                ];
+                const live = read(lines);
+                expect(live.pending).toBe(false);
+                expect(live.halt).toBeNull();
+                expect(toolsOf(live)).toEqual([finalized]);
+                expect(read(lines, { ended: true }).segments).toEqual(
+                    live.segments,
+                );
+                const ok = read([
+                    ...aborted.slice(0, 3),
+                    final("finl0001", "asst0001", "Done.", false),
+                ]);
+                expect(toolsOf(ok)).toEqual([
+                    { ...finalized, output: "Done.", ok: true },
+                ]);
+            });
+
+            it("gives way to an ordinary result anywhere on the file", () => {
+                for (const lines of [
+                    [
+                        ...aborted.slice(0, 3),
+                        final("finl0001", "asst0001"),
+                        toolResult("rslt0001", "finl0001", "call_1", "read", [
+                            text("Late."),
+                        ]),
+                    ],
+                    [
+                        ...aborted.slice(0, 3),
+                        toolResult("rslt0001", "asst0001", "call_1", "read", [
+                            text("Late."),
+                        ]),
+                        final("finl0001", "rslt0001"),
+                    ],
+                ]) {
+                    const tools = toolsOf(read(lines, { ended: true }));
+                    expect(tools).toHaveLength(1);
+                    expect(tools[0]).toMatchObject({
+                        output: "Late.",
+                        ok: true,
+                        sourceId: failed.sourceId,
+                    });
+                }
+            });
+
+            it("replaces an abandoned call's failure, once", () => {
+                const lines = [
+                    ...aborted.slice(0, 3),
+                    final("finl0001", "asst0001"),
+                    final("finl0002", "finl0001", "Second copy."),
+                    user("user0002", "finl0002", "Never mind.", 5),
+                ];
+                for (const ended of [false, true]) {
+                    expect(toolsOf(read(lines, { ended }))).toEqual([
+                        finalized,
+                    ]);
+                }
+            });
+
+            it("is ignored where it names no call on its branch", () => {
+                for (const stray of [
+                    final("finl0001", "asst0001", "x", true, "call_9"),
+                    final(
+                        "finl0001",
+                        "asst0001",
+                        "x",
+                        true,
+                        "call_1",
+                        "user0001",
+                    ),
+                    final("finl0001", "asst0003", "x", true, "call_1"),
+                    entry("custom", "finl0001", "asst0001", {
+                        customType: "dorothy.tool-final",
+                        data: { entryId: "asst0001", toolCallId: 1 },
+                    }),
+                ]) {
+                    const lines = [...aborted, stray];
+                    const r = read(lines);
+                    expect(r.halt).toBeNull();
+                    expect(toolsOf(r)).toEqual([]);
+                    expect(r.segments[0]?.pending).toBe(true);
+                    expect(toolsOf(read(lines, { ended: true }))).toEqual([
+                        failed,
+                    ]);
+                }
             });
         });
 

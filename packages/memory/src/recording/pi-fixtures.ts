@@ -24,13 +24,14 @@ export const header = (
     id = PI_SESSION,
     parentSession?: string,
     version: unknown = 3,
+    cwd = "/fixture/project",
 ) =>
     JSON.stringify({
         type: "session",
         version,
         id,
         timestamp: piAt(0),
-        cwd: "/fixture/project",
+        cwd,
         ...(parentSession === undefined ? {} : { parentSession }),
     });
 
@@ -215,6 +216,27 @@ export const custom = (id: string, parentId: string | null) =>
         customType: "fixture-extension",
         data: { count: 1 },
     });
+// The result Dorothy's extension saw for a call Pi wrote none for, as
+// assets/pi/context.ts appends it: the call's entry and id, and content.
+export const toolFinal = (
+    id: string,
+    parentId: string | null,
+    entryId: string,
+    toolCallId: string,
+    content: unknown[],
+    isError = false,
+    second = 4,
+) =>
+    entry(
+        "custom",
+        id,
+        parentId,
+        {
+            customType: "dorothy.tool-final",
+            data: { entryId, toolCallId, content, isError },
+        },
+        second,
+    );
 export const customMessage = (id: string, parentId: string | null) =>
     entry("custom_message", id, parentId, {
         customType: "fixture-extension",

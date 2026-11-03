@@ -36,6 +36,13 @@
 //   nothing; `bashExecution` is a `bash` tool event; images are `[image]`.
 //   Unknown entry types are kept once and join the tree; unknown roles
 //   and content blocks halt, as they could carry speech.
+// - A `dorothy.tool-final` custom entry, which Dorothy's extension writes
+//   for a call Pi finalized without persisting its result, answers the
+//   first unanswered call of its id in the assistant entry it names, an
+//   ancestor on its own branch. It has that call's identity and is used
+//   only where no ordinary result anywhere in the file answered the
+//   call, so a result, a final and a failure are never all emitted. One
+//   that names no such call, or is malformed, is ignored, never a halt.
 import type { RecordEvent } from "@dorothy/core";
 import {
     digestOf,
@@ -119,14 +126,26 @@ type Local = {
     abandoned: boolean;
 };
 type Placed = { line: number; order: number; event: RecordEvent };
+// A result Dorothy's extension saw for calls of one id in one entry.
+type Final = {
+    node: TreeNode;
+    line: number;
+    at: string;
+    calls: Call[];
+    output: string;
+    ok: boolean;
+};
 type State = {
     read: PiRead;
     tree: PiTree;
     locals: Map<string, Local>;
     placed: Map<string, Placed[]>;
     finalized: Set<string>;
+    finals: Final[];
     known: Set<string>;
 };
+
+export const TOOL_FINAL = "dorothy.tool-final";
 
 const object = (value: unknown): value is Json =>
     value !== null && typeof value === "object" && !Array.isArray(value);
@@ -275,6 +294,37 @@ function moveOn(state: State, node: TreeNode) {
     }
 }
 
+// The calls a tool-final entry answers: its named entry's calls of its
+// id, where that entry is an assistant entry above it on its branch.
+function finalOf(state: State, local: Local, data: unknown): Final | null {
+    if (
+        !object(data) ||
+        typeof data.entryId !== "string" ||
+        typeof data.toolCallId !== "string" ||
+        typeof data.isError !== "boolean"
+    )
+        return null;
+    let output: string;
+    try {
+        output = spoken(data.content, "\n");
+    } catch (error) {
+        if (error instanceof PiHalt) return null;
+        throw error;
+    }
+    let id = local.node.parentId;
+    while (id !== null && id !== data.entryId)
+        id =
+            (state.locals.get(id)?.node ?? state.tree.node(id))?.parentId ??
+            null;
+    const target = id === null ? undefined : state.locals.get(id);
+    if (target?.role !== "assistant") return null;
+    const calls = target.calls.filter(
+        (call) => call.callId === data.toolCallId,
+    );
+    if (calls.length === 0) return null;
+    return { ...local, calls, output, ok: !data.isError };
+}
+
 function place(state: State, local: Local, message: Message | null) {
     const { node, line, at } = local;
     state.locals.set(node.id, local);
@@ -378,25 +428,53 @@ function decodeEntry(record: unknown, line: number, state: State) {
         type !== "usage",
     );
     if (node === null) return;
-    place(
-        state,
-        {
-            node,
+    const local: Local = {
+        node,
+        line,
+        at,
+        role: message?.role ?? null,
+        calls: [],
+        paired: null,
+        abandoned: false,
+    };
+    place(state, local, message);
+    if (type === "custom" && record.customType === TOOL_FINAL) {
+        const final = finalOf(state, local, record.data);
+        if (final !== null) state.finals.push(final);
+    }
+}
+
+// Each tool-final, in append order, answers the first of its calls no
+// ordinary result or earlier final did, in its own segment.
+function finish(state: State) {
+    for (const { node, line, at, calls, output, ok } of state.finals) {
+        const call = calls.find((each) => !state.finalized.has(each.sourceId));
+        if (!call) continue;
+        state.finalized.add(call.sourceId);
+        if (node.inherited) continue;
+        const owned = state.placed.get(node.owner) ?? [];
+        owned.push({
             line,
-            at,
-            role: message?.role ?? null,
-            calls: [],
-            paired: null,
-            abandoned: false,
-        },
-        message,
-    );
+            order: 0,
+            event: {
+                kind: "tool",
+                name: call.name,
+                input: call.input,
+                output,
+                ok,
+                sourceId: call.sourceId,
+                at,
+            },
+        });
+        state.placed.set(node.owner, owned);
+    }
 }
 
 // Unanswered local calls: recorded failed once Pi abandoned them, or the
 // session is over and wholly read; else they hold their segment's later
 // events. Either way a failed call has its call's id and position.
 function settle(state: State, final: boolean): PiSegment[] {
+    finish(state);
     const held = new Map<string, number>();
     for (const { node, line, at, calls, abandoned } of state.locals.values()) {
         if (node.inherited) continue;
@@ -478,6 +556,7 @@ export function readPi(
                 locals: new Map(),
                 placed: new Map(),
                 finalized: new Set(),
+                finals: [],
                 known: new Set(),
             };
         } catch (error) {
