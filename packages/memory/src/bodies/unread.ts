@@ -293,10 +293,14 @@ const HOSTS: Record<string, string> = {
 // What a halt's number counts: Hermes keeps rows, the rest lines.
 export const unit = (host: string | undefined) =>
     host === "hermes" ? "row" : "line";
+// A Pi file that moved an entry it had kept (`ownership`) reads the same
+// again: only a dismissal, or deleting its sidecar, ends the halt.
+const rereadable = (record: UnreadRecord) =>
+    !(hostOf(record) === "pi" && record.reason === "ownership");
 const haltNotice = (env: Env, record: UnreadRecord) =>
     hostOf(record) === CLAUDE
         ? claudeNotice(env, record)
-        : `memory: a ${HOSTS[hostOf(record)] ?? hostOf(record)} session (${record.session}) could not be read past ${unit(record.host)} ${record.line} (${record.reason}); the rest is kept in ${copyPath(env, record.session, hostOf(record))}. dorothy --sweep --reread tries again; --sweep --dismiss ${hostOf(record)} ${shellWord(record.session)} stops this notice`;
+        : `memory: a ${HOSTS[hostOf(record)] ?? hostOf(record)} session (${record.session}) could not be read past ${unit(record.host)} ${record.line} (${record.reason}); the rest is kept in ${copyPath(env, record.session, hostOf(record))}. ${rereadable(record) ? "dorothy --sweep --reread tries again" : "dorothy --sweep --reread cannot clear it, as the file moved an entry already kept; deleting the file's sidecar lets it be read again"}; --sweep --dismiss ${hostOf(record)} ${shellWord(record.session)} stops this notice`;
 const claudeNotice = (env: Env, record: UnreadRecord) =>
     `memory: a Claude Code session (${record.session}) could not be read past line ${record.line} (${record.reason}); the rest is kept in ${copyPath(env, record.session)}. dorothy --claude-hook --reread tries again; --dismiss ${record.session} stops this notice`;
 

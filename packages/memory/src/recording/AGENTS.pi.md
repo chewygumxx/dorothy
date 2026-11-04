@@ -56,7 +56,9 @@ which holds what every host shares. No Pi package is imported here.
   takes a segment, so a rewrite that would move a kept entry or segment
   halts the file at that entry (`ownership`), recording nothing.
 - A file past 64 MiB is unreadable; a halt is kept under host `pi` and
-  the native session, `--sweep --reread` and `--dismiss pi` serve it.
+  the native session, `--sweep --reread` and `--dismiss pi` serve it,
+  but an `ownership` halt only `--dismiss pi` (or deleting the file's
+  sidecar) ends: a reread meets the same moved entry.
 - Pi's ended rule is the sweep's hour, or a hook's `end`.
 - A `dorothy.tool-final` custom entry (`{ entryId, toolCallId, content,
   isError }`), written by the CLI's Pi extension for a call Pi finalized

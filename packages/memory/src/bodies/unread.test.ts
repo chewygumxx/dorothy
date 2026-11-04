@@ -265,6 +265,26 @@ describe("lines kept aside", () => {
             expect(told).toContain(`--sweep --dismiss codex ${S1} stops`);
         });
 
+        it("says only a dismissal ends a Pi ownership halt", async () => {
+            await keepHalt(env, { ...other("pi", S1), reason: "ownership" }, [
+                '{"key":"x","line":3}',
+            ]);
+            const [told] = await startNotices(env);
+            expect(told).toContain("a Pi session");
+            expect(told).toContain(`--sweep --dismiss pi ${S1} stops`);
+            expect(told).not.toContain("--reread tries again");
+            expect(told).toContain("--reread cannot clear it");
+            // Another Pi halt a reread can mend keeps the offer.
+            await keepHalt(
+                env,
+                { ...other("pi", "0190c2d8-fixture"), reason: "torn" },
+                ["x"],
+            );
+            expect((await startNotices(env))[0]).toContain(
+                "--sweep --reread tries again",
+            );
+        });
+
         it("quotes an id a shell would split in the command it offers", async () => {
             await keepHalt(env, other("hermes", "a b'c"), ["row 3"]);
             const [told] = await startNotices(env);
