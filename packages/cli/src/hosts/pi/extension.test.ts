@@ -475,6 +475,31 @@ describe("the memory layer", () => {
         expect(await contents()).toEqual(["COMPACTED BLOCK"]);
     });
 
+    it("places the layer before kept turns after a mid-turn compaction", async () => {
+        const pi = start();
+        await pi.emit("session_start", { reason: "startup" });
+        // Pi's split-turn compaction: a summary, then the kept tail of the
+        // turn (assistant and tool results), no user message in context.
+        const summary = {
+            role: "compactionSummary",
+            summary: "earlier",
+            tokensBefore: 1,
+            timestamp: 0,
+        };
+        const call = { role: "assistant", content: [], timestamp: 0 };
+        const result = { role: "toolResult", content: [], timestamp: 0 };
+        const out = await pi.emit("context", {
+            messages: [summary, call, result],
+        });
+        expect(out.messages.map((m) => m.role)).toEqual([
+            "compactionSummary",
+            "custom",
+            "assistant",
+            "toolResult",
+        ]);
+        expect(layers(out.messages)).toHaveLength(1);
+    });
+
     it("warns, never rejects, when Pi's context is gone", async () => {
         const pi = start({ stale: true });
         await pi.emit("session_start", { reason: "startup" });

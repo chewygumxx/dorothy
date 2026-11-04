@@ -63,7 +63,9 @@ with Bun code are re-declared, and `extension.test.ts` checks they agree.
   `clear`; `compact` after compaction, `resume` after a tree move) asks
   for the block, a human prompt for recall; the two make one
   `dorothy.memory` message before the latest human prompt on each
-  request (`layered`), never saved, any older copy dropped. After each
+  request (`layered`; with none in context, as after a mid-turn
+  compaction, before the first kept assistant or tool result), never
+  saved, any older copy dropped. After each
   settled run it asks memory to record (`settled`); at shutdown, once
   pending records finish, `end`. A call Pi finalized without saving its
   result gets a `dorothy.tool-final` entry (`{ entryId, toolCallId,

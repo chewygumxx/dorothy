@@ -86,8 +86,9 @@ function startReason(event: SessionStartEvent, ctx: ExtensionContext): Reason {
     return spoken ? "resume" : "startup";
 }
 
-// The conversation with this one layer before its latest human prompt,
-// any other copy of the layer gone; undefined where nothing changes.
+// The conversation with this one layer before its latest human prompt (or,
+// with none, before the first assistant or tool result), any other copy of
+// the layer gone; undefined where nothing changes.
 export function layered(
     messages: readonly Message[],
     text: string,
@@ -106,7 +107,13 @@ export function layered(
     };
     let at = kept.length;
     while (at > 0 && kept[at - 1]?.role !== "user") at--;
-    const before = at > 0 ? at - 1 : kept.length;
+    // No human prompt (a mid-turn compaction keeps only the turn's tail):
+    // before the first kept assistant or tool result, after any summary.
+    const tail = kept.findIndex(
+        (message) =>
+            message.role === "assistant" || message.role === "toolResult",
+    );
+    const before = at > 0 ? at - 1 : tail >= 0 ? tail : kept.length;
     return [...kept.slice(0, before), layer, ...kept.slice(before)];
 }
 
