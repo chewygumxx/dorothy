@@ -58,9 +58,14 @@ describe("the house header", () => {
             "docs/reports/2026-10-08-tags/probe/say.sh",
             ".agents/memory/MEMORY.md",
             ".github/pull_request_template.md",
+            "packages/cli/assets/pi/vendor/herdr/herdr-agent-state.ts",
         ]) {
             expect(isHeaded(path)).toBe(false);
         }
+        // A vendored file's provenance note is the repository's own.
+        expect(
+            isHeaded("packages/cli/assets/pi/vendor/herdr/PROVENANCE.md"),
+        ).toBe(true);
     });
 
     it("is missing from a headed file that has none", () => {
