@@ -46,6 +46,9 @@ export type WorkerObservation = {
     // herdr's terminal id of the matched occupant, for the caller to pin;
     // null where unmatched, absent or not a bounded word. Never a match.
     terminalId: string | null;
+    // The registry's observed availability (its budget and state, as the
+    // runner saw them), carried in a list's reply.
+    availability?: Availability;
 };
 
 export type TaskBrief = {

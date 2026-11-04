@@ -103,7 +103,8 @@ or infers a target from focus. Bun code, never loaded by Pi's extension.
   receipt for its id, current
   revision and unchanged report digest, with the same command, exit and
   log (exit nonzero: `failed`). `read` takes 1 to 200 lines and refuses
-  over 32 KiB. `processStart` and `processAlive` are Linux's
+  over 32 KiB. `list` gives each observation the registry's
+  `availability`. `processStart` and `processAlive` are Linux's
   `<boot id>:<start ticks>` identity and the production liveness.
 - `fixtures.ts`: `writeRegistry` (private roots), `fakeHerdr`, whose
   replies have herdr 0.9.5's structure with every value invented, and

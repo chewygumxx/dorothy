@@ -71,6 +71,7 @@ export type WorkerObservation = {
     observedAt: string;
     code: string | null;
     terminalId: string | null;
+    availability?: "available" | "busy" | "limited" | "unknown";
 };
 export type StewardReply = {
     ok: boolean;
@@ -269,6 +270,10 @@ const HINTS: Record<string, string> = {
         "was doing may have happened. Call workers_reconcile before " +
         "anything else, and never repeat a dispatch under a new id.",
     WAIT_TIMEOUT: "Not reported yet: the worker still holds the task.",
+    WORKER_UNAVAILABLE:
+        "The registry does not show this worker available: its budget or " +
+        "state, as the runner observed it, rules it out. Choose another " +
+        "available worker, or tell the person; do not retry it.",
     WAIT_CANCELLED:
         "The wait stopped; the worker still holds the task and may still " +
         "be working.",
@@ -393,6 +398,7 @@ const line = (task: TaskRecord) =>
 
 const workerLine = (worker: WorkerObservation) =>
     `- ${worker.id}: ${worker.matches ? worker.state : "not as registered"}` +
+    (worker.availability ? `, ${worker.availability}` : "") +
     (worker.code ? ` (${worker.code})` : "");
 
 // The pane's text, fenced by a marker it cannot know in advance.

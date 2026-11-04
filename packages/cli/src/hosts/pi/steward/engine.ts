@@ -850,7 +850,10 @@ async function operate(
         case "list": {
             const workers: WorkerObservation[] = [];
             for (const worker of ctx.fleet.workers) {
-                workers.push(await ctx.observe(worker));
+                workers.push({
+                    ...(await ctx.observe(worker)),
+                    availability: worker.availability,
+                });
             }
             return reply(true, "OK", ctx.ledger.tasks(), workers);
         }

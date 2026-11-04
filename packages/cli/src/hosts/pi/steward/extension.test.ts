@@ -745,6 +745,36 @@ describe("a stewardship run", () => {
         expect(await sends()).toHaveLength(1);
     });
 
+    it("shows each worker's availability and refuses an unavailable one", async () => {
+        const [codex, claude] = fleet.raw.workers;
+        await writeFile(
+            fleet.path,
+            JSON.stringify({
+                ...fleet.raw,
+                workers: [codex, { ...claude, availability: "limited" }],
+            }),
+        );
+        const pi = await load();
+        const listed = await pi.call("workers_list");
+        expect(
+            listed.details.workers.map((w: WorkerObservation) => [
+                w.id,
+                w.availability,
+            ]),
+        ).toEqual([
+            ["trial-codex", "available"],
+            ["trial-claude", "limited"],
+        ]);
+        const text = listed.content[0]?.text ?? "";
+        expect(text).toContain("- trial-codex: idle, available");
+        expect(text).toContain("- trial-claude: idle, limited");
+        const refused = await dispatch(pi, "t1", "trial-claude");
+        expect(refused.isError).toBe(true);
+        expect(refused.details.code).toBe("WORKER_UNAVAILABLE");
+        expect(refused.content[0]?.text).toContain("Choose another");
+        expect(await sends()).toEqual([]);
+    });
+
     it("restores the run's tasks after compaction and a reload", async () => {
         const bus = fakeBus();
         const pi = await load({ bus });
