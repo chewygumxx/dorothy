@@ -773,9 +773,11 @@ sync pushed.
 
 ## Development
 
-The code is five Bun workspace packages under `packages/` (`core`, `memory`,
-`agent`, `tui` and `cli`), linked by Bun's isolated linker;
-[`AGENTS.md`](./AGENTS.md) and each package's own describe them.
+The code is eight Bun workspace packages under `packages/` (`agent`, `cli`,
+`core`, `eval`, `gateway`, `identity`, `memory` and `tui`), linked by Bun's
+isolated linker; [`AGENTS.md`](./AGENTS.md) and each package's own describe
+them. The [wiki](./docs/README.md) explains each subsystem, the decisions
+behind it and what comes next.
 
 - `bun run dev` and `bun run start` run the CLI from source
   (`packages/cli/src/index.ts`).

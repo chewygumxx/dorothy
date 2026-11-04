@@ -34,6 +34,7 @@ import {
     pointMemoryDirectory,
     withMemoryDirectory,
 } from "./scripts/agent-memory.js";
+import { linkTargets } from "./scripts/markdown-links.js";
 
 const ROOT = import.meta.dir;
 const at = (...parts: string[]) => join(ROOT, ...parts);
@@ -110,25 +111,6 @@ const walk = (dir: string, found: string[] = []): string[] => {
 
 const guidanceUnder = (dir: string): string[] =>
     walk(dir).filter((path) => basename(path) === "AGENTS.md");
-
-// The relative link targets in Markdown, without their fragments: inline
-// links, titled or in angle brackets, and reference definitions. Code is
-// skipped, as a link there is only an example.
-const linkTargets = (markdown: string): string[] => {
-    const prose = markdown
-        .replace(/^(```|~~~)[^\n]*\n[\s\S]*?^\1[^\n]*$/gm, "")
-        .replace(/`[^`\n]*`/g, "");
-    const inline = [...prose.matchAll(/\]\(\s*(?:<([^>\n]*)>|([^)\s]+))/g)];
-    const defined = [
-        ...prose.matchAll(/^ {0,3}\[[^\]\n]+\]:\s*(?:<([^>\n]*)>|(\S+))/gm),
-    ];
-    return [...inline, ...defined]
-        .map(
-            (match) =>
-                ((match[1] ?? match[2]) as string).split("#")[0] as string,
-        )
-        .filter((target) => target !== "" && !/^[a-z][a-z+.-]*:/i.test(target));
-};
 
 // Relative links that resolve to nothing, a leading slash meaning the
 // repository's root; remark checks none of them.
