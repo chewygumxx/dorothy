@@ -71,19 +71,26 @@ full compatibility with the
 The user approved the design and authorised execution through the
 [delivery plan](./plans/2026-11-03_pi-delivery.md), followed by the
 [stewardship plan](./plans/2026-11-03_pi-stewardship.md). Delivery,
-increment A, is built and verified on the branch `feat/pi-integration`:
-the native interface in a pseudo-terminal, recovery after a killed
-launcher, and a bounded live Featherless run, which passed
-([report](./reports/2026-11-03_pi-delivery.md)).
+increment A, is done and merged in #129: the native interface in a
+pseudo-terminal, recovery after a killed launcher, and a bounded live
+Featherless run, which passed
+([report](./reports/2026-11-03_pi-delivery.md),
+[deferred](./deferred/2026-11-03_pi-delivery-deferred.md)). Increment B,
+stewardship, is next; the phase stays in Ahead until it is done.
 
-- **Status**: Highest Priority; Delivery Verified, Awaiting Merge;
-  Stewardship Next
+- **Status**: Highest Priority; Delivery Merged; its Production Wiring
+  Check Waiting on the User; Stewardship Next
 - **Required**: Existing Identity, Memory Service and Model Providers
 - **Rationale**: The user has selected Pi for the stewardship capability
-  they most want. Its delivery and trial can build on the existing
-  services without waiting for every other host's live probes. The
-  integration design must settle recording, lifecycle and human
-  approval handling, then test actual coordination and recovery.
+  they most want. Delivery gave it a launcher, an extension, shared
+  memory and recording to add tools to, without waiting for every other
+  host's live probes. Stewardship must settle worker dispatch, recovery
+  and human approval handling, then test actual coordination. One check
+  waits on the user first: `RUNNERS.pi`, the production wiring of the
+  checkout's secrets and `config.toml` route, has never run in a test,
+  as one would decrypt `secrets.json`. `dorothy --pi --dump` and one
+  real launch settle it, before stewardship's tasks edit the same
+  runner and at the latest before its live trial.
 
 ### Dorothy's Memory
 
@@ -135,7 +142,8 @@ lexical baseline and full context, with models named in `eval.toml`.
 Recording is built too: her service sweeps the sessions of Claude Code,
 Codex and Hermes, and `dorothy --sweep --backfill` records what they
 already hold, with a durable mark preventing a review apiece until a live
-append.
+append. Pi's own sessions join them, recorded by her extension's hook and
+the sweep alike (Dorothy in Pi, above).
 
 The earlier delivery targets are Claude Code, Codex, OpenClaw and
 Hermes Agent. Pi now takes priority in its phase above. Claude Code is
@@ -315,6 +323,21 @@ Found but not scheduled, each with its source.
   guessed; the registry's shape is tested; and a rename is one edit to
   the registry.
 
+- Pi delivery's deferred findings
+  ([record](./deferred/2026-11-03_pi-delivery-deferred.md)) and limits,
+  none of which stewardship is easier for done first: a launch directory
+  a killed launcher leaves in the runtime directory is never swept; the
+  prompt hook decodes a session and its ancestors before it answers
+  (84 ms at 20 MiB, 176 ms at 58 MiB), which the file's sidecar could
+  answer as the leaf lookup; `sweep.ts` (786 lines), `launch.ts`, and
+  the probe with its proxy want splitting; Pi's packaged skills, of
+  which stewardship's own skill is the first and decides for itself, the
+  rest waiting; recording minors (an unpaired result dropped silently,
+  forks orphaned by a moved parent, sidecars never removed); the
+  user's tool flags able to drop her memory tools; and live limits
+  (reasoning replay seen once, compaction, resume and fork against the
+  scripted provider alone, `dorothy.tool-final` with no real case, and
+  a fixture that reads Pi's screen text).
 - Model Providers' deferred findings
   ([record](./deferred/2026-11-01_model-providers-deferred.md)): stream
   errors coded by word, an output limit of her own, thinking on the other
@@ -655,3 +678,11 @@ In order of completion.
   the native interface and recovery, and two bounded live Featherless
   runs at about US$0.0028 in all. Stewardship stays next in the phase, after
   delivery merges; its report's limits wait for that revision.
+- 2026-11-04: Pi's delivery is merged (#129); the phase stays first in
+  Ahead, with stewardship next. Its status gains the user's production
+  wiring check (`dorothy --pi --dump` and one real launch), the one
+  finding that makes stewardship safer done first. Candidates gain its
+  deferred findings and limits (stale launch directories, a sidecar leaf
+  lookup, splitting `sweep.ts`, the launcher and the probe, Pi's
+  packaged skills): stewardship is no easier, safer or smaller with any
+  of them, and its own skill settles the first of the skills.
