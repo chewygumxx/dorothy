@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-03
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: Priorities
 description: >-
@@ -29,6 +29,9 @@ gives its reasons, and its Revising section keeps this page in step.
 
 In the roadmap's order; the first is next.
 
+- [Dorothy in Pi](../roadmap.md#dorothy-in-pi): Highest Priority; Delivery
+  Merged (#129); its Production Wiring Check Waiting on the User;
+  Stewardship Next.
 - [Dorothy's Memory](../roadmap.md#dorothys-memory): Store, Bodies,
   Contract, Evaluation and Recording Built; the Backfill Recorded and
   Reviewed; the First Run Done; the Engine's First Step Built and its Paid
@@ -50,6 +53,7 @@ Found but not scheduled, in the roadmap's order, which
 [lists them](../roadmap.md#candidates) with their sources.
 
 - A registry of herdr agents.
+- Pi delivery's deferred findings and limits.
 - Model Providers' deferred findings.
 - The sweep's remaining deferred minors.
 - Recording's deferred minors.
@@ -88,6 +92,10 @@ Found but not scheduled, in the roadmap's order, which
 Live checks that wait on the user's sign-ins or approval. What each host
 needs is on [harnesses](./profiles/harnesses.md).
 
+- Pi, the production wiring of `dorothy --pi`: run `dorothy --pi --dump`
+  and one real launch. The fixtures and probes never ran it, as a test
+  would decrypt the checkout's `secrets.json`
+  ([deferred](../deferred/2026-11-03_pi-delivery-deferred.md#waiting-on-the-user)).
 - Hermes, a live probe on a temporary home the user signs in
   ([step 3](../reports/2026-11-01-delivery.md#waiting-for-the-user)).
 - Codex, a live probe with the user after 5 November 17:23, when its usage

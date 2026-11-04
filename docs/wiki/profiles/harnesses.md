@@ -1,11 +1,11 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-03
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: Harnesses
 description: >-
-  The four hosts Dorothy is delivered to, Claude Code, Codex, OpenClaw and
-  Hermes Agent: how each receives her persona and memory, how her sessions
+  The hosts Dorothy is delivered to, Claude Code, Codex, OpenClaw, Hermes
+  Agent and Pi: how each receives her persona and memory, how her sessions
   there are recorded, and what is built, checked or waiting.
 tags:
   - wiki
@@ -31,6 +31,9 @@ No one harness hosts her. One definition of her, from `@dorothy/identity`,
 is given to each, and one memory service serves them all; the mechanisms
 are explained under
 [identity, harnesses and delivery](../topics/identity-and-harnesses.md).
+On 2026-11-03 the user made Pi the highest priority, which supersedes its
+earlier exclusion, so Pi is a fifth host, [below](#pi)
+([roadmap](../../roadmap.md#dorothy-in-pi)).
 
 This is the one page that holds each host's state. For every host it
 separates four things, because they differ in state even within one host:
@@ -265,6 +268,73 @@ lists it: whether the cloned profile signs in, whether her `SOUL.md` and
 block reach the system prompt, whether the answer says teal, whether
 Hermes passes a working directory, and whether the sweep records the
 session. No later report says it has run.
+
+## Pi
+
+Delivery built and merged (#129), checked live on a bounded Featherless
+run; the production wiring has not run, and stewardship is next. Pi is
+the user's highest priority. Unlike the others she runs in Pi's own
+terminal interface, the published `@earendil-works/pi-coding-agent` 1.5.0
+the CLI pins, under Node 22.19 or later, through `dorothy --pi`
+([the hosts guide](../../../packages/cli/src/hosts/AGENTS.md#files)). Her
+model there is the first Featherless entry of the chat route, or the one
+`--model <provider:id>` names; no provider fallback runs inside Pi. Its
+profile is its own, `$XDG_CONFIG_HOME/dorothy/pi`, apart from plain `pi`.
+
+### Persona
+
+Built, and checked live. Her extension, which the launcher passes Pi by
+path, adds two sections to Pi's system prompt before each run, her
+identity and her capabilities. Sections are additive, after Pi's own, so
+the launcher passes no `--append-system-prompt` (it would make Pi skip a
+discovered `APPEND_SYSTEM.md`) and Pi's tool guidance and project
+instructions stay
+([the extension's guide](../../../packages/cli/assets/pi/AGENTS.md#files)).
+Every request of the offline run and the live run carried both sections,
+after `/reload` too
+([report](../../reports/2026-11-03_pi-delivery.md#the-native-fixture)).
+
+### Recording
+
+Built, and checked in a pseudo-terminal against a scripted provider. Pi
+saves each session as JSONL below `$XDG_DATA_HOME/dorothy/pi/sessions`,
+and that file is the source. Her extension has `dorothy --pi-hook` record
+after each settled turn and at the end, and the sweep recovers what a
+killed launcher left, when `pi` is in `[recording] hosts`. Each branch of
+a session is its own conversation, linked to the one it forked from, so
+a fork records only what is new. The report's run recorded every event
+once through `/reload`, `--resume`, `/compact`, `/fork` and a launcher
+killed mid-turn ([the Pi source's guide](../../../packages/memory/src/recording/AGENTS.pi.md)).
+A session started with Pi's no-session flag records nothing.
+
+### Memory access
+
+Built, and checked live. At a session's start and after a compaction the
+hook gives the opening block, and before a human prompt recall; the
+extension shows them to the model as one message, never saved as speech.
+Her tools are the MCP server `dorothy-memory`, registered by the
+extension with the model's key withheld from it. A memory fault never
+blocks a prompt: no layer, and a warning with a stable code. The live
+run saw the eight declared tools, the synthetic key and an accepted
+request on every turn.
+
+### Live checks
+
+Two live runs on Featherless passed, at about US$0.0028 in all; the
+second is the one recorded. Still open, per the
+[report](../../reports/2026-11-03_pi-delivery.md#pending-gates-and-limits)
+and the
+[deferred findings](../../deferred/2026-11-03_pi-delivery-deferred.md):
+
+- The production wiring of `RUNNERS.pi` has never run in a test or probe.
+  The user is to run `dorothy --pi --dump` and one real launch.
+- Reasoning replay after a tool call was seen in the first live run only,
+  and compaction, resume, fork and recovery ran against the scripted
+  provider alone; the live run was two turns.
+- Pi's Node and version are pinned; the native fixture reads Pi's screen
+  text, so an upgrade needs the fixtures rerun.
+- Stewardship, coordinating Claude Code and Codex through herdr, is
+  increment B and has not started.
 
 ## Related
 

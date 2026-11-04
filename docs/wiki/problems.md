@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-03
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: Problems
 description: >-
@@ -448,6 +448,60 @@ what it is.
 - **Evidence**:
   [the sweep's deferred findings](../reports/2026-10-19-roadmap-sweep.md#deferred)
   and [`package.json`](../../package.json).
+
+## A killed `dorothy --pi` leaves a launch directory behind
+
+- **Cause**: Each launch keeps private files in
+  `$XDG_RUNTIME_DIR/dorothy/pi-<id>` and removes them when Pi exits. A
+  launcher killed outright cannot. Nothing sweeps stale ones, unlike Claude
+  Code's launches.
+- **Diagnosis**: A `pi-<id>` directory there with no running `dorothy`. It
+  holds a manifest and the persona, never a key.
+- **Remedy**: Delete it; the runtime directory is also cleared at logout.
+  The session itself is safe: the sweep records what the hooks had not.
+- **State**: Known limitation, a roadmap candidate.
+- **Evidence**:
+  [the report's findings](../reports/2026-11-03_pi-delivery.md#findings),
+  [deferred](../deferred/2026-11-03_pi-delivery-deferred.md#the-launcher).
+
+## A Pi session halts with an `ownership` reason and `--reread` does not clear it
+
+- **Cause**: Pi rewrote a file so that an entry Dorothy had already
+  recorded moved to another segment. The sweep stops at that entry and
+  records nothing, as a reread meets the same entry again.
+- **Diagnosis**: The notice names a Pi session and the reason `ownership`,
+  and says `--reread` cannot clear it. A halt of another reason is
+  retried by `--reread`.
+- **Remedy**: `dorothy --sweep --dismiss pi <session>` stops the notice, or
+  delete the file's sidecar under `$XDG_STATE_HOME/dorothy/pi/recording` so
+  it is read afresh.
+- **State**: Known limitation: the halt is by design, its wording fixed.
+- **Evidence**:
+  [the Pi source's guide](../../packages/memory/src/recording/AGENTS.pi.md#invariants).
+
+## Pi's tool flags can drop her memory tools
+
+- **Cause**: `dorothy --pi` forwards `--tools`, `--no-tools` and
+  `--exclude-tools` after `--` to Pi, which honours them. It refuses
+  `--no-mcp`, the model and session-directory options by name, but not
+  these.
+- **Diagnosis**: The model has no `dorothy-memory` tools, though the
+  launch said it would.
+- **Remedy**: Do not pass them.
+- **State**: Known limitation, deferred.
+- **Evidence**:
+  [deferred](../deferred/2026-11-03_pi-delivery-deferred.md#the-launcher).
+
+## A slash command with an argument needs a second Enter in Pi
+
+- **Cause**: Pi's editor takes the first Enter of `/thinking off` as the
+  completion of the command's name, so the argument is not yet sent.
+- **Diagnosis**: The line stays in the editor after the first Enter. This is
+  Pi's behaviour, not Dorothy's.
+- **Remedy**: Press Enter again.
+- **State**: Known limitation of Pi 1.5.0, seen in the live run.
+- **Evidence**:
+  [the report's findings](../reports/2026-11-03_pi-delivery.md#findings).
 
 ## Related
 
