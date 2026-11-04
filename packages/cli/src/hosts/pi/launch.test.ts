@@ -501,6 +501,9 @@ describe("Pi's sessions", () => {
             ["--session", "../plain-pi/s.jsonl"],
             ["--session", "~/plain-pi/s.jsonl"],
             ["--session", `file://${outside}`],
+            // Not a path at all: a host, an encoded slash.
+            ["--session", "file://elsewhere/s.jsonl"],
+            ["--session", "file:///tmp/a%2Fb.jsonl"],
             ["--session", linked],
             ["--session", join(root, "..", "x.jsonl")],
         ]) {

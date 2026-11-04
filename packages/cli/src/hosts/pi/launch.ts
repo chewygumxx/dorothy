@@ -178,7 +178,14 @@ async function insideRoot(
     if (!/[/\\]/.test(value) && !value.endsWith(".jsonl")) return true;
     let path = value;
     if (path === "~" || path.startsWith("~/")) path = join(home, path.slice(1));
-    if (path.startsWith("file://")) path = fileURLToPath(path);
+    if (path.startsWith("file://")) {
+        // A URL that names no local path is outside the root.
+        try {
+            path = fileURLToPath(path);
+        } catch {
+            return false;
+        }
+    }
     path = resolve(cwd, path);
     const within = (base: string, target: string) => {
         const rest = relative(base, target);
