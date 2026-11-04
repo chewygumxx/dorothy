@@ -18,7 +18,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Env } from "@dorothy/core";
 import { dorothyExtension } from "../../../../assets/pi/index.js";
@@ -39,12 +39,8 @@ import {
     startFakeProvider,
 } from "../testing.js";
 import { processStart } from "./engine.js";
-import {
-    agentInfoReply,
-    herdrAgentOf,
-    type Registry,
-    writeRegistry,
-} from "./fixtures.js";
+import { type Registry, writeRegistry } from "./fixtures.js";
+import { setAgent, writeStubs } from "./stand-in.js";
 import type {
     StewardReply,
     TaskRecord,
@@ -65,86 +61,10 @@ const TOOLS = [
     "workers_list",
     "workers_reconcile",
 ];
-const HELPERS = join(import.meta.dir, "helper.ts");
-const ENGINE = join(import.meta.dir, "engine.ts");
-const HERDR = join(import.meta.dir, "herdr.ts");
 const INDEX = join(CLI_DIR, "src/index.ts");
 const VENDOR = join(CLI_DIR, "assets/pi/vendor/herdr");
 const SKILL = join(CLI_DIR, "assets/pi/stewardship/SKILL.md");
 const OID = "a".repeat(40);
-
-// Shell stubs: a herdr serving `agent get` and `agent read` from files, a
-// sender and an interrupter that log and write nowhere.
-const STUB_HERDR = `#!/bin/sh
-printf '%s\\n' "$*" >>"$STEWARD_STUB/herdr.log"
-case "$1 $2" in
-"agent get")
-    if [ -f "$STEWARD_STUB/agent.$3.json" ]; then
-        cat "$STEWARD_STUB/agent.$3.json"
-        exit 0
-    fi
-    echo '{"error":{"code":"agent_not_found","message":"absent"},"id":"cli:agent:get"}'
-    exit 1 ;;
-"agent read")
-    cat "$STEWARD_STUB/screen.$3" 2>/dev/null
-    exit 0 ;;
-esac
-exit 64
-`;
-const STUB_SENDER = `#!/bin/sh
-input=$(cat)
-printf '%s|%s\\n' "$*" "$input" >>"$STEWARD_STUB/send.log"
-[ -e "$STEWARD_STUB/send-hang" ] && exec sleep 3
-exit 0
-`;
-const STUB_INTERRUPTER = `#!/bin/sh
-printf '%s\\n' "$*" >>"$STEWARD_STUB/interrupt.log"
-exit 0
-`;
-// `dorothy` as her extension runs it: `--pi-steward` is the real helper
-// entry over the real engine with the stubs; `--pi-hook` answers with no
-// layer. With no STEWARD_STUB it runs nothing at all.
-const STAND_IN = `
-import { appendFileSync } from "node:fs";
-import { join } from "node:path";
-const env = process.env;
-const dir = env.STEWARD_STUB;
-if (process.argv.includes("--pi-hook")) {
-    await Bun.stdin.text();
-    process.stdout.write(JSON.stringify({
-        session: null, context: "", recording: "off", warning: null,
-    }));
-    process.exit(0);
-}
-if (!dir || !process.argv.includes("--pi-steward")) {
-    await Bun.stdin.text();
-    process.stdout.write(JSON.stringify({ ok: false, code: "STUB_MISSING" }));
-    process.exit(0);
-}
-const { stewardHelper } = await import(${JSON.stringify(HELPERS)});
-const { runSteward, processAlive } = await import(${JSON.stringify(ENGINE)});
-const { createHerdrRun } = await import(${JSON.stringify(HERDR)});
-const out = await stewardHelper(Bun.stdin.stream(), (request) => {
-    appendFileSync(join(dir, "helper.jsonl"), JSON.stringify({
-        kind: request?.operation?.kind ?? null,
-        controller: request?.controller ?? null,
-        registry: request?.registry ?? null,
-        envNames: Object.keys(env).sort(),
-        cwd: process.cwd(),
-    }) + "\\n");
-    return runSteward(request, {
-        env,
-        now: () => new Date(),
-        run: createHerdrRun({ bin: join(dir, "herdr") }),
-        sender: createHerdrRun({ bin: join(dir, "sender") }),
-        interrupter: createHerdrRun({ bin: join(dir, "interrupter") }),
-        controllerAlive: processAlive,
-        pollMs: 50,
-    });
-});
-process.stdout.write(out);
-process.exit(0);
-`;
 
 type Bag = Record<string, unknown>;
 type Handler = (event: never, ctx: never) => unknown;
@@ -299,15 +219,7 @@ beforeEach(async () => {
     fleet = await writeRegistry(undefined, new Date());
     stub = join(roots.root, "stub");
     await mkdir(stub, { recursive: true });
-    for (const [name, text] of [
-        ["herdr", STUB_HERDR],
-        ["sender", STUB_SENDER],
-        ["interrupter", STUB_INTERRUPTER],
-    ] as const) {
-        await writeFile(join(stub, name), text);
-        await chmod(join(stub, name), 0o755);
-    }
-    await writeFile(join(stub, "standin.ts"), STAND_IN);
+    await writeStubs(stub);
     for (const worker of fleet.workers) await agentIs(worker.name, "idle");
     await mkdir(join(fleet.fixtureRoot, "briefs"), { recursive: true });
     await mkdir(join(fleet.fixtureRoot, "reports"), { recursive: true });
@@ -324,10 +236,7 @@ afterEach(async () => {
 async function agentIs(name: string, status: string) {
     const worker = fleet.workers.find((w) => w.name === name);
     if (!worker) throw new Error(`no worker ${name}`);
-    await writeFile(
-        join(stub, `agent.${name}.json`),
-        agentInfoReply(herdrAgentOf(worker, status)).stdout,
-    );
+    await setAgent(stub, worker, status);
 }
 
 const brief = async (taskId: string) => {
