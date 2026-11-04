@@ -128,6 +128,11 @@ Dorothy in hosts other than Claude Code, whose launcher is `claude.ts`.
   runs the native interface with the real `--pi-hook` and `--mcp`: tool
   calls, one interrupted, `/reload`, `--resume`, `/compact`, `/fork`,
   the launcher killed mid-turn, two sweeps, each event once.
+- `pi/steward/`: stewardship, Dorothy in Pi coordinating declared Codex
+  and Claude workers in herdr panes: the strict registry, the read-only
+  herdr observation and the fixtures
+  ([guide](./pi/steward/AGENTS.md)). `../../assets/pi/stewardship/` holds
+  a synthetic registry example. Normal `--pi` needs no herdr.
 - `scripts/probe-pi-delivery.ts` (repository root): the bounded smoke
   test, offline or live, through its own counting, budgeted forwarding
   proxy ([report](../../../../docs/reports/2026-11-03_pi-delivery.md)).
