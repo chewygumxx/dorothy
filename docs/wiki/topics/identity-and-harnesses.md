@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-03
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: Identity, harnesses and delivery
 description: >-
@@ -148,6 +148,14 @@ Which hosts each serves, and their state, is on
   named `dorothy` and writes her identity as that profile's `SOUL.md`. The
   user's default profile is left alone. The `SOUL.md` is overwritten only
   where it is still the clone's or still hers by a recorded digest.
+- The Pi launcher: `dorothy --pi` runs the published Pi under Node and
+  passes her extension by path. The extension adds her identity and her
+  capabilities as two sections of Pi's system prompt before each run,
+  after Pi's own, because a command-line append would hide Pi's discovered
+  `APPEND_SYSTEM.md`
+  ([extension guide](../../../packages/cli/assets/pi/AGENTS.md#files)).
+  The persona text is a per-launch file in the runtime directory, the
+  same `identityPrompt()` text.
 - Persona files in a host's own directory: the delivery design's route for
   OpenClaw is `SOUL.md` and `IDENTITY.md`
   ([spec](../../specs/2026-11-01-delivery-design.md#openclaw)). Persona
@@ -190,6 +198,14 @@ is described here.
 - A host's own memory is switched off in her sessions, so hers is the one
   that writes (Claude Code's auto memory, Codex's two memory keys, two
   Hermes profile keys).
+- Pi has a hook of its own, not Claude-shaped: her extension runs
+  `dorothy --pi-hook`, one JSON request on standard input and one reply
+  on standard output, for the opening block, recall and records
+  ([hooks guide](../../../packages/memory/src/hooks/AGENTS.md#files)).
+  It fails open with stable warning codes. Her tools are the same MCP
+  server, registered by the extension, and the provider's key is taken
+  out of Pi's environment when the extension loads, before any command
+  or server Pi spawns can inherit it.
 
 Launchers and installs write nothing the user holds. The design ruled that
 only `--install`, run by the user, writes a host's files, and that a
@@ -206,7 +222,7 @@ a delivery; the list of hosts that are delivered to is on harnesses.
 
 A session of hers in a host is only remembered when it reaches her archive.
 Two mechanisms do it, and they are one conversation per host session
-whichever records it.
+(for Pi, per branch) whichever records it.
 
 - Hooks, for the launcher Claude Code has: with `[memory]` enabled, the
   launcher passes `Stop` and `SessionEnd` hooks that run
@@ -219,6 +235,12 @@ whichever records it.
   Claude Code's transcripts, Codex's rollout files and each Hermes
   profile's `state.db`. Events carry the host's own ids, so a session read
   twice records each event once.
+- Pi uses both. Its extension's hook records each settled turn and the
+  end through the service, and the sweep reads Pi's saved JSONL below
+  Dorothy's own session directory alone, never a global scan. A fork's
+  entries stay with the segment that first held them, and a fork whose
+  parent cannot be resolved is held, not guessed
+  ([Pi source guide](../../../packages/memory/src/recording/AGENTS.pi.md)).
 
 The design ruled the sweep over hooks because it needs no change to a
 host's configuration, at the cost of a lag of up to one interval
@@ -250,8 +272,8 @@ What each reader has met is on [harnesses](../profiles/harnesses.md).
 
 - The mechanisms above: the identity text and its pin; the gateway and its
   Anthropic adapter; the Claude Code launcher; the Codex launcher; the
-  Hermes install and provider; the hook command; and the sweep with its
-  readers.
+  Hermes install and provider; the Pi launcher, extension and hook; the
+  hook command; and the sweep with its readers.
 - Not a mechanism yet: an OpenAI-protocol adapter for the gateway, named in
   the identity spec's Later section.
 - Out of scope by the identity design: removing or rewriting anything a

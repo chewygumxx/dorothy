@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-03
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: Decisions
 description: >-
@@ -446,8 +446,10 @@ Which host receives what, and what has been run against it, is on
 - **Cost**: The minutes name three: persona strength varies by harness,
   recording varies, and formats drift, so the generators and recorders need
   upkeep.
-- **Standing**: current. Her identity is generated into slots, and one
-  memory serves them
+- **Standing**: current, with one change: pi's exclusion was superseded for
+  Pi as a host on 2026-11-03
+  ([Pi hosts her](#pi-hosts-her-through-its-own-interface)). Her identity is
+  generated into slots, and one memory serves them
   ([identity and harnesses](./topics/identity-and-harnesses.md)).
 - **Sources**:
   [protocol diversity minutes](../reports/2026-10-18-protocol-diversity.md#rulings),
@@ -465,8 +467,10 @@ Which host receives what, and what has been run against it, is on
 - **Reason**: The user had settled it before the memory work began and held
   it back until memory across harnesses was resolved.
 - **Cost**: not recorded.
-- **Standing**: current. The state of each host, and what waits on the user,
-  is on [harnesses](./profiles/harnesses.md).
+- **Standing**: current, and Pi was added on 2026-11-03 as the highest
+  priority ([below](#pi-hosts-her-through-its-own-interface)). The state of
+  each host, and what waits on the user, is on
+  [harnesses](./profiles/harnesses.md).
 - **Sources**:
   [target harnesses](../../.agents/memory/target-harnesses.md),
   [roadmap revision 2026-10-19](../roadmap.md#revisions).
@@ -596,6 +600,81 @@ Which host receives what, and what has been run against it, is on
   [delivery spec](../specs/2026-11-01-delivery-design.md#decisions),
   [delivery report](../reports/2026-11-01-delivery.md#rulings),
   [roadmap](../roadmap.md#dorothys-memory).
+
+### Pi hosts her through its own interface
+
+- **Context**: On 2026-11-03, after the stewardship research, the user made
+  Pi the highest priority, to have Dorothy coordinate Claude Code and Codex
+  as the development agents do through herdr, on Featherless inference
+  with her shared identity and memory.
+- **Alternatives**: Embedding Pi's SDK behind Dorothy's own interface, not
+  chosen: it keeps her present surface but adds session, UI and lifecycle
+  work before the trial. Open WebUI, a Pi fork, Pi Durable and an
+  unattended coordinator are outside the increments.
+- **Choice**: The user chose Pi's own terminal interface and approved the
+  design, then authorised execution without another plan approval round.
+  Pi owns the loop, tools, navigation and compaction; a launcher and
+  extension add her identity, memory and, later, stewardship. The CLI
+  pins the published Pi at 1.5.0 and starts it as a subprocess.
+- **Reason**: It uses Pi's loop and terminal and tests stewardship
+  directly, at the cost of delivery and recording adapters.
+- **Cost**: Pi runs under Node, so `--pi` and its tests need Node 22.19 or
+  later; her route fallback does not run inside Pi; a Pi upgrade needs the
+  fixtures rerun, one of which reads Pi's screen text.
+- **Standing**: current. It supersedes the earlier exclusion for Pi as a
+  host; the historical minutes stand unchanged. Delivery merged in #129;
+  stewardship is next
+  ([harnesses](./profiles/harnesses.md#pi)).
+- **Sources**:
+  [Pi delivery spec](../specs/2026-11-03_pi-delivery.md#status-and-intent),
+  [stewardship research](../notes/2026-11-03_pi-stewardship.md),
+  [delivery report](../reports/2026-11-03_pi-delivery.md),
+  [roadmap](../roadmap.md#dorothy-in-pi).
+
+### Pi's persona is added by her extension, not a launch flag
+
+- **Context**: The plan had the launcher pass her persona to Pi with
+  `--append-system-prompt`. The review of the launcher found that this
+  makes Pi skip a discovered `APPEND_SYSTEM.md`, which the spec forbids:
+  her identity augments Pi's prompt and does not replace its instructions.
+- **Alternatives**: The command-line append, built first and dropped.
+- **Choice**: The coordinating agent ruled, in the review's fix round, that
+  the extension adds her identity and capabilities as sections of Pi's
+  system prompt before each run, and the launcher passes no append.
+- **Reason**: Sections come after Pi's own, so Pi's tool guidance, context
+  files and any `APPEND_SYSTEM.md` stay.
+- **Cost**: It rests on Pi 1.5.0's section builder; the live run saw both
+  sections on every request, after `/reload` too.
+- **Standing**: current.
+- **Sources**:
+  [spec](../specs/2026-11-03_pi-delivery.md#launch-and-profile-ownership),
+  [the extension's guide](../../packages/cli/assets/pi/AGENTS.md#files),
+  [rulings](../reports/2026-11-04_pi-delivery-rulings.md#rulings).
+
+### The key reaches Pi's provider in memory alone
+
+- **Context**: The plan gave Pi the Featherless key as a `$<name>`
+  reference to its environment variable. The review found that left the
+  key in Pi's process environment, which `bash` and every other stdio MCP
+  server inherit, so `env` run by the model could land it in the saved
+  session and the memory archive.
+- **Alternatives**: The environment reference, superseded.
+- **Choice**: The coordinating agent ruled that the spec's binding
+  requirement is no key in argv, files or logs, and the reference was only
+  the plan's means. The extension reads the key once when it loads,
+  registers the provider with the value held in memory, and removes the
+  variable before any command or server can be spawned.
+- **Reason**: Pi connects MCP servers from `session_start` and `bash` reads
+  the environment as it runs, both after the extension loads. Wire tests
+  show `bash`'s `env` and another server's lack it.
+- **Cost**: Code inside Pi's process, another extension say, can still
+  reach it; the spec allows that for ordinary local execution, and the
+  guide's invariant now says what is actually guaranteed.
+- **Standing**: current.
+- **Sources**:
+  [spec](../specs/2026-11-03_pi-delivery.md#featherless),
+  [the extension's guide](../../packages/cli/assets/pi/AGENTS.md#invariants),
+  [rulings](../reports/2026-11-04_pi-delivery-rulings.md#rulings).
 
 ## Models and routing
 

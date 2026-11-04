@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-11-03
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: AGENTS.md
 description: >-
@@ -32,7 +32,7 @@ and `identity`, never on each other, `eval` on `core` and `memory`; `cli`
 on all but `eval`, and wires them. A package exports only the entry points
 its `package.json` names and imports only what it declares, as Bun's
 isolated linker fails an undeclared or internal import.
-`workspace.test.ts` pins the graph, the entry points and the SDK's holder.
+`workspace.test.ts` pins the graph, the entry points and the SDKs' holders.
 
 ## Commands
 

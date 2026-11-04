@@ -86,15 +86,14 @@ SDK. Keep every new mode's import lazy.
 - `self.ts`: `selfCommand`, this program as `bun --no-env-file <entry>`, so a
   project's `.env` never reaches a hook or server (`selfServe`, `shellWord`);
   `mainEntry`, the main checkout's entry, which an install writes;
-  `runForwarding`, shared by `--claude` and `--codex`: `SIGINT` ignored (the
+  `runForwarding`, for `--claude`, `--codex` and `--pi`: `SIGINT` ignored (the
   terminal sends it to the host too), `SIGTERM` and `SIGHUP` forwarded.
 - `hosts/`: Codex, Hermes and Pi: [guide](./src/hosts/AGENTS.md).
 - `claude-dump.ts`: `runClaudeDump` for `--claude --dump-context`: the gateway's
   upstream is `captureServer` from `@dorothy/agent`, `claude` runs quietly in
   print mode without saving its session, and is stopped at the first request,
   which is printed with a warning if the gateway injected nothing, with the
-  block alone: no sync, recall or permissions. Imported lazily, so `--claude`
-  never loads the AI SDK.
+  block alone: no sync, recall or permissions.
 - `claude-hook.ts`: `runHook`, for `--claude-hook`, gives memory's
   `runClaudeHook` the environment `claude` gave the hook, in which it finds the
   launch, and reviews on the review route, whose entries name their own base
@@ -134,10 +133,11 @@ SDK. Keep every new mode's import lazy.
   Code does, and memory is read without credentials. `--claude-hook`
   loads the checkout's `secrets.json` by path for reviews, never the
   working directory's; `claude`'s variables stay, no provider reads them.
+  `--pi` loads the selected key alone, after its route is checked.
 - The CLI passes `ambient()` to memory's history commands, and
-  `commandHistory(...)` of it to memory's commands, the fact and
-  project commands among them, and `editInEditor` (from
-  `@dorothy/tui/editor`) to `--memory` and `--edit-tags`.
+  `commandHistory(...)` of it to memory's commands, the fact and project
+  commands among them, and `editInEditor` (from `@dorothy/tui/editor`) to
+  `--memory` and `--edit-tags`.
 
 ## Tests
 

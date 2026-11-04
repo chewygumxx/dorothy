@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-03
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: Repository workflow
 description: >-
@@ -86,7 +86,10 @@ and `bun install` cannot link. A worktree's auto memory points at its own
 8. `lint:header`: every file's house header and breadcrumb match its path.
 9. `test`: `bun test`.
 
-`bun run test` runs the tests alone. The tests also pin conventions that
+`bun run test` runs the tests alone. `mise.toml` pins Bun and Node, since
+`--pi` and its tests run the published Pi under Node 22.19 or later, and
+CI installs both from it. `scripts/probe-pi-delivery.ts` is a probe, not a
+test file, so `check` never runs it. The tests also pin conventions that
 are prose elsewhere: `workspace.test.ts` the package graph,
 `agents.test.ts` the guidance budgets (the root `AGENTS.md` at 100 lines
 and `docs/AGENTS.md` within 60), the skills and the memory index,

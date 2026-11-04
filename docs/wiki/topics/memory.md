@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-03
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: Memory
 description: >-
@@ -25,8 +25,8 @@ tags:
 Dorothy's memory is a directory of files she owns, a search index derived
 from them, and the code that reads, writes, compacts, tags and versions
 them. One service on the same machine serves the store to Dorothy's chat
-and to the harnesses she is built for (Claude Code, Codex, OpenClaw and
-Hermes). That the service and the store work is one claim; that each host
+and to the harnesses she is built for (Claude Code, Codex, OpenClaw,
+Hermes and Pi). That the service and the store work is one claim; that each host
 reaches them, and has been checked doing so, is another, and
 [harnesses](../profiles/harnesses.md) records it host by host. This page
 says what the memory is and does; how it is measured is under
@@ -45,7 +45,9 @@ been checked beyond tests differs:
   [history](../../reports/2026-10-08-memory-history.md)).
 - Recording from other hosts was probed on copies of their sessions, and
   Hermes's reader has met no real session
-  ([recording](../../reports/2026-10-20-recording.md)).
+  ([recording](../../reports/2026-10-20-recording.md)). Pi's was run in a
+  pseudo-terminal against the published Pi, through a killed launcher
+  ([Pi delivery](../../reports/2026-11-03_pi-delivery.md#the-native-fixture)).
 - The rest, including the service's routes, rests on tests; the hosts'
   live checks are on the harnesses page.
 
@@ -240,8 +242,9 @@ host's block and recall budgets
   a known directory; a request from beyond loopback carries a device token.
 - In the background it reviews idle conversations, extracts facts from them
   (never from a backfilled one), consolidates and exports projects, and
-  sweeps the session stores of Claude Code, Codex and Hermes. `[recording]
-  hosts` is empty by default, so nothing is swept until the user sets it
+  sweeps the session stores of Claude Code, Codex, Hermes and Pi.
+  `[recording] hosts` is empty by default, so nothing is swept until the
+  user sets it; Pi's own hook records its sessions beside the sweep
   ([service guide](../../../packages/memory/src/service/AGENTS.md),
   [recording guide](../../../packages/memory/src/recording/AGENTS.md)).
 
