@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-03
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: Records
 description: >-
@@ -207,6 +207,15 @@ first.
   hook command, Codex launcher and Hermes provider.
 - [Delivery report](../reports/2026-11-01-delivery.md): Report. Reviews,
   rulings, the no-model verification and the live probes that wait.
+- [Open WebUI feasibility](../notes/2026-11-03_open-webui-feasibility.md):
+  Research. Open WebUI as her interface or host, with Featherless and shared
+  memory.
+- [Dorothy in Pi](../specs/2026-11-03_pi-delivery.md): Specification. Pi's own
+  interface with her identity, shared memory and Featherless inference.
+- [Pi delivery plan](../plans/2026-11-03_pi-delivery.md): Plan. Task by task,
+  the pinned runtime, profiles, branch recording, extension and launcher.
+- [Pi delivery report](../reports/2026-11-03_pi-delivery.md): Report. The
+  offline and live probes, their cost and the gates still open.
 
 ## Models and routing
 
@@ -266,6 +275,10 @@ first.
 - [Orchestration design](../specs/2026-11-02-orchestration-design.md):
   Specification. An MCP server running boxed Claude Code and Codex workers
   through acpx.
+- [Pi as her stewardship host](../notes/2026-11-03_pi-stewardship.md):
+  Research. Why Pi was excluded, what it now offers and a proposed trial.
+- [Pi stewardship plan](../plans/2026-11-03_pi-stewardship.md): Plan. A herdr
+  fixture fleet, task accounting, native Pi tools and a bounded trial.
 
 ## Repository workflow
 

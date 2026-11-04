@@ -21,7 +21,7 @@ import {
     requestBlock,
     requestRecall,
 } from "../service/client.js";
-import { type HookEvent, parseHookInput } from "./payload.js";
+import { type HookEvent, type HookInput, parseHookInput } from "./payload.js";
 
 export type HostHookDeps = {
     client?: ClientOptions;
@@ -63,10 +63,24 @@ export async function runHostHook(
     if (input === null) {
         return "";
     }
+    return reply(event, (await hostContext(host, event, input, deps)) ?? "");
+}
+
+// The block for a session's start, or recall for a prompt, from the
+// service for the project of the input's directory; null, said to the
+// log, when the service gave none. Never a throw.
+export async function hostContext(
+    host: string,
+    event: HookEvent,
+    input: HookInput,
+    deps: HostHookDeps = {},
+): Promise<string | null> {
     const client = deps.client ?? {};
     const log = deps.log ?? hookLog(client.env ?? process.env);
-    const failed = (what: string) =>
+    const failed = (what: string) => {
         log.warn(`${host} ${event}: ${what}; answered nothing`);
+        return null;
+    };
     try {
         await ensureService(deps.serve ?? [], client);
         const found = await (deps.identify ?? identifyProject)(input.cwd).catch(
@@ -84,10 +98,7 @@ export async function runHostHook(
                 },
                 client,
             );
-            if (block === null) {
-                failed("no block from the service");
-            }
-            return reply(event, block?.text ?? "");
+            return block?.text ?? failed("no block from the service");
         }
         const recall = await requestRecall(
             {
@@ -98,12 +109,8 @@ export async function runHostHook(
             },
             client,
         );
-        if (recall === null) {
-            failed("no recall from the service");
-        }
-        return reply(event, recall?.text ?? "");
+        return recall?.text ?? failed("no recall from the service");
     } catch (error) {
-        failed(error instanceof Error ? error.message : String(error));
-        return "";
+        return failed(error instanceof Error ? error.message : String(error));
     }
 }

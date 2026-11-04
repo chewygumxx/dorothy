@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-20
-mtime: 2026-10-21
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: packages/memory/src/recording/AGENTS.md
 description: >-
@@ -33,16 +33,17 @@ readers never open a Dorothy store; tests use temporary roots.
   SQLite read-only, selecting a session before fetching payloads; a read
   has the same fields plus `parent` and `source`. `since` floors stable
   source ids, exclusively; sources pass zero: those ids are not monotonic.
+- `pi.ts`, `pi-tree.ts`, `pi-source.ts`: Pi; read [its guide](./AGENTS.pi.md).
 - `sources.ts`: `claudeSource`, `codexSource`, `hermesSource` (each profile's
   `state.db`); each lists descriptors: key, path, time, fingerprint, `read`.
-- `state.ts`: private `sweep.json`, per-key skip fingerprints alone.
+- `state.ts`: private `sweep.json`'s per-key skip hints; Pi's sidecars.
 - `watermark.ts`: a host's first sweep time, in the data directory's
   `recording.json`, committed to history, never in `sweep.json`.
 - `sweep.ts`: `sweep(deps)`, one pass over the hosts; read below.
 - `report.ts`: `hostLines`, `sweepSummary`: a sweep told, a host and a count
   a line, for `--sweep` and the service's log.
-- `fixtures.ts`, `hermes-fixtures.ts`, `sweep-testing.ts`: synthetic
-  records, Hermes tables and the sweep's rig; nothing from a real store.
+- `fixtures.ts`, `hermes-fixtures.ts`, `pi-fixtures.ts`, `sweep-testing.ts`:
+  synthetic records, Hermes tables, Pi entries, the sweep's rig; none real.
 
 ## Invariants
 
@@ -53,15 +54,14 @@ readers never open a Dorothy store; tests use temporary roots.
 - Codex's `halt.line`, `unknown.line` and `pending` index supplied lines
   from zero. A malformed mapped record halts; unknown types are kept once per
   read. Diagnostics name the problem without quoting record contents.
-- Codex tool events use the call's pairing, timestamp and line ordinal.
-  Function and custom calls pair only with their own output family.
-  Repeated ids pair the nth call with the nth output in physical order;
-  an extra output cannot replace an earlier answer. `ok: true` means
-  answered, not execution success: outputs carry no success flag.
-  An unanswered call holds subsequent events, with `pending` naming it;
-  replay from there when its output arrives. Reused ids need their prior
-  occurrence counts too, so replay the full rollout in that case.
-  Only `ended: true` records an unanswered call as failed. Output
+- Codex tool events use the call's pairing, timestamp and line ordinal. Function
+  and custom calls pair only with their own output family. Repeated ids pair the
+  nth call with the nth output in physical order; an extra output cannot replace
+  an earlier answer. `ok: true` means answered, not execution success: outputs
+  carry no success flag. An unanswered call holds subsequent events, with
+  `pending` naming it; replay from there when its output arrives. Reused ids
+  need their prior occurrence counts too, so replay the full rollout in that
+  case. Only `ended: true` records an unanswered call as failed. Output
   lookahead stops at a halt.
 - Host prompts, reasoning and known bookkeeping yield no events.
   User-role environment and AGENTS/instruction wrappers are host context;
@@ -140,10 +140,10 @@ readers never open a Dorothy store; tests use temporary roots.
   Live appends clear marks; live chats stay reviewable. Private sessions send
   only `private: true`; one with no identity cannot be judged: a halt keeps
   only its key and line or row, and no new type.
-- Remember a read (`rememberRead`) only after the archive took it and unread
-  diagnostics are saved. Never a halted or unstable read, one whose type was not
-  kept, nor one holding lines behind an unanswered call (Claude's `held`,
-  others' `pending`) until untouched an hour, including during backfill.
+- Remember a read (`rememberRead`) only once the archive took each segment
+  and unread diagnostics are saved: never a halted, unstable or held read,
+  one whose type was not kept, nor one holding lines behind an unanswered
+  call (Claude's `held`, else `pending`) until an hour untouched, backfill too.
 - A halt keeps its rest in `bodies/unread.ts` under its host (Hermes counts
   rows); `dorothy --sweep --reread` and `--dismiss` serve it. A record
   failure stops that host, not others. [The service](../service/AGENTS.md)

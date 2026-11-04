@@ -12,6 +12,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Env, SecretsCode, StructuredCall } from "@dorothy/core";
+import type { PiHookReply } from "@dorothy/memory/host-hook";
 import { ambient } from "./ambient.js";
 import { type Mode, parseArgs, USAGE } from "./args.js";
 import {
@@ -25,7 +26,7 @@ import {
     loadRouting,
     type RoutingDeps,
 } from "./models.js";
-import { selfServe } from "./self.js";
+import { selfCommand, selfServe, spawnInherited } from "./self.js";
 
 // What runs each mode, and the code it exits with; nothing where it set
 // its own. Each loads its packages as it runs, so a mode pays only for
@@ -105,6 +106,65 @@ export async function loadCredentials(
         );
     }
     return failure;
+}
+
+// The contract's limits on what a --pi-hook request and reply hold.
+const PI_REQUEST_BYTES = 128 * 1024;
+const PI_REPLY_BYTES = 64 * 1024;
+
+// The text of at most `cap` bytes, or null past them, read no further.
+async function readBounded(
+    input: ReadableStream<Uint8Array>,
+    cap: number,
+): Promise<string | null> {
+    const parts: Uint8Array[] = [];
+    let size = 0;
+    const reader = input.getReader();
+    try {
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            size += value.byteLength;
+            if (size > cap) return null;
+            parts.push(value);
+        }
+    } finally {
+        reader.releaseLock();
+    }
+    return Buffer.concat(parts).toString("utf8");
+}
+
+// dorothy --pi-hook: one JSON request on stdin, one JSON reply on stdout.
+// What is too large or not JSON reaches memory as null, which it answers
+// as an invalid request; a reply past its limit loses its context.
+export async function piHook(
+    input: ReadableStream<Uint8Array>,
+    run: (request: unknown) => Promise<PiHookReply>,
+): Promise<string> {
+    const text = await readBounded(input, PI_REQUEST_BYTES);
+    let request: unknown = null;
+    try {
+        request = text === null ? null : JSON.parse(text);
+    } catch {}
+    let reply: PiHookReply;
+    try {
+        reply = await run(request);
+    } catch {
+        reply = {
+            session: null,
+            context: "",
+            recording: "pending",
+            warning: "pi_hook_failed",
+        };
+    }
+    const out = JSON.stringify(reply);
+    return Buffer.byteLength(out) <= PI_REPLY_BYTES
+        ? out
+        : JSON.stringify({
+              ...reply,
+              context: "",
+              warning: "pi_reply_too_large",
+          });
 }
 
 const RUNNERS: Runners = {
@@ -336,13 +396,45 @@ const RUNNERS: Runners = {
         process.stdout.write(`${JSON.stringify(command, null, 2)}\n`);
         return 0;
     },
+    pi: async (mode) => {
+        // Her secrets load only once the route is checked, and only the
+        // selected key reaches Pi (hosts/pi/launch.ts).
+        const { runPi } = await import("./hosts/pi/launch.js");
+        return runPi(mode, {
+            env: process.env,
+            cwd: process.cwd(),
+            self: selfCommand(),
+            loadRouting: () => loadRouting(),
+            loadSecrets: async (target) => {
+                await loadCredentials({ env: target });
+            },
+            spawn: spawnInherited,
+            write: writeError,
+        });
+    },
+    "pi-hook": async () => {
+        const { runPiHostHook } = await import("@dorothy/memory/host-hook");
+        const { sendRecord } = await import("@dorothy/memory/client");
+        const env = process.env;
+        const out = await piHook(Bun.stdin.stream(), (request) =>
+            runPiHostHook(request, {
+                env,
+                client: { env },
+                serve: selfServe(),
+                record: (record) => sendRecord(record, { env }),
+            }),
+        );
+        process.stdout.write(out);
+        // As her other hooks: nothing started may hold the extension.
+        process.exit(0);
+    },
     install: async (mode) => {
         const { hermesVersion, installHermes, uninstallHermes } = await import(
             "./hosts/hermes.js"
         );
         const { hermesRoot } = await import("@dorothy/memory/host-hook");
         const { identityPrompt } = await import("@dorothy/identity");
-        const { mainEntry, selfCommand } = await import("./self.js");
+        const { mainEntry } = await import("./self.js");
         const self = selfCommand();
         // Only an install writes her command; an uninstall needs no entry.
         let entry = self[2] ?? "";

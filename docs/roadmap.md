@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-11-03
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -54,6 +54,37 @@ or estimates.
 
 In order; the first is next.
 
+### Dorothy in Pi
+
+Pi is the user's highest priority, stated on 2026-11-03 after the
+[stewardship research](./notes/2026-11-03_pi-stewardship.md). The first
+design must address Dorothy coordinating Claude Code and Codex, like
+the development agents do through herdr, with Featherless inference
+and her shared identity and memory.
+
+This supersedes the old Pi exclusion and puts its integration ahead of
+the remaining delivery work. The user chose Pi's own terminal interface.
+The [delivery design](./specs/2026-11-03_pi-delivery.md) proposes a
+launcher and extension, shared memory and a bounded herdr trial before
+full compatibility with the
+[orchestra service](./specs/2026-11-02-orchestration-design.md).
+The user approved the design and authorised execution through the
+[delivery plan](./plans/2026-11-03_pi-delivery.md), followed by the
+[stewardship plan](./plans/2026-11-03_pi-stewardship.md). Delivery,
+increment A, is built and verified on the branch `feat/pi-integration`:
+the native interface in a pseudo-terminal, recovery after a killed
+launcher, and a bounded live Featherless run, which passed
+([report](./reports/2026-11-03_pi-delivery.md)).
+
+- **Status**: Highest Priority; Delivery Verified, Awaiting Merge;
+  Stewardship Next
+- **Required**: Existing Identity, Memory Service and Model Providers
+- **Rationale**: The user has selected Pi for the stewardship capability
+  they most want. Its delivery and trial can build on the existing
+  services without waiting for every other host's live probes. The
+  integration design must settle recording, lifecycle and human
+  approval handling, then test actual coordination and recovery.
+
 ### Dorothy's Memory
 
 One memory wherever Dorothy goes: in her chat, in Claude Code and in
@@ -106,8 +137,8 @@ Codex and Hermes, and `dorothy --sweep --backfill` records what they
 already hold, with a durable mark preventing a review apiece until a live
 append.
 
-The harnesses she is provided for and tested against are Claude Code,
-Codex, OpenClaw and Hermes Agent, as the user chose. Claude Code is
+The earlier delivery targets are Claude Code, Codex, OpenClaw and
+Hermes Agent. Pi now takes priority in its phase above. Claude Code is
 recorded already; Codex offers hooks and its rollout files, and
 OpenClaw and Hermes a memory plugin each, in a slot that takes one
 provider, as the contract's host profiles record. Recording reads the
@@ -609,3 +640,18 @@ In order of completion.
   but high priority, as herdr's agent names changed and the names
   written into the stewardship skill, memory and handover notes went
   stale.
+- 2026-11-03: The user makes Pi the highest priority, superseding its
+  earlier exclusion. Dorothy in Pi goes first, for integration design
+  and stewardship testing. The previous delivery targets remain;
+  choosing a runtime replacement or a particular implementation path
+  is left to the design.
+- 2026-11-03: The user chooses Pi's own interface. Its delivery design
+  proposes the native launcher, extension, shared memory and a bounded
+  herdr stewardship trial; review precedes implementation planning.
+- 2026-11-03: The user approves Pi's design and authorises execution
+  without another plan approval round. Delivery precedes stewardship;
+  the plans separate offline verification from bounded live probes.
+- 2026-11-04: Pi's delivery is built and verified: offline fixtures of
+  the native interface and recovery, and two bounded live Featherless
+  runs at about US$0.0028 in all. Stewardship stays next in the phase, after
+  delivery merges; its report's limits wait for that revision.

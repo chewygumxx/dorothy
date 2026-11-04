@@ -904,3 +904,74 @@ it("reads --install hermes", () => {
         "usage",
     );
 });
+
+describe("--pi", () => {
+    it("reads Dorothy's options before -- and passes Pi's after it", () => {
+        expect(parseArgs(["--pi"], false)).toEqual({
+            kind: "pi",
+            args: [],
+            model: null,
+            dump: false,
+        });
+        expect(parseArgs(["--pi", "--dump"], false)).toEqual({
+            kind: "pi",
+            args: [],
+            model: null,
+            dump: true,
+        });
+        expect(
+            parseArgs(
+                [
+                    "--pi",
+                    "--model",
+                    "featherless:deepseek-ai/DeepSeek-V4.1-Flash-1017",
+                    "--",
+                    "--resume",
+                    "--model",
+                    "--dump",
+                    "--",
+                    "a prompt",
+                ],
+                false,
+            ),
+        ).toEqual({
+            kind: "pi",
+            args: ["--resume", "--model", "--dump", "--", "a prompt"],
+            model: "featherless:deepseek-ai/DeepSeek-V4.1-Flash-1017",
+            dump: false,
+        });
+        expect(
+            parseArgs(["--pi", "--model=fl:m", "--dump", "--", "-c"], false),
+        ).toEqual({ kind: "pi", args: ["-c"], model: "fl:m", dump: true });
+    });
+
+    it.each([
+        [["--pi", "--resume"]],
+        [["--pi", "hello"]],
+        [["--pi", "--model"]],
+        [["--pi", "--model", "no-colon"]],
+        [["--pi", "--model", ":m"]],
+        [["--pi", "--model", "a:b", "--model", "a:c"]],
+        [["--pi", "--dump", "--dump"]],
+    ])("refuses %j", (argv) => {
+        expect(parseArgs(argv, false)).toEqual({
+            kind: "usage",
+            message: "--pi takes [--model <provider:id>] [--dump] [-- args...]",
+        });
+    });
+
+    it("reads --pi-hook, which takes nothing", () => {
+        expect(parseArgs(["--pi-hook"], false)).toEqual({ kind: "pi-hook" });
+        expect(parseArgs(["--pi-hook", "x"], false)).toEqual({
+            kind: "usage",
+            message: "--pi-hook takes no arguments",
+        });
+    });
+
+    it("lists --pi in the usage", () => {
+        expect(USAGE).toContain(
+            "dorothy --pi [--model <provider:id>] [--dump] [-- args...]",
+        );
+        expect(USAGE).toContain("dorothy --pi-hook");
+    });
+});

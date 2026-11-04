@@ -20,6 +20,7 @@ function hostLine(result: HostSweep): string {
         result.waiting > 0 ? `${result.waiting} waiting for the backfill` : "",
         result.private > 0 ? `${result.private} private` : "",
         result.halted > 0 ? `${result.halted} halted` : "",
+        result.held > 0 ? `${result.held} held for a parent` : "",
         result.failed > 0 ? `${result.failed} unreadable` : "",
         result.error === null ? "" : `stopped: ${result.error}`,
     ].filter((note) => note !== "");
