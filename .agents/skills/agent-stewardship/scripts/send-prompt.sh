@@ -17,6 +17,8 @@
 # would answer its dialog.
 #
 #   send-prompt.sh [--from <name>] [--at <time> | --in <span>] <agent>
+#   send-prompt.sh [--from <name>] [--expect-pane <id>] [--require-idle]
+#                  <agent>
 #   send-prompt.sh --deliver <id>
 #
 # The message is labelled `[from <name>] `, the name being --from, else
@@ -28,7 +30,12 @@
 # delivery refused by a blocked or absent agent is tried again in five
 # minutes, twelve times at most.
 #
-# Exit: 2 usage, 3 agent blocked, 4 agent absent, 1 other failure.
+# A send now may be guarded, never a scheduled one: --expect-pane refuses
+# an agent in another pane, --require-idle one not idle, each checked
+# again once the pane's lock is held.
+#
+# Exit: 2 usage, 3 agent blocked, 4 agent absent, 5 agent in another
+# pane, 6 agent not idle, 1 other failure.
 
 set -eu
 
@@ -41,6 +48,7 @@ self=$here/$(basename "$0")
 usage() {
     printf '%s\n' \
         "usage: ${0##*/} [--from <name>] [--at <time> | --in <span>] <agent>" \
+        "       ${0##*/} [--from <name>] [--expect-pane <id>] [--require-idle] <agent>" \
         "       ${0##*/} --deliver <id>" \
         'the message on stdin; --at needs a date, as in "2026-11-02 02:31"' >&2
     exit 2
@@ -73,23 +81,30 @@ from=
 at=
 span=
 deliver=
+expect=
+idle=
 while [ $# -gt 0 ]; do
     case $1 in
-    --from | --at | --in | --deliver)
+    --from | --at | --in | --deliver | --expect-pane)
         [ $# -ge 2 ] && [ -n "$2" ] || usage
         case $1 in
         --from) from=$2 ;;
         --at) at=$2 ;;
         --in) span=$2 ;;
         --deliver) deliver=$2 ;;
+        --expect-pane) valid "$2" && expect=$2 ;;
         esac
         shift 2
         ;;
+    --require-idle) idle=1 && shift ;;
     --) shift && break ;;
     -*) usage ;;
     *) break ;;
     esac
 done
+
+# The guards are for a send now alone.
+[ -z "$expect$idle" ] || [ -z "$at$span$deliver" ] || usage
 
 if [ -n "$deliver" ]; then
     [ $# -eq 0 ] && [ -z "$from$at$span" ] || usage
@@ -161,9 +176,22 @@ if [ -z "$at$span" ]; then
     # The pane is needed for its lock, and the status is read once the
     # lock is held, as a send ahead of this one may have left it blocked.
     pane=$(agent_pane "$agent") || die 4 "agent $agent is absent"
+    [ -z "$expect" ] || [ "$pane" = "$expect" ] ||
+        die 5 "agent $agent is in pane $pane, not $expect"
     lock_pane "$pane"
-    status=$(agent_status "$agent") || die 4 "agent $agent is absent"
+    if [ -z "$expect$idle" ]; then
+        status=$(agent_status "$agent") || die 4 "agent $agent is absent"
+    else
+        # Pane and status in one reading, under the lock.
+        seen=$(agent_field "$agent" '.pane_id + " " + .agent_status') ||
+            die 4 "agent $agent is absent"
+        status=${seen#* }
+        [ -z "$expect" ] || [ "${seen%% *}" = "$expect" ] ||
+            die 5 "agent $agent is in pane ${seen%% *}, not $expect"
+    fi
     [ "$status" != blocked ] || die 3 "agent $agent is blocked on a dialog"
+    [ -z "$idle" ] || [ "$status" = idle ] ||
+        die 6 "agent $agent is $status, not idle"
     # The label begins the text, so a message of `-rf` is never an option.
     herdr pane send-text "$pane" "[from $from] $message" >/dev/null 2>&1 ||
         die 1 "cannot write to pane $pane"

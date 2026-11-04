@@ -269,6 +269,141 @@ describe("send-prompt.sh, now", () => {
     });
 });
 
+describe("send-prompt.sh, guarded", () => {
+    const guarded = ["--from", "a", "--expect-pane", "w1:p2", "--require-idle"];
+    const holdLock = async () => {
+        await mkdir(join(root, "run", "dorothy-agents"), { recursive: true });
+        const holder = Bun.spawn(
+            ["flock", lockFile(), "sh", "-c", "read -r _"],
+            { stdin: "pipe", stdout: "ignore", stderr: "ignore" },
+        );
+        await until(async () => {
+            const probe = Bun.spawn(["flock", "-n", lockFile(), "true"]);
+            return (await probe.exited) !== 0;
+        });
+        return async () => {
+            holder.stdin.write("\n");
+            holder.stdin.end();
+            await holder.exited;
+        };
+    };
+
+    it("sends to an idle agent in the expected pane, as a send now", async () => {
+        const { code } = await run(send, [...guarded, "bob"], "hi");
+        expect(code).toBe(0);
+        expect(await writes()).toEqual([
+            ["send-text", "w1:p2", "[from a] hi"],
+            ["send-keys", "w1:p2", "enter"],
+        ]);
+    });
+
+    it("refuses an agent in another pane, exit 5, sending nothing", async () => {
+        await writeFile(join(root, "pane.bob"), "w1:p9");
+        const { code, err } = await run(send, [...guarded, "bob"], "hi");
+        expect(code).toBe(5);
+        expect(err).toContain("w1:p9");
+        expect(await writes()).toEqual([]);
+    });
+
+    it("refuses a pane that moved while it waited for the lock", async () => {
+        const release = await holdLock();
+        const waiting = start(send, [...guarded, "bob"], "hi");
+        await Bun.sleep(300);
+        expect(await writes()).toEqual([]);
+        await writeFile(join(root, "pane.bob"), "w1:p9");
+        await release();
+        const { code } = await finish(waiting);
+        expect(code).toBe(5);
+        expect(await writes()).toEqual([]);
+    });
+
+    it("refuses a working or unknown agent with --require-idle, exit 6", async () => {
+        for (const status of ["working", "unknown", "done"]) {
+            await setStatus(status);
+            const { code, err } = await run(send, [...guarded, "bob"], "hi");
+            expect(code).toBe(6);
+            expect(err).toContain(status);
+        }
+        expect(await writes()).toEqual([]);
+    });
+
+    it("still refuses a blocked agent with exit 3", async () => {
+        await setStatus("blocked");
+        const { code } = await run(send, [...guarded, "bob"], "hi");
+        expect(code).toBe(3);
+        expect(await writes()).toEqual([]);
+    });
+
+    it("rereads the state under the lock, refusing work begun meanwhile", async () => {
+        const release = await holdLock();
+        const waiting = start(send, [...guarded, "bob"], "hi");
+        await Bun.sleep(300);
+        await setStatus("working");
+        await release();
+        const { code } = await finish(waiting);
+        expect(code).toBe(6);
+        expect(await writes()).toEqual([]);
+    });
+
+    it("takes each flag alone", async () => {
+        await setStatus("working");
+        const pane = ["--from", "a", "--expect-pane", "w1:p2", "bob"];
+        expect((await run(send, pane, "hi")).code).toBe(0);
+        await setStatus("idle");
+        await writeFile(join(root, "pane.bob"), "w1:p9");
+        const idle = ["--from", "a", "--require-idle", "bob"];
+        expect((await run(send, idle, "hi")).code).toBe(0);
+        expect((await writes()).map((call) => call.slice(0, 2))).toEqual([
+            ["send-text", "w1:p2"],
+            ["send-keys", "w1:p2"],
+            ["send-text", "w1:p9"],
+            ["send-keys", "w1:p9"],
+        ]);
+    });
+
+    it("keeps a send now without the flags unguarded, as before", async () => {
+        await setStatus("working");
+        await writeFile(join(root, "pane.bob"), "w1:p9");
+        const { code } = await run(send, ["--from", "a", "bob"], "hi");
+        expect(code).toBe(0);
+        expect((await writes())[0]).toEqual([
+            "send-text",
+            "w1:p9",
+            "[from a] hi",
+        ]);
+    });
+
+    it("is immediate only: refused with --at, --in or --deliver", async () => {
+        for (const args of [
+            ["--from", "a", "--in", "2min", "--require-idle", "bob"],
+            [
+                "--from",
+                "a",
+                "--at",
+                "2099-01-01",
+                "--expect-pane",
+                "w1:p2",
+                "bob",
+            ],
+            ["--deliver", "bob-1", "--require-idle"],
+            ["--expect-pane", "w1:p2", "--deliver", "bob-1"],
+        ]) {
+            const { code, err } = await run(send, args, "hi");
+            expect(code).toBe(2);
+            expect(err).toContain("usage");
+        }
+        expect(await calls()).toEqual([]);
+    });
+
+    it("refuses a pane id that is not a word", async () => {
+        for (const pane of ["-x", "w1 p2", ""]) {
+            const args = ["--from", "a", "--expect-pane", pane, "bob"];
+            expect((await run(send, args, "hi")).code).toBe(2);
+        }
+        expect(await calls()).toEqual([]);
+    });
+});
+
 describe("send-prompt.sh, scheduled", () => {
     it("refuses a time without a date, as it would recur daily", async () => {
         const { code, err } = await run(
