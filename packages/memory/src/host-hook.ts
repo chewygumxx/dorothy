@@ -10,21 +10,29 @@
 
 // @dorothy/memory/host-hook: dorothy --hook, which Codex's hooks and her
 // Hermes provider run, and dorothy --pi-hook, which her Pi extension
-// runs, loading the client, the project finder and the Pi source alone.
+// runs, loading the client and the project finder, and the Pi source only
+// when the Pi hook runs.
 
 export {
     HOOK_EVENTS,
     type HookEvent,
     type HookInput,
+    PI_HOOK_EVENTS,
     parseHookInput,
 } from "./hooks/payload.js";
-export {
-    PI_HOOK_EVENTS,
-    type PiHookDeps,
-    type PiHookReply,
-    type PiHookRequest,
-    runPiHostHook,
-} from "./hooks/pi.js";
+
+import type { PiHookDeps, PiHookReply } from "./hooks/pi.js";
+
+export type { PiHookDeps, PiHookReply, PiHookRequest } from "./hooks/pi.js";
+
+// The Pi hook, loaded when it runs: Codex's and Hermes's hooks share this
+// entry point and need neither the Pi reader nor what it reads with.
+export async function runPiHostHook(
+    input: unknown,
+    deps: PiHookDeps,
+): Promise<PiHookReply> {
+    return (await import("./hooks/pi.js")).runPiHostHook(input, deps);
+}
 export { type HostHookDeps, runHostHook } from "./hooks/run.js";
 // For her install, which names the root a profile's HERMES_HOME is in.
 export { hermesRoot } from "./hosts/hermes-root.js";

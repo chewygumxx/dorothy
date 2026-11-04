@@ -32,9 +32,10 @@ import {
 import { identify as identifyProject } from "../projects/identify.js";
 import type { PiSegment } from "../recording/pi.js";
 import { type PiSessionFile, readPiSession } from "../recording/pi-source.js";
+import { PI_HOOK_EVENTS } from "./payload.js";
 import { type HostHookDeps, hostContext } from "./run.js";
 
-export const PI_HOOK_EVENTS = ["start", "prompt", "settled", "end"] as const;
+export { PI_HOOK_EVENTS };
 export type PiHookRequest = {
     event: (typeof PI_HOOK_EVENTS)[number];
     sessionId: string;

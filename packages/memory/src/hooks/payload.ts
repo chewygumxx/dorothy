@@ -16,6 +16,8 @@ import { BLOCK_REASONS, type BlockReason } from "@dorothy/core";
 
 export const HOOK_EVENTS = ["session-start", "prompt"] as const;
 export type HookEvent = (typeof HOOK_EVENTS)[number];
+// Pi's hook events, here so the entry point need not load the Pi hook.
+export const PI_HOOK_EVENTS = ["start", "prompt", "settled", "end"] as const;
 
 export type HookInput = {
     session: string;

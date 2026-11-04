@@ -32,7 +32,9 @@ hooks are in [bodies](../bodies/AGENTS.md).
   for nothing or any failure, never a throw. `hostContext` is its answer
   as text, null when the service gave none, which Pi's hook shares.
 - `pi.ts`: `runPiHostHook`, `dorothy --pi-hook`'s JSON (`PiHookRequest`,
-  `PiHookReply`). A start or prompt asks for the archive segment owning
+  `PiHookReply`), which `host-hook.ts` imports when it runs, so Codex's
+  and Hermes's hooks never load it, the Pi source or `bun:sqlite`
+  (`lazy.test.ts`). A start or prompt asks for the archive segment owning
   the active leaf, or the native session where the file names none: a
   fork held for its parent gets `pi_ancestry_missing` and no guess. A
   settled turn sends the leaf's segment, an end every one, ended, read by
