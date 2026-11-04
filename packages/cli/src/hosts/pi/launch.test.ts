@@ -19,10 +19,11 @@ import {
     symlink,
     writeFile,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { Env, RouteEntry, Routing } from "@dorothy/core";
 import { type PiDeps, type PiOptions, runPi } from "./launch.js";
 import { type PiLaunchManifest, sessionDirFor } from "./models.js";
+import { writeRegistry } from "./steward/fixtures.js";
 import {
     EXTENSION,
     entry,
@@ -117,7 +118,10 @@ async function rig(over: { env?: Env; cwd?: string } = {}) {
         signals: new EventEmitter(),
     });
     const run = (options: Partial<PiOptions> = {}, env?: Env) =>
-        runPi({ args: [], model: null, dump: false, ...options }, deps(env));
+        runPi(
+            { args: [], model: null, dump: false, steward: null, ...options },
+            deps(env),
+        );
     const launchDirs = async () =>
         (
             await readdir(join(roots.root, "runtime", "dorothy")).catch(
@@ -524,6 +528,90 @@ describe("Pi's sessions", () => {
     });
 });
 
+describe("dorothy --pi --steward", () => {
+    const HERDR_STATE = join(
+        import.meta.dir,
+        "../../../assets/pi/vendor/herdr/herdr-agent-state.ts",
+    );
+    const SKILL = join(
+        import.meta.dir,
+        "../../../assets/pi/stewardship/SKILL.md",
+    );
+    const registries: { cleanup: () => Promise<void> }[] = [];
+    afterEach(async () => {
+        await Promise.all(registries.splice(0).map((r) => r.cleanup()));
+    });
+    const registry = async (edit?: Parameters<typeof writeRegistry>[0]) => {
+        const written = await writeRegistry(edit, new Date());
+        registries.push(written);
+        return written;
+    };
+    const count = (cmd: string[], word: string) =>
+        cmd.filter((item) => item === word).length;
+
+    it("loads herdr's state, the skill and the registry once", async () => {
+        const r = await rig();
+        const fleet = await registry();
+        expect(await r.run({ steward: fleet.path })).toBe(17);
+        const [call] = r.calls;
+        expect(call?.manifest.steward).toEqual({ registry: fleet.path });
+        expect(call?.manifest.extensions).toEqual([EXTENSION, HERDR_STATE]);
+        expect(call?.manifest.skills).toEqual([SKILL]);
+        expect(count(call?.cmd ?? [], HERDR_STATE)).toBe(1);
+        expect(count(call?.cmd ?? [], SKILL)).toBe(1);
+        expect(call?.cmd).toContain("--no-extensions");
+    });
+
+    it("leaves stewardship and herdr out of a plain launch", async () => {
+        const r = await rig();
+        expect(await r.run()).toBe(17);
+        const [call] = r.calls;
+        expect(call?.manifest.steward).toBeUndefined();
+        expect(call?.manifest.extensions).toEqual([EXTENSION]);
+        expect(call?.manifest.skills).toEqual([]);
+        expect(call?.cmd).not.toContain(HERDR_STATE);
+    });
+
+    it("reads a relative registry from the user's directory", async () => {
+        const fleet = await registry();
+        const r = await rig({ cwd: dirname(fleet.path) });
+        expect(await r.run({ steward: "registry.json" })).toBe(17);
+        expect(r.calls[0]?.manifest.steward?.registry).toBe(
+            join(await realpath(dirname(fleet.path)), "registry.json"),
+        );
+    });
+
+    it("refuses a bad registry before any secret is loaded", async () => {
+        const r = await rig();
+        const fleet = await registry((raw) => {
+            raw.version = 2;
+        });
+        expect(await r.run({ steward: fleet.path })).toBe(1);
+        expect(r.writes.join("")).toContain("steward_registry: REGISTRY_");
+        expect(r.secretTargets).toHaveLength(0);
+        expect(r.calls).toHaveLength(0);
+        const missing = await rig();
+        expect(
+            await missing.run({ steward: join(fleet.root, "absent.json") }),
+        ).toBe(1);
+        expect(missing.writes.join("")).toContain("steward_registry:");
+        expect(missing.secretTargets).toHaveLength(0);
+    });
+
+    it("refuses stewardship in a launch that records nothing", async () => {
+        const r = await rig();
+        const fleet = await registry();
+        expect(
+            await r.run({ steward: fleet.path, args: ["--no-session"] }),
+        ).toBe(2);
+        expect(r.writes.join("")).toContain(
+            "--steward needs a recorded session",
+        );
+        expect(r.secretTargets).toHaveLength(0);
+        expect(r.calls).toHaveLength(0);
+    });
+});
+
 describe("Node for Pi", () => {
     it("never takes Bun's node alias from the PATH", async () => {
         const r = await rig();
@@ -572,7 +660,7 @@ describe("Pi itself", () => {
             let stdout = "";
             let stderr = "";
             const code = await runPi(
-                { args, model: null, dump: false },
+                { args, model: null, dump: false, steward: null },
                 {
                     env: { ...env, OTHER_PROVIDER_KEY: "ambient-other-key" },
                     cwd,

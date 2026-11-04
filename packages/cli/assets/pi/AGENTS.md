@@ -5,8 +5,9 @@ spdx: GPL-3.0-only
 title: packages/cli/assets/pi/AGENTS.md
 description: >-
   Dorothy's Pi extension: the launch's Featherless provider, her memory
-  layer and recording notices through `dorothy --pi-hook`, and her memory
-  server, run by the published Pi under Node.
+  layer and recording notices through `dorothy --pi-hook`, her memory
+  server and, with a registry, her worker tools through
+  `dorothy --pi-steward`, run by the published Pi under Node.
 tags:
   - agents
 ---
@@ -46,7 +47,8 @@ with Bun code are re-declared, and `extension.test.ts` checks they agree.
   Pi's system prompt: `dorothy-identity`, the persona file the manifest's
   `persona` names (read at load, refused as `dorothy_pi_persona:
   <path>`), and `dorothy-capabilities`, `capabilities.md` after its
-  header. Sections are additive, after Pi's own (pi 1.5.0
+  header, with a registry `stewardship/capabilities.md` too. Sections
+  are additive, after Pi's own (pi 1.5.0
   core/system-prompt.js `buildSystemPromptSections`), so no CLI append
   is passed and Pi's discovered `APPEND_SYSTEM.md`, trusted project's or
   profile's, and its context files stay.
@@ -71,7 +73,9 @@ with Bun code are re-declared, and `extension.test.ts` checks they agree.
   result gets a `dorothy.tool-final` entry (`{ entryId, toolCallId,
   content, isError }`) once its assistant entry is saved; memory's reader
   uses it only where no ordinary result exists.
-- `helper.ts`: `hookInvoker(manifest, cwd)` gives `invokeHook`, which
+- `helper.ts`: `runHelper`, one run of `self <flag>` under a deadline
+  signal (SIGKILL past it) with a bounded reply, which both helpers use.
+  `hookInvoker(manifest, cwd)` gives `invokeHook`, which
   runs `self --pi-hook` in the launch directory's parent (the runtime
   directory, which a memory service the helper starts may outlive the
   launch in) with the helper environment alone, the request on stdin
@@ -80,6 +84,23 @@ with Bun code are re-declared, and `extension.test.ts` checks they agree.
   records, the helper SIGKILLed past it.
 - `capabilities.md`: what the model is told of her memory tools and
   layer; her identity is the launch's persona, a section apart.
+- `steward.ts`: `registerStewardship`, for a manifest with `steward`
+  alone. Six tools (`workers_list`, `worker_read`, `worker_dispatch`,
+  `worker_wait`, `worker_cancel`, `workers_reconcile`) taking ids, paths
+  and bounds, never a command, pane, approval or receipt; each call one
+  `self --pi-steward` in the runtime directory, the helper environment
+  less the key, `DOROTHY_MEMORY_URL` and `SOPS_AGE_KEY_FILE`, as Pi's
+  `{pid, startedAt}`. Waits run in 5 s slices, each a progress update;
+  cancelled, `WAIT_CANCELLED` with the task as last seen. Dispatch (after
+  a whole reconcile) and cancel ignore Pi's abort: a killed helper leaves
+  a send unknown. The ledger is reread at session start and compaction;
+  status `dorothy-steward` and section `dorothy-stewardship-ledger` show
+  task ids and states. Pi's `ui_prompt_*` become `herdr:blocked` events.
+- `stewardship/`: `SKILL.md` (Pi `--skill`) with the report contract,
+  `capabilities.md` and a synthetic `registry.example.json`.
+- `vendor/herdr/`: herdr's Pi state extension, unedited at the declared
+  pin, with licence and [provenance](./vendor/herdr/PROVENANCE.md);
+  out of biome and the house header.
 - `models.json`: the checked model manifest
   ([hosts guide](../../src/hosts/AGENTS.md)).
 
@@ -105,6 +126,9 @@ with Bun code are re-declared, and `extension.test.ts` checks they agree.
 
 `src/hosts/pi/extension.test.ts` drives the factory through a fake
 ExtensionAPI and a stand-in `dorothy` (`testing.ts`);
+`src/hosts/pi/steward/extension.test.ts` drives the worker tools, with
+real helper processes over stub herdr, and herdr's extension in Pi's
+terminal against a fake herdr socket;
 `src/hosts/pi/wire.test.ts` runs the published CLI against a scripted
 loopback endpoint (`startFakeProvider`), and the native interface in a
 pseudo-terminal with the real `--pi-hook`, `--mcp` and memory service
@@ -112,6 +136,9 @@ pseudo-terminal with the real `--pi-hook`, `--mcp` and memory service
 
 What they showed of Pi 1.5.0, which the extension relies on:
 
+- Herdr's extension reports `idle` at session start, `working` from
+  `agent_start`, `idle` from `agent_settled` and `blocked` with the
+  dialog's title from a bridged `herdr:blocked`, each once.
 - `ctx.abort()` in `before_agent_start` stops the run before any request
   (the provider guard's stop; Pi's agent-session.js aborts at
   `agent_start`).

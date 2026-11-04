@@ -61,8 +61,15 @@ export type Mode =
     | { kind: "claude-dump"; args: string[]; message: string }
     | { kind: "codex"; args: string[] }
     | { kind: "codex-dump"; args: string[] }
-    | { kind: "pi"; args: string[]; model: string | null; dump: boolean }
+    | {
+          kind: "pi";
+          args: string[];
+          model: string | null;
+          dump: boolean;
+          steward: string | null;
+      }
     | { kind: "pi-hook" }
+    | { kind: "pi-steward" }
     | {
           kind: "install";
           host: "hermes";
@@ -134,12 +141,15 @@ export const USAGE = [
     "                                  and hooks; args go to codex",
     "       dorothy --codex --dump [args...]",
     "                                  print the codex command it would run",
-    "       dorothy --pi [--model <provider:id>] [--dump] [-- args...]",
+    "       dorothy --pi [--model <provider:id>]",
+    "                    [--steward <registry>] [--dump] [-- args...]",
     "                                  Pi, with Dorothy's persona, memory and",
     "                                  Featherless model; args after -- go to",
-    "                                  pi; --dump prints the command, naming",
-    "                                  variables alone",
+    "                                  pi; --steward gives her the workers a",
+    "                                  registry declares; --dump prints the",
+    "                                  command, naming variables alone",
     "       dorothy --pi-hook          internal: what her Pi extension runs",
+    "       dorothy --pi-steward       internal: her Pi worker tools' helper",
     "       dorothy --install hermes [--uninstall] [--force] [--entry <path>]",
     "                                  a Hermes profile of hers, `dorothy`;",
     "                                  --entry names her entry, for probes",
@@ -200,6 +210,7 @@ const COMMANDS: Record<string, Command> = {
     "--codex": parseCodex,
     "--pi": parsePi,
     "--pi-hook": noArguments("--pi-hook", { kind: "pi-hook" }),
+    "--pi-steward": noArguments("--pi-steward", { kind: "pi-steward" }),
     "--install": parseInstall,
 };
 
@@ -601,7 +612,9 @@ function parseCodex(rest: readonly string[]): Mode {
         : { kind: "codex", args: [...rest] };
 }
 
-const PI_USAGE = "--pi takes [--model <provider:id>] [--dump] [-- args...]";
+const PI_USAGE =
+    "--pi takes [--model <provider:id>] [--steward <registry>] [--dump] " +
+    "[-- args...]";
 
 // Dorothy's options come before --, Pi's own after it, so a word of Pi's
 // is never read as hers; launch.ts reads Pi's.
@@ -609,14 +622,17 @@ function parsePi(rest: readonly string[]): Mode {
     const end = rest.indexOf("--");
     const parsed = options(end === -1 ? rest : rest.slice(0, end), {
         model: { type: "string", multiple: true },
+        steward: { type: "string", multiple: true },
         dump: { type: "boolean", multiple: true },
     });
-    const { model = [], dump = [] } = parsed?.values ?? {};
+    const { model = [], steward = [], dump = [] } = parsed?.values ?? {};
     const [chosen] = model;
     if (
         parsed === null ||
         parsed.positionals.length > 0 ||
         model.length > 1 ||
+        steward.length > 1 ||
+        steward[0] === "" ||
         dump.length > 1 ||
         (chosen !== undefined && !/^[^:]+:.+$/.test(chosen))
     ) {
@@ -627,6 +643,7 @@ function parsePi(rest: readonly string[]): Mode {
         args: end === -1 ? [] : rest.slice(end + 1),
         model: chosen ?? null,
         dump: dump.length > 0,
+        steward: steward[0] ?? null,
     };
 }
 

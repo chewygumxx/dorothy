@@ -28,6 +28,8 @@ export type NativePlan = {
     self: string[];
     baseUrl: string;
     args: string[];
+    // `--steward <registry>`, where the plan gives one.
+    steward?: string;
 };
 
 if (import.meta.main) {
@@ -35,7 +37,12 @@ if (import.meta.main) {
         await readFile(process.argv[2] ?? "", "utf8"),
     );
     const code = await runPi(
-        { args: plan.args, model: null, dump: false },
+        {
+            args: plan.args,
+            model: null,
+            dump: false,
+            steward: plan.steward ?? null,
+        },
         {
             env: plan.env,
             cwd: plan.cwd,

@@ -5,7 +5,8 @@ spdx: GPL-3.0-only
 title: packages/cli/src/hosts/pi/steward/AGENTS.md
 description: >-
   Pi stewardship: the declared trial fleet of Codex and Claude workers in
-  herdr panes, and the read-only observation of it.
+  herdr panes, its observation, ledger and engine, the `--pi-steward`
+  helper and how `dorothy --pi --steward` loads them.
 tags:
   - agents
 ---
@@ -111,6 +112,23 @@ or infers a target from focus. Bun code, never loaded by Pi's extension.
   refuses any other command; with `{steward: true}` it also serves
   `agent read`, recorded. Capture new fixtures from
   dedicated trial panes only, sanitized the same way.
+- `helper.ts`: `stewardHelper`, `dorothy --pi-steward` (`index.ts`):
+  one request of at most 128 KiB (else `REQUEST_TOO_LARGE`, nothing
+  run), `runSteward` with `createHerdrRun()` and `processAlive` over the
+  environment it is given, one reply of at most 64 KiB (else
+  `REPLY_TOO_LARGE` and the code). It loads no secrets.
+
+## The launch
+
+`dorothy --pi --steward <registry>` (`../launch.ts`), Linux alone
+(`steward_platform`), refuses `--no-session` (exit 2) and checks the
+registry, resolved from the user's directory and not through a link,
+with `readFleet` before any secret (`steward_registry: <code>`). The
+manifest then names it (`steward.registry`), and Pi gets herdr's
+vendored Pi state extension and the stewardship skill, each once; a
+plain `--pi` has neither. Her extension's tools and status are
+`../../../../assets/pi/steward.ts`
+([its guide](../../../../assets/pi/AGENTS.md)).
 
 The registry example is `../../../../assets/pi/stewardship/`
 `registry.example.json`, synthetic, and expired by design.
@@ -121,3 +139,9 @@ Every root, clock, environment and runner is injected. A test starts no
 real herdr: `createHerdrRun` runs a script in a private root. The
 engine's tests give `sender`, `self` and liveness too; killed and
 competing helpers are real Bun processes on one temporary ledger.
+`extension.test.ts` drives her Pi tools through a fake ExtensionAPI,
+each call a real helper process: a stand-in `dorothy` running
+`stewardHelper` and the engine over shell stubs of herdr, the sender and
+the interrupter (none reaches a pane), plus the real `--pi-steward`, the
+published Pi offering the tools, and herdr's vendored extension in Pi's
+terminal reporting to a fake herdr socket.
