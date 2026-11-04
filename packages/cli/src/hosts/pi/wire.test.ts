@@ -14,6 +14,7 @@
 // loopback, no paid inference, a synthetic key alone.
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { existsSync } from "node:fs";
 import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { readPi } from "@dorothy/memory/host-hook";
@@ -404,6 +405,18 @@ const promptOf = (request: Captured) =>
     );
 const lastRole = (request: Captured) => messagesOf(request).at(-1)?.role;
 
+// Waits for a condition, 20 s at most, failing with what Pi showed.
+async function until(done: () => boolean, what: string, pi: NativePi) {
+    const deadline = Date.now() + 20_000;
+    while (!done()) {
+        if (Date.now() > deadline)
+            throw new Error(
+                `${what}; the screen ends:\n${pi.screen().slice(-1500)}`,
+            );
+        await Bun.sleep(50);
+    }
+}
+
 describe("Pi in its own terminal", () => {
     // `dorothy --pi` in a pseudo-terminal, the native interface throughout:
     // her real `--pi-hook` and `--mcp` against her memory service on the
@@ -413,6 +426,7 @@ describe("Pi in its own terminal", () => {
     // and `dorothy --sweep` twice, the second with every cache lost.
     it("records a native session once each, through a killed launcher", async () => {
         const service = await startMemoryService(roots);
+        const started = join(roots.root, "bash-started");
         let release = () => {};
         const held = new Promise<void>((done) => {
             release = done;
@@ -433,7 +447,9 @@ describe("Pi in its own terminal", () => {
                 ];
             if (prompt === "run slow" && lastRole(request) === "user")
                 return [
-                    called("call-slow", "bash", { command: "sleep 30" }),
+                    called("call-slow", "bash", {
+                        command: `touch ${started} && sleep 30`,
+                    }),
                     finish("tool_calls"),
                     usage,
                 ];
@@ -466,8 +482,9 @@ describe("Pi in its own terminal", () => {
             await first.waitFor("Answer to after reload.");
             // A call the person interrupts, with escape, as it runs.
             await first.send("run slow");
-            await first.waitFor("sleep 30");
-            await Bun.sleep(500);
+            // Escape once bash is running, as its marker shows: drawn
+            // alone, the call may not have started yet.
+            await until(() => existsSync(started), "bash never started", first);
             first.type(KEYS.escape);
             await first.waitFor("Command aborted");
             await first.send("/quit");
@@ -520,7 +537,11 @@ describe("Pi in its own terminal", () => {
             const asked = provider.requests.length;
             await second.send("run quick");
             await second.waitFor("QUICK");
-            while (provider.requests.length < asked + 2) await Bun.sleep(50);
+            await until(
+                () => provider?.requests.length === asked + 2,
+                "the killed turn's second request never came",
+                second,
+            );
             await second.kill();
         } finally {
             // Nothing a failed step left running outlives the test.
