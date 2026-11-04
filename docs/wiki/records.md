@@ -216,6 +216,9 @@ first.
   the pinned runtime, profiles, branch recording, extension and launcher.
 - [Pi delivery report](../reports/2026-11-03_pi-delivery.md): Report. The
   offline and live probes, their cost and the gates still open.
+- [Pi delivery deferred
+  findings](../deferred/2026-11-03_pi-delivery-deferred.md): Deferred.
+  Recording, launcher, extension and probe minors, and the live limits.
 
 ## Models and routing
 
