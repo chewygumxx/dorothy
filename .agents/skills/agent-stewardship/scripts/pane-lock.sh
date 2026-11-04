@@ -30,7 +30,8 @@ state_dir() {
     printf '%s\n' "$dir"
 }
 
-# Holds the pane's lock on fd 9 until the script exits.
+# Holds the pane's lock on fd 9 until the script exits. With a second
+# argument, waits that many seconds at most, then exits 7, unwritten.
 lock_pane() {
     [ -n "${XDG_RUNTIME_DIR:-}" ] || die 1 'XDG_RUNTIME_DIR is not set'
     dir=$XDG_RUNTIME_DIR/dorothy-agents
@@ -38,6 +39,10 @@ lock_pane() {
     chmod 700 "$dir"
     name=$(printf '%s' "$1" | tr -c '[:alnum:]' _)
     exec 9>"$dir/$name.lock" || die 1 "cannot open the lock of pane $1"
+    if [ -n "${2:-}" ]; then
+        flock -w "$2" 9 || die 7 "pane $1 is locked: gave up after $2 s"
+        return
+    fi
     flock 9 || die 1 "cannot lock pane $1"
 }
 

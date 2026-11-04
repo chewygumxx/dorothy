@@ -108,5 +108,7 @@ In [`scripts/`](./scripts), each printing its usage when misused:
   account to spend.
 - [`at-limit.sh`](./scripts/at-limit.sh): reruns a command stopped by a
   plan's limit.
+- [`send-interrupt.sh`](./scripts/send-interrupt.sh): one Escape to
+  an agent, under its pane's lock.
 - [`pane-lock.sh`](./scripts/pane-lock.sh): the pane lock the senders
   share, sourced, never run.

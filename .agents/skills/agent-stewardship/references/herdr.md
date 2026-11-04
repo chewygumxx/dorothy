@@ -84,11 +84,27 @@ them, their retries and their record.
 ## The pane lock
 
 One writer at a time per pane:
-`$XDG_RUNTIME_DIR/dorothy-agents/<pane>.lock`, held by `send-prompt.sh`
-and `compact-self.sh` across every write of a sequence, so a wake-up
-never lands inside a half-typed `/compact`. A sender waits behind
-another. A bare `herdr pane send-text` takes no lock: use it only on an
-idle agent with no scheduled send due.
+`$XDG_RUNTIME_DIR/dorothy-agents/<pane>.lock`, held by `send-prompt.sh`,
+`compact-self.sh` and `send-interrupt.sh` across every write of a
+sequence, so a wake-up never lands inside a half-typed `/compact`. A
+sender waits behind another. A bare `herdr pane send-text` or
+`send-keys` takes no lock: use it only on an idle agent with no
+scheduled send due.
+
+## Interrupting a turn
+
+```text
+send-interrupt.sh [--expect-pane <id>] [--expect-terminal <id>]
+    [--lock-wait <seconds>] <agent>
+```
+
+One Escape, which stops a Codex or Claude Code turn, sent under the
+pane's lock, waited for `--lock-wait` seconds (5 by default, 1 to 60).
+Once the lock is held it reads the agent again and refuses another pane
+(exit 5), another terminal (8) or a dialog (3), which the Escape would
+answer; absent is 4, the lock not had in time 7, usage 2: each before
+anything is sent. Exit 1 is a failed Escape, which may have landed.
+Pi stewardship's cancel uses it.
 
 ## What the label proves
 
