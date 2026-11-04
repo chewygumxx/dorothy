@@ -54,7 +54,9 @@ or infers a target from focus. Bun code, never loaded by Pi's extension.
   Anything else, a moved pane, a stopped agent, a malformed or oversized
   reply, a timeout, is `matches: false`, `unknown` and a `HERDR_*` code;
   an unrecognized status is `unknown`, never idle. Callers observe again
-  immediately before acting; `terminal_id` is herdr's, not in `Worker`.
+  immediately before acting. A match also gives `terminalId`, herdr's
+  `terminal_id` (a bounded word, else null; null when unmatched): it
+  never makes a match, the caller pins it and refuses a change.
 - `fixtures.ts`: `writeRegistry` (private roots) and `fakeHerdr`, whose
   replies have herdr 0.9.5's structure with every value invented. It
   serves `agent get` alone and refuses any other command. Capture new

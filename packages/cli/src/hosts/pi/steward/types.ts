@@ -43,6 +43,9 @@ export type WorkerObservation = {
     state: WorkerState;
     observedAt: string;
     code: string | null;
+    // herdr's terminal id of the matched occupant, for the caller to pin;
+    // null where unmatched, absent or not a bounded word. Never a match.
+    terminalId: string | null;
 };
 
 export type TaskBrief = {

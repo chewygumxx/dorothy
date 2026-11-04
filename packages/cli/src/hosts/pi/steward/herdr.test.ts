@@ -126,6 +126,7 @@ describe("observeWorker", () => {
             state: "idle",
             observedAt: NOW.toISOString(),
             code: null,
+            terminalId: "term_0000000000000a1",
         });
         expect(herdr.calls).toHaveLength(1);
         expect(herdr.calls.every((c) => c.args.includes(codex.name))).toBe(
@@ -167,6 +168,47 @@ describe("observeWorker", () => {
         expect((await observeWorker(codex, herdr.run, options)).state).toBe(
             "unknown",
         );
+    });
+
+    it("exposes herdr's terminal id, bounded, without matching on it", async () => {
+        const herdr = fakeHerdr([codex, claude]);
+        herdr.agents.set(codex.name, {
+            ...herdrAgentOf(codex),
+            terminal_id: "term_other0000000b2",
+        });
+        const seen = await observeWorker(codex, herdr.run, options);
+        expect([seen.matches, seen.terminalId]).toEqual([
+            true,
+            "term_other0000000b2",
+        ]);
+        for (const bad of [7, null, "", "x".repeat(65), "a b", "a\nb", {}]) {
+            herdr.agents.set(codex.name, {
+                ...herdrAgentOf(codex),
+                terminal_id: bad as never,
+            });
+            const odd = await observeWorker(codex, herdr.run, options);
+            expect([odd.matches, odd.state, odd.terminalId]).toEqual([
+                true,
+                "idle",
+                null,
+            ]);
+        }
+        const gone = herdrAgentOf(codex) as Record<string, unknown>;
+        delete gone.terminal_id;
+        herdr.agents.set(codex.name, gone as never);
+        expect(
+            (await observeWorker(codex, herdr.run, options)).terminalId,
+        ).toBe(null);
+    });
+
+    it("gives no terminal id for an occupant that is not the worker", async () => {
+        const herdr = fakeHerdr([codex, claude]);
+        herdr.agents.set(codex.name, {
+            ...herdrAgentOf(codex),
+            pane_id: "w9:p7",
+        });
+        const seen = await observeWorker(codex, herdr.run, options);
+        expect([seen.matches, seen.terminalId]).toEqual([false, null]);
     });
 
     it("refuses a pane the name has moved to", async () => {
@@ -244,6 +286,7 @@ describe("observeWorker", () => {
             state: "unknown",
             observedAt: NOW.toISOString(),
             code: "HERDR_AGENT_NOT_FOUND",
+            terminalId: null,
         });
     });
 

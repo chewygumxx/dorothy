@@ -34,6 +34,9 @@ export const MAX_READ_LINES = 200;
 export const MAX_OUTPUT_BYTES = 32 * 1024;
 export const METADATA_TIMEOUT_MS = 2000;
 
+// A terminal id is herdr's own word (`term_` and hex), bounded to 64.
+const TERMINAL = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
+
 const STATES: readonly WorkerState[] = [
     "idle",
     "working",
@@ -163,7 +166,9 @@ function record(value: unknown): Record<string, unknown> | null {
 function compare(
     worker: Worker,
     reply: Reply,
-): { state: WorkerState; code: string | null } | { fail: string } {
+):
+    | { state: WorkerState; code: string | null; terminalId: string | null }
+    | { fail: string } {
     const body = parse(reply.stdout);
     if (reply.code !== 0) {
         return {
@@ -202,9 +207,11 @@ function compare(
         return { fail: "HERDR_CWD_MISMATCH" };
     }
     const status = agent.agent_status;
+    const id = agent.terminal_id;
+    const terminalId = typeof id === "string" && TERMINAL.test(id) ? id : null;
     return STATES.includes(status as WorkerState)
-        ? { state: status as WorkerState, code: null }
-        : { state: "unknown", code: "HERDR_STATE_UNRECOGNIZED" };
+        ? { state: status as WorkerState, code: null, terminalId }
+        : { state: "unknown", code: "HERDR_STATE_UNRECOGNIZED", terminalId };
 }
 
 // Observes one declared worker, now and read-only. It matches only where
@@ -223,6 +230,7 @@ export async function observeWorker(
         state: "unknown",
         observedAt: at.toISOString(),
         code,
+        terminalId: null,
     });
     if (options.env.HERDR_ENV !== "1") {
         return unmatched("HERDR_ENV_MISSING");
@@ -267,5 +275,6 @@ export async function observeWorker(
         state: found.state,
         observedAt: at.toISOString(),
         code: found.code,
+        terminalId: found.terminalId,
     };
 }
