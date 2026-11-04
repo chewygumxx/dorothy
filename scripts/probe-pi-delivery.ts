@@ -232,8 +232,13 @@ function shapeOf(body: Record<string, unknown>) {
     };
 }
 
-// What a streamed reply said of itself, read as it passes.
-function tap(onEnd: (reply: Call["reply"]) => void) {
+// What a streamed reply said of itself, read as it passes: `onEnd` once,
+// with `cut` where it never ended (Pi cancelled it, the upstream failed
+// or the call's time ran out), when its usage cannot be trusted.
+function tap(
+    body: ReadableStream<Uint8Array>,
+    onEnd: (reply: Call["reply"], cut: string | null) => void,
+): ReadableStream<Uint8Array> {
     const decoder = new TextDecoder();
     let pending = "";
     let thought = "";
@@ -285,23 +290,51 @@ function tap(onEnd: (reply: Call["reply"]) => void) {
                 cached: chunk.usage.prompt_tokens_details?.cached_tokens ?? 0,
             };
     };
-    return new TransformStream<Uint8Array, Uint8Array>({
-        transform(bytes, controller) {
-            controller.enqueue(bytes);
-            pending += decoder.decode(bytes, { stream: true });
-            const lines = pending.split("\n");
-            pending = lines.pop() ?? "";
-            for (const text of lines) line(text.trim());
-        },
-        flush() {
-            line(pending.trim());
-            onEnd({
+    let ended = false;
+    const end = (cut: string | null) => {
+        if (ended) return;
+        ended = true;
+        line(pending.trim());
+        onEnd(
+            {
                 reasoning: thought === "" ? null : digest(thought),
                 reasoningField: field,
                 toolCalls: [...calls.values()],
                 finish: finishReason,
                 usage: used,
-            });
+            },
+            cut,
+        );
+    };
+    const reader = body.getReader();
+    // Pumped by hand, so a cancel and an error reach `end` as well as the
+    // close a TransformStream's flush alone would see.
+    return new ReadableStream<Uint8Array>({
+        async pull(controller) {
+            let read: Awaited<ReturnType<typeof reader.read>>;
+            try {
+                read = await reader.read();
+            } catch (error) {
+                // Ended short, as a broken stream reaches Pi: no finish,
+                // no [DONE].
+                end(`stream cut: ${(error as Error).name}`);
+                controller.close();
+                return;
+            }
+            if (read.done) {
+                end(null);
+                controller.close();
+                return;
+            }
+            controller.enqueue(read.value);
+            pending += decoder.decode(read.value, { stream: true });
+            const lines = pending.split("\n");
+            pending = lines.pop() ?? "";
+            for (const text of lines) line(text.trim());
+        },
+        async cancel(reason) {
+            end("stream cut: cancelled");
+            await reader.cancel(reason).catch(() => {});
         },
     });
 }
@@ -380,13 +413,21 @@ export function startForwardingProxy(options: ProxyOptions): ForwardingProxy {
             }
             held += reserve;
             call.reservedUsd = reserve;
-            // Settled from measured usage, or kept and stopping.
-            const settle = (reply: Call["reply"]) => {
+            // Settled from measured usage, or kept and stopping: a reply
+            // without usage, or cut before its end, keeps its reservation.
+            let settled = false;
+            const settle = (
+                reply: Call["reply"],
+                cut: string | null = null,
+            ) => {
+                if (settled) return;
+                settled = true;
                 held -= reserve;
                 call.reply = reply;
-                if (reply.usage === null) {
+                if (cut !== null) call.refused = cut;
+                if (reply.usage === null || cut !== null) {
                     spent += reserve;
-                    stop ??= "usage unavailable";
+                    stop ??= cut ?? "usage unavailable";
                 } else {
                     call.costUsd = costOf(reply.usage, options.price);
                     spent += call.costUsd;
@@ -424,7 +465,12 @@ export function startForwardingProxy(options: ProxyOptions): ForwardingProxy {
                     },
                 });
             }
-            return new Response(upstream.body.pipeThrough(tap(settle)), {
+            const reply = tap(upstream.body, settle);
+            // Pi gone mid-reply: its stream may never be read again.
+            request.signal.addEventListener("abort", () =>
+                settle(call.reply, "stream cut: client gone"),
+            );
+            return new Response(reply, {
                 status: upstream.status,
                 headers: { "content-type": "text/event-stream" },
             });

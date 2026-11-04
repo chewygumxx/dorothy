@@ -11,7 +11,8 @@
 // The probe's own rules, against a scripted upstream on loopback: no
 // spending without a stated limit, one model and path forwarded with the
 // upstream's key, worst-case reservations, and a stop when a reply's
-// usage is missing. The probe itself is never run here.
+// usage is missing or its stream is cut. The probe itself is never run
+// here.
 
 import { afterEach, describe, expect, it } from "bun:test";
 import {
@@ -35,14 +36,59 @@ const PRICE = { input: 0.225, output: 0.9, cacheRead: 0.006 };
 
 let upstream: FakeProvider | null = null;
 let proxy: ForwardingProxy | null = null;
+let stalled: { close(): Promise<void> } | null = null;
 afterEach(async () => {
     await proxy?.close();
     await upstream?.close();
+    await stalled?.close();
     proxy = null;
     upstream = null;
+    stalled = null;
 });
 
-const start = (script: Parameters<typeof startFakeProvider>[0], over = {}) => {
+// An upstream that streams one chunk of a reply, then nothing, ever:
+// the cut a cancel or a timeout ends. It counts what reaches it.
+function startStalled() {
+    let asked = 0;
+    const server = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        idleTimeout: 0,
+        fetch() {
+            asked++;
+            const stream = new ReadableStream({
+                start(controller) {
+                    controller.enqueue(
+                        new TextEncoder().encode(
+                            `data: ${JSON.stringify(said("Partial"))}\n\n`,
+                        ),
+                    );
+                },
+            });
+            return new Response(stream, {
+                headers: { "content-type": "text/event-stream" },
+            });
+        },
+    });
+    stalled = { close: () => server.stop(true) };
+    return {
+        baseUrl: `http://127.0.0.1:${server.port}/v1`,
+        asked: () => asked,
+    };
+}
+
+const until = async (done: () => boolean) => {
+    const deadline = Date.now() + 5_000;
+    while (!done()) {
+        if (Date.now() > deadline) throw new Error("never settled");
+        await Bun.sleep(20);
+    }
+};
+
+const start = (
+    script: Parameters<typeof startFakeProvider>[0],
+    over: Partial<Parameters<typeof startForwardingProxy>[0]> = {},
+) => {
     upstream = startFakeProvider(script);
     proxy = startForwardingProxy({
         upstream: upstream.baseUrl,
@@ -180,5 +226,46 @@ describe("the probe's forwarding proxy", () => {
         expect(at.stopped()).toBe("usage unavailable");
         expect((await ask(at, {})).status).toBe(400);
         expect(upstream?.requests).toHaveLength(1);
+    });
+
+    it("keeps the reservation and stops when Pi cancels a reply", async () => {
+        const cut = startStalled();
+        const at = start([], { upstream: cut.baseUrl });
+        const abort = new AbortController();
+        const response = await fetch(`${at.baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ model: MODEL, messages: [] }),
+            signal: abort.signal,
+        });
+        const reader = response.body?.getReader();
+        expect(
+            new TextDecoder().decode((await reader?.read())?.value),
+        ).toContain("Partial");
+        abort.abort();
+        await until(() => at.stopped() !== null);
+        expect(at.stopped()).toStartWith("stream cut");
+        expect(at.calls[0]?.costUsd).toBeNull();
+        expect(at.spentUsd()).toBeCloseTo(at.calls[0]?.reservedUsd ?? 0, 12);
+        expect((await ask(at, {})).status).toBe(400);
+        expect(cut.asked()).toBe(1);
+    });
+
+    it("keeps the reservation and stops when a reply outlives its time", async () => {
+        const cut = startStalled();
+        const at = start([], { upstream: cut.baseUrl, timeoutMs: 300 });
+        const answer = await fetch(`${at.baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ model: MODEL, messages: [] }),
+        });
+        // The reply starts, then breaks off when the call's time is up.
+        await answer.text().catch(() => "");
+        await until(() => at.stopped() !== null);
+        expect(at.stopped()).toStartWith("stream cut");
+        expect(at.calls[0]?.costUsd).toBeNull();
+        expect(at.spentUsd()).toBeCloseTo(at.calls[0]?.reservedUsd ?? 0, 12);
+        expect((await ask(at, {})).status).toBe(400);
+        expect(cut.asked()).toBe(1);
     });
 });
