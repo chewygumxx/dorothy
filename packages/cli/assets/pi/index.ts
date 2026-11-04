@@ -242,9 +242,12 @@ export function dorothyExtension(env: Env): (pi: ExtensionAPI) => void {
         };
 
         registerProvider(pi, manifest, apiKey, notify);
+        // The launch's directory is removed when it ends, and a memory
+        // service the helper starts would keep it as its cwd: start in its
+        // parent, the runtime directory, which outlasts a launch.
         deliverMemory(
             pi,
-            hookInvoker(manifest, dirname(path ?? "")),
+            hookInvoker(manifest, dirname(dirname(path ?? ""))),
             (ctx, code) => notify(ctx, `Dorothy's memory: ${code}`, "warning"),
         );
 

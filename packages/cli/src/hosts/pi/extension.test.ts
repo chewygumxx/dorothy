@@ -15,7 +15,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type {
     PiHookReply as MemoryReply,
     PiHookRequest as MemoryRequest,
@@ -718,7 +718,9 @@ describe("the memory server", () => {
         for (const name of Object.keys(envOf()))
             if (!(name in manifest.helperEnv))
                 expect(names).not.toContain(name);
-        expect(seen?.cwd).toBe(roots.launchDir);
+        // The launch's directory goes when it ends: the helper starts in
+        // its parent, which a memory service it starts may outlive.
+        expect(seen?.cwd).toBe(dirname(roots.launchDir));
     });
 
     it("refuses a project server that would shadow hers", async () => {

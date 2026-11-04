@@ -71,11 +71,13 @@ with Bun code are re-declared, and `extension.test.ts` checks they agree.
   result gets a `dorothy.tool-final` entry (`{ entryId, toolCallId,
   content, isError }`) once its assistant entry is saved; memory's reader
   uses it only where no ordinary result exists.
-- `helper.ts`: `hookInvoker(manifest, launchDir)` gives `invokeHook`,
-  which runs `self --pi-hook` in the launch directory with the helper
-  environment alone, the request on stdin (128 KiB at most) and the reply
-  on stdout (64 KiB at most). The signal is the deadline: 2500 ms for
-  start and prompt, 5000 ms for records, the helper SIGKILLed past it.
+- `helper.ts`: `hookInvoker(manifest, cwd)` gives `invokeHook`, which
+  runs `self --pi-hook` in the launch directory's parent (the runtime
+  directory, which a memory service the helper starts may outlive the
+  launch in) with the helper environment alone, the request on stdin
+  (128 KiB at most) and the reply on stdout (64 KiB at most). The
+  signal is the deadline: 2500 ms for start and prompt, 5000 ms for
+  records, the helper SIGKILLed past it.
 - `capabilities.md`: what the model is told of her memory tools and
   layer; her identity is the launch's persona, a section apart.
 - `models.json`: the checked model manifest
