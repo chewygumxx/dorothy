@@ -1,8 +1,8 @@
 {
     "mode": "live",
     "outcome": "pass",
-    "startedAt": "2026-11-04T00:19:26.846Z",
-    "finishedAt": "2026-11-04T00:19:34.891Z",
+    "startedAt": "2026-11-04T00:46:41.771Z",
+    "finishedAt": "2026-11-04T00:46:48.989Z",
     "versions": {
         "pi": "1.5.0",
         "node": "v24.22.1",
@@ -15,11 +15,11 @@
         "maxTurns": 6,
         "timeoutMs": 120000
     },
-    "spentUsd": 0.001400109,
+    "spentUsd": 0.0013643190000000001,
     "costSource": "each reply's streamed usage x the manifest's prices (packages/cli/assets/pi/models.json); a reply without usage keeps its reservation",
     "stopped": null,
     "metadata": {
-        "checkedAt": "2026-11-04T00:19:28.451Z",
+        "checkedAt": "2026-11-04T00:46:43.053Z",
         "source": "https://api.featherless.ai/v1/models",
         "found": true,
         "contextWindow": 262144,
@@ -63,17 +63,18 @@
             "toolResults": [],
             "syntheticKey": true,
             "reply": {
-                "reasoning": "45e99bd66ccd6908",
-                "toolCalls": ["chatcmpl-tool-87f3bc0915519bab"],
+                "reasoning": null,
+                "reasoningField": null,
+                "toolCalls": ["chatcmpl-tool-bd8bfdcfdb708cf0"],
                 "finish": "tool_calls",
                 "usage": {
-                    "prompt": 2784,
-                    "completion": 83,
+                    "prompt": 2785,
+                    "completion": 42,
                     "cached": 0
                 }
             },
             "reservedUsd": 0.08847360000000001,
-            "costUsd": 0.0007011
+            "costUsd": 0.0006644250000000001
         },
         {
             "n": 2,
@@ -103,21 +104,22 @@
             "maxCompletionTokens": 32768,
             "maxTokens": false,
             "thinking": true,
-            "replayedReasoning": ["45e99bd66ccd6908"],
-            "toolResults": ["chatcmpl-tool-87f3bc0915519bab"],
+            "replayedReasoning": [],
+            "toolResults": ["chatcmpl-tool-bd8bfdcfdb708cf0"],
             "syntheticKey": true,
             "reply": {
                 "reasoning": null,
+                "reasoningField": null,
                 "toolCalls": [],
                 "finish": "stop",
                 "usage": {
-                    "prompt": 2883,
+                    "prompt": 2843,
                     "completion": 4,
-                    "cached": 2839
+                    "cached": 2799
                 }
             },
             "reservedUsd": 0.08847360000000001,
-            "costUsd": 0.000030534
+            "costUsd": 0.000030294
         },
         {
             "n": 3,
@@ -155,21 +157,22 @@
             "maxCompletionTokens": 32768,
             "maxTokens": false,
             "thinking": false,
-            "replayedReasoning": ["45e99bd66ccd6908"],
-            "toolResults": ["chatcmpl-tool-87f3bc0915519bab"],
+            "replayedReasoning": [],
+            "toolResults": ["chatcmpl-tool-bd8bfdcfdb708cf0"],
             "syntheticKey": true,
             "reply": {
                 "reasoning": null,
+                "reasoningField": null,
                 "toolCalls": [],
                 "finish": "stop",
                 "usage": {
-                    "prompt": 2963,
+                    "prompt": 2968,
                     "completion": 2,
                     "cached": 0
                 }
             },
             "reservedUsd": 0.08847360000000001,
-            "costUsd": 0.0006684750000000001
+            "costUsd": 0.0006696000000000001
         }
     ],
     "checks": [
@@ -200,8 +203,8 @@
         },
         {
             "id": "reasoning-replay",
-            "ok": true,
-            "detail": "the tool-calling reply's reasoning came back on the next request, unchanged (by digest)"
+            "ok": null,
+            "detail": "the first reply streamed no reasoning: not exercised"
         },
         {
             "id": "synthetic-key",
@@ -221,7 +224,7 @@
         {
             "id": "within-limits",
             "ok": true,
-            "detail": "3 request(s), 3 forwarded, US$0.001400"
+            "detail": "3 request(s), 3 forwarded, US$0.001364"
         },
         {
             "id": "no-key-at-rest",
@@ -230,5 +233,5 @@
         }
     ],
     "pending": [],
-    "screen": "/quit\n→ quit\nQuit pi\n█▀ █ escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\nPress ctrl+o to show full startup help and loaded resources.\nPi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n[Extensions]\npi\nThis is an automated connectivity probe. Call the bash tool exactly once, with the command: echo dorothy-probe. After\nit returns, reply with the single word DONE.\nThe user wants me to call bash exactly once with echo dorothy-probe, then reply with a single word DONE.\nThis is an automated connectivity probe. Simple and harmless. Let me do it.\n$ echo dorothy-probe\ndorothy-probe\nTook 0.0s\nDONE\nThinking level: off\nReply with the single word OK.\nOK\n▀▀█  v1.5.0\n█▀ █ escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\nPress ctrl+o to show full startup help and loaded resources.\nPi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n[Extensions]\npi\nThis is an automated connectivity probe. Call the bash tool exactly once, with the command: echo dorothy-probe. After\nit returns, reply with the single word DONE.\nThe user wants me to call bash exactly once with echo dorothy-probe, then reply with a single word DONE.\nThis is an automated connectivity probe. Simple and harmless. Let me do it.\n$ echo dorothy-probe\ndorothy-probe\nTook 0.0s\nDONE\nThinking level: off\nReply with the single word OK.\nOK\n~/project-a\n↑5.8k ↓89 R2.8k CH0.0% $0.001 1.1%/262k (auto)\ndeepseek-ai/DeepSeek-V4.1-Flash-1017 • thinking off\nTo resume this session: pi --session-dir <roots>/data/dorothy/pi/sessions/9166dddaaa3a025c3384ea34802d8dc37fbe3298692d55dbaad7727963ce4a42/--tmp-dorothy-pi-ext-gWedHO-project-a-- --session 01a1a3ec-d25d-775f-a9e0-bf770dfaa0fe"
+    "screen": "→ off\n/thinking off\nThinking level: off\n↑2.8k ↓46 R2.8k CH98.5% $0.001 1.1%/262k (auto)\ndeepseek-ai/DeepSeek-V4.1-Flash-1017 • thinking offReply with the single word OK.\nReply with the single word OK.\n── ⠋ Working\n⠙ Working\n⠹ Working\n⠸ Working\n⠼ Working\n⠴ Working\n⠦ Working\n⠧ Working\nOK\n── ⠇ Working\n↑5.8k ↓48 R2.8k CH0.0% $0.001 1.1%/262k (auto)\ndeepseek-ai/DeepSeek-V4.1-Flash-1017 • thinking off/quit\n/quit\n→ quit\nQuit pi\n▀▀█  v1.5.0\n█▀ █ escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\nPress ctrl+o to show full startup help and loaded resources.\nPi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n[Extensions]\npi\nThis is an automated connectivity probe. Call the bash tool exactly once, with the command: echo dorothy-probe. After\nit returns, reply with the single word DONE.\n$ echo dorothy-probe\ndorothy-probe\nTook 0.0s\nDONE\nThinking level: off\nReply with the single word OK.\nOK\n~/project-a\n↑5.8k ↓48 R2.8k CH0.0% $0.001 1.1%/262k (auto)\ndeepseek-ai/DeepSeek-V4.1-Flash-1017 • thinking off\nTo resume this session: pi --session-dir <roots>/data/dorothy/pi/sessions/b69eba60cb853778ac57b8930c4c95a08d9aa72ed11575c1c296e34ca77051a6/--tmp-dorothy-pi-ext-oM83we-project-a-- --session 01a1a405-c393-714e-bcb6-b75413399a2b"
 }

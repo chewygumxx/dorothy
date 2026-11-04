@@ -28,8 +28,9 @@ tags:
 [The spec](../specs/2026-11-03_pi-delivery.md) and
 [the plan](../plans/2026-11-03_pi-delivery.md), increment A. Tasks 1 to
 6 built `dorothy --pi`; this report is Task 7's verification. Delivery
-is built and verified: offline fixtures pass, and one bounded live run
-against Featherless passed every wire check, for about US$0.0014.
+is built and verified: offline fixtures pass, and the bounded live run
+against Featherless passed every wire check it exercised, for about
+US$0.0014.
 
 - The published Pi 1.5.0 ran in its own terminal interface, in a
   pseudo-terminal, through the launcher, with her real `--pi-hook`,
@@ -40,8 +41,10 @@ against Featherless passed every wire check, for about US$0.0014.
 - No integration fix was needed: the fixtures failed when the wiring
   was removed or a crash injected, and passed on the code as built.
 - Featherless took system messages, no `store`, `max_completion_tokens`
-  and `chat_template_kwargs.thinking`, and Pi replayed the streamed
-  reasoning after a tool call. Its catalogue matches the manifest.
+  and `chat_template_kwargs.thinking`. Pi replayed streamed reasoning
+  after a tool call in the first live run; in the recorded run the model
+  streamed none, so replay was not exercised there. Its catalogue
+  matches the manifest.
 
 Captured output is in the directory beside this report:
 [`offline.json`](./2026-11-03_pi-delivery/offline.json) and
@@ -89,9 +92,10 @@ launcher", against a scripted provider:
 
 1. A new session. "look up moss" calls `mcp__dorothy_memory__search`
    through the real bridge; `/reload` rebuilds her extension; "after
-   reload" is answered; "run slow" calls `bash` with `sleep 30`, which
-   escape interrupts. `/quit`. The real hook has by then recorded the
-   session through the service.
+   reload" is answered; "run slow" calls `bash`, which touches a marker
+   file and sleeps 30 s; once the marker exists, escape interrupts it.
+   `/quit`. The real hook has by then recorded the session through the
+   service.
 2. A preference of the user's, `compaction.keepRecentTokens: 1`, is
    written to her profile's `settings.json`.
 3. `--resume`, the session chosen in Pi's picker. "second prompt",
@@ -123,10 +127,9 @@ Then, with the service stopped:
   was taken for speech; no `dorothy.tool-final` was written; no file
   under the roots holds the key.
 
-The run takes about 5 s. In its final form it passed 14 runs in a row,
-`bun run check` among them. An earlier form, which waited for the
-fork's settled record before the kill, failed once for a reason not
-captured, then passed 21 in a row (see Limits).
+The run takes about 5 s. It passed 50 runs in a row in a shell loop,
+each failure's output kept; none failed. An earlier form failed once in
+about 25 runs, its output not kept (see Limits).
 
 ### Failures it exposes
 
@@ -163,10 +166,10 @@ and the test failed.
 
 ```text
 $ bun run check
- 4192 pass
+ 4194 pass
  5 skip
  0 fail
-Ran 4197 tests across 204 files. [65.20s]
+Ran 4199 tests across 204 files. [70.64s]
 ```
 
 ```text
@@ -177,10 +180,15 @@ probe offline: pass, 3 request(s), US$0.000020; <tmp>
 ```text
 $ bun scripts/probe-pi-delivery.ts --live --out <tmp> --max-usd 5 \
     --max-turns 6 --timeout-ms 120000
-probe live: pass, 3 request(s), US$0.001400; <tmp>
+probe live: pass, 3 request(s), US$0.001364; <tmp>
 ```
 
-The live run started at 2026-11-04T00:19:26Z and took 8 s. It ran once.
+Two live runs were made, each once, under the same limits. The first,
+at 2026-11-04T00:19:26Z (3 requests, US$0.001400), ran on the probe
+before it recorded the reasoning's field and loaded the key before
+starting anything, and before the proxy stopped on cut streams. The
+second, the recorded one in `live.json`, ran on the probe as committed,
+at 2026-11-04T00:46:41Z, and took 8 s. Together they cost US$0.002764.
 
 ## The probe
 
@@ -203,14 +211,17 @@ the probe and given to Pi as the route entry's base URL:
   probe's own: never `process.env`, argv, a file or a log.
 - Before forwarding a call it reserves its worst cost, a full context
   window in and its `max_completion_tokens` out at the manifest's
-  prices: US$0.0884736 each. Streamed usage settles it; a reply without
-  usage keeps its reservation and stops the proxy. Calls past
+  prices: US$0.0884736 each. Streamed usage settles it. A reply without
+  usage, or cut before its end (Pi cancelled it, its read failed or its
+  time ran out), keeps its reservation and stops the proxy. Calls past
   `--max-turns`, the budget or `--max-turns` times `--timeout-ms` are
   refused; each upstream call is bounded by `--timeout-ms`.
 - `--live` without `--max-usd` is refused. The result holds shapes,
   counts, digests of reasoning and costs, never a key or prompt text.
 
 ### The live run
+
+The recorded run, `live.json`:
 
 | Check | Result |
 | --- | --- |
@@ -219,32 +230,26 @@ the probe and given to Pi as the route entry's base URL:
 | max-completion-tokens | pass: 32768 on every request, no `max_tokens` |
 | thinking | pass: `true`, `true`, then `false` after `/thinking off` |
 | tool-call | pass: one call; the next request answered its id |
-| reasoning-replay | pass: digest `45e99bd66ccd6908` replayed |
+| reasoning-replay | not exercised: the tool-calling reply streamed no reasoning |
 | synthetic-key | pass: Pi sent only the synthetic key |
 | loadout | pass: the eight declared tools |
 | recorded | pass: 1 conversation, 5 events; the sweep added 0 |
-| within-limits | pass: 3 requests, US$0.001400 |
+| within-limits | pass: 3 requests, US$0.001364 |
 | no-key-at-rest | pass: no file under the roots holds a key |
 
 | # | Status | Roles | Thinking | Reply | Usage in/out | US$ |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | 200 | system user user | true | tool call, reasoning | 2784/83 | 0.000701 |
-| 2 | 200 | system user user assistant tool | true | stop | 2883/4 (2839 cached) | 0.000031 |
-| 3 | 200 | system user assistant tool assistant user user | false | stop | 2963/2 | 0.000668 |
+| 1 | 200 | system user user | true | tool call | 2785/42 | 0.000664 |
+| 2 | 200 | system user user assistant tool | true | stop | 2843/4 (2799 cached) | 0.000030 |
+| 3 | 200 | system user assistant tool assistant user user | false | stop | 2968/2 | 0.000670 |
 
 Each request's body held `chat_template_kwargs`,
 `max_completion_tokens`, `messages`, `model`, `stream`, `stream_options`
 and `tools`, and nothing else. The second user message of each request
-is her memory layer. The screen's end, as the probe saved it:
+is her memory layer. The proxy refused nothing and never stopped. The
+screen's end, as the probe saved it:
 
 ```text
-This is an automated connectivity probe. Call the bash tool exactly
-once, with the command: echo dorothy-probe. After it returns, reply
-with the single word DONE.
-The user wants me to call bash exactly once with echo dorothy-probe,
-then reply with a single word DONE.
-This is an automated connectivity probe. Simple and harmless. Let me
-do it.
 $ echo dorothy-probe
 dorothy-probe
 Took 0.0s
@@ -253,25 +258,31 @@ Thinking level: off
 Reply with the single word OK.
 OK
 ~/project-a
-↑5.8k ↓89 R2.8k CH0.0% $0.001 1.1%/262k (auto)
+↑5.8k ↓48 R2.8k CH0.0% $0.001 1.1%/262k (auto)
 deepseek-ai/DeepSeek-V4.1-Flash-1017 • thinking off
 ```
 
+The first run, on the earlier probe, had the same checks pass, and its
+tool-calling reply streamed reasoning (usage 2784/83), whose digest
+`45e99bd66ccd6908` came back on the next two requests. Its result is
+not kept; this report quoted it before the re-run.
+
 ### Cost
 
-US$0.001400 for three requests, against the US$5 limit. The source is
-the probe's own ledger: each reply's streamed usage times the
-manifest's prices per million tokens (input 0.225, output 0.9, cached
-input 0.006). Featherless's own billing was not queried, and its plan
-may bill differently; Pi's footer showed about US$0.001 from its own
-reckoning.
+US$0.001364 for the recorded run's three requests, against the US$5
+limit; US$0.002764 for both live runs. The source is the probe's own
+ledger: each reply's streamed usage times the manifest's prices per
+million tokens (input 0.225, output 0.9, cached input 0.006), with a
+reservation of US$0.0884736 a call settled from that usage. Featherless's
+own billing was not queried, and its plan may bill differently; Pi's
+footer showed about US$0.001 from its own reckoning.
 
 ### Model metadata
 
-Refreshed during the live run from
-`https://api.featherless.ai/v1/models`, unauthenticated, at
-2026-11-04T00:19:28Z: the model is listed, context 262144, maximum
-completion 32768, prices 0.225 and 0.9. No drift from
+Refreshed during each live run from
+`https://api.featherless.ai/v1/models`, unauthenticated, the recorded
+one at 2026-11-04T00:46:43Z: the model is listed, context 262144,
+maximum completion 32768, prices 0.225 and 0.9. No drift from
 `packages/cli/assets/pi/models.json`; the catalogue gives no cached
 price, so the manifest's 0.006 (from the model's page) was not
 rechecked. Nothing was changed.
@@ -280,14 +291,17 @@ rechecked. Nothing was changed.
 
 - **Featherless with `supportsDeveloperRole: false`, no `store`,
   `max_completion_tokens` and `chat_template_kwargs.thinking`.**
-  Verified live: all three requests were accepted with status 200, and
-  thinking on gave streamed reasoning while thinking off gave none.
-- **`reasoning_content` replay after tool calls.** Verified live: the
-  tool-calling reply's reasoning came back on the next two requests,
-  unchanged by digest. The live result does not name the field it
-  streamed in; the probe now records it (`reasoningField`), and the
-  offline run shows `reasoning_content`. Pi replays it in whichever
-  field it arrived in (pi-ai 1.5.0 `openai-completions.js`).
+  Verified live in both runs: every request was accepted with status
+  200. Thinking on gave streamed reasoning in the first run and none in
+  the second; thinking off gave none.
+- **`reasoning_content` replay after tool calls.** Verified in the
+  first live run: the tool-calling reply's reasoning came back on the
+  next two requests, unchanged by digest, in a field that run did not
+  record. In the recorded run the model, thinking on, streamed no
+  reasoning before its call, so replay was not exercised and the
+  field is still unnamed live; offline it is `reasoning_content`. Pi
+  replays reasoning in whichever field it arrived in (pi-ai 1.5.0
+  `openai-completions.js`).
 - **Does `ctx.abort()` in `before_agent_start` stop inference?** Yes.
   With the published Pi and an extension aborting there, no request
   reached the endpoint, the prompt was saved with no reply, and Pi
@@ -329,6 +343,10 @@ rechecked. Nothing was changed.
 
 - None for delivery's live gate, which passed. CI on the branch and its
   merge remain, under the repository's standing rules.
+- Live reasoning replay rests on the first run alone, whose result was
+  not kept, and the field Featherless streams reasoning in is unrecorded
+  live. The model chooses whether to reason, so a later run may or may
+  not exercise it.
 - Live coverage is two turns: compaction, resume, fork, reload and
   recovery were verified against the scripted provider alone. Their
   requests use the same wire.
@@ -336,8 +354,12 @@ rechecked. Nothing was changed.
 - The native fixture depends on Pi's screen text (`v1.5.0`, "Resume
   Session", "Fork from Message", "Compacted from"), which a Pi upgrade
   may change; the pin keeps it.
-- One unexplained failure of the native fixture in about 25 runs, when
-  it still waited for the fork's settled record, whose hook has a 5 s
-  budget. It now checks what the sweep adds instead; 14 runs since
+- One failure of an earlier form of the native fixture, in about 25
+  runs, was not captured, so its cause is unproven. That form sent
+  escape a fixed 500 ms after `sleep 30` was drawn, which under load can
+  land before bash starts, and polled 10 s for the fork's settled
+  record, whose hook has a 5 s budget. The fixture now waits for a
+  marker the command writes, bounds every wait with the screen as its
+  diagnostic, and checks what the sweep adds instead; 50 runs since
   passed.
 - Stewardship, increment B, has not started.

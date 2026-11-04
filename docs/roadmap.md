@@ -645,6 +645,6 @@ In order of completion.
   without another plan approval round. Delivery precedes stewardship;
   the plans separate offline verification from bounded live probes.
 - 2026-11-04: Pi's delivery is built and verified: offline fixtures of
-  the native interface and recovery, and one bounded live Featherless
-  run at about US$0.0014. Stewardship stays next in the phase, after
+  the native interface and recovery, and two bounded live Featherless
+  runs at about US$0.0028 in all. Stewardship stays next in the phase, after
   delivery merges; its report's limits wait for that revision.

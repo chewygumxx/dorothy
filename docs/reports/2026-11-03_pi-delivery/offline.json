@@ -1,8 +1,8 @@
 {
     "mode": "offline",
     "outcome": "pass",
-    "startedAt": "2026-11-04T00:27:42.889Z",
-    "finishedAt": "2026-11-04T00:27:45.473Z",
+    "startedAt": "2026-11-04T00:46:38.955Z",
+    "finishedAt": "2026-11-04T00:46:41.690Z",
     "versions": {
         "pi": "1.5.0",
         "node": "v24.22.1",
@@ -222,5 +222,5 @@
         }
     ],
     "pending": [],
-    "screen": "OK\n/quit\n→ quit\nQuit pi\n▀▀█  v1.5.0\n█▀ █ escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\nPress ctrl+o to show full startup help and loaded resources.\nPi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n[Extensions]\npi\nThis is an automated connectivity probe. Call the bash tool exactly once, with the command: echo dorothy-probe. After\nit returns, reply with the single word DONE.\nSynthetic probe thought.\n$ echo dorothy-probe\ndorothy-probe\nTook 0.0s\nDONE\nThinking level: off\nReply with the single word OK.\nOK\n▀▀█  v1.5.0\n█▀ █ escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\nPress ctrl+o to show full startup help and loaded resources.\nPi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n[Extensions]\npi\nThis is an automated connectivity probe. Call the bash tool exactly once, with the command: echo dorothy-probe. After\nit returns, reply with the single word DONE.\nSynthetic probe thought.\n$ echo dorothy-probe\ndorothy-probe\nTook 0.0s\nDONE\nThinking level: off\nReply with the single word OK.\nOK\n~/project-a\n↑30 ↓15 $0.000 0.0%/262k (auto)\ndeepseek-ai/DeepSeek-V4.1-Flash-1017 • thinking off\nTo resume this session: pi --session-dir <roots>/data/dorothy/pi/sessions/453a99e5df49a4fe77ca0b419e977dfcf8bc65cd4d83aaa927020e11b8bedd86/--tmp-dorothy-pi-ext-R9dNxV-project-a-- --session 01a1a3f4-5dff-7571-9f5d-6b9dfe1b0b82"
+    "screen": "OK\n/quit\n→ quit\nQuit pi\n▀▀█  v1.5.0\n█▀ █ escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\nPress ctrl+o to show full startup help and loaded resources.\nPi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n[Extensions]\npi\nThis is an automated connectivity probe. Call the bash tool exactly once, with the command: echo dorothy-probe. After\nit returns, reply with the single word DONE.\nSynthetic probe thought.\n$ echo dorothy-probe\ndorothy-probe\nTook 0.0s\nDONE\nThinking level: off\nReply with the single word OK.\nOK\n▀▀█  v1.5.0\n█▀ █ escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\nPress ctrl+o to show full startup help and loaded resources.\nPi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n[Extensions]\npi\nThis is an automated connectivity probe. Call the bash tool exactly once, with the command: echo dorothy-probe. After\nit returns, reply with the single word DONE.\nSynthetic probe thought.\n$ echo dorothy-probe\ndorothy-probe\nTook 0.0s\nDONE\nThinking level: off\nReply with the single word OK.\nOK\n~/project-a\n↑30 ↓15 $0.000 0.0%/262k (auto)\ndeepseek-ai/DeepSeek-V4.1-Flash-1017 • thinking off\nTo resume this session: pi --session-dir <roots>/data/dorothy/pi/sessions/8877a5559928d2f1b3cd16d436ef432403b4c5a177f2c3f22e9b810e375fd15d/--tmp-dorothy-pi-ext-WKNGEv-project-a-- --session 01a1a405-b3d3-7510-96b6-a923a238d08c"
 }
