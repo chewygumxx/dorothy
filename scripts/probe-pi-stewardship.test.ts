@@ -113,6 +113,17 @@ describe("the offline run", () => {
                 "claimed-revision/trial-invented",
             ]),
         );
+        // Per review: the verdict beside the owner's receipt. One wrong
+        // approval per cast (a disagreement), the rest agreeing.
+        expect(result.totals.reviews).toEqual({
+            total: 6,
+            agree: 4,
+            disagree: 2,
+            undecided: 0,
+        });
+        expect(await readFile(join(out, "report.md"), "utf8")).toContain(
+            "| Cast | Scenario | Review | Verdict | Owner passed | Agree |",
+        );
         expect(result.casts.map((c) => c.cast)).toEqual([
             "default",
             "held-out",

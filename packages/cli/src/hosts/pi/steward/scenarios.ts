@@ -20,12 +20,15 @@
 
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import type { ReviewMeasure } from "./owner.js";
 import {
     type BootOptions,
     type Cast,
     type Check,
     type Decision,
+    FIXES,
     Sim,
+    SOURCE_LINE,
 } from "./simulation.js";
 import type { TaskState } from "./types.js";
 
@@ -43,6 +46,8 @@ export type ScenarioResult = {
     verified: { taskId: string; revision: string; receiptRevision: string }[];
     sends: number;
     interrupts: number;
+    // Each review's verdict beside the owner's receipt on what it reviewed.
+    reviews: ReviewMeasure[];
 };
 
 type Scenario = {
@@ -158,6 +163,7 @@ const SCENARIOS: Record<string, Scenario> = {
             const { impl, rev } = s.w;
             const first = s.id("fix-1");
             const review1 = s.id("review-1");
+            s.markReview(review1);
             const first_oid = await submit(s, first, "impl", "incomplete");
             await s.act("wait for the first fix", {
                 kind: "wait",
@@ -214,6 +220,13 @@ const SCENARIOS: Record<string, Scenario> = {
                 [closed.outcome.kind, closed.reply?.code],
                 ["receipt", "TASK_FAILED"],
             );
+            // `failed` says nothing of whether the review was right.
+            const m1 = await s.reviewMeasure(review1);
+            s.check(
+                "the rejecting review agrees with the owner's receipt",
+                [m1.verdict, m1.ownerPassed, m1.agree],
+                ["changes-requested", false, true],
+            );
 
             // The finding goes back as a new task with a new id.
             const second = s.id("fix-2");
@@ -231,6 +244,28 @@ const SCENARIOS: Record<string, Scenario> = {
             );
             s.check("at its own revision", s.task(second)?.revision, oid2);
             s.check("which is not the first", oid2 === first_oid, false);
+
+            // The reviewer approves the second fix: right, and verified.
+            const review2 = s.id("review-2");
+            s.markReview(review2);
+            await s.dispatch(review2, rev, "ask for a review of the fix");
+            await s.report(review2, {
+                status: "approved",
+                revision: oid2,
+                verification: "read the diff against CONTRACT.md",
+            });
+            await s.act("wait for the review", {
+                kind: "wait",
+                taskId: review2,
+                timeoutMs: 100,
+            });
+            const closed2 = await s.ownerFinish(review2, impl);
+            const m2 = await s.reviewMeasure(review2);
+            s.check(
+                "the approving review is verified and agrees",
+                [closed2.reply?.code, m2.verdict, m2.ownerPassed, m2.agree],
+                ["TASK_VERIFIED", "approved", true, true],
+            );
         },
     },
 
@@ -355,6 +390,7 @@ const SCENARIOS: Record<string, Scenario> = {
             const { impl, rev, spare } = s.w;
             const fix = s.id("fix");
             const review = s.id("review");
+            s.markReview(review);
             const bad = await submit(s, fix, "impl", "incomplete");
             await s.dispatch(review, rev, "ask for a review");
             // The reviewer approves a revision the owner's test fails.
@@ -382,6 +418,13 @@ const SCENARIOS: Record<string, Scenario> = {
                 "approval of a failing revision does not verify",
                 approval.reply?.code,
                 "TASK_FAILED",
+            );
+            // Ended `failed` like a right rejection: the measure tells.
+            const wrong = await s.reviewMeasure(review);
+            s.check(
+                "and the review is measured as disagreeing with the owner",
+                [wrong.verdict, wrong.ownerPassed, wrong.agree],
+                ["approved", false, false],
             );
             const claim = await s.ownerFinish(fix, impl);
             s.check(
@@ -1139,6 +1182,132 @@ const SCENARIOS: Record<string, Scenario> = {
             s.check("with its own revision", s.task(good)?.revision, goodOid);
         },
     },
+
+    "hostile-submission": {
+        summary:
+            "Submitted code that exits 0 at import, forges a reply, or rewrites the owner's test passes nothing.",
+        async run(s) {
+            const { impl, spare } = s.w;
+            const bogus =
+                "export function slugify(text: string): string {\n    return `bogus ` + text;\n}\n";
+            // (i) A module that ends the process with a pass at import.
+            const quits = s.id("exits-at-import");
+            await s.dispatch(quits, impl);
+            const quitsOid = await s.commitFiles(
+                impl,
+                { "src/slug.ts": `process.exit(0);\n${bogus}` },
+                "exit 0 at import",
+            );
+            await s.report(quits, { revision: quitsOid });
+            await s.act("reconcile", { kind: "reconcile", taskId: quits });
+            const one = await s.ownerFinish(quits, impl);
+            s.check(
+                "exiting 0 at import is a failing receipt, not a pass",
+                [
+                    one.outcome.kind === "receipt" &&
+                        one.outcome.receipt.exitCode,
+                    one.reply?.code,
+                ],
+                [1, "TASK_FAILED"],
+            );
+            const log =
+                one.outcome.kind === "receipt"
+                    ? await Bun.file(one.outcome.receipt.logPath).text()
+                    : "";
+            s.check(
+                "the log says no reply came",
+                log.includes("no reply from the submitted module"),
+                true,
+            );
+
+            // (ii) A module that prints a forged reply line, then exits 0.
+            const forges = s.id("forges-reply");
+            await s.dispatch(forges, impl);
+            const line = `\n0 ${JSON.stringify([
+                "hello-world",
+                "spaced-out",
+                "already-a-slug",
+                "creme-brulee",
+                "unicode-test",
+                "a-b",
+                "",
+                "",
+                "text",
+                "v2-0-final",
+            ])}\n`;
+            const say = `process.stdout.write(${JSON.stringify(line)});`;
+            const forgesOid = await s.commitFiles(
+                impl,
+                {
+                    "src/slug.ts": `process.on("exit", () => {\n${say}\n});\n${say}\nprocess.exit(0);\n${bogus}`,
+                },
+                "forged reply",
+            );
+            await s.report(forges, { revision: forgesOid });
+            await s.act("reconcile", { kind: "reconcile", taskId: forges });
+            const two = await s.ownerFinish(forges, impl);
+            s.check(
+                "a reply without the nonce is no reply",
+                [
+                    two.outcome.kind === "receipt" &&
+                        two.outcome.receipt.exitCode,
+                    two.reply?.code,
+                ],
+                [1, "TASK_FAILED"],
+            );
+
+            // (iii) A correct fix whose import rewrites the owner's test.
+            const tampers = s.id("rewrites-test");
+            await s.dispatch(tampers, spare);
+            const tampersOid = await s.commitFiles(
+                spare,
+                {
+                    "src/slug.ts": (text) =>
+                        `${text.replace(SOURCE_LINE, FIXES.complete)}\n` +
+                        'import { chmodSync, writeFileSync } from "node:fs";\n' +
+                        'import { dirname, join } from "node:path";\n' +
+                        'const test = join(dirname(process.argv[1] ?? ""), "acceptance.ts");\n' +
+                        "chmodSync(test, 0o600);\n" +
+                        'writeFileSync(test, "process.exit(0);\\n");\n',
+                },
+                "rewrites the owner's test",
+            );
+            await s.report(tampers, { revision: tampersOid });
+            await s.act("reconcile", { kind: "reconcile", taskId: tampers });
+            const three = await s.owner(tampers, spare);
+            s.check(
+                "a run that touched the test counts for nothing",
+                [three.kind, three.kind === "pending" && three.why],
+                ["pending", "ACCEPTANCE_CHANGED"],
+            );
+            s.check(
+                "no receipt was recorded",
+                s.ledger((db) => db.receipts(tampers)),
+                [],
+            );
+            s.check(
+                "and the task stays reported",
+                s.stateOf(tampers),
+                "reported",
+            );
+
+            // The kit is refused from then on, even for honest work.
+            const honest = s.id("honest");
+            await s.dispatch(honest, impl);
+            const honestOid = await s.commit(impl, "complete", honest);
+            await s.report(honest, { revision: honestOid });
+            await s.act("reconcile", { kind: "reconcile", taskId: honest });
+            const four = await s.owner(honest, impl);
+            s.check(
+                "a changed test is refused before any later run",
+                [four.kind, four.kind === "pending" && four.why],
+                ["pending", "ACCEPTANCE_CHANGED"],
+            );
+            s.note(
+                "the owner's kit is compromised: rebuild it, tell the person",
+            );
+        },
+    },
 };
 
 export const SCENARIO_NAMES = Object.keys(SCENARIOS);
@@ -1191,6 +1360,9 @@ export async function runScenario(
             verified,
             sends: s.sends().length,
             interrupts: s.interrupter.calls.length,
+            reviews: await Promise.all(
+                s.reviewTasks.map((id) => s.reviewMeasure(id)),
+            ),
         };
     } finally {
         await s.close();
@@ -1207,9 +1379,16 @@ export type Totals = {
     duplicateDispatches: number;
     falseVerifiedTasks: string[];
     unresolvedTasks: string[];
+    reviews: {
+        total: number;
+        agree: number;
+        disagree: number;
+        undecided: number;
+    };
 };
 
 export function totalsOf(results: readonly ScenarioResult[]): Totals {
+    const reviews = results.flatMap((r) => r.reviews);
     const named = (result: ScenarioResult, ids: string[]) =>
         ids.map((id) => `${result.name}/${id}`);
     return {
@@ -1226,6 +1405,12 @@ export function totalsOf(results: readonly ScenarioResult[]): Totals {
             named(r, r.falseVerifiedTasks),
         ),
         unresolvedTasks: results.flatMap((r) => named(r, r.unresolvedTasks)),
+        reviews: {
+            total: reviews.length,
+            agree: reviews.filter((m) => m.agree === true).length,
+            disagree: reviews.filter((m) => m.agree === false).length,
+            undecided: reviews.filter((m) => m.agree === null).length,
+        },
     };
 }
 

@@ -16,6 +16,7 @@
 // ledger hold, not that a model chooses well.
 
 import { describe, expect, it } from "bun:test";
+import { measureReview } from "./owner.js";
 import { runPiScenario } from "./pi-scenario.js";
 import {
     failedChecks,
@@ -38,6 +39,7 @@ const PENDING: Record<string, string[]> = {
     "busy-limited": ["fix"],
     "stale-identity": ["fix"],
     "conflicting-reports": ["misfiled"],
+    "hostile-submission": ["rewrites-test", "honest"],
     "injected-authority": [],
     "delayed-output": [],
     "coordinator-crash": ["never", "uncertain"],
@@ -85,6 +87,7 @@ describe("every scenario is covered", () => {
                 "forged-report",
                 "claimed-revision",
                 "review-loop",
+                "hostile-submission",
             ]),
         );
     });
@@ -177,6 +180,59 @@ describe("the properties the brief requires", () => {
             wrong: "failed",
             retry: "sent",
         });
+    });
+});
+
+describe("review measures", () => {
+    // The ledger ends a right rejection and a wrong approval `failed`
+    // alike; the measure tells them apart.
+    it("tells a right rejection and a right approval from a wrong one", async () => {
+        const loop = await result("review-loop");
+        expect(
+            loop.reviews.map((m) => [
+                m.taskId.slice(DEFAULT_CAST.prefix.length + 1),
+                m.verdict,
+                m.ownerPassed,
+                m.agree,
+            ]),
+        ).toEqual([
+            ["review-1", "changes-requested", false, true],
+            ["review-2", "approved", true, true],
+        ]);
+        expect(loop.states[`${DEFAULT_CAST.prefix}-review-1`]).toBe("failed");
+
+        const conflict = await result("conflicting-reports");
+        expect(
+            conflict.reviews.map((m) => [m.verdict, m.ownerPassed, m.agree]),
+        ).toEqual([["approved", false, false]]);
+        // Same ledger state as the right rejection above.
+        expect(conflict.states[`${DEFAULT_CAST.prefix}-review`]).toBe("failed");
+    });
+
+    it("totals agreeing and disagreeing reviews", async () => {
+        const totals = totalsOf([
+            await result("review-loop"),
+            await result("conflicting-reports"),
+        ]);
+        expect(totals.reviews).toEqual({
+            total: 3,
+            agree: 2,
+            disagree: 1,
+            undecided: 0,
+        });
+    });
+
+    it("leaves a review undecided while it has no receipt", () => {
+        expect(
+            measureReview("r", "Status: approved\n", "a".repeat(40), []),
+        ).toMatchObject({
+            verdict: "approved",
+            ownerPassed: null,
+            agree: null,
+        });
+        expect(
+            measureReview("r", "no status\n", "a".repeat(40), []).verdict,
+        ).toBe("unknown");
     });
 });
 

@@ -29,7 +29,11 @@ The trial's task and its offline exercise. The engine and its guide are
   deterministic bug, `CONTRACT.md` (the contract and the report format),
   `src/example.ts` (the contract's easy examples).
 - `owner/acceptance.ts`: the owner's test, fuller than the examples
-  (diacritics, symbol-only text). It never enters a clone. The first fix
+  (diacritics, symbol-only text), and `owner/child.ts`. The submitted
+  code runs only in the child, which gets the inputs and a nonce on stdin
+  and answers with outputs; the parent holds the expected ones and
+  compares, so an exit 0 at import, no reply or a reply without the nonce
+  fails. Neither enters a clone. The first fix
   that trims hyphens passes the examples and fails this: the deliberately
   incomplete fix an independent reviewer must catch.
 
@@ -42,13 +46,20 @@ refuses a claim that differs (`CLAIM_MISMATCH`) or history not from the
 base (`NOT_FROM_BASE`); exports exactly that commit with `git archive` to
 the owner's root, outside the fixture root and every clone; runs the
 owner's copy of the test there with a minimal environment and Bun's config
-pinned to the owner's empty one; then records the receipt (task, revision
-it computed, digest, command, exit, log). A failing run is a receipt too:
+pinned to the owner's empty one; reads the sealed test files (test, child,
+config) again before and after the run, and refuses on any change
+(`ACCEPTANCE_CHANGED`: no receipt, and no later run on that kit); then
+records the receipt (task, revision it computed, digest, command, exit,
+log). A failing run is a receipt too:
 `finish` turns exit nonzero into `failed`. Nothing recorded is a pending
 task, not a verified one. It runs the worker's code as the runner's user:
 no sandbox. A reviewer's task is closed by the same receipt on the
 reviewed revision, so a review that rejects a failing revision ends
-`failed`; no engine step closes a reported task without a receipt.
+`failed`; no engine step closes a reported task without a receipt. The
+ledger therefore cannot tell a right rejection from a wrong approval:
+`measureReview` holds a reviewer's verdict (its report's `Status:`) beside
+the receipt on the reviewed revision (`ScenarioResult.reviews`, the
+probe's `result.json` and `report.md`).
 
 ## The scenarios
 
@@ -57,14 +68,15 @@ root, each with a clone, the engine reached by `runSteward` over a fake
 herdr, sender and interrupter, every scripted call a recorded `Decision`.
 A `Cast` names workers, panes, terminals and task ids and orders the
 registry, the reports and the suite: `DEFAULT_CAST`, and `HELD_OUT_CAST`,
-which renames and reorders all of them. `scenarios.ts`: fourteen
+which renames and reorders all of them. `scenarios.ts`: fifteen
 scenarios (busy and limited workers, stale identity, conflicting reports,
 injected authority, delayed output, coordinator crash, cancellation and
 its race, failed worker, forged report, claimed revision, two workers,
-the review loop, a plain fix) each ending in `ScenarioResult`:
-`duplicateDispatches`, `falseVerifiedTasks` (against an oracle of
-revisions the harness made complete) and `unresolvedTasks`. `pi-scenario.ts`:
-one scripted-provider turn through the published Pi and the stand-in
+hostile submissions, the review loop, a plain fix), each ending in a
+`ScenarioResult`: `duplicateDispatches`, `falseVerifiedTasks` (against an
+oracle of revisions the harness made complete), `unresolvedTasks` and
+`reviews`. `pi-scenario.ts`: one scripted-provider turn through the
+published Pi and the stand-in
 helper. These are plumbing results: the model is scripted.
 
 ## The probe

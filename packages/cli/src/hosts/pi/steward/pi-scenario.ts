@@ -204,6 +204,7 @@ export async function runPiScenario(): Promise<ScenarioResult> {
             ),
             sends: sent.length,
             interrupts: 0,
+            reviews: [],
         };
     } finally {
         await provider.close();

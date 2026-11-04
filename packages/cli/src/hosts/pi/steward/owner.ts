@@ -13,8 +13,9 @@
 // the only code that writes a verification receipt. It takes the revision
 // from the worker's clone itself (`git rev-parse HEAD`), never from the
 // report, exports exactly that commit to a directory under the owner's
-// root, runs the owner's acceptance test there, and only then records a
-// receipt for the revision it computed. A report that claims another
+// root, runs the owner's acceptance test there (the submitted code in a
+// child that only answers, the expected outputs held by the parent), and
+// only then records a receipt for the revision it computed. A report that claims another
 // revision, or that changed since the ledger saw it, gets no receipt. The
 // worker's code still runs as the runner's user: no OS confinement, and a
 // minimal environment with no credential.
@@ -57,7 +58,11 @@ export type OwnerKit = {
     // Outside the fixture root and every worker's clone.
     root: string;
     env: OwnerEnv;
+    // The test's entry point and the digest of every file it is made of
+    // (the test, its child, the Bun config), sealed when the kit is made
+    // and read again before and after each run.
     acceptance: { path: string; digest: string };
+    sealed: { path: string; digest: string }[];
     timeoutMs: number;
 };
 
@@ -185,16 +190,41 @@ export async function createOwnerKit(options: {
     }
     const path = join(real, "acceptance", "acceptance.ts");
     await mkdir(dirname(path), { recursive: true });
-    const source = await readFile(join(FIXTURE, "owner", "acceptance.ts"));
-    await writeFile(path, source, { mode: 0o400 });
-    await writeFile(join(real, "bunfig.toml"), "", { mode: 0o400 });
+    const sealed: OwnerKit["sealed"] = [];
+    const place = async (from: string, to: string, content?: Uint8Array) => {
+        const source = content ?? (await readFile(from));
+        await writeFile(to, source, { mode: 0o400 });
+        sealed.push({ path: to, digest: sha256(source) });
+    };
+    await place(join(FIXTURE, "owner", "acceptance.ts"), path);
+    await place(
+        join(FIXTURE, "owner", "child.ts"),
+        join(dirname(path), "child.ts"),
+    );
+    await place("", join(real, "bunfig.toml"), new Uint8Array());
     await mkdir(options.env.home, { recursive: true });
     return {
         root: real,
         env: options.env,
-        acceptance: { path, digest: sha256(source) },
+        acceptance: {
+            path,
+            digest: sha256(Buffer.from(sealed.map((f) => f.digest).join("\n"))),
+        },
+        sealed,
         timeoutMs: options.timeoutMs ?? ACCEPTANCE_TIMEOUT_MS,
     };
+}
+
+// True when every sealed file is as it was made. Submitted code runs as the
+// runner's user, so the test is read again, never assumed.
+async function intact(kit: OwnerKit): Promise<boolean> {
+    for (const file of kit.sealed) {
+        const now = await readFile(file.path).catch(() => null);
+        if (!now || sha256(now) !== file.digest) {
+            return false;
+        }
+    }
+    return true;
 }
 
 export type Pending =
@@ -204,6 +234,7 @@ export type Pending =
     | "CLONE_UNREADABLE"
     | "CLAIM_MISMATCH"
     | "NOT_FROM_BASE"
+    | "ACCEPTANCE_CHANGED"
     | "EXPORT_FAILED";
 
 export type OwnerOutcome =
@@ -258,8 +289,8 @@ async function exportRevision(
 // Verifies a reported task from its worker's clone, or says why not. The
 // revision is the clone's `HEAD`, read here; the report's claim must equal
 // it, and the report must be the one the ledger holds. Only then is the
-// owner's acceptance test run, on an export of exactly that commit, and a
-// receipt for it recorded. A failing run is a receipt too (exit nonzero):
+// owner's acceptance test run, on an export of exactly that commit, the
+// test files sealed before and after, and a receipt for it recorded. A failing run is a receipt too (exit nonzero):
 // the engine's `finish` turns it into `failed`.
 export async function verifySubmission(
     kit: OwnerKit,
@@ -306,6 +337,9 @@ export async function verifySubmission(
         return pending("NOT_FROM_BASE", claimed, actual);
     }
 
+    if (!(await intact(kit))) {
+        return pending("ACCEPTANCE_CHANGED", claimed, actual);
+    }
     const short = `${task.taskId}-${actual.slice(0, 12)}`;
     const exported = join(kit.root, "exports", short);
     if (!(await exportRevision(kit, clone, actual, exported))) {
@@ -321,11 +355,16 @@ export async function verifySubmission(
             kit.acceptance.path,
             exported,
         ],
-        exported,
+        kit.root,
         { PATH: kit.env.PATH, HOME: kit.env.home },
         kit.timeoutMs,
     );
     await rm(exported, { recursive: true, force: true });
+    // The submitted code ran as this user: if it touched the test, nothing
+    // of this run counts, and no later run is made on the same kit.
+    if (!(await intact(kit))) {
+        return pending("ACCEPTANCE_CHANGED", claimed, actual);
+    }
 
     const logPath = join(kit.root, "logs", `${short}.log`);
     await mkdir(dirname(logPath), { recursive: true });
@@ -365,3 +404,58 @@ export async function verifySubmission(
 // True when the path is a regular file (a test's look).
 export const isFile = async (path: string): Promise<boolean> =>
     (await lstat(path).catch(() => null))?.isFile() ?? false;
+
+export type Verdict = "approved" | "changes-requested" | "unknown";
+
+// A reviewer's verdict, from the `Status:` line of its report: a claim.
+export function reviewVerdict(report: string): Verdict {
+    const status = /^Status:[ \t]*(\S+)/im.exec(report)?.[1]?.toLowerCase();
+    if (
+        status &&
+        ["approved", "approve", "accepted", "lgtm"].includes(status)
+    ) {
+        return "approved";
+    }
+    if (
+        status &&
+        ["changes-requested", "rejected", "reject", "failed"].includes(status)
+    ) {
+        return "changes-requested";
+    }
+    return "unknown";
+}
+
+// What the ledger cannot say: a review that rightly rejects and one that
+// wrongly approves both end `failed` after a failing receipt. This measure
+// holds the reviewer's verdict beside the owner's receipt on the reviewed
+// revision; `agree` is null while either is missing.
+export type ReviewMeasure = {
+    taskId: string;
+    reviewedRevision: string | null;
+    verdict: Verdict;
+    ownerPassed: boolean | null;
+    agree: boolean | null;
+};
+
+export function measureReview(
+    taskId: string,
+    report: string,
+    reviewedRevision: string | null,
+    receipts: readonly Receipt[],
+): ReviewMeasure {
+    const verdict = reviewVerdict(report);
+    const receipt = receipts
+        .filter((r) => r.revision === reviewedRevision)
+        .at(-1);
+    const ownerPassed = receipt ? receipt.exitCode === 0 : null;
+    return {
+        taskId,
+        reviewedRevision,
+        verdict,
+        ownerPassed,
+        agree:
+            verdict === "unknown" || ownerPassed === null
+                ? null
+                : (verdict === "approved") === ownerPassed,
+    };
+}

@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createOwnerKit, FIXTURE, isFile } from "./owner.js";
-import { DEFAULT_CAST, Sim } from "./simulation.js";
+import { DEFAULT_CAST, FIXES, Sim, SOURCE_LINE } from "./simulation.js";
 
 let s: Sim;
 
@@ -148,28 +148,115 @@ describe("the owner's verification", () => {
         const { impl } = s.w;
         const id = s.id("fix");
         await s.dispatch(id, impl);
-        const clone = await s.clone(impl);
-        await s.edit(impl, "complete");
-        const file = join(clone, "src", "slug.ts");
-        await writeFile(
-            file,
-            `${await readFile(file, "utf8")}\nconsole.log("ENV " + Object.keys(process.env).sort().join(","));\n`,
-        );
+        const seen = join(s.root, "seen-env.json");
         process.env.DOROTHY_OWNER_TEST_SECRET = "synthetic";
         try {
-            const head = await s.commit(impl, "complete", "noisy");
+            const head = await s.commitFiles(
+                impl,
+                {
+                    "src/slug.ts": (text) =>
+                        `${text.replace(SOURCE_LINE, FIXES.complete)}\n` +
+                        'import { writeFileSync } from "node:fs";\n' +
+                        `writeFileSync(${JSON.stringify(seen)}, JSON.stringify(process.env));\n`,
+                },
+                "noisy",
+            );
             await s.report(id, { revision: head });
             await s.act("reconcile", { kind: "reconcile", taskId: id });
             const outcome = await s.owner(id, impl);
-            if (outcome.kind !== "receipt") throw new Error("no receipt");
-            const log = await readFile(outcome.receipt.logPath, "utf8");
-            const names = /^ENV (.*)$/m.exec(log)?.[1] ?? "";
-            expect(names).toContain("PATH");
-            expect(names).not.toContain("DOROTHY_OWNER_TEST_SECRET");
-            expect(log).not.toContain("synthetic");
+            expect(outcome).toMatchObject({ kind: "receipt", passed: true });
+            const env = JSON.parse(await readFile(seen, "utf8")) as Record<
+                string,
+                string
+            >;
+            expect(Object.keys(env)).toContain("PATH");
+            expect(Object.keys(env)).not.toContain("DOROTHY_OWNER_TEST_SECRET");
+            expect(JSON.stringify(env)).not.toContain("synthetic");
         } finally {
             delete process.env.DOROTHY_OWNER_TEST_SECRET;
         }
+    });
+
+    it("is not passed by code that exits 0 at import", async () => {
+        const { impl } = s.w;
+        const id = s.id("fix");
+        await s.dispatch(id, impl);
+        const head = await s.commitFiles(
+            impl,
+            {
+                "src/slug.ts":
+                    "process.exit(0);\nexport const slugify = (t: string) => t;\n",
+            },
+            "exit 0 at import",
+        );
+        await s.report(id, { revision: head });
+        await s.act("reconcile", { kind: "reconcile", taskId: id });
+        const outcome = await s.owner(id, impl);
+        expect(outcome).toMatchObject({ kind: "receipt", passed: false });
+        if (outcome.kind !== "receipt") return;
+        expect(outcome.receipt.exitCode).toBe(1);
+        expect(await readFile(outcome.receipt.logPath, "utf8")).toContain(
+            "no reply from the submitted module",
+        );
+    });
+
+    it("is not passed by a reply it forges without the nonce", async () => {
+        const { impl } = s.w;
+        const id = s.id("fix");
+        await s.dispatch(id, impl);
+        const line = JSON.stringify(
+            `\n0 ${JSON.stringify(Array(10).fill(""))}\n`,
+        );
+        const head = await s.commitFiles(
+            impl,
+            {
+                "src/slug.ts": `process.stdout.write(${line});\nexport const slugify = () => "";\n`,
+            },
+            "forged reply",
+        );
+        await s.report(id, { revision: head });
+        await s.act("reconcile", { kind: "reconcile", taskId: id });
+        expect(await s.owner(id, impl)).toMatchObject({
+            kind: "receipt",
+            passed: false,
+        });
+    });
+
+    it("refuses a run that rewrote the test, and every run after", async () => {
+        const { impl, rev } = s.w;
+        const id = s.id("fix");
+        await s.dispatch(id, impl);
+        const head = await s.commitFiles(
+            impl,
+            {
+                "src/slug.ts": (text) =>
+                    `${text.replace(SOURCE_LINE, FIXES.complete)}\n` +
+                    'import { chmodSync, writeFileSync } from "node:fs";\n' +
+                    'import { dirname, join } from "node:path";\n' +
+                    'const t = join(dirname(process.argv[1] ?? ""), "acceptance.ts");\n' +
+                    "chmodSync(t, 0o600);\n" +
+                    'writeFileSync(t, "process.exit(0);\\n");\n',
+            },
+            "rewrites the test",
+        );
+        await s.report(id, { revision: head });
+        await s.act("reconcile", { kind: "reconcile", taskId: id });
+        expect(await s.owner(id, impl)).toMatchObject({
+            kind: "pending",
+            why: "ACCEPTANCE_CHANGED",
+        });
+        expect(s.ledger((db) => db.receipts(id))).toEqual([]);
+        // An honest submission is refused before its run.
+        const other = s.id("other");
+        await s.dispatch(other, rev);
+        const good = await s.commit(rev, "complete", other);
+        await s.report(other, { revision: good });
+        await s.act("reconcile", { kind: "reconcile", taskId: other });
+        expect(await s.owner(other, rev)).toMatchObject({
+            kind: "pending",
+            why: "ACCEPTANCE_CHANGED",
+        });
+        expect(await logs()).toEqual([]);
     });
 
     it("refuses history that does not descend from the base", async () => {

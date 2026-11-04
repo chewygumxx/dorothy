@@ -19,7 +19,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { runSteward, type StewardDeps } from "./engine.js";
 import {
     type FakeHerdr,
@@ -38,9 +38,11 @@ import {
     createOrigin,
     createOwnerKit,
     headOf,
+    measureReview,
     type OwnerEnv,
     type OwnerKit,
     type OwnerOutcome,
+    type ReviewMeasure,
     verifySubmission,
 } from "./owner.js";
 import { readFleet } from "./registry.js";
@@ -120,8 +122,8 @@ export type BootOptions = {
 };
 
 // The line of `slug.ts` a worker changes.
-const SOURCE_LINE = /^ {4}return .*;$/m;
-const FIXES = {
+export const SOURCE_LINE = /^ {4}return .*;$/m;
+export const FIXES = {
     // Trims the hyphens but leaves accented letters as separators: passes
     // the examples in CONTRACT.md and fails the owner's test.
     incomplete:
@@ -171,6 +173,8 @@ export class Sim {
     // verified-task count is measured against, apart from anything the
     // engine or the runner believes.
     readonly good = new Set<string>();
+    // Review tasks, measured at the end against the owner's receipts.
+    readonly reviewTasks: string[] = [];
     private readonly clones = new Map<string, string>();
     private gets = 0;
     private readonly hooks: { n: number; fn: () => void }[] = [];
@@ -451,6 +455,26 @@ export class Sim {
         return oid;
     }
 
+    // A commit of arbitrary file contents, by path: a worker's own code,
+    // hostile or not. `slug.ts` may be given as a function of its text.
+    async commitFiles(
+        worker: Worker,
+        files: Record<string, string | ((current: string) => string)>,
+        tag: string,
+    ): Promise<string> {
+        const clone = await this.clone(worker);
+        for (const [path, content] of Object.entries(files)) {
+            const file = join(clone, path);
+            const current = await readFile(file, "utf8").catch(() => "");
+            await mkdir(dirname(file), { recursive: true });
+            await writeFile(
+                file,
+                typeof content === "function" ? content(current) : content,
+            );
+        }
+        return commitAll(clone, `${worker.id}: ${tag}`, this.parts.ownerEnv);
+    }
+
     // Changes the working tree and commits nothing.
     async edit(worker: Worker, fix: Fix): Promise<void> {
         await this.rewrite(worker, fix);
@@ -535,6 +559,24 @@ export class Sim {
                   )
                 : null;
         return { outcome, reply };
+    }
+
+    // Registers a review task: its verdict is measured against the owner's
+    // receipt on the revision it reviewed.
+    markReview(taskId: string): void {
+        this.reviewTasks.push(taskId);
+    }
+
+    async reviewMeasure(taskId: string): Promise<ReviewMeasure> {
+        const text = await readFile(this.reportPath(taskId), "utf8").catch(
+            () => "",
+        );
+        return measureReview(
+            taskId,
+            text,
+            this.task(taskId)?.revision ?? null,
+            this.ledger((db) => db.receipts(taskId)),
+        );
     }
 
     // What happened, measured from the fakes and the ledger.

@@ -184,7 +184,29 @@ export function markdown(result: ProbeResult): string {
     for (const cast of result.casts) {
         lines.push(...cast.scenarios.map(row));
     }
-    lines.push(row(result.pi), "", "Scenarios:", "");
+    lines.push(row(result.pi), "");
+    const reviews = [...result.casts.flatMap((c) => c.scenarios)].flatMap((r) =>
+        r.reviews.map((m) => ({ ...m, cast: r.cast, scenario: r.name })),
+    );
+    lines.push(
+        "Reviews: the ledger ends a right rejection and a wrong approval " +
+            "`failed` alike, so each review's verdict (its report's claim) " +
+            "is shown beside the owner's receipt on the reviewed revision. " +
+            `${result.totals.reviews.agree} agree, ` +
+            `${result.totals.reviews.disagree} disagree, ` +
+            `${result.totals.reviews.undecided} undecided.`,
+        "",
+        "| Cast | Scenario | Review | Verdict | Owner passed | Agree |",
+        "| ---- | -------- | ------ | ------- | ------------ | ----- |",
+        ...reviews.map(
+            (m) =>
+                `| ${m.cast} | ${m.scenario} | ${m.taskId} | ${m.verdict} | ` +
+                `${m.ownerPassed ?? "none"} | ${m.agree ?? "undecided"} |`,
+        ),
+        "",
+        "Scenarios:",
+        "",
+    );
     for (const r of result.casts[0]?.scenarios ?? []) {
         lines.push(`- \`${r.name}\`: ${summaryOf(r.name)}`);
     }
@@ -220,7 +242,9 @@ if (import.meta.main) {
             `${t.failedChecks.length} failed, ` +
             `${t.duplicateDispatches} duplicate dispatches, ` +
             `${t.falseVerifiedTasks.length} false verified, ` +
-            `${t.unresolvedTasks.length} pending or unknown; ${args.out}\n`,
+            `${t.unresolvedTasks.length} pending or unknown, ` +
+            `${t.reviews.agree}/${t.reviews.total} reviews agree with the ` +
+            `owner; ${args.out}\n`,
     );
     process.exit(result.outcome === "pass" ? 0 : 1);
 }
