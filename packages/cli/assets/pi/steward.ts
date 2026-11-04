@@ -20,8 +20,9 @@
 //   second process, a fork among them, cannot take a live one's claim.
 // - Waits run in slices, each reported as progress; a cancelled wait
 //   stops waiting and says what was last observed, the worker keeping
-//   its task. Dispatch and cancel run to their end even when Pi aborts
-//   them, as a helper killed mid-send leaves its task unknown.
+//   its task. An abort before a dispatch's send stops it, nothing sent
+//   (`DISPATCH_ABORTED`); once its helper starts, dispatch and cancel
+//   run to their end, as a helper killed mid-send leaves a task unknown.
 // - The ledger is read again at session start or reload, after
 //   compaction and before every dispatch; the status line and a system
 //   prompt section show its task ids and observed states, never a
@@ -274,6 +275,9 @@ const HINTS: Record<string, string> = {
         "The registry does not show this worker available: its budget or " +
         "state, as the runner observed it, rules it out. Choose another " +
         "available worker, or tell the person; do not retry it.",
+    DISPATCH_ABORTED:
+        "Pi stopped the dispatch before anything was sent: no task was " +
+        "recorded and the worker got nothing.",
     WAIT_CANCELLED:
         "The wait stopped; the worker still holds the task and may still " +
         "be working.",
@@ -643,11 +647,13 @@ export function registerStewardship(
             ),
         ),
     );
-    // Not cancelled by Pi: a helper killed mid-send leaves the task
-    // unknown, where one let finish says whether it was sent.
-    tool("worker_dispatch", "Dispatch", async (args) => {
+    // Pi's abort is honoured until the dispatch helper starts, as nothing
+    // has been recorded or sent before it.
+    tool("worker_dispatch", "Dispatch", async (args, signal) => {
         const taskId = args.taskId as string;
-        const before = await ask({ kind: "reconcile" });
+        const before = await ask({ kind: "reconcile" }, signal);
+        if (signal?.aborted)
+            return resultOf({ ok: false, code: "DISPATCH_ABORTED" }, taskId);
         if (!before.ok) return resultOf(before, taskId);
         return resultOf(
             await ask({

@@ -92,15 +92,15 @@ with Bun code are re-declared, and `extension.test.ts` checks they agree.
   less the key, `DOROTHY_MEMORY_URL` and `SOPS_AGE_KEY_FILE`, as Pi's
   `{pid, startedAt}`. Waits run in 5 s slices, each a progress update;
   cancelled, `WAIT_CANCELLED` with the task as last seen. Dispatch (after
-  a whole reconcile) and cancel ignore Pi's abort: a killed helper leaves
-  a send unknown. The ledger is reread at session start and compaction;
-  status `dorothy-steward` and section `dorothy-stewardship-ledger` show
-  task ids and states. Pi's `ui_prompt_*` become `herdr:blocked` events.
-- `stewardship/`: `SKILL.md` (Pi `--skill`) with the report contract,
-  `capabilities.md` and a synthetic `registry.example.json`.
-- `vendor/herdr/`: herdr's Pi state extension, unedited at the declared
-  pin, with licence and [provenance](./vendor/herdr/PROVENANCE.md);
-  out of biome and the house header.
+  a whole reconcile, `DISPATCH_ABORTED` if Pi aborts by then) and cancel
+  then ignore Pi's abort: a killed helper leaves a send unknown. Ledger
+  reread at session start and compaction; `dorothy-steward` status and
+  `dorothy-stewardship-ledger` section show ids and states; Pi's
+  `ui_prompt_*` become `herdr:blocked` events.
+- `stewardship/`: `SKILL.md` (Pi `--skill`), `capabilities.md`, and a
+  synthetic `registry.example.json`.
+- `vendor/herdr/`: herdr's Pi state extension, unedited at its pin, with
+  licence and [provenance](./vendor/herdr/PROVENANCE.md); no biome, header.
 - `models.json`: the checked model manifest
   ([hosts guide](../../src/hosts/AGENTS.md)).
 

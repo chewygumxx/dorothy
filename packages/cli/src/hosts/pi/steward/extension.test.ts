@@ -725,7 +725,7 @@ describe("a stewardship run", () => {
         expect(pi.statuses.at(-1)).toBe("steward: t1 unknown");
     });
 
-    it("lets a dispatch finish its send when Pi aborts it", async () => {
+    it("sends nothing when Pi aborts a dispatch before its send", async () => {
         const pi = await load();
         const controller = new AbortController();
         const pending = pi.call(
@@ -739,9 +739,43 @@ describe("a stewardship run", () => {
             },
             controller.signal,
         );
+        // The pre-dispatch reconcile's helper has started; Escape now.
+        controller.abort();
+        const stopped = await pending;
+        expect(stopped.isError).toBe(true);
+        expect(stopped.details.code).toBe("DISPATCH_ABORTED");
+        expect(stopped.content[0]?.text).toContain("before anything was sent");
+        expect(await sends()).toEqual([]);
+        expect((await helperCalls()).map((call) => call.kind)).not.toContain(
+            "dispatch",
+        );
+        const listed = await pi.call("workers_list");
+        expect(listed.details.tasks).toEqual([]);
+    });
+
+    it("lets a dispatch finish once its send has begun", async () => {
+        const pi = await load();
+        await writeFile(join(stub, "send-hang"), "");
+        const controller = new AbortController();
+        const started = Date.now();
+        const pending = pi.call(
+            "worker_dispatch",
+            {
+                taskId: "t1",
+                workerId: "trial-codex",
+                briefPath: await brief("t1"),
+                reportPath: reportPath("t1"),
+                baseOid: OID,
+            },
+            controller.signal,
+        );
+        while ((await sends()).length === 0) await Bun.sleep(20);
         controller.abort();
         const sent = await pending;
+        // The sender ran its 3 s to the end: no early return, no kill.
+        expect(Date.now() - started).toBeGreaterThanOrEqual(2500);
         expect(sent.details.code).toBe("TASK_SENT");
+        expect(sent.details.task?.state).toBe("sent");
         expect(await sends()).toHaveLength(1);
     });
 
