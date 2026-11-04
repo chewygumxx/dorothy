@@ -100,12 +100,12 @@ or infers a target from focus. Bun code, never loaded by Pi's extension.
   the request (`CANCEL_NOT_SENT`), any other failure keeps it
   (`CANCEL_UNCERTAIN`); only a report saying `cancelled` cancels.
   `finish` runs nothing: a `reported` task is `verified` only on a
-  receipt for its id, current
-  revision and unchanged report digest, with the same command, exit and
-  log (exit nonzero: `failed`). `read` takes 1 to 200 lines and refuses
-  over 32 KiB. `list` gives each observation the registry's
-  `availability`. `processStart` and `processAlive` are Linux's
-  `<boot id>:<start ticks>` identity and the production liveness.
+  receipt for its id, current revision and unchanged report digest, with
+  the same command, exit and log (exit nonzero: `failed`). A receipt
+  checks a report's claims, not hostile code run as the runner's user.
+  `read` takes 1 to 200 lines, refusing over 32 KiB. `list` adds each
+  observation's registry `availability`. `processStart`, `processAlive`:
+  Linux's `<boot id>:<start ticks>` identity, and production liveness.
 - `fixtures.ts`: `writeRegistry` (private roots), `fakeHerdr`, whose
   replies have herdr 0.9.5's structure with every value invented, and
   `fakeSender`, which records each call to a sender or the interrupter

@@ -19,7 +19,8 @@
 // one scenario through the published Pi 1.5.0 with a scripted provider on
 // loopback. The owner's runner verifies each submission from the worker's
 // clone, on an export of the revision it computed itself, outside every
-// clone; only its receipt verifies a task.
+// clone; only its receipt verifies a task. A receipt is evidence against a
+// worker's report, not against hostile code running as the runner's user.
 //
 // Everything runs in a temporary root, with that root as HOME, every XDG
 // directory and TMPDIR, and only synthetic credentials: the real user's
@@ -86,7 +87,8 @@ export type ProbeResult = {
 const NOTE =
     "The coordinator's decisions are scripted: this run shows the plumbing, " +
     "the ledger and the owner's verification hold, not that a model " +
-    "chooses well.";
+    "chooses well. An owner receipt is evidence against a worker's report, " +
+    "not against hostile code running as the runner's user.";
 
 // The environment variables of the user's own that could name a real root
 // or carry a credential; the probe holds none of them.

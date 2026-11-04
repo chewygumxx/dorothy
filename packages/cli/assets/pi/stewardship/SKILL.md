@@ -120,6 +120,11 @@ or settles it, and you never send it again, under its id or another.
   person, who answers it in the worker's own interface. Tell them which
   worker and task. `worker_cancel` cannot stop a blocked worker: its
   Escape would answer the dialog, so it is refused.
+- **A receipt checks a report, not a worker.** `verified` means the
+  runner independently ran the owner's test on the revision it read
+  from the clone, against what the report claimed. It does not clear
+  hostile code running as the user; if a worker acts against the trial,
+  tell the person.
 - **Idle, sent and `agent_end` are not completion.** Only a report
   makes a task `reported`, and only the runner's receipt `verified`.
 - **Never resend an uncertain dispatch.** After `SEND_UNCERTAIN`,

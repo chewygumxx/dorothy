@@ -15,7 +15,9 @@
 // given the inputs on stdin and may only answer with their outputs; this
 // process holds the expected outputs and compares them. A child that exits
 // early, hangs, says nothing or says the wrong thing fails, whatever its
-// exit code. Prints one line per case and exits nonzero if any fails.
+// exit code. Prints one line per case and exits nonzero if any fails. The
+// child guards against accident and in-band forgery; it is no sandbox, and
+// hostile code in it runs as this user (see steward/owner.ts).
 
 import { dirname, join, resolve } from "node:path";
 
@@ -86,8 +88,9 @@ async function ask(inputs: string[]): Promise<(string | null)[] | string> {
     child.stdin.end();
     const out = await boundedText(child.stdout, () => child.kill("SIGKILL"));
     const code = await child.exited;
-    // Only a line starting with the nonce, which the submitted code never
-    // saw, is the child's reply; exactly one is needed.
+    // Only a line starting with the nonce is the child's reply; exactly one
+    // is needed. This rejects a reply printed ahead of the child's own, not
+    // code that learns the nonce (it can wrap process.stdout.write).
     const replies = out
         .split("\n")
         .filter((line) => line.startsWith(`${nonce} `));

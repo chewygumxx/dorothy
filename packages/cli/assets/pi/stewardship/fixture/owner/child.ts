@@ -9,11 +9,13 @@
 //
 
 // The child of the owner's acceptance test, the only process that imports
-// the submitted code. It reads the request from stdin first, so the nonce
-// is in no environment or file the code can read, then imports the
+// the submitted code. It reads the request from stdin first, imports the
 // submitted `slugify`, applies it to each input and prints one reply line:
 // the nonce, a space and a JSON array of outputs (null for anything that
-// is not a string). It knows no expected output.
+// is not a string). It knows no expected output. The nonce stops a reply
+// printed ahead of this one; code that wraps `process.stdout.write` can
+// still see it. This is a guard against accident and in-band forgery, not
+// a sandbox: the code runs as the runner's user.
 
 import { join, resolve } from "node:path";
 

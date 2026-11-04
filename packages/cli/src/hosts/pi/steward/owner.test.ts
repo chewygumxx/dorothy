@@ -259,6 +259,36 @@ describe("the owner's verification", () => {
         expect(await logs()).toEqual([]);
     });
 
+    // KNOWN LIMIT, asserted as it is today so a change is noticed. A
+    // receipt checks a worker's report, not hostile code: the submitted
+    // module runs as the runner's user and can read the owner's expected
+    // cases from the sibling test file, so a lookup of them passes. No
+    // sandbox is in scope (no OS confinement boundary); if the test is ever
+    // hidden from the code, this fails and should become a refusal test.
+    it("KNOWN LIMIT: code that reads the owner's cases passes", async () => {
+        const { impl } = s.w;
+        const id = s.id("fix");
+        await s.dispatch(id, impl);
+        const lookup = [
+            'import { readFileSync } from "node:fs";',
+            'import { dirname, join } from "node:path";',
+            'const test = readFileSync(join(dirname(process.argv[1] ?? ""), "acceptance.ts"), "utf8");',
+            'const table = /const cases: \\[string, string\\]\\[\\] = (\\[[\\s\\S]*?\\n\\]);/.exec(test)?.[1] ?? "[]";',
+            "const cases = new Map<string, string>(eval(table));",
+            'export const slugify = (text: string): string => cases.get(text) ?? "";',
+            "",
+        ].join("\n");
+        const head = await s.commitFiles(
+            impl,
+            { "src/slug.ts": lookup },
+            "lookup",
+        );
+        await s.report(id, { revision: head });
+        await s.act("reconcile", { kind: "reconcile", taskId: id });
+        const outcome = await s.owner(id, impl);
+        expect(outcome).toMatchObject({ kind: "receipt", passed: true });
+    });
+
     it("refuses history that does not descend from the base", async () => {
         const { impl } = s.w;
         const id = s.id("fix");

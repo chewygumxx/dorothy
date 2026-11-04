@@ -30,12 +30,15 @@ The trial's task and its offline exercise. The engine and its guide are
   `src/example.ts` (the contract's easy examples).
 - `owner/acceptance.ts`: the owner's test, fuller than the examples
   (diacritics, symbol-only text), and `owner/child.ts`. The submitted
-  code runs only in the child, which gets the inputs and a nonce on stdin
-  and answers with outputs; the parent holds the expected ones and
-  compares, so an exit 0 at import, no reply or a reply without the nonce
-  fails. Neither enters a clone. The first fix
-  that trims hyphens passes the examples and fails this: the deliberately
-  incomplete fix an independent reviewer must catch.
+  code runs in the child, not in the test's process: the child gets the
+  inputs and a nonce on stdin and answers with outputs, and the parent
+  holds the expected ones and compares. That stops in-band forgery: an
+  exit 0 at import, no reply, a reply printed before the child's own (it
+  lacks the nonce, which the code could still learn by wrapping
+  `process.stdout.write`, so the nonce guards against a reply printed
+  ahead of the child's, not against code that watches it). Neither file
+  enters a clone. The first fix that trims hyphens passes the examples
+  and fails this: the incomplete fix an independent reviewer must catch.
 
 ## The runner's side (`steward/owner.ts`)
 
@@ -52,8 +55,15 @@ config) again before and after the run, and refuses on any change
 records the receipt (task, revision it computed, digest, command, exit,
 log). A failing run is a receipt too:
 `finish` turns exit nonzero into `failed`. Nothing recorded is a pending
-task, not a verified one. It runs the worker's code as the runner's user:
-no sandbox. A reviewer's task is closed by the same receipt on the
+task, not a verified one. What a receipt is: independent evidence
+against a worker's report (a claimed revision, command or pass), computed
+by the runner from the clone. It is not evidence against hostile code,
+which runs as the runner's user and no sandbox: it can read the expected
+cases from the test's files, change the owner's files between the two
+reads (and put them back), or write into the test's output through
+`/proc/<ppid>/fd/1`. The sealing and the child catch accident and in-band
+forgery, not that. `owner.test.ts` records the first as a known limit.
+A reviewer's task is closed by the same receipt on the
 reviewed revision, so a review that rejects a failing revision ends
 `failed`; no engine step closes a reported task without a receipt. The
 ledger therefore cannot tell a right rejection from a wrong approval:

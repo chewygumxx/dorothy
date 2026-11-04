@@ -15,10 +15,18 @@
 // report, exports exactly that commit to a directory under the owner's
 // root, runs the owner's acceptance test there (the submitted code in a
 // child that only answers, the expected outputs held by the parent), and
-// only then records a receipt for the revision it computed. A report that claims another
-// revision, or that changed since the ledger saw it, gets no receipt. The
-// worker's code still runs as the runner's user: no OS confinement, and a
-// minimal environment with no credential.
+// only then records a receipt for the revision it computed. A report that
+// claims another revision, or that changed since the ledger saw it, gets
+// no receipt.
+//
+// A receipt is independent evidence against a worker's report: a claimed
+// revision, command or pass. It is not evidence against hostile code. That
+// code runs as the runner's user, with no OS confinement, and can read the
+// expected cases from the test's files, change the owner's files between
+// the checks and restore them, or write into the test's output. The child,
+// the nonce (which stops a reply printed ahead of the child's own, not code
+// that wraps `process.stdout.write`) and the re-reading of the sealed files
+// catch accident and in-band forgery only.
 
 import { createHash } from "node:crypto";
 import {
