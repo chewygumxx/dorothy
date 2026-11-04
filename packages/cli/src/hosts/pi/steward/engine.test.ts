@@ -14,6 +14,7 @@ import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
     COORDINATOR,
+    INTERRUPTER,
     processAlive,
     processStart,
     runSteward,
@@ -58,6 +59,7 @@ let codex: Worker;
 let claude: Worker;
 let herdr: FakeHerdr;
 let sender: FakeSender;
+let interrupter: FakeSender;
 let env: Record<string, string>;
 let alive: Map<string, boolean | "uncertain">;
 
@@ -101,6 +103,7 @@ const deps = (extra: Partial<StewardDeps> = {}): StewardDeps => ({
     now: () => NOW,
     run: herdr.run,
     sender: sender.run,
+    interrupter: interrupter.run,
     self: HELPER,
     pollMs: 5,
     controllerAlive: async (pid, startedAt) => {
@@ -154,6 +157,7 @@ beforeEach(async () => {
     await mkdir(join(reg.fixtureRoot, "reports"));
     herdr = fakeHerdr(reg.workers, { steward: true });
     sender = fakeSender();
+    interrupter = fakeSender();
     env = {
         HERDR_ENV: "1",
         PATH: "/usr/bin:/bin",
@@ -789,8 +793,7 @@ describe("wait", () => {
 });
 
 describe("cancel", () => {
-    const interrupts = () =>
-        herdr.calls.filter((call) => call.args[1] === "send-keys");
+    const interrupts = () => interrupter.calls;
 
     beforeEach(async () => {
         await writeBrief("t1");
@@ -802,9 +805,21 @@ describe("cancel", () => {
         const reply = await steward({ kind: "cancel", taskId: "t1" });
         expect(reply).toMatchObject({ ok: true, code: "CANCEL_REQUESTED" });
         expect(only(reply).state).toBe("cancel-requested");
-        expect(interrupts().map((c) => c.args)).toEqual([
-            ["pane", "send-keys", codex.pane, "esc"],
+        expect(interrupts()).toEqual([
+            {
+                args: [
+                    "--expect-pane",
+                    codex.pane,
+                    "--expect-terminal",
+                    "term_0000000000000a1",
+                    "--lock-wait",
+                    "5",
+                    codex.name,
+                ],
+                stdin: undefined,
+            },
         ]);
+        expect(herdrCalls("send-keys")).toEqual([]);
         const again = await steward({ kind: "cancel", taskId: "t1" });
         expect(only(again).state).toBe("cancel-requested");
         expect(interrupts()).toHaveLength(1);
@@ -862,12 +877,58 @@ describe("cancel", () => {
         expect(only(reply).state).toBe("reported");
     });
 
+    it("interrupts through the skill's locked sender by default", async () => {
+        expect(INTERRUPTER).toEndWith(
+            "/.agents/skills/agent-stewardship/scripts/send-interrupt.sh",
+        );
+        expect(await Bun.file(INTERRUPTER).exists()).toBe(true);
+    });
+
     it("keeps the request when the interrupt's outcome is uncertain", async () => {
-        herdr.queue(agentInfoReply(herdrAgentOf(codex, "working")));
-        herdr.queue(new Error("socket gone"));
-        const reply = await steward({ kind: "cancel", taskId: "t1" });
+        const outcomes = [
+            { code: 1, stdout: "", stderr: "Escape failed" },
+            { code: 137, stdout: "", stderr: "" },
+            new Error("socket gone"),
+        ] as const;
+        for (const outcome of outcomes) {
+            withLedger((db) =>
+                db.move("t1", ["cancel-requested"], "running", { code: null }),
+            );
+            interrupter.queue(outcome);
+            const reply = await steward({ kind: "cancel", taskId: "t1" });
+            expect(reply).toMatchObject({
+                ok: false,
+                code: "CANCEL_UNCERTAIN",
+            });
+            expect(only(reply).state).toBe("cancel-requested");
+        }
+    });
+
+    it("withdraws a request the script refused before the Escape", async () => {
+        interrupter.queue("hang");
+        const reply = await steward({ kind: "cancel", taskId: "t1" }, ME, {
+            interruptTimeoutMs: 30,
+        });
         expect(reply).toMatchObject({ ok: false, code: "CANCEL_UNCERTAIN" });
-        expect(only(reply).state).toBe("cancel-requested");
+        for (const code of [2, 3, 4, 5, 7, 8]) {
+            withLedger((db) =>
+                db.move("t1", ["cancel-requested"], "running", { code: null }),
+            );
+            interrupter.queue({ code, stdout: "", stderr: "refused" });
+            const refused = await steward({ kind: "cancel", taskId: "t1" });
+            expect(refused).toMatchObject({
+                ok: false,
+                code: "CANCEL_NOT_SENT",
+            });
+            // Known unsent: the request is withdrawn, the task as it was.
+            expect(only(refused)).toMatchObject({
+                state: "running",
+                code: `CANCEL_NOT_SENT_${code}`,
+            });
+        }
+        const again = await steward({ kind: "cancel", taskId: "t1" });
+        expect(again).toMatchObject({ ok: true, code: "CANCEL_REQUESTED" });
+        expect(interrupts()).toHaveLength(8);
     });
 
     it("refuses an intent in flight and a finished task", async () => {

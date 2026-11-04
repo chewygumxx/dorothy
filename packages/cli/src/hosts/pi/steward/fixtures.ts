@@ -12,8 +12,8 @@
 // replies have the structure of the installed 0.9.5 `herdr agent get`, every
 // name, pane, terminal and session invented. The fake serves `agent get`
 // alone and refuses anything else, so a test can never send input to a pane;
-// asked to, it also serves a read and the cancel's Escape, recording them.
-// The fake sender stands in for `send-prompt.sh`, recording what it is given.
+// asked to, it also serves a read, recording it. The fake sender stands in
+// for `send-prompt.sh` or `send-interrupt.sh`, recording what it is given.
 
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -127,8 +127,8 @@ const ok = (stdout = ""): Reply => ({ code: 0, stdout, stderr: "" });
 
 // A herdr holding the workers, each idle in its declared pane. `agent get`
 // finds an agent by name or pane, as herdr does. With `steward`, it also
-// serves `agent read <name> --lines <n> --format text` and `pane send-keys
-// <pane> esc`, recorded in `calls`, and still refuses any other command.
+// serves `agent read <name> --lines <n> --format text`, recorded in
+// `calls`, and still refuses any other command.
 export function fakeHerdr(
     workers: Worker[],
     options: { steward?: boolean } = {},
@@ -164,14 +164,6 @@ export function fakeHerdr(
             return find(target)
                 ? ok(screens.get(target) ?? "")
                 : notFoundReply(target);
-        }
-        if (
-            args.length === 4 &&
-            noun === "pane" &&
-            verb === "send-keys" &&
-            args[3] === "esc"
-        ) {
-            return ok();
         }
         return null;
     };
@@ -216,8 +208,8 @@ export type FakeSender = {
     onSend: (hook: (call: SendCall) => void | Promise<void>) => void;
 };
 
-// A `send-prompt.sh` that writes to no pane: each call recorded, its exit
-// scripted.
+// A `send-prompt.sh` or `send-interrupt.sh` that writes to no pane: each
+// call recorded, its exit scripted.
 export function fakeSender(): FakeSender {
     const calls: SendCall[] = [];
     const queued: (Reply | "hang" | Error)[] = [];

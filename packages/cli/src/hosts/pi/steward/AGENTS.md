@@ -93,19 +93,23 @@ or infers a target from focus. Bun code, never loaded by Pi's extension.
   a report naming the task (`Task: <id>` line; `Status:`, `Revision:`
   are claims) is `reported`, work seen after a send `running`; idle is
   never done, and a timeout keeps the reservation. `cancel` records
-  `cancel-requested`, then sends one `esc` to the pinned occupant; only
-  a report saying `cancelled` cancels. `finish` runs nothing: a
-  `reported` task is `verified` only on a receipt for its id, current
+  `cancel-requested`, then sends one Escape through `send-interrupt.sh
+  --expect-pane --expect-terminal <pinned> --lock-wait 5` (15 s), under
+  the pane lock: its refusals before sending (2, 3, 4, 5, 7, 8) withdraw
+  the request (`CANCEL_NOT_SENT`), any other failure keeps it
+  (`CANCEL_UNCERTAIN`); only a report saying `cancelled` cancels.
+  `finish` runs nothing: a `reported` task is `verified` only on a
+  receipt for its id, current
   revision and unchanged report digest, with the same command, exit and
   log (exit nonzero: `failed`). `read` takes 1 to 200 lines and refuses
   over 32 KiB. `processStart` and `processAlive` are Linux's
   `<boot id>:<start ticks>` identity and the production liveness.
 - `fixtures.ts`: `writeRegistry` (private roots), `fakeHerdr`, whose
   replies have herdr 0.9.5's structure with every value invented, and
-  `fakeSender`, which records each send and scripts its exit. The fake
-  herdr serves `agent get` alone and refuses any other command; with
-  `{steward: true}` it also serves `agent read` and the cancel's
-  `pane send-keys <pane> esc`, recorded. Capture new fixtures from
+  `fakeSender`, which records each call to a sender or the interrupter
+  and scripts its exit. The fake herdr serves `agent get` alone and
+  refuses any other command; with `{steward: true}` it also serves
+  `agent read`, recorded. Capture new fixtures from
   dedicated trial panes only, sanitized the same way.
 
 The registry example is `../../../../assets/pi/stewardship/`

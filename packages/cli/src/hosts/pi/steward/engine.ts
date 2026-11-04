@@ -24,7 +24,6 @@ import {
     type HerdrRun,
     MAX_OUTPUT_BYTES,
     MAX_READ_LINES,
-    METADATA_TIMEOUT_MS,
     observeWorker,
     timed,
 } from "./herdr.js";
@@ -66,7 +65,12 @@ export const SENDER = join(
     "scripts",
     "send-prompt.sh",
 );
+// The skill's interrupt: one Escape, under the same pane lock.
+export const INTERRUPTER = join(SENDER, "..", "send-interrupt.sh");
 export const SEND_TIMEOUT_MS = 15_000;
+// The interrupt waits this long for the pane's lock, within its timeout.
+export const LOCK_WAIT_S = 5;
+export const INTERRUPT_TIMEOUT_MS = 15_000;
 export const READ_TIMEOUT_MS = 5000;
 export const MAX_WAIT_MS = 60_000;
 export const POLL_MS = 500;
@@ -76,6 +80,9 @@ export const MAX_FILE_BYTES = 64 * 1024;
 // The sender's refusals before it writes anything: usage, blocked, absent,
 // another pane, not idle. Any other exit may have written.
 const REFUSALS = [2, 3, 4, 5, 6];
+// The interrupt's: usage, blocked, absent, another pane, the lock not had
+// in time, another terminal. Any other exit may have sent the Escape.
+const UNSENT = [2, 3, 4, 5, 7, 8];
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing them
@@ -93,7 +100,10 @@ export type StewardDeps = {
     sender?: HerdrRun;
     // This helper's identity; by default its pid and /proc start.
     self?: Identity;
+    // `send-interrupt.sh` by default; tests pass a fake.
+    interrupter?: HerdrRun;
     sendTimeoutMs?: number;
+    interruptTimeoutMs?: number;
     pollMs?: number;
 };
 
@@ -619,7 +629,10 @@ async function wait(
 }
 
 // Records the request, then sends one interrupt (Escape) to the worker
-// still holding the pinned terminal. Only a report saying so cancels.
+// still holding the pinned terminal, through `send-interrupt.sh`, which
+// takes the pane's lock (5 s at most) and rereads pane, terminal and
+// status under it. A refusal before the Escape withdraws the request;
+// any other failure keeps it, uncertain. Only a report saying so cancels.
 async function cancel(ctx: Context, taskId: unknown): Promise<StewardReply> {
     const { ledger } = ctx;
     const id = taskOf(ctx, taskId).taskId;
@@ -644,34 +657,45 @@ async function cancel(ctx: Context, taskId: unknown): Promise<StewardReply> {
     if (refusal) {
         return reply(false, refusal, [ledger.task(id)], [seen]);
     }
-    const op = ledger.begin(
-        id,
-        "cancel",
-        ["sent", "running", "unknown"],
-        "cancel-requested",
-        helper,
-    );
+    const before = task.state;
+    const op = ledger.begin(id, "cancel", [before], "cancel-requested", helper);
     if (!op) {
         const now = ledger.task(id) as StoredTask;
         return now.state === "cancel-requested"
             ? reply(true, "CANCEL_REQUESTED", [now], [seen])
             : reply(false, "TASK_MOVED", [now], [seen]);
     }
-    let sent = false;
+    let code: number | null = null;
     try {
-        const { code } = await timed(
-            ctx.deps.run,
-            ["pane", "send-keys", worker.pane, "esc"],
+        ({ code } = await timed(
+            ctx.deps.interrupter ?? createHerdrRun({ bin: INTERRUPTER }),
+            [
+                "--expect-pane",
+                worker.pane,
+                "--expect-terminal",
+                task.terminalId as string,
+                "--lock-wait",
+                String(LOCK_WAIT_S),
+                worker.name,
+            ],
             ctx.deps.env,
-            METADATA_TIMEOUT_MS,
-        );
-        sent = code === 0;
+            ctx.deps.interruptTimeoutMs ?? INTERRUPT_TIMEOUT_MS,
+        ));
     } catch {
-        sent = false;
+        code = null;
     }
-    if (sent) {
+    if (code === 0) {
         ledger.conclude(op.id, "done", null);
         return reply(true, "CANCEL_REQUESTED", [ledger.task(id)], [seen]);
+    }
+    if (code !== null && UNSENT.includes(code)) {
+        const why = `CANCEL_NOT_SENT_${code}`;
+        ledger.conclude(op.id, "done", why, {
+            from: ["cancel-requested"],
+            to: before,
+            fields: { code: why },
+        });
+        return reply(false, "CANCEL_NOT_SENT", [ledger.task(id)], [seen]);
     }
     ledger.conclude(op.id, "uncertain", "CANCEL_UNCERTAIN", {
         from: ["cancel-requested"],
