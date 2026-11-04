@@ -648,7 +648,8 @@ Which host receives what, and what has been run against it, is on
 - **Standing**: current.
 - **Sources**:
   [spec](../specs/2026-11-03_pi-delivery.md#launch-and-profile-ownership),
-  [the extension's guide](../../packages/cli/assets/pi/AGENTS.md#files).
+  [the extension's guide](../../packages/cli/assets/pi/AGENTS.md#files),
+  [rulings](../reports/2026-11-04_pi-delivery-rulings.md#rulings).
 
 ### The key reaches Pi's provider in memory alone
 
@@ -672,7 +673,8 @@ Which host receives what, and what has been run against it, is on
 - **Standing**: current.
 - **Sources**:
   [spec](../specs/2026-11-03_pi-delivery.md#featherless),
-  [the extension's guide](../../packages/cli/assets/pi/AGENTS.md#invariants).
+  [the extension's guide](../../packages/cli/assets/pi/AGENTS.md#invariants),
+  [rulings](../reports/2026-11-04_pi-delivery-rulings.md#rulings).
 
 ## Models and routing
 
