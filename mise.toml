@@ -30,7 +30,7 @@ min_version = "2026.9.0"
 #
 # Runtimes
 #
-bun = "1.4"
+bun  = "1.4"
 # Pi 1.5.0 runs under Node (>=22.19), which `--pi` and its tests start.
 node = "24"
 
