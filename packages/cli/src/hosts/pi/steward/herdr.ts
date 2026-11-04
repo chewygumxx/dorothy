@@ -122,11 +122,12 @@ type Reply = { code: number; stdout: string; stderr: string };
 
 // Races the call against its deadline, so a runner that ignores its signal
 // still ends the wait; the signal tells one that honours it to kill.
-async function timed(
+export async function timed(
     run: HerdrRun,
     args: string[],
     env: Env,
     timeoutMs: number,
+    stdin?: string,
 ): Promise<Reply> {
     const control = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -136,7 +137,11 @@ async function timed(
             reject(new StewardError("HERDR_TIMEOUT", `${timeoutMs} ms`));
         }, timeoutMs);
     });
-    const call = run(args, { env, signal: control.signal });
+    const call = run(args, {
+        env,
+        signal: control.signal,
+        ...(stdin === undefined ? {} : { stdin }),
+    });
     call.catch(() => {});
     try {
         return await Promise.race([call, deadline]);

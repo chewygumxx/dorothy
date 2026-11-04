@@ -11,7 +11,9 @@
 // Synthetic stewardship fixtures: a registry on disk and a fake herdr whose
 // replies have the structure of the installed 0.9.5 `herdr agent get`, every
 // name, pane, terminal and session invented. The fake serves `agent get`
-// alone and refuses anything else, so a test can never send input to a pane.
+// alone and refuses anything else, so a test can never send input to a pane;
+// asked to, it also serves a read and the cancel's Escape, recording them.
+// The fake sender stands in for `send-prompt.sh`, recording what it is given.
 
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -115,19 +117,64 @@ export type FakeHerdr = {
     run: HerdrRun;
     calls: FakeCall[];
     agents: Map<string, HerdrAgent>;
+    // What `agent read <name>` shows, by name, where a read is served.
+    screens: Map<string, string>;
     // The next call gets this reply, or hangs until its signal aborts.
     queue: (reply: Reply | "hang" | Error) => void;
 };
 
+const ok = (stdout = ""): Reply => ({ code: 0, stdout, stderr: "" });
+
 // A herdr holding the workers, each idle in its declared pane. `agent get`
-// finds an agent by name or pane, as herdr does.
-export function fakeHerdr(workers: Worker[]): FakeHerdr {
+// finds an agent by name or pane, as herdr does. With `steward`, it also
+// serves `agent read <name> --lines <n> --format text` and `pane send-keys
+// <pane> esc`, recorded in `calls`, and still refuses any other command.
+export function fakeHerdr(
+    workers: Worker[],
+    options: { steward?: boolean } = {},
+): FakeHerdr {
     const agents = new Map<string, HerdrAgent>();
     for (const worker of workers) {
         agents.set(worker.name, herdrAgentOf(worker));
     }
+    const screens = new Map<string, string>();
     const calls: FakeCall[] = [];
     const queued: (Reply | "hang" | Error)[] = [];
+    const find = (target: string) =>
+        [...agents.values()].find(
+            (agent) => agent.name === target || agent.pane_id === target,
+        );
+    const served = (args: string[]): Reply | null => {
+        const [noun, verb, target] = args as [string, string, string];
+        if (args.length === 3 && noun === "agent" && verb === "get") {
+            const found = find(target);
+            return found ? agentInfoReply(found) : notFoundReply(target);
+        }
+        if (!options.steward) {
+            return null;
+        }
+        if (
+            args.length === 7 &&
+            noun === "agent" &&
+            verb === "read" &&
+            args[3] === "--lines" &&
+            args[5] === "--format" &&
+            args[6] === "text"
+        ) {
+            return find(target)
+                ? ok(screens.get(target) ?? "")
+                : notFoundReply(target);
+        }
+        if (
+            args.length === 4 &&
+            noun === "pane" &&
+            verb === "send-keys" &&
+            args[3] === "esc"
+        ) {
+            return ok();
+        }
+        return null;
+    };
     const run: HerdrRun = async (args, options) => {
         calls.push({ args: [...args], env: { ...options.env } });
         const next = queued.shift();
@@ -143,16 +190,62 @@ export function fakeHerdr(workers: Worker[]): FakeHerdr {
         if (next) {
             return next;
         }
-        if (args.length !== 3 || args[0] !== "agent" || args[1] !== "get") {
+        const reply = served(args);
+        if (!reply) {
             throw new Error(`fake herdr refuses: ${args.join(" ")}`);
         }
-        const target = args[2] as string;
-        const found = [...agents.values()].find(
-            (agent) => agent.name === target || agent.pane_id === target,
-        );
-        return found ? agentInfoReply(found) : notFoundReply(target);
+        return reply;
     };
-    return { run, calls, agents, queue: (reply) => queued.push(reply) };
+    return {
+        run,
+        calls,
+        agents,
+        screens,
+        queue: (reply) => queued.push(reply),
+    };
+}
+
+export type SendCall = { args: string[]; stdin: string | undefined };
+
+export type FakeSender = {
+    run: HerdrRun;
+    calls: SendCall[];
+    // The next send gets this exit, error or hang; by default, exit 0.
+    queue: (reply: Reply | "hang" | Error) => void;
+    // Runs as each send starts, before its reply: a test's observation.
+    onSend: (hook: (call: SendCall) => void | Promise<void>) => void;
+};
+
+// A `send-prompt.sh` that writes to no pane: each call recorded, its exit
+// scripted.
+export function fakeSender(): FakeSender {
+    const calls: SendCall[] = [];
+    const queued: (Reply | "hang" | Error)[] = [];
+    let hook: (call: SendCall) => void | Promise<void> = () => {};
+    const run: HerdrRun = async (args, options) => {
+        const call = { args: [...args], stdin: options.stdin };
+        calls.push(call);
+        await hook(call);
+        const next = queued.shift();
+        if (next instanceof Error) {
+            throw next;
+        }
+        if (next === "hang") {
+            await new Promise<void>((resolve) => {
+                options.signal.addEventListener("abort", () => resolve());
+            });
+            throw new Error("aborted");
+        }
+        return next ?? ok();
+    };
+    return {
+        run,
+        calls,
+        queue: (reply) => queued.push(reply),
+        onSend: (next) => {
+            hook = next;
+        },
+    };
 }
 
 // The registry's JSON as a test may edit it: two workers, as written.

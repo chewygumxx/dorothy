@@ -62,13 +62,30 @@ export type CompletionEvidence = {
     verification: { command: string[]; exitCode: number; logPath: string };
 };
 
-// The ledger's row, whose states Task 2's ledger owns; the reply carries it.
-export type TaskRecord = {
-    taskId: string;
-    workerId: string;
-    state: string;
-    attempt: number;
+// A task's state in the ledger. `intent` is recorded before a send and
+// proves no delivery; `unknown` is a send that may or may not have landed;
+// `verified` needs the runner's receipt. Only `verified`, `cancelled` and
+// `failed` release the worker.
+export type TaskState =
+    | "intent"
+    | "sent"
+    | "running"
+    | "reported"
+    | "verified"
+    | "cancel-requested"
+    | "cancelled"
+    | "failed"
+    | "unknown";
+
+// The ledger's row, as the reply carries it.
+export type TaskRecord = TaskBrief & {
+    briefDigest: string;
+    state: TaskState;
+    createdAt: string;
     updatedAt: string;
+    reportDigest: string | null;
+    revision: string | null;
+    code: string | null;
 };
 
 export type StewardRequest = {
