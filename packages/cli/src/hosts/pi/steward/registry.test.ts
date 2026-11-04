@@ -148,6 +148,55 @@ describe("readFleet", () => {
         }, "REGISTRY_CREDENTIAL");
     });
 
+    it("accepts paths and labels that merely contain a token's prefix", async () => {
+        for (const name of [
+            "task-stewardship",
+            "risk-assessment-x",
+            "desk-account-one",
+            "highp_0123456789abcdef0123",
+            "mygithub_pat_0123456789abc",
+            "bAKIA0123456789ABCDEF",
+            "boxoxb-abcdefghijkl",
+            "beyJhbGciOiJIUzI1.eyJzdWIi",
+        ]) {
+            const reg = await registry();
+            const cwd = join(reg.fixtureRoot, name);
+            await mkdir(cwd);
+            const raw = JSON.parse(await Bun.file(reg.path).text());
+            raw.workers[0].cwd = cwd;
+            await Bun.write(reg.path, JSON.stringify(raw));
+            expect((await readFleet(reg.path, NOW)).workers[0]?.cwd).toBe(cwd);
+        }
+        const reg = await registry();
+        const root = join(reg.root, "task-stewardship-fixture");
+        await Bun.write(
+            reg.path,
+            (await Bun.file(reg.path).text()).replaceAll(reg.fixtureRoot, root),
+        );
+        await mkdir(join(root, "trial-codex"), { recursive: true });
+        await mkdir(join(root, "trial-claude"), { recursive: true });
+        expect((await readFleet(reg.path, NOW)).fixtureRoot).toBe(root);
+    });
+
+    it("still refuses each token shape, after a delimiter", async () => {
+        for (const token of [
+            "sk-ant-0123456789abcdef",
+            "sk-proj_abcdefgh1234",
+            "ghp_0123456789abcdef0123",
+            "gho_0123456789abcdef0123",
+            "github_pat_0123456789abc",
+            "xoxb-0123456789abc",
+            "AKIA0123456789ABCDEF",
+            "eyJhbGciOiJIUzI1.eyJzdWIi",
+        ]) {
+            for (const label of [token, `acct ${token}`, `a:${token}`]) {
+                await refused((raw) => {
+                    raw.workers[0].accountLabel = label;
+                }, "REGISTRY_CREDENTIAL");
+            }
+        }
+    });
+
     it("refuses a root escape, by path, dot-dot or link", async () => {
         await refused((raw) => {
             raw.workers[0].cwd = resolve(raw.fixtureRoot, "..");

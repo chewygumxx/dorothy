@@ -39,8 +39,20 @@ const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 // Field names that hold or invite a credential, and values shaped like one.
 const SECRET_KEY =
     /token|secret|passw|credential|api[-_]?key|auth|bearer|cookie|private/i;
-const SECRET_VALUE =
-    /sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9]{16,}|github_pat_\w{10,}|xox[abprs]-[\w-]{8,}|AKIA[0-9A-Z]{12,}|eyJ[\w-]{10,}\.[\w-]{4,}/;
+// Each token shape starts at a word edge, as `task-stewardship` and
+// `desk-account-one` are paths, not an `sk-` key.
+const SECRET_VALUE = new RegExp(
+    [
+        "sk-[A-Za-z0-9_-]{8,}",
+        "gh[pousr]_[A-Za-z0-9]{16,}",
+        "github_pat_\\w{10,}",
+        "xox[abprs]-[\\w-]{8,}",
+        "AKIA[0-9A-Z]{12,}",
+        "eyJ[\\w-]{10,}\\.[\\w-]{4,}",
+    ]
+        .map((shape) => `(?<![A-Za-z0-9])${shape}`)
+        .join("|"),
+);
 
 const HARNESSES: readonly Harness[] = ["codex", "claude"];
 const ROLES: readonly Role[] = ["implementer", "reviewer", "reserve"];

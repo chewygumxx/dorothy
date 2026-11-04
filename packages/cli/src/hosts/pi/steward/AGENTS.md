@@ -32,7 +32,8 @@ or infers a target from focus. Bun code, never loaded by Pi's extension.
 - `registry.ts`: `readFleet(path, now)`, the strict manifest: a regular
   file of at most 64 KiB, version 1, every key named (an unknown one is
   refused, a token-like one as `REGISTRY_CREDENTIAL`, as is a
-  token-shaped value), `fleetId` through core's `isUuid`, one to eight
+  token-shaped value, one starting at a word edge: `task-stewardship` is
+  a path), `fleetId` through core's `isUuid`, one to eight
   workers whose ids, names and panes are argv-safe words of 1 to 32
   characters (no leading dash). `fixtureRoot` and each `cwd` are made
   canonical; a `cwd` outside the root, links followed, is
