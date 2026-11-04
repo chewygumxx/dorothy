@@ -314,7 +314,8 @@ export function dorothyExtension(env: Env): (pi: ExtensionAPI) => void {
             ].filter((deviation) => !shown.has(deviation));
             if (deviations.length === 0) return;
             for (const deviation of deviations) shown.add(deviation);
-            ctx.ui.notify(
+            notify(
+                ctx,
                 `Dorothy: outside her tested loadout: ${deviations.join(", ")}`,
                 "warning",
             );

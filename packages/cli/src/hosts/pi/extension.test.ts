@@ -69,6 +69,8 @@ type Session = {
     stale?: boolean;
     // Its saved branch cannot be read: a fault in finalizing a call.
     unreadable?: boolean;
+    // Its notices cannot be shown: a UI Pi has torn down.
+    deaf?: boolean;
 };
 
 // The parts of ExtensionAPI Dorothy's extension uses, recording what it
@@ -99,8 +101,10 @@ function fakePi(session: Session) {
             find: (provider: string, id: string) => ({ provider, id }),
         },
         ui: {
-            notify: (text: string, level = "info") =>
-                seen.notices.push({ text, level }),
+            notify: (text: string, level = "info") => {
+                if (session.deaf) throw new Error("no UI");
+                seen.notices.push({ text, level });
+            },
         },
         sessionManager: {
             getSessionId: () => {
@@ -804,6 +808,25 @@ describe("the memory server", () => {
         for (const name of ["tools", "foreign", "codemode"])
             expect(deviations[0]?.text).toContain(name);
         expect(deviations[0]?.text).not.toContain("read");
+    });
+
+    it("still sets her sections where the loadout notice cannot show", async () => {
+        const pi = start({ deaf: true });
+        pi.seen.tools.push({
+            name: "foreign",
+            sourceInfo: { source: "local", path: "/x/ext.ts" },
+        });
+        await pi.emit("session_start", { reason: "startup" });
+        const options = {
+            messageType: "user",
+            prompt: "hello",
+            systemPromptOptions: { sections: {} as Record<string, string> },
+        };
+        await pi.emit("before_agent_start", options);
+        expect(
+            options.systemPromptOptions.sections["dorothy-capabilities"],
+        ).toBeString();
+        expect(pi.seen.notices).toEqual([]);
     });
 });
 
