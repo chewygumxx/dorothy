@@ -139,3 +139,8 @@ Dorothy in hosts other than Claude Code, whose launcher is `claude.ts`.
   test, offline or live, through its own counting, budgeted forwarding
   proxy ([report](../../../../docs/reports/2026-11-03_pi-delivery.md)).
   Never part of `bun run test`.
+- `scripts/probe-pi-stewardship.ts` (repository root): the offline
+  stewardship probe with simulated workers and the owner's verification;
+  it imports the CLI by relative path, as the delivery probe does, a
+  documented exception for probes
+  ([fixture guide](../../assets/pi/stewardship/fixture/AGENTS.md)).

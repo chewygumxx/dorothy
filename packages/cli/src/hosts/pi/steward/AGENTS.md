@@ -111,13 +111,16 @@ or infers a target from focus. Bun code, never loaded by Pi's extension.
   `fakeSender`, which records each call to a sender or the interrupter
   and scripts its exit. The fake herdr serves `agent get` alone and
   refuses any other command; with `{steward: true}` it also serves
-  `agent read`, recorded. Capture new fixtures from
-  dedicated trial panes only, sanitized the same way.
+  `agent read`, recorded. Capture new ones from trial panes, sanitized.
 - `helper.ts`: `stewardHelper`, `dorothy --pi-steward` (`index.ts`):
   one request of at most 128 KiB (else `REQUEST_TOO_LARGE`, nothing
   run), `runSteward` with `createHerdrRun()` and `processAlive` over the
   environment it is given, one reply of at most 64 KiB (else
   `REPLY_TOO_LARGE` and the code). It loads no secrets.
+- `stand-in.ts`: the shell stubs and the `dorothy` stand-in that tests and
+  the probe spawn. `owner.ts`, `simulation.ts`, `scenarios.ts`,
+  `pi-scenario.ts`: the owner's verification and the simulated workers
+  ([fixture guide](../../../../assets/pi/stewardship/fixture/AGENTS.md)).
 
 ## The launch
 
@@ -129,10 +132,9 @@ manifest then names it (`steward.registry`), and Pi gets herdr's
 vendored Pi state extension and the stewardship skill, each once; a
 plain `--pi` has neither. Her extension's tools and status are
 `../../../../assets/pi/steward.ts`
-([its guide](../../../../assets/pi/AGENTS.md)).
-
-The registry example is `../../../../assets/pi/stewardship/`
-`registry.example.json`, synthetic, and expired by design.
+([its guide](../../../../assets/pi/AGENTS.md)). The registry example is
+`../../../../assets/pi/stewardship/registry.example.json`, synthetic and
+expired by design.
 
 ## Tests
 
@@ -141,8 +143,8 @@ real herdr: `createHerdrRun` runs a script in a private root. The
 engine's tests give `sender`, `self` and liveness too; killed and
 competing helpers are real Bun processes on one temporary ledger.
 `extension.test.ts` drives her Pi tools through a fake ExtensionAPI,
-each call a real helper process: a stand-in `dorothy` running
-`stewardHelper` and the engine over shell stubs of herdr, the sender and
-the interrupter (none reaches a pane), plus the real `--pi-steward`, the
-published Pi offering the tools, and herdr's vendored extension in Pi's
-terminal reporting to a fake herdr socket.
+each call a real helper process (`stand-in.ts`; none reaches a pane),
+plus the real `--pi-steward`, the published Pi offering the tools, and
+herdr's vendored extension in Pi's terminal reporting to a fake socket.
+`scenarios.test.ts` and `owner.test.ts` run the scenarios, also under a
+held-out cast, and the runner's verification.
