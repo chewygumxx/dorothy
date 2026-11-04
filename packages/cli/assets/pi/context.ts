@@ -175,7 +175,13 @@ export function deliverMemory(
 
     // Each finished call whose saved entry has no saved result on this
     // branch gets its final; one whose entry is unsaved waits.
+    // A fault here, a context Pi tore down say, never blocks the notices.
     const finalize = (ctx: ExtensionContext) => {
+        try {
+            appendFinals(ctx);
+        } catch {}
+    };
+    const appendFinals = (ctx: ExtensionContext) => {
         const branch = ctx.sessionManager.getBranch();
         for (const [toolCallId, result] of finished) {
             const at = branch.findLastIndex(

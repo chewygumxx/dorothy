@@ -67,6 +67,8 @@ type Session = {
     trusted?: boolean;
     // Torn down, as a replaced runtime's context is: reading it throws.
     stale?: boolean;
+    // Its saved branch cannot be read: a fault in finalizing a call.
+    unreadable?: boolean;
 };
 
 // The parts of ExtensionAPI Dorothy's extension uses, recording what it
@@ -107,7 +109,10 @@ function fakePi(session: Session) {
             },
             getSessionFile: () => session.file ?? undefined,
             getLeafId: () => (session.entries.at(-1)?.id as string) ?? null,
-            getBranch: () => session.entries,
+            getBranch: () => {
+                if (session.unreadable) throw new Error("unreadable branch");
+                return session.entries;
+            },
             getEntries: () => session.entries,
             getCwd: () => session.cwd,
         },
@@ -902,6 +907,19 @@ describe("recording", () => {
         await pi.emit("agent_settled", { aborted: false });
         expect(pi.seen.appended.map((a) => a.data.entryId)).toEqual([
             "asst0002",
+        ]);
+    });
+
+    it("records and ends though a call's final cannot be written", async () => {
+        const pi = start({ unreadable: true });
+        await pi.emit("session_start", { reason: "startup" });
+        await pi.emit("tool_execution_end", ended("call-1"));
+        await pi.emit("agent_settled", { aborted: false });
+        await pi.emit("session_shutdown", { reason: "quit" });
+        expect((await heard()).map((r) => r.event)).toEqual([
+            "start",
+            "settled",
+            "end",
         ]);
     });
 
