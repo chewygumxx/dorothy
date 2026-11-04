@@ -101,26 +101,38 @@ const frame = (data: unknown) =>
         `data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`,
     );
 
+// What answers a request: the next reply of a script, or a reply chosen
+// from what was asked (and when, as a fixture may hold one back).
+export type Answer = (
+    request: Captured,
+    index: number,
+) => Scripted | undefined | Promise<Scripted | undefined>;
+
 // A loopback endpoint answering each request with the next scripted reply,
 // and capturing what Pi sent. Past the script it answers 500.
-export function startFakeProvider(script: readonly Scripted[]): FakeProvider {
+export function startFakeProvider(
+    script: readonly Scripted[] | Answer,
+): FakeProvider {
     const requests: Captured[] = [];
-    let next = 0;
+    const answer: Answer =
+        typeof script === "function" ? script : (_, index) => script[index];
     const server = Bun.serve({
         hostname: "127.0.0.1",
         port: 0,
+        idleTimeout: 0,
         async fetch(request) {
             const path = new URL(request.url).pathname;
             const body = (await request.json().catch(() => ({}))) as Record<
                 string,
                 unknown
             >;
-            requests.push({
+            const captured = {
                 path,
                 authorization: request.headers.get("authorization"),
                 body,
-            });
-            const step = script[next++];
+            };
+            requests.push(captured);
+            const step = await answer(captured, requests.length - 1);
             if (step === undefined)
                 return new Response("script exhausted", { status: 500 });
             if (!Array.isArray(step) && "status" in step)

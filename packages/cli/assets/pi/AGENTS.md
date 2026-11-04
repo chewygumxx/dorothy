@@ -102,4 +102,18 @@ with Bun code are re-declared, and `extension.test.ts` checks they agree.
 `src/hosts/pi/extension.test.ts` drives the factory through a fake
 ExtensionAPI and a stand-in `dorothy` (`testing.ts`);
 `src/hosts/pi/wire.test.ts` runs the published CLI against a scripted
-loopback endpoint (`startFakeProvider`). Both inject every root.
+loopback endpoint (`startFakeProvider`), and the native interface in a
+pseudo-terminal with the real `--pi-hook`, `--mcp` and memory service
+(`delivery-testing.ts`). All inject every root.
+
+What they showed of Pi 1.5.0, which the extension relies on:
+
+- `ctx.abort()` in `before_agent_start` stops the run before any request
+  (the provider guard's stop; Pi's agent-session.js aborts at
+  `agent_start`).
+- A call Pi finalizes gets its saved `toolResult`, an interrupted one
+  too ("Command aborted", an error); calls an abort skips get neither
+  (pi-agent-core agent-loop.js). `dorothy.tool-final` is the fallback
+  for a result Pi never saves, which no test has yet produced.
+- [The delivery report](../../../../docs/reports/2026-11-03_pi-delivery.md)
+  has the live Featherless run of this wire.

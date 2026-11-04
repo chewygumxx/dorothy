@@ -16,6 +16,8 @@ import { piSessionRoot } from "../hosts/pi-root.js";
 import { eventId } from "./pi.js";
 import {
     assistant,
+    COMPACTED_LINES,
+    compactedForkLines,
     entry,
     forkLines,
     header,
@@ -121,6 +123,39 @@ describe("sweeping Pi", () => {
             eventId(PI_FORK, "asst0002", "assistant", 0),
         ]);
         expect(Object.keys(await hints())).toContain(keyOf(child));
+        expect(await replay()).toMatchObject({ accepted: 0 });
+    });
+
+    it("records Pi's own fork past a compaction once, with no copies", async () => {
+        const parent = await write("a-parent.jsonl", COMPACTED_LINES);
+        await write("b-child.jsonl", compactedForkLines(parent));
+        expect(await pi()).toMatchObject({ sessions: 2, events: 8 });
+        const conversations = await r.conversations();
+        const [root, fork] = r.requests.map((request) => request.session);
+        const of = (session: string | undefined) =>
+            said(
+                conversations.find(
+                    (c) => c[0]?.sourceSession === `pi:${session}`,
+                ) ?? [],
+            );
+        // The interrupted call once, by Pi's own result; the empty
+        // errored reply, the system entry and the summary not at all.
+        expect(of(root)).toEqual([
+            eventId(PI_SESSION, "user0001", "user", 0),
+            eventId(PI_SESSION, "asst0001", "tool", 0),
+            eventId(PI_SESSION, "user0002", "user", 0),
+            eventId(PI_SESSION, "asst0003", "assistant", 0),
+            eventId(PI_SESSION, "user0003", "user", 0),
+            eventId(PI_SESSION, "asst0004", "assistant", 0),
+        ]);
+        expect(of(fork)).toEqual([
+            eventId(PI_FORK, "user0004", "user", 0),
+            eventId(PI_FORK, "asst0005", "assistant", 0),
+        ]);
+        expect(r.requests[1]?.parent).toBe(root);
+        expect(
+            conversations.flat().find((line) => line.kind === "tool"),
+        ).toMatchObject({ ok: false, output: "Command aborted" });
         expect(await replay()).toMatchObject({ accepted: 0 });
     });
 

@@ -14,9 +14,20 @@
 // loopback, no paid inference, a synthetic key alone.
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { readPi } from "@dorothy/memory/host-hook";
+import {
+    archive,
+    type Conversation,
+    deliveryEnv,
+    KEYS,
+    launchNative,
+    type NativePi,
+    SELF,
+    startMemoryService,
+    sweepOnce,
+} from "./delivery-testing.js";
 import {
     type Captured,
     called,
@@ -314,6 +325,35 @@ describe("Pi on the wire", () => {
         });
     }, 60_000);
 
+    // Her provider guard stops a run on a model outside the launch with
+    // ctx.abort() in before_agent_start (assets/pi/provider.ts): Pi 1.5.0
+    // must then send nothing.
+    it("sends nothing for a run aborted before it starts", async () => {
+        const aborting = join(roots.fake, "abort-extension.ts");
+        await writeFile(
+            aborting,
+            [
+                "export default (pi: any) => {",
+                '    pi.on("before_agent_start", (_event: unknown, ctx: any) => {',
+                "        ctx.abort();",
+                "    });",
+                "};",
+                "",
+            ].join("\n"),
+        );
+        provider = startFakeProvider([reply("Never asked.")]);
+        const { path } = await fixtureManifest(roots, provider.baseUrl);
+        const run = await runPi(roots, path, ["-e", aborting, "hello"]);
+        expect(provider.requests).toEqual([]);
+        expect(run.stdout).not.toContain("Never asked.");
+        expect(run.code).toBe(0);
+        // The prompt was taken, and the run stopped before any reply.
+        const events = (await savedSession()).segments.flatMap(
+            (segment) => segment.events,
+        );
+        expect(events.map((event) => event.kind)).toEqual(["user"]);
+    }, 60_000);
+
     it("retries a rate limit and a broken stream, never a finished call", async () => {
         await writeFile(
             join(roots.agentDir, "settings.json"),
@@ -352,4 +392,253 @@ describe("Pi on the wire", () => {
             .filter((event) => event.kind === "tool");
         expect(tools).toHaveLength(1);
     }, 60_000);
+});
+
+// The prompt a request answers: its latest human words, the memory layer
+// before them aside.
+const promptOf = (request: Captured) =>
+    textOf(
+        messagesOf(request).findLast((message) => message.role === "user") ?? {
+            role: "user",
+        },
+    );
+const lastRole = (request: Captured) => messagesOf(request).at(-1)?.role;
+
+describe("Pi in its own terminal", () => {
+    // `dorothy --pi` in a pseudo-terminal, the native interface throughout:
+    // her real `--pi-hook` and `--mcp` against her memory service on the
+    // roots, tool calls, one interrupted, a reload, a resume, compaction
+    // and a fork from past it, then
+    // the launcher killed mid-turn, before anything of hers can catch up,
+    // and `dorothy --sweep` twice, the second with every cache lost.
+    it("records a native session once each, through a killed launcher", async () => {
+        const service = await startMemoryService(roots);
+        let release = () => {};
+        const held = new Promise<void>((done) => {
+            release = done;
+        });
+        provider = startFakeProvider(async (request) => {
+            const prompt = promptOf(request);
+            // Compaction's summaries: Pi asks with no tools.
+            if (toolsOf(request).length === 0)
+                return reply("SYNTHETIC SUMMARY");
+            if (prompt === "look up moss" && lastRole(request) === "user")
+                return [
+                    reasoning("synthetic thought"),
+                    called("call-moss", "mcp__dorothy_memory__search", {
+                        query: "moss",
+                    }),
+                    finish("tool_calls"),
+                    usage,
+                ];
+            if (prompt === "run slow" && lastRole(request) === "user")
+                return [
+                    called("call-slow", "bash", { command: "sleep 30" }),
+                    finish("tool_calls"),
+                    usage,
+                ];
+            if (prompt === "run quick" && lastRole(request) === "user")
+                return [
+                    called("call-quick", "bash", { command: "echo QUICK" }),
+                    finish("tool_calls"),
+                    usage,
+                ];
+            // The turn the launcher dies in: never answered.
+            if (prompt === "run quick") {
+                await held;
+                return undefined;
+            }
+            return reply(`Answer to ${prompt}.`);
+        });
+        const env = deliveryEnv(roots, service.url);
+        const plan = { env, self: SELF, baseUrl: provider.baseUrl };
+        const launched: NativePi[] = [];
+        try {
+            const first = await launchNative(roots, { ...plan, args: [] });
+            launched.push(first);
+            await first.waitFor("v1.5.0");
+            await first.send("look up moss");
+            await first.waitFor("Answer to look up moss.");
+            // A reload builds her extension again, key and all.
+            await first.send("/reload");
+            await first.waitFor("Reloaded keybindings");
+            await first.send("after reload");
+            await first.waitFor("Answer to after reload.");
+            // A call the person interrupts, with escape, as it runs.
+            await first.send("run slow");
+            await first.waitFor("sleep 30");
+            await Bun.sleep(500);
+            first.type(KEYS.escape);
+            await first.waitFor("Command aborted");
+            await first.send("/quit");
+            expect(await first.exited).toBe(0);
+            // Her real hook recorded it as it went, through the service.
+            for (let tries = 0; ; tries++) {
+                const said = (await archive(env)).flatMap((c) => c.events);
+                if (said.some((event) => event.text === "run slow")) break;
+                if (tries > 100) throw new Error("the hook never recorded");
+                await Bun.sleep(100);
+            }
+
+            // A preference of the user's: compact all but the latest.
+            const settings = join(roots.agentDir, "settings.json");
+            const kept = JSON.parse(
+                await readFile(settings, "utf8").catch(() => "{}"),
+            );
+            await writeFile(
+                settings,
+                JSON.stringify({
+                    ...kept,
+                    compaction: { keepRecentTokens: 1 },
+                }),
+            );
+
+            const second = await launchNative(roots, {
+                ...plan,
+                args: ["--resume"],
+            });
+            launched.push(second);
+            await second.waitFor("Resume Session");
+            await second.waitFor("look up moss");
+            const picked = second.mark();
+            second.type(KEYS.enter);
+            // The resumed session, drawn again to its latest entry.
+            await second.waitFor("Command aborted", picked);
+            await second.send("second prompt");
+            await second.waitFor("Answer to second prompt.");
+            await second.send("/compact");
+            await second.waitFor("Compacted from");
+            await second.send("third prompt");
+            await second.waitFor("Answer to third prompt.");
+            // A fork from the latest message: past the compaction.
+            await second.send("/fork");
+            await second.waitFor("Fork from Message");
+            second.type(KEYS.enter);
+            await second.waitFor("Forked to new session");
+            await second.send(" (forked)");
+            await second.waitFor("Answer to third prompt (forked).");
+            const asked = provider.requests.length;
+            await second.send("run quick");
+            await second.waitFor("QUICK");
+            while (provider.requests.length < asked + 2) await Bun.sleep(50);
+            await second.kill();
+        } finally {
+            // Nothing a failed step left running outlives the test.
+            for (const pi of launched) await pi.kill();
+            release();
+            await service.stop();
+        }
+
+        // What reached the model: her identity, the declared loadout, the
+        // memory layer from her service, on every turn and after a reload.
+        const turns = provider.requests.filter(
+            (request) => toolsOf(request).length > 0,
+        );
+        for (const request of turns) {
+            expect(request.authorization).toBe(`Bearer ${SYNTHETIC_KEY}`);
+            const system = textOf(messagesOf(request)[0] as Message);
+            expect(messagesOf(request)[0]?.role).toBe("system");
+            expect(system).toContain("<dorothy-identity>");
+            expect(system).toContain("<dorothy-capabilities>");
+            expect(toolsOf(request).sort()).toEqual([
+                "bash",
+                "edit",
+                "mcp__dorothy_memory__brief",
+                "mcp__dorothy_memory__open",
+                "mcp__dorothy_memory__remember",
+                "mcp__dorothy_memory__search",
+                "read",
+                "write",
+            ]);
+            expect(
+                messagesOf(request).filter(
+                    (message) =>
+                        message.role === "user" &&
+                        textOf(message).startsWith("<memory>"),
+                ),
+            ).toHaveLength(1);
+        }
+        expect(turns.map(promptOf)).toContain("after reload");
+
+        // Killed mid-turn: the hooks never told memory of the last turn.
+        const ids = (conversations: Conversation[]) =>
+            conversations.flatMap((c) => c.events.map((e) => e.sourceUuid));
+        const before = await archive(env);
+        expect(
+            before.flatMap((c) => c.events).map((e) => e.text),
+        ).not.toContain("run quick");
+
+        const swept = await sweepOnce(env);
+        expect(swept).toMatchObject({ code: 0, err: "" });
+        const recovered = await archive(env);
+        // The sweep added what the hooks had not, and said so: at least
+        // the killed turn's prompt and call.
+        const added = ids(recovered).length - ids(before).length;
+        expect(added).toBeGreaterThanOrEqual(2);
+        expect(swept.out).toContain(`pi: ${added} events in`);
+        // Every cache lost, the second sweep reads all again: nothing new.
+        await rm(join(roots.root, "state", "dorothy", "sweep.json"));
+        await rm(join(roots.root, "state", "dorothy", "pi"), {
+            recursive: true,
+        });
+        const again = await sweepOnce(env);
+        expect(again).toMatchObject({ code: 0, err: "" });
+        expect(again.out).toContain("pi: 0 events in 0 sessions");
+        expect(await archive(env)).toEqual(recovered);
+        // It did read them again: their sidecars are back.
+        expect(
+            await readdir(join(roots.root, "state", "dorothy", "pi")),
+        ).not.toEqual([]);
+
+        // Two conversations, the fork's linked to the session it left;
+        // resume and compaction kept the first one's, nothing copied.
+        expect(recovered).toHaveLength(2);
+        const [original, fork] = [...recovered]
+            .sort((a, b) => a.events.length - b.events.length)
+            .reverse() as [Conversation, Conversation];
+        const ofKind = (conversation: Conversation, kind: string) =>
+            conversation.events
+                .filter((event) => event.kind === kind)
+                .map((event) => event.text ?? event.name);
+        expect(ofKind(original, "user")).toEqual([
+            "look up moss",
+            "after reload",
+            "run slow",
+            "second prompt",
+            "third prompt",
+        ]);
+        // The interrupted call once, failed, with Pi's own saved result:
+        // no final of hers stands in for it.
+        expect(
+            original.events
+                .filter((event) => event.kind === "tool")
+                .map((event) => [event.name, event.ok, event.output]),
+        ).toEqual([
+            ["mcp__dorothy_memory__search", true, "[]"],
+            ["bash", false, "Command aborted"],
+        ]);
+        expect(ofKind(fork, "user")).toEqual([
+            "third prompt (forked)",
+            "run quick",
+        ]);
+        expect(fork.events.filter((event) => event.kind === "tool")).toEqual([
+            expect.objectContaining({
+                name: "bash",
+                output: "QUICK\n",
+                ok: true,
+            }),
+        ]);
+        expect(fork.headers[0]?.parentSession).toBe(
+            original.headers[0]?.sourceSession,
+        );
+        expect(new Set(ids(recovered)).size).toBe(ids(recovered).length);
+        // No summary, system prompt or memory layer was taken for speech.
+        const text = JSON.stringify(recovered);
+        expect(text).not.toContain("SYNTHETIC SUMMARY");
+        expect(text).not.toContain("<memory>");
+        expect(text).not.toContain("dorothy-identity");
+        const saved = await everything(join(roots.root, "data"));
+        expect(saved).not.toContain("dorothy.tool-final");
+        expect(await everything(roots.root)).not.toContain(SYNTHETIC_KEY);
+    }, 180_000);
 });

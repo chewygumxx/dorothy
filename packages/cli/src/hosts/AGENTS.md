@@ -105,8 +105,10 @@ Dorothy in hosts other than Claude Code, whose launcher is `claude.ts`.
 - `../../assets/pi/`: her extension, which Pi loads under Node with the
   manifest `DOROTHY_PI_MANIFEST` names: [its guide](../../assets/pi/AGENTS.md).
 - `pi/testing.ts`: `startFakeProvider`, a scripted Chat Completions
-  endpoint on loopback; `piRoots`, private roots; a stand-in `dorothy`
-  for `--pi-hook` and `--mcp`, logging beside itself unless told where;
+  endpoint on loopback, its replies a list or chosen per request (and
+  held back, as a killed turn needs); `piRoots`, private roots; a
+  stand-in `dorothy` for `--pi-hook` and `--mcp`, logging beside itself
+  unless told where;
   `runPi`, the published CLI under Node. `pi/extension.test.ts` drives
   the extension through a fake Pi API, `pi/wire.test.ts` the CLI on the
   wire, with a synthetic key alone. `pi/launch.test.ts` injects every
@@ -114,3 +116,19 @@ Dorothy in hosts other than Claude Code, whose launcher is `claude.ts`.
   new, `-c`, `--fork` and `--session` launches, two paths Pi names
   alike, preferences kept, Pi's `APPEND_SYSTEM.md` beside her persona,
   and Bun's alias first on `PATH`.
+- `pi/native-launch.ts`: `runPi` as a process, for a pseudo-terminal,
+  from a plan file (`NativePlan`: roots' env, cwd, `self`, base URL, Pi's
+  arguments); the routing and a synthetic key are injected, so nothing
+  decrypts `secrets.json`. Never drive `index.ts --pi` in a test: it
+  would. `pi/delivery-testing.ts`: her real memory service on the roots
+  (`startMemoryService`, from `@dorothy/memory/service`, never `--serve`,
+  which loads secrets), `launchNative` (Bun's `terminal` spawn: type,
+  wait for text, kill the process group), `sweepOnce` (this checkout's
+  `--sweep`) and `archive`. `pi/wire.test.ts` "Pi in its own terminal"
+  runs the native interface with the real `--pi-hook` and `--mcp`: tool
+  calls, one interrupted, `/reload`, `--resume`, `/compact`, `/fork`,
+  the launcher killed mid-turn, two sweeps, each event once.
+- `scripts/probe-pi-delivery.ts` (repository root): the bounded smoke
+  test, offline or live, through its own counting, budgeted forwarding
+  proxy ([report](../../../../docs/reports/2026-11-03_pi-delivery.md)).
+  Never part of `bun run test`.

@@ -1,0 +1,226 @@
+{
+    "mode": "offline",
+    "outcome": "pass",
+    "startedAt": "2026-11-04T00:27:42.889Z",
+    "finishedAt": "2026-11-04T00:27:45.473Z",
+    "versions": {
+        "pi": "1.5.0",
+        "node": "v24.22.1",
+        "bun": "1.4.2"
+    },
+    "model": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+    "endpoint": "scripted loopback",
+    "limits": {
+        "maxUsd": 1,
+        "maxTurns": 6,
+        "timeoutMs": 120000
+    },
+    "spentUsd": 0.000020249999999999998,
+    "costSource": "each reply's streamed usage x the manifest's prices (packages/cli/assets/pi/models.json); a reply without usage keeps its reservation",
+    "stopped": null,
+    "metadata": null,
+    "calls": [
+        {
+            "n": 1,
+            "status": 200,
+            "refused": null,
+            "keys": [
+                "chat_template_kwargs",
+                "max_completion_tokens",
+                "messages",
+                "model",
+                "stream",
+                "stream_options",
+                "tools"
+            ],
+            "roles": ["system", "user", "user"],
+            "tools": [
+                "bash",
+                "edit",
+                "mcp__dorothy_memory__brief",
+                "mcp__dorothy_memory__open",
+                "mcp__dorothy_memory__remember",
+                "mcp__dorothy_memory__search",
+                "read",
+                "write"
+            ],
+            "store": false,
+            "maxCompletionTokens": 32768,
+            "maxTokens": false,
+            "thinking": true,
+            "replayedReasoning": [],
+            "toolResults": [],
+            "syntheticKey": true,
+            "reply": {
+                "reasoning": "2dea9d5373d01828",
+                "reasoningField": "reasoning_content",
+                "toolCalls": ["call-probe"],
+                "finish": "tool_calls",
+                "usage": {
+                    "prompt": 10,
+                    "completion": 5,
+                    "cached": 0
+                }
+            },
+            "reservedUsd": 0.08847360000000001,
+            "costUsd": 0.00000675
+        },
+        {
+            "n": 2,
+            "status": 200,
+            "refused": null,
+            "keys": [
+                "chat_template_kwargs",
+                "max_completion_tokens",
+                "messages",
+                "model",
+                "stream",
+                "stream_options",
+                "tools"
+            ],
+            "roles": ["system", "user", "user", "assistant", "tool"],
+            "tools": [
+                "bash",
+                "edit",
+                "mcp__dorothy_memory__brief",
+                "mcp__dorothy_memory__open",
+                "mcp__dorothy_memory__remember",
+                "mcp__dorothy_memory__search",
+                "read",
+                "write"
+            ],
+            "store": false,
+            "maxCompletionTokens": 32768,
+            "maxTokens": false,
+            "thinking": true,
+            "replayedReasoning": ["2dea9d5373d01828"],
+            "toolResults": ["call-probe"],
+            "syntheticKey": true,
+            "reply": {
+                "reasoning": null,
+                "reasoningField": null,
+                "toolCalls": [],
+                "finish": "stop",
+                "usage": {
+                    "prompt": 10,
+                    "completion": 5,
+                    "cached": 0
+                }
+            },
+            "reservedUsd": 0.08847360000000001,
+            "costUsd": 0.00000675
+        },
+        {
+            "n": 3,
+            "status": 200,
+            "refused": null,
+            "keys": [
+                "chat_template_kwargs",
+                "max_completion_tokens",
+                "messages",
+                "model",
+                "stream",
+                "stream_options",
+                "tools"
+            ],
+            "roles": [
+                "system",
+                "user",
+                "assistant",
+                "tool",
+                "assistant",
+                "user",
+                "user"
+            ],
+            "tools": [
+                "bash",
+                "edit",
+                "mcp__dorothy_memory__brief",
+                "mcp__dorothy_memory__open",
+                "mcp__dorothy_memory__remember",
+                "mcp__dorothy_memory__search",
+                "read",
+                "write"
+            ],
+            "store": false,
+            "maxCompletionTokens": 32768,
+            "maxTokens": false,
+            "thinking": false,
+            "replayedReasoning": ["2dea9d5373d01828"],
+            "toolResults": ["call-probe"],
+            "syntheticKey": true,
+            "reply": {
+                "reasoning": null,
+                "reasoningField": null,
+                "toolCalls": [],
+                "finish": "stop",
+                "usage": {
+                    "prompt": 10,
+                    "completion": 5,
+                    "cached": 0
+                }
+            },
+            "reservedUsd": 0.08847360000000001,
+            "costUsd": 0.00000675
+        }
+    ],
+    "checks": [
+        {
+            "id": "system-role",
+            "ok": true,
+            "detail": "every request opens with a system message; no developer role"
+        },
+        {
+            "id": "no-store",
+            "ok": true,
+            "detail": "no request carries an OpenAI `store` field"
+        },
+        {
+            "id": "max-completion-tokens",
+            "ok": true,
+            "detail": "max_completion_tokens on every request (32768), no max_tokens"
+        },
+        {
+            "id": "thinking",
+            "ok": true,
+            "detail": "chat_template_kwargs.thinking true at high, false after /thinking off"
+        },
+        {
+            "id": "tool-call",
+            "ok": true,
+            "detail": "the first reply called 1 tool(s); the next request answered the same ids"
+        },
+        {
+            "id": "reasoning-replay",
+            "ok": true,
+            "detail": "the tool-calling reply's reasoning, streamed as reasoning_content, came back on the next request, unchanged (by digest)"
+        },
+        {
+            "id": "synthetic-key",
+            "ok": true,
+            "detail": "Pi sent the synthetic key alone; the proxy held the upstream one"
+        },
+        {
+            "id": "loadout",
+            "ok": true,
+            "detail": "tools: bash, edit, mcp__dorothy_memory__brief, mcp__dorothy_memory__open, mcp__dorothy_memory__remember, mcp__dorothy_memory__search, read, write"
+        },
+        {
+            "id": "recorded",
+            "ok": true,
+            "detail": "archive: 1 conversation(s), 5 events; sweep: pi: 0 events in 0 sessions"
+        },
+        {
+            "id": "within-limits",
+            "ok": true,
+            "detail": "3 request(s), 3 forwarded, US$0.000020"
+        },
+        {
+            "id": "no-key-at-rest",
+            "ok": true,
+            "detail": "no file under the roots holds a key"
+        }
+    ],
+    "pending": [],
+    "screen": "OK\n/quit\n→ quit\nQuit pi\n▀▀█  v1.5.0\n█▀ █ escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\nPress ctrl+o to show full startup help and loaded resources.\nPi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n[Extensions]\npi\nThis is an automated connectivity probe. Call the bash tool exactly once, with the command: echo dorothy-probe. After\nit returns, reply with the single word DONE.\nSynthetic probe thought.\n$ echo dorothy-probe\ndorothy-probe\nTook 0.0s\nDONE\nThinking level: off\nReply with the single word OK.\nOK\n▀▀█  v1.5.0\n█▀ █ escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more\nPress ctrl+o to show full startup help and loaded resources.\nPi can explain its own features and look up its docs. Ask it how to use or extend Pi.\n[Extensions]\npi\nThis is an automated connectivity probe. Call the bash tool exactly once, with the command: echo dorothy-probe. After\nit returns, reply with the single word DONE.\nSynthetic probe thought.\n$ echo dorothy-probe\ndorothy-probe\nTook 0.0s\nDONE\nThinking level: off\nReply with the single word OK.\nOK\n~/project-a\n↑30 ↓15 $0.000 0.0%/262k (auto)\ndeepseek-ai/DeepSeek-V4.1-Flash-1017 • thinking off\nTo resume this session: pi --session-dir <roots>/data/dorothy/pi/sessions/453a99e5df49a4fe77ca0b419e977dfcf8bc65cd4d83aaa927020e11b8bedd86/--tmp-dorothy-pi-ext-R9dNxV-project-a-- --session 01a1a3f4-5dff-7571-9f5d-6b9dfe1b0b82"
+}

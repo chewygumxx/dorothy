@@ -1,6 +1,6 @@
 ---
 ctime: 2026-09-29
-mtime: 2026-11-01
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: "dorothy"
 description: "Conversational LLM interface"
@@ -30,6 +30,8 @@ Messages API with her own system prompt, and the other providers
 
 - Bun >=1.4
 - An Anthropic API key; `--claude` also needs Claude Code, signed in
+- For `--pi`, Node >=22.19.0 on `PATH` and a Featherless entry in the
+  chat route, with its key in `secrets.json`
 
 [mise](https://mise.jdx.dev) supplies Bun, sops, age and jq from
 `mise.toml`:
@@ -440,6 +442,28 @@ upstream is a stand-in on a local port, so nothing reaches the API. Print
 mode's request can differ a little from an interactive session's. A
 warning on stderr says if the gateway found no marker to replace.
 
+### Pi as Dorothy
+
+`--pi` runs the published Pi coding agent (1.5.0, pinned by the CLI) in
+its own terminal interface, as Dorothy: her identity beside Pi's system
+prompt, her memory tools over MCP, her memory layer before each prompt,
+and its sessions recorded. It runs on the first Featherless entry of the
+chat route, or the one `--model <provider:id>` names; only that key is
+decrypted and given to Pi. Arguments after `--` go to Pi:
+
+```sh
+bun run dev -- --pi
+bun run dev -- --pi -- --resume
+bun run dev -- --pi --dump    # the redacted command, decrypting nothing
+```
+
+Its profile is `$XDG_CONFIG_HOME/dorothy/pi`, its sessions are below
+`$XDG_DATA_HOME/dorothy/pi/sessions`, and your preferences, keybindings
+and trust decisions there stay yours. Add `"pi"` to `[recording] hosts`
+for the sweep to catch up a session whose launcher was killed. The
+[verification report](./docs/reports/2026-11-03_pi-delivery.md) records
+what was tested, offline and against Featherless.
+
 ### Her memory as a service
 
 `--serve` runs her memory as a service, which every harness's adapter
@@ -491,13 +515,13 @@ claude-dirs = ["/home/me/.config/claude-2"]
 ### Recording other harnesses
 
 Her memory can also take in the sessions your other harnesses keep:
-Claude Code, Codex and Hermes Agent, read from their own stores, which
-are only read, never written. Name the ones to record in `config.toml`;
-none is recorded by default:
+Claude Code, Codex, Hermes Agent and Pi (her own Pi sessions alone), read
+from their own stores, which are only read, never written. Name the ones
+to record in `config.toml`; none is recorded by default:
 
 ```toml
 [recording]
-hosts = ["claude-code", "codex"]  # claude-code, codex, hermes
+hosts = ["claude-code", "codex"]  # claude-code, codex, hermes, pi
 sweep-seconds = 300               # between sweeps, 10 to 86400
 ```
 

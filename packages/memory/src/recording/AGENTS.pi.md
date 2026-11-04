@@ -32,7 +32,10 @@ which holds what every host shares. No Pi package is imported here.
 - `state.ts`: `loadPiSidecar` and `savePiSidecar`, a versioned sidecar
   per file under `$XDG_STATE_HOME/dorothy/pi/recording`, named by the
   SHA-256 of its canonical path.
-- `pi-fixtures.ts`: synthetic entries, and a session and its fork.
+- `pi-fixtures.ts`: synthetic entries, a session and its fork, and
+  `COMPACTED_LINES` with `compactedForkLines`, the shapes Pi 1.5.0 wrote
+  in the CLI's native run: an interrupted call, a split-turn compaction
+  and a fork past it, copied verbatim.
 
 ## Invariants
 

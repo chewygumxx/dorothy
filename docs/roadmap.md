@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-11-03
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -66,9 +66,14 @@ full compatibility with the
 [orchestra service](./specs/2026-11-02-orchestration-design.md).
 The user approved the design and authorised execution through the
 [delivery plan](./plans/2026-11-03_pi-delivery.md), followed by the
-[stewardship plan](./plans/2026-11-03_pi-stewardship.md).
+[stewardship plan](./plans/2026-11-03_pi-stewardship.md). Delivery,
+increment A, is built and verified on the branch `feat/pi-integration`:
+the native interface in a pseudo-terminal, recovery after a killed
+launcher, and a bounded live Featherless run, which passed
+([report](./reports/2026-11-03_pi-delivery.md)).
 
-- **Status**: Highest Priority; Design Approved; Implementation Starting
+- **Status**: Highest Priority; Delivery Verified, Awaiting Merge;
+  Stewardship Next
 - **Required**: Existing Identity, Memory Service and Model Providers
 - **Rationale**: The user has selected Pi for the stewardship capability
   they most want. Its delivery and trial can build on the existing
@@ -639,3 +644,7 @@ In order of completion.
 - 2026-11-03: The user approves Pi's design and authorises execution
   without another plan approval round. Delivery precedes stewardship;
   the plans separate offline verification from bounded live probes.
+- 2026-11-04: Pi's delivery is built and verified: offline fixtures of
+  the native interface and recovery, and one bounded live Featherless
+  run at about US$0.0014. Stewardship stays next in the phase, after
+  delivery merges; its report's limits wait for that revision.

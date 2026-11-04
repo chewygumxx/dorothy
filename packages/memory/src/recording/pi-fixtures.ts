@@ -271,3 +271,44 @@ export const forkLines = (parentPath: string, id = PI_FORK) => [
     assistant("asst0002", "user0002", [text("Synthetic fork answer.")], 4),
 ];
 export const piText = (lines: readonly string[]) => `${lines.join("\n")}\n`;
+
+// A session as Pi 1.5.0 writes one in its own terminal (the CLI's native
+// run in wire.test.ts): model, thinking and system entries first, a call
+// the person interrupted (Pi's own failed result, then an empty errored
+// reply), and a split-turn compaction keeping the last reply. A fork
+// from past it copies the path verbatim, compaction and ids alike.
+export const COMPACTED_LINES = [
+    header(),
+    modelChange("modl0001", null),
+    thinkingLevel("thnk0001", "modl0001"),
+    system("syst0001", "thnk0001"),
+    user("user0001", "syst0001", [text("Synthetic slow request.")], 1),
+    assistant(
+        "asst0001",
+        "user0001",
+        [toolCall("call0001", "bash", { command: "sleep 30" })],
+        2,
+        "toolUse",
+    ),
+    toolResult(
+        "tool0001",
+        "asst0001",
+        "call0001",
+        "bash",
+        [text("Command aborted")],
+        3,
+        true,
+    ),
+    assistant("asst0002", "tool0001", [], 4, "error"),
+    user("user0002", "asst0002", [text("Synthetic second request.")], 5),
+    assistant("asst0003", "user0002", [text("Synthetic second answer.")], 6),
+    compaction("comp0001", "asst0003", "asst0003"),
+    user("user0003", "comp0001", [text("Synthetic third request.")], 7),
+    assistant("asst0004", "user0003", [text("Synthetic third answer.")], 8),
+];
+export const compactedForkLines = (parentPath: string) => [
+    header(PI_FORK, parentPath),
+    ...COMPACTED_LINES.slice(1, 11),
+    user("user0004", "comp0001", [text("Synthetic forked request.")], 9),
+    assistant("asst0005", "user0004", [text("Synthetic forked answer.")], 10),
+];
