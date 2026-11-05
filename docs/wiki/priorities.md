@@ -29,9 +29,6 @@ gives its reasons, and its Revising section keeps this page in step.
 
 In the roadmap's order; the first is next.
 
-- [Dorothy in Pi](../roadmap.md#dorothy-in-pi): Highest Priority; Delivery
-  Merged (#129); Stewardship Acceptance Complete, Ready to Merge, Not
-  Merged; Production Smoke Complete.
 - [Dorothy's Memory](../roadmap.md#dorothys-memory): Store, Bodies,
   Contract, Evaluation and Recording Built; the Backfill Recorded and
   Reviewed; the First Run Done; the Engine's First Step Built and its Paid
@@ -54,6 +51,7 @@ Found but not scheduled, in the roadmap's order, which
 
 - A registry of herdr agents.
 - Pi delivery's deferred findings and limits.
+- Pi stewardship's deferred findings and limits.
 - Model Providers' deferred findings.
 - The sweep's remaining deferred minors.
 - Recording's deferred minors.

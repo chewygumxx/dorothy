@@ -622,16 +622,15 @@ Which host receives what, and what has been run against it, is on
   later; her route fallback does not run inside Pi; a Pi upgrade needs the
   fixtures rerun, one of which reads Pi's screen text.
 - **Standing**: current. It supersedes the earlier exclusion for Pi as a
-  host; the historical minutes stand unchanged. Delivery merged in #129;
-  stewardship's runner is built and its bounded native run passed at
-  `b38393c`, with its declared deviations and limits
-  ([harnesses](./profiles/harnesses.md#pi)). The phase awaits the
-  controller's merge and post-merge roadmap revision.
+  host; the historical minutes stand unchanged. Delivery merged in #129
+  and stewardship in #131. Its bounded native run passed at `b38393c` in
+  one configured Linux API-backed cycle, with its declared deviations and
+  limits ([harnesses](./profiles/harnesses.md#pi)).
 - **Sources**:
   [Pi delivery spec](../specs/2026-11-03_pi-delivery.md#status-and-intent),
   [stewardship research](../notes/2026-11-03_pi-stewardship.md),
   [delivery report](../reports/2026-11-03_pi-delivery.md),
-  [roadmap](../roadmap.md#dorothy-in-pi).
+  [roadmap](../roadmap.md#done).
 
 ### Pi's persona is added by her extension, not a launch flag
 
