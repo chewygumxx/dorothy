@@ -106,6 +106,8 @@ process_start() {
     stat=$(cat "/proc/$1/stat" 2>/dev/null) || return 1
     rest=${stat##*) }
     set -f
+    # Split numeric /proc stat fields after comm removal; globbing is off.
+    # shellcheck disable=SC2086
     set -- $rest
     set +f
     [ "$#" -ge 20 ] && [ "$1" != Z ] && [ "$1" != X ] || return 1
