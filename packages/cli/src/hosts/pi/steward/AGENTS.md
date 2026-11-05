@@ -23,24 +23,24 @@ tags:
 Dorothy in Pi coordinates workers she is told of, none she finds: a
 registry names each, and nothing here adopts the live development fleet
 or infers a target from focus. Bun code, never loaded by Pi's extension.
+Native trial fault injection and readiness are in [TRIAL](./TRIAL.md).
 
 ## Files
 
 - `types.ts`: the contracts the parts meet on (`Worker`, `Fleet`,
-  `WorkerObservation`, the helper's `StewardRequest` and `StewardReply`,
-  `TaskBrief`, `CompletionEvidence`, `TaskState`, `TaskRecord`), and
-  `StewardError`, whose `code` begins its message.
-- `registry.ts`: `readFleet(path, now)`, the strict manifest: a regular
-  file of at most 64 KiB, version 1, every key named (an unknown one is
-  refused, a token-like one as `REGISTRY_CREDENTIAL`, as is a
+  `WorkerObservation`, helper request/reply, task brief/evidence/state and
+  record), and `StewardError`, whose `code` begins its message.
+- `registry.ts`: `readFleet(path, now, expected?)`, a strict regular file
+  of at most 64 KiB, version 1, every key named. Frozen source path,
+  SHA-256, fleet id and fixture root drift is `REGISTRY_CHANGED`. An
+  unknown key is refused, a token-like one as `REGISTRY_CREDENTIAL`, as is a
   token-shaped value, one starting at a word edge: `task-stewardship` is
   a path), `fleetId` through core's `isUuid`, one to eight
   workers whose ids, names and panes are argv-safe words of 1 to 32
   characters (no leading dash). `fixtureRoot` and each `cwd` are made
-  canonical; a `cwd` outside the root, links followed, is
-  `REGISTRY_ROOT_ESCAPE`. Observation times are exact UTC; an
-  observation after the injected clock, or an expiry not within an hour
-  after it, refuses the fleet, as does any worker expired
+  canonical; one outside the root, links followed, is
+  `REGISTRY_ROOT_ESCAPE`. Observation times are exact UTC; a future
+  observation, an expiry over an hour later or an expired worker refuses
   (`REGISTRY_EXPIRED`): refresh is the fixture runner's act. Also
   `isTaskId` (`[a-z][a-z0-9_-]{0,63}`) and `fixturePath`, which a
   brief's or report's path passes at each use: absolute, beneath the
@@ -52,18 +52,21 @@ or infers a target from focus. Bun code, never loaded by Pi's extension.
   timeoutMs})` is read-only: it needs `HERDR_ENV=1`, asks
   `herdr agent get <name>` for 2000 ms, and matches only if
   `.result.agent` has the declared name, `pane_id`, `agent` and `cwd`.
-  Anything else, a moved pane, a stopped agent, a malformed or oversized
-  reply, a timeout, is `matches: false`, `unknown` and a `HERDR_*` code;
-  an unrecognized status is `unknown`, never idle. Callers observe again
-  immediately before acting. A match also gives `terminalId`, herdr's
+  A moved pane, stopped agent, malformed/oversized reply or timeout is
+  `matches: false`, `unknown` and a `HERDR_*` code; unrecognized status
+  is unknown, never idle. Callers reobserve before acting. A match gives
+  `terminalId`, herdr's
   `terminal_id` (a bounded word, else null; null when unmatched): it
   never makes a match, the caller pins it and refuses a change.
+  `pane process-info` supplies session-first/process-second identity: a
+  fresh Codex uses foreground group leader plus Linux boot:start.
 - `ledger.ts`: `openLedger`, one SQLite file per fleet at
   `ledgerPath(env, fleetId)`, `$XDG_STATE_HOME/dorothy/pi/steward/`
   `<fleetId>.sqlite` (HOME's `.local/state` if unset, else refused),
   0600 in a 0700 directory, WAL, `synchronous=FULL`, a 2000 ms busy
-  timeout, every write a `BEGIN IMMEDIATE` transaction. Tables: `fleet`
-  (a file of another fleet is refused), `controller`, `tasks`,
+  timeout, every write a `BEGIN IMMEDIATE` transaction. Ledger schema 2
+  persists occupants; schema 1 loads null and fails closed on mutation.
+  Tables: `fleet` (another fleet is refused), `controller`, `tasks`,
   `operations`, `receipts`. A partial unique index holds each worker for
   one task in an active state (all but `verified`, `cancelled`,
   `failed`); a task id is the primary key, so never reused. `move` is a
@@ -81,12 +84,12 @@ or infers a target from focus. Bun code, never loaded by Pi's extension.
   no report yet), then: a repeated id with identical arguments and brief
   gives the old state (`TASK_EXISTS`), a changed one `TASK_CONFLICT` or
   `BRIEF_CHANGED`. A new task needs the worker matching, idle and with a
-  terminal id, pinned when `reserve` records intent, digest and
-  reservation. Immediately before the send it observes again (refused
-  unless matching, idle and the pinned terminal, else
-  `WORKER_REPLACED`), then rereads the brief's digest; such a refusal
-  fails the task, its id spent. The sender is `send-prompt.sh --from
-  dorothy --expect-pane <pane> --require-idle <name>`, stdin `Read
+  terminal id and occupant, pinned with the intent, digest and reservation.
+  Immediately before sending it reobserves and rechecks registry identity
+  and the brief digest (`WORKER_UNIDENTIFIED` or `WORKER_REPLACED`); such
+  a refusal fails the task, its id spent. The sender is `send-prompt.sh --from
+  dorothy --expect-pane <pane> --expect-terminal <id> --expect-session
+  or --expect-process <pin> --require-idle <name>`, stdin `Read
   <brief> for task <id>.`, for 15 s: exit 0 is `sent`, 2 to 6 a refusal
   (`failed`), anything else, a throw or a timeout `unknown`, never
   resent. A pending operation whose helper is proven gone makes its
@@ -95,28 +98,25 @@ or infers a target from focus. Bun code, never loaded by Pi's extension.
   are claims) is `reported`, work seen after a send `running`; idle is
   never done, and a timeout keeps the reservation. `cancel` records
   `cancel-requested`, then sends one Escape through `send-interrupt.sh
-  --expect-pane --expect-terminal <pinned> --lock-wait 5` (15 s), under
-  the pane lock: its refusals before sending (2, 3, 4, 5, 7, 8) withdraw
-  the request (`CANCEL_NOT_SENT`), any other failure keeps it
+  --expect-pane --expect-terminal <pinned> plus the occupant and
+  --lock-wait 5` (15 s), under the pane lock: refusals before sending
+  (2, 3, 4, 5, 7, 8, 9) withdraw the request (`CANCEL_NOT_SENT`), others keep it
   (`CANCEL_UNCERTAIN`); only a report saying `cancelled` cancels.
   `finish` runs nothing: a `reported` task is `verified` only on a
   receipt for its id, current revision and unchanged report digest, with
   the same command, exit and log (exit nonzero: `failed`). A receipt
   checks a report's claims, not hostile code run as the runner's user.
-  `read` takes 1 to 200 lines, refusing over 32 KiB. `list` adds each
-  observation's registry `availability`. `processStart`, `processAlive`:
-  Linux's `<boot id>:<start ticks>` identity, and production liveness.
+  `read` takes 1 to 200 lines/32 KiB; `list` adds availability.
+  `processStart`/`processAlive` are Linux boot:start identity/liveness.
 - `fixtures.ts`: `writeRegistry` (private roots), `fakeHerdr`, whose
   replies have herdr 0.9.5's structure with every value invented, and
   `fakeSender`, which records each call to a sender or the interrupter
-  and scripts its exit. The fake herdr serves `agent get` alone and
-  refuses any other command; with `{steward: true}` it also serves
-  `agent read`, recorded. Capture new ones from trial panes, sanitized.
+  and scripts its exit. Fake herdr serves `agent get`; `{steward: true}`
+  adds recorded reads. Capture new trial replies sanitized.
 - `helper.ts`: `stewardHelper`, `dorothy --pi-steward` (`index.ts`):
-  one request of at most 128 KiB (else `REQUEST_TOO_LARGE`, nothing
-  run), `runSteward` with `createHerdrRun()` and `processAlive` over the
-  environment it is given, one reply of at most 64 KiB (else
-  `REPLY_TOO_LARGE` and the code). It loads no secrets.
+  one request of at most 128 KiB (else `REQUEST_TOO_LARGE`, nothing run),
+  `runSteward` over its env, one reply of at most 64 KiB (else
+  `REPLY_TOO_LARGE`). It loads no secrets.
 - `stand-in.ts`: the shell stubs and the `dorothy` stand-in that tests and
   the probe spawn. `owner.ts`, `simulation.ts`, `scenarios.ts`,
   `pi-scenario.ts`: the owner's verification and the simulated workers
@@ -128,7 +128,7 @@ or infers a target from focus. Bun code, never loaded by Pi's extension.
 (`steward_platform`), refuses `--no-session` (exit 2) and checks the
 registry, resolved from the user's directory and not through a link,
 with `readFleet` before any secret (`steward_registry: <code>`). The
-manifest then names it (`steward.registry`), and Pi gets herdr's
+manifest names its path, digest, fleet id and fixture root; Pi gets herdr's
 vendored Pi state extension and the stewardship skill, each once; a
 plain `--pi` has neither. Her extension's tools and status are
 `../../../../assets/pi/steward.ts`

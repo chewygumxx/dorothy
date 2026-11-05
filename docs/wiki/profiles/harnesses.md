@@ -328,18 +328,23 @@ second is the one recorded. Still open, per the
 and the
 [deferred findings](../../deferred/2026-11-03_pi-delivery-deferred.md):
 
-- The production wiring of `RUNNERS.pi` has never run in a test or probe.
-  The user is to run `dorothy --pi --dump` and one real launch.
+- The controller completed `RUNNERS.pi`'s dump and native final-turn
+  smoke under isolated HOME/XDG and Featherless configuration. It used a
+  direct provider without proxy accounting; provider billing is unknown
+  and normal user defaults were unchanged.
 - Reasoning replay after a tool call was seen in the first live run only,
   and compaction, resume, fork and recovery ran against the scripted
   provider alone; the live run was two turns.
 - Pi's Node and version is pinned; the native fixture reads Pi's screen
   text, so an upgrade needs the fixtures rerun.
-- Stewardship's live trial waits on two temporary worker homes the user
-  signs in, an approved Featherless budget and quota room. The runner
-  never copies a subscription credential and leaves the gate pending
+- Stewardship's native mixed-worker trial has not run; two temporary
+  worker homes do not yet exist. Open-weight spending is unlimited and
+  the controller chooses the numeric cap. API-backed homes would be a
+  disclosed deviation from original subscription evidence. The runner
+  never copies a credential and leaves the gate pending
   ([report](../../reports/2026-11-03_pi-stewardship.md#the-live-gate)).
-- The production wiring of `RUNNERS.pi` is the separate check above.
+- The production wiring of `RUNNERS.pi` is the separate smoke above, not
+  stewardship acceptance.
 
 ## Related
 

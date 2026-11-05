@@ -675,6 +675,33 @@ Which host receives what, and what has been run against it, is on
   report](../reports/2026-11-03_pi-stewardship.md#the-proxy-lifecycle-bug),
   [proxy guide](../../packages/cli/src/hosts/AGENTS.md#files).
 
+### A steward pins an occupant, not a terminal
+
+- **Context**: Herdr reuses a workspace terminal for a new agent. A
+  same-pane RED sent successfully after only `agent_session` changed.
+  Fresh Codex has no session, so pane, cwd and `terminal_id` cannot
+  distinguish its replacement.
+- **Alternatives**: Keep terminal-only matching, which permits stale
+  mutation; require sessions, which makes fresh Codex unusable; or use
+  the observed foreground group leader plus Linux boot:start fallback.
+- **Choice**: Store session-first/process-second occupant identity in
+  ledger schema 2. Repeat it under the sender/interrupter pane lock.
+  Migrated rows without an occupant remain readable but cannot mutate.
+  Native manifests also pin registry SHA-256, fleet id and fixture root.
+- **Reason**: A live agent can change while every old address field stays
+  equal. A process/start pin works for a fresh worker without claiming a
+  session Herdr did not return. Exact registry identity catches benign
+  concurrent writes as well as same-worker tampering.
+- **Cost**: A transient foreground process requires the group leader, not
+  an exactly-one-process assumption. Interactive home reset and Codex's
+  daemon require post-shell verification and `--no-daemon`. This is an
+  identity check, not OS confinement against same-user code.
+- **Standing**: current; covered by same-terminal and locked-recheck
+  regressions, plus native observation without inference.
+- **Sources**:
+  [trial report](../reports/2026-11-03_pi-stewardship.md),
+  [supplemental findings](../reports/2026-11-03_pi-stewardship/supplemental-live-findings.txt).
+
 ### The key reaches Pi's provider in memory alone
 
 - **Context**: The plan gave Pi the Featherless key as a `$<name>`

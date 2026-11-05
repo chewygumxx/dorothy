@@ -19,18 +19,18 @@ tags:
 
 # packages/cli/AGENTS.md
 
-`@dorothy/cli` is the `dorothy` program, run and not imported: it exports
-nothing and wires every other package together.
+`@dorothy/cli` wires every package into `dorothy`; its application has
+no imports, with only the evidence scrubber boundary below exported.
 
 ## Entry points and imports
 
-No entry points. `src/index.ts` runs each mode from `RUNNERS`, whose
-type has `tsc` require a runner for every mode, and each runner loads
-its package lazily (`await import(...)`): memory's commands, recall server
-and hooks through their own entry points (`@dorothy/memory/commands`,
-`/recall-server`, `/claude-hook`, `/host-hook`), and the agent only for the
-model modes, so `--help`, `--list` and `--recall-server` never load the AI
-SDK. Keep every new mode's import lazy.
+`src/scrub.ts` exports memory's scrubber as `@dorothy/cli/scrub` for evidence.
+`src/index.ts` runs each mode from `RUNNERS`; `tsc` requires every mode
+and each runner loads its package lazily (`await import(...)`): memory's
+commands, recall server and hooks through their own entry points
+(`@dorothy/memory/commands`, `/recall-server`, `/claude-hook`,
+`/host-hook`), and the agent only for model modes, so `--help`, `--list`
+and `--recall-server` never load the AI SDK. Keep new mode imports lazy.
 
 ## Files
 

@@ -466,10 +466,13 @@ what was tested, offline and against Featherless.
 
 `--steward <registry>` gives Pi the declared trial workers' tools, and a
 normal `--pi` needs neither herdr nor a worker login. The bounded
-stewardship trial's runner and offline tests are built; its live gate is
-pending on two temporary worker homes you sign in, an approved
-Featherless budget and quota room. It never copies a subscription
-credential. The
+stewardship trial's runner and offline tests are built; its native mixed-
+worker gate has not run and temporary worker homes do not yet exist.
+Open-weight spending is authorized, with an explicit numeric cap chosen
+per run. The runner never copies a subscription credential; API-backed
+homes would be a disclosed deviation from original subscription evidence.
+The separate production Pi smoke completed under isolated configuration.
+The
 [report](./docs/reports/2026-11-03_pi-stewardship.md) records the
 offline evidence, the proxy lifecycle fix and the user's checklist.
 

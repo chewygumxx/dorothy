@@ -28,13 +28,17 @@ offline runner and its tests are built; the live gate has not run.
 
 ## Waiting on the user
 
-- The live Codex and Claude trial needs two temporary homes the user
-  signs in, an approved Featherless budget, and quota room. No
-  subscription credential may be copied. The gate is pending.
-- The production `RUNNERS.pi` wiring still needs `dorothy --pi --dump`
-  and one real launch, as
-  [Pi delivery's deferred record](./2026-11-03_pi-delivery-deferred.md)
-  says. That check is independent of the stewardship runner.
+- The native mixed Codex/Claude trial needs two temporary homes and quota
+  room; the controller confirmed those homes do not yet exist. Open-weight
+  spending is explicitly unlimited, and the controller will choose the
+  mandatory numeric `--max-usd` without another spending request. No
+  subscription credential may be copied. API-backed homes are a disclosed
+  deviation, not original subscription evidence. The gate is pending.
+- The separate production `RUNNERS.pi` dump and native final-turn smoke
+  completed under isolated HOME/XDG and a Featherless route. It used a
+  direct provider, no tools and no proxy cap; provider billing is unknown.
+  Normal user config has no Featherless chat route and was not changed.
+  This does not run or pass the stewardship gate.
 
 ## Evidence and limits
 
@@ -46,20 +50,37 @@ offline runner and its tests are built; the live gate has not run.
   independent-review loop is not exercised. The runner reports that
   honestly; it cannot force a model to make a specific incomplete fix
   without scripting the model.
-- Interruption is a ctrl+c under the pane lock, then a restart in the
-  same pane. Whether herdr gives the new occupant a new `terminal_id` is
-  recorded but not assumed. A worker that does not exit is reported as
-  not interrupted, not as recovered.
+- Interruption is a guarded Ctrl+C under the pane lock, then a restart
+  in the same pane. Native no-inference observation confirmed identical
+  `terminal_id`, null `agent_session` and a different foreground
+  PID/boot:start identity. Session or process/start identity, never
+  terminal stability alone, authorizes send and interruption. Codex uses
+  `--no-daemon`; a frontend exit alone is not worker lifetime proof.
+- Interactive shell startup can reset `CODEX_HOME`. The runner restores
+  HOME/XDG/harness roots after startup, from the owned fixture cwd, and
+  verifies the foreground process's expected home and cwd without logging
+  its environment. No global shell or `mise` trust change is allowed.
 - Compaction confirmation reads Pi's screen text ("Compacted from"), so
   a Pi upgrade needs that fixture rerun. The number of requests after
   compaction is counted, not interpreted as a model resuming well.
 - Skill adherence, dialog ownership and review quality are judged by
   hand from the saved evidence. The offline probe's scripted decisions
   are plumbing, never model competence.
-- `metadata()` currently records a catalogue failure as `null` and
-  continues. It should stop before spending when the model is absent or
-  its manifest drifted; the existing delivery probe already treats that
-  as pending. The trial's budget and usage checks still bound spending.
+- Exported text passes memory's public scrubber; JSON is scrubbed only
+  in string values so numeric fields stay valid. Original captures under
+  the private trial root are not labeled sanitized or public. A secret
+  with no recognized shape can still require manual quarantine.
+- Herdr failure JSON can be on stderr and successful mutations can have
+  empty stdout. Native observation required no prompt or inference; two
+  private dummy daemons were stopped by owned home, never the user's
+  daemon. Transient foreground tools are not mistaken for the group
+  leader.
+- Catalogue absence, malformed values and drift now refuse before key
+  loading or pane creation. A current catalogue outage therefore leaves
+  the native gate pending; stale prices are never used as a numeric cap.
+- Pi's ordinary shell is same-user and outside this protocol's control.
+  Frozen registry bytes and occupant pins prevent in-band drift and stale
+  mutations; they do not claim OS confinement or stop every raw bypass.
 - The live adapter duplicates the memory health route as `/v1/health`
   and starts its service with the fixture's recording config. A shared
   production memory-launch helper would remove the duplication.

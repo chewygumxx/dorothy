@@ -92,15 +92,13 @@ Found but not scheduled, in the roadmap's order, which
 Live checks that wait on the user's sign-ins or approval. What each host
 needs is on [harnesses](./profiles/harnesses.md).
 
-- Pi, the production wiring of `dorothy --pi`: run `dorothy --pi --dump`
-  and one real launch. The fixtures and probes never ran it, as a test
-  would decrypt the checkout's `secrets.json`
-  ([Pi delivery's
-  deferred](../deferred/2026-11-03_pi-delivery-deferred.md)).
-- Pi stewardship's live trial: two temporary worker homes the user signs
-  in, an approved Featherless budget and quota room. The runner refuses
-  to copy a subscription credential and leaves the gate pending without
-  them ([report](../reports/2026-11-03_pi-stewardship.md#the-live-gate)).
+- Pi stewardship's native mixed-worker trial: two temporary worker homes
+  and quota room; none exists yet. Open-weight spending is unlimited and
+  the controller chooses the mandatory numeric cap. API-backed homes are
+  a disclosed deviation from original subscription evidence. The runner
+  never copies a credential and leaves the gate pending without the
+  prerequisites ([report](../reports/2026-11-03_pi-stewardship.md#the-live-gate)).
+  The separate isolated production Pi smoke is complete, not pending.
 - Hermes, a live probe on a temporary home the user signs in
   ([step 3](../reports/2026-11-01-delivery.md#waiting-for-the-user)).
 - Codex, a live probe with the user after 5 November 17:23, when its usage

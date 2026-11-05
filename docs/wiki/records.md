@@ -286,11 +286,11 @@ first.
 - [Pi stewardship plan](../plans/2026-11-03_pi-stewardship.md): Plan. A herdr
   fixture fleet, task accounting, native Pi tools and a bounded trial.
 - [Pi stewardship trial](../reports/2026-11-03_pi-stewardship.md): Report.
-  The live trial's runner, its offline tests and evidence, the proxy
-  lifecycle fix it exposed, and the pending live gate.
+  The runner, its hardened identity and accounting tests, the proxy
+  lifecycle fix, supplemental limits and the pending native live gate.
 - [Pi stewardship deferred
   findings](../deferred/2026-11-03_pi-stewardship-deferred.md): Deferred.
-  The pending worker-home gate, the same-user limits of owner receipts,
+  The pending native worker-home gate, numeric run cap, same-user limits,
   live-only uncertainties and runner edges.
 
 ## Repository workflow

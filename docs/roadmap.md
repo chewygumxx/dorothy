@@ -76,28 +76,28 @@ pseudo-terminal, recovery after a killed launcher, and a bounded live
 Featherless run, which passed
 ([report](./reports/2026-11-03_pi-delivery.md),
 [deferred](./deferred/2026-11-03_pi-delivery-deferred.md)). Increment B's
-runner and offline tests are built; its live gate waits on user-signed
-worker homes and a budget
+runner and offline tests are built; its native mixed-worker gate has not
+run and temporary worker homes do not yet exist. Open-weight spending is
+authorized, with a numeric cap chosen per run
 ([report](./reports/2026-11-03_pi-stewardship.md),
 [deferred](./deferred/2026-11-03_pi-stewardship-deferred.md)).
 
 - **Status**: Highest Priority; Delivery Merged; Stewardship Runner
-  Built, its Live Gate Waiting on the User; its Production Wiring Check
-  Waiting on the User
+  Hardened, its Native Live Gate Waiting on the User; Isolated Production
+  Smoke Complete
 - **Required**: Existing Identity, Memory Service and Model Providers
 - **Rationale**: The user has selected Pi for the stewardship capability
   they most want. Delivery gave it a launcher, an extension, shared
   memory and recording to add tools to, without waiting for every other
   host's live probes. Stewardship must settle worker dispatch, recovery
-  and human approval handling, then test actual coordination. One check
-  waits on the user first: `RUNNERS.pi`, the production wiring of the
-  checkout's secrets and `config.toml` route, has never run in a test,
-  as one would decrypt `secrets.json`. `dorothy --pi --dump` and one
-  real launch settle it, before stewardship's tasks edit the same
-  runner and at the latest before its live trial. Stewardship's live
-  trial waits on two temporary worker homes the user signs in, an
-  approved Featherless budget and quota room; the runner never copies a
-  subscription credential and records the gate as pending without them.
+  and human approval handling, then test actual coordination. The
+  controller completed `RUNNERS.pi`'s dump and real native final-turn
+  smoke under isolated configuration, with direct-provider
+  and no-proxy-cap limits recorded. Stewardship's native trial still waits
+  on two temporary worker homes and quota room. Open-weight spending is
+  unlimited; the controller chooses an explicit numeric cap per run. The
+  runner never copies a subscription credential and records the gate as
+  pending. API-backed homes require an explicit evidence deviation.
 
 ### Dorothy's Memory
 
@@ -346,11 +346,11 @@ Found but not scheduled, each with its source.
   scripted provider alone, `dorothy.tool-final` with no real case, and
   a fixture that reads Pi's screen text).
 - Pi stewardship's deferred findings and limits
-  ([record](./deferred/2026-11-03_pi-stewardship-deferred.md)): the live
-  worker-home and budget gate, the same-user limit of owner receipts and
-  no OS confinement for workers, catalogue metadata continuing rather
-  than gating, live-only interruption and compaction evidence, and a
-  shared memory-launch helper.
+  ([record](./deferred/2026-11-03_pi-stewardship-deferred.md)): the native
+  worker-home gate and mandatory numeric cap, the same-user limit of owner
+  receipts and no OS confinement, catalogue outages refusing before spend,
+  live-only interruption and compaction evidence, and a shared
+  memory-launch helper.
 - Model Providers' deferred findings
   ([record](./deferred/2026-11-01_model-providers-deferred.md)): stream
   errors coded by word, an output limit of her own, thinking on the other

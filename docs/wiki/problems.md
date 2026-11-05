@@ -509,6 +509,23 @@ what it is.
   [the trial
   report](../reports/2026-11-03_pi-stewardship.md#the-proxy-lifecycle-bug).
 
+## A same-pane worker replacement keeps its terminal id
+
+- **Cause**: Herdr's `terminal_id` names the stable terminal resource,
+  not the agent process. Fresh Codex can also have null `agent_session`.
+- **Diagnosis**: A new session or foreground PID appears with the old
+  name, pane, cwd and terminal. A terminal-only guard would send or
+  interrupt it. Interactive startup can also reset `CODEX_HOME`.
+- **Remedy**: Pin a validated session or Linux foreground group leader
+  and boot:start in ledger schema 2, then recheck under the pane lock.
+  Restore and verify worker homes after shell startup; use Codex
+  `--no-daemon`. Old rows without an occupant fail closed.
+- **State**: Fixed with same-terminal regressions. Native no-inference
+  observation confirmed identical terminal and different process/start.
+  Same-user raw shell access is still not OS-confined.
+- **Evidence**:
+  [the trial report](../reports/2026-11-03_pi-stewardship.md).
+
 ## A slash command with an argument needs a second Enter in Pi
 
 - **Cause**: Pi's editor takes the first Enter of `/thinking off` as the

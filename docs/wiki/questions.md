@@ -114,10 +114,11 @@ Yes: `dorothy --pi` runs the published Pi 1.5.0 in its own terminal
 interface, under Node 22.19 or later, with her identity, memory tools and
 a memory layer before each prompt, on a Featherless model. It was run in a
 pseudo-terminal against a scripted provider, and for three requests live,
-and merged in #129. Its production wiring has not run: `dorothy --pi
---dump`, then one real launch, is the user's to do. Stewardship's runner
-and offline tests are built; its live trial waits on two temporary worker
-homes the user signs in and an approved Featherless budget. See
+and merged in #129. The controller also completed an isolated production
+dump and native final-turn smoke, with direct-provider limits recorded.
+Stewardship's runner and offline tests are built; its native mixed-worker
+gate has not run and temporary homes do not yet exist. Open-weight
+spending is authorized, with an explicit numeric cap per run. See
 [harnesses](./profiles/harnesses.md#pi), the
 [delivery report](../reports/2026-11-03_pi-delivery.md) and the
 [stewardship report](../reports/2026-11-03_pi-stewardship.md).
