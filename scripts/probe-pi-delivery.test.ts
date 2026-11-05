@@ -25,6 +25,7 @@ import {
     startFakeProvider,
     usage,
 } from "../packages/cli/src/hosts/pi/testing.js";
+import { metadataProblem } from "./pi-proxy.js";
 import {
     costOf,
     type ForwardingProxy,
@@ -200,6 +201,37 @@ describe("the probe's arguments", () => {
 });
 
 describe("the probe's forwarding proxy", () => {
+    it("accepts only complete metadata matching the reviewed manifest", () => {
+        const declared = {
+            id: MODEL,
+            contextWindow: 262144,
+            maxTokens: 32768,
+            reasoning: true,
+            input: ["text" as const],
+            price: PRICE,
+            checkedAt: "2026-11-03",
+            sources: [],
+        };
+        const valid = {
+            checkedAt: "2026-11-05",
+            source: "fixture",
+            found: true,
+            contextWindow: 262144,
+            maxTokens: 32768,
+            price: { input: 0.225, output: 0.9 },
+            drift: [],
+        };
+        expect(metadataProblem(valid, declared)).toBeNull();
+        for (const bad of [
+            null,
+            { ...valid, found: false },
+            { ...valid, drift: ["price changed"] },
+            { ...valid, maxTokens: -1 },
+            { ...valid, price: { input: Number.NaN, output: 0.9 } },
+        ]) {
+            expect(metadataProblem(bad, declared)).not.toBeNull();
+        }
+    });
     it("forwards Chat Completions for its model with the upstream's key", async () => {
         const at = start([reply("Fine.")]);
         const answer = await ask(at, {
@@ -265,6 +297,68 @@ describe("the probe's forwarding proxy", () => {
         expect(at.stopped()).toBe("usage unavailable");
         expect((await ask(at, {})).status).toBe(400);
         expect(upstream?.requests).toHaveLength(1);
+    });
+
+    it("treats incomplete or malformed usage as unknown cost", async () => {
+        for (const bad of [
+            { prompt_tokens: 10, prompt_tokens_details: { cached_tokens: 0 } },
+            { prompt_tokens: -1, completion_tokens: 2 },
+            { prompt_tokens: 10, completion_tokens: 1.5 },
+            {
+                prompt_tokens: 10,
+                completion_tokens: 2,
+                prompt_tokens_details: { cached_tokens: 11 },
+            },
+        ]) {
+            const at = start([
+                [said("Bad usage"), finish("stop"), { ...usage, usage: bad }],
+            ]);
+            expect((await ask(at, {})).status).toBe(200);
+            expect(at.calls[0]?.reply.usage).toBeNull();
+            expect(at.calls[0]?.costUsd).toBeNull();
+            expect(at.stopped()).toBe("usage invalid");
+            expect(upstream?.requests).toHaveLength(1);
+            await proxy?.close();
+            await upstream?.close();
+        }
+    });
+
+    it("rejects negative limits and normalizes oversized output bounds", async () => {
+        const at = start([reply("bounded")]);
+        expect((await ask(at, { max_completion_tokens: -1 })).status).toBe(400);
+        expect(upstream?.requests).toEqual([]);
+        expect(
+            (
+                await ask(at, {
+                    max_completion_tokens: 999_999,
+                    max_tokens: 888_888,
+                })
+            ).status,
+        ).toBe(200);
+        expect(upstream?.requests[0]?.body).toMatchObject({
+            max_completion_tokens: 32768,
+            max_tokens: 32768,
+        });
+        expect(at.calls[1]?.maxCompletionTokens).toBe(32768);
+    });
+
+    it("aborts an in-flight upstream stream when the wall stops", async () => {
+        const cut = startStalled();
+        const at = start([], { upstream: cut.baseUrl });
+        const response = await fetch(`${at.baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ model: MODEL, messages: [] }),
+        });
+        const reader = response.body?.getReader();
+        expect(
+            new TextDecoder().decode((await reader?.read())?.value),
+        ).toContain("Partial");
+        at.stop("time limit");
+        await until(() => at.calls[0]?.refused === "time limit");
+        expect(at.calls[0]?.costUsd).toBeNull();
+        expect(at.spentUsd()).toBeCloseTo(at.calls[0]?.reservedUsd ?? 0, 12);
+        expect((await ask(at, {})).status).toBe(400);
     });
 
     it("settles a complete reply at DONE when Pi cancels before EOF", async () => {
@@ -362,7 +456,8 @@ describe("the probe's forwarding proxy", () => {
         // The reply starts, then breaks off when the call's time is up.
         await answer.text().catch(() => "");
         await until(() => at.stopped() !== null);
-        expect(at.stopped()).toStartWith("stream cut");
+        expect(at.stopped()).toBe("time limit");
+        expect(at.calls[0]?.refused).toStartWith("stream cut");
         expect(at.calls[0]?.costUsd).toBeNull();
         expect(at.spentUsd()).toBeCloseTo(at.calls[0]?.reservedUsd ?? 0, 12);
         expect((await ask(at, {})).status).toBe(400);

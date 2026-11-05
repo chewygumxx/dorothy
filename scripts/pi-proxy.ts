@@ -23,7 +23,10 @@
 
 import { createHash } from "node:crypto";
 import { loadCheckoutSecrets } from "../packages/cli/src/claude-hook.js";
-import { readPiCatalog } from "../packages/cli/src/hosts/pi/models.js";
+import {
+    type PiModelSpec,
+    readPiCatalog,
+} from "../packages/cli/src/hosts/pi/models.js";
 import { SYNTHETIC_KEY } from "../packages/cli/src/hosts/pi/testing.js";
 
 export const FEATHERLESS = "https://api.featherless.ai/v1";
@@ -77,6 +80,8 @@ export type ProxyOptions = {
     wallMs?: number;
     // The clock its limits are read on; Date.now by default.
     now?: () => number;
+    // An absolute deadline, shared with the trial's startup and cleanup.
+    deadlineAt?: number;
 };
 
 export type ForwardingProxy = {
@@ -162,6 +167,7 @@ function tap(
     const calls = new Map<number, string>();
     let finishReason: string | null = null;
     let used: Usage | null = null;
+    let usageInvalid = false;
     const line = (text: string) => {
         if (!text.startsWith("data:")) return;
         const data = text.slice(5).trim();
@@ -205,12 +211,28 @@ function tap(
             }
             if (choice.finish_reason) finishReason = choice.finish_reason;
         }
-        if (chunk.usage && typeof chunk.usage.prompt_tokens === "number")
-            used = {
-                prompt: chunk.usage.prompt_tokens,
-                completion: chunk.usage.completion_tokens ?? 0,
-                cached: chunk.usage.prompt_tokens_details?.cached_tokens ?? 0,
-            };
+        if (chunk.usage) {
+            const prompt = chunk.usage.prompt_tokens;
+            const completion = chunk.usage.completion_tokens;
+            const cached =
+                chunk.usage.prompt_tokens_details?.cached_tokens ?? 0;
+            const valid = [prompt, completion, cached].every(
+                (value) =>
+                    typeof value === "number" &&
+                    Number.isSafeInteger(value) &&
+                    value >= 0,
+            );
+            if (!valid || (cached as number) > (prompt as number)) {
+                usageInvalid = true;
+                used = null;
+            } else if (!usageInvalid) {
+                used = {
+                    prompt: prompt as number,
+                    completion: completion as number,
+                    cached: cached as number,
+                };
+            }
+        }
     };
     let ended = false;
     const end = (cut: string | null) => {
@@ -227,7 +249,12 @@ function tap(
             },
             // DONE settles a complete reply; without a finish marker it is
             // incomplete, however much usage came before it.
-            cut ?? (finishReason === null ? "stream cut: no finish" : null),
+            cut ??
+                (usageInvalid
+                    ? "usage invalid"
+                    : finishReason === null
+                      ? "stream cut: no finish"
+                      : null),
         );
     };
     const reader = body.getReader();
@@ -272,7 +299,10 @@ export function startForwardingProxy(options: ProxyOptions): ForwardingProxy {
     let stop: string | null = null;
     const now = options.now ?? Date.now;
     const deadline =
+        options.deadlineAt ??
         now() + (options.wallMs ?? options.maxTurns * options.timeoutMs);
+    const active = new Set<AbortController>();
+    const activeSettles = new Set<(reason: string) => void>();
     const refuse = (call: Call, reason: string, status = 400) => {
         call.status = status;
         call.refused = reason;
@@ -315,21 +345,45 @@ export function startForwardingProxy(options: ProxyOptions): ForwardingProxy {
                 return refuse(call, `path ${path}`, 404);
             if (body.model !== options.model) return refuse(call, "model");
             if (stop !== null) return refuse(call, stop);
+            const outputFields = ["max_completion_tokens", "max_tokens"].filter(
+                (field) => Object.hasOwn(body, field),
+            );
+            if (
+                outputFields.some((field) => {
+                    const value = body[field];
+                    return (
+                        typeof value !== "number" ||
+                        !Number.isSafeInteger(value) ||
+                        value <= 0
+                    );
+                })
+            ) {
+                return refuse(call, "invalid output limit");
+            }
+            const requestedOutput = outputFields.map(
+                (field) => body[field] as number,
+            );
+            const normalized = { ...body };
+            const output = Math.min(options.maxTokens, ...requestedOutput);
+            if (outputFields.length > 0) {
+                normalized.max_completion_tokens = output;
+                if (Object.hasOwn(body, "max_tokens"))
+                    normalized.max_tokens = output;
+            }
+            const outbound = JSON.stringify(normalized);
+            Object.assign(call, shapeOf(normalized));
             const forwarded = calls.filter((c) => c.refused === null).length;
             if (forwarded > options.maxTurns) {
                 stop = `turn limit ${options.maxTurns}`;
                 return refuse(call, stop);
             }
-            if (now() > deadline) {
+            if (now() >= deadline) {
                 stop = "time limit";
                 return refuse(call, stop);
             }
             // The worst this call could cost: a full context in, its
             // largest reply out.
-            const out = Math.min(
-                call.maxCompletionTokens ?? options.maxTokens,
-                options.maxTokens,
-            );
+            const out = call.maxCompletionTokens ?? options.maxTokens;
             const reserve =
                 usd(options.contextWindow, options.price.input) +
                 usd(out, options.price.output);
@@ -349,6 +403,7 @@ export function startForwardingProxy(options: ProxyOptions): ForwardingProxy {
                 if (settled) return;
                 settled = true;
                 held -= reserve;
+                activeSettles.delete(settleActive);
                 call.reply = reply;
                 if (cut !== null) call.refused = cut;
                 if (reply.usage === null || cut !== null) {
@@ -359,6 +414,19 @@ export function startForwardingProxy(options: ProxyOptions): ForwardingProxy {
                     spent += call.costUsd;
                 }
             };
+            const settleActive = (reason: string) => settle(call.reply, reason);
+            activeSettles.add(settleActive);
+            const control = new AbortController();
+            active.add(control);
+            const remaining = Math.max(1, deadline - now());
+            const timer = setTimeout(
+                () => {
+                    stop ??= "time limit";
+                    control.abort();
+                    settleActive("stream cut: time limit");
+                },
+                Math.min(options.timeoutMs, remaining),
+            );
             let upstream: Response;
             try {
                 upstream = await fetch(`${options.upstream}/chat/completions`, {
@@ -368,11 +436,16 @@ export function startForwardingProxy(options: ProxyOptions): ForwardingProxy {
                         accept: "text/event-stream",
                         authorization: `Bearer ${options.key}`,
                     },
-                    body: text,
-                    signal: AbortSignal.timeout(options.timeoutMs),
+                    body: outbound,
+                    signal: control.signal,
                 });
             } catch (error) {
-                settle(call.reply);
+                clearTimeout(timer);
+                active.delete(control);
+                settle(
+                    call.reply,
+                    control.signal.aborted ? "stream cut: time limit" : null,
+                );
                 call.status = 502;
                 call.refused = `upstream ${(error as Error).name}`;
                 return new Response("probe: upstream unreachable", {
@@ -381,6 +454,8 @@ export function startForwardingProxy(options: ProxyOptions): ForwardingProxy {
             }
             call.status = upstream.status;
             if (!upstream.ok || upstream.body === null) {
+                clearTimeout(timer);
+                active.delete(control);
                 settle(call.reply);
                 return new Response(await upstream.text().catch(() => ""), {
                     status: upstream.status,
@@ -391,11 +466,16 @@ export function startForwardingProxy(options: ProxyOptions): ForwardingProxy {
                     },
                 });
             }
-            const reply = tap(upstream.body, settle);
+            const reply = tap(upstream.body, (seen, cut) => {
+                clearTimeout(timer);
+                active.delete(control);
+                settle(seen, cut);
+            });
             // Pi gone mid-reply: its stream may never be read again.
-            request.signal.addEventListener("abort", () =>
-                settle(call.reply, "stream cut: client gone"),
-            );
+            request.signal.addEventListener("abort", () => {
+                control.abort();
+                settle(call.reply, "stream cut: client gone");
+            });
             return new Response(reply, {
                 status: upstream.status,
                 headers: { "content-type": "text/event-stream" },
@@ -409,8 +489,13 @@ export function startForwardingProxy(options: ProxyOptions): ForwardingProxy {
         stopped: () => stop,
         stop: (reason) => {
             stop ??= reason;
+            for (const finish of [...activeSettles]) finish(reason);
+            for (const control of active) control.abort();
         },
         close: async () => {
+            stop ??= "proxy closed";
+            for (const finish of [...activeSettles]) finish("proxy closed");
+            for (const control of active) control.abort();
             await server.stop(true);
         },
     };
@@ -426,12 +511,64 @@ export type Metadata = {
     drift: string[];
 };
 
+// The exact current metadata must match the reviewed manifest before a
+// key is loaded or a paid resource starts. Unknown is never a zero price.
+export function metadataProblem(
+    meta: Metadata | null,
+    declared: PiModelSpec,
+): string | null {
+    if (!meta) return "catalogue unavailable";
+    if (!meta.found) return "model absent from catalogue";
+    if (meta.drift.length > 0)
+        return `catalogue drift: ${meta.drift.join("; ")}`;
+    const limits = [meta.contextWindow, meta.maxTokens];
+    if (
+        limits.some(
+            (value) =>
+                typeof value !== "number" ||
+                !Number.isSafeInteger(value) ||
+                value <= 0,
+        )
+    ) {
+        return "catalogue limits invalid";
+    }
+    const prices = [
+        meta.price.input,
+        meta.price.output,
+        declared.price.input,
+        declared.price.output,
+        declared.price.cacheRead ?? declared.price.input,
+    ];
+    if (
+        prices.some(
+            (value) =>
+                typeof value !== "number" ||
+                !Number.isFinite(value) ||
+                value < 0,
+        )
+    ) {
+        return "catalogue prices invalid";
+    }
+    if (
+        !Number.isSafeInteger(declared.contextWindow) ||
+        declared.contextWindow <= 0 ||
+        !Number.isSafeInteger(declared.maxTokens) ||
+        declared.maxTokens <= 0
+    ) {
+        return "manifest limits invalid";
+    }
+    return null;
+}
+
 // Featherless's public catalogue entry for the model, against the
 // committed manifest; drift is said, never written back.
-export async function refreshMetadata(model: string): Promise<Metadata> {
+export async function refreshMetadata(
+    model: string,
+    timeoutMs = 30_000,
+): Promise<Metadata> {
     const [declared] = (await readPiCatalog()).filter((m) => m.id === model);
     const response = await fetch(CATALOGUE, {
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(Math.max(1, timeoutMs)),
     });
     const listed = ((await response.json()) as { data?: unknown[] }).data ?? [];
     const entry = listed.find(
