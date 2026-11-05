@@ -32,7 +32,12 @@ import type { Worker } from "./types.js";
 
 const env = { HERDR_ENV: "1", PATH: "/usr/bin" };
 const clock = () => NOW;
-const options = { env, now: clock, timeoutMs: 50 };
+const options = {
+    env,
+    now: clock,
+    timeoutMs: 50,
+    processStart: async (pid: number) => `boot:${pid}`,
+};
 
 let codex: Worker;
 let claude: Worker;
@@ -127,13 +132,45 @@ describe("observeWorker", () => {
             observedAt: NOW.toISOString(),
             code: null,
             terminalId: "term_0000000000000a1",
+            occupant: {
+                kind: "process",
+                pid: 4101,
+                startedAt: "boot:4101",
+            },
         });
-        expect(herdr.calls).toHaveLength(1);
-        expect(herdr.calls.every((c) => c.args.includes(codex.name))).toBe(
-            true,
-        );
+        expect(herdr.calls).toHaveLength(2);
         expect(herdr.calls[0]?.args).toEqual(["agent", "get", codex.name]);
+        expect(herdr.calls[1]?.args).toEqual([
+            "pane",
+            "process-info",
+            "--pane",
+            codex.pane,
+        ]);
         expect(herdr.calls[0]?.env.HERDR_ENV).toBe("1");
+    });
+
+    it("prefers a validated agent session to the terminal resource", async () => {
+        const herdr = fakeHerdr([codex, claude]);
+        const seen = await observeWorker(claude, herdr.run, options);
+        expect(seen.occupant).toEqual({
+            kind: "session",
+            value: "00000000-0000-4000-8000-0000000000a1",
+        });
+        expect(herdr.calls.map((call) => call.args[1])).toEqual(["get"]);
+    });
+
+    it("uses Linux process start when a fresh worker has no session", async () => {
+        const herdr = fakeHerdr([codex, claude]);
+        const seen = await observeWorker(codex, herdr.run, options);
+        expect(seen.occupant).toEqual({
+            kind: "process",
+            pid: 4101,
+            startedAt: "boot:4101",
+        });
+        expect(herdr.calls.map((call) => call.args.slice(0, 2))).toEqual([
+            ["agent", "get"],
+            ["pane", "process-info"],
+        ]);
     });
 
     it("reports each recognized state, as a match", async () => {
@@ -287,6 +324,7 @@ describe("observeWorker", () => {
             observedAt: NOW.toISOString(),
             code: "HERDR_AGENT_NOT_FOUND",
             terminalId: null,
+            occupant: null,
         });
     });
 

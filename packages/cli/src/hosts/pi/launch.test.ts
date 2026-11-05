@@ -554,7 +554,14 @@ describe("dorothy --pi --steward", () => {
         const fleet = await registry();
         expect(await r.run({ steward: fleet.path })).toBe(17);
         const [call] = r.calls;
-        expect(call?.manifest.steward).toEqual({ registry: fleet.path });
+        expect(call?.manifest.steward).toMatchObject({
+            registry: fleet.path,
+            fleetId: fleet.raw.fleetId,
+            fixtureRoot: fleet.fixtureRoot,
+        });
+        expect(call?.manifest.steward?.registryDigest).toMatch(
+            /^[a-f0-9]{64}$/,
+        );
         expect(call?.manifest.extensions).toEqual([EXTENSION, HERDR_STATE]);
         expect(call?.manifest.skills).toEqual([SKILL]);
         expect(count(call?.cmd ?? [], HERDR_STATE)).toBe(1);

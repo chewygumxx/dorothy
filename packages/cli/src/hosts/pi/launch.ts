@@ -272,6 +272,7 @@ export async function runPi(options: PiOptions, deps: PiDeps): Promise<number> {
     // The registry is checked as the helper will check it, before any
     // secret is decrypted; it names no credential.
     let registry: string | null = null;
+    let steward: PiLaunchManifest["steward"];
     if (options.steward !== null && !native.help) {
         if (process.platform !== "linux") {
             return fail(`steward_platform: ${process.platform}`);
@@ -279,7 +280,16 @@ export async function runPi(options: PiOptions, deps: PiDeps): Promise<number> {
         try {
             // As given, a link not followed: the registry must be a file.
             registry = resolve(cwd, options.steward);
-            await readFleet(registry, (deps.now ?? (() => new Date()))());
+            const frozen = await readFleet(
+                registry,
+                (deps.now ?? (() => new Date()))(),
+            );
+            steward = {
+                registry,
+                fleetId: frozen.fleetId,
+                fixtureRoot: frozen.fixtureRoot,
+                registryDigest: frozen.sourceDigest,
+            };
         } catch (error) {
             const code = (error as { code?: unknown }).code;
             return fail(
@@ -331,7 +341,7 @@ export async function runPi(options: PiOptions, deps: PiDeps): Promise<number> {
         extensions: registry === null ? [EXTENSION] : [EXTENSION, HERDR_STATE],
         skills: registry === null ? [...SKILLS] : [...SKILLS, STEWARD_SKILL],
         helperEnv: helperEnvOf(passed, env),
-        ...(registry === null ? {} : { steward: { registry } }),
+        ...(registry === null || !steward ? {} : { steward }),
     };
     let profile: PiProfile;
     try {

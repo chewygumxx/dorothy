@@ -34,10 +34,17 @@ import {
     openLedger,
     type StoredTask,
 } from "./ledger.js";
-import { fixturePath, isTaskId, readFleet } from "./registry.js";
+import {
+    type FrozenFleet,
+    fixturePath,
+    identityOf,
+    isTaskId,
+    readFleet,
+} from "./registry.js";
 import {
     type CompletionEvidence,
     type Fleet,
+    type Occupant,
     StewardError,
     type StewardReply,
     type StewardRequest,
@@ -79,10 +86,10 @@ export const MAX_FILE_BYTES = 64 * 1024;
 
 // The sender's refusals before it writes anything: usage, blocked, absent,
 // another pane, not idle. Any other exit may have written.
-const REFUSALS = [2, 3, 4, 5, 6];
+const REFUSALS = [2, 3, 4, 5, 6, 9];
 // The interrupt's: usage, blocked, absent, another pane, the lock not had
 // in time, another terminal. Any other exit may have sent the Escape.
-const UNSENT = [2, 3, 4, 5, 7, 8];
+const UNSENT = [2, 3, 4, 5, 7, 8, 9];
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing them
@@ -105,10 +112,12 @@ export type StewardDeps = {
     sendTimeoutMs?: number;
     interruptTimeoutMs?: number;
     pollMs?: number;
+    // Linux process-start identity for a sessionless native occupant.
+    occupantStart?: (pid: number) => Promise<string>;
 };
 
 type Context = {
-    fleet: Fleet;
+    fleet: FrozenFleet;
     ledger: Ledger;
     deps: StewardDeps;
     self: () => Promise<Identity>;
@@ -119,7 +128,11 @@ const refuse = (code: string, detail = code): never => {
     throw new StewardError(code, detail);
 };
 
-const record = ({ terminalId: _, ...task }: StoredTask): TaskRecord => task;
+const record = ({
+    terminalId: _,
+    occupant: __,
+    ...task
+}: StoredTask): TaskRecord => task;
 
 const reply = (
     ok: boolean,
@@ -297,21 +310,52 @@ function checkRequest(request: StewardRequest): void {
     ) {
         refuse("REQUEST_INVALID");
     }
+    const pinned = [
+        request.registryDigest,
+        request.fleetId,
+        request.fixtureRoot,
+    ];
+    if (
+        pinned.some((value) => value !== undefined) &&
+        pinned.some((value) => typeof value !== "string" || value.length === 0)
+    ) {
+        refuse("REQUEST_INVALID");
+    }
 }
 
-// Why the observed occupant may not be acted on, or null: it must match,
-// and carry the terminal pinned at reservation.
+// Why the observed occupant may not be acted on, or null: the terminal
+// must be the pinned resource and the session or process-start identity
+// must be the pinned occupant. Migrated rows without one fail closed.
 function identityRefusal(
     seen: WorkerObservation,
-    pinned: string | null,
+    pinned: { terminalId: string | null; occupant: Occupant | null },
 ): string | null {
     if (!seen.matches) {
         return seen.code ?? "WORKER_MISMATCH";
     }
-    if (!seen.terminalId || seen.terminalId !== pinned) {
+    if (!pinned.occupant || !seen.occupant) return "WORKER_UNIDENTIFIED";
+    if (
+        !seen.terminalId ||
+        seen.terminalId !== pinned.terminalId ||
+        JSON.stringify(seen.occupant) !== JSON.stringify(pinned.occupant)
+    ) {
         return "WORKER_REPLACED";
     }
     return null;
+}
+
+const sameOccupant = (seen: WorkerObservation) => ({
+    terminalId: seen.terminalId,
+    occupant: seen.occupant,
+});
+
+// The shell sender/interrupter repeats this comparison under the pane
+// lock. A process pin names only herdr's observed foreground group, never
+// an arbitrary pid supplied by a model.
+export function occupantArgs(occupant: Occupant): string[] {
+    return occupant.kind === "session"
+        ? ["--expect-session", occupant.value]
+        : ["--expect-process", String(occupant.pid), occupant.startedAt];
 }
 
 // Abandoned operations: a pending one whose helper is proven gone. An
@@ -390,7 +434,7 @@ async function reconcileTask(
         return { task: current() };
     }
     const seen = await ctx.observe(worker);
-    const refusal = identityRefusal(seen, task.terminalId);
+    const refusal = identityRefusal(seen, task);
     if (refusal === "WORKER_REPLACED") {
         ctx.ledger.move(taskId, [task.state], task.state, { code: refusal });
     } else if (!refusal && seen.state === "working" && task.state === "sent") {
@@ -444,6 +488,7 @@ async function send(
     ctx: Context,
     worker: Worker,
     brief: TaskBrief,
+    occupant: Occupant,
 ): Promise<SendOutcome> {
     const sender = ctx.deps.sender ?? createHerdrRun({ bin: SENDER });
     const args = [
@@ -452,10 +497,17 @@ async function send(
         "--expect-pane",
         worker.pane,
         "--require-idle",
+        ...occupantArgs(occupant),
         worker.name,
     ];
     const message = `Read ${brief.briefPath} for task ${brief.taskId}.`;
     try {
+        // Recheck the frozen bytes immediately before the external mutation.
+        await readFleet(
+            ctx.fleet.sourcePath,
+            ctx.deps.now(),
+            identityOf(ctx.fleet),
+        );
         const { code } = await timed(
             sender,
             args,
@@ -467,7 +519,13 @@ async function send(
             return "sent";
         }
         return REFUSALS.includes(code) ? `refused:${code}` : "uncertain";
-    } catch {
+    } catch (error) {
+        if (
+            error instanceof StewardError &&
+            error.code === "REGISTRY_CHANGED"
+        ) {
+            throw error;
+        }
         return "uncertain";
     }
 }
@@ -482,6 +540,8 @@ async function dispatch(ctx: Context, task: unknown): Promise<StewardReply> {
         reportPath: await fixturePath(fleet, asked.reportPath, "report"),
     };
     await settleAbandoned(ctx);
+    // The registry is frozen before the reservation, not merely at launch.
+    await readFleet(ctx.fleet.sourcePath, ctx.deps.now(), identityOf(fleet));
     const existing = ledger.task(brief.taskId);
     if (existing) {
         return repeat(ctx, existing, brief);
@@ -510,12 +570,18 @@ async function dispatch(ctx: Context, task: unknown): Promise<StewardReply> {
     if (seen.state !== "idle") {
         refuse("WORKER_NOT_IDLE", seen.state);
     }
-    if (!seen.terminalId) {
+    if (!seen.terminalId || !seen.occupant) {
         refuse("WORKER_UNIDENTIFIED");
     }
     let op: ReturnType<Ledger["reserve"]>;
     try {
-        op = ledger.reserve(brief, digest, seen.terminalId as string, helper);
+        op = ledger.reserve(
+            brief,
+            digest,
+            seen.terminalId as string,
+            helper,
+            seen.occupant,
+        );
     } catch (error) {
         const raced = ledger.task(brief.taskId);
         if (
@@ -545,7 +611,7 @@ async function dispatch(ctx: Context, task: unknown): Promise<StewardReply> {
     };
     const again = await ctx.observe(worker);
     const refusal =
-        identityRefusal(again, seen.terminalId) ??
+        identityRefusal(again, sameOccupant(seen)) ??
         (again.state === "idle" ? null : "WORKER_NOT_IDLE");
     if (refusal) {
         return fail(refusal);
@@ -562,7 +628,7 @@ async function dispatch(ctx: Context, task: unknown): Promise<StewardReply> {
         return fail("BRIEF_CHANGED");
     }
 
-    const outcome = await send(ctx, worker, brief);
+    const outcome = await send(ctx, worker, brief, seen.occupant as Occupant);
     if (outcome === "sent") {
         ledger.conclude(op.id, "done", null, { from: ["intent"], to: "sent" });
         return reply(true, "TASK_SENT", [ledger.task(brief.taskId)], [again]);
@@ -653,7 +719,7 @@ async function cancel(ctx: Context, taskId: unknown): Promise<StewardReply> {
     const worker = workerOf(ctx.fleet, task.workerId);
     const helper = await ctx.self();
     const seen = await ctx.observe(worker);
-    const refusal = identityRefusal(seen, task.terminalId);
+    const refusal = identityRefusal(seen, task);
     if (refusal) {
         return reply(false, refusal, [ledger.task(id)], [seen]);
     }
@@ -674,6 +740,7 @@ async function cancel(ctx: Context, taskId: unknown): Promise<StewardReply> {
                 worker.pane,
                 "--expect-terminal",
                 task.terminalId as string,
+                ...occupantArgs(task.occupant as Occupant),
                 "--lock-wait",
                 String(LOCK_WAIT_S),
                 worker.name,
@@ -892,7 +959,14 @@ export async function runSteward(
     let ledger: Ledger | undefined;
     try {
         checkRequest(request);
-        const fleet = await readFleet(request.registry, deps.now());
+        const pinned = request.registryDigest
+            ? {
+                  fleetId: request.fleetId as string,
+                  fixtureRoot: request.fixtureRoot as string,
+                  sourceDigest: request.registryDigest,
+              }
+            : undefined;
+        const fleet = await readFleet(request.registry, deps.now(), pinned);
         ledger = openLedger(
             ledgerPath(deps.env, fleet.fleetId),
             fleet.fleetId,
@@ -920,6 +994,7 @@ export async function runSteward(
                 observeWorker(worker, deps.run, {
                     env: deps.env,
                     now: deps.now,
+                    processStart: deps.occupantStart ?? processStart,
                 }),
         };
         if (claim === "taken") {

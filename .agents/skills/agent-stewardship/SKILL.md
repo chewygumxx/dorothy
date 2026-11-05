@@ -98,7 +98,8 @@ Read the one the work at hand needs:
 In [`scripts/`](./scripts), each printing its usage when misused:
 
 - [`send-prompt.sh`](./scripts/send-prompt.sh): a message to an agent,
-  now, at a dated time or after a span.
+  now, at a dated time or after a span. `--expect-session` or
+  `--expect-process` rechecks the occupant under the pane lock.
 - [`compact-self.sh`](./scripts/compact-self.sh): compacts your own
   conversation once your turn ends.
 - [`job.sh`](./scripts/job.sh), with
@@ -108,7 +109,8 @@ In [`scripts/`](./scripts), each printing its usage when misused:
   account to spend.
 - [`at-limit.sh`](./scripts/at-limit.sh): reruns a command stopped by a
   plan's limit.
-- [`send-interrupt.sh`](./scripts/send-interrupt.sh): one Escape to
-  an agent, under its pane's lock.
+- [`send-interrupt.sh`](./scripts/send-interrupt.sh): one Escape, or
+  `--key ctrl+c` for trial interruption, under its pane's lock. Occupant
+  mismatch exits 9 before writing; terminal stability is not identity.
 - [`pane-lock.sh`](./scripts/pane-lock.sh): the pane lock the senders
   share, sourced, never run.

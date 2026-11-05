@@ -12,6 +12,7 @@
 // named, every path canonical beneath the fixture root, every observation
 // recent. It discovers nothing and loads no credential.
 
+import { createHash } from "node:crypto";
 import { lstat, open, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, normalize, sep } from "node:path";
 import { isUuid } from "@dorothy/core";
@@ -23,6 +24,13 @@ import {
     StewardError,
     type Worker,
 } from "./types.js";
+
+export type RegistryIdentity = {
+    fleetId: string;
+    fixtureRoot: string;
+    sourceDigest: string;
+};
+export type FrozenFleet = Fleet & RegistryIdentity & { sourcePath: string };
 
 export const MAX_REGISTRY_BYTES = 64 * 1024;
 export const MAX_WORKERS = 8;
@@ -266,8 +274,24 @@ function distinct(workers: Worker[]): void {
 // Reads the registry at `path` against the injected clock. Any worker
 // expired, observed in the future or lasting over an hour refuses the whole
 // fleet: refresh is the fixture runner's explicit act, never this reader's.
-export async function readFleet(path: string, now: Date): Promise<Fleet> {
+export const identityOf = (fleet: FrozenFleet): RegistryIdentity => ({
+    fleetId: fleet.fleetId,
+    fixtureRoot: fleet.fixtureRoot,
+    sourceDigest: fleet.sourceDigest,
+});
+
+export async function readFleet(
+    path: string,
+    now: Date,
+    expected?: RegistryIdentity,
+): Promise<FrozenFleet> {
     const text = await readBounded(path);
+    const sourceDigest = createHash("sha256")
+        .update(text, "utf8")
+        .digest("hex");
+    if (expected && expected.sourceDigest !== sourceDigest) {
+        throw new StewardError("REGISTRY_CHANGED", path);
+    }
     if (SECRET_VALUE.test(text)) {
         throw new StewardError("REGISTRY_CREDENTIAL", "value");
     }
@@ -307,7 +331,20 @@ export async function readFleet(path: string, now: Date): Promise<Fleet> {
         workers.push(await readWorker(value, index, root, now.getTime()));
     }
     distinct(workers);
-    return { version: 1, fleetId: raw.fleetId, fixtureRoot: root, workers };
+    if (
+        expected &&
+        (expected.fleetId !== raw.fleetId || expected.fixtureRoot !== root)
+    ) {
+        throw new StewardError("REGISTRY_CHANGED", path);
+    }
+    return {
+        version: 1,
+        fleetId: raw.fleetId,
+        fixtureRoot: root,
+        workers,
+        sourcePath: await realpath(path),
+        sourceDigest,
+    };
 }
 
 // A brief or report path, to be used: absolute, beneath the fixture root,

@@ -65,6 +65,9 @@ export type TaskRecord = {
     revision: string | null;
     code: string | null;
 };
+export type Occupant =
+    | { kind: "session"; value: string }
+    | { kind: "process"; pid: number; startedAt: string };
 export type WorkerObservation = {
     id: string;
     matches: boolean;
@@ -72,6 +75,7 @@ export type WorkerObservation = {
     observedAt: string;
     code: string | null;
     terminalId: string | null;
+    occupant: Occupant | null;
     availability?: "available" | "busy" | "limited" | "unknown";
 };
 export type StewardReply = {
@@ -453,7 +457,14 @@ const refusal = (code: string, why: string): Result =>
 
 export function registerStewardship(
     pi: ExtensionAPI,
-    manifest: PiManifest & { steward: { registry: string } },
+    manifest: PiManifest & {
+        steward: {
+            registry: string;
+            registryDigest: string;
+            fleetId: string;
+            fixtureRoot: string;
+        };
+    },
     options: StewardOptions & {
         // Where the helper runs: the runtime directory, never the project.
         cwd: string;
@@ -505,6 +516,9 @@ export function registerStewardship(
         if (!identity) return { ok: false, code: "STEWARD_PLATFORM" };
         const body = JSON.stringify({
             registry: manifest.steward.registry,
+            registryDigest: manifest.steward.registryDigest,
+            fleetId: manifest.steward.fleetId,
+            fixtureRoot: manifest.steward.fixtureRoot,
             controller: identity,
             operation,
         });

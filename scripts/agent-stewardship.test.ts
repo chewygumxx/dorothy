@@ -60,8 +60,16 @@ case "$1 $2" in
     name=$(cat "$STUB/name.$3" 2>/dev/null || printf %s "$3")
     pane=$(cat "$STUB/pane.$3" 2>/dev/null || echo w1:p2)
     term=$(cat "$STUB/terminal" 2>/dev/null || echo term_1)
-    printf '{"result":{"agent":{"name":"%s","pane_id":"%s","agent_status":"%s","terminal_id":"%s"}}}\\n' \\
-        "$name" "$pane" "$(cat "$STUB/status")" "$term"
+    session=$(cat "$STUB/session" 2>/dev/null || true)
+    if [ -n "$session" ]; then
+        session=$(printf ',"agent_session":{"agent":"claude","kind":"id","source":"herdr:claude","value":"%s"}' "$session")
+    fi
+    printf '{"result":{"agent":{"name":"%s","pane_id":"%s","agent_status":"%s","terminal_id":"%s"%s}}}\\n' \\
+        "$name" "$pane" "$(cat "$STUB/status")" "$term" "$session"
+    ;;
+"pane process-info")
+    pgid=$(cat "$STUB/pgid" 2>/dev/null || echo 0)
+    printf '{"result":{"process_info":{"foreground_process_group_id":%s}}}\\n' "$pgid"
     ;;
 "pane send-text")
     [ -e "$STUB/fail-text" ] && exit 1
@@ -114,6 +122,13 @@ const sendsDir = () => join(root, "state", "dorothy-agents", "sends");
 const lockFile = () => join(root, "run", "dorothy-agents", "w1_p2.lock");
 const setStatus = (status: string) => writeFile(join(root, "status"), status);
 const touch = (name: string) => writeFile(join(root, name), "");
+const processStart = async (pid: number) => {
+    const boot = (
+        await readFile("/proc/sys/kernel/random/boot_id", "utf8")
+    ).trim();
+    const stat = await readFile(`/proc/${pid}/stat`, "utf8");
+    return `${boot}:${stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19]}`;
+};
 
 async function calls(): Promise<string[][]> {
     const raw = await readFile(join(root, "calls.log"), "utf8").catch(() => "");
@@ -129,6 +144,11 @@ async function writes(): Promise<string[][]> {
         .filter((call) => call[0] === "herdr" && call[1] === "pane")
         .map((call) => call.slice(2));
 }
+
+const mutations = async () =>
+    (await writes()).filter(
+        (call) => call[0] === "send-text" || call[0] === "send-keys",
+    );
 
 const start = (
     script: string,
@@ -397,6 +417,53 @@ describe("send-prompt.sh, guarded", () => {
         expect(await calls()).toEqual([]);
     });
 
+    it("rechecks the pinned session under the pane lock", async () => {
+        await writeFile(join(root, "session"), "session-a");
+        const guardedSession = [
+            ...guarded,
+            "--expect-session",
+            "session-a",
+            "bob",
+        ];
+        expect((await run(send, guardedSession, "hi")).code).toBe(0);
+        const release = await holdLock();
+        const waiting = start(send, guardedSession, "hi");
+        await Bun.sleep(300);
+        await writeFile(join(root, "session"), "session-b");
+        await release();
+        const { code } = await finish(waiting);
+        expect(code).toBe(9);
+        expect((await mutations()).slice(2)).toEqual([]);
+    });
+
+    it("rechecks a process pin under the lock before writing", async () => {
+        const sleeper = Bun.spawn(["sleep", "30"]);
+        try {
+            await writeFile(join(root, "pgid"), String(sleeper.pid));
+            const startedAt = await processStart(sleeper.pid);
+            const args = [
+                ...guarded,
+                "--expect-process",
+                String(sleeper.pid),
+                startedAt,
+                "bob",
+            ];
+            expect((await run(send, args, "hi")).code).toBe(0);
+            const other = Bun.spawn(["sleep", "30"]);
+            try {
+                await writeFile(join(root, "pgid"), String(other.pid));
+                expect((await run(send, args, "hi")).code).toBe(9);
+                expect((await mutations()).slice(2)).toEqual([]);
+            } finally {
+                other.kill();
+                await other.exited;
+            }
+        } finally {
+            sleeper.kill();
+            await sleeper.exited;
+        }
+    });
+
     it("refuses a pane id that is not a word", async () => {
         for (const pane of ["-x", "w1 p2", ""]) {
             const args = ["--from", "a", "--expect-pane", pane, "bob"];
@@ -469,6 +536,24 @@ describe("send-interrupt.sh", () => {
         const { code } = await finish(waiting);
         expect(code).toBe(8);
         expect(await writes()).toEqual([]);
+    });
+
+    it("guards a deliberate ctrl+c by session, not terminal alone", async () => {
+        await setStatus("working");
+        await writeFile(join(root, "session"), "session-a");
+        const args = [
+            ...guarded,
+            "--expect-session",
+            "session-a",
+            "--key",
+            "ctrl+c",
+            "bob",
+        ];
+        expect((await run(interrupt, args)).code).toBe(0);
+        expect(await writes()).toEqual([["send-keys", "w1:p2", "ctrl+c"]]);
+        await writeFile(join(root, "session"), "session-b");
+        expect((await run(interrupt, args)).code).toBe(9);
+        expect(await writes()).toHaveLength(1);
     });
 
     it("refuses another pane (5), an absent agent (4) or a dialog (3)", async () => {

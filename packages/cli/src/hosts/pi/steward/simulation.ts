@@ -273,6 +273,9 @@ export class Sim {
     terminalOf(worker: Worker): string {
         return this.cast.terminals[this.slotOf(worker)];
     }
+    processOf(worker: Worker): number {
+        return this.herdr.processes.get(worker.pane) as number;
+    }
     get baseOid() {
         return this.parts.baseOid;
     }
@@ -323,6 +326,7 @@ export class Sim {
             sender: this.sender.run,
             interrupter: this.interrupter.run,
             self: this.helper,
+            occupantStart: async (pid) => `boot:${pid}`,
             pollMs: 5,
             controllerAlive: async (pid, startedAt) => {
                 const known = this.alive.get(`${pid}/${startedAt}`);

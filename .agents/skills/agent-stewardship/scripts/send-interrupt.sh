@@ -15,13 +15,17 @@
 # seconds (5 by default) at most. Once it is held, the agent is read again:
 # its pane must be --expect-pane and its terminal --expect-terminal where
 # given, and it must not be blocked, as Escape would answer its dialog.
+# --expect-session <id> or --expect-process <pid> <boot:start> also pins
+# the real occupant. --key ctrl+c asks the native harness to quit (esc is
+# the default); both are sent only after the same locked guards.
 #
 #   send-interrupt.sh [--expect-pane <id>] [--expect-terminal <id>]
-#                     [--lock-wait <seconds>] <agent>
+#                     [--expect-session <id> | --expect-process <pid> <start>]
+#                     [--key esc|ctrl+c] [--lock-wait <seconds>] <agent>
 #
 # Exit: 2 usage, 3 agent blocked, 4 agent absent, 5 agent in another
-# pane, 7 lock not had in time, 8 another terminal in the pane: each
-# before anything is sent. 1 another failure, the Escape perhaps sent.
+# pane, 7 lock not had in time, 8 another terminal, 9 another occupant:
+# each before anything is sent. 1 another failure, the key perhaps sent.
 
 set -eu
 
@@ -43,9 +47,30 @@ valid() {
 
 expect=
 terminal=
+session=
+process=
+started=
+key=esc
 wait=5
 while [ $# -gt 0 ]; do
     case $1 in
+    --expect-session)
+        [ $# -ge 2 ] && [ -n "$2" ] || usage
+        valid "$2" && session=$2
+        shift 2
+        ;;
+    --expect-process)
+        [ $# -ge 3 ] && [ -n "$2" ] && [ -n "$3" ] || usage
+        case $2 in *[!0-9]* | '' | 0) usage ;; esac
+        valid "$3" || usage
+        process=$2 started=$3
+        shift 3
+        ;;
+    --key)
+        [ $# -ge 2 ] || usage
+        case $2 in esc | ctrl+c) key=$2 ;; *) usage ;; esac
+        shift 2
+        ;;
     --expect-pane | --expect-terminal | --lock-wait)
         [ $# -ge 2 ] && [ -n "$2" ] || usage
         case $1 in
@@ -70,6 +95,11 @@ done
 [ $# -eq 1 ] || usage
 agent=$1
 valid "$agent"
+[ -z "$session" ] || [ -z "$process$started" ] || usage
+if { [ -n "$process" ] && [ -z "$started" ]; } ||
+    { [ -z "$process" ] && [ -n "$started" ]; }; then
+    usage
+fi
 
 pane=$(agent_pane "$agent") || die 4 "agent $agent is absent"
 [ -z "$expect" ] || [ "$pane" = "$expect" ] ||
@@ -87,5 +117,6 @@ status=${rest#* }
 [ -z "$terminal" ] || [ "$now_terminal" = "$terminal" ] ||
     die 8 "pane $pane holds terminal $now_terminal, not $terminal"
 [ "$status" != blocked ] || die 3 "agent $agent is blocked on a dialog"
-herdr pane send-keys "$pane" esc >/dev/null 2>&1 ||
-    die 1 "Escape to pane $pane failed, perhaps sent"
+occupant_guard "$agent" "$pane" "$session" "$process" "$started"
+herdr pane send-keys "$pane" "$key" >/dev/null 2>&1 ||
+    die 1 "$key to pane $pane failed, perhaps sent"

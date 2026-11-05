@@ -39,6 +39,7 @@ import {
     openLedger,
     type Receipt,
 } from "./ledger.js";
+import { readFleet } from "./registry.js";
 import type {
     CompletionEvidence,
     StewardReply,
@@ -105,6 +106,7 @@ const deps = (extra: Partial<StewardDeps> = {}): StewardDeps => ({
     sender: sender.run,
     interrupter: interrupter.run,
     self: HELPER,
+    occupantStart: async (pid) => `boot:${pid}`,
     pollMs: 5,
     controllerAlive: async (pid, startedAt) => {
         const known = alive.get(key({ pid, startedAt }));
@@ -257,6 +259,9 @@ describe("dispatch", () => {
                     "--expect-pane",
                     codex.pane,
                     "--require-idle",
+                    "--expect-process",
+                    "4101",
+                    "boot:4101",
                     codex.name,
                 ],
                 stdin: `Read ${briefPath("t1")} for task t1.`,
@@ -339,30 +344,119 @@ describe("dispatch", () => {
         expect(sender.calls).toEqual([]);
     });
 
+    it("refuses a new fleet or root after the native manifest was pinned", async () => {
+        const frozen = await readFleet(reg.path, NOW);
+        for (const patch of [
+            { fleetId: "00000000-0000-4000-8000-0000000000f3" },
+            { fixtureRoot: "/tmp" },
+        ]) {
+            await writeFile(reg.path, JSON.stringify({ ...reg.raw, ...patch }));
+            const reply = await runSteward(
+                {
+                    registry: reg.path,
+                    registryDigest: frozen.sourceDigest,
+                    fleetId: frozen.fleetId,
+                    fixtureRoot: frozen.fixtureRoot,
+                    controller: ME,
+                    operation: { kind: "dispatch", task: task("t1") },
+                },
+                deps(),
+            );
+            expect(reply).toMatchObject({
+                ok: false,
+                code: "REGISTRY_CHANGED",
+            });
+            expect(sender.calls).toEqual([]);
+        }
+        await writeFile(reg.path, JSON.stringify(reg.raw));
+    });
+
     it("refuses a new occupant with the same name, pane, harness and cwd", async () => {
         await writeBrief("t1");
-        const replaced = { ...herdrAgentOf(codex), terminal_id: "term_new" };
-        herdr.queue(agentInfoReply(herdrAgentOf(codex)));
+        const replaced = { ...herdrAgentOf(claude), terminal_id: "term_new" };
+        herdr.queue(agentInfoReply(herdrAgentOf(claude)));
         herdr.queue(agentInfoReply(replaced));
-        const reply = await dispatch(task("t1"));
+        const reply = await dispatch(task("t1", claude));
         expect(reply).toMatchObject({ ok: false, code: "WORKER_REPLACED" });
         expect(only(reply).state).toBe("failed");
         expect(sender.calls).toEqual([]);
     });
 
+    it("refuses a same-terminal replacement whose session changed", async () => {
+        await writeBrief("t1");
+        const first = herdrAgentOf(claude);
+        const replaced = {
+            ...first,
+            agent_session: {
+                ...first.agent_session,
+                value: "00000000-0000-4000-8000-0000000000b2",
+            },
+        } as typeof first;
+        herdr.queue(agentInfoReply(first));
+        herdr.queue(agentInfoReply(replaced));
+        const reply = await dispatch(task("t1", claude));
+        expect(reply).toMatchObject({ ok: false, code: "WORKER_REPLACED" });
+        expect(sender.calls).toEqual([]);
+        expect(replaced.terminal_id).toBe(first.terminal_id);
+    });
+
+    it("pins a fresh Codex by its foreground process start", async () => {
+        await writeBrief("t1");
+        expect(herdrAgentOf(codex).agent_session).toBeUndefined();
+        const reply = await dispatch(task("t1"));
+        expect(reply).toMatchObject({ ok: true, code: "TASK_SENT" });
+        expect(reply.workers?.[0]?.occupant).toEqual({
+            kind: "process",
+            pid: 4101,
+            startedAt: "boot:4101",
+        });
+        expect(withLedger((db) => db.task("t1")?.occupant)).toEqual(
+            reply.workers?.[0]?.occupant,
+        );
+    });
+
+    it("refuses a same-terminal foreground process replacement", async () => {
+        await writeBrief("t1");
+        const run = herdr.run;
+        let infos = 0;
+        const replacing: StewardDeps["run"] = async (args, options) => {
+            if (args[1] === "process-info" && ++infos === 2) {
+                return {
+                    code: 0,
+                    stdout: JSON.stringify({
+                        result: {
+                            process_info: {
+                                foreground_process_group_id: 4199,
+                            },
+                        },
+                    }),
+                    stderr: "",
+                };
+            }
+            return run(args, options);
+        };
+        const reply = await steward(
+            { kind: "dispatch", task: task("t1") },
+            ME,
+            { run: replacing },
+        );
+        expect(reply).toMatchObject({ ok: false, code: "WORKER_REPLACED" });
+        expect(sender.calls).toEqual([]);
+    });
+
     it("refuses an occupant whose terminal id is unreadable", async () => {
         await writeBrief("t1");
-        const blank = { ...herdrAgentOf(codex), terminal_id: "" };
+        const blank = { ...herdrAgentOf(claude), terminal_id: "" };
         herdr.queue(agentInfoReply(blank));
-        const reply = await dispatch(task("t1"));
+        const reply = await dispatch(task("t1", claude));
         expect(reply).toMatchObject({ ok: false, code: "WORKER_UNIDENTIFIED" });
         expect(reply.tasks ?? []).toEqual([]);
         expect(sender.calls).toEqual([]);
 
         await writeBrief("t2");
-        herdr.queue(agentInfoReply(herdrAgentOf(codex)));
+        herdr.queue(agentInfoReply(herdrAgentOf(claude)));
         herdr.queue(agentInfoReply(blank));
-        const late = await dispatch(task("t2"));
+        const late = await dispatch(task("t2", claude));
         expect(late).toMatchObject({ ok: false, code: "WORKER_REPLACED" });
         expect(sender.calls).toEqual([]);
     });
@@ -386,9 +480,9 @@ describe("dispatch", () => {
 
     it("refuses a worker that becomes busy before the send", async () => {
         await writeBrief("t1");
-        herdr.queue(agentInfoReply(herdrAgentOf(codex)));
-        herdr.queue(agentInfoReply(herdrAgentOf(codex, "working")));
-        const reply = await dispatch(task("t1"));
+        herdr.queue(agentInfoReply(herdrAgentOf(claude)));
+        herdr.queue(agentInfoReply(herdrAgentOf(claude, "working")));
+        const reply = await dispatch(task("t1", claude));
         expect(reply).toMatchObject({ ok: false, code: "WORKER_NOT_IDLE" });
         expect(only(reply).state).toBe("failed");
         expect(sender.calls).toEqual([]);
@@ -538,6 +632,7 @@ const reply = await runSteward(
         sender: sender.run,
         controllerAlive: async () => true,
         self: { pid: process.pid, startedAt: "child" },
+        occupantStart: async (pid) => "boot:" + pid,
     },
 );
 console.log(JSON.stringify(reply));
@@ -812,6 +907,9 @@ describe("cancel", () => {
                     codex.pane,
                     "--expect-terminal",
                     "term_0000000000000a1",
+                    "--expect-process",
+                    "4101",
+                    "boot:4101",
                     "--lock-wait",
                     "5",
                     codex.name,
@@ -845,6 +943,26 @@ describe("cancel", () => {
         const reply = await steward({ kind: "cancel", taskId: "t1" });
         expect(reply).toMatchObject({ ok: false, code: "WORKER_REPLACED" });
         expect(only(reply).state).toBe("sent");
+        expect(interrupts()).toEqual([]);
+    });
+
+    it("refuses a new foreground process before any interrupt", async () => {
+        herdr.processes.set(codex.pane, 4199);
+        const reply = await steward({ kind: "cancel", taskId: "t1" });
+        expect(reply).toMatchObject({ ok: false, code: "WORKER_REPLACED" });
+        expect(interrupts()).toEqual([]);
+    });
+
+    it("refuses a new session before any interrupt", async () => {
+        await writeBrief("review");
+        await dispatch(task("review", claude));
+        setStatus(claude, "working");
+        const agent = herdr.agents.get(claude.name);
+        if (agent?.agent_session) {
+            agent.agent_session.value = "00000000-0000-4000-8000-0000000000b2";
+        }
+        const reply = await steward({ kind: "cancel", taskId: "review" });
+        expect(reply).toMatchObject({ ok: false, code: "WORKER_REPLACED" });
         expect(interrupts()).toEqual([]);
     });
 

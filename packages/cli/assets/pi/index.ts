@@ -83,7 +83,12 @@ export type PiManifest = {
     skills: string[];
     helperEnv: Env;
     persona?: string;
-    steward?: { registry: string };
+    steward?: {
+        registry: string;
+        registryDigest: string;
+        fleetId: string;
+        fixtureRoot: string;
+    };
 };
 
 export const MEMORY_SERVER = "dorothy-memory";
@@ -132,7 +137,10 @@ function sound(value: unknown): value is PiManifest {
         (m.persona === undefined || typeof m.persona === "string") &&
         (m.steward === undefined ||
             (typeof m.steward?.registry === "string" &&
-                m.steward.registry.startsWith("/"))) &&
+                m.steward.registry.startsWith("/") &&
+                typeof m.steward.registryDigest === "string" &&
+                typeof m.steward.fleetId === "string" &&
+                typeof m.steward.fixtureRoot === "string")) &&
         typeof m.helperEnv === "object" &&
         m.helperEnv !== null &&
         Object.values(m.helperEnv).every((item) => typeof item === "string")

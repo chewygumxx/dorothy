@@ -117,6 +117,8 @@ export type FakeHerdr = {
     run: HerdrRun;
     calls: FakeCall[];
     agents: Map<string, HerdrAgent>;
+    // Foreground process-group ids by pane, all invented and stable.
+    processes: Map<string, number>;
     // What `agent read <name>` shows, by name, where a read is served.
     screens: Map<string, string>;
     // The next call gets this reply, or hangs until its signal aborts.
@@ -137,6 +139,9 @@ export function fakeHerdr(
     for (const worker of workers) {
         agents.set(worker.name, herdrAgentOf(worker));
     }
+    const processes = new Map(
+        workers.map((worker, index) => [worker.pane, 4101 + index]),
+    );
     const screens = new Map<string, string>();
     const calls: FakeCall[] = [];
     const queued: (Reply | "hang" | Error)[] = [];
@@ -149,6 +154,36 @@ export function fakeHerdr(
         if (args.length === 3 && noun === "agent" && verb === "get") {
             const found = find(target);
             return found ? agentInfoReply(found) : notFoundReply(target);
+        }
+        if (
+            args.length === 4 &&
+            noun === "pane" &&
+            verb === "process-info" &&
+            args[2] === "--pane"
+        ) {
+            const pane = args[3] as string;
+            const pid = processes.get(pane);
+            return pid === undefined
+                ? errorReply("pane_not_found", `pane ${pane} not found`)
+                : ok(
+                      JSON.stringify({
+                          id: "cli:pane:process-info",
+                          result: {
+                              process_info: {
+                                  foreground_process_group_id: pid,
+                                  foreground_processes: [
+                                      {
+                                          pid,
+                                          name: "fixture-agent",
+                                          cwd: "/fixture",
+                                          argv: ["fixture-agent"],
+                                      },
+                                  ],
+                                  shell_pid: pid - 1,
+                              },
+                          },
+                      }),
+                  );
         }
         if (!options.steward) {
             return null;
@@ -192,6 +227,7 @@ export function fakeHerdr(
         run,
         calls,
         agents,
+        processes,
         screens,
         queue: (reply) => queued.push(reply),
     };

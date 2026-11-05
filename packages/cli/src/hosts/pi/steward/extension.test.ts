@@ -484,7 +484,7 @@ describe("a stewardship run", () => {
         expect(sent.details.task?.state).toBe("sent");
         const [line] = await sends();
         expect(line).toBe(
-            "--from dorothy --expect-pane w1:p1 --require-idle trial-codex|" +
+            "--from dorothy --expect-pane w1:p1 --require-idle --expect-session stub-trial-codex trial-codex|" +
                 `Read ${await brief("t1")} for task t1.`,
         );
         // Before the dispatch, the ledger was reconciled.
@@ -776,7 +776,7 @@ describe("a stewardship run", () => {
         expect(cancelled.details.task?.state).toBe("cancel-requested");
         expect(await lines(join(stub, "interrupt.log"))).toEqual([
             "--expect-pane w1:p1 --expect-terminal term_0000000000000a1 " +
-                "--lock-wait 5 trial-codex",
+                "--expect-session stub-trial-codex --lock-wait 5 trial-codex",
         ]);
     });
 });

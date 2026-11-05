@@ -37,6 +37,12 @@ export type Fleet = {
 
 export type WorkerState = "idle" | "working" | "blocked" | "done" | "unknown";
 
+// The occupant, not the terminal it reuses: a harness session where
+// herdr has one, else the foreground process group and its Linux start.
+export type Occupant =
+    | { kind: "session"; value: string }
+    | { kind: "process"; pid: number; startedAt: string };
+
 export type WorkerObservation = {
     id: string;
     matches: boolean;
@@ -46,6 +52,8 @@ export type WorkerObservation = {
     // herdr's terminal id of the matched occupant, for the caller to pin;
     // null where unmatched, absent or not a bounded word. Never a match.
     terminalId: string | null;
+    // Null when unmatched or no trustworthy occupant can be observed.
+    occupant: Occupant | null;
     // The registry's observed availability (its budget and state, as the
     // runner saw them), carried in a list's reply.
     availability?: Availability;
@@ -93,6 +101,10 @@ export type TaskRecord = TaskBrief & {
 
 export type StewardRequest = {
     registry: string;
+    // The native extension pins the exact manifest it was launched with.
+    registryDigest?: string;
+    fleetId?: string;
+    fixtureRoot?: string;
     controller: { pid: number; startedAt: string };
     operation:
         | { kind: "list" }

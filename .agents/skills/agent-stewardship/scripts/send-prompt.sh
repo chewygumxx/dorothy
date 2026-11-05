@@ -32,10 +32,11 @@
 #
 # A send now may be guarded, never a scheduled one: --expect-pane refuses
 # an agent in another pane, --require-idle one not idle, each checked
-# again once the pane's lock is held.
+# again once the pane's lock is held. --expect-session <id> or
+# --expect-process <pid> <boot:start> pins its real occupant there too.
 #
 # Exit: 2 usage, 3 agent blocked, 4 agent absent, 5 agent in another
-# pane, 6 agent not idle, 1 other failure.
+# pane, 6 agent not idle, 9 another occupant, 1 other failure.
 
 set -eu
 
@@ -83,6 +84,9 @@ span=
 deliver=
 expect=
 idle=
+session=
+process=
+started=
 while [ $# -gt 0 ]; do
     case $1 in
     --from | --at | --in | --deliver | --expect-pane)
@@ -96,6 +100,18 @@ while [ $# -gt 0 ]; do
         esac
         shift 2
         ;;
+    --expect-session)
+        [ $# -ge 2 ] && [ -n "$2" ] || usage
+        valid "$2" && session=$2
+        shift 2
+        ;;
+    --expect-process)
+        [ $# -ge 3 ] && [ -n "$2" ] && [ -n "$3" ] || usage
+        case $2 in *[!0-9]* | '' | 0) usage ;; esac
+        valid "$3" || usage
+        process=$2 started=$3
+        shift 3
+        ;;
     --require-idle) idle=1 && shift ;;
     --) shift && break ;;
     -*) usage ;;
@@ -103,8 +119,15 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# The guards are for a send now alone.
-[ -z "$expect$idle" ] || [ -z "$at$span$deliver" ] || usage
+# The guards are for a send now alone, and an occupant needs its pane.
+[ -z "$expect$idle$session$process$started" ] ||
+    [ -z "$at$span$deliver" ] || usage
+[ -z "$session$process$started" ] || [ -n "$expect" ] || usage
+[ -z "$session" ] || [ -z "$process$started" ] || usage
+if { [ -n "$process" ] && [ -z "$started" ]; } ||
+    { [ -z "$process" ] && [ -n "$started" ]; }; then
+    usage
+fi
 
 if [ -n "$deliver" ]; then
     [ $# -eq 0 ] && [ -z "$from$at$span" ] || usage
@@ -192,6 +215,7 @@ if [ -z "$at$span" ]; then
     [ "$status" != blocked ] || die 3 "agent $agent is blocked on a dialog"
     [ -z "$idle" ] || [ "$status" = idle ] ||
         die 6 "agent $agent is $status, not idle"
+    occupant_guard "$agent" "$pane" "$session" "$process" "$started"
     # The label begins the text, so a message of `-rf` is never an option.
     herdr pane send-text "$pane" "[from $from] $message" >/dev/null 2>&1 ||
         die 1 "cannot write to pane $pane"

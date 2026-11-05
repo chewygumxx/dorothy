@@ -139,7 +139,7 @@ export async function runPiScenario(): Promise<ScenarioResult> {
             sent.map((line) => line.split("|")),
             [
                 [
-                    `--from dorothy --expect-pane ${impl.pane} --require-idle ${impl.name}`,
+                    `--from dorothy --expect-pane ${impl.pane} --require-idle --expect-session stub-${impl.id} ${impl.name}`,
                     `Read ${brief.briefPath} for task ${id}.`,
                 ],
             ],

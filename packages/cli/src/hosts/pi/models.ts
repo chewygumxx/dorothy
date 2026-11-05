@@ -47,7 +47,12 @@ export type PiLaunchManifest = {
     persona?: string;
     // `--steward`: the registry of the workers she may steward, read
     // again by her helper at each use. Absent, no worker tool exists.
-    steward?: { registry: string };
+    steward?: {
+        registry: string;
+        registryDigest: string;
+        fleetId: string;
+        fixtureRoot: string;
+    };
 };
 
 const CATALOG = join(import.meta.dir, "../../../assets/pi/models.json");

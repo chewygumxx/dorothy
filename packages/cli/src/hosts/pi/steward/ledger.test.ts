@@ -134,6 +134,23 @@ describe("the ledger's file", () => {
         raw.close();
         expect(() => ledger()).toThrow("LEDGER_VERSION");
     });
+
+    it("migrates version 1 rows with no occupant authority", () => {
+        const first = ledger();
+        first.reserve(brief("t1"), DIGEST, "term_1", HELPER);
+        first.close();
+        open = [];
+        const raw = new Database(path);
+        raw.run("ALTER TABLE tasks DROP COLUMN occupant");
+        raw.run("PRAGMA user_version = 1");
+        raw.close();
+        const migrated = ledger();
+        expect(migrated.pragma("user_version")).toEqual({ user_version: 2 });
+        expect(migrated.task("t1")).toMatchObject({
+            terminalId: "term_1",
+            occupant: null,
+        });
+    });
 });
 
 describe("tasks", () => {

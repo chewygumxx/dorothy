@@ -95,7 +95,7 @@ const SCENARIOS: Record<string, Scenario> = {
                 ["TASK_SENT", 1],
             );
             s.check(
-                "the sender is labelled and pinned to the pane",
+                "the sender is labelled and pinned to the pane and occupant",
                 s.sends()[0]?.args,
                 [
                     "--from",
@@ -103,6 +103,9 @@ const SCENARIOS: Record<string, Scenario> = {
                     "--expect-pane",
                     impl.pane,
                     "--require-idle",
+                    "--expect-process",
+                    String(s.processOf(impl)),
+                    `boot:${s.processOf(impl)}`,
                     impl.name,
                 ],
             );
@@ -758,7 +761,7 @@ const SCENARIOS: Record<string, Scenario> = {
             await s.act("wait", { kind: "wait", taskId: a, timeoutMs: 0 });
             const asked = await s.act("cancel", { kind: "cancel", taskId: a });
             s.check(
-                "the Escape goes to the pinned pane and terminal, once",
+                "the Escape goes to the pinned pane, terminal and occupant, once",
                 [asked.code, s.interrupter.calls.map((c) => c.args)],
                 [
                     "CANCEL_REQUESTED",
@@ -768,6 +771,9 @@ const SCENARIOS: Record<string, Scenario> = {
                             impl.pane,
                             "--expect-terminal",
                             s.cast.terminals.impl,
+                            "--expect-process",
+                            String(s.processOf(impl)),
+                            `boot:${s.processOf(impl)}`,
                             "--lock-wait",
                             "5",
                             impl.name,

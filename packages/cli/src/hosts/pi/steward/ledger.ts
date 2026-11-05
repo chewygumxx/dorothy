@@ -19,6 +19,7 @@ import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { type Env, isUuid } from "@dorothy/core";
 import {
+    type Occupant,
     StewardError,
     type TaskBrief,
     type TaskRecord,
@@ -26,7 +27,9 @@ import {
 } from "./types.js";
 
 export const BUSY_TIMEOUT_MS = 2000;
-const VERSION = 1;
+// Version 2 adds the occupant pin. Version 1 rows migrate with a null
+// occupant and may be read, but the engine will not send or interrupt them.
+const VERSION = 2;
 
 // The states that hold their worker: all but verified, cancelled, failed.
 export const ACTIVE_STATES: readonly TaskState[] = [
@@ -49,8 +52,12 @@ export type Identity = { pid: number; startedAt: string };
 // True alive, false proven gone; a rejection is uncertain.
 export type Liveness = (pid: number, startedAt: string) => Promise<boolean>;
 
-// A row as stored: the record and the terminal pinned at reservation.
-export type StoredTask = TaskRecord & { terminalId: string | null };
+// A row as stored: the terminal resource and real occupant pinned at
+// reservation. The terminal is only the sender's second guard.
+export type StoredTask = TaskRecord & {
+    terminalId: string | null;
+    occupant: Occupant | null;
+};
 
 export type OperationState = "pending" | "done" | "uncertain";
 export type Operation = {
@@ -108,6 +115,7 @@ CREATE TABLE tasks (
     base_oid TEXT NOT NULL,
     brief_digest TEXT NOT NULL,
     terminal_id TEXT,
+    occupant TEXT,
     state TEXT NOT NULL CHECK (state IN (${quoted(STATES)})),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -176,7 +184,20 @@ const taskOf = (row: Row): StoredTask => ({
     revision: row.revision as string | null,
     code: row.code as string | null,
     terminalId: row.terminal_id as string | null,
+    occupant: parseOccupant(row.occupant),
 });
+
+function parseOccupant(value: unknown): Occupant | null {
+    if (typeof value !== "string") return null;
+    try {
+        const occupant = JSON.parse(value) as Occupant;
+        return occupant.kind === "session" || occupant.kind === "process"
+            ? occupant
+            : null;
+    } catch {
+        return null;
+    }
+}
 
 const operationOf = (row: Row): Operation => ({
     id: row.id as number,
@@ -204,6 +225,7 @@ export type Ledger = {
         briefDigest: string,
         terminalId: string,
         helper: Identity,
+        occupant?: Occupant | null,
     ) => Operation;
     // Moves a task only from one of `from`; false where it was not there.
     move: (
@@ -268,7 +290,10 @@ function prepare(db: Database, fleetId: string, at: string): void {
             db.run(`PRAGMA user_version = ${VERSION}`);
             return;
         }
-        if (version !== VERSION) {
+        if (version === 1) {
+            db.run("ALTER TABLE tasks ADD COLUMN occupant TEXT");
+            db.run(`PRAGMA user_version = ${VERSION}`);
+        } else if (version !== VERSION) {
             throw new StewardError("LEDGER_VERSION", String(version));
         }
         const row = db.query("SELECT fleet_id FROM fleet").get() as Row | null;
@@ -427,7 +452,7 @@ export function openLedger(
                     .all() as Row[]
             ).map(taskOf),
 
-        reserve: (brief, briefDigest, terminalId, helper) =>
+        reserve: (brief, briefDigest, terminalId, helper, occupant = null) =>
             db
                 .transaction(() => {
                     if (getTask(brief.taskId)) {
@@ -449,9 +474,9 @@ export function openLedger(
                     db.run(
                         `INSERT INTO tasks
                             (task_id, worker_id, brief_path, report_path,
-                             base_oid, brief_digest, terminal_id, state,
-                             created_at, updated_at)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, 'intent', ?, ?)`,
+                             base_oid, brief_digest, terminal_id, occupant,
+                             state, created_at, updated_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'intent', ?, ?)`,
                         [
                             brief.taskId,
                             brief.workerId,
@@ -460,6 +485,7 @@ export function openLedger(
                             brief.baseOid,
                             briefDigest,
                             terminalId,
+                            occupant ? JSON.stringify(occupant) : null,
                             at,
                             at,
                         ],

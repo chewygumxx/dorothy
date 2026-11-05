@@ -122,6 +122,12 @@ export async function setAgent(
     if (over.terminalId) {
         agent.terminal_id = over.terminalId;
     }
+    agent.agent_session = {
+        agent: worker.harness,
+        kind: "id",
+        source: `herdr:${worker.harness}`,
+        value: `stub-${worker.id}`,
+    };
     await writeFile(
         join(dir, `agent.${worker.name}.json`),
         agentInfoReply(agent).stdout,

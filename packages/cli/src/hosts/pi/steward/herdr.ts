@@ -17,6 +17,7 @@
 import type { Env } from "@dorothy/core";
 import { isWorkerWord } from "./registry.js";
 import {
+    type Occupant,
     StewardError,
     type Worker,
     type WorkerObservation,
@@ -34,8 +35,9 @@ export const MAX_READ_LINES = 200;
 export const MAX_OUTPUT_BYTES = 32 * 1024;
 export const METADATA_TIMEOUT_MS = 2000;
 
-// A terminal id is herdr's own word (`term_` and hex), bounded to 64.
+// Terminal and session values are bounded argv-safe words.
 const TERMINAL = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
+const SESSION = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 const STATES: readonly WorkerState[] = [
     "idle",
@@ -116,6 +118,8 @@ export type ObserveOptions = {
     env: Env;
     now: () => Date;
     timeoutMs?: number;
+    // Linux /proc start for a sessionless occupant's foreground group.
+    processStart?: (pid: number) => Promise<string>;
 };
 
 type Reply = { code: number; stdout: string; stderr: string };
@@ -168,12 +172,15 @@ function record(value: unknown): Record<string, unknown> | null {
 }
 
 // What `herdr agent get <name>` gives for `worker`, or the code for why not.
-function compare(
-    worker: Worker,
-    reply: Reply,
-):
-    | { state: WorkerState; code: string | null; terminalId: string | null }
-    | { fail: string } {
+type Compared = {
+    state: WorkerState;
+    code: string | null;
+    terminalId: string | null;
+    occupant: Occupant | null;
+    sessionAbsent: boolean;
+};
+
+function compare(worker: Worker, reply: Reply): Compared | { fail: string } {
     const body = parse(reply.stdout);
     if (reply.code !== 0) {
         return {
@@ -214,9 +221,90 @@ function compare(
     const status = agent.agent_status;
     const id = agent.terminal_id;
     const terminalId = typeof id === "string" && TERMINAL.test(id) ? id : null;
-    return STATES.includes(status as WorkerState)
-        ? { state: status as WorkerState, code: null, terminalId }
-        : { state: "unknown", code: "HERDR_STATE_UNRECOGNIZED", terminalId };
+    const recognized = STATES.includes(status as WorkerState);
+    const state = recognized ? (status as WorkerState) : "unknown";
+    let code = recognized ? null : "HERDR_STATE_UNRECOGNIZED";
+    if (agent.agent_session === undefined) {
+        return {
+            state,
+            code,
+            terminalId,
+            occupant: null,
+            sessionAbsent: true,
+        };
+    }
+    const session = record(agent.agent_session);
+    if (
+        session?.agent !== worker.harness ||
+        session.kind !== "id" ||
+        typeof session.source !== "string" ||
+        !SESSION.test(session.source) ||
+        typeof session.value !== "string" ||
+        !SESSION.test(session.value)
+    ) {
+        code = "HERDR_OCCUPANT_INVALID";
+        return {
+            state,
+            code,
+            terminalId,
+            occupant: null,
+            sessionAbsent: false,
+        };
+    }
+    return {
+        state,
+        code,
+        terminalId,
+        occupant: { kind: "session", value: session.value },
+        sessionAbsent: false,
+    };
+}
+
+// Fresh Codex sessions can have no agent_session yet. Their foreground
+// process group is the native harness job; its /proc start distinguishes a
+// replacement even when herdr reuses the pane and terminal.
+async function processOccupant(
+    worker: Worker,
+    run: HerdrRun,
+    options: ObserveOptions,
+): Promise<{ occupant: Occupant | null; code: string | null }> {
+    if (!options.processStart) {
+        return { occupant: null, code: "HERDR_OCCUPANT_UNKNOWN" };
+    }
+    let reply: Reply;
+    try {
+        reply = await timed(
+            run,
+            ["pane", "process-info", "--pane", worker.pane],
+            options.env,
+            options.timeoutMs ?? METADATA_TIMEOUT_MS,
+        );
+    } catch {
+        return { occupant: null, code: "HERDR_OCCUPANT_UNKNOWN" };
+    }
+    const body = parse(reply.stdout);
+    const info = record(record(body?.result)?.process_info);
+    const pid = info?.foreground_process_group_id;
+    if (
+        reply.code !== 0 ||
+        typeof pid !== "number" ||
+        !Number.isSafeInteger(pid) ||
+        pid <= 0
+    ) {
+        return { occupant: null, code: "HERDR_OCCUPANT_UNKNOWN" };
+    }
+    try {
+        return {
+            occupant: {
+                kind: "process",
+                pid,
+                startedAt: await options.processStart(pid),
+            },
+            code: null,
+        };
+    } catch {
+        return { occupant: null, code: "HERDR_OCCUPANT_UNKNOWN" };
+    }
 }
 
 // Observes one declared worker, now and read-only. It matches only where
@@ -236,6 +324,7 @@ export async function observeWorker(
         observedAt: at.toISOString(),
         code,
         terminalId: null,
+        occupant: null,
     });
     if (options.env.HERDR_ENV !== "1") {
         return unmatched("HERDR_ENV_MISSING");
@@ -274,12 +363,16 @@ export async function observeWorker(
     if ("fail" in found) {
         return unmatched(found.fail);
     }
+    const fallback = found.sessionAbsent
+        ? await processOccupant(worker, run, options)
+        : null;
     return {
         id: worker.id,
         matches: true,
         state: found.state,
         observedAt: at.toISOString(),
-        code: found.code,
+        code: fallback?.code ?? found.code,
         terminalId: found.terminalId,
+        occupant: fallback?.occupant ?? found.occupant,
     };
 }
