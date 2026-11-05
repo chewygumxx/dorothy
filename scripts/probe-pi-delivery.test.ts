@@ -342,6 +342,32 @@ describe("the probe's forwarding proxy", () => {
         expect(at.calls[1]?.maxCompletionTokens).toBe(32768);
     });
 
+    it("injects the reserved output cap when the client omits both fields", async () => {
+        const at = start([reply("bounded")]);
+        const response = await fetch(`${at.baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+                authorization: `Bearer ${SYNTHETIC_KEY}`,
+            },
+            body: JSON.stringify({
+                model: MODEL,
+                messages: [{ role: "system", content: "s" }],
+            }),
+        });
+        expect(response.status).toBe(200);
+        await response.text();
+        expect(upstream?.requests[0]?.body).toMatchObject({
+            max_completion_tokens: 32768,
+        });
+        expect(upstream?.requests[0]?.body).not.toHaveProperty("max_tokens");
+        expect(at.calls[0]?.maxCompletionTokens).toBe(32768);
+        const expected =
+            (262144 * PRICE.input) / 1_000_000 +
+            (32768 * PRICE.output) / 1_000_000;
+        expect(at.calls[0]?.reservedUsd).toBeCloseTo(expected, 12);
+    });
+
     it("aborts an in-flight upstream stream when the wall stops", async () => {
         const cut = startStalled();
         const at = start([], { upstream: cut.baseUrl });

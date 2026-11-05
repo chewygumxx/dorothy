@@ -365,11 +365,9 @@ export function startForwardingProxy(options: ProxyOptions): ForwardingProxy {
             );
             const normalized = { ...body };
             const output = Math.min(options.maxTokens, ...requestedOutput);
-            if (outputFields.length > 0) {
-                normalized.max_completion_tokens = output;
-                if (Object.hasOwn(body, "max_tokens"))
-                    normalized.max_tokens = output;
-            }
+            normalized.max_completion_tokens = output;
+            if (Object.hasOwn(body, "max_tokens"))
+                normalized.max_tokens = output;
             const outbound = JSON.stringify(normalized);
             Object.assign(call, shapeOf(normalized));
             const forwarded = calls.filter((c) => c.refused === null).length;
