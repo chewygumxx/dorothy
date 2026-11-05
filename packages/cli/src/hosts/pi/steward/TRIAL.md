@@ -59,6 +59,19 @@ of them. A banner and live shell or foreign job cannot authorize kickoff.
 The identity is checked again before prompt text and Enter. Before a
 successful kickoff Enter and with no provider call, evidence is `not-run`.
 
+## Control environment and lock namespace
+
+The live trial uses one explicit, credential-free control environment:
+the declared `HERDR_ENV`, `HERDR_SOCKET_PATH` and optional
+`HERDR_BIN_PATH`, the caller's `PATH`/`HOME` and locale, and a
+**trial-owned** `XDG_RUNTIME_DIR`. No provider key, age key, memory
+address or arbitrary owner setting is inherited. Runner Herdr calls,
+home inspection, the locked interrupter and Pi's helper all use that
+runtime, so there is one pane-lock namespace; Pi's home, config, data,
+state and cache remain isolated. Preflight requires an absolute
+`HERDR_SOCKET_PATH` and never falls back to a default or discovers another
+server.
+
 Reservation persists validated session identity, or foreground group
 leader PID plus boot:start. The locked sender/interrupter repeats the
 check before writing. Process-pinned interruption confirms that exact

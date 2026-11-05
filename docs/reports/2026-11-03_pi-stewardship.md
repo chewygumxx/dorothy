@@ -209,6 +209,12 @@ incomplete reply complete.
   kickoff. A banner with a live shell or foreign job is insufficient.
   Before successful kickoff Enter and with no provider call, the result
   remains `not-run`.
+- Live Herdr calls, home inspection, interruption and Pi's helper share
+  one explicit control environment: the owner's declared
+  `HERDR_SOCKET_PATH`, `HERDR_ENV`, PATH/HOME and locale, plus a
+  trial-owned `XDG_RUNTIME_DIR` for one pane-lock namespace. Pi's
+  config/data/state/cache stay isolated. Provider and age keys are not
+  copied; an absent or relative socket is refused before startup.
 
 A receipt is evidence against a worker's report, not against hostile
 code running as the runner's user. The workers run as the user with no
@@ -271,6 +277,15 @@ bun scripts/probe-pi-stewardship.ts --live --registry <path> \
 Missing prerequisites leave the gate pending while offline evidence
 remains reviewable. The separate production `RUNNERS.pi` smoke has now
 completed under isolated configuration; its limits are below.
+
+The first production native trial attempt stopped incomplete before any
+request with `agent get trial-codex: worker home is not the trial home`,
+while all three panes it created were closed. A read-only profile
+diagnostic showed the worker's actual HOME, CODEX_HOME and cwd were the
+expected private roots. The missing context was the owner's declared
+Herdr socket and the trial lock runtime in the verifier's control
+environment. A second run also made zero requests; that is not a passed
+trial and proves no model competence.
 
 ### Supplemental live research, not acceptance
 

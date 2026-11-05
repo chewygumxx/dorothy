@@ -83,7 +83,9 @@ offline runner and its tests are built; the live gate has not run.
   Frozen registry bytes, exact native launch identity, occupant pins and
   the propagated trial deadline prevent the covered in-band drift, stale
   mutations and late writes; they do not claim OS confinement or stop
-  every raw bypass. The native arrangement still needs its live gate.
+  every raw bypass. The live control environment keeps the declared Herdr
+  socket and a trial-owned lock runtime but no provider or age key. The
+  native arrangement still needs its live gate.
 - The live adapter duplicates the memory health route as `/v1/health`
   and starts its service with the fixture's recording config. A shared
   production memory-launch helper would remove the duplication.

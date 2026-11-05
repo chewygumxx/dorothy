@@ -134,17 +134,17 @@ manifest names its path, digest, fleet id and fixture root; Pi gets herdr's
 vendored Pi state extension and the stewardship skill, each once; a
 plain `--pi` has neither. `TRIAL.md` defines the owner-only native
 `stewardDeadlineAt` and `launchRecord` plan fields, readiness and deadline
-enforcement; neither is a model tool field. Her extension's tools and
-status are `../../../../assets/pi/steward.ts`
-([its guide](../../../../assets/pi/AGENTS.md)). The registry example is
-`../../../../assets/pi/stewardship/registry.example.json`, synthetic and
-expired by design.
+enforcement; neither is a model tool field. The live control environment
+keeps the declared socket and a trial-owned runtime shared with Pi's
+helper, without provider or age keys. Her extension's tools and status are
+`../../../../assets/pi/steward.ts`
+([its guide](../../../../assets/pi/AGENTS.md)). The registry example
+`../../../../assets/pi/stewardship/registry.example.json` is synthetic.
 
 ## Tests
 
 Every root, clock, environment and runner is injected; `createHerdrRun`
-uses a private script, never real herdr. Engine tests inject identity and
-liveness; killed and competing helpers share one temporary ledger.
-`extension.test.ts` uses a fake ExtensionAPI and real helpers, then the
-published Pi and vendored herdr extension against a fake socket.
-`scenarios.test.ts` and `owner.test.ts` run both casts and verification.
+never starts real herdr. Engine tests inject identity and liveness;
+competing helpers share one ledger. `extension.test.ts` uses a fake
+ExtensionAPI and real helpers, then published Pi and vendored herdr
+against a fake socket; `scenarios.test.ts`/`owner.test.ts` run both casts.
