@@ -17,8 +17,8 @@
 # would answer its dialog.
 #
 #   send-prompt.sh [--from <name>] [--at <time> | --in <span>] <agent>
-#   send-prompt.sh [--from <name>] [--expect-pane <id>] [--require-idle]
-#                  <agent>
+#   send-prompt.sh [--from <name>] [--expect-pane <id>]
+#                  [--require-idle | --require-ready] <agent>
 #   send-prompt.sh --deliver <id>
 #
 # The message is labelled `[from <name>] `, the name being --from, else
@@ -31,13 +31,14 @@
 # minutes, twelve times at most.
 #
 # A send now may be guarded, never a scheduled one: --expect-pane refuses
-# an agent in another pane, --require-idle one not idle, each checked
-# again once the pane's lock is held. --expect-session <id> or
-# --expect-process <pid> <boot:start> pins its real occupant there too.
+# an agent in another pane, --require-idle one not idle and --require-ready
+# one neither idle nor done, each checked again once the pane's lock is
+# held. --expect-session <id> or --expect-process <pid> <boot:start> pins
+# its real occupant there too.
 # --deadline-at <epoch-ms> caps lock/pause and checks before each write.
 #
 # Exit: 2 usage, 3 agent blocked, 4 agent absent, 5 agent in another
-# pane, 6 agent not idle, 9 another occupant, 10 expired before text,
+# pane, 6 agent not idle or ready, 9 another occupant, 10 expired before text,
 # 11 expired after text (uncertain), 1 other failure.
 
 set -eu
@@ -51,7 +52,7 @@ self=$here/$(basename "$0")
 usage() {
     printf '%s\n' \
         "usage: ${0##*/} [--from <name>] [--at <time> | --in <span>] <agent>" \
-        "       ${0##*/} [--from <name>] [--expect-pane <id>] [--require-idle] <agent>" \
+        "       ${0##*/} [--from <name>] [--expect-pane <id>] [--require-idle | --require-ready] <agent>" \
         "       ${0##*/} --deliver <id>" \
         'the message on stdin; --at needs a date, as in "2026-11-02 02:31"' >&2
     exit 2
@@ -86,6 +87,7 @@ span=
 deliver=
 expect=
 idle=
+ready=
 session=
 process=
 started=
@@ -122,6 +124,7 @@ while [ $# -gt 0 ]; do
         shift 3
         ;;
     --require-idle) idle=1 && shift ;;
+    --require-ready) ready=1 && shift ;;
     --) shift && break ;;
     -*) usage ;;
     *) break ;;
@@ -129,8 +132,9 @@ while [ $# -gt 0 ]; do
 done
 
 # The guards are for a send now alone, and an occupant needs its pane.
-[ -z "$expect$idle$session$process$started$deadline_at" ] ||
+[ -z "$expect$idle$ready$session$process$started$deadline_at" ] ||
     [ -z "$at$span$deliver" ] || usage
+[ -z "$idle" ] || [ -z "$ready" ] || usage
 [ -z "$session$process$started" ] || [ -n "$expect" ] || usage
 [ -z "$session" ] || [ -z "$process$started" ] || usage
 if { [ -n "$process" ] && [ -z "$started" ]; } ||
@@ -217,7 +221,7 @@ if [ -z "$at$span" ]; then
         lock_pane "$pane"
     fi
     deadline_check 10
-    if [ -z "$expect$idle" ]; then
+    if [ -z "$expect$idle$ready" ]; then
         status=$(agent_status "$agent") || die 4 "agent $agent is absent"
     else
         # Pane and status in one reading, under the lock.
@@ -230,6 +234,8 @@ if [ -z "$at$span" ]; then
     [ "$status" != blocked ] || die 3 "agent $agent is blocked on a dialog"
     [ -z "$idle" ] || [ "$status" = idle ] ||
         die 6 "agent $agent is $status, not idle"
+    [ -z "$ready" ] || [ "$status" = idle ] || [ "$status" = "done" ] ||
+        die 6 "agent $agent is $status, not ready"
     occupant_guard "$agent" "$pane" "$session" "$process" "$started"
     deadline_check 10
     # The label begins the text, so a message of `-rf` is never an option.

@@ -102,7 +102,7 @@ const SCENARIOS: Record<string, Scenario> = {
                     "dorothy",
                     "--expect-pane",
                     impl.pane,
-                    "--require-idle",
+                    "--require-ready",
                     "--expect-process",
                     String(s.processOf(impl)),
                     `boot:${s.processOf(impl)}`,

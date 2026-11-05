@@ -285,7 +285,7 @@ describe("dispatch", () => {
         expect(await Bun.file(SENDER).exists()).toBe(true);
     });
 
-    it("sends only the labelled pointer, guarded by pane and idle", async () => {
+    it("sends only the labelled pointer, guarded by pane and readiness", async () => {
         await writeBrief("t1");
         await dispatch(task("t1"));
         expect(sender.calls).toEqual([
@@ -295,7 +295,7 @@ describe("dispatch", () => {
                     COORDINATOR,
                     "--expect-pane",
                     codex.pane,
-                    "--require-idle",
+                    "--require-ready",
                     "--expect-process",
                     "4101",
                     "boot:4101",
@@ -314,6 +314,73 @@ describe("dispatch", () => {
         });
         await dispatch(task("t1"));
         expect(gets).toBe(2);
+    });
+
+    it("dispatches a distinct task to a completed worker without verifying it", async () => {
+        await writeBrief("t1");
+        await dispatch(task("t1"));
+        await writeReport("t1");
+        await steward({ kind: "reconcile", taskId: "t1" });
+        withLedger((db) =>
+            db.recordReceipt({
+                taskId: "t1",
+                revision: NEXT,
+                reportDigest: sha256(report("t1")),
+                command: ["bun", "test"],
+                exitCode: 0,
+                logPath: join(reg.fixtureRoot, "t1.log"),
+            }),
+        );
+        const verified = await steward({
+            kind: "finish",
+            taskId: "t1",
+            evidence: {
+                reportDigest: sha256(report("t1")),
+                revision: NEXT,
+                verification: {
+                    command: ["bun", "test"],
+                    exitCode: 0,
+                    logPath: join(reg.fixtureRoot, "t1.log"),
+                },
+            },
+        });
+        expect(verified.code).toBe("TASK_VERIFIED");
+
+        setStatus(codex, "done");
+        await writeBrief("t2");
+        const reply = await dispatch(task("t2"));
+        expect(reply).toMatchObject({ ok: true, code: "TASK_SENT" });
+        expect(only(reply)).toMatchObject({ taskId: "t2", state: "sent" });
+        expect(only(reply).state).not.toBe("verified");
+        expect(withLedger((db) => db.task("t1")?.state)).toBe("verified");
+        expect(sender.calls).toHaveLength(2);
+    });
+
+    it("accepts idle and done at both observations", async () => {
+        for (const [index, states] of [
+            ["done", "idle"],
+            ["idle", "done"],
+            ["done", "done"],
+        ].entries()) {
+            const id = `ready-${index}`;
+            await writeBrief(id);
+            const run = herdr.run;
+            let gets = 0;
+            const transitioning: StewardDeps["run"] = async (args, options) => {
+                if (args[1] === "get") {
+                    setStatus(codex, states[gets++] ?? "unknown");
+                }
+                return run(args, options);
+            };
+            const reply = await steward(
+                { kind: "dispatch", task: task(id) },
+                ME,
+                { run: transitioning },
+            );
+            expect(reply).toMatchObject({ ok: true, code: "TASK_SENT" });
+            withLedger((db) => db.move(id, ["sent"], "failed"));
+        }
+        expect(sender.calls).toHaveLength(3);
     });
 
     it("returns the old state for a repeat with identical arguments", async () => {
@@ -421,7 +488,7 @@ describe("dispatch", () => {
 
     it("refuses a same-terminal replacement whose session changed", async () => {
         await writeBrief("t1");
-        const first = herdrAgentOf(claude);
+        const first = herdrAgentOf(claude, "done");
         const replaced = {
             ...first,
             agent_session: {
@@ -498,9 +565,9 @@ describe("dispatch", () => {
         expect(sender.calls).toEqual([]);
     });
 
-    it("refuses a worker that is not idle, recording nothing", async () => {
+    it("refuses a worker that is not ready, recording nothing", async () => {
         await writeBrief("t1");
-        for (const status of ["working", "blocked", "done", "unknown"]) {
+        for (const status of ["working", "blocked", "unknown"]) {
             setStatus(codex, status);
             const reply = await dispatch(task("t1"));
             expect(reply).toMatchObject({ ok: false, code: "WORKER_NOT_IDLE" });
@@ -515,13 +582,23 @@ describe("dispatch", () => {
         expect(withLedger((db) => db.task("t1"))).toBeNull();
     });
 
-    it("refuses a worker that becomes busy before the send", async () => {
-        await writeBrief("t1");
-        herdr.queue(agentInfoReply(herdrAgentOf(claude)));
-        herdr.queue(agentInfoReply(herdrAgentOf(claude, "working")));
-        const reply = await dispatch(task("t1", claude));
-        expect(reply).toMatchObject({ ok: false, code: "WORKER_NOT_IDLE" });
-        expect(only(reply).state).toBe("failed");
+    it("refuses unsafe states on the observation before the send", async () => {
+        for (const [index, status] of [
+            "working",
+            "blocked",
+            "unknown",
+        ].entries()) {
+            const id = `unsafe-${index}`;
+            await writeBrief(id);
+            herdr.queue(agentInfoReply(herdrAgentOf(claude)));
+            herdr.queue(agentInfoReply(herdrAgentOf(claude, status)));
+            const reply = await dispatch(task(id, claude));
+            expect(reply).toMatchObject({
+                ok: false,
+                code: "WORKER_NOT_IDLE",
+            });
+            expect(only(reply).state).toBe("failed");
+        }
         expect(sender.calls).toEqual([]);
     });
 

@@ -85,7 +85,7 @@ export const POLL_MS = 500;
 export const MAX_FILE_BYTES = 64 * 1024;
 
 // The sender's refusals before it writes anything: usage, blocked, absent,
-// another pane, not idle. Any other exit may have written.
+// another pane, not ready. Any other exit may have written.
 const REFUSALS = [2, 3, 4, 5, 6, 9, 10];
 // The interrupt's: usage, blocked, absent, another pane, the lock not had
 // in time, another terminal. Any other exit may have sent the Escape.
@@ -508,6 +508,11 @@ async function repeat(
 
 type SendOutcome = "sent" | `refused:${number}` | "uncertain" | "deadline";
 
+// Herdr's done is an unseen completed turn, ready for another prompt. It
+// says nothing about the task's report or verification.
+const dispatchReady = (state: WorkerObservation["state"]) =>
+    state === "idle" || state === "done";
+
 async function send(
     ctx: Context,
     worker: Worker,
@@ -520,7 +525,7 @@ async function send(
         COORDINATOR,
         "--expect-pane",
         worker.pane,
-        "--require-idle",
+        "--require-ready",
         ...occupantArgs(occupant),
         ...(ctx.deadlineAt === null
             ? []
@@ -597,7 +602,7 @@ async function dispatch(ctx: Context, task: unknown): Promise<StewardReply> {
     if (!seen.matches) {
         refuse(seen.code ?? "WORKER_MISMATCH");
     }
-    if (seen.state !== "idle") {
+    if (!dispatchReady(seen.state)) {
         refuse("WORKER_NOT_IDLE", seen.state);
     }
     if (!seen.terminalId || !seen.occupant) {
@@ -625,7 +630,7 @@ async function dispatch(ctx: Context, task: unknown): Promise<StewardReply> {
         throw error;
     }
 
-    // Immediately before the send: the occupant as pinned, idle, then the
+    // Immediately before the send: the occupant as pinned, ready, then the
     // brief as recorded. A refusal here is known unsent: the task fails,
     // its id spent.
     const fail = (code: string) => {
@@ -643,7 +648,7 @@ async function dispatch(ctx: Context, task: unknown): Promise<StewardReply> {
     const again = await ctx.observe(worker);
     const refusal =
         identityRefusal(again, sameOccupant(seen)) ??
-        (again.state === "idle" ? null : "WORKER_NOT_IDLE");
+        (dispatchReady(again.state) ? null : "WORKER_NOT_IDLE");
     if (refusal) {
         return fail(refusal);
     }

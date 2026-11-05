@@ -294,6 +294,7 @@ describe("send-prompt.sh, now", () => {
 
 describe("send-prompt.sh, guarded", () => {
     const guarded = ["--from", "a", "--expect-pane", "w1:p2", "--require-idle"];
+    const ready = ["--from", "a", "--expect-pane", "w1:p2", "--require-ready"];
     const holdLock = async () => {
         await mkdir(join(root, "run", "dorothy-agents"), { recursive: true });
         const holder = Bun.spawn(
@@ -318,6 +319,38 @@ describe("send-prompt.sh, guarded", () => {
             ["send-text", "w1:p2", "[from a] hi"],
             ["send-keys", "w1:p2", "enter"],
         ]);
+    });
+
+    it("accepts idle and done with --require-ready", async () => {
+        for (const status of ["idle", "done"]) {
+            await setStatus(status);
+            const { code } = await run(send, [...ready, "bob"], "hi");
+            expect(code).toBe(0);
+        }
+        expect(await mutations()).toHaveLength(4);
+    });
+
+    it("refuses unsafe states with --require-ready, sending nothing", async () => {
+        for (const status of ["working", "unknown"]) {
+            await setStatus(status);
+            const { code, err } = await run(send, [...ready, "bob"], "hi");
+            expect(code).toBe(6);
+            expect(err).toContain(status);
+        }
+        await setStatus("blocked");
+        expect((await run(send, [...ready, "bob"], "hi")).code).toBe(3);
+        expect(await writes()).toEqual([]);
+    });
+
+    it("rechecks and accepts done under the lock with --require-ready", async () => {
+        const release = await holdLock();
+        const waiting = start(send, [...ready, "bob"], "hi");
+        await Bun.sleep(300);
+        await setStatus("done");
+        await release();
+        const { code } = await finish(waiting);
+        expect(code).toBe(0);
+        expect(await mutations()).toHaveLength(2);
     });
 
     it("refuses an agent in another pane, exit 5, sending nothing", async () => {
@@ -409,12 +442,25 @@ describe("send-prompt.sh, guarded", () => {
                 "bob",
             ],
             ["--deliver", "bob-1", "--require-idle"],
+            ["--from", "a", "--in", "2min", "--require-ready", "bob"],
+            ["--deliver", "bob-1", "--require-ready"],
             ["--expect-pane", "w1:p2", "--deliver", "bob-1"],
         ]) {
             const { code, err } = await run(send, args, "hi");
             expect(code).toBe(2);
             expect(err).toContain("usage");
         }
+        expect(await calls()).toEqual([]);
+    });
+
+    it("refuses --require-idle and --require-ready together", async () => {
+        const { code, err } = await run(
+            send,
+            ["--from", "a", "--require-idle", "--require-ready", "bob"],
+            "hi",
+        );
+        expect(code).toBe(2);
+        expect(err).toContain("usage");
         expect(await calls()).toEqual([]);
     });
 
