@@ -72,10 +72,13 @@ would answer, or absent. Exit codes: 2 usage, 3 blocked, 4 absent, 1
 another failure, such as Enter failing after the text was written.
 
 A send now may also be guarded, as Pi stewardship's sends are:
-`--expect-pane <id>` refuses an agent in another pane (exit 5), and
-`--require-idle` one that is working, done or unknown (exit 6), both
-read again once the lock is held. Neither is taken with `--at`, `--in`
-or `--deliver`, and without them a send behaves as above.
+`--expect-pane <id>` refuses an agent in another pane (exit 5).
+`--require-idle` refuses one that is working, done or unknown (exit 6);
+`--require-ready` instead accepts idle or done, still refusing blocked
+first (exit 3) and every other state (exit 6). Done means ready for
+another prompt, not that its work is verified. Guards are read again once
+the lock is held. None is taken with `--at`, `--in` or `--deliver`, and
+without them a send behaves as above.
 
 `--at` and `--in` schedule the send instead, on a systemd timer, and
 label it `[from <name>, scheduled]`; [recovery](./recovery.md) covers

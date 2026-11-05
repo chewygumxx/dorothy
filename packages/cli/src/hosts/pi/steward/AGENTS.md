@@ -83,13 +83,13 @@ Native trial fault injection and readiness are in [TRIAL](./TRIAL.md).
   `baseOid`, paths with no control character through `fixturePath`,
   no report yet), then: a repeated id with identical arguments and brief
   gives the old state (`TASK_EXISTS`), a changed one `TASK_CONFLICT` or
-  `BRIEF_CHANGED`. A new task needs the worker matching, idle and with a
-  terminal id and occupant, pinned with the intent, digest and reservation.
+  `BRIEF_CHANGED`. A new task needs a matching, ready worker (`idle` or
+  `done`, not completion); its reservation pins digest, terminal and occupant.
   Immediately before sending it reobserves and rechecks registry identity
   and the brief digest (`WORKER_UNIDENTIFIED` or `WORKER_REPLACED`); such
   a refusal fails the task, its id spent. The sender is `send-prompt.sh --from
   dorothy --expect-pane <pane> --expect-terminal <id> --expect-session
-  or --expect-process <pin> --require-idle <name>`, stdin `Read
+  or --expect-process <pin> --require-ready <name>`, stdin `Read
   <brief> for task <id>.`, for 15 s: exit 0 is `sent`, 2 to 6 a refusal
   (`failed`), anything else, a throw or a timeout `unknown`, never
   resent. A pending operation whose helper is proven gone makes its
