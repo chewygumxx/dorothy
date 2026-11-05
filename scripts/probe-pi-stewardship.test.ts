@@ -13,7 +13,7 @@
 // sentinels, empty directories the probe must leave empty.
 
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,10 +32,40 @@ afterAll(() => {
 });
 
 describe("the arguments", () => {
-    it("take --offline and --out, nothing else", () => {
+    it("take offline, live and release modes, with their own limits", () => {
         expect(parseProbeArgs(["--offline", "--out", "x"])).toEqual({
             mode: "offline",
             out: join(process.cwd(), "x"),
+        });
+        expect(
+            parseProbeArgs([
+                "--live",
+                "--registry",
+                "r",
+                "--out",
+                "x",
+                "--max-usd",
+                "5",
+                "--max-turns",
+                "6",
+                "--timeout-ms",
+                "120000",
+            ]),
+        ).toEqual({
+            mode: "live",
+            registry: join(process.cwd(), "r"),
+            out: join(process.cwd(), "x"),
+            maxUsd: 5,
+            maxTurns: 6,
+            timeoutMs: 120000,
+        });
+        expect(
+            parseProbeArgs(["--release", "fix-1", "--registry", "r"]),
+        ).toEqual({
+            mode: "release",
+            registry: join(process.cwd(), "r"),
+            taskId: "fix-1",
+            reason: "the user released it from the probe",
         });
         for (const argv of [
             [],
@@ -43,12 +73,12 @@ describe("the arguments", () => {
             ["--out", "x"],
             ["--offline", "--out"],
             ["--offline", "--out", "x", "--extra"],
+            ["--live", "--out", "x"],
+            ["--live", "--registry", "r", "--out", "x"],
+            ["--release", "fix-1"],
         ]) {
             expect(typeof parseProbeArgs(argv)).toBe("string");
         }
-        expect(parseProbeArgs(["--live", "--out", "x"])).toContain(
-            "not available",
-        );
     });
 });
 
@@ -148,7 +178,54 @@ describe("the offline run", () => {
         }
     }, 300_000);
 
-    it("refuses --live", () => {
+    it("wires live to a pending gate when the worker homes are absent", async () => {
+        const root = scratch();
+        const trial = join(root, "trial");
+        mkdirSync(trial, { recursive: true, mode: 0o700 });
+        const out = join(root, "out");
+        const child = Bun.spawnSync(
+            [
+                process.execPath,
+                "--no-env-file",
+                join(import.meta.dir, "probe-pi-stewardship.ts"),
+                "--live",
+                "--registry",
+                join(trial, "registry.json"),
+                "--out",
+                out,
+                "--max-usd",
+                "1",
+            ],
+            {
+                env: {
+                    PATH: process.env.PATH ?? "",
+                    HOME: join(root, "home"),
+                    HERDR_ENV: "1",
+                    XDG_STATE_HOME: join(root, "state"),
+                },
+                stdout: "pipe",
+                stderr: "pipe",
+            },
+        );
+        expect(child.exitCode).toBe(2);
+        expect(child.stderr.toString()).toBe("");
+        expect(child.stdout.toString()).toContain("pending");
+        const result = JSON.parse(
+            await readFile(join(out, "result.json"), "utf8"),
+        );
+        expect(result.status).toBe("pending");
+        expect(result.pending.join("\n")).toContain("CODEX_HOME=");
+        // The evidence left behind carries placeholders, not the trial path.
+        const kept = await Promise.all(
+            ["result.json", "events.jsonl", "report.md"].map((name) =>
+                readFile(join(out, name), "utf8"),
+            ),
+        );
+        expect(kept.join("\n")).not.toContain(trial);
+        expect(kept.join("\n")).not.toContain(out);
+    });
+
+    it("refuses live without its registry and spending limit", () => {
         const child = Bun.spawnSync(
             [
                 process.execPath,
@@ -161,6 +238,6 @@ describe("the offline run", () => {
             { stdout: "pipe", stderr: "pipe" },
         );
         expect(child.exitCode).toBe(2);
-        expect(child.stderr.toString()).toContain("--live");
+        expect(child.stderr.toString()).toContain("--live needs --registry");
     });
 });

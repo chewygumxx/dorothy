@@ -34,9 +34,22 @@
 // probe-pi-delivery.ts does, a documented exception to the package
 // boundary for probes.
 
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+    chmod,
+    mkdir,
+    mkdtemp,
+    readFile,
+    rm,
+    writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { resolvePiRuntime } from "../packages/cli/src/hosts/pi/runtime.js";
+import {
+    processAlive,
+    processStart,
+} from "../packages/cli/src/hosts/pi/steward/engine.js";
+import { createHerdrRun } from "../packages/cli/src/hosts/pi/steward/herdr.js";
 import { runPiScenario } from "../packages/cli/src/hosts/pi/steward/pi-scenario.js";
 import {
     runSuite,
@@ -49,28 +62,111 @@ import {
     DEFAULT_CAST,
     HELD_OUT_CAST,
 } from "../packages/cli/src/hosts/pi/steward/simulation.js";
+import { CLI_DIR, MODEL } from "../packages/cli/src/hosts/pi/testing.js";
+import {
+    FEATHERLESS,
+    liveKey,
+    refreshMetadata,
+    startForwardingProxy,
+} from "./pi-proxy.js";
+import {
+    type LoginStatus,
+    layoutOf,
+    operatorRelease,
+    type ReleaseResult,
+    runTrial,
+    type TrialDeps,
+} from "./pi-stewardship-trial.js";
 
-export type ProbeArgs = { mode: "offline"; out: string };
+export type ProbeArgs =
+    | { mode: "offline"; out: string }
+    | {
+          mode: "live";
+          registry: string;
+          out: string;
+          maxUsd: number;
+          maxTurns: number;
+          timeoutMs: number;
+      }
+    | {
+          mode: "release";
+          registry: string;
+          taskId: string;
+          reason: string;
+      };
 
-const USAGE = "usage: probe-pi-stewardship.ts --offline --out <dir>";
+const USAGE =
+    "usage: probe-pi-stewardship.ts --offline --out <dir>\n" +
+    "       probe-pi-stewardship.ts --live --registry <path> --out <dir> " +
+    "--max-usd <n> [--max-turns 30] [--timeout-ms 1800000]\n" +
+    "       probe-pi-stewardship.ts --release <task-id> --registry <path> " +
+    "[--reason <text>]";
 
 // The probe's arguments, or what is wrong with them.
 export function parseProbeArgs(argv: readonly string[]): ProbeArgs | string {
     let offline = false;
+    let live = false;
+    let release: string | null = null;
     let out: string | null = null;
+    let registry: string | null = null;
+    let reason = "the user released it from the probe";
+    let maxUsd: number | null = null;
+    let maxTurns = 30;
+    let timeoutMs = 1_800_000;
     for (let i = 0; i < argv.length; i++) {
         const word = argv[i];
+        const value = argv[i + 1];
+        const number = () => {
+            i++;
+            const n = Number(value);
+            return value !== undefined && Number.isFinite(n) && n > 0
+                ? n
+                : null;
+        };
         if (word === "--offline") {
             offline = true;
-        } else if (word === "--out" && argv[i + 1] !== undefined) {
-            out = resolve(argv[++i] as string);
         } else if (word === "--live") {
-            return `${USAGE}\n--live is not available yet`;
+            live = true;
+        } else if (word === "--release" && value !== undefined) {
+            release = value;
+            i++;
+        } else if (word === "--out" && value !== undefined) {
+            out = resolve(value);
+            i++;
+        } else if (word === "--registry" && value !== undefined) {
+            registry = resolve(value);
+            i++;
+        } else if (word === "--reason" && value !== undefined) {
+            reason = value;
+            i++;
+        } else if (word === "--max-usd") {
+            maxUsd = number();
+            if (maxUsd === null) return `${USAGE}\n--max-usd takes a number`;
+        } else if (word === "--max-turns") {
+            const n = number();
+            if (n === null || !Number.isInteger(n))
+                return `${USAGE}\n--max-turns takes a whole number`;
+            maxTurns = n;
+        } else if (word === "--timeout-ms") {
+            const n = number();
+            if (n === null) return `${USAGE}\n--timeout-ms takes a number`;
+            timeoutMs = n;
         } else {
             return `${USAGE}\nunknown argument ${word}`;
         }
     }
-    return offline && out !== null ? { mode: "offline", out } : USAGE;
+    const modes = [offline, live, release !== null].filter(Boolean).length;
+    if (modes !== 1) return `${USAGE}\none of --offline, --live, --release`;
+    if (offline) return out !== null ? { mode: "offline", out } : USAGE;
+    if (release !== null) {
+        if (registry === null) return `${USAGE}\n--release needs --registry`;
+        return { mode: "release", registry, taskId: release, reason };
+    }
+    if (registry === null) return `${USAGE}\n--live needs --registry`;
+    if (out === null) return `${USAGE}\n--live needs --out`;
+    if (maxUsd === null)
+        return `${USAGE}\n--live needs --max-usd: no spending limit is assumed`;
+    return { mode: "live", registry, out, maxUsd, maxTurns, timeoutMs };
 }
 
 export type ProbeResult = {
@@ -224,11 +320,280 @@ export function markdown(result: ProbeResult): string {
     return lines.join("\n");
 }
 
+type Env = Record<string, string | undefined>;
+
+// The memory contract's health route, from @dorothy/core's SERVICE_PATHS.
+const HEALTH = "/v1/health";
+
+function freePort(): number {
+    const probe = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch: () => new Response(""),
+    });
+    const { port } = probe;
+    probe.stop(true);
+    if (port === undefined) throw new Error("trial: no free port");
+    return port;
+}
+
+// Her real memory service on the trial's private roots, started from its
+// package entry as `--serve` starts it, with reviews off and no secret.
+async function startMemory(
+    root: string,
+    env: Env,
+): Promise<{ url: string; stop(): Promise<void> }> {
+    const port = freePort();
+    const config = join(
+        env.XDG_CONFIG_HOME ?? join(root, "config"),
+        "dorothy",
+        "config.toml",
+    );
+    await mkdir(dirname(config), { recursive: true, mode: 0o700 });
+    await writeFile(
+        config,
+        [
+            "[service]",
+            `port = ${port}`,
+            "",
+            "[recording]",
+            'hosts = ["pi"]',
+            "sweep-seconds = 86400",
+            "",
+        ].join("\n"),
+    );
+    const url = `http://127.0.0.1:${port}`;
+    const entry = Bun.resolveSync(
+        "@dorothy/memory/service",
+        join(CLI_DIR, "src"),
+    );
+    const code = [
+        `const { runService } = await import(${JSON.stringify(entry)});`,
+        "process.exit(await runService({ env: process.env, review: null,",
+        '    noReviews: "trial" }));',
+    ].join("\n");
+    const child = Bun.spawn([process.execPath, "--no-env-file", "-e", code], {
+        cwd: root,
+        env: {
+            ...env,
+            DOROTHY_MEMORY_URL: url,
+            BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
+        },
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "pipe",
+    });
+    let log = "";
+    const reading = (async () => {
+        for await (const part of child.stderr)
+            log += new TextDecoder().decode(part);
+    })();
+    for (let tries = 0; ; tries++) {
+        const up = await fetch(`${url}${HEALTH}`)
+            .then((response) => response.ok)
+            .catch(() => false);
+        if (up) break;
+        if (tries > 100 || child.exitCode !== null) {
+            child.kill("SIGKILL");
+            throw new Error(`trial: memory service down: ${log}`);
+        }
+        await Bun.sleep(100);
+    }
+    return {
+        url,
+        stop: async () => {
+            child.kill("SIGTERM");
+            await child.exited;
+            await reading;
+        },
+    };
+}
+
+// A worker home's own status command, never a read of its credential.
+async function loginStatus(
+    harness: "codex" | "claude",
+    home: string,
+    env: Env,
+): Promise<LoginStatus> {
+    const command =
+        harness === "codex"
+            ? ["codex", "login", "status"]
+            : ["claude", "auth", "status", "--text"];
+    const name = harness === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR";
+    const child = Bun.spawn(command, {
+        env: {
+            PATH: env.PATH ?? "",
+            HOME: home,
+            [name]: home,
+            TERM: "dumb",
+        },
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 30_000,
+        killSignal: "SIGKILL",
+    });
+    const [stdout, stderr, code] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+    ]);
+    const detail = (stdout.trim() || stderr.trim())
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .join(" ")
+        .slice(0, 240);
+    return {
+        loggedIn: code === 0,
+        detail: detail || `${harness}: status exit ${code}`,
+    };
+}
+
+// A herdr call under the pane's lock, as the stewardship scripts hold it,
+// so an interrupt never lands among another sender's text and Enter.
+async function lockedHerdr(
+    pane: string,
+    args: string[],
+    env: Env,
+): Promise<{ code: number; stdout: string; stderr: string }> {
+    const runtime = env.XDG_RUNTIME_DIR;
+    if (!runtime) throw new Error("trial: XDG_RUNTIME_DIR is not set");
+    const dir = join(runtime, "dorothy-agents");
+    await mkdir(dir, { recursive: true, mode: 0o700 });
+    await chmod(dir, 0o700);
+    const lock = join(dir, `${pane.replace(/[^A-Za-z0-9]/g, "_")}.lock`);
+    const flock = Bun.which("flock", { PATH: env.PATH ?? "" });
+    if (!flock) throw new Error("trial: flock is missing");
+    const child = Bun.spawn([flock, "-w", "5", lock, "herdr", ...args], {
+        env,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 15_000,
+        killSignal: "SIGKILL",
+    });
+    const [stdout, stderr, code] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+    ]);
+    return { code, stdout, stderr };
+}
+
+async function versions(env: Env): Promise<Record<string, string>> {
+    const runtime = await resolvePiRuntime(CLI_DIR, env).catch(() => null);
+    const seen = (command: string[]): string => {
+        const run = Bun.spawnSync([...command, "--version"], {
+            env,
+            stdin: "ignore",
+            stdout: "pipe",
+            stderr: "ignore",
+        });
+        if (run.exitCode !== 0) return "unknown";
+        return run.stdout.toString().trim().split("\n")[0] ?? "unknown";
+    };
+    return {
+        pi: runtime?.version ?? "unknown",
+        node: runtime ? seen([runtime.command[0] as string]) : "unknown",
+        herdr: seen(["herdr"]),
+        bun: Bun.version,
+    };
+}
+
+// The live trial's real dependencies: herdr, the worker homes' own status
+// commands, the memory service, Featherless and the shared proxy.
+export async function liveDeps(): Promise<TrialDeps> {
+    const env = process.env;
+    return {
+        env,
+        now: () => new Date(),
+        sleep: (ms) => Bun.sleep(ms),
+        platform: process.platform,
+        uid: process.getuid?.() ?? 0,
+        herdr: createHerdrRun(),
+        lockedHerdr: (pane, args) => lockedHerdr(pane, args, env),
+        loginStatus: (harness, home) => loginStatus(harness, home, env),
+        startProxy: startForwardingProxy,
+        upstream: async () => ({ url: FEATHERLESS, key: await liveKey() }),
+        metadata: () => refreshMetadata(MODEL).catch(() => null),
+        memory: startMemory,
+        versions: () => versions(env),
+        alive: processAlive,
+        self: {
+            pid: process.pid,
+            startedAt: await processStart(process.pid),
+        },
+    };
+}
+
+// A task the user releases by hand, from the trial's own log, never a
+// model tool. The private roots and fleet id come from the runner's state.
+export async function releaseTask(
+    args: Extract<ProbeArgs, { mode: "release" }>,
+): Promise<ReleaseResult> {
+    const registry = resolve(args.registry);
+    const layout = layoutOf(registry, join(dirname(registry), "release-out"));
+    const text = await readFile(layout.state, "utf8").catch(() => null);
+    if (text === null) return { code: "RELEASE_NO_STATE" };
+    let state: {
+        fleetId?: unknown;
+        owned?: unknown;
+        env?: { XDG_STATE_HOME?: unknown; HOME?: unknown };
+    };
+    try {
+        state = JSON.parse(text);
+    } catch {
+        return { code: "RELEASE_STATE_INVALID" };
+    }
+    const owned = Array.isArray(state.owned)
+        ? state.owned.filter((id): id is string => typeof id === "string")
+        : [];
+    const home =
+        typeof state.env?.HOME === "string" ? state.env.HOME : undefined;
+    const xdg =
+        typeof state.env?.XDG_STATE_HOME === "string"
+            ? state.env.XDG_STATE_HOME
+            : undefined;
+    if (typeof state.fleetId !== "string" || owned.length === 0 || !home)
+        return { code: "RELEASE_STATE_INVALID" };
+    return operatorRelease({
+        env: { HOME: home, XDG_STATE_HOME: xdg },
+        fleetId: state.fleetId,
+        owned,
+        taskId: args.taskId,
+        reason: args.reason,
+        by: "user",
+        log: layout.interventions,
+        now: () => new Date(),
+    });
+}
+
 if (import.meta.main) {
     const args = parseProbeArgs(process.argv.slice(2));
     if (typeof args === "string") {
         process.stderr.write(`${args}\n`);
         process.exit(2);
+    }
+    if (args.mode === "release") {
+        const released = await releaseTask(args);
+        process.stdout.write(
+            `release ${args.taskId}: ${released.code}` +
+                `${released.from ? ` from ${released.from}` : ""}\n`,
+        );
+        process.exit(released.code === "TASK_RELEASED" ? 0 : 2);
+    }
+    if (args.mode === "live") {
+        const result = await runTrial(args, await liveDeps());
+        process.stdout.write(
+            `probe live (${result.kind}): ${result.status}, ` +
+                `${result.cost.calls} request(s), ` +
+                `${result.cost.measuredUsd === null ? "cost unknown" : `US$${result.cost.measuredUsd.toFixed(6)}`}; ` +
+                `${args.out}\n`,
+        );
+        process.exit(
+            result.status === "pass" ? 0 : result.status === "pending" ? 2 : 1,
+        );
     }
     await mkdir(args.out, { recursive: true, mode: 0o700 });
     const result = await probe();
