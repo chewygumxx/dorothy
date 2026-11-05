@@ -54,53 +54,6 @@ or estimates.
 
 In order; the first is next.
 
-### Dorothy in Pi
-
-Pi is the user's highest priority, stated on 2026-11-03 after the
-[stewardship research](./notes/2026-11-03_pi-stewardship.md). The first
-design must address Dorothy coordinating Claude Code and Codex, like
-the development agents do through herdr, with Featherless inference
-and her shared identity and memory.
-
-This supersedes the old Pi exclusion and puts its integration ahead of
-the remaining delivery work. The user chose Pi's own terminal interface.
-The [delivery design](./specs/2026-11-03_pi-delivery.md) proposes a
-launcher and extension, shared memory and a bounded herdr trial before
-full compatibility with the
-[orchestra service](./specs/2026-11-02-orchestration-design.md).
-The user approved the design and authorised execution through the
-[delivery plan](./plans/2026-11-03_pi-delivery.md), followed by the
-[stewardship plan](./plans/2026-11-03_pi-stewardship.md). Delivery,
-increment A, is done and merged in #129: the native interface in a
-pseudo-terminal, recovery after a killed launcher, and a bounded live
-Featherless run, which passed
-([report](./reports/2026-11-03_pi-delivery.md),
-[deferred](./deferred/2026-11-03_pi-delivery-deferred.md)). Increment B's
-runner and offline tests are built, and its bounded native mixed-worker
-run passed all eleven checks at product `b38393c`
-([report](./reports/2026-11-03_pi-stewardship.md),
-[deferred](./deferred/2026-11-03_pi-stewardship-deferred.md)).
-Open-weight spending was authorized with a numeric cap per run.
-
-- **Status**: Highest Priority; Delivery Merged; Stewardship Acceptance
-  Complete, Ready to Merge, Not Merged; Isolated Production Smoke Complete
-- **Required**: Existing Identity, Memory Service and Model Providers
-- **Rationale**: The user has selected Pi for the stewardship capability
-  they most want. Delivery gave it a launcher, an extension, shared
-  memory and recording to add tools to, without waiting for every other
-  host's live probes. Stewardship must settle worker dispatch, recovery
-  and human approval handling, then test actual coordination. The
-  controller completed `RUNNERS.pi`'s dump and real native final-turn
-  smoke under isolated configuration, with direct-provider
-  and no-proxy-cap limits recorded. Stewardship's bounded native run then
-  passed at `b38393c` on synthetic API-backed homes under declared
-  deviations (declared fault injection, `keepRecentTokens` 1024, explicit
-  human Claude tool authorization). It is one controlled Linux cycle, not
-  subscription evidence, a reliability estimate or general production
-  readiness. The runner never copies a subscription credential. The phase
-  waits on the controller's merge and post-merge roadmap revision, not on
-  new prerequisites.
-
 ### Dorothy's Memory
 
 One memory wherever Dorothy goes: in her chat, in Claude Code and in
@@ -334,7 +287,7 @@ Found but not scheduled, each with its source.
 
 - Pi delivery's deferred findings
   ([record](./deferred/2026-11-03_pi-delivery-deferred.md)) and limits,
-  none of which stewardship is easier for done first: a launch directory
+  none of which blocks the existing Memory phase: a launch directory
   a killed launcher leaves in the runtime directory is never swept; the
   prompt hook decodes a session and its ancestors before it answers
   (84 ms at 20 MiB, 176 ms at 58 MiB), which the file's sidecar could
@@ -350,9 +303,14 @@ Found but not scheduled, each with its source.
 - Pi stewardship's deferred findings and limits
   ([record](./deferred/2026-11-03_pi-stewardship-deferred.md)): the
   accepted run's synthetic API profiles, declared fault injection and
-  same-user owner receipts without OS confinement, catalogue outages
-  refusing before spend, live-only interruption and compaction limits, and
-  a shared memory-launch helper.
+  same-user owner receipts without OS confinement; catalogue outages
+  refusing before spend; worker history reads that sometimes fail closed,
+  so broad dialog coverage is unproven; live-only interruption and
+  compaction limits; a shared memory-launch helper; the normal user
+  config's missing Featherless chat route as a prerequisite for a plain
+  local route; and broader provider, model, dialog and reliability
+  coverage. None of these Pi-specific limits blocks the existing Memory
+  phase.
 - Model Providers' deferred findings
   ([record](./deferred/2026-11-01_model-providers-deferred.md)): stream
   errors coded by word, an output limit of her own, thinking on the other
@@ -521,6 +479,22 @@ In order of completion.
   [report](./reports/2026-11-01-model-providers.md),
   [deferred](./deferred/2026-11-01_model-providers-deferred.md); merged
   in #111 and #113.
+- **Dorothy in Pi**:
+  [delivery spec](./specs/2026-11-03_pi-delivery.md),
+  [delivery plan](./plans/2026-11-03_pi-delivery.md),
+  [delivery report](./reports/2026-11-03_pi-delivery.md),
+  [delivery deferred](./deferred/2026-11-03_pi-delivery-deferred.md);
+  [stewardship research](./notes/2026-11-03_pi-stewardship.md),
+  [stewardship plan](./plans/2026-11-03_pi-stewardship.md),
+  [stewardship report](./reports/2026-11-03_pi-stewardship.md),
+  [stewardship deferred](./deferred/2026-11-03_pi-stewardship-deferred.md);
+  merged in #129 and #131. The user made Pi the highest priority on
+  2026-11-03. Delivery gave Pi its own terminal interface with her
+  identity, memory and recording. Stewardship's bounded native run then
+  passed all eleven checks at product `b38393c` in one configured Linux
+  API-backed cycle, with synthetic profiles, declared fault injection,
+  explicit human operator assistance and same-user limits. It is not
+  subscription evidence or a general reliability estimate.
 
 ## Revisions
 
@@ -715,3 +689,14 @@ In order of completion.
   Candidates gain the run's limits (synthetic API profiles, declared
   fault injection, same-user access without OS confinement, and unproven
   hostile-code or broad reliability claims).
+- 2026-11-06: Dorothy in Pi is done and merged (#129/#131), so it moves
+  from Ahead to Done with its delivery and stewardship records. Pi remains
+  the user's 2026-11-03 priority as history, not a new priority.
+  Dorothy's Memory stays first in Ahead: the merged Pi cycle was one
+  configured Linux API-backed run, and its remaining limits (same-user
+  access without OS confinement, worker history reads, catalogue outages,
+  a shared memory-launch helper, the normal Featherless route
+  prerequisite, and broader provider, model, dialog and reliability
+  coverage) are Pi-specific and do not make an existing candidate
+  load-bearing for Memory. Candidates keep every such limit with its
+  source.

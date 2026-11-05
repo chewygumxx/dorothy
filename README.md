@@ -468,9 +468,10 @@ what was tested, offline and against Featherless.
 normal `--pi` needs neither herdr nor a worker login. The bounded
 stewardship trial's runner and offline tests are built, and its native
 mixed-worker run passed all eleven checks at `b38393c` in one controlled
-Linux API-backed cycle. Open-weight spending was authorized with an
-explicit numeric cap per run. The runner never copies a subscription
-credential; synthetic API-backed homes were a disclosed deviation. The
+Linux API-backed cycle, merged in #131. Open-weight spending was
+authorized with an explicit numeric cap per run. The runner never copies
+a subscription credential; synthetic API-backed homes were a disclosed
+deviation. The
 separate production Pi smoke completed under isolated configuration. The
 [report](./docs/reports/2026-11-03_pi-stewardship.md) records the
 offline evidence, the proxy lifecycle fix and the bounded acceptance.

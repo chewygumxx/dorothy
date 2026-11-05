@@ -33,7 +33,7 @@ are explained under
 [identity, harnesses and delivery](../topics/identity-and-harnesses.md).
 On 2026-11-03 the user made Pi the highest priority, which supersedes its
 earlier exclusion, so Pi is a fifth host, [below](#pi)
-([roadmap](../../roadmap.md#dorothy-in-pi)).
+([roadmap](../../roadmap.md#done)).
 
 This is the one page that holds each host's state. For every host it
 separates four things, because they differ in state even within one host:
@@ -273,10 +273,10 @@ session. No later report says it has run.
 
 Delivery built and merged (#129), checked live on a bounded Featherless
 run; stewardship's runner and offline tests are built, and its bounded
-native mixed-worker run passed at `b38393c`. The production wiring also
-ran under isolated configuration. Pi is the user's highest priority.
-Unlike the others
-she runs in Pi's own terminal interface, the published
+native mixed-worker run passed at `b38393c` and merged (#131). The
+production wiring also ran under isolated configuration. Pi was made the
+user's highest priority on 2026-11-03. Unlike the others she runs in Pi's
+own terminal interface, the published
 `@earendil-works/pi-coding-agent` 1.5.0 the CLI pins, under Node 22.19 or
 later, through `dorothy --pi`
 ([the hosts guide](../../../packages/cli/src/hosts/AGENTS.md#files)). Her
