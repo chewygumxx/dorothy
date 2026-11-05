@@ -1,0 +1,52 @@
+2026-11-05 controller supplemental live research (not worker fleet):
+
+1. Actual installed Codex 0.166.0 + Claude Code 2.1.316 both pass a native
+shell-tool smoke via OpenRouter deepseek/deepseek-v4.1-flash-1017. Each
+uses a fresh temporary home and synthetic local proxy credential; only
+proxy holds real key. Four provider calls 200, no subscription credential
+copy. Claude --bare --model exact --tools Bash --allowedTools Bash(printf *)
+works without auth login. Codex custom Responses provider env_key synthetic,
+requires_openai_auth=false, supports_websockets=false. Evidence:
+<compat-evidence>.
+Codex warns missing model metadata, Claude costs are unknown basis so
+provider usage is authority. We can trial API-backed homes as explicit
+runner deviation; do not claim original subscription/account evidence.
+
+2. Actual live Featherless Pi over simulated workers: first/default cast
+safely stopped after proxy stream cut, no dispatch. The renamed/held-out
+cast made 1 dispatch, reached reported, stated not verified and listed
+report gaps correctly. It did not use shell to control a worker. Owner
+verification after exit was blocked by my supplemental harness lacking
+Sim.alive controller-gone entry; harness fixed before repeat. Evidence:
+<scenario-evidence>/.
+
+Potential shared proxy defect to investigate with RED test after current
+implementer finishes: tap ignores [DONE] and calls end only on HTTP EOF.
+Pi may cancel after complete [DONE] without waiting for EOF; request.abort
+settles(call.reply initial empty) so labels even a fully parsed reply
+stream cut/client gone and reserves maximum. Should finalize at explicit
+SSE [DONE] once final usage parsed, retaining fail-closed on true cut or
+missing usage. Test provider sending complete usage/[DONE] but keeping the
+HTTP body open; client reader cancels after DONE. Compare ordinary EOF,
+missing usage, missing DONE, and actual mid-reply cut. Do not change
+without a failing reproducer.
+
+3. Source audit: terminal_id is a terminal/pane resource identity, not an
+agent process identity. Pinned Herdr src/app/agents.rs start_agent looks
+up workspace.terminal_id and calls begin_managed_agent on that same
+terminal; it never replaces the terminal for a new occupant. AgentInfo
+also has optional agent_session. Therefore same-pane same-name same-cwd
+replacement can retain terminal_id and current engine guard won't notice.
+Tests currently invent new terminal_id on worker restart. This needs a
+real occupant pin (session identity or Linux process-start identity) with
+fail-closed handling, and sender/interrupter revalidation under the pane
+lock. Task 5 must capture terminal stability honestly; do not assert that
+terminal_id identifies a new occupant from fake-world tests.
+Source inspected at pin 2ecf19a:
+https://github.com/herdrdev/herdr/blob/2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01/src/app/agents.rs#L175-L227
+Actual installed herdr pane process-info --pane w3H:p1 yields
+.result.process_info.foreground_process_group_id and
+foreground_processes [{pid,name,cwd,argv}], shell_pid. PID plus /proc start
+can pin a process, but interactive harness foreground process group may
+stay stable during tools and needs an observation test. No changes to
+production code made by controller on this issue.

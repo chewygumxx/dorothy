@@ -1,0 +1,58 @@
+bun test v1.4.2 (744846f84)
+
+scripts/pi-stewardship-trial.test.ts:
+(pass) before anything starts > leaves the gate pending with the user's checklist when no worker home is signed in [6.33ms]
+(pass) before anything starts > refuses homes it cannot trust, a shared trial directory and an unproven login [1.69ms]
+(pass) before anything starts > refuses evidence inside the trial directory and an earlier trial's leftovers [1.42ms]
+(pass) before anything starts > never runs past the caps [1.33ms]
+(pass) a trial on fakes > runs the cycle, cleans up only what it created and records the evidence [429.54ms]
+(pass) a trial on fakes > refuses registry entries outside the fixture and never touches them [37.98ms]
+(pass) a trial on fakes > preserves the evidence and cleans up its own panes when a step fails [28.03ms]
+(pass) its limits > reserves each request's worst cost and sends nothing once the budget is spent [36.12ms]
+(pass) its limits > stops at a reply without usage and calls its cost unknown, never zero [30.48ms]
+(pass) its limits > stops at the turn cap [35.49ms]
+(pass) its limits > stops at its time limit, on the injected clock [56.68ms]
+(pass) the operator's release > releases only a stranded task the trial owns, and logs it [2.57ms]
+
+scripts/probe-pi-delivery.test.ts:
+(pass) the probe's arguments > never runs live without a spending limit [0.38ms]
+(pass) the probe's forwarding proxy > forwards Chat Completions for its model with the upstream's key [3.20ms]
+(pass) the probe's forwarding proxy > refuses another model or path without forwarding it [0.84ms]
+(pass) the probe's forwarding proxy > reserves a call's worst cost before forwarding it [0.56ms]
+(pass) the probe's forwarding proxy > stops after its turns [0.91ms]
+(pass) the probe's forwarding proxy > keeps the reservation and stops when a reply has no usage [0.84ms]
+(pass) the probe's forwarding proxy > settles a complete reply at DONE when Pi cancels before EOF [45.09ms]
+(pass) the probe's forwarding proxy > does not settle DONE without a finish marker as complete [21.90ms]
+(pass) the probe's forwarding proxy > keeps the reservation and stops when Pi cancels a reply [22.59ms]
+(pass) the probe's forwarding proxy > keeps the reservation and stops when a reply outlives its time [302.63ms]
+
+scripts/probe-pi-stewardship.test.ts:
+(pass) the arguments > take offline, live and release modes, with their own limits [0.22ms]
+(pass) the offline run > passes with zero duplicates and false verifications, touching no user root [13685.65ms]
+(pass) the offline run > wires live to a pending gate when the worker homes are absent [85.80ms]
+(pass) the offline run > refuses live without its registry and spending limit [69.05ms]
+
+packages/cli/src/hosts/pi/steward/owner.test.ts:
+(pass) the owner's verification > takes the revision from the clone and tests that commit [59.06ms]
+(pass) the owner's verification > runs the test in an export outside every clone, then removes it [51.55ms]
+(pass) the owner's verification > records no receipt for a revision the report claims but the clone lacks [33.24ms]
+(pass) the owner's verification > tests the head, never the working tree [54.96ms]
+(pass) the owner's verification > ignores a worker's own test, bunfig and preload [51.83ms]
+(pass) the owner's verification > gives the worker's code no variable of the runner's own [57.21ms]
+(pass) the owner's verification > is not passed by code that exits 0 at import [51.70ms]
+(pass) the owner's verification > is not passed by a reply it forges without the nonce [54.08ms]
+(pass) the owner's verification > refuses a run that rewrote the test, and every run after [73.87ms]
+(pass) the owner's verification > KNOWN LIMIT: code that reads the owner's cases passes [52.87ms]
+(pass) the owner's verification > refuses history that does not descend from the base [33.00ms]
+(pass) the owner's verification > records nothing for a report with no revision [29.74ms]
+(pass) the owner's verification > records nothing for a report the ledger has not seen [27.70ms]
+(pass) the owner's verification > verifies only a reported task [19.18ms]
+(pass) the owner's verification > refuses an owner root inside the fixture root [12.73ms]
+(pass) the runner's run of the examples > tells an incomplete fix, which passes them, from the bug [43.68ms]
+(pass) the fixture template > fails the owner's test as shipped and the contract's examples too [36.42ms]
+(pass) the fixture template > passes the examples with the incomplete fix and the test with the complete [85.87ms]
+
+ 44 pass
+ 0 fail
+ 262 expect() calls
+Ran 44 tests across 4 files. [15.87s]
