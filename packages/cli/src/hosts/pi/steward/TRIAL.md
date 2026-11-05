@@ -5,7 +5,7 @@ spdx: GPL-3.0-only
 title: packages/cli/src/hosts/pi/steward/TRIAL.md
 description: >-
   The native stewardship trial's declared fault injection, checkpoints,
-  readiness and absolute-deadline rules.
+  path ownership, readiness and absolute-deadline rules.
 tags:
   - agents
 ---
@@ -56,8 +56,29 @@ writes its own PID and the exact spawned Pi PID before returning the
 child. The runner reads both boot:start identities and requires both
 processes to remain alive, with the pane's foreground group naming one
 of them. A banner and live shell or foreign job cannot authorize kickoff.
-The identity is checked again before prompt text and Enter. Before a
-successful kickoff Enter and with no provider call, evidence is `not-run`.
+The identity is checked again before prompt text and Enter. Evidence is
+`not-run` until at least one provider request is observed. Successful
+kickoff Enter with no request, failed text and failed Enter are all
+`not-run`; only the observed request makes the result `model-driven`.
+
+## Registry and evidence ownership
+
+The exact resolved `--registry`, including a custom basename, must be
+absent. Its private trial directory and every ancestor must be real
+non-symlink directories. Other runner-made leftovers are refused too.
+`--out` must be absent, whether the existing object would be a file, an
+empty directory or a nonempty directory. Its parent and every ancestor
+must exist as real non-symlink directories. Symlink aliases are refused.
+
+The runner creates the output non-recursively with mode 0700, then creates
+its event stream exclusively. The registry and exported result, report,
+ledger, screens, sessions, briefs and worker reports are also created
+exclusively, never by truncating an existing object. A rejected registry
+with a fresh output still leaves pending evidence there. A rejected
+output has `outputOwned: false`: no pending or error file is written into
+it, and the CLI prints the returned preflight problems. Existing bytes
+stay unchanged. These are trial ownership guards, not confinement from
+hostile code running as the same uid.
 
 ## Control environment and lock namespace
 

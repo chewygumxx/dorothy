@@ -24,16 +24,21 @@ tags:
 
 Left by [the bounded trial](../reports/2026-11-03_pi-stewardship.md)
 and [the plan](../plans/2026-11-03_pi-stewardship.md), Task 5. The
-offline runner and its tests are built; the live gate has not run.
+offline runner and its tests are built. Three native attempts made zero
+provider requests and failed; the mixed-worker live gate remains pending.
 
 ## Waiting on the user
 
-- The native mixed Codex/Claude trial needs two temporary homes and quota
-  room; the controller confirmed those homes do not yet exist. Open-weight
-  spending is explicitly unlimited, and the controller will choose the
-  mandatory numeric `--max-usd` without another spending request. No
-  subscription credential may be copied. API-backed homes are a disclosed
-  deviation, not original subscription evidence. The gate is pending.
+- The native mixed Codex/Claude trial remains pending. Three actual
+  attempts each made zero provider requests: the first two failed before
+  inference on the Herdr control environment, and the third received no
+  human reply at Claude's folder-trust dialog. No coordinator started,
+  and no mixed-worker acceptance occurred. Open-weight spending is
+  explicitly unlimited, and the controller will choose the mandatory
+  numeric `--max-usd` without another spending request. No subscription
+  credential may be copied. API-backed homes are a disclosed deviation,
+  not original subscription evidence. A later bounded native attempt and
+  its required human UI decisions still belong to the controller.
 - The separate production `RUNNERS.pi` dump and native final-turn smoke
   completed under isolated HOME/XDG and a Featherless route. It used a
   direct provider, no tools and no proxy cap; provider billing is unknown.
@@ -92,6 +97,14 @@ offline runner and its tests are built; the live gate has not run.
 
 ## Runner edges
 
+- Live creation requires an absent exact registry, including a custom
+  basename, and an absent `--out`. Non-symlink ancestors are required.
+  Existing output files and empty or nonempty directories, and registry
+  or output symlink aliases, are refused before key loading, paid calls
+  or pane creation. Registry and evidence files are exclusive creates.
+  Rejected output gets no new evidence and keeps its bytes; fresh safe
+  output still retains sanitized pending evidence. This is no same-uid
+  security boundary.
 - `--release` reads the runner's private `trial.json` for the fleet id,
   owned task ids and private state roots. A missing, stale or tampered
   state file refuses the release; it does not fall back to the user's

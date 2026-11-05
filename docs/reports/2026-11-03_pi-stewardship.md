@@ -26,13 +26,15 @@ tags:
 
 [The spec](../specs/2026-11-03_pi-delivery.md), increment B, and
 [the plan](../plans/2026-11-03_pi-stewardship.md), Task 5. The bounded
-live trial's runner and its offline tests are built. The native mixed-
-worker trial did not run: the confirmed temporary Codex and Claude homes
-do not yet exist, and the runner must not copy a subscription credential.
+live trial's runner and its offline tests are built. Three actual native
+attempts failed before any provider request. The first two exposed a
+missing Herdr control binding; the third waited for an unanswered human
+Claude folder-trust decision. No coordinator or mixed-worker cycle
+started. The live gate is **pending**, not passed. API-backed homes are a
+declared deviation from the original subscription-login evidence, and
+offline or scripted results cannot substitute for native acceptance.
 Open-weight spending is explicitly unlimited, but the controller must set
-an explicit numeric `--max-usd` for each run. The live gate is **pending**,
-not passed. API-backed homes would be a disclosed deviation from the
-original subscription-login evidence, not a substitute for it.
+an explicit numeric `--max-usd` for each run.
 
 The offline work proves plumbing, not model competence. It covers the
 fixture and owner, registry ownership, dedicated panes read from herdr's
@@ -156,7 +158,17 @@ incomplete reply complete.
 
 - The registry is written by the runner from herdr's creation replies.
   Every entry must be a pane, name and clone this trial made; any other
-  entry fails the run and is never touched.
+  entry fails the run and is never touched. The exact resolved registry,
+  even with a custom basename, must be absent and have no symlinked path
+  component. It is created exclusively, never by truncating prior bytes.
+- `--out` must be absent with existing non-symlink ancestors. An existing
+  file, empty or nonempty directory, symlink or symlink alias is refused
+  before key loading, paid calls or pane creation. A safe fresh output is
+  created privately and non-recursively; its event stream and all other
+  evidence files are exclusive creates. Rejected output gets no pending or
+  error files, has `outputOwned: false` and keeps its original bytes. The
+  CLI prints those preflight problems. Other preflight failures preserve
+  sanitized pending evidence in the new safely owned output.
 - `verifySubmission` reads the clone's HEAD itself and runs the owner's
   sealed acceptance test on an export outside every clone. Only its
   receipt closes a task. A report's arbitrary verification string is
@@ -207,8 +219,9 @@ incomplete reply complete.
   records the launcher and exact spawned Pi PIDs; both boot:start
   identities must stay alive and match the foreground group before
   kickoff. A banner with a live shell or foreign job is insufficient.
-  Before successful kickoff Enter and with no provider call, the result
-  remains `not-run`.
+  The result remains `not-run` until a provider request is observed.
+  Successful kickoff Enter with zero requests does not count as
+  model-driven; a real request does.
 - Live Herdr calls, home inspection, interruption and Pi's helper share
   one explicit control environment: the owner's declared
   `HERDR_SOCKET_PATH`, `HERDR_ENV`, PATH/HOME and locale, plus a
@@ -284,8 +297,10 @@ while all three panes it created were closed. A read-only profile
 diagnostic showed the worker's actual HOME, CODEX_HOME and cwd were the
 expected private roots. The missing context was the owner's declared
 Herdr socket and the trial lock runtime in the verifier's control
-environment. A second run also made zero requests; that is not a passed
-trial and proves no model competence.
+environment. A second run also made zero requests. The third run reached
+an actual Claude folder-trust dialog but received no human answer; it
+also made zero requests. None is a passed trial or evidence of model
+competence, and the native gate remains pending.
 
 ### Supplemental live research, not acceptance
 
@@ -335,13 +350,28 @@ A third pre-existing assertion expected the report to say "not against
 hostile code"; the note says "not evidence against hostile code". The
 expectation was corrected to the sentence the runner actually writes.
 
+## Final ownership and taxonomy checks
+
+The final fix wave first reproduced WB-3 and WB-4 with eight focused fake
+tests. All eight failed: the custom registry and five output-reuse cases
+ran or threw, the registry symlink was not protected, and accepted
+kickoff with no request was labeled `model-driven`. After implementation,
+the same eight passed with 65 assertions. The final combined covering
+suites passed 147 tests with 692 assertions, including a fresh output
+full fake cycle and an actionable CLI rejection whose reused
+`result.json` stayed unchanged.
+
+The requested output and registry tests use fakes only. They count zero
+upstream key loads, provider requests and created trial panes, and compare
+all preserved bytes. They establish no native acceptance.
+
 ## Commands and results
 
 ```text
 $ bun run check
 typecheck, format, lint, markdown, YAML, secrets, em dash and header
-checks clean; 4488 pass, 5 skip, 0 fail; 149048 expect() calls across
-4493 tests in 216 files
+checks clean; 4545 pass, 5 skip, 0 fail; 149362 expect() calls across
+4550 tests in 216 files
 ```
 
 ## Deferred findings
