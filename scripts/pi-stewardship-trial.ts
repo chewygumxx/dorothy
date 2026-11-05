@@ -49,7 +49,7 @@ import {
     realpath,
     writeFile,
 } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { scrub } from "@dorothy/cli/scrub";
 import { readPiCatalog } from "../packages/cli/src/hosts/pi/models.js";
 import { runSteward } from "../packages/cli/src/hosts/pi/steward/engine.js";
@@ -165,12 +165,17 @@ export type TrialDeps = {
     platform: string;
     uid: number;
     herdr: HerdrRun;
+    // The one credential-free control environment for live Herdr, home
+    // inspection and locked writes. Runtime is trial-owned and shared
+    // with Pi's helper, so both sides take the same pane lock.
+    controlEnv: (runtimeDir: string) => Env;
     // Ctrl+C under the pane lock, after revalidating this exact occupant.
     interruptWorker: (
         worker: Worker,
         pin: { terminalId: string; occupant: Occupant },
         timeoutMs: number,
-        deadlineAt?: number,
+        deadlineAt: number | undefined,
+        control: Env,
     ) => Promise<Reply>;
     // A home's login, by the harness's own status command; never a read
     // of its credential.
@@ -189,6 +194,7 @@ export type TrialDeps = {
         cwd: string,
         pane: string,
         timeoutMs: number,
+        control: Env,
     ) => Promise<boolean>;
     nativePiIdentity?: (
         path: string,
@@ -351,6 +357,12 @@ export async function preflight(
         problems.push(`--timeout-ms must be 1 to ${TRIAL_TIME_CAP_MS}`);
     if (deps.env.HERDR_ENV !== "1")
         problems.push("run it from a herdr pane: HERDR_ENV is not 1");
+    if (!deps.env.HERDR_SOCKET_PATH)
+        problems.push(
+            "HERDR_SOCKET_PATH is not declared: the trial never guesses another server",
+        );
+    else if (!isAbsolute(deps.env.HERDR_SOCKET_PATH))
+        problems.push("HERDR_SOCKET_PATH must be absolute");
     const { trial, out } = layout;
     if (!PLAIN_PATH.test(trial))
         problems.push(
@@ -700,6 +712,7 @@ class Trial {
     private kit: OwnerKit | null = null;
     private ownerEnv: OwnerEnv;
     private piEnv: Env = {};
+    private controlEnv: Env = {};
     private fleetId = "";
     private registryDigest = "";
     private registryFixtureRoot = "";
@@ -817,7 +830,7 @@ class Trial {
         );
         try {
             return await this.deps.herdr(args, {
-                env: this.deps.env,
+                env: this.controlEnv,
                 signal: control.signal,
             });
         } finally {
@@ -984,6 +997,9 @@ class Trial {
         ])
             await mkdir(dir, { recursive: true, mode: 0o700 });
         const { env } = this.deps;
+        this.controlEnv = this.deps.controlEnv(at("runtime"));
+        // Pi and its helper share the trial's one lock runtime and the
+        // declared server; their config, data and state stay isolated.
         this.piEnv = {
             PATH: env.PATH,
             HOME: at("home"),
@@ -991,16 +1007,16 @@ class Trial {
             XDG_DATA_HOME: at("data"),
             XDG_STATE_HOME: at("state"),
             XDG_CACHE_HOME: at("cache"),
-            XDG_RUNTIME_DIR: at("runtime"),
+            XDG_RUNTIME_DIR: this.controlEnv.XDG_RUNTIME_DIR ?? at("runtime"),
             TERM: "xterm-256color",
             COLORTERM: "truecolor",
             BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
-            HERDR_ENV: "1",
-            ...(env.HERDR_SOCKET_PATH
-                ? { HERDR_SOCKET_PATH: env.HERDR_SOCKET_PATH }
+            HERDR_ENV: this.controlEnv.HERDR_ENV ?? "1",
+            ...(this.controlEnv.HERDR_SOCKET_PATH
+                ? { HERDR_SOCKET_PATH: this.controlEnv.HERDR_SOCKET_PATH }
                 : {}),
-            ...(env.HERDR_BIN_PATH
-                ? { HERDR_BIN_PATH: env.HERDR_BIN_PATH }
+            ...(this.controlEnv.HERDR_BIN_PATH
+                ? { HERDR_BIN_PATH: this.controlEnv.HERDR_BIN_PATH }
                 : {}),
         };
     }
@@ -1160,6 +1176,7 @@ class Trial {
                     clone,
                     pane,
                     Math.min(10_000, this.remaining()),
+                    this.controlEnv,
                 ))
             ) {
                 throw new Error(
@@ -1685,6 +1702,7 @@ class Trial {
                         },
                         Math.min(15_000, this.deadline - this.now()),
                         this.deadline,
+                        this.controlEnv,
                     )
                     .catch(() => null);
                 if (sent?.code === 9) {
@@ -1705,7 +1723,7 @@ class Trial {
                     const current = declared
                         ? (
                               await observeWorker(declared, this.deps.herdr, {
-                                  env: this.deps.env,
+                                  env: this.controlEnv,
                                   now: this.deps.now,
                                   processStart: this.deps.occupantStart,
                               })
@@ -1733,6 +1751,7 @@ class Trial {
                     clone,
                     worker.pane,
                     Math.min(10_000, this.remaining()),
+                    this.controlEnv,
                 ))
             ) {
                 throw new Error(
@@ -1743,7 +1762,7 @@ class Trial {
             if (declared) {
                 occupantAfter = (
                     await observeWorker(declared, this.deps.herdr, {
-                        env: this.deps.env,
+                        env: this.controlEnv,
                         now: this.deps.now,
                         processStart: this.deps.occupantStart,
                     })

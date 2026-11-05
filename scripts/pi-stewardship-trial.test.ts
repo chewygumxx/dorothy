@@ -149,6 +149,8 @@ class World {
         piStartedAt: string;
     } | null = null;
     nativeIdentityChecks = 0;
+    workerControl: Record<string, string | undefined> | null = null;
+    interruptControl: Record<string, string | undefined> | null = null;
     stderrNotReady = false;
     emptyMutations = false;
     shellEchoOnly = false;
@@ -833,7 +835,21 @@ function depsFor(
         platform: "linux",
         uid: process.getuid?.() ?? 0,
         herdr: world.herdr,
-        interruptWorker: async (worker, pin) => {
+        controlEnv: (runtimeDir) => ({
+            PATH: process.env.PATH ?? "",
+            HOME: "/nonexistent-home",
+            HERDR_ENV: "1",
+            HERDR_SOCKET_PATH: "/nonexistent/herdr.sock",
+            XDG_RUNTIME_DIR: runtimeDir,
+        }),
+        interruptWorker: async (
+            worker,
+            pin,
+            _timeoutMs,
+            _deadlineAt,
+            control,
+        ) => {
+            world.interruptControl = control;
             world.onInterrupt?.();
             const agent = world.find(worker.name)?.agent;
             const occupant = agent
@@ -888,7 +904,17 @@ function depsFor(
                     pane.agent?.process === pid && startedAt === `boot:${pid}`,
             );
         },
-        workerHomeMatches: async () => true,
+        workerHomeMatches: async (
+            _harness,
+            _home,
+            _cwd,
+            _pane,
+            _timeout,
+            control,
+        ) => {
+            world.workerControl = control;
+            return true;
+        },
         nativePiIdentity: async () => {
             world.nativeIdentityChecks++;
             return world.nativeIdentity;
@@ -1205,6 +1231,12 @@ describe("a trial on fakes", () => {
             launcherPid: expect.any(Number),
             piPid: expect.any(Number),
         });
+        expect(world.workerControl).toMatchObject({
+            HERDR_ENV: "1",
+            HERDR_SOCKET_PATH: "/nonexistent/herdr.sock",
+            XDG_RUNTIME_DIR: expect.stringMatching(/\/runtime$/),
+        });
+        expect(world.interruptControl).toEqual(world.workerControl);
         expect(result.interventions.map((i) => [i.by, i.kind])).toEqual(
             expect.arrayContaining([
                 ["runner", "worker-interruption"],

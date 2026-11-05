@@ -14,10 +14,17 @@
 
 import { afterAll, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type ProbeResult, parseProbeArgs } from "./probe-pi-stewardship.js";
+import { processStart } from "../packages/cli/src/hosts/pi/steward/engine.js";
+import {
+    interruptWorker,
+    type ProbeResult,
+    parseProbeArgs,
+    trialControlEnv,
+    workerHomeMatches,
+} from "./probe-pi-stewardship.js";
 
 const roots: string[] = [];
 const scratch = () => {
@@ -80,6 +87,295 @@ describe("the arguments", () => {
             expect(typeof parseProbeArgs(argv)).toBe("string");
         }
     });
+});
+
+const oneLine = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
+
+const fakeHerdr = async ({
+    path,
+    log,
+    socket,
+    runtime,
+    pid,
+}: {
+    path: string;
+    log: string;
+    socket: string;
+    runtime: string;
+    pid: number;
+}) => {
+    await writeFile(
+        path,
+        `#!/bin/sh
+printf '%s|%s\\n' "$HERDR_SOCKET_PATH" "$XDG_RUNTIME_DIR" >>${oneLine(log)}
+env >${oneLine(`${log}.env`)}
+[ "$HERDR_SOCKET_PATH" = ${oneLine(socket)} ] || exit 1
+[ "$XDG_RUNTIME_DIR" = ${oneLine(runtime)} ] || exit 1
+case "$1 $2" in
+"agent get")
+    printf '%s\\n' '{"result":{"agent":{"name":"trial-codex","pane_id":"w1:p1","agent_status":"working","terminal_id":"term_1"}}}'
+    ;;
+"pane process-info")
+    printf '%s\\n' '{"result":{"process_info":{"foreground_process_group_id":${pid}}}}'
+    ;;
+"pane send-keys") ;;
+*) exit 1 ;;
+esac
+`,
+    );
+    await chmod(path, 0o755);
+};
+
+describe("the live control boundary", () => {
+    it("keeps the declared socket and trial runtime, and no credential", () => {
+        const control = trialControlEnv(
+            {
+                PATH: "/bin",
+                HOME: "/owner/home",
+                HERDR_ENV: "1",
+                HERDR_SOCKET_PATH: "/owner/herdr.sock",
+                XDG_RUNTIME_DIR: "/owner/run",
+                XDG_STATE_HOME: "/owner/state",
+                FEATHERLESS_API_KEY: "provider-secret",
+                SOPS_AGE_KEY_FILE: "/owner/age.txt",
+            },
+            "/trial/run",
+        );
+        expect(control).toMatchObject({
+            PATH: "/bin",
+            HOME: "/owner/home",
+            HERDR_ENV: "1",
+            HERDR_SOCKET_PATH: "/owner/herdr.sock",
+            XDG_RUNTIME_DIR: "/trial/run",
+        });
+        expect(control.FEATHERLESS_API_KEY).toBeUndefined();
+        expect(control.SOPS_AGE_KEY_FILE).toBeUndefined();
+        expect(control.XDG_STATE_HOME).toBeUndefined();
+    });
+
+    it("feeds home inspection the declared socket and trial runtime", async () => {
+        const root = scratch();
+        const home = join(root, "home");
+        const cwd = join(root, "cwd");
+        const bin = join(root, "bin");
+        const socket = join(root, "owner", "herdr.sock");
+        const runtime = join(root, "trial", "run");
+        const log = join(root, "calls.log");
+        await Promise.all([
+            mkdir(home, { recursive: true, mode: 0o700 }),
+            mkdir(cwd, { recursive: true, mode: 0o700 }),
+            mkdir(bin, { recursive: true, mode: 0o700 }),
+            mkdir(runtime, { recursive: true, mode: 0o700 }),
+        ]);
+        const child = Bun.spawn(["sh", "-c", "sleep 30"], {
+            cwd,
+            env: {
+                PATH: process.env.PATH ?? "",
+                HOME: home,
+                CODEX_HOME: home,
+            },
+            stdin: "ignore",
+            stdout: "ignore",
+            stderr: "ignore",
+        });
+        try {
+            await Bun.sleep(50);
+            await fakeHerdr({
+                path: join(bin, "herdr"),
+                log,
+                socket,
+                runtime,
+                pid: child.pid,
+            });
+            const owner = {
+                PATH: `${bin}:${process.env.PATH ?? ""}`,
+                HOME: join(root, "owner"),
+                HERDR_ENV: "1",
+                HERDR_SOCKET_PATH: socket,
+                XDG_RUNTIME_DIR: join(root, "owner-run"),
+                FEATHERLESS_API_KEY: "provider-secret",
+                SOPS_AGE_KEY_FILE: join(root, "age.txt"),
+            };
+            expect(
+                await workerHomeMatches(
+                    "codex",
+                    home,
+                    cwd,
+                    "w1:p1",
+                    2000,
+                    trialControlEnv(owner, runtime),
+                ),
+            ).toBe(true);
+            expect(await readFile(log, "utf8")).toContain(
+                `${socket}|${runtime}`,
+            );
+            const seen = await readFile(`${log}.env`, "utf8");
+            expect(seen).not.toContain("provider-secret");
+            expect(seen).not.toContain("SOPS_AGE_KEY_FILE");
+            expect(
+                await workerHomeMatches(
+                    "codex",
+                    home,
+                    cwd,
+                    "w1:p1",
+                    2000,
+                    trialControlEnv(
+                        {
+                            ...owner,
+                            HERDR_SOCKET_PATH: join(root, "other.sock"),
+                        },
+                        runtime,
+                    ),
+                ),
+            ).toBe(false);
+            expect(
+                await workerHomeMatches(
+                    "codex",
+                    home,
+                    cwd,
+                    "w1:p1",
+                    2000,
+                    trialControlEnv(
+                        { ...owner, HERDR_SOCKET_PATH: undefined },
+                        runtime,
+                    ),
+                ),
+            ).toBe(false);
+        } finally {
+            child.kill("SIGKILL");
+            await child.exited;
+        }
+    }, 20_000);
+
+    it("locks the interrupter and prompt sender in one trial namespace", async () => {
+        const root = scratch();
+        const bin = join(root, "bin");
+        const runtime = join(root, "trial", "run");
+        const socket = join(root, "owner", "herdr.sock");
+        const log = join(root, "calls.log");
+        await Promise.all([
+            mkdir(bin, { recursive: true, mode: 0o700 }),
+            mkdir(runtime, { recursive: true, mode: 0o700 }),
+            mkdir(join(runtime, "dorothy-agents"), {
+                recursive: true,
+                mode: 0o700,
+            }),
+        ]);
+        await fakeHerdr({
+            path: join(bin, "herdr"),
+            log,
+            socket,
+            runtime,
+            pid: process.pid,
+        });
+        const started = await processStart(process.pid);
+        const control = trialControlEnv(
+            {
+                PATH: `${bin}:${process.env.PATH ?? ""}`,
+                HOME: join(root, "owner"),
+                HERDR_ENV: "1",
+                HERDR_SOCKET_PATH: socket,
+                XDG_RUNTIME_DIR: join(root, "owner-run"),
+                FEATHERLESS_API_KEY: "provider-secret",
+            },
+            runtime,
+        );
+        const worker = {
+            id: "trial-codex",
+            name: "trial-codex",
+            pane: "w1:p1",
+            harness: "codex" as const,
+            role: "implementer" as const,
+            cwd: root,
+            accountLabel: "fixture",
+            availability: "available" as const,
+            observedAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        };
+        const pin = {
+            terminalId: "term_1",
+            occupant: {
+                kind: "process" as const,
+                pid: process.pid,
+                startedAt: started,
+            },
+        };
+        expect(
+            (
+                await interruptWorker(worker, pin, 1000, undefined, {
+                    ...control,
+                    HERDR_SOCKET_PATH: undefined,
+                })
+            ).code,
+        ).toBe(4);
+        const lock = join(runtime, "dorothy-agents", "w1_p1.lock");
+        // The final sleep owns fd 9, so killing it releases the lock.
+        const holder = Bun.spawn(
+            ["sh", "-c", `exec 9>${oneLine(lock)}; flock 9; exec sleep 30`],
+            {
+                stdin: "ignore",
+                stdout: "ignore",
+                stderr: "ignore",
+            },
+        );
+        try {
+            await Bun.sleep(100);
+            expect(
+                (
+                    await interruptWorker(
+                        worker,
+                        pin,
+                        3000,
+                        Date.now() + 800,
+                        control,
+                    )
+                ).code,
+            ).toBe(7);
+            const sendPrompt = join(
+                import.meta.dir,
+                "..",
+                ".agents",
+                "skills",
+                "agent-stewardship",
+                "scripts",
+                "send-prompt.sh",
+            );
+            const prompt = Bun.spawn(
+                [
+                    sendPrompt,
+                    "--from",
+                    "dorothy",
+                    "--expect-pane",
+                    worker.pane,
+                    "--expect-process",
+                    String(process.pid),
+                    started,
+                    "--deadline-at",
+                    String(Date.now() + 800),
+                    worker.name,
+                ],
+                {
+                    env: control,
+                    stdin: new Blob(["controlled"]),
+                    stdout: "ignore",
+                    stderr: "ignore",
+                },
+            );
+            expect(await prompt.exited).toBe(7);
+            expect(await readFile(log, "utf8")).toContain(
+                `${socket}|${runtime}`,
+            );
+            expect(await readFile(`${log}.env`, "utf8")).not.toContain(
+                "provider-secret",
+            );
+        } finally {
+            holder.kill("SIGKILL");
+            await holder.exited;
+        }
+        expect(
+            (await interruptWorker(worker, pin, 3000, undefined, control)).code,
+        ).toBe(0);
+    }, 20_000);
 });
 
 describe("the offline run", () => {
@@ -201,6 +497,7 @@ describe("the offline run", () => {
                     PATH: process.env.PATH ?? "",
                     HOME: join(root, "home"),
                     HERDR_ENV: "1",
+                    HERDR_SOCKET_PATH: join(root, "herdr.sock"),
                     XDG_STATE_HOME: join(root, "state"),
                 },
                 stdout: "pipe",

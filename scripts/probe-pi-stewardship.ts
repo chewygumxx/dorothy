@@ -68,6 +68,10 @@ import {
     DEFAULT_CAST,
     HELD_OUT_CAST,
 } from "../packages/cli/src/hosts/pi/steward/simulation.js";
+import type {
+    Occupant,
+    Worker,
+} from "../packages/cli/src/hosts/pi/steward/types.js";
 import { CLI_DIR, MODEL } from "../packages/cli/src/hosts/pi/testing.js";
 import {
     FEATHERLESS,
@@ -328,10 +332,74 @@ export function markdown(result: ProbeResult): string {
 }
 
 type Env = Record<string, string | undefined>;
-const HERDR_ENV: Env = {
-    PATH: process.env.PATH ?? "",
-    HERDR_ENV: "1",
-};
+// The control environment for live Herdr and the locked scripts: declared
+// server/session context, the caller's command path and home, and the
+// trial's own runtime for the one pane-lock namespace. It never inherits
+// provider keys, age keys, memory addresses or arbitrary owner settings.
+const CONTROL_PASSED = [
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "USER",
+    "LOGNAME",
+    "LANG",
+    "LANGUAGE",
+    "TZ",
+] as const;
+export function trialControlEnv(owner: Env, runtimeDir: string): Env {
+    const env: Env = {};
+    for (const name of CONTROL_PASSED) {
+        if (owner[name] !== undefined) env[name] = owner[name];
+    }
+    for (const [name, value] of Object.entries(owner)) {
+        if (name.startsWith("LC_") && value !== undefined) env[name] = value;
+    }
+    for (const name of [
+        "HERDR_ENV",
+        "HERDR_SOCKET_PATH",
+        "HERDR_BIN_PATH",
+    ] as const) {
+        if (owner[name] !== undefined) env[name] = owner[name];
+    }
+    env.XDG_RUNTIME_DIR = runtimeDir;
+    return env;
+}
+
+export async function interruptWorker(
+    worker: Worker,
+    pin: { terminalId: string; occupant: Occupant },
+    timeoutMs: number,
+    deadlineAt: number | undefined,
+    control: Env,
+) {
+    // Never let herdr discover a default server when the declaration is
+    // absent: code 4 is an unsent refusal to the engine.
+    if (control.HERDR_ENV !== "1" || !control.HERDR_SOCKET_PATH) {
+        return {
+            code: 4,
+            stdout: "",
+            stderr: "control environment has no declared Herdr socket",
+        };
+    }
+    return timed(
+        createHerdrRun({ bin: INTERRUPTER }),
+        [
+            "--expect-pane",
+            worker.pane,
+            "--expect-terminal",
+            pin.terminalId,
+            ...occupantArgs(pin.occupant),
+            ...(deadlineAt ? ["--deadline-at", String(deadlineAt)] : []),
+            "--key",
+            "ctrl+c",
+            "--lock-wait",
+            "5",
+            worker.name,
+        ],
+        control,
+        Math.max(1, timeoutMs),
+    );
+}
 
 // The memory contract's health route, from @dorothy/core's SERVICE_PATHS.
 const HEALTH = "/v1/health";
@@ -528,17 +596,19 @@ async function runtimeProblems(
 
 // Check only the three expected values in the owned process. The rest of
 // its environment is neither exported nor logged.
-async function workerHomeMatches(
+export async function workerHomeMatches(
     harness: "codex" | "claude",
     home: string,
     cwd: string,
     pane: string,
     timeoutMs: number,
+    control: Env,
 ): Promise<boolean> {
+    if (control.HERDR_ENV !== "1" || !control.HERDR_SOCKET_PATH) return false;
     const reply = await timed(
         createHerdrRun(),
         ["pane", "process-info", "--pane", pane],
-        HERDR_ENV,
+        control,
         Math.max(1, timeoutMs),
     );
     try {
@@ -603,27 +673,9 @@ export async function liveDeps(): Promise<TrialDeps> {
         platform: process.platform,
         uid: process.getuid?.() ?? 0,
         herdr: createHerdrRun(),
-        interruptWorker: (worker, pin, timeoutMs, deadlineAt) =>
-            timed(
-                createHerdrRun({ bin: INTERRUPTER }),
-                [
-                    "--expect-pane",
-                    worker.pane,
-                    "--expect-terminal",
-                    pin.terminalId,
-                    ...occupantArgs(pin.occupant),
-                    ...(deadlineAt
-                        ? ["--deadline-at", String(deadlineAt)]
-                        : []),
-                    "--key",
-                    "ctrl+c",
-                    "--lock-wait",
-                    "5",
-                    worker.name,
-                ],
-                HERDR_ENV,
-                Math.max(1, timeoutMs),
-            ),
+        controlEnv: (runtimeDir) => trialControlEnv(env, runtimeDir),
+        interruptWorker: (worker, pin, timeoutMs, deadlineAt, control) =>
+            interruptWorker(worker, pin, timeoutMs, deadlineAt, control),
         loginStatus: (harness, home, timeoutMs) =>
             loginStatus(harness, home, env, timeoutMs),
         preflightAssets: (timeoutMs) => runtimeProblems(env, timeoutMs),
