@@ -16,7 +16,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createOwnerKit, FIXTURE, isFile } from "./owner.js";
+import { createOwnerKit, FIXTURE, isFile, runExamples } from "./owner.js";
 import { DEFAULT_CAST, FIXES, Sim, SOURCE_LINE } from "./simulation.js";
 
 let s: Sim;
@@ -348,6 +348,21 @@ describe("the owner's verification", () => {
                 env: { PATH: "/usr/bin:/bin", home: join(s.root, "h") },
             }),
         ).rejects.toThrow("OWNER_ROOT_INSIDE_FIXTURE");
+    });
+});
+
+describe("the runner's run of the examples", () => {
+    it("tells an incomplete fix, which passes them, from the bug", async () => {
+        const { impl } = s.w;
+        const clone = await s.clone(impl);
+        const bug = await s.head(impl);
+        const incomplete = await s.commit(impl, "incomplete");
+        expect(await runExamples(s.kit, clone, bug)).toBe(1);
+        expect(await runExamples(s.kit, clone, incomplete)).toBe(0);
+        expect(await runExamples(s.kit, clone, "f".repeat(40))).toBeNull();
+        // Its export is removed; no receipt is written.
+        expect(await readdir(join(s.kit.root, "exports"))).toEqual([]);
+        expect(await logs()).toEqual([]);
     });
 });
 

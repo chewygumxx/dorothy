@@ -281,16 +281,20 @@ async function exportRevision(
         clone,
         kit.env,
     );
-    if (made.code !== 0) {
-        return false;
-    }
-    const taken = await run(
-        ["tar", "-xf", tar, "-C", into],
-        kit.root,
-        { PATH: kit.env.PATH },
-        15_000,
-    );
+    const taken =
+        made.code === 0
+            ? await run(
+                  ["tar", "-xf", tar, "-C", into],
+                  kit.root,
+                  { PATH: kit.env.PATH },
+                  15_000,
+              )
+            : made;
     await rm(tar, { force: true });
+    // A failed export leaves nothing behind.
+    if (taken.code !== 0) {
+        await rm(into, { recursive: true, force: true });
+    }
     return taken.code === 0;
 }
 
@@ -407,6 +411,35 @@ export async function verifySubmission(
         },
         passed: ran.code === 0,
     };
+}
+
+// The contract's examples (`src/example.ts`) run by the runner itself on an
+// export of the revision, as the owner's test is: the exit code alone, for
+// telling an incomplete fix (examples pass, the owner's test fails) from a
+// wrong one. Never a receipt, and its output is not read: the submitted
+// code could write anything there. It runs as the runner's user too.
+export async function runExamples(
+    kit: OwnerKit,
+    clone: string,
+    revision: string,
+): Promise<number | null> {
+    const into = join(kit.root, "exports", `examples-${revision.slice(0, 12)}`);
+    if (!(await exportRevision(kit, clone, revision, into))) {
+        return null;
+    }
+    const ran = await run(
+        [
+            process.execPath,
+            "--no-env-file",
+            `--config=${join(kit.root, "bunfig.toml")}`,
+            join(into, "src", "example.ts"),
+        ],
+        into,
+        { PATH: kit.env.PATH, HOME: kit.env.home },
+        kit.timeoutMs,
+    );
+    await rm(into, { recursive: true, force: true });
+    return ran.code;
 }
 
 // True when the path is a regular file (a test's look).
