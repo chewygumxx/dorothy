@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-04
+mtime: 2026-11-06
 spdx: GPL-3.0-only
 title: Problems
 description: >-
@@ -522,7 +522,9 @@ what it is.
   `--no-daemon`. Old rows without an occupant fail closed.
 - **State**: Fixed with same-terminal regressions. Native no-inference
   observation confirmed identical terminal and different process/start.
-  Same-user raw shell access is still not OS-confined.
+  The accepted native run then observed a real guarded worker exit and a
+  new occupant in the same terminal. Same-user raw shell access is still
+  not OS-confined.
 - **Evidence**:
   [the trial report](../reports/2026-11-03_pi-stewardship.md).
 

@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-04
+mtime: 2026-11-06
 spdx: GPL-3.0-only
 title: Priorities
 description: >-
@@ -30,8 +30,8 @@ gives its reasons, and its Revising section keeps this page in step.
 In the roadmap's order; the first is next.
 
 - [Dorothy in Pi](../roadmap.md#dorothy-in-pi): Highest Priority; Delivery
-  Merged (#129); Stewardship Runner Built, its Live Gate and the
-  Production Wiring Check Waiting on the User.
+  Merged (#129); Stewardship Acceptance Complete, Ready to Merge, Not
+  Merged; Production Smoke Complete.
 - [Dorothy's Memory](../roadmap.md#dorothys-memory): Store, Bodies,
   Contract, Evaluation and Recording Built; the Backfill Recorded and
   Reviewed; the First Run Done; the Engine's First Step Built and its Paid
@@ -92,13 +92,6 @@ Found but not scheduled, in the roadmap's order, which
 Live checks that wait on the user's sign-ins or approval. What each host
 needs is on [harnesses](./profiles/harnesses.md).
 
-- Pi stewardship's native mixed-worker trial: two temporary worker homes
-  and quota room; none exists yet. Open-weight spending is unlimited and
-  the controller chooses the mandatory numeric cap. API-backed homes are
-  a disclosed deviation from original subscription evidence. The runner
-  never copies a credential and leaves the gate pending without the
-  prerequisites ([report](../reports/2026-11-03_pi-stewardship.md#the-live-gate)).
-  The separate isolated production Pi smoke is complete, not pending.
 - Hermes, a live probe on a temporary home the user signs in
   ([step 3](../reports/2026-11-01-delivery.md#waiting-for-the-user)).
 - Codex, a live probe with the user after 5 November 17:23, when its usage

@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-11-04
+mtime: 2026-11-06
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -76,15 +76,14 @@ pseudo-terminal, recovery after a killed launcher, and a bounded live
 Featherless run, which passed
 ([report](./reports/2026-11-03_pi-delivery.md),
 [deferred](./deferred/2026-11-03_pi-delivery-deferred.md)). Increment B's
-runner and offline tests are built; its native mixed-worker gate has not
-run and temporary worker homes do not yet exist. Open-weight spending is
-authorized, with a numeric cap chosen per run
+runner and offline tests are built, and its bounded native mixed-worker
+run passed all eleven checks at product `b38393c`
 ([report](./reports/2026-11-03_pi-stewardship.md),
 [deferred](./deferred/2026-11-03_pi-stewardship-deferred.md)).
+Open-weight spending was authorized with a numeric cap per run.
 
-- **Status**: Highest Priority; Delivery Merged; Stewardship Runner
-  Hardened, its Native Live Gate Waiting on the User; Isolated Production
-  Smoke Complete
+- **Status**: Highest Priority; Delivery Merged; Stewardship Acceptance
+  Complete, Ready to Merge, Not Merged; Isolated Production Smoke Complete
 - **Required**: Existing Identity, Memory Service and Model Providers
 - **Rationale**: The user has selected Pi for the stewardship capability
   they most want. Delivery gave it a launcher, an extension, shared
@@ -93,11 +92,14 @@ authorized, with a numeric cap chosen per run
   and human approval handling, then test actual coordination. The
   controller completed `RUNNERS.pi`'s dump and real native final-turn
   smoke under isolated configuration, with direct-provider
-  and no-proxy-cap limits recorded. Stewardship's native trial still waits
-  on two temporary worker homes and quota room. Open-weight spending is
-  unlimited; the controller chooses an explicit numeric cap per run. The
-  runner never copies a subscription credential and records the gate as
-  pending. API-backed homes require an explicit evidence deviation.
+  and no-proxy-cap limits recorded. Stewardship's bounded native run then
+  passed at `b38393c` on synthetic API-backed homes under declared
+  deviations (declared fault injection, `keepRecentTokens` 1024, explicit
+  human Claude tool authorization). It is one controlled Linux cycle, not
+  subscription evidence, a reliability estimate or general production
+  readiness. The runner never copies a subscription credential. The phase
+  waits on the controller's merge and post-merge roadmap revision, not on
+  new prerequisites.
 
 ### Dorothy's Memory
 
@@ -346,11 +348,11 @@ Found but not scheduled, each with its source.
   scripted provider alone, `dorothy.tool-final` with no real case, and
   a fixture that reads Pi's screen text).
 - Pi stewardship's deferred findings and limits
-  ([record](./deferred/2026-11-03_pi-stewardship-deferred.md)): the native
-  worker-home gate and mandatory numeric cap, the same-user limit of owner
-  receipts and no OS confinement, catalogue outages refusing before spend,
-  live-only interruption and compaction evidence, and a shared
-  memory-launch helper.
+  ([record](./deferred/2026-11-03_pi-stewardship-deferred.md)): the
+  accepted run's synthetic API profiles, declared fault injection and
+  same-user owner receipts without OS confinement, catalogue outages
+  refusing before spend, live-only interruption and compaction limits, and
+  a shared memory-launch helper.
 - Model Providers' deferred findings
   ([record](./deferred/2026-11-01_model-providers-deferred.md)): stream
   errors coded by word, an output limit of her own, thinking on the other
@@ -706,3 +708,10 @@ In order of completion.
   phase stays first; Candidates gain its deferred findings and limits
   (the pending live gate, same-user owner receipts without OS
   confinement, the metadata gate and live-only evidence).
+- 2026-11-06: Pi's stewardship acceptance passed all eleven checks at
+  product `b38393c`, one bounded Linux API-backed cycle. Its status is
+  acceptance complete, ready to merge, not merged; the phase stays in
+  Ahead, and the post-merge Revising step stays with the controller.
+  Candidates gain the run's limits (synthetic API profiles, declared
+  fault injection, same-user access without OS confinement, and unproven
+  hostile-code or broad reliability claims).

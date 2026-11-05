@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-04
+mtime: 2026-11-06
 spdx: GPL-3.0-only
 title: Records
 description: >-
@@ -287,11 +287,12 @@ first.
   fixture fleet, task accounting, native Pi tools and a bounded trial.
 - [Pi stewardship trial](../reports/2026-11-03_pi-stewardship.md): Report.
   The runner, its hardened identity and accounting tests, the proxy
-  lifecycle fix, supplemental limits and the pending native live gate.
+  lifecycle fix, the bounded native acceptance pass at `b38393c` and its
+  limits.
 - [Pi stewardship deferred
   findings](../deferred/2026-11-03_pi-stewardship-deferred.md): Deferred.
-  The pending native worker-home gate, numeric run cap, same-user limits,
-  live-only uncertainties and runner edges.
+  The accepted native run's limits, same-user bounds, live-only
+  uncertainties and runner edges.
 
 ## Repository workflow
 

@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-05
-mtime: 2026-11-05
+mtime: 2026-11-06
 spdx: GPL-3.0-only
 title: packages/cli/src/hosts/pi/steward/TRIAL.md
 description: >-
@@ -124,5 +124,5 @@ usage still fail closed.
 
 Every exported text channel uses the public scrubber. JSON scrubs string
 values only. Private originals are not public sanitized evidence. The
-native mixed-worker gate remains pending; API-backed homes would be an
-explicit deviation from the original subscription evidence.
+native mixed-worker gate passed at `b38393c`; synthetic API-backed homes
+were an explicit deviation from the original subscription evidence.

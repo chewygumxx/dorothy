@@ -1,12 +1,13 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-05
+mtime: 2026-11-06
 spdx: GPL-3.0-only
 title: Pi stewardship trial
 description: >-
   The bounded live stewardship trial's runner, its offline tests and
-  evidence, the proxy lifecycle fix it exposed, and the pending live gate.
-  Open-weight spending is authorized; each run still needs a numeric cap.
+  evidence, the proxy lifecycle fix it exposed, and the bounded native
+  acceptance at b38393c with its limits.
+  Open-weight spending was authorized with a numeric cap per run.
 tags:
   - dorothy
   - pi
@@ -26,15 +27,19 @@ tags:
 
 [The spec](../specs/2026-11-03_pi-delivery.md), increment B, and
 [the plan](../plans/2026-11-03_pi-stewardship.md), Task 5. The bounded
-live trial's runner and its offline tests are built. Three actual native
+live trial's runner and its offline tests are built. Three early native
 attempts failed before any provider request. The first two exposed a
 missing Herdr control binding; the third waited for an unanswered human
-Claude folder-trust decision. No coordinator or mixed-worker cycle
-started. The live gate is **pending**, not passed. API-backed homes are a
-declared deviation from the original subscription-login evidence, and
-offline or scripted results cannot substitute for native acceptance.
-Open-weight spending is explicitly unlimited, but the controller must set
-an explicit numeric `--max-usd` for each run.
+Claude folder-trust decision. Seven model-driven attempts then ran a
+real coordinator and workers: attempts 4 to 9 stayed `incomplete`,
+mostly at the 30-request cap, attempt 7 exposed a real done-state bug
+that was fixed and reviewed, and attempt 10 passed all eleven acceptance
+checks at product `b38393c` on a bounded Linux, synthetic API-backed
+configuration. That is one controlled cycle's evidence, not
+subscription-model evidence, a reliability estimate or general
+production readiness. Offline or scripted results still cannot
+substitute for native acceptance, and open-weight spending still needs
+an explicit numeric cap for each run.
 
 The offline work proves plumbing, not model competence. It covers the
 fixture and owner, registry ownership, dedicated panes read from herdr's
@@ -54,7 +59,9 @@ was a proxy defect, not evidence about a model.
 Captured output is in the directory beside this report:
 [`offline.json`](./2026-11-03_pi-stewardship/offline.json),
 [`offline-report.txt`](./2026-11-03_pi-stewardship/offline-report.txt),
-[`focused-tests.log`](./2026-11-03_pi-stewardship/focused-tests.log)
+[`focused-tests.log`](./2026-11-03_pi-stewardship/focused-tests.log),
+the sanitized
+[native acceptance export](./2026-11-03_pi-stewardship/native-acceptance.json)
 and the controller's separate
 [supplemental live
 findings](./2026-11-03_pi-stewardship/supplemental-live-findings.txt).
@@ -70,9 +77,10 @@ findings](./2026-11-03_pi-stewardship/supplemental-live-findings.txt).
 | Task base | `7c5639a` |
 | Proxy extraction | `d825ce2` |
 
-No live inference, herdr pane, worker login, secret decryption or merge
-was performed by this implementation pass. The offline probe and tests
-use temporary roots, a scripted provider and fake herdr replies only.
+The native acceptance run's versions are in its own section below. No
+live inference, herdr pane, worker login, secret decryption or merge was
+performed by the implementation pass. The offline probe and tests use
+temporary roots, a scripted provider and fake herdr replies only.
 
 ## What was added
 
@@ -265,20 +273,25 @@ competence.
 
 ## The live gate
 
-The controller will choose the numeric run cap without asking again for
-spending authorization. Before the native run:
+The controller chose the numeric run cap without another spending
+request. The declared preconditions for a run, kept as the checklist the
+controller used:
 
-1. Make the trial directory and two temporary worker homes private; the
-   controller confirmed that these homes do not yet exist.
+1. Make the trial directory and both worker homes private. They were
+   created fresh for this experiment and never copied a subscription
+   home or auth; attempt 10 reused them at the same exact paths.
 2. Establish the intended Codex and Claude homes without copying an
-   existing home or subscription credential. API-backed homes require an
-   explicit deviation from the original subscription evidence.
+   existing home or subscription credential. The accepted run used those
+   synthetic API-backed homes, the declared deviation from original
+   subscription evidence.
 3. Read each account's quota in its own interface.
 4. Provide `flock`, herdr, both worker CLIs, Git, tar and the pinned
    Pi/Node runtime, plus an isolated config with a Featherless chat route.
-   Do not change normal route defaults or bypass `mise` trust globally.
+   Normal route defaults were not changed and `mise` trust was not
+   bypassed globally.
 5. Stay near for first-run or trust dialogs; the runner records those as
-   the user's interventions and answers none itself.
+   the user's interventions and answers none itself. The human
+   explicitly delegated Claude trust and tool authorization for the run.
 6. Run the probe with the controller's explicit numeric cap:
 
 ```text
@@ -287,20 +300,119 @@ bun scripts/probe-pi-stewardship.ts --live --registry <path> \
   --max-turns 30 --timeout-ms 1800000
 ```
 
-Missing prerequisites leave the gate pending while offline evidence
-remains reviewable. The separate production `RUNNERS.pi` smoke has now
-completed under isolated configuration; its limits are below.
+Earlier attempts left the gate pending while offline evidence remained
+reviewable; the accepted run then proceeded under the deviations below.
+The separate production `RUNNERS.pi` smoke completed earlier under
+isolated configuration; its limits are below.
 
-The first production native trial attempt stopped incomplete before any
-request with `agent get trial-codex: worker home is not the trial home`,
-while all three panes it created were closed. A read-only profile
-diagnostic showed the worker's actual HOME, CODEX_HOME and cwd were the
-expected private roots. The missing context was the owner's declared
-Herdr socket and the trial lock runtime in the verifier's control
-environment. A second run also made zero requests. The third run reached
-an actual Claude folder-trust dialog but received no human answer; it
-also made zero requests. None is a passed trial or evidence of model
-competence, and the native gate remains pending.
+### Early attempts
+
+The first three native attempts made zero provider requests. The first
+stopped incomplete before any request with `agent get trial-codex: worker
+home is not the trial home`, while all three panes it created were
+closed. A read-only profile diagnostic showed the worker's actual HOME,
+CODEX_HOME and cwd were the expected private roots. The missing context
+was the owner's declared Herdr socket and the trial lock runtime in the
+verifier's control environment. A second run also made zero requests.
+The third reached an actual Claude folder-trust dialog but received no
+human answer; it also made zero requests. None is a passed trial or
+evidence of model competence. These attempts stay as failed history.
+
+### Model-driven attempts before acceptance
+
+Attempts 4 to 9 each started a real coordinator and workers, and each
+stopped `incomplete` at the 30-request cap. Attempt 4 stopped on a small
+session that Pi's default `keepRecentTokens` 20000 rejected; the owned
+fixture then set `keepRecentTokens` 1024. Attempt 5 hit the cap. Attempt
+6 ran under too narrow permissions. Attempt 7 exposed a real L2
+done-state bug, fixed in `040c4d0` and `b38393c` and reviewed. Attempts 8
+and 9 completed the core cycle but lacked a final state file at the cap.
+They remain incomplete history and are not folded into the pass. Usage
+is the coordinator's declared-price total; cost is the workers'
+conservative accounted total.
+
+| # | Stop | Requests | Usage US$ | Calls | Cost US$ | Panes |
+| --- | --- | --- | --- | --- | --- | --- |
+| 4 | cap 30 | 30 | 0.011283912 | 22 | 0.011551932 | 3 closed |
+| 5 | cap 30 | 30 | 0.017152782 | 26 | 0.015121884 | 3 closed |
+| 6 | cap 30 | 30 | 0.016564287 | 29 | 0.014754492 | 3 closed |
+| 7 | cap 30 | 30 | 0.015999858 | 29 | 0.022976700 | 3 closed |
+| 8 | cap 30 | 30 | 0.013670799 | 48 | 0.039762934 | 3 closed |
+| 9 | cap 30 | 30 | 0.017966937 | 46 | 0.045545952 | 3 closed |
+
+### Attempt 10, the accepted run
+
+Attempt 10 passed (`result` `pass`) at product
+`b38393c3fa124e69c0edd8d0b41e8c93f2f6235f`. All eleven checks were true,
+with no waiver: registry ownership, sealed kit, no duplicate assignment,
+final revision, honest states, a real guarded worker exit and new
+occupant, compaction with work in flight, the review loop, limits, no
+key at rest and cleanup. The controller's manual assessment also agreed
+that the final state file matched the ledger and that no coordinator
+implemented anything itself.
+
+The actual final revision was
+`7ddcd973577fab48e3f0c07bc643da2b29bbd287`. Its owner receipt and examples
+passed, the current HEAD matched it, and the final review approved the
+same revision. The first review had requested changes on exactly
+`61783a326057ebace52a04179e24bbbf4ff292ba`, whose owner test failed and
+whose owner agreed with the rejection. `fix-1`/`fix-1b` kept the declared
+partial candidate, `fix-2` passed, and `review-2` approved. No honest
+state mismatched the ledger.
+
+The run used Pi 1.5.0, Node v24.22.1, herdr 0.9.5 and Bun 1.4.2. Compaction
+was confirmed while Pi was busy, with 9 calls before and 18 after its
+2026-11-05T16:22:52Z entry.
+
+| Measure | Accepted run | Cap |
+| --- | --- | --- |
+| Coordinator requests | 27, 0 refused, 0 unknown | 30 |
+| Coordinator usage price | US$0.016791567 | US$5 |
+| Worker calls | 47 | 100 |
+| Worker conservative cost | US$0.031589844, 0 held unknown | US$10 |
+| Worker output tokens per call | not totalled | 8192 |
+| Safety stop | false | false |
+| Elapsed | 329778 ms | 1798148 ms |
+| Owned panes closed | 3 of 3, none failed or left open | 3 |
+
+These are usage multiplied by declared or catalogue prices, not provider
+invoices and not all-mission spending. The isolated gateway caps were 100
+worker calls, US$10 and 8192 output tokens per call. The private research
+helper held two unknown transport calls of US$1.376256 apart from
+US$0.697854 of known usage-price subtotal; that audit is
+controller-private, outside the native cycle accounting, and total
+mission billing is not known.
+
+The run's declared deviations, preserved in the export: private
+API-backed profiles created fresh for this experiment and reused at the
+same paths, with synthetic gateway keys and no copied subscription auth;
+coordinator `deepseek-ai/DeepSeek-V4.1-Flash-1017` on
+Featherless; worker `deepseek/deepseek-v4.1-flash-1017` on OpenRouter;
+explicit human delegation of Claude trust and tool authorization, with an
+isolated Bash/Read/Write/Edit allowlist, owned fixture access and
+`acceptEdits`; and owned-fixture `keepRecentTokens` 1024. Interruption,
+release and compaction-busy timings were declared at 60 s, 10 s and 1 s.
+The first candidate was declared fault injection, so this is a
+fault-aware controlled cycle, not evidence of competence at unexpected
+failures. Workers ran as the same user, with no OS confinement or
+hostile-code verification claim. Normal `--pi` has no Herdr or workers;
+the normal user config still lacks a Featherless chat route and was not
+changed.
+
+The controller's initial operator guidance was part of the accepted
+conditions: a 30-request cap including compaction and final reporting,
+six requests reserved for owner updates and the final report, a
+preference for long waits and grouped reads, and the disclosed
+controlled schedule of a 60 s interruption, a 10 s release and the retry
+checkpoint held until compaction. No implementation, revision, result,
+verdict or final state was supplied by that guidance. It is recorded as
+`deviations.initialOperatorGuidance` in the export.
+
+The pass covers one configured Linux native Pi/Codex/Claude cycle on
+open-weight APIs. It is not subscription-model evidence, not an estimate
+of model reliability and not general production readiness. Working Codex
+history reads sometimes fail closed, so full dialog-bridge coverage and
+hostile-code confinement remain unproven.
 
 ### Supplemental live research, not acceptance
 
@@ -327,8 +439,9 @@ later native shell turn kept the same null session and process/start pin
 through transient tool children; three provider calls measured
 US$0.0020179872, including possible auxiliary work. Only owned panes and
 two private dummy daemons were cleaned; the user's
-daemon was untouched. None of this proves model competence, the native
-mixed-worker gate or subscription-account evidence.
+daemon was untouched. None of this proves model competence or
+subscription-account evidence; the later bounded acceptance and its
+limits are above, and this research stays separate from that accounting.
 
 ## Cleanup and evidence findings
 
@@ -367,20 +480,21 @@ all preserved bytes. They establish no native acceptance.
 
 ## Commands and results
 
-```text
-$ bun run check
-typecheck, format, lint, markdown, YAML, secrets, em dash and header
-checks clean; 4545 pass, 5 skip, 0 fail; 149362 expect() calls across
-4550 tests in 216 files
-```
+The latest head's CI run `42060608635` passed: typecheck, format, lint,
+markdown, YAML, secrets, em dash and header checks clean, then 4551 tests
+with 5 skipped and 0 failed. The implementation pass's earlier local
+`bun run check` reported 4545 pass, 5 skip and 0 fail. This evidence-only
+revision ran the Markdown, header and JSON format checks alone; no
+runtime test repeated the full suite for unchanged code.
 
 ## Deferred findings
 
 New or carried findings are in
 [the deferred record](../deferred/2026-11-03_pi-stewardship-deferred.md).
-They include the pending live gate, the same-user limit of owner
-receipts, live-only uncertainties about interruption and compaction, the
-unexercised first-fix guarantee, and the production Pi wiring check.
+The native gate is now recorded passed at `b38393c` with its limits; the
+record keeps the same-user limit of owner receipts, the live-only
+uncertainties around interruption and compaction, and the small adapter
+edges.
 
 ## Commits
 
@@ -388,4 +502,6 @@ unexercised first-fix guarantee, and the production Pi wiring check.
 - `9bff276` `feat(cli): Run the owner's examples for a fix`
 - `8ed522e` `feat(cli): Run the bounded Pi trial`
 - `1d3ce27` `feat(cli): Wire the live stewardship trial probe`
-- this report's commit, `docs(cli): Record the Pi stewardship trial`
+- `040c4d0` `fix(cli): Accept completed workers for dispatch`
+- `b38393c` `docs(cli): Explain steward ready state`
+- this report's commit, `docs(cli): Record native stewardship acceptance`

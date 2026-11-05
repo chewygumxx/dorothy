@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-04
+mtime: 2026-11-06
 spdx: GPL-3.0-only
 title: Decisions
 description: >-
@@ -623,9 +623,10 @@ Which host receives what, and what has been run against it, is on
   fixtures rerun, one of which reads Pi's screen text.
 - **Standing**: current. It supersedes the earlier exclusion for Pi as a
   host; the historical minutes stand unchanged. Delivery merged in #129;
-  stewardship's runner and offline tests are built, while its live gate
-  still waits on user-signed worker homes and a budget
-  ([harnesses](./profiles/harnesses.md#pi)).
+  stewardship's runner is built and its bounded native run passed at
+  `b38393c`, with its declared deviations and limits
+  ([harnesses](./profiles/harnesses.md#pi)). The phase awaits the
+  controller's merge and post-merge roadmap revision.
 - **Sources**:
   [Pi delivery spec](../specs/2026-11-03_pi-delivery.md#status-and-intent),
   [stewardship research](../notes/2026-11-03_pi-stewardship.md),

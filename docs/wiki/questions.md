@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-04
+mtime: 2026-11-06
 spdx: GPL-3.0-only
 title: Questions
 description: >-
@@ -116,9 +116,10 @@ a memory layer before each prompt, on a Featherless model. It was run in a
 pseudo-terminal against a scripted provider, and for three requests live,
 and merged in #129. The controller also completed an isolated production
 dump and native final-turn smoke, with direct-provider limits recorded.
-Stewardship's runner and offline tests are built; its native mixed-worker
-gate has not run and temporary homes do not yet exist. Open-weight
-spending is authorized, with an explicit numeric cap per run. See
+Stewardship's runner and offline tests are built, and its bounded native
+mixed-worker run passed all eleven checks at `b38393c` on synthetic
+API-backed homes. Open-weight spending was authorized, with an explicit
+numeric cap per run. See
 [harnesses](./profiles/harnesses.md#pi), the
 [delivery report](../reports/2026-11-03_pi-delivery.md) and the
 [stewardship report](../reports/2026-11-03_pi-stewardship.md).
