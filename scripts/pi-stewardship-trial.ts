@@ -50,9 +50,13 @@ import {
     writeFile,
 } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
+import { scrub } from "@dorothy/cli/scrub";
 import { readPiCatalog } from "../packages/cli/src/hosts/pi/models.js";
 import { runSteward } from "../packages/cli/src/hosts/pi/steward/engine.js";
-import type { HerdrRun } from "../packages/cli/src/hosts/pi/steward/herdr.js";
+import {
+    type HerdrRun,
+    observeWorker,
+} from "../packages/cli/src/hosts/pi/steward/herdr.js";
 import {
     type Identity,
     type Ledger,
@@ -75,13 +79,20 @@ import {
 import { readFleet } from "../packages/cli/src/hosts/pi/steward/registry.js";
 import type {
     Harness,
+    Occupant,
     Role,
     StewardReply,
     StewardRequest,
     TaskState,
+    Worker,
 } from "../packages/cli/src/hosts/pi/steward/types.js";
 import { CLI_DIR, MODEL } from "../packages/cli/src/hosts/pi/testing.js";
-import type { ForwardingProxy, Metadata, ProxyOptions } from "./pi-proxy.js";
+import {
+    type ForwardingProxy,
+    type Metadata,
+    metadataProblem,
+    type ProxyOptions,
+} from "./pi-proxy.js";
 
 type Env = Record<string, string | undefined>;
 type Reply = { code: number; stdout: string; stderr: string };
@@ -154,21 +165,41 @@ export type TrialDeps = {
     platform: string;
     uid: number;
     herdr: HerdrRun;
-    // A herdr call under the pane's lock (`pane-lock.sh`'s file).
-    lockedHerdr: (pane: string, args: string[]) => Promise<Reply>;
+    // Ctrl+C under the pane lock, after revalidating this exact occupant.
+    interruptWorker: (
+        worker: Worker,
+        pin: { terminalId: string; occupant: Occupant },
+        timeoutMs: number,
+    ) => Promise<Reply>;
     // A home's login, by the harness's own status command; never a read
     // of its credential.
-    loginStatus: (harness: Harness, home: string) => Promise<LoginStatus>;
+    loginStatus: (
+        harness: Harness,
+        home: string,
+        timeoutMs?: number,
+    ) => Promise<LoginStatus>;
+    // Runtime/executable checks, before a key or pane is touched.
+    preflightAssets?: () => Promise<string[]>;
+    // Verify the launched foreground process's home and cwd without
+    // logging its environment or reading a credential file.
+    workerHomeMatches: (
+        harness: Harness,
+        home: string,
+        cwd: string,
+        pane: string,
+        timeoutMs: number,
+    ) => Promise<boolean>;
     startProxy: (options: ProxyOptions) => ForwardingProxy;
     // Live, Featherless and the key from secrets.json, held in memory.
     upstream: () => Promise<{ url: string; key: string }>;
-    metadata: () => Promise<Metadata | null>;
+    metadata: (timeoutMs?: number) => Promise<Metadata | null>;
     memory: (
         root: string,
         env: Env,
     ) => Promise<{ url: string; stop(): Promise<void> }>;
     versions: () => Promise<Record<string, string>>;
     alive: (pid: number, startedAt: string) => Promise<boolean>;
+    occupantStart: (pid: number) => Promise<string>;
     self: Identity;
     pollMs?: number;
     // How long a fix runs before its worker is interrupted, how long the
@@ -192,6 +223,7 @@ export type TrialLayout = {
     origin: string;
     pi: string;
     run: string;
+    checkpoints: string;
     interventions: string;
     state: string;
     coordinator: string;
@@ -220,6 +252,7 @@ export function layoutOf(registry: string, out: string): TrialLayout {
         origin: join(trial, "origin"),
         pi: join(trial, "pi"),
         run: join(trial, "run"),
+        checkpoints: join(trial, "run", "checkpoints"),
         interventions: join(trial, "interventions.jsonl"),
         state: join(trial, "trial.json"),
         coordinator: join(fixture, "reports", "coordinator.md"),
@@ -245,6 +278,7 @@ const inside = (dir: string, path: string) => {
 
 const sha256 = (data: string | Uint8Array) =>
     `sha256:${createHash("sha256").update(data).digest("hex")}`;
+const shellQuote = (text: string) => `'${text.replaceAll("'", `'"'"'`)}'`;
 
 // The user's checklist for the live gate, exactly as printed.
 export function checklist(layout: TrialLayout): string[] {
@@ -254,10 +288,11 @@ export function checklist(layout: TrialLayout): string[] {
         `1. Make the trial directory and the homes private: mkdir -p -m 700 ${homes.codex} ${homes.claude} && chmod 700 ${trial} ${trial}/homes`,
         `2. Sign the trial's Codex account in, in its own home (never copy ~/.codex): CODEX_HOME=${homes.codex} codex login, then check: CODEX_HOME=${homes.codex} codex login status`,
         `3. Sign the trial's Claude account in, in its own home (never copy ~/.claude): CLAUDE_CONFIG_DIR=${homes.claude} claude auth login, then check: CLAUDE_CONFIG_DIR=${homes.claude} claude auth status --text`,
-        "4. Look at each account's quota in its own interface (Codex /status, Claude /usage); run only when both have room.",
-        `5. Write no registry: the runner writes ${registry} itself, filling each worker's pane from herdr's creation reply (pane split's .result.pane.pane_id), its name and cwd from agent get's .result.agent, its observedAt and expiresAt (now, and 55 minutes on), its availability (login and start screen) and its accountLabel (codex-trial-home, claude-trial-home); the engine pins each terminal_id.`,
-        "6. Stay near: a worker's first-run or trust dialog is yours to answer in its pane; the runner waits and records it as your intervention.",
-        `7. From a herdr pane, with Featherless's key in secrets.json, run: bun scripts/probe-pi-stewardship.ts --live --registry ${registry} --out <a new directory outside ${trial}> --max-usd <budget> --max-turns 30 --timeout-ms 1800000`,
+        "4. Look at each account's quota in its own interface (Codex /status, Claude /usage); run only when both have room. Open-weight spending is authorized, but the controller still chooses an explicit numeric cap for this run.",
+        `5. Write no registry: the runner writes ${registry} itself from creation replies, including observedAt/expiresAt, and freezes its bytes, fleet id and fixture root. The engine pins each validated session or Linux foreground process/start identity, not merely terminal_id.`,
+        "6. Stay near: a worker's first-run or trust dialog is yours to answer in its pane; the runner waits and records it as your intervention. It restores and verifies each private worker home after shell startup and starts Codex with --no-daemon.",
+        "7. Required locally: flock, herdr, both worker CLIs, git, tar and the pinned Pi/Node runtime. The selected config needs a Featherless chat route; do not change normal defaults or bypass mise trust.",
+        `8. From a herdr pane, with Featherless's key in secrets.json, run: bun scripts/probe-pi-stewardship.ts --live --registry ${registry} --out <a new directory outside ${trial}> --max-usd <number> --max-turns 30 --timeout-ms 1800000`,
     ];
 }
 
@@ -288,6 +323,7 @@ export type Preflight =
 export async function preflight(
     args: TrialArgs,
     deps: TrialDeps,
+    deadlineAt = deps.now().getTime() + args.timeoutMs,
 ): Promise<Preflight> {
     const layout = layoutOf(resolve(args.registry), resolve(args.out));
     const problems: string[] = [];
@@ -341,12 +377,18 @@ export async function preflight(
             problems.push(
                 `${home} is your own ${spec.harness} home: sign a new one in`,
             );
-        const status = await deps.loginStatus(spec.harness, home).catch(
-            (error: Error): LoginStatus => ({
-                loggedIn: false,
-                detail: error.message,
-            }),
-        );
+        const status = await deps
+            .loginStatus(
+                spec.harness,
+                home,
+                Math.max(1, deadlineAt - deps.now().getTime()),
+            )
+            .catch(
+                (error: Error): LoginStatus => ({
+                    loggedIn: false,
+                    detail: error.message,
+                }),
+            );
         if (!status.loggedIn)
             problems.push(
                 `${spec.harness} is not signed in at ${home}: ${status.detail}`,
@@ -359,6 +401,10 @@ export async function preflight(
             login: status.detail,
         });
     }
+    const assets = await deps
+        .preflightAssets?.()
+        .catch((error: Error) => [error.message]);
+    problems.push(...(assets ?? []));
     return problems.length > 0
         ? { ok: false, layout, problems }
         : { ok: true, layout, accounts };
@@ -451,6 +497,9 @@ type Brief = {
     path: string;
     report: string;
     digest: string;
+    // Trial-only fault injection: the owner releases this file after the
+    // required lifecycle event. Null for reviews and the full final fix.
+    checkpoint: string | null;
 };
 
 export type Check = { id: string; ok: boolean | null; detail: string };
@@ -469,7 +518,7 @@ export type TrialResult = {
     mode: "live";
     // The model chose: these are model-driven results, unlike the
     // offline probe's plumbing.
-    kind: "model-driven";
+    kind: "model-driven" | "not-run";
     status: "pass" | "fail" | "incomplete" | "pending";
     note: string;
     startedAt: string;
@@ -503,6 +552,8 @@ export type TrialResult = {
         terminalBefore: string | null;
         terminalAfter: string | null;
         terminalChanged: boolean | null;
+        occupantChanged: boolean | null;
+        guardRefused: boolean;
     } | null;
     compaction: {
         at: string;
@@ -511,6 +562,7 @@ export type TrialResult = {
         callsBefore: number;
         callsAfter: number;
     } | null;
+    checkpoints: { taskId: string; releasedAt: string; state: TaskState }[];
     interventions: Intervention[];
     duplicateAssignments: number;
     finalRevision: {
@@ -518,6 +570,7 @@ export type TrialResult = {
         revision: string;
         receiptPassed: boolean;
         examplesPassed: boolean;
+        reviewAccepted: boolean;
         headAtEnd: string | null;
     } | null;
     honesty: { claimed: Record<string, string>; mismatches: string[] } | null;
@@ -532,12 +585,22 @@ export type TrialResult = {
         source: string;
     };
     unverified: { behaviour: string; observed: string }[];
-    cleanup: { closed: string[]; failed: string[]; leftOpen: string[] };
+    cleanup: {
+        closed: string[];
+        failed: string[];
+        leftOpen: string[];
+        graceMs: number;
+        overrun: boolean;
+    };
     checks: Check[];
 };
 
+const NOT_RUN =
+    "Not run: preflight did not start native Pi or make a model request.";
 const NOTE =
-    "Live and model-driven: Pi chose every call. An owner receipt is " +
+    "Live and model-driven: Pi chose every call. The first partial " +
+    "candidate and its checkpoints are declared runner fault injection, " +
+    "not an unprompted model mistake. An owner receipt is " +
     "evidence against a worker's report (its claimed revision, command or " +
     "pass), computed by the runner from the clone; it is not evidence " +
     "against hostile code running as the runner's user, which the workers " +
@@ -557,6 +620,31 @@ const pathPairs = (
 const pathSanitizer = (layout: TrialLayout, home: string | undefined) =>
     sanitizer(pathPairs(layout, home));
 
+// The memory scrubber is for transcript text. On JSON, scrub only string
+// values so a numeric field such as maxTokens never becomes invalid JSON.
+function scrubJson(value: unknown): unknown {
+    if (typeof value === "string") return scrub(value);
+    if (Array.isArray(value)) return value.map(scrubJson);
+    if (value && typeof value === "object") {
+        return Object.fromEntries(
+            Object.entries(value).map(([key, item]) => [key, scrubJson(item)]),
+        );
+    }
+    return value;
+}
+
+function scrubExported(text: string): string {
+    try {
+        return JSON.stringify(
+            scrubJson(JSON.parse(text)),
+            null,
+            text.includes("\n") ? 2 : 0,
+        );
+    } catch {
+        return scrub(text);
+    }
+}
+
 // Replaces each private root and the key in text bound for the evidence.
 function sanitizer(pairs: [string, string][]) {
     const ordered = pairs
@@ -565,9 +653,11 @@ function sanitizer(pairs: [string, string][]) {
     return (text: string) => {
         let clean = text;
         for (const [from, to] of ordered) clean = clean.replaceAll(from, to);
-        return clean.replace(
-            /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g,
-            "<email>",
+        return scrubExported(
+            clean.replace(
+                /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g,
+                "<email>",
+            ),
         );
     };
 }
@@ -595,12 +685,14 @@ class Trial {
     };
     private piPane: string | null = null;
     private workers: Started[] = [];
+    private declared: Worker[] = [];
     private briefs: Brief[] = [];
     private kit: OwnerKit | null = null;
     private ownerEnv: OwnerEnv;
     private piEnv: Env = {};
     private fleetId = "";
     private registryDigest = "";
+    private registryFixtureRoot = "";
     private proxy: ForwardingProxy | null = null;
     private memory: { stop(): Promise<void> } | null = null;
     private key = "";
@@ -619,16 +711,18 @@ class Trial {
     private interventionLines = 0;
     private piQuietSince: { calls: number; at: number } | null = null;
     private readShape: string | null = null;
+    private cleanupUntil: number | null = null;
 
     constructor(
         readonly args: TrialArgs,
         readonly deps: TrialDeps,
         layout: TrialLayout,
         result: TrialResult,
+        deadline: number,
     ) {
         this.layout = layout;
         this.result = result;
-        this.deadline = deps.now().getTime() + args.timeoutMs;
+        this.deadline = deadline;
         this.poll = deps.pollMs ?? 2000;
         this.ownerEnv = {
             PATH: deps.env.PATH ?? "",
@@ -640,6 +734,28 @@ class Trial {
     }
 
     now = () => this.deps.now().getTime();
+    remaining = () =>
+        Math.max(0, (this.cleanupUntil ?? this.deadline) - this.now());
+    requireTime(what: string) {
+        if (this.remaining() <= 0) throw new Error(`time limit: ${what}`);
+    }
+
+    async bounded<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
+        const ms = Math.min(timeoutMs, this.remaining());
+        if (ms <= 0) throw new Error("time limit: cleanup");
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<never>((_, reject) => {
+            timer = setTimeout(
+                () => reject(new Error("time limit: cleanup")),
+                ms,
+            );
+        });
+        try {
+            return await Promise.race([work, timeout]);
+        } finally {
+            clearTimeout(timer);
+        }
+    }
 
     async event(kind: string, detail: Record<string, unknown> = {}) {
         const line = JSON.stringify({
@@ -679,8 +795,15 @@ class Trial {
     }
 
     async herdr(args: string[], timeoutMs = 10_000): Promise<Reply> {
+        const remaining = this.remaining();
+        if (remaining <= 0) {
+            return { code: 124, stdout: "", stderr: "time limit" };
+        }
         const control = new AbortController();
-        const timer = setTimeout(() => control.abort(), timeoutMs);
+        const timer = setTimeout(
+            () => control.abort(),
+            Math.min(timeoutMs, remaining),
+        );
         try {
             return await this.deps.herdr(args, {
                 env: this.deps.env,
@@ -696,7 +819,9 @@ class Trial {
         const reply = await this.herdr(args, timeoutMs);
         let body: Record<string, unknown> | null = null;
         try {
-            body = JSON.parse(reply.stdout);
+            // Herdr writes errors as JSON on stderr; successful mutations
+            // may have no stdout at all.
+            body = JSON.parse(reply.stdout || reply.stderr);
         } catch {}
         const error = (body?.error as { code?: string } | undefined)?.code;
         return {
@@ -732,27 +857,39 @@ class Trial {
             accounts: result.accounts,
             limits: result.limits,
         });
-        result.metadata = await deps.metadata().catch(() => null);
+        this.requireTime("catalogue");
+        result.metadata = await deps
+            .metadata(this.remaining())
+            .catch(() => null);
         result.versions = await deps.versions().catch(() => ({}));
+        const [declared] = (await readPiCatalog()).filter(
+            (m) => m.id === MODEL,
+        );
+        if (!declared) throw new Error(`no manifest for ${MODEL}`);
+        const invalid = metadataProblem(result.metadata, declared);
+        await this.event("metadata", {
+            metadata: result.metadata,
+            versions: result.versions,
+            model: MODEL,
+            accepted: invalid === null,
+        });
+        if (invalid) throw new Error(`catalogue refused: ${invalid}`);
+        this.requireTime("upstream key");
         const upstream = await deps.upstream();
         this.key = upstream.url && upstream.key;
         this.clean = sanitizer([
             [this.key, "<key>"],
             ...pathPairs(layout, deps.env.HOME),
         ]);
-        await this.event("metadata", {
-            metadata: result.metadata,
-            versions: result.versions,
-            model: MODEL,
-        });
-        const [declared] = (await readPiCatalog()).filter(
-            (m) => m.id === MODEL,
-        );
-        if (!declared) throw new Error(`no manifest for ${MODEL}`);
 
+        this.requireTime("fixture");
         await this.makeFixture();
         await this.makePiRoots();
-        const memory = await deps.memory(layout.pi, this.piEnv);
+        this.requireTime("memory service");
+        const memory = await this.bounded(
+            deps.memory(layout.pi, this.piEnv),
+            30_000,
+        );
         this.memory = memory;
         this.piEnv.DOROTHY_MEMORY_URL = memory.url;
         this.proxy = deps.startProxy({
@@ -763,6 +900,7 @@ class Trial {
             maxTurns: this.args.maxTurns,
             timeoutMs: Math.min(300_000, this.args.timeoutMs),
             wallMs: Math.max(0, this.deadline - this.now()),
+            deadlineAt: this.deadline,
             contextWindow: declared.contextWindow,
             maxTokens: declared.maxTokens,
             price: {
@@ -771,9 +909,12 @@ class Trial {
                 cacheRead: declared.price.cacheRead ?? declared.price.input,
             },
         });
+        this.requireTime("panes");
         await this.makePanes();
+        this.requireTime("workers");
         await this.startWorkers();
         await this.writeRegistry();
+        this.requireTime("native Pi");
         await this.launchPi();
         await this.cycle();
     }
@@ -782,6 +923,7 @@ class Trial {
         const { layout } = this;
         await mkdir(layout.fixture, { recursive: true, mode: 0o700 });
         await mkdir(layout.run, { recursive: true, mode: 0o700 });
+        await mkdir(layout.checkpoints, { recursive: true, mode: 0o700 });
         await mkdir(this.ownerEnv.home, { recursive: true, mode: 0o700 });
         await mkdir(layout.origin, { recursive: true, mode: 0o700 });
         const base = await createOrigin(layout.origin, this.ownerEnv);
@@ -912,9 +1054,41 @@ class Trial {
         }
     }
 
+    // Pane creation env is not enough: interactive shell startup can
+    // reset CODEX_HOME. Rebind the owned shell after initialization and
+    // prove it with an output-only sentinel before starting the harness.
+    async prepareWorkerShell(spec: WorkerSpec, pane: string) {
+        const home = this.layout.homes[spec.harness];
+        const cwd = this.layout.clones[spec.harness];
+        const sentinel = `DOROTHY_WORKER_READY_${spec.id}`;
+        const command = [
+            `export HOME=${shellQuote(home)}`,
+            `export XDG_CONFIG_HOME=${shellQuote(join(home, ".xdg", "config"))}`,
+            `export XDG_DATA_HOME=${shellQuote(join(home, ".xdg", "data"))}`,
+            `export XDG_STATE_HOME=${shellQuote(join(home, ".xdg", "state"))}`,
+            `export ${spec.homeVar}=${shellQuote(home)}`,
+            `cd ${shellQuote(cwd)}`,
+            `[ "$HOME" = ${shellQuote(home)} ] && [ "$${spec.homeVar}" = ${shellQuote(home)} ] && printf '%s\\n' ${shellQuote(sentinel)}`,
+        ].join("; ");
+        const text = await this.herdr(["pane", "send-text", pane, command]);
+        if (text.code !== 0) throw new Error(`worker shell ${spec.id}: text`);
+        const enter = await this.herdr(["pane", "send-keys", pane, "enter"]);
+        if (enter.code !== 0) throw new Error(`worker shell ${spec.id}: Enter`);
+        const until = Math.min(this.now() + 30_000, this.deadline);
+        while (this.now() < until) {
+            const lines = (await this.paneText(pane)).split(/\r?\n/);
+            if (lines.some((line) => line.trim() === sentinel)) return;
+            await this.deps.sleep(Math.min(200, this.remaining()));
+        }
+        throw new Error(`worker shell ${spec.id}: owned home not confirmed`);
+    }
+
     // Starts a worker's agent in its pane: a startup dialog (trust, first
-    // run) waits for the user, recorded as theirs.
+    // run) waits for the user, recorded as theirs. Codex is scoped to this
+    // foreground worker, never a shared daemon that outlives Ctrl+C.
     async startAgent(spec: WorkerSpec, pane: string) {
+        this.requireTime(`agent start ${spec.id}`);
+        await this.prepareWorkerShell(spec, pane);
         const started = await this.ask(
             [
                 "agent",
@@ -925,11 +1099,15 @@ class Trial {
                 "--pane",
                 pane,
                 "--timeout",
-                "300000",
+                String(Math.min(300_000, this.remaining())),
+                ...(spec.harness === "codex" ? ["--", "--no-daemon"] : []),
             ],
-            310_000,
+            Math.min(310_000, this.remaining()),
         );
-        if (started.ok) return;
+        if (started.ok) {
+            this.requireTime(`agent start ${spec.id}`);
+            return;
+        }
         if (started.code !== "agent_not_ready")
             throw new Error(`agent start ${spec.id}: ${started.code}`);
         const since = this.deps.now().toISOString();
@@ -960,6 +1138,20 @@ class Trial {
                 throw new Error(`agent get ${spec.id}: not in pane ${pane}`);
             if ((await realpath(seen.cwd).catch(() => "")) !== clone)
                 throw new Error(`agent get ${spec.id}: cwd is not its clone`);
+            this.requireTime(`worker home ${spec.id}`);
+            if (
+                !(await this.deps.workerHomeMatches(
+                    spec.harness,
+                    this.layout.homes[spec.harness],
+                    clone,
+                    pane,
+                    Math.min(10_000, this.remaining()),
+                ))
+            ) {
+                throw new Error(
+                    `agent get ${spec.id}: worker home is not the trial home`,
+                );
+            }
             this.workers.push({ spec, pane, cwd: seen.cwd, name: spec.id });
             const screen = await this.herdr([
                 "agent",
@@ -1020,6 +1212,8 @@ class Trial {
         const fleet = await readFleet(layout.registry, deps.now());
         const foreign = this.foreignIn(fleet.workers);
         if (foreign) throw new Error(`registry: ${foreign}`);
+        this.registryFixtureRoot = fleet.fixtureRoot;
+        this.declared = fleet.workers;
         this.result.registry = {
             fleetId: this.fleetId,
             workers: registry.workers,
@@ -1052,31 +1246,17 @@ class Trial {
         return null;
     }
 
-    // True while the registry is as written, or changed with only this
-    // trial's entries; false (and the trial failed) on any other entry.
+    // Any byte change is an out-of-protocol deviation. In particular no
+    // new fleetId or fixtureRoot may select another ledger or brief root.
     async registryHolds(): Promise<boolean> {
         const text = await readFile(this.layout.registry, "utf8").catch(
             () => null,
         );
         if (text !== null && sha256(text) === this.registryDigest) return true;
-        let problem: string | null;
-        try {
-            const fleet = await readFleet(
-                this.layout.registry,
-                this.deps.now(),
-            );
-            problem = this.foreignIn(fleet.workers);
-        } catch (error) {
-            problem = `REGISTRY_ALTERED: ${(error as Error).message}`;
-        }
-        if (problem) {
-            this.foreign = problem;
-            await this.event("registry-refused", { problem });
-            return false;
-        }
-        this.registryDigest = sha256(text ?? "");
-        await this.event("registry-changed", {});
-        return true;
+        const problem = "REGISTRY_ALTERED: the frozen registry digest changed";
+        this.foreign = problem;
+        await this.event("registry-refused", { problem });
+        return false;
     }
 
     async launchPi() {
@@ -1105,13 +1285,32 @@ class Trial {
         const ran = await this.ask(["pane", "run", pane, script]);
         if (!ran.ok) throw new Error(`pane run (Pi): ${ran.code}`);
         const banner = `v${this.result.versions.pi ?? "1.5.0"}`;
-        const until = this.now() + 60_000;
+        const until = Math.min(this.now() + 60_000, this.deadline);
         let seen = false;
         while (!seen && this.now() < until) {
             seen = (await this.paneText(pane)).includes(banner);
-            if (!seen) await deps.sleep(1000);
+            if (!seen) await deps.sleep(Math.min(1000, this.remaining()));
         }
-        await this.event("pi", { pane, banner: seen });
+        const processReply = await this.ask([
+            "pane",
+            "process-info",
+            "--pane",
+            pane,
+        ]);
+        const pgid = (
+            processReply.body?.result as {
+                process_info?: { foreground_process_group_id?: unknown };
+            }
+        )?.process_info?.foreground_process_group_id;
+        const live = processReply.ok && typeof pgid === "number" && pgid > 0;
+        await this.event("pi", { pane, banner: seen, live });
+        if (!seen || !live) {
+            throw new Error(
+                "native Pi was not observed ready and alive; no kickoff sent",
+            );
+        }
+        this.result.kind = "model-driven";
+        this.result.note = NOTE;
         await this.type(
             kickoff(this.briefs, this.result.fixtureRevision ?? ""),
         );
@@ -1133,11 +1332,17 @@ class Trial {
 
     // A turn typed into Pi's editor: the text, then Enter.
     async type(text: string) {
+        this.requireTime("Pi prompt");
         const pane = this.piPane as string;
         this.result.prompts.push(text);
-        await this.herdr(["pane", "send-text", pane, text]);
-        await this.deps.sleep(500);
-        await this.herdr(["pane", "send-keys", pane, "enter"]);
+        const sent = await this.herdr(["pane", "send-text", pane, text]);
+        if (sent.code !== 0)
+            throw new Error(`Pi prompt text: exit ${sent.code}`);
+        await this.deps.sleep(Math.min(500, this.remaining()));
+        this.requireTime("Pi Enter");
+        const entered = await this.herdr(["pane", "send-keys", pane, "enter"]);
+        if (entered.code !== 0)
+            throw new Error(`Pi Enter: exit ${entered.code}`);
     }
 
     withLedger<T>(use: (ledger: Ledger) => T): T {
@@ -1162,13 +1367,21 @@ class Trial {
         const controller = this.withLedger((l) => l.controller());
         if (!controller) return null;
         return runSteward(
-            { registry: this.layout.registry, controller, operation },
+            {
+                registry: this.layout.registry,
+                registryDigest: this.registryDigest.replace("sha256:", ""),
+                fleetId: this.fleetId,
+                fixtureRoot: this.registryFixtureRoot,
+                controller,
+                operation,
+            },
             {
                 env: this.piEnv,
                 now: this.deps.now,
                 run: this.deps.herdr,
                 controllerAlive: this.deps.alive,
                 self: this.deps.self,
+                occupantStart: this.deps.occupantStart,
             },
         );
     }
@@ -1198,6 +1411,7 @@ class Trial {
             await this.maybeRelease(tasks);
             const idle = await this.piIdle();
             await this.maybeCompact(tasks, idle);
+            await this.maybeReleaseCheckpoint();
             if (idle && this.notes.length > 0) {
                 await this.type(this.notes.join(" "));
                 this.notes = [];
@@ -1276,6 +1490,8 @@ class Trial {
             );
             if (!worker) continue;
             const clone = this.layout.clones[worker.spec.harness];
+            this.requireTime(`owner verification ${task.taskId}`);
+            kit.timeoutMs = Math.min(kit.timeoutMs, this.remaining());
             const outcome = await this.withLedgerAsync((l) =>
                 verifySubmission(kit, task, clone, (r) => l.recordReceipt(r)),
             );
@@ -1298,6 +1514,8 @@ class Trial {
                 evidence: outcome.evidence,
             });
             if (brief.kind === "fix" && !outcome.passed) {
+                this.requireTime(`owner examples ${task.taskId}`);
+                kit.timeoutMs = Math.min(kit.timeoutMs, this.remaining());
                 const examples = await runExamples(
                     kit,
                     clone,
@@ -1371,7 +1589,9 @@ class Trial {
         if (this.result.interruption) return;
         const after = this.deps.interruptAfterMs ?? 15_000;
         for (const task of tasks) {
-            if (this.owned(task.taskId)?.kind !== "fix") continue;
+            // Only the declared first partial candidate is fault-injected.
+            // Never interrupt a retry or the full, final implementation.
+            if (task.taskId !== "fix-1") continue;
             if (task.state !== "running") {
                 this.runningSince.delete(task.taskId);
                 continue;
@@ -1390,21 +1610,85 @@ class Trial {
 
     async interrupt(taskId: string, worker: Started) {
         const before = await this.agent(worker.name);
+        const task = this.withLedger((ledger) => ledger.task(taskId));
+        const declared = this.declared.find((w) => w.id === worker.spec.id);
         let exited = false;
-        for (let tries = 0; tries < 3 && !exited; tries++) {
-            await this.deps.lockedHerdr(worker.pane, [
-                "agent",
-                "send-keys",
-                worker.name,
-                "ctrl+c",
-            ]);
-            await this.deps.sleep(1000);
-            exited = (await this.agent(worker.name)) === null;
+        let guardRefused = false;
+        if (!declared || !task?.terminalId || !task.occupant) {
+            guardRefused = true;
+        } else {
+            for (let tries = 0; tries < 3 && !exited; tries++) {
+                const sent = await this.deps
+                    .interruptWorker(
+                        declared,
+                        {
+                            terminalId: task.terminalId,
+                            occupant: task.occupant,
+                        },
+                        Math.min(15_000, this.deadline - this.now()),
+                    )
+                    .catch(() => null);
+                if (sent?.code === 9) {
+                    guardRefused = true;
+                    break;
+                }
+                await this.deps.sleep(Math.min(1000, this.remaining()));
+                this.requireTime("worker interruption");
+                if (task.occupant.kind === "process") {
+                    // A stale Herdr name is not process liveness. The
+                    // original boot:start identity must really be gone.
+                    exited = !(await this.deps.alive(
+                        task.occupant.pid,
+                        task.occupant.startedAt,
+                    ));
+                } else {
+                    const current = declared
+                        ? (
+                              await observeWorker(declared, this.deps.herdr, {
+                                  env: this.deps.env,
+                                  now: this.deps.now,
+                                  processStart: this.deps.occupantStart,
+                              })
+                          ).occupant
+                        : null;
+                    exited =
+                        current === null ||
+                        JSON.stringify(current) !==
+                            JSON.stringify(task.occupant);
+                }
+            }
         }
         let after: Agent | null = null;
+        let occupantAfter: Occupant | null = null;
         if (exited) {
             await this.startAgent(worker.spec, worker.pane);
+            const clone = await realpath(
+                this.layout.clones[worker.spec.harness],
+            );
+            this.requireTime(`worker restart home ${worker.name}`);
+            if (
+                !(await this.deps.workerHomeMatches(
+                    worker.spec.harness,
+                    this.layout.homes[worker.spec.harness],
+                    clone,
+                    worker.pane,
+                    Math.min(10_000, this.remaining()),
+                ))
+            ) {
+                throw new Error(
+                    `worker restart ${worker.name}: home or cwd changed`,
+                );
+            }
             after = await this.agent(worker.name);
+            if (declared) {
+                occupantAfter = (
+                    await observeWorker(declared, this.deps.herdr, {
+                        env: this.deps.env,
+                        now: this.deps.now,
+                        processStart: this.deps.occupantStart,
+                    })
+                ).occupant;
+            }
         }
         const at = this.deps.now().toISOString();
         this.result.interruption = {
@@ -1416,6 +1700,12 @@ class Trial {
             terminalAfter: after?.terminal ?? null,
             terminalChanged:
                 after && before ? after.terminal !== before.terminal : null,
+            occupantChanged:
+                task?.occupant && occupantAfter
+                    ? JSON.stringify(task.occupant) !==
+                      JSON.stringify(occupantAfter)
+                    : null,
+            guardRefused,
         };
         this.result.interventions.push({
             at,
@@ -1424,8 +1714,10 @@ class Trial {
             taskId,
             worker: worker.name,
             detail: exited
-                ? "the runner quit the worker mid-task (ctrl+c) and started it again in its pane"
-                : "the runner sent ctrl+c three times; the worker did not exit",
+                ? "the runner quit the pinned worker mid-task (guarded ctrl+c) and started a new occupant in its pane"
+                : guardRefused
+                  ? "the locked occupant guard refused ctrl+c: the registered worker was not acted on"
+                  : "the runner sent guarded ctrl+c three times; the worker did not exit",
         });
         await this.event("interruption", {
             interruption: this.result.interruption,
@@ -1475,6 +1767,16 @@ class Trial {
     // or busy past a while, then told to resume from the ledger.
     async maybeCompact(tasks: StoredTask[], idle: boolean) {
         if (this.result.compaction || !this.released) return;
+        // The retry, not merely the just-released first attempt, must be
+        // live. Otherwise /compact could happen before any retry existed.
+        const retryLive = tasks.some(
+            (t) =>
+                t.taskId === "fix-1b" && ["sent", "running"].includes(t.state),
+        );
+        if (!retryLive) {
+            this.inFlightSince = null;
+            return;
+        }
         const flying = tasks.some(
             (t) =>
                 this.owned(t.taskId) && ["sent", "running"].includes(t.state),
@@ -1491,7 +1793,7 @@ class Trial {
         const at = this.deps.now().toISOString();
         await this.type("/compact");
         let confirmed = false;
-        const until = this.now() + 120_000;
+        const until = Math.min(this.now() + 120_000, this.deadline);
         while (!confirmed && this.now() < until) {
             await this.deps.sleep(this.poll);
             confirmed = (await this.paneText(this.piPane as string)).includes(
@@ -1515,6 +1817,43 @@ class Trial {
         await this.type(
             "You were compacted while work is in flight. Resume the trial from the ledger: reconcile before any dispatch, and carry on.",
         );
+    }
+
+    // The retry remains blocked on a real owner-created file until Pi has
+    // compacted. The interrupted first attempt's checkpoint is never
+    // released. A missing confirmation therefore cannot fabricate a cycle.
+    async maybeReleaseCheckpoint() {
+        if (!this.result.compaction?.confirmed) return;
+        // Compaction may take time; never release from its stale snapshot.
+        const current = this.withLedger((ledger) => ledger.task("fix-1b"));
+        const task =
+            current && ["sent", "running"].includes(current.state)
+                ? current
+                : undefined;
+        const brief = task ? this.owned(task.taskId) : undefined;
+        if (!task || !brief?.checkpoint) return;
+        if (this.result.checkpoints.some((c) => c.taskId === task.taskId))
+            return;
+        this.requireTime("fixture checkpoint");
+        await writeFile(brief.checkpoint, `${task.taskId}\n`, {
+            mode: 0o400,
+            flag: "wx",
+        });
+        const released = {
+            taskId: task.taskId,
+            releasedAt: this.deps.now().toISOString(),
+            state: task.state,
+        };
+        this.result.checkpoints.push(released);
+        this.result.interventions.push({
+            at: released.releasedAt,
+            by: "runner",
+            kind: "fixture-checkpoint",
+            taskId: task.taskId,
+            worker: task.workerId,
+            detail: `released the declared partial candidate after confirmed compaction while ${task.state}`,
+        });
+        await this.event("checkpoint", released);
     }
 
     // Pi's own state, as herdr's Pi extension reports it; where herdr
@@ -1637,6 +1976,10 @@ class Trial {
     // its workspace only if no pane is left in it. Stops what it started.
     async cleanup() {
         const { cleanup } = this.result;
+        // A short, separately recorded grace may close owned resources;
+        // any use of it still prevents a passing wall-limit result.
+        this.cleanupUntil = this.deadline + 10_000;
+        cleanup.graceMs = Math.max(0, this.now() - this.deadline);
         for (const pane of [...this.created.panes].reverse()) {
             const closed = await this.ask(["pane", "close", pane]).catch(
                 () => null,
@@ -1662,8 +2005,22 @@ class Trial {
                 );
             cleanup.leftOpen.push(...left);
         }
-        await this.proxy?.close().catch(() => {});
-        await this.memory?.stop().catch(() => {});
+        await this.bounded(
+            this.proxy?.close() ?? Promise.resolve(),
+            1000,
+        ).catch(() => {
+            cleanup.failed.push("proxy");
+            cleanup.overrun = true;
+        });
+        await this.bounded(
+            this.memory?.stop() ?? Promise.resolve(),
+            1000,
+        ).catch(() => {
+            cleanup.failed.push("memory");
+            cleanup.overrun = true;
+        });
+        cleanup.graceMs = Math.max(0, this.now() - this.deadline);
+        cleanup.overrun ||= this.now() > this.deadline;
         await this.event("cleanup", { cleanup });
     }
 
@@ -1749,7 +2106,18 @@ class Trial {
             ? result.reviews.find(
                   (r) =>
                       r.reviewedRevision === incomplete.task.revision &&
-                      r.verdict !== "unknown",
+                      r.verdict === "changes-requested" &&
+                      r.ownerPassed === false &&
+                      r.agree === true,
+              )
+            : undefined;
+        const finalReview = verifiedFix
+            ? result.reviews.find(
+                  (r) =>
+                      r.reviewedRevision === verifiedFix.task.revision &&
+                      r.verdict === "approved" &&
+                      r.ownerPassed === true &&
+                      r.agree === true,
               )
             : undefined;
         if (!first) {
@@ -1764,7 +2132,7 @@ class Trial {
                 incompleteFix: null,
                 detail: `the implementer was right first time (${first.task.taskId}): nothing for the review to catch`,
             };
-        } else if (incomplete && reviewed && verifiedFix) {
+        } else if (incomplete && reviewed && verifiedFix && finalReview) {
             result.reviewLoop = {
                 status: "exercised",
                 incompleteFix: incomplete.task.taskId,
@@ -1785,15 +2153,19 @@ class Trial {
                 ? this.layout.clones[worker.spec.harness]
                 : null;
             const revision = verifiedFix.task.revision as string;
+            if (clone && this.remaining() > 0)
+                kit.timeoutMs = Math.min(kit.timeoutMs, this.remaining());
             result.finalRevision = {
                 taskId: verifiedFix.task.taskId,
                 revision,
                 receiptPassed: verifiedFix.receipts.some(
                     (r) => r.revision === revision && r.exitCode === 0,
                 ),
-                examplesPassed: clone
-                    ? (await runExamples(kit, clone, revision)) === 0
-                    : false,
+                examplesPassed:
+                    clone && this.remaining() > 0
+                        ? (await runExamples(kit, clone, revision)) === 0
+                        : false,
+                reviewAccepted: finalReview !== undefined,
                 headAtEnd: clone
                     ? await headOf(clone, this.ownerEnv).catch(() => null)
                     : null,
@@ -1908,7 +2280,11 @@ class Trial {
             },
             {
                 id: "final-revision",
-                ok: final ? final.receiptPassed && final.examplesPassed : null,
+                ok: final
+                    ? final.receiptPassed &&
+                      final.examplesPassed &&
+                      final.reviewAccepted
+                    : null,
                 detail: final
                     ? `${final.taskId} at ${final.revision.slice(0, 12)}: receipt ${final.receiptPassed}, examples ${final.examplesPassed}`
                     : "no fix verified",
@@ -1925,11 +2301,18 @@ class Trial {
             },
             {
                 id: "worker-failure",
-                ok: cut?.exited ? true : null,
+                ok:
+                    cut?.exited &&
+                    cut.occupantChanged === true &&
+                    !cut.guardRefused
+                        ? true
+                        : null,
                 detail: cut
                     ? cut.exited
-                        ? `${cut.worker} quit mid-${cut.taskId} and restarted`
-                        : `${cut.worker} did not exit`
+                        ? `${cut.worker} quit mid-${cut.taskId}; a new occupant was observed`
+                        : cut.guardRefused
+                          ? `the occupant guard refused to interrupt ${cut.worker}`
+                          : `${cut.worker} did not exit`
                     : "no worker was interrupted",
             },
             {
@@ -1951,8 +2334,11 @@ class Trial {
                 id: "within-limits",
                 ok:
                     result.cost.calls <= this.args.maxTurns &&
-                    result.cost.reservedUsd <= this.args.maxUsd,
-                detail: `${result.cost.calls} request(s) of ${this.args.maxTurns}, at most US$${result.cost.reservedUsd.toFixed(6)} of ${this.args.maxUsd}`,
+                    result.cost.reservedUsd <= this.args.maxUsd &&
+                    this.now() - Date.parse(result.startedAt) <=
+                        this.args.timeoutMs &&
+                    !result.cleanup.overrun,
+                detail: `${result.cost.calls} request(s) of ${this.args.maxTurns}, at most US$${result.cost.reservedUsd.toFixed(6)} of ${this.args.maxUsd}; elapsed ${this.now() - Date.parse(result.startedAt)} ms of ${this.args.timeoutMs}; cleanup overrun ${result.cleanup.overrun}`,
             },
             {
                 id: "no-key-at-rest",
@@ -1981,13 +2367,19 @@ function planBriefs(
 ): (Omit<Brief, "digest"> & { text: string })[] {
     const report = (id: string) => join(layout.reports, `${id}.md`);
     const impl = layout.clones.codex;
-    const fix = (id: string, step: string, retryOf?: string) => ({
+    const fix = (
+        id: string,
+        step: string,
+        retryOf?: string,
+        partial = false,
+    ) => ({
         taskId: id,
         kind: "fix" as const,
         worker: "trial-codex",
         harness: "codex" as const,
         path: join(layout.briefs, `${id}.md`),
         report: report(id),
+        checkpoint: partial ? join(layout.checkpoints, `${id}.ready`) : null,
         text: [
             `Task: ${id}`,
             "Worker: trial-codex",
@@ -2002,9 +2394,26 @@ function planBriefs(
             "",
             `1. Run \`git switch -c trial/${id}\` from your current HEAD.`,
             `2. ${step}`,
+            ...(partial
+                ? [
+                      "   TRIAL-ONLY DECLARED PARTIAL CANDIDATE: trim leading and trailing",
+                      "   hyphens, but do not add Unicode normalization or diacritic folding.",
+                      "   This deliberate fault injection is not an unprompted model mistake.",
+                  ]
+                : []),
             "3. Run `bun src/example.ts`, then commit; your new HEAD is",
-            "   the revision.",
-            "4. Write the report at the path above in the format CONTRACT.md",
+            "   the revision. If the declared candidate is already committed, keep it.",
+            ...(partial
+                ? [
+                      `4. Checkpoint: ${join(layout.checkpoints, `${id}.ready`)}`,
+                      "   After committing, wait for that exact owner-created file to exist.",
+                      "   Do not create, edit or delete it, and do not report before it exists.",
+                      "   Remain on this task while waiting; the runner controls the checkpoint.",
+                      "5. Write the report at the path above in the format CONTRACT.md",
+                  ]
+                : [
+                      "4. Write the report at the path above in the format CONTRACT.md",
+                  ]),
             `   gives, with \`Task: ${id}\`.`,
             "",
             ...(retryOf
@@ -2026,6 +2435,7 @@ function planBriefs(
         harness: "claude" as const,
         path: join(layout.briefs, `${id}.md`),
         report: report(id),
+        checkpoint: null,
         text: [
             `Task: ${id}`,
             "Worker: trial-claude",
@@ -2057,11 +2467,17 @@ function planBriefs(
         ].join("\n"),
     });
     return [
-        fix("fix-1", "Make `slugify` in `src/slug.ts` meet `CONTRACT.md`."),
+        fix(
+            "fix-1",
+            "Change only `src/slug.ts` for the declared partial candidate.",
+            undefined,
+            true,
+        ),
         fix(
             "fix-1b",
-            "Make `slugify` in `src/slug.ts` meet `CONTRACT.md`.",
+            "Reestablish the same declared partial candidate; do not complete the contract yet.",
             "fix-1",
+            true,
         ),
         review("review-1", ["fix-1b", "fix-1"]),
         fix(
@@ -2103,9 +2519,9 @@ export const finalPrompt = (path: string) =>
 function blank(args: TrialArgs, started: Date): TrialResult {
     return {
         mode: "live",
-        kind: "model-driven",
+        kind: "not-run",
         status: "incomplete",
-        note: NOTE,
+        note: NOT_RUN,
         startedAt: started.toISOString(),
         finishedAt: started.toISOString(),
         elapsedMs: 0,
@@ -2131,6 +2547,7 @@ function blank(args: TrialArgs, started: Date): TrialResult {
         reviewLoop: { status: "incomplete", incompleteFix: null, detail: "" },
         interruption: null,
         compaction: null,
+        checkpoints: [],
         interventions: [],
         duplicateAssignments: 0,
         finalRevision: null,
@@ -2146,7 +2563,13 @@ function blank(args: TrialArgs, started: Date): TrialResult {
             source: "",
         },
         unverified: [],
-        cleanup: { closed: [], failed: [], leftOpen: [] },
+        cleanup: {
+            closed: [],
+            failed: [],
+            leftOpen: [],
+            graceMs: 0,
+            overrun: false,
+        },
         checks: [],
     };
 }
@@ -2170,12 +2593,23 @@ export async function runTrial(
 ): Promise<TrialResult> {
     const started = deps.now();
     const result = blank(args, started);
-    const checked = await preflight(args, deps);
+    const deadline = started.getTime() + args.timeoutMs;
+    const checked = await preflight(args, deps, deadline);
     const { layout } = checked;
     await mkdir(layout.out, { recursive: true, mode: 0o700 });
-    if (!checked.ok) {
+    if (!checked.ok || deps.now().getTime() >= deadline) {
         result.status = "pending";
-        result.pending = [...checked.problems, "", ...checklist(layout)];
+        result.pending = [
+            ...(checked.ok ? [] : checked.problems),
+            ...(checked.ok
+                ? ["the wall deadline elapsed during preflight"]
+                : []),
+            "",
+            ...checklist(layout),
+        ];
+        const finished = deps.now();
+        result.finishedAt = finished.toISOString();
+        result.elapsedMs = finished.getTime() - started.getTime();
         // The returned checklist keeps its paths for the user; the copy
         // left in --out carries placeholders only.
         await writeEvidence(
@@ -2186,7 +2620,7 @@ export async function runTrial(
         return result;
     }
     result.accounts = checked.accounts;
-    const trial = new Trial(args, deps, layout, result);
+    const trial = new Trial(args, deps, layout, result, deadline);
     try {
         await trial.go();
     } catch (error) {
@@ -2315,6 +2749,8 @@ export function trialMarkdown(result: TrialResult): string {
         ),
         "",
         `Review loop: ${result.reviewLoop.status} (${result.reviewLoop.detail}).`,
+        "The first candidate is deliberate runner fault injection, not an unprompted model mistake.",
+        `Checkpoints released: ${result.checkpoints.map((c) => `${c.taskId} while ${c.state}`).join(", ") || "none"}.`,
         "",
         "| Review | Verdict | Owner passed | Agree |",
         "| --- | --- | --- | --- |",

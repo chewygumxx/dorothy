@@ -11,7 +11,8 @@
         "./client": "./src/client.ts",
         "./bridge": "./src/bridge.ts",
         "./evaluation": "./src/evaluation.ts",
-        "./host-hook": "./src/host-hook.ts"
+        "./host-hook": "./src/host-hook.ts",
+        "./scrub": "./src/scrub.ts"
     },
     "dependencies": {
         "@dorothy/core": "workspace:*",

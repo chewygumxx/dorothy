@@ -30,7 +30,7 @@ import {
     writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { runSteward } from "../packages/cli/src/hosts/pi/steward/engine.js";
 import type { HerdrRun } from "../packages/cli/src/hosts/pi/steward/herdr.js";
 import {
@@ -108,6 +108,7 @@ type Agent = {
     kind: string;
     status: string;
     terminal: string;
+    process: number;
 };
 type Pane = {
     id: string;
@@ -115,11 +116,12 @@ type Pane = {
     cwd: string;
     env: Record<string, string>;
     agent: Agent | null;
+    terminal: string;
     text: string;
     typed: string;
 };
 
-type Job = { taskId: string; brief: string; ticks: number };
+type Job = { taskId: string; brief: string; ticks: number; prepared?: boolean };
 
 // The fake herdr and everything behind it: panes, agents, a scripted Pi
 // (once its pane runs the launcher) and the two workers' jobs.
@@ -134,11 +136,25 @@ class World {
     fail: ((args: string[]) => Reply | null) | null = null;
     jobs = new Map<string, Job>();
     pi: FakePi | null = null;
+    onInterrupt: (() => void) | null = null;
+    onAgentStart: (() => void) | null = null;
+    secret: string | null = null;
+    piBanner = true;
+    piLive = true;
+    stderrNotReady = false;
+    emptyMutations = false;
+    shellEchoOnly = false;
+    retainStoppedAgent = false;
+    compactionAcknowledges = true;
+    tamperField: "fleetId" | "fixtureRoot" | null = null;
+    reviewOverride: ((taskId: string, approved: boolean) => boolean) | null =
+        null;
     // What the upstream had been asked when Pi was first refused.
     upstreamCount: () => number = () => 0;
     upstreamAtFirstRefusal = -1;
     private nextWorkspace = 4;
     private nextTerminal = 1;
+    private nextProcess = 5100;
     private nextPane = new Map<string, number>();
 
     constructor() {
@@ -152,7 +168,9 @@ class World {
                 kind: "claude",
                 status: "idle",
                 terminal: "term_0000000000000ff",
+                process: 5099,
             },
+            terminal: "term_0000000000000ff",
             text: "the user's own session",
             typed: "",
         });
@@ -174,6 +192,7 @@ class World {
             cwd,
             env,
             agent: null,
+            terminal: this.terminal(),
             text: "",
             typed: "",
         });
@@ -210,6 +229,19 @@ class World {
                     terminal_title: "trial",
                     terminal_title_stripped: "trial",
                     workspace_id: pane.workspace,
+                },
+            },
+        });
+    }
+
+    processInfo(pane: Pane): Reply {
+        return json({
+            id: "cli:pane:process-info",
+            result: {
+                process_info: {
+                    foreground_process_group_id: pane.agent?.process ?? 0,
+                    foreground_processes: [],
+                    shell_pid: 5000,
                 },
             },
         });
@@ -273,16 +305,34 @@ class World {
             this.closedWorkspaces.push(args[2] as string);
             return json({ id: "cli:workspace:close", result: {} });
         }
-        if (noun === "agent" && verb === "start") {
+        if (noun === "pane" && verb === "process-info") {
             const pane = this.panes.get(flag("--pane") ?? "");
-            if (!pane || pane.agent) return herdrError("pane_not_available");
+            return pane?.agent
+                ? this.processInfo(pane)
+                : herdrError("pane_not_found");
+        }
+        if (noun === "agent" && verb === "start") {
+            this.onAgentStart?.();
+            const pane = this.panes.get(flag("--pane") ?? "");
+            if (!pane || (pane.agent && pane.agent.process !== 0))
+                return herdrError("pane_not_available");
             pane.agent = {
                 name: args[2],
                 kind: flag("--kind") ?? "?",
                 status: "idle",
-                terminal: this.terminal(),
+                terminal: pane.terminal,
+                process: ++this.nextProcess,
             };
             pane.text = `${pane.agent.kind} ready\n`;
+            if (this.stderrNotReady) {
+                return {
+                    code: 1,
+                    stdout: "",
+                    stderr: JSON.stringify({
+                        error: { code: "agent_not_ready" },
+                    }),
+                };
+            }
             return json({ id: "cli:agent:start", result: { type: "ok" } });
         }
         if (noun === "agent" && verb === "get") {
@@ -307,9 +357,15 @@ class World {
             const pane = this.find(args[2] as string);
             if (!pane?.agent) return herdrError("agent_not_found");
             if (args[3] === "ctrl+c") {
-                // The worker quits: its turn and its occupant are gone.
+                // The process is gone. Herdr may retain the old name for a
+                // moment; process identity, not that name, proves the exit.
                 this.jobs.delete(pane.agent.name as string);
-                pane.agent = null;
+                if (this.retainStoppedAgent) {
+                    pane.agent.process = 0;
+                    pane.agent.status = "done";
+                } else {
+                    pane.agent = null;
+                }
                 pane.text += "\n$ ";
             }
             return json({ id: "cli:agent:send-keys", result: {} });
@@ -324,7 +380,9 @@ class World {
             const pane = this.panes.get(args[2] as string);
             if (!pane) return herdrError("pane_not_found");
             pane.typed += args[3] ?? "";
-            return json({ id: "cli:pane:send-text", result: {} });
+            return this.emptyMutations
+                ? { code: 0, stdout: "", stderr: "" }
+                : json({ id: "cli:pane:send-text", result: {} });
         }
         if (noun === "pane" && verb === "send-keys") {
             const pane = this.panes.get(args[2] as string);
@@ -332,10 +390,17 @@ class World {
             if (args[3] === "enter") {
                 const text = pane.typed;
                 pane.typed = "";
-                if (this.pi && pane.id === this.pi.pane)
+                if (this.pi && pane.id === this.pi.pane) {
                     await this.pi.turn(text);
+                } else {
+                    const ready = /DOROTHY_WORKER_READY_[a-z-]+/.exec(text);
+                    if (this.shellEchoOnly) pane.text += `\n$ ${text}\n`;
+                    else if (ready) pane.text += `\n${ready[0]}\n`;
+                }
             }
-            return json({ id: "cli:pane:send-keys", result: {} });
+            return this.emptyMutations
+                ? { code: 0, stdout: "", stderr: "" }
+                : json({ id: "cli:pane:send-keys", result: {} });
         }
         return { code: 2, stdout: "", stderr: `fake herdr: ${args.join(" ")}` };
     };
@@ -349,13 +414,27 @@ class World {
                 "utf8",
             ),
         );
-        pane.agent = {
-            name: undefined,
-            kind: "pi",
-            status: "idle",
-            terminal: this.terminal(),
-        };
-        pane.text = "pi v1.5.0\n";
+        pane.agent = this.piLive
+            ? {
+                  name: undefined,
+                  kind: "pi",
+                  status: "idle",
+                  terminal: pane.terminal,
+                  process: ++this.nextProcess,
+              }
+            : null;
+        pane.text = this.piBanner ? "pi v1.5.0\n" : "$ shell\n";
+        if (this.secret) {
+            const sessions = join(
+                dirname(plan.steward),
+                "pi/data/dorothy/pi/sessions",
+            );
+            await mkdir(sessions, { recursive: true });
+            await writeFile(
+                join(sessions, "session.jsonl"),
+                `${JSON.stringify({ text: this.secret })}\n`,
+            );
+        }
         this.pi = new FakePi(this, pane.id, plan, this.script);
     }
 
@@ -364,7 +443,7 @@ class World {
 
     // The sender: a labelled pointer reaches the worker, which starts.
     sender: HerdrRun = async (args, options) => {
-        const name = args[args.indexOf("--require-idle") + 1] as string;
+        const name = args.at(-1) as string;
         const pane = this.find(name);
         const [, brief, taskId] =
             /^Read (\S+) for task (\S+)\.$/.exec(options.stdin ?? "") ?? [];
@@ -381,9 +460,13 @@ class World {
     async tick() {
         for (const [name, job] of [...this.jobs]) {
             if (--job.ticks > 0) continue;
-            this.jobs.delete(name);
             const pane = this.find(name);
-            await work(this, pane as Pane, job);
+            const finished = await work(this, pane as Pane, job);
+            if (!finished) {
+                job.ticks = 1;
+                continue;
+            }
+            this.jobs.delete(name);
             if (pane?.agent) pane.agent.status = "idle";
         }
         await this.pi?.tick();
@@ -417,12 +500,22 @@ async function work(world: World, pane: Pane, job: Job) {
     const report = field(brief, "Report") as string;
     const base = field(brief, "Base") as string;
     const env = { PATH: process.env.PATH ?? "", home: pane.cwd };
+    if (world.secret) pane.text += `\n${world.secret}\n`;
     if (job.taskId.startsWith("fix-")) {
         const file = join(pane.cwd, "src", "slug.ts");
         const fix = job.taskId.startsWith("fix-1") ? "incomplete" : "complete";
-        const source = await readFile(file, "utf8");
-        await writeFile(file, source.replace(SOURCE_LINE, FIXES[fix]));
-        const revision = await commitAll(pane.cwd, job.taskId, env);
+        let revision = "";
+        if (!job.prepared) {
+            const source = await readFile(file, "utf8");
+            await writeFile(file, source.replace(SOURCE_LINE, FIXES[fix]));
+            revision = await commitAll(pane.cwd, job.taskId, env);
+            job.prepared = true;
+        } else {
+            revision = git(pane.cwd, "rev-parse", "HEAD");
+        }
+        const checkpoint = /^Checkpoint: (\S+)$/m.exec(brief)?.[1];
+        if (checkpoint && !(await stat(checkpoint).catch(() => null)))
+            return false;
         await writeFile(
             report,
             [
@@ -430,11 +523,11 @@ async function work(world: World, pane: Pane, job: Job) {
                 "Status: done",
                 `Base: ${base}`,
                 `Revision: ${revision}`,
-                "Verification: bun src/example.ts: examples pass",
+                `Verification: bun src/example.ts: examples pass ${world.secret ?? ""}`,
                 "",
             ].join("\n"),
         );
-        return;
+        return true;
     }
     const reviewed = /^Review: (.+)$/m
         .exec(brief)?.[1]
@@ -459,7 +552,9 @@ async function work(world: World, pane: Pane, job: Job) {
     );
     git(pane.cwd, "checkout", "-q", "--detach", revision);
     const source = await readFile(join(pane.cwd, "src", "slug.ts"), "utf8");
-    const approved = source.includes("normalize");
+    const approved =
+        world.reviewOverride?.(job.taskId, source.includes("normalize")) ??
+        source.includes("normalize");
     await writeFile(
         report,
         [
@@ -467,11 +562,12 @@ async function work(world: World, pane: Pane, job: Job) {
             `Status: ${approved ? "approved" : "changes-requested"}`,
             `Base: ${base}`,
             `Revision: ${revision}`,
-            `Findings: ${approved ? "none" : "diacritics are not folded"}`,
+            `Findings: ${approved ? "none" : "diacritics are not folded"} ${world.secret ?? ""}`,
             "",
         ].join("\n"),
     );
     void world;
+    return true;
 }
 
 // The coordinator as a script: each step asks the provider once through
@@ -525,6 +621,7 @@ class FakePi {
                 controllerAlive: async () => true,
                 sender: this.world.sender,
                 self: PI_SELF,
+                occupantStart: async (pid) => `boot:${pid}`,
             },
         );
     }
@@ -535,7 +632,8 @@ class FakePi {
             await this.ask();
             this.compacted = true;
             const pane = this.world.panes.get(this.pane) as Pane;
-            pane.text += "Compacted from 12k tokens\n";
+            if (this.world.compactionAcknowledges)
+                pane.text += "Compacted from 12k tokens\n";
             return;
         }
         if (!this.started) {
@@ -577,7 +675,13 @@ class FakePi {
             const registry = JSON.parse(
                 await readFile(this.plan.steward, "utf8"),
             );
-            if (registry.workers.length === 2) {
+            if (this.world.tamperField) {
+                registry[this.world.tamperField] =
+                    this.world.tamperField === "fleetId"
+                        ? "00000000-0000-4000-8000-0000000000f9"
+                        : "/tmp";
+                await writeFile(this.plan.steward, JSON.stringify(registry));
+            } else if (registry.workers.length === 2) {
                 registry.workers.push({
                     ...registry.workers[0],
                     id: "dev-claude",
@@ -712,11 +816,27 @@ function depsFor(
         platform: "linux",
         uid: process.getuid?.() ?? 0,
         herdr: world.herdr,
-        lockedHerdr: (_pane, args) =>
-            world.herdr(args, {
+        interruptWorker: async (worker, pin) => {
+            world.onInterrupt?.();
+            const agent = world.find(worker.name)?.agent;
+            const occupant = agent
+                ? {
+                      kind: "process",
+                      pid: agent.process,
+                      startedAt: `boot:${agent.process}`,
+                  }
+                : null;
+            if (
+                agent?.terminal !== pin.terminalId ||
+                JSON.stringify(occupant) !== JSON.stringify(pin.occupant)
+            ) {
+                return { code: 9, stdout: "", stderr: "occupant changed" };
+            }
+            return world.herdr(["agent", "send-keys", worker.name, "ctrl+c"], {
                 env: {},
                 signal: new AbortController().signal,
-            }),
+            });
+        },
         loginStatus: async (harness) => ({
             loggedIn: true,
             detail: `${harness}: logged in (fixture)`,
@@ -727,13 +847,29 @@ function depsFor(
                 now: () => world.clock,
             }),
         upstream: async () => ({ url: provider.baseUrl, key: UPSTREAM_KEY }),
-        metadata: async () => null,
+        metadata: async () => ({
+            checkedAt: world.now().toISOString(),
+            source: "fake catalogue",
+            found: true,
+            contextWindow: 262144,
+            maxTokens: 32768,
+            price: { input: 0.225, output: 0.9 },
+            drift: [],
+        }),
         memory: async () => ({
             url: "http://127.0.0.1:9",
             stop: async () => {},
         }),
         versions: async () => ({ pi: "1.5.0", herdr: "fixture" }),
-        alive: async () => true,
+        alive: async (pid, startedAt) => {
+            if (pid === PI_SELF.pid || pid === process.pid) return true;
+            return [...world.panes.values()].some(
+                (pane) =>
+                    pane.agent?.process === pid && startedAt === `boot:${pid}`,
+            );
+        },
+        workerHomeMatches: async () => true,
+        occupantStart: async (pid) => `boot:${pid}`,
         self: { pid: process.pid, startedAt: "runner" },
     };
     return { deps, provider };
@@ -764,6 +900,8 @@ describe("before anything starts", () => {
         const { deps } = depsFor(world);
         const result = await runTrial(args, deps);
         expect(result.status).toBe("pending");
+        expect(result.kind).toBe("not-run");
+        expect(result.note).toContain("Not run");
         expect(world.calls).toEqual([]);
         // The checklist returned to the user keeps its paths; the copy
         // left in --out does not.
@@ -832,6 +970,80 @@ describe("before anything starts", () => {
         const unpaid = await preflight({ ...args, maxUsd: 0 }, deps);
         expect(unpaid.ok).toBe(false);
     });
+
+    it("checks required executables before loading a key or making panes", async () => {
+        const world = new World();
+        const { args } = await trialDir();
+        const { deps, provider } = depsFor(world);
+        deps.preflightAssets = async () => [
+            "missing runtime executable: flock",
+        ];
+        let keys = 0;
+        const upstream = deps.upstream;
+        deps.upstream = async () => {
+            keys++;
+            return upstream();
+        };
+        const result = await runTrial(args, deps);
+        expect(result.status).toBe("pending");
+        expect(result.pending.join("\n")).toContain("flock");
+        expect(keys).toBe(0);
+        expect(provider.requests).toEqual([]);
+        expect(trialPanes(world)).toEqual([]);
+    });
+
+    it("includes preflight in the one absolute wall deadline", async () => {
+        const world = new World();
+        const { args } = await trialDir();
+        const { deps, provider } = depsFor(world);
+        deps.loginStatus = async () => {
+            world.clock += 6_000;
+            return { loggedIn: true, detail: "signed in" };
+        };
+        let keys = 0;
+        const upstream = deps.upstream;
+        deps.upstream = async () => {
+            keys++;
+            return upstream();
+        };
+        const result = await runTrial({ ...args, timeoutMs: 10_000 }, deps);
+        expect(result.status).toBe("pending");
+        expect(result.kind).toBe("not-run");
+        expect(result.pending.join("\n")).toContain("deadline");
+        expect(keys).toBe(0);
+        expect(provider.requests).toEqual([]);
+        expect(trialPanes(world)).toEqual([]);
+    });
+
+    it("refuses missing, drifted or invalid catalogue metadata before spending", async () => {
+        for (const mode of ["missing", "drift", "invalid"]) {
+            const world = new World();
+            const { args } = await trialDir();
+            const { deps, provider } = depsFor(world);
+            const metadata = await deps.metadata();
+            if (!metadata) throw new Error("fixture catalogue missing");
+            deps.metadata = async () =>
+                mode === "missing"
+                    ? null
+                    : {
+                          ...metadata,
+                          drift: mode === "drift" ? ["price changed"] : [],
+                          maxTokens: mode === "invalid" ? -1 : 32768,
+                      };
+            let keys = 0;
+            const upstream = deps.upstream;
+            deps.upstream = async () => {
+                keys++;
+                return upstream();
+            };
+            const result = await runTrial(args, deps);
+            expect(result.status).not.toBe("pass");
+            expect(result.error).toContain("catalogue refused");
+            expect(keys).toBe(0);
+            expect(provider.requests).toEqual([]);
+            expect(trialPanes(world)).toEqual([]);
+        }
+    });
 });
 
 describe("a trial on fakes", () => {
@@ -885,6 +1097,43 @@ describe("a trial on fakes", () => {
             expect((await stat(brief.path)).mode & 0o222).toBe(0);
         }
 
+        const firstBrief = await readFile(
+            result.briefs.find((brief) => brief.taskId === "fix-1")
+                ?.path as string,
+            "utf8",
+        );
+        expect(firstBrief).toContain("TRIAL-ONLY DECLARED PARTIAL CANDIDATE");
+        expect(firstBrief).toContain("do not add Unicode normalization");
+        expect(firstBrief).toContain("Checkpoint:");
+        const finalBrief = await readFile(
+            result.briefs.find((brief) => brief.taskId === "fix-2")
+                ?.path as string,
+            "utf8",
+        );
+        expect(finalBrief).not.toContain("Checkpoint:");
+        expect(
+            await stat(
+                join(
+                    layoutOf(args.registry, args.out).checkpoints,
+                    "fix-1.ready",
+                ),
+            ).catch(() => null),
+        ).toBeNull();
+        expect(result.checkpoints).toHaveLength(1);
+        expect(result.checkpoints[0]).toMatchObject({
+            taskId: "fix-1b",
+            state: "running",
+        });
+        expect(
+            result.interventions.findIndex(
+                (entry) => entry.kind === "compaction",
+            ),
+        ).toBeLessThan(
+            result.interventions.findIndex(
+                (entry) => entry.kind === "fixture-checkpoint",
+            ),
+        );
+
         // The cycle: an interrupted worker released by the runner, the
         // incomplete fix caught, the review loop and the final fix.
         expect(result.tasks.map((t) => [t.taskId, t.state])).toEqual([
@@ -895,7 +1144,7 @@ describe("a trial on fakes", () => {
             ["review-2", "verified"],
         ]);
         expect(result.interruption?.exited).toBe(true);
-        expect(result.interruption?.terminalChanged).toBe(true);
+        expect(result.interruption?.terminalChanged).toBe(false);
         expect(result.interventions.map((i) => [i.by, i.kind])).toEqual(
             expect.arrayContaining([
                 ["runner", "worker-interruption"],
@@ -935,6 +1184,7 @@ describe("a trial on fakes", () => {
                 "created",
                 "registry",
                 "kickoff",
+                "checkpoint",
             ]),
         );
         const all = await Promise.all(
@@ -948,6 +1198,245 @@ describe("a trial on fakes", () => {
             "not evidence against hostile code",
         );
     }, 120_000);
+
+    it("handles stderr readiness, empty mutations and scoped Codex startup", async () => {
+        const world = new World();
+        world.stderrNotReady = true;
+        world.emptyMutations = true;
+        const { args } = await trialDir();
+        const result = await runTrial(args, depsFor(world).deps);
+        expect(result.status).toBe("pass");
+        const start = world.calls.find(
+            (call) =>
+                call[0] === "agent" &&
+                call[1] === "start" &&
+                call[2] === "trial-codex",
+        );
+        expect(start?.slice(-2)).toEqual(["--", "--no-daemon"]);
+        const shell = world.calls.find(
+            (call) =>
+                call[0] === "pane" &&
+                call[1] === "send-text" &&
+                call[3]?.includes("DOROTHY_WORKER_READY_trial-codex"),
+        );
+        expect(shell?.[3]).toContain("export HOME=");
+        expect(shell?.[3]).toContain("export CODEX_HOME=");
+        expect(shell?.[3]).toContain("cd ");
+    }, 60_000);
+
+    it("does not mistake an echoed bootstrap command for its output sentinel", async () => {
+        const world = new World();
+        world.shellEchoOnly = true;
+        let starts = 0;
+        world.onAgentStart = () => {
+            starts++;
+        };
+        const { args } = await trialDir();
+        const { deps, provider } = depsFor(world);
+        const result = await runTrial(args, deps);
+        expect(result.error).toContain("owned home not confirmed");
+        expect(starts).toBe(0);
+        expect(result.prompts).toEqual([]);
+        expect(provider.requests).toEqual([]);
+    }, 60_000);
+
+    it("scrubs worker tokens from screens, sessions, reports and JSON", async () => {
+        const world = new World();
+        world.secret = "sk-worker-abcdefghijklmnop";
+        const { args } = await trialDir();
+        const result = await runTrial(args, depsFor(world).deps);
+        expect(result.status).toBe("pass");
+        const files = [
+            "screens/trial-codex.txt",
+            "pi-sessions/session.jsonl",
+            "reports/fix-1b.md",
+            "result.json",
+            "events.jsonl",
+        ];
+        for (const file of files) {
+            const text = await readFile(join(args.out, file), "utf8");
+            expect(text).not.toContain(world.secret);
+            if (file.startsWith("screens/") || file.startsWith("reports/"))
+                expect(text).toContain("[secret]");
+        }
+        expect(
+            JSON.parse(await readFile(join(args.out, "result.json"), "utf8"))
+                .metadata.maxTokens,
+        ).toBe(32768);
+    }, 60_000);
+
+    it("never types kickoff when native Pi is not ready and alive", async () => {
+        for (const mode of ["banner", "process"]) {
+            const world = new World();
+            world.piBanner = mode !== "banner";
+            world.piLive = mode !== "process";
+            const { args } = await trialDir();
+            const { deps, provider } = depsFor(world);
+            const result = await runTrial({ ...args, timeoutMs: 5000 }, deps);
+            expect(result.status).not.toBe("pass");
+            expect(result.error).toContain("no kickoff sent");
+            expect(result.kind).toBe("not-run");
+            expect(result.prompts).toEqual([]);
+            expect(provider.requests).toEqual([]);
+        }
+    }, 60_000);
+
+    it("stops when a checked native prompt write fails", async () => {
+        const world = new World();
+        world.fail = (args) =>
+            args[0] === "pane" &&
+            args[1] === "send-text" &&
+            args[3]?.includes("fix-1b")
+                ? { code: 1, stdout: "", stderr: "write failed" }
+                : null;
+        const { args } = await trialDir();
+        const { deps, provider } = depsFor(world);
+        const result = await runTrial(args, deps);
+        expect(result.error).toContain("Pi prompt text");
+        expect(result.prompts).toHaveLength(1);
+        expect(provider.requests).toEqual([]);
+    }, 60_000);
+
+    it("refuses a worker whose launched home or cwd is not the trial's", async () => {
+        const world = new World();
+        const { args } = await trialDir();
+        const { deps, provider } = depsFor(world);
+        deps.workerHomeMatches = async () => false;
+        const result = await runTrial(args, deps);
+        expect(result.error).toContain("worker home");
+        expect(result.prompts).toEqual([]);
+        expect(provider.requests).toEqual([]);
+    }, 60_000);
+
+    it("bounds worker home inspection by the remaining trial deadline", async () => {
+        const world = new World();
+        let advanced = false;
+        world.onAgentStart = () => {
+            if (!advanced) world.clock += 45_000;
+            advanced = true;
+        };
+        const { args } = await trialDir();
+        const { deps } = depsFor(world);
+        const timeouts: number[] = [];
+        deps.workerHomeMatches = async (_harness, _home, _cwd, _pane, ms) => {
+            timeouts.push(ms);
+            return true;
+        };
+        await runTrial({ ...args, timeoutMs: 50_000 }, deps);
+        expect(timeouts.length).toBeGreaterThan(0);
+        expect(timeouts[0]).toBeGreaterThan(0);
+        expect(timeouts[0]).toBeLessThanOrEqual(5_000);
+    }, 60_000);
+
+    it("does not interrupt a same-pane process that replaced the pinned worker", async () => {
+        const world = new World();
+        const { args } = await trialDir();
+        const { deps } = depsFor(world);
+        world.onInterrupt = () => {
+            const agent = world.find("trial-codex")?.agent;
+            if (agent) agent.process = 5999;
+        };
+        const result = await runTrial({ ...args, timeoutMs: 60_000 }, deps);
+        expect(result.interruption?.exited).toBe(false);
+        expect(result.interruption?.terminalChanged).toBeNull();
+        expect(result.interruption?.occupantChanged).toBeNull();
+        expect(result.interruption?.guardRefused).toBe(true);
+        expect(
+            world.calls.filter(
+                (call) =>
+                    call[0] === "agent" &&
+                    call[1] === "start" &&
+                    call[2] === "trial-codex",
+            ),
+        ).toHaveLength(1);
+        expect(result.status).not.toBe("pass");
+    }, 60_000);
+
+    it("confirms interruption by process exit even if the old name remains", async () => {
+        const world = new World();
+        world.retainStoppedAgent = true;
+        const { args } = await trialDir();
+        const result = await runTrial(args, depsFor(world).deps);
+        expect(result.status).toBe("pass");
+        expect(result.interruption).toMatchObject({
+            exited: true,
+            occupantChanged: true,
+            guardRefused: false,
+        });
+    }, 60_000);
+
+    it("withholds the retry checkpoint when compaction is unconfirmed", async () => {
+        const world = new World();
+        world.compactionAcknowledges = false;
+        const { args } = await trialDir();
+        const { deps } = depsFor(world);
+        deps.releaseAfterMs = 0;
+        const result = await runTrial({ ...args, timeoutMs: 60_000 }, deps);
+        expect(result.compaction?.confirmed).toBe(false);
+        expect(result.checkpoints).toEqual([]);
+        expect(
+            await stat(
+                join(
+                    layoutOf(args.registry, args.out).checkpoints,
+                    "fix-1b.ready",
+                ),
+            ).catch(() => null),
+        ).toBeNull();
+        expect(result.reviewLoop.status).not.toBe("exercised");
+        expect(result.status).not.toBe("pass");
+    }, 60_000);
+
+    it("does not count approval of the owner-failing first fix", async () => {
+        const world = new World();
+        const { args } = await trialDir();
+        world.reviewOverride = (taskId, approved) =>
+            taskId === "review-1" ? true : approved;
+        const result = await runTrial(args, depsFor(world).deps);
+        expect(result.reviewLoop.status).toBe("incomplete");
+        expect(result.status).not.toBe("pass");
+    }, 60_000);
+
+    it("does not accept a final fix its reviewer rejected", async () => {
+        const world = new World();
+        const { args } = await trialDir();
+        world.reviewOverride = (taskId, approved) =>
+            taskId === "review-2" ? false : approved;
+        const result = await runTrial(args, depsFor(world).deps);
+        expect(result.reviewLoop.status).toBe("incomplete");
+        expect(result.finalRevision?.reviewAccepted).toBe(false);
+        expect(result.status).not.toBe("pass");
+    }, 60_000);
+
+    it("refuses same-worker fleetId and fixtureRoot changes", async () => {
+        for (const field of ["fleetId", "fixtureRoot"] as const) {
+            const world = new World();
+            world.script = "tamper";
+            world.tamperField = field;
+            const { args } = await trialDir();
+            const { deps, provider } = depsFor(world);
+            const result = await runTrial(args, deps);
+            expect(result.status).toBe("fail");
+            expect(
+                result.checks.find((c) => c.id === "registry-owned")?.ok,
+            ).toBe(false);
+            expect(world.jobs.size).toBe(0);
+            expect(provider.requests.length).toBe(1);
+        }
+    }, 60_000);
+
+    it("stops a late worker startup without dispatching new work", async () => {
+        const world = new World();
+        world.onAgentStart = () => {
+            world.clock += 20_000;
+        };
+        const { args } = await trialDir();
+        const { deps, provider } = depsFor(world);
+        const result = await runTrial({ ...args, timeoutMs: 10_000 }, deps);
+        expect(result.status).not.toBe("pass");
+        expect(result.prompts).toEqual([]);
+        expect(result.registry).toBeNull();
+        expect(provider.requests).toEqual([]);
+    }, 60_000);
 
     it("refuses registry entries outside the fixture and never touches them", async () => {
         const world = new World();
@@ -1042,14 +1531,35 @@ describe("its limits", () => {
         expect(result.stopped).toContain("turn limit 3");
     }, 60_000);
 
+    it("bounds slow cleanup and never passes an overrun", async () => {
+        const world = new World();
+        world.script = "quiet";
+        const { args } = await trialDir();
+        const { deps } = depsFor(world);
+        deps.memory = async () => ({
+            url: "http://127.0.0.1:9",
+            stop: () => new Promise<void>(() => {}),
+        });
+        const result = await runTrial({ ...args, timeoutMs: 20 }, deps);
+        expect(result.status).toBe("fail");
+        expect(result.cleanup.failed).toContain("memory");
+        expect(result.cleanup.overrun).toBe(true);
+        expect(result.checks.find((c) => c.id === "within-limits")?.ok).toBe(
+            false,
+        );
+    }, 60_000);
+
     it("stops at its time limit, on the injected clock", async () => {
         const world = new World();
         world.script = "quiet";
         const { args } = await trialDir();
         const { deps } = depsFor(world);
         const result = await runTrial({ ...args, timeoutMs: 120_000 }, deps);
-        expect(result.status).toBe("incomplete");
+        expect(result.status).toBe("fail");
         expect(result.stopped).toContain("time limit");
+        expect(result.checks.find((c) => c.id === "within-limits")?.ok).toBe(
+            false,
+        );
         expect(world.clock - START).toBeGreaterThanOrEqual(120_000);
         expect(world.clock - START).toBeLessThan(200_000);
         expect(sorted(world.closed)).toEqual(sorted(trialPanes(world)));

@@ -35,21 +35,27 @@
 // boundary for probes.
 
 import {
-    chmod,
     mkdir,
     mkdtemp,
     readFile,
+    realpath,
     rm,
+    stat,
     writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { resolvePiRuntime } from "../packages/cli/src/hosts/pi/runtime.js";
 import {
+    INTERRUPTER,
+    occupantArgs,
     processAlive,
     processStart,
 } from "../packages/cli/src/hosts/pi/steward/engine.js";
-import { createHerdrRun } from "../packages/cli/src/hosts/pi/steward/herdr.js";
+import {
+    createHerdrRun,
+    timed,
+} from "../packages/cli/src/hosts/pi/steward/herdr.js";
 import { runPiScenario } from "../packages/cli/src/hosts/pi/steward/pi-scenario.js";
 import {
     runSuite,
@@ -321,6 +327,10 @@ export function markdown(result: ProbeResult): string {
 }
 
 type Env = Record<string, string | undefined>;
+const HERDR_ENV: Env = {
+    PATH: process.env.PATH ?? "",
+    HERDR_ENV: "1",
+};
 
 // The memory contract's health route, from @dorothy/core's SERVICE_PATHS.
 const HEALTH = "/v1/health";
@@ -414,6 +424,7 @@ async function loginStatus(
     harness: "codex" | "claude",
     home: string,
     env: Env,
+    timeoutMs = 30_000,
 ): Promise<LoginStatus> {
     const command =
         harness === "codex"
@@ -421,6 +432,7 @@ async function loginStatus(
             : ["claude", "auth", "status", "--text"];
     const name = harness === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR";
     const child = Bun.spawn(command, {
+        cwd: home,
         env: {
             PATH: env.PATH ?? "",
             HOME: home,
@@ -430,7 +442,7 @@ async function loginStatus(
         stdin: "ignore",
         stdout: "pipe",
         stderr: "pipe",
-        timeout: 30_000,
+        timeout: Math.max(1, timeoutMs),
         killSignal: "SIGKILL",
     });
     const [stdout, stderr, code] = await Promise.all([
@@ -448,37 +460,6 @@ async function loginStatus(
         loggedIn: code === 0,
         detail: detail || `${harness}: status exit ${code}`,
     };
-}
-
-// A herdr call under the pane's lock, as the stewardship scripts hold it,
-// so an interrupt never lands among another sender's text and Enter.
-async function lockedHerdr(
-    pane: string,
-    args: string[],
-    env: Env,
-): Promise<{ code: number; stdout: string; stderr: string }> {
-    const runtime = env.XDG_RUNTIME_DIR;
-    if (!runtime) throw new Error("trial: XDG_RUNTIME_DIR is not set");
-    const dir = join(runtime, "dorothy-agents");
-    await mkdir(dir, { recursive: true, mode: 0o700 });
-    await chmod(dir, 0o700);
-    const lock = join(dir, `${pane.replace(/[^A-Za-z0-9]/g, "_")}.lock`);
-    const flock = Bun.which("flock", { PATH: env.PATH ?? "" });
-    if (!flock) throw new Error("trial: flock is missing");
-    const child = Bun.spawn([flock, "-w", "5", lock, "herdr", ...args], {
-        env,
-        stdin: "ignore",
-        stdout: "pipe",
-        stderr: "pipe",
-        timeout: 15_000,
-        killSignal: "SIGKILL",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text(),
-        child.exited,
-    ]);
-    return { code, stdout, stderr };
 }
 
 async function versions(env: Env): Promise<Record<string, string>> {
@@ -501,6 +482,63 @@ async function versions(env: Env): Promise<Record<string, string>> {
     };
 }
 
+async function runtimeProblems(env: Env): Promise<string[]> {
+    const problems: string[] = [];
+    for (const command of ["flock", "herdr", "codex", "claude", "git", "tar"]) {
+        if (!Bun.which(command, { PATH: env.PATH ?? "" }))
+            problems.push(`missing runtime executable: ${command}`);
+    }
+    for (const path of [
+        INTERRUPTER,
+        join(CLI_DIR, "src/hosts/pi/native-launch.ts"),
+        process.execPath,
+    ]) {
+        if (!(await stat(path).catch(() => null)))
+            problems.push(`missing trial asset: ${path}`);
+    }
+    await resolvePiRuntime(CLI_DIR, env).catch((error: Error) => {
+        problems.push(`pinned Pi/Node unavailable: ${error.message}`);
+    });
+    return problems;
+}
+
+// Check only the three expected values in the owned process. The rest of
+// its environment is neither exported nor logged.
+async function workerHomeMatches(
+    harness: "codex" | "claude",
+    home: string,
+    cwd: string,
+    pane: string,
+    timeoutMs: number,
+): Promise<boolean> {
+    const reply = await timed(
+        createHerdrRun(),
+        ["pane", "process-info", "--pane", pane],
+        HERDR_ENV,
+        Math.max(1, timeoutMs),
+    );
+    try {
+        const body = JSON.parse(reply.stdout || reply.stderr) as {
+            result?: {
+                process_info?: { foreground_process_group_id?: number };
+            };
+        };
+        const pid = body.result?.process_info?.foreground_process_group_id;
+        if (reply.code !== 0 || !pid || pid <= 0) return false;
+        const values = (await readFile(`/proc/${pid}/environ`, "utf8")).split(
+            "\0",
+        );
+        const name = harness === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR";
+        return (
+            values.includes(`HOME=${home}`) &&
+            values.includes(`${name}=${home}`) &&
+            (await realpath(`/proc/${pid}/cwd`)) === (await realpath(cwd))
+        );
+    } catch {
+        return false;
+    }
+}
+
 // The live trial's real dependencies: herdr, the worker homes' own status
 // commands, the memory service, Featherless and the shared proxy.
 export async function liveDeps(): Promise<TrialDeps> {
@@ -512,14 +550,36 @@ export async function liveDeps(): Promise<TrialDeps> {
         platform: process.platform,
         uid: process.getuid?.() ?? 0,
         herdr: createHerdrRun(),
-        lockedHerdr: (pane, args) => lockedHerdr(pane, args, env),
-        loginStatus: (harness, home) => loginStatus(harness, home, env),
+        interruptWorker: (worker, pin, timeoutMs) =>
+            timed(
+                createHerdrRun({ bin: INTERRUPTER }),
+                [
+                    "--expect-pane",
+                    worker.pane,
+                    "--expect-terminal",
+                    pin.terminalId,
+                    ...occupantArgs(pin.occupant),
+                    "--key",
+                    "ctrl+c",
+                    "--lock-wait",
+                    "5",
+                    worker.name,
+                ],
+                HERDR_ENV,
+                Math.max(1, timeoutMs),
+            ),
+        loginStatus: (harness, home, timeoutMs) =>
+            loginStatus(harness, home, env, timeoutMs),
+        preflightAssets: () => runtimeProblems(env),
+        workerHomeMatches,
         startProxy: startForwardingProxy,
         upstream: async () => ({ url: FEATHERLESS, key: await liveKey() }),
-        metadata: () => refreshMetadata(MODEL).catch(() => null),
+        metadata: (timeoutMs) =>
+            refreshMetadata(MODEL, timeoutMs).catch(() => null),
         memory: startMemory,
         versions: () => versions(env),
         alive: processAlive,
+        occupantStart: processStart,
         self: {
             pid: process.pid,
             startedAt: await processStart(process.pid),

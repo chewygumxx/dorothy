@@ -2,7 +2,9 @@
     "name": "@dorothy/cli",
     "private": true,
     "type": "module",
-    "exports": {},
+    "exports": {
+        "./scrub": "./src/scrub.ts"
+    },
     "dependencies": {
         "@dorothy/agent": "workspace:*",
         "@dorothy/core": "workspace:*",
