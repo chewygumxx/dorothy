@@ -141,6 +141,14 @@ class World {
     secret: string | null = null;
     piBanner = true;
     piLive = true;
+    foreignPi = false;
+    nativeIdentity: {
+        launcherPid: number;
+        launcherStartedAt: string;
+        piPid: number;
+        piStartedAt: string;
+    } | null = null;
+    nativeIdentityChecks = 0;
     stderrNotReady = false;
     emptyMutations = false;
     shellEchoOnly = false;
@@ -239,7 +247,8 @@ class World {
             id: "cli:pane:process-info",
             result: {
                 process_info: {
-                    foreground_process_group_id: pane.agent?.process ?? 0,
+                    // A real pane still has its shell after Pi exits.
+                    foreground_process_group_id: pane.agent?.process ?? 5000,
                     foreground_processes: [],
                     shell_pid: 5000,
                 },
@@ -307,9 +316,7 @@ class World {
         }
         if (noun === "pane" && verb === "process-info") {
             const pane = this.panes.get(flag("--pane") ?? "");
-            return pane?.agent
-                ? this.processInfo(pane)
-                : herdrError("pane_not_found");
+            return pane ? this.processInfo(pane) : herdrError("pane_not_found");
         }
         if (noun === "agent" && verb === "start") {
             this.onAgentStart?.();
@@ -424,6 +431,16 @@ class World {
               }
             : null;
         pane.text = this.piBanner ? "pi v1.5.0\n" : "$ shell\n";
+        const launched = pane.agent?.process;
+        this.nativeIdentity =
+            launched && this.piLive && !this.foreignPi
+                ? {
+                      launcherPid: launched,
+                      launcherStartedAt: `boot:${launched}`,
+                      piPid: launched + 1,
+                      piStartedAt: `boot:${launched + 1}`,
+                  }
+                : null;
         if (this.secret) {
             const sessions = join(
                 dirname(plan.steward),
@@ -863,12 +880,19 @@ function depsFor(
         versions: async () => ({ pi: "1.5.0", herdr: "fixture" }),
         alive: async (pid, startedAt) => {
             if (pid === PI_SELF.pid || pid === process.pid) return true;
+            if (pid === world.nativeIdentity?.piPid) {
+                return world.piLive && !world.foreignPi;
+            }
             return [...world.panes.values()].some(
                 (pane) =>
                     pane.agent?.process === pid && startedAt === `boot:${pid}`,
             );
         },
         workerHomeMatches: async () => true,
+        nativePiIdentity: async () => {
+            world.nativeIdentityChecks++;
+            return world.nativeIdentity;
+        },
         occupantStart: async (pid) => `boot:${pid}`,
         self: { pid: process.pid, startedAt: "runner" },
     };
@@ -1015,6 +1039,37 @@ describe("before anything starts", () => {
         expect(trialPanes(world)).toEqual([]);
     });
 
+    it("bounds a hanging version probe by the trial wall", async () => {
+        const world = new World();
+        const { args } = await trialDir();
+        const { deps, provider } = depsFor(world);
+        let release = () => {};
+        const waiting = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        deps.versions = async () => {
+            await waiting;
+            return { pi: "1.5.0" };
+        };
+        let keys = 0;
+        const upstream = deps.upstream;
+        deps.upstream = async () => {
+            keys++;
+            return upstream();
+        };
+        const running = runTrial({ ...args, timeoutMs: 40 }, deps);
+        const early = await Promise.race([
+            running,
+            Bun.sleep(200).then(() => null),
+        ]);
+        release();
+        await running;
+        expect(early).not.toBeNull();
+        expect(keys).toBe(0);
+        expect(provider.requests).toEqual([]);
+        expect(trialPanes(world)).toEqual([]);
+    });
+
     it("refuses missing, drifted or invalid catalogue metadata before spending", async () => {
         for (const mode of ["missing", "drift", "invalid"]) {
             const world = new World();
@@ -1145,6 +1200,11 @@ describe("a trial on fakes", () => {
         ]);
         expect(result.interruption?.exited).toBe(true);
         expect(result.interruption?.terminalChanged).toBe(false);
+        expect(world.nativeIdentityChecks).toBeGreaterThan(0);
+        expect(world.nativeIdentity).toMatchObject({
+            launcherPid: expect.any(Number),
+            piPid: expect.any(Number),
+        });
         expect(result.interventions.map((i) => [i.by, i.kind])).toEqual(
             expect.arrayContaining([
                 ["runner", "worker-interruption"],
@@ -1266,10 +1326,11 @@ describe("a trial on fakes", () => {
     }, 60_000);
 
     it("never types kickoff when native Pi is not ready and alive", async () => {
-        for (const mode of ["banner", "process"]) {
+        for (const mode of ["banner", "dead-pi-live-shell", "foreign"]) {
             const world = new World();
             world.piBanner = mode !== "banner";
-            world.piLive = mode !== "process";
+            world.piLive = mode === "foreign";
+            world.foreignPi = mode === "foreign";
             const { args } = await trialDir();
             const { deps, provider } = depsFor(world);
             const result = await runTrial({ ...args, timeoutMs: 5000 }, deps);
@@ -1281,20 +1342,27 @@ describe("a trial on fakes", () => {
         }
     }, 60_000);
 
-    it("stops when a checked native prompt write fails", async () => {
-        const world = new World();
-        world.fail = (args) =>
-            args[0] === "pane" &&
-            args[1] === "send-text" &&
-            args[3]?.includes("fix-1b")
-                ? { code: 1, stdout: "", stderr: "write failed" }
-                : null;
-        const { args } = await trialDir();
-        const { deps, provider } = depsFor(world);
-        const result = await runTrial(args, deps);
-        expect(result.error).toContain("Pi prompt text");
-        expect(result.prompts).toHaveLength(1);
-        expect(provider.requests).toEqual([]);
+    it("keeps failed text or Enter with no provider call not-run", async () => {
+        for (const write of ["send-text", "send-keys"]) {
+            const world = new World();
+            world.fail = (args) =>
+                args[0] === "pane" &&
+                args[1] === write &&
+                (write === "send-text"
+                    ? args[3]?.includes("fix-1b")
+                    : args[2] === world.pi?.pane && args[3] === "enter")
+                    ? { code: 1, stdout: "", stderr: "write failed" }
+                    : null;
+            const { args } = await trialDir();
+            const { deps, provider } = depsFor(world);
+            const result = await runTrial(args, deps);
+            expect(result.error).toContain(
+                write === "send-text" ? "Pi prompt text" : "Pi Enter",
+            );
+            expect(result.kind).toBe("not-run");
+            expect(result.prompts).toHaveLength(1);
+            expect(provider.requests).toEqual([]);
+        }
     }, 60_000);
 
     it("refuses a worker whose launched home or cwd is not the trial's", async () => {

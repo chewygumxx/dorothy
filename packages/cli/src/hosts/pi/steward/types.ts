@@ -105,6 +105,9 @@ export type StewardRequest = {
     registryDigest?: string;
     fleetId?: string;
     fixtureRoot?: string;
+    // Owner-supplied native trial wall. Absent for ordinary --pi use.
+    // The extension copies its launch manifest; it is never a tool field.
+    deadlineAt?: string;
     controller: { pid: number; startedAt: string };
     operation:
         | { kind: "list" }

@@ -34,10 +34,32 @@ export async function stewardHelper(
         request = JSON.parse(text);
     } catch {}
     let reply: StewardReply;
+    const deadlineAt = (request as StewardRequest | null)?.deadlineAt;
+    const deadline =
+        typeof deadlineAt === "string" &&
+        Number.isFinite(Date.parse(deadlineAt))
+            ? Date.parse(deadlineAt)
+            : null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired =
+        deadline === null
+            ? null
+            : new Promise<StewardReply>((resolve) => {
+                  timer = setTimeout(
+                      () => resolve({ ok: false, code: "STEWARD_DEADLINE" }),
+                      Math.max(0, deadline - Date.now()),
+                  );
+              });
     try {
-        reply = await run(request as StewardRequest);
+        const running = run(request as StewardRequest);
+        reply =
+            expired === null
+                ? await running
+                : await Promise.race([running, expired]);
     } catch {
         reply = { ok: false, code: "STEWARD_FAILED" };
+    } finally {
+        if (timer !== undefined) clearTimeout(timer);
     }
     const out = JSON.stringify(reply);
     // Too large, the reply keeps its code alone: a mutation may have

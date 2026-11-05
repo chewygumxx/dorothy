@@ -55,6 +55,8 @@ export type PiOptions = {
     dump: boolean;
     // `--steward <registry>`, as the user gave it.
     steward: string | null;
+    // Native trial wall, copied to its private helper; never a model field.
+    stewardDeadlineAt?: string;
 };
 
 export type PiDeps = {
@@ -258,6 +260,15 @@ export async function runPi(options: PiOptions, deps: PiDeps): Promise<number> {
         }
     }
 
+    if (
+        options.stewardDeadlineAt !== undefined &&
+        (typeof options.stewardDeadlineAt !== "string" ||
+            !Number.isFinite(Date.parse(options.stewardDeadlineAt)) ||
+            new Date(options.stewardDeadlineAt).toISOString() !==
+                options.stewardDeadlineAt)
+    ) {
+        return fail("invalid steward deadline");
+    }
     let selection: ReturnType<typeof selectPiModel>;
     try {
         const routing = await deps.loadRouting();
@@ -289,6 +300,9 @@ export async function runPi(options: PiOptions, deps: PiDeps): Promise<number> {
                 fleetId: frozen.fleetId,
                 fixtureRoot: frozen.fixtureRoot,
                 registryDigest: frozen.sourceDigest,
+                ...(options.stewardDeadlineAt
+                    ? { deadlineAt: options.stewardDeadlineAt }
+                    : {}),
             };
         } catch (error) {
             const code = (error as { code?: unknown }).code;

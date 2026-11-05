@@ -254,7 +254,9 @@ export async function fixtureManifest(
     roots: Roots,
     baseUrl: string,
     over: Omit<Partial<PiLaunchManifest>, "steward"> & {
-        steward?: { registry: string };
+        steward?: Partial<NonNullable<PiLaunchManifest["steward"]>> & {
+            registry: string;
+        };
     } = {},
 ): Promise<{ manifest: PiLaunchManifest; path: string }> {
     const node = Bun.which("node", { PATH: roots.env.PATH ?? "" });
@@ -274,6 +276,7 @@ export async function fixtureManifest(
     const steward =
         requested && frozen
             ? {
+                  ...requested,
                   registry: requested.registry,
                   fleetId: frozen.fleetId,
                   fixtureRoot: frozen.fixtureRoot,

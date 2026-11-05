@@ -86,10 +86,10 @@ export const MAX_FILE_BYTES = 64 * 1024;
 
 // The sender's refusals before it writes anything: usage, blocked, absent,
 // another pane, not idle. Any other exit may have written.
-const REFUSALS = [2, 3, 4, 5, 6, 9];
+const REFUSALS = [2, 3, 4, 5, 6, 9, 10];
 // The interrupt's: usage, blocked, absent, another pane, the lock not had
 // in time, another terminal. Any other exit may have sent the Escape.
-const UNSENT = [2, 3, 4, 5, 7, 8, 9];
+const UNSENT = [2, 3, 4, 5, 7, 8, 9, 10];
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing them
@@ -120,9 +120,26 @@ type Context = {
     fleet: FrozenFleet;
     ledger: Ledger;
     deps: StewardDeps;
+    // Null preserves ordinary --pi's independent per-operation bounds.
+    deadlineAt: number | null;
     self: () => Promise<Identity>;
     observe: (worker: Worker) => Promise<WorkerObservation>;
 };
+
+function remaining(ctx: Context): number | null {
+    return ctx.deadlineAt === null
+        ? null
+        : ctx.deadlineAt - ctx.deps.now().getTime();
+}
+
+function requireTime(ctx: Context): void {
+    if ((remaining(ctx) ?? 1) <= 0) refuse("STEWARD_DEADLINE");
+}
+
+function boundedMs(ctx: Context, timeoutMs: number): number {
+    requireTime(ctx);
+    return Math.min(timeoutMs, remaining(ctx) ?? timeoutMs);
+}
 
 const refuse = (code: string, detail = code): never => {
     throw new StewardError(code, detail);
@@ -321,6 +338,13 @@ function checkRequest(request: StewardRequest): void {
     ) {
         refuse("REQUEST_INVALID");
     }
+    if (
+        request.deadlineAt !== undefined &&
+        (typeof request.deadlineAt !== "string" ||
+            !Number.isFinite(Date.parse(request.deadlineAt)))
+    ) {
+        refuse("REQUEST_INVALID");
+    }
 }
 
 // Why the observed occupant may not be acted on, or null: the terminal
@@ -482,7 +506,7 @@ async function repeat(
     return reply(true, "TASK_EXISTS", [existing]);
 }
 
-type SendOutcome = "sent" | `refused:${number}` | "uncertain";
+type SendOutcome = "sent" | `refused:${number}` | "uncertain" | "deadline";
 
 async function send(
     ctx: Context,
@@ -498,10 +522,17 @@ async function send(
         worker.pane,
         "--require-idle",
         ...occupantArgs(occupant),
+        ...(ctx.deadlineAt === null
+            ? []
+            : ["--deadline-at", String(ctx.deadlineAt)]),
         worker.name,
     ];
     const message = `Read ${brief.briefPath} for task ${brief.taskId}.`;
     try {
+        const timeoutMs = boundedMs(
+            ctx,
+            ctx.deps.sendTimeoutMs ?? SEND_TIMEOUT_MS,
+        );
         // Recheck the frozen bytes immediately before the external mutation.
         await readFleet(
             ctx.fleet.sourcePath,
@@ -512,7 +543,7 @@ async function send(
             sender,
             args,
             ctx.deps.env,
-            ctx.deps.sendTimeoutMs ?? SEND_TIMEOUT_MS,
+            timeoutMs,
             message,
         );
         if (code === 0) {
@@ -520,17 +551,16 @@ async function send(
         }
         return REFUSALS.includes(code) ? `refused:${code}` : "uncertain";
     } catch (error) {
-        if (
-            error instanceof StewardError &&
-            error.code === "REGISTRY_CHANGED"
-        ) {
-            throw error;
+        if (error instanceof StewardError) {
+            if (error.code === "REGISTRY_CHANGED") throw error;
+            if (error.code === "STEWARD_DEADLINE") return "deadline";
         }
         return "uncertain";
     }
 }
 
 async function dispatch(ctx: Context, task: unknown): Promise<StewardReply> {
+    requireTime(ctx);
     const { fleet, ledger } = ctx;
     const asked = checkBrief(fleet, task);
     const worker = workerOf(fleet, asked.workerId);
@@ -574,6 +604,7 @@ async function dispatch(ctx: Context, task: unknown): Promise<StewardReply> {
         refuse("WORKER_UNIDENTIFIED");
     }
     let op: ReturnType<Ledger["reserve"]>;
+    requireTime(ctx);
     try {
         op = ledger.reserve(
             brief,
@@ -629,6 +660,7 @@ async function dispatch(ctx: Context, task: unknown): Promise<StewardReply> {
     }
 
     const outcome = await send(ctx, worker, brief, seen.occupant as Occupant);
+    if (outcome === "deadline") return fail("STEWARD_DEADLINE");
     if (outcome === "sent") {
         ledger.conclude(op.id, "done", null, { from: ["intent"], to: "sent" });
         return reply(true, "TASK_SENT", [ledger.task(brief.taskId)], [again]);
@@ -686,7 +718,10 @@ async function wait(
         if (seen?.state === "blocked") {
             return reply(true, "WORKER_BLOCKED", [task], workers);
         }
-        const left = (timeoutMs as number) - (performance.now() - started);
+        requireTime(ctx);
+        const requestedLeft =
+            (timeoutMs as number) - (performance.now() - started);
+        const left = Math.min(requestedLeft, remaining(ctx) ?? requestedLeft);
         if (left <= 0) {
             return reply(true, "WAIT_TIMEOUT", [task], workers);
         }
@@ -700,6 +735,7 @@ async function wait(
 // status under it. A refusal before the Escape withdraws the request;
 // any other failure keeps it, uncertain. Only a report saying so cancels.
 async function cancel(ctx: Context, taskId: unknown): Promise<StewardReply> {
+    requireTime(ctx);
     const { ledger } = ctx;
     const id = taskOf(ctx, taskId).taskId;
     await settleAbandoned(ctx, id);
@@ -724,6 +760,7 @@ async function cancel(ctx: Context, taskId: unknown): Promise<StewardReply> {
         return reply(false, refusal, [ledger.task(id)], [seen]);
     }
     const before = task.state;
+    requireTime(ctx);
     const op = ledger.begin(id, "cancel", [before], "cancel-requested", helper);
     if (!op) {
         const now = ledger.task(id) as StoredTask;
@@ -732,22 +769,35 @@ async function cancel(ctx: Context, taskId: unknown): Promise<StewardReply> {
             : reply(false, "TASK_MOVED", [now], [seen]);
     }
     let code: number | null = null;
+    const left = remaining(ctx);
+    if (left !== null && left <= 0) {
+        code = 10;
+    }
     try {
-        ({ code } = await timed(
-            ctx.deps.interrupter ?? createHerdrRun({ bin: INTERRUPTER }),
-            [
-                "--expect-pane",
-                worker.pane,
-                "--expect-terminal",
-                task.terminalId as string,
-                ...occupantArgs(task.occupant as Occupant),
-                "--lock-wait",
-                String(LOCK_WAIT_S),
-                worker.name,
-            ],
-            ctx.deps.env,
-            ctx.deps.interruptTimeoutMs ?? INTERRUPT_TIMEOUT_MS,
-        ));
+        if (code === null)
+            ({ code } = await timed(
+                ctx.deps.interrupter ?? createHerdrRun({ bin: INTERRUPTER }),
+                [
+                    "--expect-pane",
+                    worker.pane,
+                    "--expect-terminal",
+                    task.terminalId as string,
+                    ...occupantArgs(task.occupant as Occupant),
+                    ...(ctx.deadlineAt === null
+                        ? []
+                        : ["--deadline-at", String(ctx.deadlineAt)]),
+                    "--lock-wait",
+                    String(LOCK_WAIT_S),
+                    worker.name,
+                ],
+                ctx.deps.env,
+                left === null
+                    ? (ctx.deps.interruptTimeoutMs ?? INTERRUPT_TIMEOUT_MS)
+                    : Math.min(
+                          ctx.deps.interruptTimeoutMs ?? INTERRUPT_TIMEOUT_MS,
+                          left,
+                      ),
+            ));
     } catch {
         code = null;
     }
@@ -972,6 +1022,18 @@ export async function runSteward(
             fleet.fleetId,
             deps.now,
         );
+        const deadlineAt = request.deadlineAt
+            ? Date.parse(request.deadlineAt)
+            : null;
+        if (deadlineAt !== null && deps.now().getTime() >= deadlineAt) {
+            const id =
+                "taskId" in request.operation &&
+                typeof request.operation.taskId === "string"
+                    ? request.operation.taskId
+                    : null;
+            const current = id ? ledger.task(id) : null;
+            return reply(false, "STEWARD_DEADLINE", [current]);
+        }
         const claim = await ledger.claim(
             request.controller,
             deps.controllerAlive,
@@ -981,6 +1043,7 @@ export async function runSteward(
             fleet,
             ledger,
             deps,
+            deadlineAt,
             self: () => {
                 self ??= deps.self
                     ? Promise.resolve(deps.self)
@@ -994,6 +1057,14 @@ export async function runSteward(
                 observeWorker(worker, deps.run, {
                     env: deps.env,
                     now: deps.now,
+                    ...(deadlineAt === null
+                        ? {}
+                        : {
+                              timeoutMs: Math.max(
+                                  1,
+                                  deadlineAt - deps.now().getTime(),
+                              ),
+                          }),
                     processStart: deps.occupantStart ?? processStart,
                 }),
         };

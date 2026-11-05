@@ -519,6 +519,7 @@ export function registerStewardship(
             registryDigest: manifest.steward.registryDigest,
             fleetId: manifest.steward.fleetId,
             fixtureRoot: manifest.steward.fixtureRoot,
+            deadlineAt: manifest.steward.deadlineAt,
             controller: identity,
             operation,
         });

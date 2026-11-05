@@ -82,6 +82,7 @@ import {
     type ReleaseResult,
     runTrial,
     type TrialDeps,
+    type TrialResult,
 } from "./pi-stewardship-trial.js";
 
 export type ProbeArgs =
@@ -462,27 +463,50 @@ async function loginStatus(
     };
 }
 
-async function versions(env: Env): Promise<Record<string, string>> {
-    const runtime = await resolvePiRuntime(CLI_DIR, env).catch(() => null);
-    const seen = (command: string[]): string => {
-        const run = Bun.spawnSync([...command, "--version"], {
-            env,
-            stdin: "ignore",
-            stdout: "pipe",
-            stderr: "ignore",
-        });
-        if (run.exitCode !== 0) return "unknown";
-        return run.stdout.toString().trim().split("\n")[0] ?? "unknown";
+async function versions(
+    env: Env,
+    timeoutMs = 10_000,
+): Promise<Record<string, string>> {
+    const deadline = Date.now() + Math.max(1, timeoutMs);
+    const runtime = await resolvePiRuntime(CLI_DIR, env, timeoutMs).catch(
+        () => null,
+    );
+    const seen = async (command: string[]): Promise<string> => {
+        try {
+            const run = Bun.spawn([...command, "--version"], {
+                env,
+                stdin: "ignore",
+                stdout: "pipe",
+                stderr: "ignore",
+                timeout: Math.max(1, deadline - Date.now()),
+                killSignal: "SIGKILL",
+            });
+            const [stdout, code] = await Promise.all([
+                new Response(run.stdout).text(),
+                run.exited,
+            ]);
+            if (code !== 0) return "unknown";
+            return stdout.trim().split("\n")[0] ?? "unknown";
+        } catch {
+            return "unknown";
+        }
     };
+    const [node, herdr] = await Promise.all([
+        runtime ? seen([runtime.command[0] as string]) : "unknown",
+        seen(["herdr"]),
+    ]);
     return {
         pi: runtime?.version ?? "unknown",
-        node: runtime ? seen([runtime.command[0] as string]) : "unknown",
-        herdr: seen(["herdr"]),
+        node,
+        herdr,
         bun: Bun.version,
     };
 }
 
-async function runtimeProblems(env: Env): Promise<string[]> {
+async function runtimeProblems(
+    env: Env,
+    timeoutMs = 10_000,
+): Promise<string[]> {
     const problems: string[] = [];
     for (const command of ["flock", "herdr", "codex", "claude", "git", "tar"]) {
         if (!Bun.which(command, { PATH: env.PATH ?? "" }))
@@ -496,7 +520,7 @@ async function runtimeProblems(env: Env): Promise<string[]> {
         if (!(await stat(path).catch(() => null)))
             problems.push(`missing trial asset: ${path}`);
     }
-    await resolvePiRuntime(CLI_DIR, env).catch((error: Error) => {
+    await resolvePiRuntime(CLI_DIR, env, timeoutMs).catch((error: Error) => {
         problems.push(`pinned Pi/Node unavailable: ${error.message}`);
     });
     return problems;
@@ -539,6 +563,35 @@ async function workerHomeMatches(
     }
 }
 
+async function nativePiIdentity(
+    path: string,
+): Promise<TrialResult["nativeIdentity"] | null> {
+    try {
+        const raw = JSON.parse(await readFile(path, "utf8")) as {
+            launcherPid?: unknown;
+            piPid?: unknown;
+        };
+        if (
+            !Number.isSafeInteger(raw.launcherPid) ||
+            !Number.isSafeInteger(raw.piPid) ||
+            (raw.launcherPid as number) <= 0 ||
+            (raw.piPid as number) <= 0
+        ) {
+            return null;
+        }
+        const launcherPid = raw.launcherPid as number;
+        const piPid = raw.piPid as number;
+        const [launcherStartedAt, piStartedAt] = await Promise.all([
+            processStart(launcherPid),
+            processStart(piPid),
+        ]);
+        if (!launcherStartedAt || !piStartedAt) return null;
+        return { launcherPid, piPid, launcherStartedAt, piStartedAt };
+    } catch {
+        return null;
+    }
+}
+
 // The live trial's real dependencies: herdr, the worker homes' own status
 // commands, the memory service, Featherless and the shared proxy.
 export async function liveDeps(): Promise<TrialDeps> {
@@ -550,7 +603,7 @@ export async function liveDeps(): Promise<TrialDeps> {
         platform: process.platform,
         uid: process.getuid?.() ?? 0,
         herdr: createHerdrRun(),
-        interruptWorker: (worker, pin, timeoutMs) =>
+        interruptWorker: (worker, pin, timeoutMs, deadlineAt) =>
             timed(
                 createHerdrRun({ bin: INTERRUPTER }),
                 [
@@ -559,6 +612,9 @@ export async function liveDeps(): Promise<TrialDeps> {
                     "--expect-terminal",
                     pin.terminalId,
                     ...occupantArgs(pin.occupant),
+                    ...(deadlineAt
+                        ? ["--deadline-at", String(deadlineAt)]
+                        : []),
                     "--key",
                     "ctrl+c",
                     "--lock-wait",
@@ -570,14 +626,15 @@ export async function liveDeps(): Promise<TrialDeps> {
             ),
         loginStatus: (harness, home, timeoutMs) =>
             loginStatus(harness, home, env, timeoutMs),
-        preflightAssets: () => runtimeProblems(env),
+        preflightAssets: (timeoutMs) => runtimeProblems(env, timeoutMs),
         workerHomeMatches,
+        nativePiIdentity,
         startProxy: startForwardingProxy,
         upstream: async () => ({ url: FEATHERLESS, key: await liveKey() }),
         metadata: (timeoutMs) =>
             refreshMetadata(MODEL, timeoutMs).catch(() => null),
         memory: startMemory,
-        versions: () => versions(env),
+        versions: (timeoutMs) => versions(env, timeoutMs),
         alive: processAlive,
         occupantStart: processStart,
         self: {

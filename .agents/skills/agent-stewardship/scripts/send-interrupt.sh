@@ -18,6 +18,7 @@
 # --expect-session <id> or --expect-process <pid> <boot:start> also pins
 # the real occupant. --key ctrl+c asks the native harness to quit (esc is
 # the default); both are sent only after the same locked guards.
+# --deadline-at <epoch-ms> caps lock wait and checks before the key.
 #
 #   send-interrupt.sh [--expect-pane <id>] [--expect-terminal <id>]
 #                     [--expect-session <id> | --expect-process <pid> <start>]
@@ -25,7 +26,8 @@
 #
 # Exit: 2 usage, 3 agent blocked, 4 agent absent, 5 agent in another
 # pane, 7 lock not had in time, 8 another terminal, 9 another occupant:
-# each before anything is sent. 1 another failure, the key perhaps sent.
+# each before anything is sent. Exit 10 is expiry before the key;
+# 1 another failure, the key perhaps sent.
 
 set -eu
 
@@ -50,6 +52,7 @@ terminal=
 session=
 process=
 started=
+deadline_at=
 key=esc
 wait=5
 while [ $# -gt 0 ]; do
@@ -65,6 +68,12 @@ while [ $# -gt 0 ]; do
         valid "$3" || usage
         process=$2 started=$3
         shift 3
+        ;;
+    --deadline-at)
+        [ $# -ge 2 ] && [ -n "$2" ] || usage
+        case $2 in *[!0-9]* | '' | 0) usage ;; esac
+        deadline_at=$2
+        shift 2
         ;;
     --key)
         [ $# -ge 2 ] || usage
@@ -101,10 +110,16 @@ if { [ -n "$process" ] && [ -z "$started" ]; } ||
     usage
 fi
 
+deadline_check 10
 pane=$(agent_pane "$agent") || die 4 "agent $agent is absent"
 [ -z "$expect" ] || [ "$pane" = "$expect" ] ||
     die 5 "agent $agent is in pane $pane, not $expect"
+if [ -n "$deadline_at" ]; then
+    deadline_wait=$(deadline_lock_wait)
+    [ "$deadline_wait" -ge "$wait" ] || wait=$deadline_wait
+fi
 lock_pane "$pane" "$wait"
+deadline_check 10
 # Pane, terminal and status in one reading, under the lock.
 seen=$(agent_field "$agent" \
     '.pane_id + " " + (.terminal_id // "-") + " " + .agent_status') ||
@@ -118,5 +133,6 @@ status=${rest#* }
     die 8 "pane $pane holds terminal $now_terminal, not $terminal"
 [ "$status" != blocked ] || die 3 "agent $agent is blocked on a dialog"
 occupant_guard "$agent" "$pane" "$session" "$process" "$started"
+deadline_check 10
 herdr pane send-keys "$pane" "$key" >/dev/null 2>&1 ||
     die 1 "$key to pane $pane failed, perhaps sent"

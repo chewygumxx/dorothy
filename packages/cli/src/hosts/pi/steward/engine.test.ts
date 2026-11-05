@@ -217,6 +217,43 @@ describe("list", () => {
 });
 
 describe("dispatch", () => {
+    it("refuses an expired trial deadline before intent or sender", async () => {
+        await writeBrief("t1");
+        const reply = await runSteward(
+            {
+                registry: reg.path,
+                controller: ME,
+                operation: { kind: "dispatch", task: task("t1") },
+                deadlineAt: new Date(NOW.getTime() - 1).toISOString(),
+            } as StewardRequest,
+            deps(),
+        );
+        expect(reply).toMatchObject({ ok: false, code: "STEWARD_DEADLINE" });
+        expect(sender.calls).toEqual([]);
+        expect(withLedger((db) => db.task("t1"))).toBeNull();
+    });
+
+    it("passes the trial deadline to the locked sender", async () => {
+        await writeBrief("t1");
+        const deadlineAt = new Date(NOW.getTime() + 60_000).toISOString();
+        const reply = await runSteward(
+            {
+                registry: reg.path,
+                controller: ME,
+                operation: { kind: "dispatch", task: task("t1") },
+                deadlineAt,
+            } as StewardRequest,
+            deps(),
+        );
+        expect(reply.code).toBe("TASK_SENT");
+        expect(sender.calls[0]?.args).toEqual(
+            expect.arrayContaining([
+                "--deadline-at",
+                String(Date.parse(deadlineAt)),
+            ]),
+        );
+    });
+
     it("persists intent, digest and reservation before the send", async () => {
         await writeBrief("t1", "the brief\n");
         let seen: unknown;
@@ -951,6 +988,23 @@ describe("cancel", () => {
         const reply = await steward({ kind: "cancel", taskId: "t1" });
         expect(reply).toMatchObject({ ok: false, code: "WORKER_REPLACED" });
         expect(interrupts()).toEqual([]);
+    });
+
+    it("refuses an expired trial cancel without touching the worker", async () => {
+        await writeBrief("t1");
+        await dispatch(task("t1"));
+        const reply = await runSteward(
+            {
+                registry: reg.path,
+                controller: ME,
+                operation: { kind: "cancel", taskId: "t1" },
+                deadlineAt: new Date(NOW.getTime() - 1).toISOString(),
+            } as StewardRequest,
+            deps(),
+        );
+        expect(reply).toMatchObject({ ok: false, code: "STEWARD_DEADLINE" });
+        expect(interrupter.calls).toEqual([]);
+        expect(only(reply).state).toBe("sent");
     });
 
     it("refuses a new session before any interrupt", async () => {

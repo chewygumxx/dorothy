@@ -170,6 +170,7 @@ export type TrialDeps = {
         worker: Worker,
         pin: { terminalId: string; occupant: Occupant },
         timeoutMs: number,
+        deadlineAt?: number,
     ) => Promise<Reply>;
     // A home's login, by the harness's own status command; never a read
     // of its credential.
@@ -179,7 +180,7 @@ export type TrialDeps = {
         timeoutMs?: number,
     ) => Promise<LoginStatus>;
     // Runtime/executable checks, before a key or pane is touched.
-    preflightAssets?: () => Promise<string[]>;
+    preflightAssets?: (timeoutMs?: number) => Promise<string[]>;
     // Verify the launched foreground process's home and cwd without
     // logging its environment or reading a credential file.
     workerHomeMatches: (
@@ -189,6 +190,9 @@ export type TrialDeps = {
         pane: string,
         timeoutMs: number,
     ) => Promise<boolean>;
+    nativePiIdentity?: (
+        path: string,
+    ) => Promise<TrialResult["nativeIdentity"] | null>;
     startProxy: (options: ProxyOptions) => ForwardingProxy;
     // Live, Featherless and the key from secrets.json, held in memory.
     upstream: () => Promise<{ url: string; key: string }>;
@@ -197,7 +201,7 @@ export type TrialDeps = {
         root: string,
         env: Env,
     ) => Promise<{ url: string; stop(): Promise<void> }>;
-    versions: () => Promise<Record<string, string>>;
+    versions: (timeoutMs?: number) => Promise<Record<string, string>>;
     alive: (pid: number, startedAt: string) => Promise<boolean>;
     occupantStart: (pid: number) => Promise<string>;
     self: Identity;
@@ -402,7 +406,7 @@ export async function preflight(
         });
     }
     const assets = await deps
-        .preflightAssets?.()
+        .preflightAssets?.(Math.max(1, deadlineAt - deps.now().getTime()))
         .catch((error: Error) => [error.message]);
     problems.push(...(assets ?? []));
     return problems.length > 0
@@ -529,6 +533,12 @@ export type TrialResult = {
     error: string | null;
     stopped: string | null;
     versions: Record<string, string>;
+    nativeIdentity?: {
+        launcherPid: number;
+        piPid: number;
+        launcherStartedAt: string;
+        piStartedAt: string;
+    };
     model: string;
     metadata: Metadata | null;
     accounts: Account[];
@@ -596,7 +606,7 @@ export type TrialResult = {
 };
 
 const NOT_RUN =
-    "Not run: preflight did not start native Pi or make a model request.";
+    "Not run: native Pi accepted no kickoff and made no model request.";
 const NOTE =
     "Live and model-driven: Pi chose every call. The first partial " +
     "candidate and its checkpoints are declared runner fault injection, " +
@@ -712,6 +722,7 @@ class Trial {
     private piQuietSince: { calls: number; at: number } | null = null;
     private readShape: string | null = null;
     private cleanupUntil: number | null = null;
+    private piIdentity: TrialResult["nativeIdentity"] | null = null;
 
     constructor(
         readonly args: TrialArgs,
@@ -861,7 +872,10 @@ class Trial {
         result.metadata = await deps
             .metadata(this.remaining())
             .catch(() => null);
-        result.versions = await deps.versions().catch(() => ({}));
+        result.versions = await this.bounded(
+            deps.versions(this.remaining()),
+            this.remaining(),
+        );
         const [declared] = (await readPiCatalog()).filter(
             (m) => m.id === MODEL,
         );
@@ -1273,6 +1287,8 @@ class Trial {
             baseUrl: this.proxy?.baseUrl,
             args: [],
             steward: layout.registry,
+            stewardDeadlineAt: new Date(this.deadline).toISOString(),
+            launchRecord: join(layout.run, "pi-launch.json"),
         };
         const planPath = join(layout.run, "plan.json");
         await writeFile(planPath, JSON.stringify(plan), { mode: 0o600 });
@@ -1302,19 +1318,50 @@ class Trial {
                 process_info?: { foreground_process_group_id?: unknown };
             }
         )?.process_info?.foreground_process_group_id;
-        const live = processReply.ok && typeof pgid === "number" && pgid > 0;
-        await this.event("pi", { pane, banner: seen, live });
+        const identity =
+            (await this.deps.nativePiIdentity?.(
+                join(layout.run, "pi-launch.json"),
+            )) ?? null;
+        this.piIdentity = identity;
+        if (identity) this.result.nativeIdentity = identity;
+        const groupMatches =
+            identity !== null &&
+            (pgid === identity.launcherPid || pgid === identity.piPid);
+        const live =
+            processReply.ok &&
+            groupMatches &&
+            (await this.nativePiAlive(identity));
+        await this.event("pi", {
+            pane,
+            banner: seen,
+            live,
+            processGroup: typeof pgid === "number" ? pgid : null,
+            launcherPid: identity?.launcherPid ?? null,
+            piPid: identity?.piPid ?? null,
+        });
         if (!seen || !live) {
             throw new Error(
                 "native Pi was not observed ready and alive; no kickoff sent",
             );
         }
-        this.result.kind = "model-driven";
-        this.result.note = NOTE;
         await this.type(
             kickoff(this.briefs, this.result.fixtureRevision ?? ""),
         );
+        this.result.kind = "model-driven";
+        this.result.note = NOTE;
         await this.event("kickoff", {});
+    }
+
+    async nativePiAlive(
+        identity: TrialResult["nativeIdentity"] | null = this.piIdentity,
+    ): Promise<boolean> {
+        if (!identity) return false;
+        return (
+            (await this.deps.alive(
+                identity.launcherPid,
+                identity.launcherStartedAt,
+            )) && (await this.deps.alive(identity.piPid, identity.piStartedAt))
+        );
     }
 
     async paneText(pane: string, lines = 60): Promise<string> {
@@ -1333,6 +1380,11 @@ class Trial {
     // A turn typed into Pi's editor: the text, then Enter.
     async type(text: string) {
         this.requireTime("Pi prompt");
+        if (!(await this.nativePiAlive())) {
+            throw new Error(
+                "native Pi was not observed ready and alive; no kickoff sent",
+            );
+        }
         const pane = this.piPane as string;
         this.result.prompts.push(text);
         const sent = await this.herdr(["pane", "send-text", pane, text]);
@@ -1340,6 +1392,11 @@ class Trial {
             throw new Error(`Pi prompt text: exit ${sent.code}`);
         await this.deps.sleep(Math.min(500, this.remaining()));
         this.requireTime("Pi Enter");
+        if (!(await this.nativePiAlive())) {
+            throw new Error(
+                "native Pi was not observed ready and alive; no kickoff sent",
+            );
+        }
         const entered = await this.herdr(["pane", "send-keys", pane, "enter"]);
         if (entered.code !== 0)
             throw new Error(`Pi Enter: exit ${entered.code}`);
@@ -1372,6 +1429,7 @@ class Trial {
                 registryDigest: this.registryDigest.replace("sha256:", ""),
                 fleetId: this.fleetId,
                 fixtureRoot: this.registryFixtureRoot,
+                deadlineAt: new Date(this.deadline).toISOString(),
                 controller,
                 operation,
             },
@@ -1626,12 +1684,14 @@ class Trial {
                             occupant: task.occupant,
                         },
                         Math.min(15_000, this.deadline - this.now()),
+                        this.deadline,
                     )
                     .catch(() => null);
                 if (sent?.code === 9) {
                     guardRefused = true;
                     break;
                 }
+                if (sent?.code === 10) break;
                 await this.deps.sleep(Math.min(1000, this.remaining()));
                 this.requireTime("worker interruption");
                 if (task.occupant.kind === "process") {

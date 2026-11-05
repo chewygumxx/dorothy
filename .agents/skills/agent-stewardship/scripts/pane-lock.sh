@@ -46,6 +46,45 @@ lock_pane() {
     flock 9 || die 1 "cannot lock pane $1"
 }
 
+# deadline_* implement the native trial's owner epoch in milliseconds.
+# No deadline leaves ordinary sends unchanged. Exit 10 is before a write;
+# send-prompt uses 11 after text, where delivery is uncertain.
+deadline_remaining() {
+    [ -n "${deadline_at:-}" ] || return 1
+    now_ms=$(date +%s%3N) || die 10 'cannot read the trial clock'
+    case $now_ms in *[!0-9]* | '') die 10 'cannot read the trial clock' ;; esac
+    printf '%s\n' "$((deadline_at - now_ms))"
+}
+
+deadline_check() {
+    [ -n "${deadline_at:-}" ] || return 0
+    left=$(deadline_remaining) || die "$1" 'invalid trial deadline'
+    [ "$left" -gt 0 ] || die "$1" 'trial deadline expired'
+}
+
+deadline_lock_wait() {
+    left=$(deadline_remaining) || die 10 'invalid trial deadline'
+    [ "$left" -gt 0 ] || die 10 'trial deadline expired'
+    printf '%s\n' "$(((left + 999) / 1000))"
+}
+
+deadline_pause() {
+    code=$1 pause=$2
+    [ -n "${deadline_at:-}" ] || {
+        sleep "$pause"
+        return
+    }
+    deadline_check "$code"
+    left=$(deadline_remaining) || die "$code" 'invalid trial deadline'
+    case $pause in *[!0-9.]* | '') die 1 'invalid send pause' ;; esac
+    whole=${pause%%.*}
+    [ -n "$whole" ] || whole=0
+    needed=$((whole * 1000))
+    [ "$pause" = "$whole" ] || needed=$((needed + 1000))
+    [ "$needed" -lt "$left" ] || die "$code" 'trial deadline expires during the send pause'
+    sleep "$pause"
+}
+
 # agent_field <agent> <jq filter on the agent>: fails for an absent
 # agent, whose reply is an error without a result.
 agent_field() {

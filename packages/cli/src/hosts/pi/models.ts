@@ -52,6 +52,7 @@ export type PiLaunchManifest = {
         registryDigest: string;
         fleetId: string;
         fixtureRoot: string;
+        deadlineAt?: string;
     };
 };
 

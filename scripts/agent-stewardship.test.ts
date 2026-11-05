@@ -74,6 +74,7 @@ case "$1 $2" in
 "pane send-text")
     [ -e "$STUB/fail-text" ] && exit 1
     [ -e "$STUB/fail-instructions" ] && [ "$4" != "/compact " ] && exit 1
+    [ -e "$STUB/expire-on-text" ] && touch "$STUB/expired"
     ;;
 "pane send-keys") [ -e "$STUB/fail-keys" ] && exit 1 ;;
 esac
@@ -471,6 +472,35 @@ describe("send-prompt.sh, guarded", () => {
         }
         expect(await calls()).toEqual([]);
     });
+
+    it("refuses an expired deadline before writing text", async () => {
+        const { code } = await run(
+            send,
+            ["--from", "a", "--deadline-at", "1", "bob"],
+            "hi",
+        );
+        expect(code).toBe(10);
+        expect(await mutations()).toEqual([]);
+    });
+
+    it("never writes Enter after expiry once text may have landed", async () => {
+        await touch("expire-on-text");
+        const date = join(root, "bin", "date");
+        await writeFile(
+            date,
+            `#!/bin/sh\nif [ "\${1:-}" = "+%s%3N" ]; then\n  if [ -e "$STUB/expired" ]; then echo 2000; else echo 1000; fi\nelse\n  exec /bin/date "$@"\nfi\n`,
+        );
+        await chmod(date, 0o755);
+        const { code } = await run(
+            send,
+            ["--from", "a", "--deadline-at", "1500", "bob"],
+            "hi",
+        );
+        expect(code).toBe(11);
+        expect(await mutations()).toEqual([
+            ["send-text", "w1:p2", "[from a] hi"],
+        ]);
+    });
 });
 
 describe("send-interrupt.sh", () => {
@@ -536,6 +566,50 @@ describe("send-interrupt.sh", () => {
         const { code } = await finish(waiting);
         expect(code).toBe(8);
         expect(await writes()).toEqual([]);
+    });
+
+    it("refuses an expired deadline before the interrupt key", async () => {
+        const { code } = await run(interrupt, [
+            ...guarded,
+            "--deadline-at",
+            "1",
+            "bob",
+        ]);
+        expect(code).toBe(10);
+        expect(await mutations()).toEqual([]);
+    });
+
+    it("caps the pane-lock wait by the absolute deadline", async () => {
+        const release = await holdLock();
+        const date = join(root, "bin", "date");
+        await writeFile(
+            date,
+            `#!/bin/sh\nif [ "\${1:-}" = "+%s%3N" ]; then echo 1000; else exec /bin/date "$@"; fi\n`,
+        );
+        await chmod(date, 0o755);
+        const flock = join(root, "bin", "flock");
+        await writeFile(
+            flock,
+            `#!/bin/sh\n${logging}\nexec ${Bun.which("flock")} "$@"\n`,
+        );
+        await chmod(flock, 0o755);
+        const { code } = await run(interrupt, [
+            ...guarded,
+            "--lock-wait",
+            "60",
+            "--deadline-at",
+            "1500",
+            "bob",
+        ]);
+        await release();
+        expect(code).toBe(7);
+        expect(await mutations()).toEqual([]);
+        expect((await calls()).find((call) => call[0] === "flock")).toEqual([
+            "flock",
+            "-w",
+            "1",
+            "9",
+        ]);
     });
 
     it("guards a deliberate ctrl+c by session, not terminal alone", async () => {

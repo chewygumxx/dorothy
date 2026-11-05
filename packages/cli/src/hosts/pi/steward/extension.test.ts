@@ -615,6 +615,28 @@ describe("a stewardship run", () => {
         expect(pi.statuses.at(-1)).toBe("steward: t1 reported");
     });
 
+    it("refuses an expired launch deadline before a dispatch helper", async () => {
+        const deadlineAt = new Date(Date.now() - 1000).toISOString();
+        const pi = await load({
+            manifest: {
+                steward: {
+                    registry: fleet.path,
+                    deadlineAt,
+                } as PiLaunchManifest["steward"],
+            },
+        });
+        const result = await dispatch(
+            pi,
+            "expired",
+            fleet.workers[0]?.id as string,
+        );
+        expect(result.details.code).toBe("STEWARD_DEADLINE");
+        expect(
+            (await helperCalls()).filter((call) => call.kind === "dispatch"),
+        ).toEqual([]);
+        expect(await sends()).toEqual([]);
+    });
+
     it("leaves a killed helper's send unknown, and never resends it", async () => {
         const pi = await load({
             stewardOptions: { deadlines: { dispatch: 1500 } },

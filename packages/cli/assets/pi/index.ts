@@ -88,6 +88,7 @@ export type PiManifest = {
         registryDigest: string;
         fleetId: string;
         fixtureRoot: string;
+        deadlineAt?: string;
     };
 };
 
@@ -140,7 +141,10 @@ function sound(value: unknown): value is PiManifest {
                 m.steward.registry.startsWith("/") &&
                 typeof m.steward.registryDigest === "string" &&
                 typeof m.steward.fleetId === "string" &&
-                typeof m.steward.fixtureRoot === "string")) &&
+                typeof m.steward.fixtureRoot === "string" &&
+                (m.steward.deadlineAt === undefined ||
+                    (typeof m.steward.deadlineAt === "string" &&
+                        Number.isFinite(Date.parse(m.steward.deadlineAt)))))) &&
         typeof m.helperEnv === "object" &&
         m.helperEnv !== null &&
         Object.values(m.helperEnv).every((item) => typeof item === "string")

@@ -34,9 +34,11 @@
 # an agent in another pane, --require-idle one not idle, each checked
 # again once the pane's lock is held. --expect-session <id> or
 # --expect-process <pid> <boot:start> pins its real occupant there too.
+# --deadline-at <epoch-ms> caps lock/pause and checks before each write.
 #
 # Exit: 2 usage, 3 agent blocked, 4 agent absent, 5 agent in another
-# pane, 6 agent not idle, 9 another occupant, 1 other failure.
+# pane, 6 agent not idle, 9 another occupant, 10 expired before text,
+# 11 expired after text (uncertain), 1 other failure.
 
 set -eu
 
@@ -87,6 +89,7 @@ idle=
 session=
 process=
 started=
+deadline_at=
 while [ $# -gt 0 ]; do
     case $1 in
     --from | --at | --in | --deliver | --expect-pane)
@@ -105,6 +108,12 @@ while [ $# -gt 0 ]; do
         valid "$2" && session=$2
         shift 2
         ;;
+    --deadline-at)
+        [ $# -ge 2 ] && [ -n "$2" ] || usage
+        case $2 in *[!0-9]* | '' | 0) usage ;; esac
+        deadline_at=$2
+        shift 2
+        ;;
     --expect-process)
         [ $# -ge 3 ] && [ -n "$2" ] && [ -n "$3" ] || usage
         case $2 in *[!0-9]* | '' | 0) usage ;; esac
@@ -120,7 +129,7 @@ while [ $# -gt 0 ]; do
 done
 
 # The guards are for a send now alone, and an occupant needs its pane.
-[ -z "$expect$idle$session$process$started" ] ||
+[ -z "$expect$idle$session$process$started$deadline_at" ] ||
     [ -z "$at$span$deliver" ] || usage
 [ -z "$session$process$started" ] || [ -n "$expect" ] || usage
 [ -z "$session" ] || [ -z "$process$started" ] || usage
@@ -198,10 +207,16 @@ esac
 if [ -z "$at$span" ]; then
     # The pane is needed for its lock, and the status is read once the
     # lock is held, as a send ahead of this one may have left it blocked.
+    deadline_check 10
     pane=$(agent_pane "$agent") || die 4 "agent $agent is absent"
     [ -z "$expect" ] || [ "$pane" = "$expect" ] ||
         die 5 "agent $agent is in pane $pane, not $expect"
-    lock_pane "$pane"
+    if [ -n "$deadline_at" ]; then
+        lock_pane "$pane" "$(deadline_lock_wait)"
+    else
+        lock_pane "$pane"
+    fi
+    deadline_check 10
     if [ -z "$expect$idle" ]; then
         status=$(agent_status "$agent") || die 4 "agent $agent is absent"
     else
@@ -216,10 +231,12 @@ if [ -z "$at$span" ]; then
     [ -z "$idle" ] || [ "$status" = idle ] ||
         die 6 "agent $agent is $status, not idle"
     occupant_guard "$agent" "$pane" "$session" "$process" "$started"
+    deadline_check 10
     # The label begins the text, so a message of `-rf` is never an option.
     herdr pane send-text "$pane" "[from $from] $message" >/dev/null 2>&1 ||
         die 1 "cannot write to pane $pane"
-    sleep "$pause"
+    deadline_pause 11 "$pause"
+    deadline_check 11
     herdr pane send-keys "$pane" enter >/dev/null 2>&1 ||
         die 1 "text written to pane $pane, enter failed"
     exit 0

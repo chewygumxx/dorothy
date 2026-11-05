@@ -44,13 +44,23 @@ async function binaryPath(path: string): Promise<string> {
     }
 }
 
-async function checkNode(node: string, env: Env): Promise<void> {
+async function checkNode(
+    node: string,
+    env: Env,
+    timeoutMs?: number,
+): Promise<void> {
     try {
         const child = Bun.spawn([node, "--version"], {
             env,
             stdin: "ignore",
             stdout: "pipe",
             stderr: "ignore",
+            ...(timeoutMs === undefined
+                ? {}
+                : {
+                      timeout: Math.max(1, timeoutMs),
+                      killSignal: "SIGKILL" as const,
+                  }),
         });
         const [output, code] = await Promise.all([
             new Response(child.stdout).text(),
@@ -74,6 +84,7 @@ async function checkNode(node: string, env: Env): Promise<void> {
 export async function resolvePiRuntime(
     cliDir: string,
     env: Env,
+    timeoutMs?: number,
 ): Promise<PiRuntime> {
     const manifestPath = join(cliDir, "package.json");
     const manifest = await metadata(manifestPath, "pi_dependency_pin");
@@ -98,6 +109,6 @@ export async function resolvePiRuntime(
     }
     const node = Bun.which("node", { PATH: env.PATH ?? "" });
     if (!node) throw new Error("pi_node_missing");
-    await checkNode(node, env);
+    await checkNode(node, env, timeoutMs);
     return { command: [node, binary], version: VERSION };
 }

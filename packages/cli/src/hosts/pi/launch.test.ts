@@ -23,6 +23,7 @@ import { dirname, join } from "node:path";
 import type { Env, RouteEntry, Routing } from "@dorothy/core";
 import { type PiDeps, type PiOptions, runPi } from "./launch.js";
 import { type PiLaunchManifest, sessionDirFor } from "./models.js";
+import { nativeSpawn } from "./native-launch.js";
 import { writeRegistry } from "./steward/fixtures.js";
 import {
     EXTENSION,
@@ -528,6 +529,25 @@ describe("Pi's sessions", () => {
     });
 });
 
+describe("the native launch record", () => {
+    it("binds the exact spawned Pi pid to its launcher", async () => {
+        const roots = await piRoots();
+        opened.push(roots);
+        const launchRecord = join(roots.root, "pi-launch.json");
+        const child = {
+            pid: 41234,
+            exited: Promise.resolve(0),
+            kill: () => {},
+        };
+        const spawn = nativeSpawn({ launchRecord }, () => child);
+        expect(spawn(["pi"], {}, roots.project)).toBe(child);
+        expect(JSON.parse(await readFile(launchRecord, "utf8"))).toEqual({
+            launcherPid: process.pid,
+            piPid: 41234,
+        });
+    });
+});
+
 describe("dorothy --pi --steward", () => {
     const HERDR_STATE = join(
         import.meta.dir,
@@ -552,12 +572,19 @@ describe("dorothy --pi --steward", () => {
     it("loads herdr's state, the skill and the registry once", async () => {
         const r = await rig();
         const fleet = await registry();
-        expect(await r.run({ steward: fleet.path })).toBe(17);
+        const deadlineAt = "2026-11-05T12:00:00.000Z";
+        expect(
+            await r.run({
+                steward: fleet.path,
+                ...({ stewardDeadlineAt: deadlineAt } as Partial<PiOptions>),
+            }),
+        ).toBe(17);
         const [call] = r.calls;
         expect(call?.manifest.steward).toMatchObject({
             registry: fleet.path,
             fleetId: fleet.raw.fleetId,
             fixtureRoot: fleet.fixtureRoot,
+            deadlineAt,
         });
         expect(call?.manifest.steward?.registryDigest).toMatch(
             /^[a-f0-9]{64}$/,
