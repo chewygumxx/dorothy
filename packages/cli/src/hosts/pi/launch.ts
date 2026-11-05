@@ -47,8 +47,17 @@ import {
 } from "./models.js";
 import { type PiProfile, piProfileArgs, preparePiProfile } from "./profile.js";
 import { type PiRuntime, resolvePiRuntime } from "./runtime.js";
+import { readFleet } from "./steward/registry.js";
 
-export type PiOptions = { args: string[]; model: string | null; dump: boolean };
+export type PiOptions = {
+    args: string[];
+    model: string | null;
+    dump: boolean;
+    // `--steward <registry>`, as the user gave it.
+    steward: string | null;
+    // Native trial wall, copied to its private helper; never a model field.
+    stewardDeadlineAt?: string;
+};
 
 export type PiDeps = {
     env: Env;
@@ -66,12 +75,21 @@ export type PiDeps = {
     persona?: string;
     launchId?: () => string;
     signals?: Pick<NodeJS.EventEmitter, "on" | "off">;
+    // The clock a registry's expiry is read against.
+    now?: () => Date;
 };
 
 const CLI_DIR = resolve(import.meta.dir, "../../..");
 const EXTENSION = join(CLI_DIR, "assets/pi/index.ts");
-// The skills she declares for Pi: none yet.
+// The skills she declares for Pi: none but stewardship's, with --steward.
 const SKILLS: readonly string[] = [];
+const STEWARD_SKILL = join(CLI_DIR, "assets/pi/stewardship/SKILL.md");
+// herdr's own Pi state extension, vendored at the declared pin
+// (assets/pi/vendor/herdr/PROVENANCE.md), loaded with --steward alone.
+const HERDR_STATE = join(
+    CLI_DIR,
+    "assets/pi/vendor/herdr/herdr-agent-state.ts",
+);
 
 // Pi 1.5.0's options that take the next word whatever it is, when there is
 // one (dist/cli/args.js parseArgs).
@@ -226,6 +244,13 @@ export async function runPi(options: PiOptions, deps: PiDeps): Promise<number> {
     } catch {
         return fail(`pi_cwd: ${shell.cwd ?? deps.cwd}`);
     }
+    if (options.steward !== null && native.private) {
+        write(
+            "dorothy: --steward needs a recorded session: a run without one " +
+                "cannot be recovered\n",
+        );
+        return 2;
+    }
     const root = piSessionRoot(env);
     for (const { option, value } of native.sessions) {
         if (!(await insideRoot(value, cwd, root, env.HOME ?? ""))) {
@@ -235,6 +260,15 @@ export async function runPi(options: PiOptions, deps: PiDeps): Promise<number> {
         }
     }
 
+    if (
+        options.stewardDeadlineAt !== undefined &&
+        (typeof options.stewardDeadlineAt !== "string" ||
+            !Number.isFinite(Date.parse(options.stewardDeadlineAt)) ||
+            new Date(options.stewardDeadlineAt).toISOString() !==
+                options.stewardDeadlineAt)
+    ) {
+        return fail("invalid steward deadline");
+    }
     let selection: ReturnType<typeof selectPiModel>;
     try {
         const routing = await deps.loadRouting();
@@ -245,6 +279,37 @@ export async function runPi(options: PiOptions, deps: PiDeps): Promise<number> {
         );
     } catch (error) {
         return fail(describe(error));
+    }
+    // The registry is checked as the helper will check it, before any
+    // secret is decrypted; it names no credential.
+    let registry: string | null = null;
+    let steward: PiLaunchManifest["steward"];
+    if (options.steward !== null && !native.help) {
+        if (process.platform !== "linux") {
+            return fail(`steward_platform: ${process.platform}`);
+        }
+        try {
+            // As given, a link not followed: the registry must be a file.
+            registry = resolve(cwd, options.steward);
+            const frozen = await readFleet(
+                registry,
+                (deps.now ?? (() => new Date()))(),
+            );
+            steward = {
+                registry,
+                fleetId: frozen.fleetId,
+                fixtureRoot: frozen.fixtureRoot,
+                registryDigest: frozen.sourceDigest,
+                ...(options.stewardDeadlineAt
+                    ? { deadlineAt: options.stewardDeadlineAt }
+                    : {}),
+            };
+        } catch (error) {
+            const code = (error as { code?: unknown }).code;
+            return fail(
+                `steward_registry: ${typeof code === "string" ? code : "REGISTRY_UNREADABLE"}: ${options.steward}`,
+            );
+        }
     }
     const { entry, models } = selection;
     const keyName = entry.key;
@@ -287,9 +352,10 @@ export async function runPi(options: PiOptions, deps: PiDeps): Promise<number> {
         self: [...deps.self],
         entry,
         models,
-        extensions: [EXTENSION],
-        skills: [...SKILLS],
+        extensions: registry === null ? [EXTENSION] : [EXTENSION, HERDR_STATE],
+        skills: registry === null ? [...SKILLS] : [...SKILLS, STEWARD_SKILL],
         helperEnv: helperEnvOf(passed, env),
+        ...(registry === null || !steward ? {} : { steward }),
     };
     let profile: PiProfile;
     try {

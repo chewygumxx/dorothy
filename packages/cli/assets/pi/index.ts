@@ -31,6 +31,9 @@
 // - Her identity, the persona file the manifest names, and her
 //   capabilities are sections of Pi's system prompt beside Pi's own, so
 //   a discovered APPEND_SYSTEM.md still applies.
+// - With a registry in the manifest (`dorothy --pi --steward`), her worker
+//   tools, their status and the stewardship part of her capabilities
+//   (steward.ts); without one, none of them, and nothing asks for herdr.
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -43,6 +46,11 @@ import type {
 import { deliverMemory } from "./context.js";
 import { hookInvoker } from "./helper.js";
 import { registerProvider } from "./provider.js";
+import {
+    registerStewardship,
+    STEWARD_TOOLS,
+    type StewardOptions,
+} from "./steward.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -75,7 +83,13 @@ export type PiManifest = {
     skills: string[];
     helperEnv: Env;
     persona?: string;
-    registryPath?: string;
+    steward?: {
+        registry: string;
+        registryDigest: string;
+        fleetId: string;
+        fixtureRoot: string;
+        deadlineAt?: string;
+    };
 };
 
 export const MEMORY_SERVER = "dorothy-memory";
@@ -122,6 +136,15 @@ function sound(value: unknown): value is PiManifest {
                     number(model.price?.cacheRead)),
         ) &&
         (m.persona === undefined || typeof m.persona === "string") &&
+        (m.steward === undefined ||
+            (typeof m.steward?.registry === "string" &&
+                m.steward.registry.startsWith("/") &&
+                typeof m.steward.registryDigest === "string" &&
+                typeof m.steward.fleetId === "string" &&
+                typeof m.steward.fixtureRoot === "string" &&
+                (m.steward.deadlineAt === undefined ||
+                    (typeof m.steward.deadlineAt === "string" &&
+                        Number.isFinite(Date.parse(m.steward.deadlineAt)))))) &&
         typeof m.helperEnv === "object" &&
         m.helperEnv !== null &&
         Object.values(m.helperEnv).every((item) => typeof item === "string")
@@ -194,12 +217,19 @@ const isHers = (name: string) =>
     name.replaceAll("-", "_") === MEMORY_SERVER.replaceAll("-", "_");
 
 // Her capabilities, as a section of Pi's system prompt: the Markdown
-// after its house header.
-function capabilities(): string {
+// after each file's house header, stewardship's only where a registry
+// gives her workers.
+function capabilities(steward: boolean): string {
     const here = dirname(fileURLToPath(import.meta.url));
-    const text = readFileSync(join(here, "capabilities.md"), "utf8");
-    const end = text.indexOf("-->");
-    return (end < 0 ? text : text.slice(end + 3)).trim();
+    const body = (file: string) => {
+        const text = readFileSync(join(here, file), "utf8");
+        const end = text.indexOf("-->");
+        return (end < 0 ? text : text.slice(end + 3)).trim();
+    };
+    const memory = body("capabilities.md");
+    return steward
+        ? `${memory}\n\n${body("stewardship/capabilities.md")}`
+        : memory;
 }
 
 // Her identity, from the persona file the manifest names: a section of
@@ -214,7 +244,10 @@ function identity(path: string | undefined): string {
     }
 }
 
-export function dorothyExtension(env: Env): (pi: ExtensionAPI) => void {
+export function dorothyExtension(
+    env: Env,
+    options: { steward?: StewardOptions } = {},
+): (pi: ExtensionAPI) => void {
     return (pi) => {
         const path = env.DOROTHY_PI_MANIFEST;
         const manifest = readManifest(path);
@@ -223,7 +256,9 @@ export function dorothyExtension(env: Env): (pi: ExtensionAPI) => void {
             takeKey(env, path ?? "", manifest.entry.key ?? ""),
         );
         const persona = identity(manifest.persona);
-        const prompt = capabilities();
+        const prompt = capabilities(manifest.steward !== undefined);
+        // Her own worker tools, with stewardship, are her loadout.
+        const own = new Set<string>(manifest.steward ? STEWARD_TOOLS : []);
         const agentDir =
             env.PI_CODING_AGENT_DIR || join(env.HOME ?? "", ".pi", "agent");
         const profileFile = join(agentDir, "mcp.json");
@@ -250,6 +285,18 @@ export function dorothyExtension(env: Env): (pi: ExtensionAPI) => void {
             hookInvoker(manifest, dirname(dirname(path ?? ""))),
             (ctx, code) => notify(ctx, `Dorothy's memory: ${code}`, "warning"),
         );
+
+        const { steward } = manifest;
+        if (steward)
+            registerStewardship(
+                pi,
+                { ...manifest, steward },
+                {
+                    ...options.steward,
+                    cwd: dirname(dirname(path ?? "")),
+                    notify: (ctx, text) => notify(ctx, text, "warning"),
+                },
+            );
 
         // Refused before any connection: declining trust keeps a project's
         // server of her name from loading at all.
@@ -308,7 +355,11 @@ export function dorothyExtension(env: Env): (pi: ExtensionAPI) => void {
                     .map((server) => `MCP server ${server.name}`),
                 ...pi
                     .getAllTools()
-                    .filter((tool) => tool.sourceInfo.source !== "builtin")
+                    .filter(
+                        (tool) =>
+                            tool.sourceInfo.source !== "builtin" &&
+                            !own.has(tool.name),
+                    )
                     .map((tool) => `tool ${tool.name}`),
                 ...pi
                     .getActiveTools()

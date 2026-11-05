@@ -38,7 +38,7 @@ const GRAPH: Record<string, string[]> = {
 
 const ENTRIES: Record<string, string[]> = {
     agent: ["."],
-    cli: [],
+    cli: ["./scrub"],
     core: ["."],
     eval: [],
     gateway: ["."],
@@ -52,6 +52,7 @@ const ENTRIES: Record<string, string[]> = {
         "./evaluation",
         "./host-hook",
         "./recall-server",
+        "./scrub",
         "./service",
     ],
     tui: [".", "./editor"],

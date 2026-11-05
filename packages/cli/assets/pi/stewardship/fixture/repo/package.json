@@ -1,0 +1,9 @@
+{
+    "name": "fixture-slug",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "check": "bun src/example.ts"
+    }
+}

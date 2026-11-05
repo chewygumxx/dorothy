@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-04
+mtime: 2026-11-06
 spdx: GPL-3.0-only
 title: Decisions
 description: >-
@@ -623,8 +623,10 @@ Which host receives what, and what has been run against it, is on
   fixtures rerun, one of which reads Pi's screen text.
 - **Standing**: current. It supersedes the earlier exclusion for Pi as a
   host; the historical minutes stand unchanged. Delivery merged in #129;
-  stewardship is next
-  ([harnesses](./profiles/harnesses.md#pi)).
+  stewardship's runner is built and its bounded native run passed at
+  `b38393c`, with its declared deviations and limits
+  ([harnesses](./profiles/harnesses.md#pi)). The phase awaits the
+  controller's merge and post-merge roadmap revision.
 - **Sources**:
   [Pi delivery spec](../specs/2026-11-03_pi-delivery.md#status-and-intent),
   [stewardship research](../notes/2026-11-03_pi-stewardship.md),
@@ -650,6 +652,56 @@ Which host receives what, and what has been run against it, is on
   [spec](../specs/2026-11-03_pi-delivery.md#launch-and-profile-ownership),
   [the extension's guide](../../packages/cli/assets/pi/AGENTS.md#files),
   [rulings](../reports/2026-11-04_pi-delivery-rulings.md#rulings).
+
+### A Pi reply ends at its DONE marker, not only at EOF
+
+- **Context**: A live supplemental Pi turn completed and streamed usage
+  and `[DONE]`, but the probe recorded `stream cut: client gone`, kept
+  the maximum reservation and stopped. Pi returns on `[DONE]` and may
+  cancel before the upstream HTTP body closes.
+- **Alternatives**: Settle only at HTTP EOF, which raced Pi's cancel and
+  lost the parsed reply. Trust any `[DONE]`, which would call a reply
+  incomplete in usage or finish complete.
+- **Choice**: The trial's runner settles at `[DONE]` after validating a
+  finish marker and usage. A true cut, a timeout, missing usage or a
+  missing finish marker keeps the reservation and stops later calls with
+  unknown cost.
+- **Reason**: `[DONE]` is the protocol's explicit end, so it must win the
+  race with a client that returns on it, without weakening accounting.
+- **Cost**: A provider that sends finish and usage but no `[DONE]` still
+  settles at ordinary EOF; one that sends neither is treated as cut.
+- **Standing**: current; fixed with a regression in the shared proxy.
+- **Sources**:
+  [trial
+  report](../reports/2026-11-03_pi-stewardship.md#the-proxy-lifecycle-bug),
+  [proxy guide](../../packages/cli/src/hosts/AGENTS.md#files).
+
+### A steward pins an occupant, not a terminal
+
+- **Context**: Herdr reuses a workspace terminal for a new agent. A
+  same-pane RED sent successfully after only `agent_session` changed.
+  Fresh Codex has no session, so pane, cwd and `terminal_id` cannot
+  distinguish its replacement.
+- **Alternatives**: Keep terminal-only matching, which permits stale
+  mutation; require sessions, which makes fresh Codex unusable; or use
+  the observed foreground group leader plus Linux boot:start fallback.
+- **Choice**: Store session-first/process-second occupant identity in
+  ledger schema 2. Repeat it under the sender/interrupter pane lock.
+  Migrated rows without an occupant remain readable but cannot mutate.
+  Native manifests also pin registry SHA-256, fleet id and fixture root.
+- **Reason**: A live agent can change while every old address field stays
+  equal. A process/start pin works for a fresh worker without claiming a
+  session Herdr did not return. Exact registry identity catches benign
+  concurrent writes as well as same-worker tampering.
+- **Cost**: A transient foreground process requires the group leader, not
+  an exactly-one-process assumption. Interactive home reset and Codex's
+  daemon require post-shell verification and `--no-daemon`. This is an
+  identity check, not OS confinement against same-user code.
+- **Standing**: current; covered by same-terminal and locked-recheck
+  regressions, plus native observation without inference.
+- **Sources**:
+  [trial report](../reports/2026-11-03_pi-stewardship.md),
+  [supplemental findings](../reports/2026-11-03_pi-stewardship/supplemental-live-findings.txt).
 
 ### The key reaches Pi's provider in memory alone
 

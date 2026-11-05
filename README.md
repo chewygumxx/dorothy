@@ -1,6 +1,6 @@
 ---
 ctime: 2026-09-29
-mtime: 2026-11-04
+mtime: 2026-11-06
 spdx: GPL-3.0-only
 title: "dorothy"
 description: "Conversational LLM interface"
@@ -463,6 +463,17 @@ and trust decisions there stay yours. Add `"pi"` to `[recording] hosts`
 for the sweep to catch up a session whose launcher was killed. The
 [verification report](./docs/reports/2026-11-03_pi-delivery.md) records
 what was tested, offline and against Featherless.
+
+`--steward <registry>` gives Pi the declared trial workers' tools, and a
+normal `--pi` needs neither herdr nor a worker login. The bounded
+stewardship trial's runner and offline tests are built, and its native
+mixed-worker run passed all eleven checks at `b38393c` in one controlled
+Linux API-backed cycle. Open-weight spending was authorized with an
+explicit numeric cap per run. The runner never copies a subscription
+credential; synthetic API-backed homes were a disclosed deviation. The
+separate production Pi smoke completed under isolated configuration. The
+[report](./docs/reports/2026-11-03_pi-stewardship.md) records the
+offline evidence, the proxy lifecycle fix and the bounded acceptance.
 
 ### Her memory as a service
 

@@ -912,12 +912,14 @@ describe("--pi", () => {
             args: [],
             model: null,
             dump: false,
+            steward: null,
         });
         expect(parseArgs(["--pi", "--dump"], false)).toEqual({
             kind: "pi",
             args: [],
             model: null,
             dump: true,
+            steward: null,
         });
         expect(
             parseArgs(
@@ -939,10 +941,49 @@ describe("--pi", () => {
             args: ["--resume", "--model", "--dump", "--", "a prompt"],
             model: "featherless:deepseek-ai/DeepSeek-V4.1-Flash-1017",
             dump: false,
+            steward: null,
         });
         expect(
             parseArgs(["--pi", "--model=fl:m", "--dump", "--", "-c"], false),
-        ).toEqual({ kind: "pi", args: ["-c"], model: "fl:m", dump: true });
+        ).toEqual({
+            kind: "pi",
+            args: ["-c"],
+            model: "fl:m",
+            dump: true,
+            steward: null,
+        });
+    });
+
+    it("reads --steward and its registry before --", () => {
+        expect(
+            parseArgs(
+                ["--pi", "--steward", "trial/registry.json", "--", "-c"],
+                false,
+            ),
+        ).toEqual({
+            kind: "pi",
+            args: ["-c"],
+            model: null,
+            dump: false,
+            steward: "trial/registry.json",
+        });
+        expect(
+            parseArgs(["--pi", "--steward=/r.json", "--model", "a:b"], false),
+        ).toEqual({
+            kind: "pi",
+            args: [],
+            model: "a:b",
+            dump: false,
+            steward: "/r.json",
+        });
+        // After --, it is Pi's word.
+        expect(parseArgs(["--pi", "--", "--steward", "x"], false)).toEqual({
+            kind: "pi",
+            args: ["--steward", "x"],
+            model: null,
+            dump: false,
+            steward: null,
+        });
     });
 
     it.each([
@@ -953,10 +994,25 @@ describe("--pi", () => {
         [["--pi", "--model", ":m"]],
         [["--pi", "--model", "a:b", "--model", "a:c"]],
         [["--pi", "--dump", "--dump"]],
+        [["--pi", "--steward"]],
+        [["--pi", "--steward", ""]],
+        [["--pi", "--steward", "a.json", "--steward", "b.json"]],
     ])("refuses %j", (argv) => {
         expect(parseArgs(argv, false)).toEqual({
             kind: "usage",
-            message: "--pi takes [--model <provider:id>] [--dump] [-- args...]",
+            message:
+                "--pi takes [--model <provider:id>] [--steward <registry>] " +
+                "[--dump] [-- args...]",
+        });
+    });
+
+    it("reads --pi-steward, which takes nothing", () => {
+        expect(parseArgs(["--pi-steward"], false)).toEqual({
+            kind: "pi-steward",
+        });
+        expect(parseArgs(["--pi-steward", "x"], false)).toEqual({
+            kind: "usage",
+            message: "--pi-steward takes no arguments",
         });
     });
 
@@ -969,9 +1025,9 @@ describe("--pi", () => {
     });
 
     it("lists --pi in the usage", () => {
-        expect(USAGE).toContain(
-            "dorothy --pi [--model <provider:id>] [--dump] [-- args...]",
-        );
+        expect(USAGE).toContain("dorothy --pi [--model <provider:id>]");
+        expect(USAGE).toContain("[--steward <registry>] [--dump]");
         expect(USAGE).toContain("dorothy --pi-hook");
+        expect(USAGE).toContain("dorothy --pi-steward");
     });
 });

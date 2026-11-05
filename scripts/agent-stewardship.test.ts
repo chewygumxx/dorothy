@@ -38,6 +38,7 @@ const scripts = join(
     "scripts",
 );
 const send = join(scripts, "send-prompt.sh");
+const interrupt = join(scripts, "send-interrupt.sh");
 const compact = join(scripts, "compact-self.sh");
 const job = join(scripts, "job.sh");
 const stopped = join(scripts, "job-stopped.sh");
@@ -58,12 +59,22 @@ case "$1 $2" in
     fi
     name=$(cat "$STUB/name.$3" 2>/dev/null || printf %s "$3")
     pane=$(cat "$STUB/pane.$3" 2>/dev/null || echo w1:p2)
-    printf '{"result":{"agent":{"name":"%s","pane_id":"%s","agent_status":"%s"}}}\\n' \\
-        "$name" "$pane" "$(cat "$STUB/status")"
+    term=$(cat "$STUB/terminal" 2>/dev/null || echo term_1)
+    session=$(cat "$STUB/session" 2>/dev/null || true)
+    if [ -n "$session" ]; then
+        session=$(printf ',"agent_session":{"agent":"claude","kind":"id","source":"herdr:claude","value":"%s"}' "$session")
+    fi
+    printf '{"result":{"agent":{"name":"%s","pane_id":"%s","agent_status":"%s","terminal_id":"%s"%s}}}\\n' \\
+        "$name" "$pane" "$(cat "$STUB/status")" "$term" "$session"
+    ;;
+"pane process-info")
+    pgid=$(cat "$STUB/pgid" 2>/dev/null || echo 0)
+    printf '{"result":{"process_info":{"foreground_process_group_id":%s}}}\\n' "$pgid"
     ;;
 "pane send-text")
     [ -e "$STUB/fail-text" ] && exit 1
     [ -e "$STUB/fail-instructions" ] && [ "$4" != "/compact " ] && exit 1
+    [ -e "$STUB/expire-on-text" ] && touch "$STUB/expired"
     ;;
 "pane send-keys") [ -e "$STUB/fail-keys" ] && exit 1 ;;
 esac
@@ -112,6 +123,13 @@ const sendsDir = () => join(root, "state", "dorothy-agents", "sends");
 const lockFile = () => join(root, "run", "dorothy-agents", "w1_p2.lock");
 const setStatus = (status: string) => writeFile(join(root, "status"), status);
 const touch = (name: string) => writeFile(join(root, name), "");
+const processStart = async (pid: number) => {
+    const boot = (
+        await readFile("/proc/sys/kernel/random/boot_id", "utf8")
+    ).trim();
+    const stat = await readFile(`/proc/${pid}/stat`, "utf8");
+    return `${boot}:${stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19]}`;
+};
 
 async function calls(): Promise<string[][]> {
     const raw = await readFile(join(root, "calls.log"), "utf8").catch(() => "");
@@ -127,6 +145,11 @@ async function writes(): Promise<string[][]> {
         .filter((call) => call[0] === "herdr" && call[1] === "pane")
         .map((call) => call.slice(2));
 }
+
+const mutations = async () =>
+    (await writes()).filter(
+        (call) => call[0] === "send-text" || call[0] === "send-keys",
+    );
 
 const start = (
     script: string,
@@ -266,6 +289,426 @@ describe("send-prompt.sh, now", () => {
         await holder.exited;
         expect(code).toBe(3);
         expect(await writes()).toEqual([]);
+    });
+});
+
+describe("send-prompt.sh, guarded", () => {
+    const guarded = ["--from", "a", "--expect-pane", "w1:p2", "--require-idle"];
+    const ready = ["--from", "a", "--expect-pane", "w1:p2", "--require-ready"];
+    const holdLock = async () => {
+        await mkdir(join(root, "run", "dorothy-agents"), { recursive: true });
+        const holder = Bun.spawn(
+            ["flock", lockFile(), "sh", "-c", "read -r _"],
+            { stdin: "pipe", stdout: "ignore", stderr: "ignore" },
+        );
+        await until(async () => {
+            const probe = Bun.spawn(["flock", "-n", lockFile(), "true"]);
+            return (await probe.exited) !== 0;
+        });
+        return async () => {
+            holder.stdin.write("\n");
+            holder.stdin.end();
+            await holder.exited;
+        };
+    };
+
+    it("sends to an idle agent in the expected pane, as a send now", async () => {
+        const { code } = await run(send, [...guarded, "bob"], "hi");
+        expect(code).toBe(0);
+        expect(await writes()).toEqual([
+            ["send-text", "w1:p2", "[from a] hi"],
+            ["send-keys", "w1:p2", "enter"],
+        ]);
+    });
+
+    it("accepts idle and done with --require-ready", async () => {
+        for (const status of ["idle", "done"]) {
+            await setStatus(status);
+            const { code } = await run(send, [...ready, "bob"], "hi");
+            expect(code).toBe(0);
+        }
+        expect(await mutations()).toHaveLength(4);
+    });
+
+    it("refuses unsafe states with --require-ready, sending nothing", async () => {
+        for (const status of ["working", "unknown"]) {
+            await setStatus(status);
+            const { code, err } = await run(send, [...ready, "bob"], "hi");
+            expect(code).toBe(6);
+            expect(err).toContain(status);
+        }
+        await setStatus("blocked");
+        expect((await run(send, [...ready, "bob"], "hi")).code).toBe(3);
+        expect(await writes()).toEqual([]);
+    });
+
+    it("rechecks and accepts done under the lock with --require-ready", async () => {
+        const release = await holdLock();
+        const waiting = start(send, [...ready, "bob"], "hi");
+        await Bun.sleep(300);
+        await setStatus("done");
+        await release();
+        const { code } = await finish(waiting);
+        expect(code).toBe(0);
+        expect(await mutations()).toHaveLength(2);
+    });
+
+    it("refuses an agent in another pane, exit 5, sending nothing", async () => {
+        await writeFile(join(root, "pane.bob"), "w1:p9");
+        const { code, err } = await run(send, [...guarded, "bob"], "hi");
+        expect(code).toBe(5);
+        expect(err).toContain("w1:p9");
+        expect(await writes()).toEqual([]);
+    });
+
+    it("refuses a pane that moved while it waited for the lock", async () => {
+        const release = await holdLock();
+        const waiting = start(send, [...guarded, "bob"], "hi");
+        await Bun.sleep(300);
+        expect(await writes()).toEqual([]);
+        await writeFile(join(root, "pane.bob"), "w1:p9");
+        await release();
+        const { code } = await finish(waiting);
+        expect(code).toBe(5);
+        expect(await writes()).toEqual([]);
+    });
+
+    it("refuses a working or unknown agent with --require-idle, exit 6", async () => {
+        for (const status of ["working", "unknown", "done"]) {
+            await setStatus(status);
+            const { code, err } = await run(send, [...guarded, "bob"], "hi");
+            expect(code).toBe(6);
+            expect(err).toContain(status);
+        }
+        expect(await writes()).toEqual([]);
+    });
+
+    it("still refuses a blocked agent with exit 3", async () => {
+        await setStatus("blocked");
+        const { code } = await run(send, [...guarded, "bob"], "hi");
+        expect(code).toBe(3);
+        expect(await writes()).toEqual([]);
+    });
+
+    it("rereads the state under the lock, refusing work begun meanwhile", async () => {
+        const release = await holdLock();
+        const waiting = start(send, [...guarded, "bob"], "hi");
+        await Bun.sleep(300);
+        await setStatus("working");
+        await release();
+        const { code } = await finish(waiting);
+        expect(code).toBe(6);
+        expect(await writes()).toEqual([]);
+    });
+
+    it("takes each flag alone", async () => {
+        await setStatus("working");
+        const pane = ["--from", "a", "--expect-pane", "w1:p2", "bob"];
+        expect((await run(send, pane, "hi")).code).toBe(0);
+        await setStatus("idle");
+        await writeFile(join(root, "pane.bob"), "w1:p9");
+        const idle = ["--from", "a", "--require-idle", "bob"];
+        expect((await run(send, idle, "hi")).code).toBe(0);
+        expect((await writes()).map((call) => call.slice(0, 2))).toEqual([
+            ["send-text", "w1:p2"],
+            ["send-keys", "w1:p2"],
+            ["send-text", "w1:p9"],
+            ["send-keys", "w1:p9"],
+        ]);
+    });
+
+    it("keeps a send now without the flags unguarded, as before", async () => {
+        await setStatus("working");
+        await writeFile(join(root, "pane.bob"), "w1:p9");
+        const { code } = await run(send, ["--from", "a", "bob"], "hi");
+        expect(code).toBe(0);
+        expect((await writes())[0]).toEqual([
+            "send-text",
+            "w1:p9",
+            "[from a] hi",
+        ]);
+    });
+
+    it("is immediate only: refused with --at, --in or --deliver", async () => {
+        for (const args of [
+            ["--from", "a", "--in", "2min", "--require-idle", "bob"],
+            [
+                "--from",
+                "a",
+                "--at",
+                "2099-01-01",
+                "--expect-pane",
+                "w1:p2",
+                "bob",
+            ],
+            ["--deliver", "bob-1", "--require-idle"],
+            ["--from", "a", "--in", "2min", "--require-ready", "bob"],
+            ["--deliver", "bob-1", "--require-ready"],
+            ["--expect-pane", "w1:p2", "--deliver", "bob-1"],
+        ]) {
+            const { code, err } = await run(send, args, "hi");
+            expect(code).toBe(2);
+            expect(err).toContain("usage");
+        }
+        expect(await calls()).toEqual([]);
+    });
+
+    it("refuses --require-idle and --require-ready together", async () => {
+        const { code, err } = await run(
+            send,
+            ["--from", "a", "--require-idle", "--require-ready", "bob"],
+            "hi",
+        );
+        expect(code).toBe(2);
+        expect(err).toContain("usage");
+        expect(await calls()).toEqual([]);
+    });
+
+    it("rechecks the pinned session under the pane lock", async () => {
+        await writeFile(join(root, "session"), "session-a");
+        const guardedSession = [
+            ...guarded,
+            "--expect-session",
+            "session-a",
+            "bob",
+        ];
+        expect((await run(send, guardedSession, "hi")).code).toBe(0);
+        const release = await holdLock();
+        const waiting = start(send, guardedSession, "hi");
+        await Bun.sleep(300);
+        await writeFile(join(root, "session"), "session-b");
+        await release();
+        const { code } = await finish(waiting);
+        expect(code).toBe(9);
+        expect((await mutations()).slice(2)).toEqual([]);
+    });
+
+    it("rechecks a process pin under the lock before writing", async () => {
+        const sleeper = Bun.spawn(["sleep", "30"]);
+        try {
+            await writeFile(join(root, "pgid"), String(sleeper.pid));
+            const startedAt = await processStart(sleeper.pid);
+            const args = [
+                ...guarded,
+                "--expect-process",
+                String(sleeper.pid),
+                startedAt,
+                "bob",
+            ];
+            expect((await run(send, args, "hi")).code).toBe(0);
+            const other = Bun.spawn(["sleep", "30"]);
+            try {
+                await writeFile(join(root, "pgid"), String(other.pid));
+                expect((await run(send, args, "hi")).code).toBe(9);
+                expect((await mutations()).slice(2)).toEqual([]);
+            } finally {
+                other.kill();
+                await other.exited;
+            }
+        } finally {
+            sleeper.kill();
+            await sleeper.exited;
+        }
+    });
+
+    it("refuses a pane id that is not a word", async () => {
+        for (const pane of ["-x", "w1 p2", ""]) {
+            const args = ["--from", "a", "--expect-pane", pane, "bob"];
+            expect((await run(send, args, "hi")).code).toBe(2);
+        }
+        expect(await calls()).toEqual([]);
+    });
+
+    it("refuses an expired deadline before writing text", async () => {
+        const { code } = await run(
+            send,
+            ["--from", "a", "--deadline-at", "1", "bob"],
+            "hi",
+        );
+        expect(code).toBe(10);
+        expect(await mutations()).toEqual([]);
+    });
+
+    it("never writes Enter after expiry once text may have landed", async () => {
+        await touch("expire-on-text");
+        const date = join(root, "bin", "date");
+        await writeFile(
+            date,
+            `#!/bin/sh\nif [ "\${1:-}" = "+%s%3N" ]; then\n  if [ -e "$STUB/expired" ]; then echo 2000; else echo 1000; fi\nelse\n  exec /bin/date "$@"\nfi\n`,
+        );
+        await chmod(date, 0o755);
+        const { code } = await run(
+            send,
+            ["--from", "a", "--deadline-at", "1500", "bob"],
+            "hi",
+        );
+        expect(code).toBe(11);
+        expect(await mutations()).toEqual([
+            ["send-text", "w1:p2", "[from a] hi"],
+        ]);
+    });
+});
+
+describe("send-interrupt.sh", () => {
+    const guarded = ["--expect-pane", "w1:p2", "--expect-terminal", "term_1"];
+    const holdLock = async () => {
+        await mkdir(join(root, "run", "dorothy-agents"), { recursive: true });
+        const holder = Bun.spawn(
+            ["flock", lockFile(), "sh", "-c", "read -r _"],
+            { stdin: "pipe", stdout: "ignore", stderr: "ignore" },
+        );
+        await until(async () => {
+            const probe = Bun.spawn(["flock", "-n", lockFile(), "true"]);
+            return (await probe.exited) !== 0;
+        });
+        return async () => {
+            holder.stdin.write("\n");
+            holder.stdin.end();
+            await holder.exited;
+        };
+    };
+
+    it("sends one Escape to the expected pane and terminal", async () => {
+        await setStatus("working");
+        const { code } = await run(interrupt, [...guarded, "bob"]);
+        expect(code).toBe(0);
+        expect(await writes()).toEqual([["send-keys", "w1:p2", "esc"]]);
+    });
+
+    it("waits for the pane's lock before the Escape", async () => {
+        await setStatus("working");
+        const release = await holdLock();
+        const waiting = start(interrupt, [...guarded, "bob"]);
+        await Bun.sleep(300);
+        expect(await writes()).toEqual([]);
+        await release();
+        const { code } = await finish(waiting);
+        expect(code).toBe(0);
+        expect(await writes()).toEqual([["send-keys", "w1:p2", "esc"]]);
+    });
+
+    it("gives up on a held lock after --lock-wait, exit 7, unsent", async () => {
+        const release = await holdLock();
+        const began = Date.now();
+        const { code, err } = await run(interrupt, [
+            ...guarded,
+            "--lock-wait",
+            "1",
+            "bob",
+        ]);
+        await release();
+        expect(code).toBe(7);
+        expect(err).toContain("locked");
+        expect(Date.now() - began).toBeGreaterThanOrEqual(900);
+        expect(await writes()).toEqual([]);
+    });
+
+    it("rereads the occupant under the lock: a new terminal is exit 8", async () => {
+        const release = await holdLock();
+        const waiting = start(interrupt, [...guarded, "bob"]);
+        await Bun.sleep(300);
+        await writeFile(join(root, "terminal"), "term_2");
+        await release();
+        const { code } = await finish(waiting);
+        expect(code).toBe(8);
+        expect(await writes()).toEqual([]);
+    });
+
+    it("refuses an expired deadline before the interrupt key", async () => {
+        const { code } = await run(interrupt, [
+            ...guarded,
+            "--deadline-at",
+            "1",
+            "bob",
+        ]);
+        expect(code).toBe(10);
+        expect(await mutations()).toEqual([]);
+    });
+
+    it("caps the pane-lock wait by the absolute deadline", async () => {
+        const release = await holdLock();
+        const date = join(root, "bin", "date");
+        await writeFile(
+            date,
+            `#!/bin/sh\nif [ "\${1:-}" = "+%s%3N" ]; then echo 1000; else exec /bin/date "$@"; fi\n`,
+        );
+        await chmod(date, 0o755);
+        const flock = join(root, "bin", "flock");
+        await writeFile(
+            flock,
+            `#!/bin/sh\n${logging}\nexec ${Bun.which("flock")} "$@"\n`,
+        );
+        await chmod(flock, 0o755);
+        const { code } = await run(interrupt, [
+            ...guarded,
+            "--lock-wait",
+            "60",
+            "--deadline-at",
+            "1500",
+            "bob",
+        ]);
+        await release();
+        expect(code).toBe(7);
+        expect(await mutations()).toEqual([]);
+        expect((await calls()).find((call) => call[0] === "flock")).toEqual([
+            "flock",
+            "-w",
+            "1",
+            "9",
+        ]);
+    });
+
+    it("guards a deliberate ctrl+c by session, not terminal alone", async () => {
+        await setStatus("working");
+        await writeFile(join(root, "session"), "session-a");
+        const args = [
+            ...guarded,
+            "--expect-session",
+            "session-a",
+            "--key",
+            "ctrl+c",
+            "bob",
+        ];
+        expect((await run(interrupt, args)).code).toBe(0);
+        expect(await writes()).toEqual([["send-keys", "w1:p2", "ctrl+c"]]);
+        await writeFile(join(root, "session"), "session-b");
+        expect((await run(interrupt, args)).code).toBe(9);
+        expect(await writes()).toHaveLength(1);
+    });
+
+    it("refuses another pane (5), an absent agent (4) or a dialog (3)", async () => {
+        await writeFile(join(root, "pane.bob"), "w1:p9");
+        expect((await run(interrupt, [...guarded, "bob"])).code).toBe(5);
+        await rm(join(root, "pane.bob"));
+        await setStatus("blocked");
+        expect((await run(interrupt, [...guarded, "bob"])).code).toBe(3);
+        await touch("absent");
+        expect((await run(interrupt, [...guarded, "bob"])).code).toBe(4);
+        expect(await writes()).toEqual([]);
+    });
+
+    it("reports a failed Escape as exit 1, which may have landed", async () => {
+        await touch("fail-keys");
+        const { code } = await run(interrupt, [...guarded, "bob"]);
+        expect(code).toBe(1);
+    });
+
+    it("says its usage on bad arguments, touching nothing", async () => {
+        for (const args of [
+            [],
+            ["bob", "extra"],
+            ["--expect-pane", "-x", "bob"],
+            ["--expect-terminal", "a b", "bob"],
+            ["--lock-wait", "0", "bob"],
+            ["--lock-wait", "61", "bob"],
+            ["--lock-wait", "1.5", "bob"],
+            ["--bogus", "bob"],
+        ]) {
+            const { code, err } = await run(interrupt, args);
+            expect(code).toBe(2);
+            expect(err).toContain("usage");
+        }
+        expect(await calls()).toEqual([]);
     });
 });
 

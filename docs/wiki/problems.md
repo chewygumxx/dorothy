@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-04
+mtime: 2026-11-06
 spdx: GPL-3.0-only
 title: Problems
 description: >-
@@ -491,6 +491,42 @@ what it is.
 - **State**: Known limitation, deferred.
 - **Evidence**:
   [deferred](../deferred/2026-11-03_pi-delivery-deferred.md#the-launcher).
+
+## A Pi probe stops with `stream cut: client gone` after a complete turn
+
+- **Cause**: Pi returns on the SSE `[DONE]` and may cancel before the
+  upstream HTTP body closes. The shared proxy settled only at EOF, so the
+  cancel stored an empty reply, lost usage, reserved the maximum and
+  refused every later call.
+- **Diagnosis**: A call with `[DONE]`, usage and a finish is still marked
+  `stream cut: client gone`; all later calls are `400`.
+- **Remedy**: Settle a validated `[DONE]`; keep a true cut, a timeout,
+  missing usage or a missing finish marker as unknown and stopped.
+- **State**: Fixed in the shared proxy with a regression. A provider that
+  sends no `[DONE]` still settles at ordinary EOF if finish and usage are
+  present.
+- **Evidence**:
+  [the trial
+  report](../reports/2026-11-03_pi-stewardship.md#the-proxy-lifecycle-bug).
+
+## A same-pane worker replacement keeps its terminal id
+
+- **Cause**: Herdr's `terminal_id` names the stable terminal resource,
+  not the agent process. Fresh Codex can also have null `agent_session`.
+- **Diagnosis**: A new session or foreground PID appears with the old
+  name, pane, cwd and terminal. A terminal-only guard would send or
+  interrupt it. Interactive startup can also reset `CODEX_HOME`.
+- **Remedy**: Pin a validated session or Linux foreground group leader
+  and boot:start in ledger schema 2, then recheck under the pane lock.
+  Restore and verify worker homes after shell startup; use Codex
+  `--no-daemon`. Old rows without an occupant fail closed.
+- **State**: Fixed with same-terminal regressions. Native no-inference
+  observation confirmed identical terminal and different process/start.
+  The accepted native run then observed a real guarded worker exit and a
+  new occupant in the same terminal. Same-user raw shell access is still
+  not OS-confined.
+- **Evidence**:
+  [the trial report](../reports/2026-11-03_pi-stewardship.md).
 
 ## A slash command with an argument needs a second Enter in Pi
 

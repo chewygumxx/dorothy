@@ -1,0 +1,31 @@
+{
+    "version": 1,
+    "fleetId": "00000000-0000-4000-8000-0000000000f1",
+    "fixtureRoot": "/srv/dorothy-trial/fixture",
+    "workers": [
+        {
+            "id": "trial-codex",
+            "name": "trial-codex",
+            "pane": "w1:p1",
+            "harness": "codex",
+            "role": "implementer",
+            "cwd": "/srv/dorothy-trial/fixture/trial-codex",
+            "accountLabel": "codex-trial",
+            "availability": "available",
+            "observedAt": "2026-11-03T11:50:00.000Z",
+            "expiresAt": "2026-11-03T12:40:00.000Z"
+        },
+        {
+            "id": "trial-claude",
+            "name": "trial-claude",
+            "pane": "w1:p2",
+            "harness": "claude",
+            "role": "reviewer",
+            "cwd": "/srv/dorothy-trial/fixture/trial-claude",
+            "accountLabel": "claude-trial",
+            "availability": "available",
+            "observedAt": "2026-11-03T11:50:00.000Z",
+            "expiresAt": "2026-11-03T12:40:00.000Z"
+        }
+    ]
+}

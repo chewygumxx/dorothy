@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-04
+mtime: 2026-11-06
 spdx: GPL-3.0-only
 title: Harnesses
 description: >-
@@ -272,10 +272,13 @@ session. No later report says it has run.
 ## Pi
 
 Delivery built and merged (#129), checked live on a bounded Featherless
-run; the production wiring has not run, and stewardship is next. Pi is
-the user's highest priority. Unlike the others she runs in Pi's own
-terminal interface, the published `@earendil-works/pi-coding-agent` 1.5.0
-the CLI pins, under Node 22.19 or later, through `dorothy --pi`
+run; stewardship's runner and offline tests are built, and its bounded
+native mixed-worker run passed at `b38393c`. The production wiring also
+ran under isolated configuration. Pi is the user's highest priority.
+Unlike the others
+she runs in Pi's own terminal interface, the published
+`@earendil-works/pi-coding-agent` 1.5.0 the CLI pins, under Node 22.19 or
+later, through `dorothy --pi`
 ([the hosts guide](../../../packages/cli/src/hosts/AGENTS.md#files)). Her
 model there is the first Featherless entry of the chat route, or the one
 `--model <provider:id>` names; no provider fallback runs inside Pi. Its
@@ -326,15 +329,29 @@ second is the one recorded. Still open, per the
 and the
 [deferred findings](../../deferred/2026-11-03_pi-delivery-deferred.md):
 
-- The production wiring of `RUNNERS.pi` has never run in a test or probe.
-  The user is to run `dorothy --pi --dump` and one real launch.
+- The controller completed `RUNNERS.pi`'s dump and native final-turn
+  smoke under isolated HOME/XDG and Featherless configuration. It used a
+  direct provider without proxy accounting; provider billing is unknown
+  and normal user defaults were unchanged.
 - Reasoning replay after a tool call was seen in the first live run only,
   and compaction, resume, fork and recovery ran against the scripted
   provider alone; the live run was two turns.
-- Pi's Node and version are pinned; the native fixture reads Pi's screen
+- Pi's Node and version is pinned; the native fixture reads Pi's screen
   text, so an upgrade needs the fixtures rerun.
-- Stewardship, coordinating Claude Code and Codex through herdr, is
-  increment B and has not started.
+- The production wiring of `RUNNERS.pi` is the separate smoke above, not
+  stewardship acceptance.
+
+Stewardship's native mixed-worker run separately passed all eleven checks
+at product `b38393c` in one bounded Linux API-backed cycle. It used 27 of
+30 requests at a US$0.016791567 declared-price usage, 47 worker calls
+at a conservative US$0.031589844 with no held unknown or safety stop,
+and closed 3 of 3 owned panes in 329778 ms. Synthetic API profiles,
+declared fault injection and owned-fixture `keepRecentTokens` 1024 were
+declared deviations; workers ran as the same user with no OS
+confinement. Attempts 4 to 9 remain incomplete history. These are not
+subscription-model evidence or a reliability estimate
+([the stewardship
+report](../../reports/2026-11-03_pi-stewardship.md#the-live-gate)).
 
 ## Related
 

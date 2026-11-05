@@ -27,6 +27,7 @@ import { dirname, join, resolve } from "node:path";
 import type { Env, RouteEntry } from "@dorothy/core";
 import type { PiLaunchManifest, PiModelSpec } from "./models.js";
 import { resolvePiRuntime } from "./runtime.js";
+import { readFleet } from "./steward/registry.js";
 
 export const CLI_DIR = resolve(import.meta.dir, "../../..");
 export const EXTENSION = join(CLI_DIR, "assets/pi/index.ts");
@@ -252,7 +253,11 @@ export const entry = (baseUrl: string): RouteEntry => ({
 export async function fixtureManifest(
     roots: Roots,
     baseUrl: string,
-    over: Partial<PiLaunchManifest> = {},
+    over: Omit<Partial<PiLaunchManifest>, "steward"> & {
+        steward?: Partial<NonNullable<PiLaunchManifest["steward"]>> & {
+            registry: string;
+        };
+    } = {},
 ): Promise<{ manifest: PiLaunchManifest; path: string }> {
     const node = Bun.which("node", { PATH: roots.env.PATH ?? "" });
     if (!node) throw new Error("fixture: no Node on PATH");
@@ -264,6 +269,20 @@ export async function fixtureManifest(
         XDG_STATE_HOME: roots.env.XDG_STATE_HOME ?? "",
         FAKE_DOROTHY_DIR: roots.fake,
     };
+    const { steward: requested, ...rest } = over;
+    const frozen = requested
+        ? await readFleet(requested.registry, new Date())
+        : undefined;
+    const steward =
+        requested && frozen
+            ? {
+                  ...requested,
+                  registry: requested.registry,
+                  fleetId: frozen.fleetId,
+                  fixtureRoot: frozen.fixtureRoot,
+                  registryDigest: frozen.sourceDigest,
+              }
+            : undefined;
     const manifest: PiLaunchManifest = {
         version: 1,
         launchId: "fixture",
@@ -274,7 +293,8 @@ export async function fixtureManifest(
         extensions: [EXTENSION],
         skills: [],
         helperEnv,
-        ...over,
+        ...rest,
+        ...(steward ? { steward } : {}),
     };
     const path = join(roots.launchDir, "manifest.json");
     await Bun.write(path, `${JSON.stringify(manifest, null, 2)}\n`);

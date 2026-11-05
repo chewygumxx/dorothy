@@ -965,11 +965,20 @@ describe("recording", () => {
 describe("the extension's assets", () => {
     it("import only Node's built-ins, each other and Pi's types", async () => {
         const dir = join(import.meta.dir, "../../../assets/pi");
-        const sources = (await readdir(dir)).filter((name) =>
-            name.endsWith(".ts"),
-        );
+        const sources = [
+            ...(await readdir(dir)).filter((name) => name.endsWith(".ts")),
+            // herdr's own, which stewardship loads beside hers.
+            "vendor/herdr/herdr-agent-state.ts",
+        ];
         expect(sources.sort()).toEqual(
-            ["context.ts", "helper.ts", "index.ts", "provider.ts"].sort(),
+            [
+                "context.ts",
+                "helper.ts",
+                "index.ts",
+                "provider.ts",
+                "steward.ts",
+                "vendor/herdr/herdr-agent-state.ts",
+            ].sort(),
         );
         for (const name of sources) {
             const text = await readFile(join(dir, name), "utf8");

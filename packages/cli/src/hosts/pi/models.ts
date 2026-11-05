@@ -45,7 +45,15 @@ export type PiLaunchManifest = {
     // The persona file preparePiProfile writes beside the manifest, which
     // the extension adds to Pi's system prompt as a section of its own.
     persona?: string;
-    registryPath?: string;
+    // `--steward`: the registry of the workers she may steward, read
+    // again by her helper at each use. Absent, no worker tool exists.
+    steward?: {
+        registry: string;
+        registryDigest: string;
+        fleetId: string;
+        fixtureRoot: string;
+        deadlineAt?: string;
+    };
 };
 
 const CATALOG = join(import.meta.dir, "../../../assets/pi/models.json");

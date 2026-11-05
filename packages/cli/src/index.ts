@@ -15,6 +15,7 @@ import type { Env, SecretsCode, StructuredCall } from "@dorothy/core";
 import type { PiHookReply } from "@dorothy/memory/host-hook";
 import { ambient } from "./ambient.js";
 import { type Mode, parseArgs, USAGE } from "./args.js";
+import { readBounded } from "./bounded.js";
 import {
     type CheckoutSecretsDeps,
     checkoutRoot,
@@ -111,28 +112,6 @@ export async function loadCredentials(
 // The contract's limits on what a --pi-hook request and reply hold.
 const PI_REQUEST_BYTES = 128 * 1024;
 const PI_REPLY_BYTES = 64 * 1024;
-
-// The text of at most `cap` bytes, or null past them, read no further.
-async function readBounded(
-    input: ReadableStream<Uint8Array>,
-    cap: number,
-): Promise<string | null> {
-    const parts: Uint8Array[] = [];
-    let size = 0;
-    const reader = input.getReader();
-    try {
-        for (;;) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            size += value.byteLength;
-            if (size > cap) return null;
-            parts.push(value);
-        }
-    } finally {
-        reader.releaseLock();
-    }
-    return Buffer.concat(parts).toString("utf8");
-}
 
 // dorothy --pi-hook: one JSON request on stdin, one JSON reply on stdout.
 // What is too large or not JSON reaches memory as null, which it answers
@@ -426,6 +405,26 @@ const RUNNERS: Runners = {
         );
         process.stdout.write(out);
         // As her other hooks: nothing started may hold the extension.
+        process.exit(0);
+    },
+    "pi-steward": async () => {
+        // Her worker tools' helper: one request, one reply. It loads no
+        // secrets, and herdr gets only the helper environment it is given.
+        const { stewardHelper } = await import("./hosts/pi/steward/helper.js");
+        const { processAlive, runSteward } = await import(
+            "./hosts/pi/steward/engine.js"
+        );
+        const { createHerdrRun } = await import("./hosts/pi/steward/herdr.js");
+        const env = process.env;
+        const out = await stewardHelper(Bun.stdin.stream(), (request) =>
+            runSteward(request, {
+                env,
+                now: () => new Date(),
+                run: createHerdrRun(),
+                controllerAlive: processAlive,
+            }),
+        );
+        process.stdout.write(out);
         process.exit(0);
     },
     install: async (mode) => {

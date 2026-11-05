@@ -61,8 +61,9 @@ Dorothy in hosts other than Claude Code, whose launcher is `claude.ts`.
   gives `--session-dir`, discovered extensions and skills off, built-in MCP
   kept, then Dorothy's by path.
 - `pi/launch.ts`: `runPi`, for `dorothy --pi [--model <provider:id>]
-  [--dump] [-- <Pi arguments>]` (`args.ts` reads hers before `--`). In
-  order:
+  [--steward <registry>] [--dump] [-- <Pi arguments>]` (`args.ts` reads
+  hers before `--`). With `--steward` see [its guide](./pi/steward/AGENTS.md).
+  In order:
   - `readPiArgs` reads Pi's arguments with Pi 1.5.0's own arity, so an
     option word that is a value (`--system-prompt --api-key`, `-p "say
     --model"`) is not taken for one. It refuses by name alone, exit 2,
@@ -97,7 +98,8 @@ Dorothy in hosts other than Claude Code, whose launcher is `claude.ts`.
   reads the user's own `~/.pi/agent`, `DOROTHY_PI_MANIFEST` and the key.
   The helpers' (`helperEnvOf`, the manifest's `helperEnv`) adds
   `DOROTHY_MEMORY_URL` and the age key's path, and holds no key.
-- `--pi-hook` (`index.ts` `piHook`): one request of at most 128 KiB on
+- `--pi-hook` (`index.ts` `piHook`, `readBounded` of `../bounded.ts`):
+  one request of at most 128 KiB on
   stdin, `runPiHostHook` with the memory client and `sendRecord`, one JSON
   reply on stdout (64 KiB at most, else its context dropped as
   `pi_reply_too_large`), exit 0. Too large or not JSON is `null`, which
@@ -128,7 +130,21 @@ Dorothy in hosts other than Claude Code, whose launcher is `claude.ts`.
   runs the native interface with the real `--pi-hook` and `--mcp`: tool
   calls, one interrupted, `/reload`, `--resume`, `/compact`, `/fork`,
   the launcher killed mid-turn, two sweeps, each event once.
+- `pi/steward/`: stewardship, Dorothy in Pi coordinating declared Codex
+  and Claude workers in herdr panes: the strict registry, the herdr
+  observation, the SQLite task ledger, the engine, `--pi-steward`'s
+  helper and the fixtures ([guide](./pi/steward/AGENTS.md)). Plain
+  `--pi` registers no worker tool and needs no herdr.
 - `scripts/probe-pi-delivery.ts` (repository root): the bounded smoke
   test, offline or live, through its own counting, budgeted forwarding
   proxy ([report](../../../../docs/reports/2026-11-03_pi-delivery.md)).
   Never part of `bun run test`.
+- `scripts/probe-pi-stewardship.ts` (repository root): the stewardship
+  probe. Offline it runs simulated workers and the owner's verification;
+  live it builds the runner's real deps (`scripts/pi-stewardship-trial.ts`:
+  herdr, worker login checks, memory service, Featherless proxy, versions)
+  and leaves a missing home or budget pending, and `--release <task-id>`
+  frees a stranded task by hand from the runner's state. It imports the
+  CLI by relative path, as the delivery probe does, a documented
+  exception for probes
+  ([fixture guide](../../assets/pi/stewardship/fixture/AGENTS.md)).
