@@ -522,6 +522,45 @@ describe("the offline run", () => {
         expect(kept.join("\n")).not.toContain(out);
     });
 
+    it("prints actionable preflight errors when no evidence path is safe", async () => {
+        const root = scratch();
+        const trial = join(root, "trial");
+        const out = join(root, "out");
+        const original = "keep this prior result\n";
+        mkdirSync(trial, { recursive: true, mode: 0o700 });
+        mkdirSync(out, { recursive: true, mode: 0o700 });
+        await writeFile(join(out, "result.json"), original);
+        const child = Bun.spawnSync(
+            [
+                process.execPath,
+                "--no-env-file",
+                join(import.meta.dir, "probe-pi-stewardship.ts"),
+                "--live",
+                "--registry",
+                join(trial, "custom-fleet.json"),
+                "--out",
+                out,
+                "--max-usd",
+                "1",
+            ],
+            {
+                env: {
+                    PATH: process.env.PATH ?? "",
+                    HOME: join(root, "home"),
+                    HERDR_ENV: "1",
+                    HERDR_SOCKET_PATH: join(root, "herdr.sock"),
+                    XDG_STATE_HOME: join(root, "state"),
+                },
+                stdout: "pipe",
+                stderr: "pipe",
+            },
+        );
+        expect(child.exitCode).toBe(2);
+        expect(child.stderr.toString()).toContain("--out");
+        expect(child.stderr.toString()).toContain("already exists");
+        expect(await readFile(join(out, "result.json"), "utf8")).toBe(original);
+    });
+
     it("refuses live without its registry and spending limit", () => {
         const child = Bun.spawnSync(
             [

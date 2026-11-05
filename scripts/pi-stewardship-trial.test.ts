@@ -27,6 +27,7 @@ import {
     realpath,
     rm,
     stat,
+    symlink,
     writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -149,6 +150,7 @@ class World {
         piStartedAt: string;
     } | null = null;
     nativeIdentityChecks = 0;
+    acceptKickoffWithoutRequest = false;
     workerControl: Record<string, string | undefined> | null = null;
     interruptControl: Record<string, string | undefined> | null = null;
     stderrNotReady = false;
@@ -658,6 +660,7 @@ class FakePi {
         if (!this.started) {
             this.started = true;
             this.kickoff = text;
+            if (this.world.acceptKickoffWithoutRequest) return;
         }
         if (/coordinator\.md/.test(text) && this.behaviour === "coordinate") {
             this.finalAsked = true;
@@ -931,6 +934,27 @@ const sorted = (values: string[]) => [...values].sort();
 const trialPanes = (world: World) =>
     world.created.filter((pane) => !pane.startsWith("w9:"));
 
+async function expectRefusedBeforeStart(
+    world: World,
+    deps: TrialDeps,
+    provider: FakeProvider,
+    args: TrialArgs,
+) {
+    let keys = 0;
+    const upstream = deps.upstream;
+    deps.upstream = async () => {
+        keys++;
+        return upstream();
+    };
+    const result = await runTrial(args, deps);
+    expect(result.status).toBe("pending");
+    expect(result.kind).toBe("not-run");
+    expect(keys).toBe(0);
+    expect(provider.requests).toEqual([]);
+    expect(trialPanes(world)).toEqual([]);
+    return result;
+}
+
 async function evidence(out: string) {
     return {
         result: JSON.parse(
@@ -1008,6 +1032,103 @@ describe("before anything starts", () => {
             "registry.json",
         );
     });
+
+    it("preserves an existing registry with a custom basename", async () => {
+        const world = new World();
+        const { trial, args } = await trialDir();
+        args.registry = join(trial, "custom-fleet.json");
+        const original = '{"keep":"these exact bytes"}\n';
+        await writeFile(args.registry, original);
+        const { deps, provider } = depsFor(world);
+        const result = await expectRefusedBeforeStart(
+            world,
+            deps,
+            provider,
+            args,
+        );
+        expect(result.pending.join("\n")).toContain(args.registry);
+        expect(result.outputOwned).toBe(true);
+        expect(await readFile(args.registry, "utf8")).toBe(original);
+        // A fresh output still holds actionable pending evidence.
+        expect(await readdir(args.out)).toEqual(
+            expect.arrayContaining(["result.json", "report.md"]),
+        );
+    });
+
+    it("preserves the target of an existing registry symlink", async () => {
+        const world = new World();
+        const { root, trial, args } = await trialDir();
+        args.registry = join(trial, "custom-fleet.json");
+        const target = join(root, "prior-registry.json");
+        const original = "prior registry bytes\n";
+        await writeFile(target, original);
+        await symlink(target, args.registry);
+        const { deps, provider } = depsFor(world);
+        const result = await expectRefusedBeforeStart(
+            world,
+            deps,
+            provider,
+            args,
+        );
+        expect(result.pending.join("\n")).toContain(args.registry);
+        expect(await readFile(target, "utf8")).toBe(original);
+        expect((await stat(args.registry)).isFile()).toBe(true);
+    });
+
+    for (const kind of [
+        "file",
+        "empty-directory",
+        "nonempty-directory",
+        "symlink",
+        "symlink-ancestor",
+    ] as const) {
+        it(`rejects a reused output: ${kind}`, async () => {
+            const world = new World();
+            const { root, args } = await trialDir();
+            const original = "prior evidence bytes\n";
+            let target = args.out;
+            if (kind === "file") {
+                await writeFile(args.out, original);
+            } else if (kind === "empty-directory") {
+                await mkdir(args.out);
+            } else if (kind === "nonempty-directory") {
+                await mkdir(args.out);
+                await writeFile(join(args.out, "prior.txt"), original);
+            } else if (kind === "symlink") {
+                target = join(root, "prior-evidence");
+                await mkdir(target);
+                await writeFile(join(target, "prior.txt"), original);
+                await symlink(target, args.out, "dir");
+            } else {
+                const actual = join(root, "actual");
+                await mkdir(actual);
+                await symlink(actual, join(root, "alias"), "dir");
+                args.out = join(root, "alias", "new-evidence");
+                target = join(actual, "new-evidence");
+            }
+            const { deps, provider } = depsFor(world);
+            const result = await expectRefusedBeforeStart(
+                world,
+                deps,
+                provider,
+                args,
+            );
+            expect(result.pending.join("\n")).toContain("--out");
+            expect(result.outputOwned).toBe(false);
+            if (kind === "file") {
+                expect(await readFile(args.out, "utf8")).toBe(original);
+            } else if (kind === "symlink-ancestor") {
+                expect(await stat(target).catch(() => null)).toBeNull();
+            } else if (kind === "empty-directory") {
+                expect(await readdir(args.out)).toEqual([]);
+            } else {
+                expect(await readFile(join(target, "prior.txt"), "utf8")).toBe(
+                    original,
+                );
+                expect(await readdir(target)).toEqual(["prior.txt"]);
+            }
+        });
+    }
 
     it("never runs past the caps", async () => {
         const world = new World();
@@ -1138,6 +1259,7 @@ describe("a trial on fakes", () => {
 
         expect(result.checks.filter((c) => c.ok === false)).toEqual([]);
         expect(result.status).toBe("pass");
+        expect(result.kind).toBe("model-driven");
         // Three panes, all its own; the user's pane untouched.
         expect(createdFixturePanes.length).toBe(3);
         expect(sorted(cleanedPanes)).toEqual(sorted(createdFixturePanes));
@@ -1372,6 +1494,21 @@ describe("a trial on fakes", () => {
             expect(result.prompts).toEqual([]);
             expect(provider.requests).toEqual([]);
         }
+    }, 60_000);
+
+    it("keeps accepted kickoff with no provider request not-run", async () => {
+        const world = new World();
+        world.script = "quiet";
+        world.acceptKickoffWithoutRequest = true;
+        const { args } = await trialDir();
+        const { deps, provider } = depsFor(world);
+        const result = await runTrial({ ...args, timeoutMs: 1000 }, deps);
+        expect(world.pi?.started).toBe(true);
+        expect(result.prompts).toHaveLength(1);
+        expect(provider.requests).toEqual([]);
+        expect(result.cost.calls).toBe(0);
+        expect(result.kind).toBe("not-run");
+        expect(result.note).toContain("no model request");
     }, 60_000);
 
     it("keeps failed text or Enter with no provider call not-run", async () => {

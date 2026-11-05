@@ -754,6 +754,9 @@ if (import.meta.main) {
     }
     if (args.mode === "live") {
         const result = await runTrial(args, await liveDeps());
+        if (!result.outputOwned && result.pending.length > 0) {
+            process.stderr.write(`${result.pending.join("\n")}\n`);
+        }
         process.stdout.write(
             `probe live (${result.kind}): ${result.status}, ` +
                 `${result.cost.calls} request(s), ` +

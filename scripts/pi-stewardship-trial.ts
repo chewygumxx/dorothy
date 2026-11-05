@@ -326,8 +326,33 @@ export type Account = {
 };
 
 export type Preflight =
-    | { ok: true; layout: TrialLayout; accounts: Account[] }
-    | { ok: false; layout: TrialLayout; problems: string[] };
+    | {
+          ok: true;
+          layout: TrialLayout;
+          accounts: Account[];
+          outputRejected: false;
+      }
+    | {
+          ok: false;
+          layout: TrialLayout;
+          problems: string[];
+          outputRejected: boolean;
+      };
+
+// Refuse path aliases before creating or writing anything. Every ancestor
+// must already exist as a real directory; --out itself must still be absent.
+async function nonlinkDirectory(path: string): Promise<string | null> {
+    let current = resolve(path);
+    for (;;) {
+        const seen = await lstat(current).catch((error: Error) => error);
+        if (seen instanceof Error) return `${current} cannot be inspected`;
+        if (seen.isSymbolicLink()) return `${current} is a symbolic link`;
+        if (!seen.isDirectory()) return `${current} is not a directory`;
+        const parent = dirname(current);
+        if (parent === current) return null;
+        current = parent;
+    }
+}
 
 // Everything checked before anything is made, spent or started.
 export async function preflight(
@@ -370,14 +395,33 @@ export async function preflight(
         );
     const privacy = await privacyOf(trial, deps.uid);
     if (privacy) problems.push(`the trial directory ${trial} is ${privacy}`);
+    const trialAncestors = await nonlinkDirectory(trial);
+    if (trialAncestors) problems.push(`invalid trial path: ${trialAncestors}`);
+    let outputRejected = false;
+    if (await lstat(out).catch(() => null)) {
+        outputRejected = true;
+        problems.push(
+            `--out ${out} already exists: choose an absent path, not a reused file or directory`,
+        );
+    } else {
+        const outAncestors = await nonlinkDirectory(dirname(out));
+        if (outAncestors) {
+            outputRejected = true;
+            problems.push(`invalid --out path: ${outAncestors}`);
+        }
+    }
     if (inside(trial, out) || inside(out, trial))
         problems.push(
             `--out ${out} must be apart from ${trial}, which holds the worker homes`,
         );
-    for (const name of MADE) {
-        if (await lstat(join(trial, name)).catch(() => null))
+    const leftovers = new Set([
+        ...MADE.map((name) => join(trial, name)),
+        layout.registry,
+    ]);
+    for (const path of leftovers) {
+        if (await lstat(path).catch(() => null))
             problems.push(
-                `${join(trial, name)} is left from an earlier trial: remove it (keep homes/)`,
+                `${path} is left from an earlier trial: remove it (keep homes/)`,
             );
     }
     const accounts: Account[] = [];
@@ -422,8 +466,8 @@ export async function preflight(
         .catch((error: Error) => [error.message]);
     problems.push(...(assets ?? []));
     return problems.length > 0
-        ? { ok: false, layout, problems }
-        : { ok: true, layout, accounts };
+        ? { ok: false, layout, problems, outputRejected }
+        : { ok: true, layout, accounts, outputRejected: false };
 }
 
 export type Intervention = {
@@ -532,10 +576,12 @@ export type TaskOutcome = {
 
 export type TrialResult = {
     mode: "live";
-    // The model chose: these are model-driven results, unlike the
-    // offline probe's plumbing.
+    // At least one provider request was observed, unlike the offline
+    // probe's plumbing. Accepted kickoff alone is not enough.
     kind: "model-driven" | "not-run";
     status: "pass" | "fail" | "incomplete" | "pending";
+    // False means this run never owned --out and wrote no evidence there.
+    outputOwned: boolean;
     note: string;
     startedAt: string;
     finishedAt: string;
@@ -618,7 +664,8 @@ export type TrialResult = {
 };
 
 const NOT_RUN =
-    "Not run: native Pi accepted no kickoff and made no model request.";
+    "Not run: no model request was observed; accepted kickoff alone is " +
+    "insufficient.";
 const NOTE =
     "Live and model-driven: Pi chose every call. The first partial " +
     "candidate and its checkpoints are declared runner fault injection, " +
@@ -1237,7 +1284,10 @@ class Trial {
             })),
         };
         const text = `${JSON.stringify(registry, null, 4)}\n`;
-        await writeFile(layout.registry, text, { mode: 0o600 });
+        await writeFile(layout.registry, text, {
+            mode: 0o600,
+            flag: "wx",
+        });
         this.registryDigest = sha256(text);
         // Its own validation, then the trial's: every entry its own.
         const fleet = await readFleet(layout.registry, deps.now());
@@ -1364,8 +1414,6 @@ class Trial {
         await this.type(
             kickoff(this.briefs, this.result.fixtureRevision ?? ""),
         );
-        this.result.kind = "model-driven";
-        this.result.note = NOTE;
         await this.event("kickoff", {});
     }
 
@@ -2019,14 +2067,14 @@ class Trial {
             await writeFile(
                 join(out, "screens", `${worker.name}.txt`),
                 this.clean(read.stdout),
-                { mode: 0o600 },
+                { mode: 0o600, flag: "wx" },
             );
         }
         if (this.piPane && this.created.panes.includes(this.piPane))
             await writeFile(
                 join(out, "screens", "pi.txt"),
                 this.clean(await this.paneText(this.piPane, 200)),
-                { mode: 0o600 },
+                { mode: 0o600, flag: "wx" },
             );
         for (const [from, to] of [
             [
@@ -2046,7 +2094,10 @@ class Trial {
                 if (text === null) continue;
                 const dest = join(out, to, name);
                 await mkdir(dirname(dest), { recursive: true, mode: 0o700 });
-                await writeFile(dest, this.clean(text), { mode: 0o600 });
+                await writeFile(dest, this.clean(text), {
+                    mode: 0o600,
+                    flag: "wx",
+                });
             }
         }
     }
@@ -2254,6 +2305,10 @@ class Trial {
             result.compaction.callsAfter =
                 this.proxy.calls.length - result.compaction.callsBefore;
         const calls = this.proxy?.calls ?? [];
+        if (calls.length > 0) {
+            result.kind = "model-driven";
+            result.note = NOTE;
+        }
         const forwarded = calls.filter((c) => c.reservedUsd > 0);
         const unmeasured = forwarded.filter((c) => c.costUsd === null).length;
         const known = forwarded.reduce((n, c) => n + (c.costUsd ?? 0), 0);
@@ -2600,6 +2655,7 @@ function blank(args: TrialArgs, started: Date): TrialResult {
         mode: "live",
         kind: "not-run",
         status: "incomplete",
+        outputOwned: false,
         note: NOT_RUN,
         startedAt: started.toISOString(),
         finishedAt: started.toISOString(),
@@ -2662,10 +2718,29 @@ const REQUIRED = [
     "review-loop",
 ];
 
-// Runs the trial, or says why it cannot start. Every outcome leaves its
-// evidence in `--out`, sanitized: result.json, report.md, events.jsonl,
-// ledger.json, screens, Pi's sessions, briefs and reports. The returned
-// result keeps the real paths.
+// Claim the absent output and its event stream only by exclusive creation.
+// A caller that lost this race gets a returned/CLI problem, not a write
+// through the winning path. Existing ancestors are checked again here.
+async function ownEvidenceOutput(out: string): Promise<string | null> {
+    const ancestors = await nonlinkDirectory(dirname(out));
+    if (ancestors) return `invalid --out path: ${ancestors}`;
+    try {
+        await mkdir(out, { mode: 0o700 });
+        await writeFile(join(out, "events.jsonl"), "", {
+            mode: 0o600,
+            flag: "wx",
+        });
+        return null;
+    } catch (error) {
+        return `--out ${out} could not be claimed exclusively: ${(error as Error).message}`;
+    }
+}
+
+// Runs the trial, or says why it cannot start. An owned `--out` gets
+// sanitized evidence: result.json, report.md, events.jsonl, ledger.json,
+// screens, Pi's sessions, briefs and reports. A rejected output keeps its
+// original bytes and gets nothing; the returned problems and CLI stay
+// actionable. The returned result otherwise keeps the real paths.
 export async function runTrial(
     args: TrialArgs,
     deps: TrialDeps,
@@ -2675,28 +2750,44 @@ export async function runTrial(
     const deadline = started.getTime() + args.timeoutMs;
     const checked = await preflight(args, deps, deadline);
     const { layout } = checked;
-    await mkdir(layout.out, { recursive: true, mode: 0o700 });
-    if (!checked.ok || deps.now().getTime() >= deadline) {
+    const finishPending = async (
+        problems: string[],
+        evidenceOwned: boolean,
+    ) => {
         result.status = "pending";
-        result.pending = [
-            ...(checked.ok ? [] : checked.problems),
-            ...(checked.ok
-                ? ["the wall deadline elapsed during preflight"]
-                : []),
-            "",
-            ...checklist(layout),
-        ];
+        result.pending = [...problems, "", ...checklist(layout)];
         const finished = deps.now();
         result.finishedAt = finished.toISOString();
         result.elapsedMs = finished.getTime() - started.getTime();
-        // The returned checklist keeps its paths for the user; the copy
-        // left in --out carries placeholders only.
-        await writeEvidence(
-            layout,
-            result,
-            pathSanitizer(layout, deps.env.HOME),
-        );
+        if (evidenceOwned) {
+            // Returned paths stay actionable; exported ones are scrubbed.
+            await writeEvidence(
+                layout,
+                result,
+                pathSanitizer(layout, deps.env.HOME),
+            );
+        }
         return result;
+    };
+    if (checked.outputRejected)
+        return finishPending(checked.ok ? [] : checked.problems, false);
+    const ownershipProblem = await ownEvidenceOutput(layout.out);
+    if (ownershipProblem)
+        return finishPending(
+            [...(checked.ok ? [] : checked.problems), ownershipProblem],
+            false,
+        );
+    result.outputOwned = true;
+    if (!checked.ok || deps.now().getTime() >= deadline) {
+        return finishPending(
+            [
+                ...(checked.ok ? [] : checked.problems),
+                ...(checked.ok
+                    ? ["the wall deadline elapsed during preflight"]
+                    : []),
+            ],
+            true,
+        );
     }
     result.accounts = checked.accounts;
     const trial = new Trial(args, deps, layout, result, deadline);
@@ -2751,15 +2842,13 @@ async function writeEvidence(
     await writeFile(
         join(out, "result.json"),
         clean(`${JSON.stringify(result, null, 2)}\n`),
-        { mode: 0o600 },
+        { mode: 0o600, flag: "wx" },
     );
     await writeFile(join(out, "report.md"), clean(trialMarkdown(result)), {
         mode: 0o600,
+        flag: "wx",
     });
-    if (!trial) {
-        await appendFile(join(out, "events.jsonl"), "", { mode: 0o600 });
-        return;
-    }
+    if (!trial) return;
     await writeFile(
         join(out, "ledger.json"),
         clean(
@@ -2769,7 +2858,7 @@ async function writeEvidence(
                 2,
             )}\n`,
         ),
-        { mode: 0o600 },
+        { mode: 0o600, flag: "wx" },
     );
 }
 
