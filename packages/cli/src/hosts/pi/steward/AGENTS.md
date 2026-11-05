@@ -100,8 +100,11 @@ Native trial fault injection and readiness are in [TRIAL](./TRIAL.md).
   `cancel-requested`, then sends one Escape through `send-interrupt.sh
   --expect-pane --expect-terminal <pinned> plus the occupant and
   --lock-wait 5` (15 s), under the pane lock: refusals before sending
-  (2, 3, 4, 5, 7, 8, 9) withdraw the request (`CANCEL_NOT_SENT`), others keep it
-  (`CANCEL_UNCERTAIN`); only a report saying `cancelled` cancels.
+  (2, 3, 4, 5, 7, 8, 9, 10) withdraw the request (`CANCEL_NOT_SENT`), others
+  keep it (`CANCEL_UNCERTAIN`); only a report saying `cancelled` cancels.
+  A trial's owner `deadlineAt` caps helper, engine, lock and pause waits.
+  Exit 10 is pre-write, prompt 11 uncertain after text; ordinary requests
+  omit it and retain per-operation limits.
   `finish` runs nothing: a `reported` task is `verified` only on a
   receipt for its id, current revision and unchanged report digest, with
   the same command, exit and log (exit nonzero: `failed`). A receipt
@@ -114,9 +117,8 @@ Native trial fault injection and readiness are in [TRIAL](./TRIAL.md).
   and scripts its exit. Fake herdr serves `agent get`; `{steward: true}`
   adds recorded reads. Capture new trial replies sanitized.
 - `helper.ts`: `stewardHelper`, `dorothy --pi-steward` (`index.ts`):
-  one request of at most 128 KiB (else `REQUEST_TOO_LARGE`, nothing run),
-  `runSteward` over its env, one reply of at most 64 KiB (else
-  `REPLY_TOO_LARGE`). It loads no secrets.
+  one request of at most 128 KiB (`REQUEST_TOO_LARGE`), `runSteward` over
+  its env, one reply of at most 64 KiB (`REPLY_TOO_LARGE`), and no secrets.
 - `stand-in.ts`: the shell stubs and the `dorothy` stand-in that tests and
   the probe spawn. `owner.ts`, `simulation.ts`, `scenarios.ts`,
   `pi-scenario.ts`: the owner's verification and the simulated workers
@@ -130,21 +132,19 @@ registry, resolved from the user's directory and not through a link,
 with `readFleet` before any secret (`steward_registry: <code>`). The
 manifest names its path, digest, fleet id and fixture root; Pi gets herdr's
 vendored Pi state extension and the stewardship skill, each once; a
-plain `--pi` has neither. Her extension's tools and status are
-`../../../../assets/pi/steward.ts`
+plain `--pi` has neither. `TRIAL.md` defines the owner-only native
+`stewardDeadlineAt` and `launchRecord` plan fields, readiness and deadline
+enforcement; neither is a model tool field. Her extension's tools and
+status are `../../../../assets/pi/steward.ts`
 ([its guide](../../../../assets/pi/AGENTS.md)). The registry example is
 `../../../../assets/pi/stewardship/registry.example.json`, synthetic and
 expired by design.
 
 ## Tests
 
-Every root, clock, environment and runner is injected. A test starts no
-real herdr: `createHerdrRun` runs a script in a private root. The
-engine's tests give `sender`, `self` and liveness too; killed and
-competing helpers are real Bun processes on one temporary ledger.
-`extension.test.ts` drives her Pi tools through a fake ExtensionAPI,
-each call a real helper process (`stand-in.ts`; none reaches a pane),
-plus the real `--pi-steward`, the published Pi offering the tools, and
-herdr's vendored extension in Pi's terminal reporting to a fake socket.
-`scenarios.test.ts` and `owner.test.ts` run the scenarios, also under a
-held-out cast, and the runner's verification.
+Every root, clock, environment and runner is injected; `createHerdrRun`
+uses a private script, never real herdr. Engine tests inject identity and
+liveness; killed and competing helpers share one temporary ledger.
+`extension.test.ts` uses a fake ExtensionAPI and real helpers, then the
+published Pi and vendored herdr extension against a fake socket.
+`scenarios.test.ts` and `owner.test.ts` run both casts and verification.

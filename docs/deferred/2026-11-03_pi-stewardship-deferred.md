@@ -46,10 +46,11 @@ offline runner and its tests are built; the live gate has not run.
   code running as the runner's user. Workers have the user's privileges
   and no OS confinement. The owner's sealing and child process catch
   accident and in-band forgery only.
-- The live trial's first fix may be right first time, in which case the
-  independent-review loop is not exercised. The runner reports that
-  honestly; it cannot force a model to make a specific incomplete fix
-  without scripting the model.
+- The first candidate is declared runner fault injection: both partial
+  briefs request the same limited `slugify`, whose public examples pass
+  and whose full owner test fails. Owner checkpoints hold it active for
+  interruption and compaction. It is not an unprompted model mistake;
+  live skill adherence and review quality remain unproven.
 - Interruption is a guarded Ctrl+C under the pane lock, then a restart
   in the same pane. Native no-inference observation confirmed identical
   `terminal_id`, null `agent_session` and a different foreground
@@ -79,8 +80,10 @@ offline runner and its tests are built; the live gate has not run.
   loading or pane creation. A current catalogue outage therefore leaves
   the native gate pending; stale prices are never used as a numeric cap.
 - Pi's ordinary shell is same-user and outside this protocol's control.
-  Frozen registry bytes and occupant pins prevent in-band drift and stale
-  mutations; they do not claim OS confinement or stop every raw bypass.
+  Frozen registry bytes, exact native launch identity, occupant pins and
+  the propagated trial deadline prevent the covered in-band drift, stale
+  mutations and late writes; they do not claim OS confinement or stop
+  every raw bypass. The native arrangement still needs its live gate.
 - The live adapter duplicates the memory health route as `/v1/health`
   and starts its service with the fixture's recording config. A shared
   production memory-launch helper would remove the duplication.

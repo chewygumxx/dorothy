@@ -82,10 +82,10 @@ use temporary roots, a scripted provider and fake herdr replies only.
   from creation replies with an explicit expiry. Pi's native interface
   runs through the delivery launcher; each request crosses the shared
   proxy, which reserves the worst cost and stops on the caps, budget or
-  missing usage. The runner is the only receipt writer, checks whether an
-  incomplete first fix occurred for review, interrupts one worker once, releases
-  the stranded task explicitly and logs it, compacts Pi with work in
-  flight, and resumes from the ledger.
+  missing usage. The runner is the only receipt writer, declares an
+  incomplete first candidate for review, interrupts one worker once,
+  releases the stranded task explicitly and logs it, compacts Pi with
+  work in flight, and resumes from the ledger.
 - `scripts/pi-stewardship-trial.test.ts`: the offline cycle with fake
   herdr, clock, proxy and workers, including ownership, fixture refusal,
   budget, usage, turns, time, interruption and release.
@@ -194,11 +194,21 @@ incomplete reply complete.
 - One deadline starts before preflight. Catalogue absence, invalid values
   or drift refuse before key loading. Startup, readiness, owner work and
   streams use the remaining time; cleanup has a recorded 10-second grace
-  and an overrun cannot pass. Complete safe-integer usage and normalized
-  outbound output limits are mandatory.
+  and an overrun cannot pass. Version subprocesses are cancellable. The
+  native plan's `stewardDeadlineAt` reaches the launch manifest, helper,
+  engine and locked scripts; it is never a model argument. Scripts refuse
+  pre-write expiry with exit 10 and preserve post-text uncertainty with
+  exit 11. Ordinary `--pi` has no trial wall and keeps its usual bounds.
+- Complete safe-integer usage and normalized outbound output limits are
+  mandatory. With neither output field supplied, the proxy injects the
+  reviewed maximum as `max_completion_tokens`, matching its reservation.
 - Worker shells restore and verify the private HOME/XDG/harness roots
-  after interactive startup. Codex uses `--no-daemon`; native Pi must show
-  its version and a live foreground process before checked prompt writes.
+  after interactive startup. Codex uses `--no-daemon`. Native launch
+  records the launcher and exact spawned Pi PIDs; both boot:start
+  identities must stay alive and match the foreground group before
+  kickoff. A banner with a live shell or foreign job is insufficient.
+  Before successful kickoff Enter and with no provider call, the result
+  remains `not-run`.
 
 A receipt is evidence against a worker's report, not against hostile
 code running as the runner's user. The workers run as the user with no

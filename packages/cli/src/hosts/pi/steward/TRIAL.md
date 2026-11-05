@@ -51,6 +51,14 @@ Codex starts with `--no-daemon`. The foreground process's expected home,
 harness home and canonical cwd are checked from Linux `/proc` without
 logging its environment. This check receives the remaining wall deadline.
 
+The native plan also names a private launch-record path. The launcher
+writes its own PID and the exact spawned Pi PID before returning the
+child. The runner reads both boot:start identities and requires both
+processes to remain alive, with the pane's foreground group naming one
+of them. A banner and live shell or foreign job cannot authorize kickoff.
+The identity is checked again before prompt text and Enter. Before a
+successful kickoff Enter and with no provider call, evidence is `not-run`.
+
 Reservation persists validated session identity, or foreground group
 leader PID plus boot:start. The locked sender/interrupter repeats the
 check before writing. Process-pinned interruption confirms that exact
@@ -62,9 +70,23 @@ may retain terminal id; a new process/start identity is required.
 
 The absolute deadline starts before preflight. Setup, readiness, owner
 commands and paid streams use its remainder; cleanup has only the recorded
-grace and an overrun fails. Missing executables/assets or catalogue drift
-refuse before key loading and pane creation. No native approval is
-answered by the runner.
+grace and an overrun fails. Version discovery uses cancellable subprocess
+timeouts and the runner bounds the whole version probe. Missing
+executables/assets or catalogue drift refuse before key loading and pane
+creation. No native approval is answered by the runner.
+
+The native plan's `stewardDeadlineAt` is an owner ISO timestamp, copied
+to `manifest.steward.deadlineAt`, helper request `deadlineAt`, and locked
+script `--deadline-at <epoch-ms>`. It is not a tool argument. The engine
+checks before reservation and mutation and caps process, lock and pause
+waits. Script exit 10 is before a write; prompt exit 11 means text may
+have landed but Enter was not written, so the send remains uncertain.
+Ordinary `--pi` omits the field and keeps its per-operation timeouts.
+
+The proxy injects `max_completion_tokens` at the reviewed maximum when
+the client supplies neither output-limit field. Explicit valid limits
+are normalized as before; invalid or conflicting limits and incomplete
+usage still fail closed.
 
 Every exported text channel uses the public scrubber. JSON scrubs string
 values only. Private originals are not public sanitized evidence. The
