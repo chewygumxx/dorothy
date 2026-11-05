@@ -165,7 +165,13 @@ function tap(
     const line = (text: string) => {
         if (!text.startsWith("data:")) return;
         const data = text.slice(5).trim();
-        if (data === "" || data === "[DONE]") return;
+        if (data === "") return;
+        // The explicit end of the stream: Pi returns on it and may cancel
+        // before the HTTP body ends, so settle here, not only at EOF.
+        if (data === "[DONE]") {
+            end(null);
+            return;
+        }
         let chunk: {
             choices?: {
                 delta?: {
@@ -219,7 +225,9 @@ function tap(
                 finish: finishReason,
                 usage: used,
             },
-            cut,
+            // DONE settles a complete reply; without a finish marker it is
+            // incomplete, however much usage came before it.
+            cut ?? (finishReason === null ? "stream cut: no finish" : null),
         );
     };
     const reader = body.getReader();

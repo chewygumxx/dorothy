@@ -23,6 +23,7 @@ import {
     SYNTHETIC_KEY,
     said,
     startFakeProvider,
+    usage,
 } from "../packages/cli/src/hosts/pi/testing.js";
 import {
     costOf,
@@ -63,6 +64,44 @@ function startStalled() {
                             `data: ${JSON.stringify(said("Partial"))}\n\n`,
                         ),
                     );
+                },
+            });
+            return new Response(stream, {
+                headers: { "content-type": "text/event-stream" },
+            });
+        },
+    });
+    stalled = { close: () => server.stop(true) };
+    return {
+        baseUrl: `http://127.0.0.1:${server.port}/v1`,
+        asked: () => asked,
+    };
+}
+
+// An upstream that sends a complete reply and [DONE], then leaves the
+// HTTP body open: Pi reads DONE and may cancel before the connection ends.
+function startDoneOpen(chunks: readonly Record<string, unknown>[]) {
+    let asked = 0;
+    const encoder = new TextEncoder();
+    const server = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        idleTimeout: 0,
+        fetch() {
+            asked++;
+            const first = asked === 1;
+            const stream = new ReadableStream({
+                start(controller) {
+                    for (const chunk of chunks)
+                        controller.enqueue(
+                            encoder.encode(
+                                `data: ${JSON.stringify(chunk)}\n\n`,
+                            ),
+                        );
+                    controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+                    // The body Pi leaves open; a later call closes, so a
+                    // test can show the proxy still forwards it.
+                    if (!first) controller.close();
                 },
             });
             return new Response(stream, {
@@ -226,6 +265,67 @@ describe("the probe's forwarding proxy", () => {
         expect(at.stopped()).toBe("usage unavailable");
         expect((await ask(at, {})).status).toBe(400);
         expect(upstream?.requests).toHaveLength(1);
+    });
+
+    it("settles a complete reply at DONE when Pi cancels before EOF", async () => {
+        const open = startDoneOpen([said("Fine."), finish("stop"), usage]);
+        const at = start([reply("Next.")], { upstream: open.baseUrl });
+        const abort = new AbortController();
+        const response = await fetch(`${at.baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ model: MODEL, messages: [] }),
+            signal: abort.signal,
+        });
+        const reader = response.body?.getReader();
+        let text = "";
+        while (!text.includes("[DONE]")) {
+            const read = await reader?.read();
+            if (!read || read.done) break;
+            text += new TextDecoder().decode(read.value);
+        }
+        expect(text).toContain("[DONE]");
+        // Let the proxy read DONE before Pi's cancellation reaches it.
+        await Bun.sleep(20);
+        abort.abort();
+        await Bun.sleep(20);
+        const [call] = at.calls;
+        const used = { prompt: 10, completion: 5, cached: 0 };
+        expect(at.stopped()).toBeNull();
+        expect(call?.reply).toMatchObject({ finish: "stop", usage: used });
+        expect(call?.costUsd).toBeCloseTo(costOf(used, PRICE), 12);
+        expect(at.spentUsd()).toBeCloseTo(costOf(used, PRICE), 12);
+        // The next permitted call is forwarded, not refused for the last.
+        expect((await ask(at, {})).status).toBe(200);
+        expect(open.asked()).toBe(2);
+        expect(at.calls[1]?.refused).toBeNull();
+    });
+
+    it("does not settle DONE without a finish marker as complete", async () => {
+        const open = startDoneOpen([said("Unfinished."), usage]);
+        const at = start([reply("Next.")], { upstream: open.baseUrl });
+        const abort = new AbortController();
+        const response = await fetch(`${at.baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ model: MODEL, messages: [] }),
+            signal: abort.signal,
+        });
+        const reader = response.body?.getReader();
+        let text = "";
+        while (!text.includes("[DONE]")) {
+            const read = await reader?.read();
+            if (!read || read.done) break;
+            text += new TextDecoder().decode(read.value);
+        }
+        expect(text).toContain("[DONE]");
+        await Bun.sleep(20);
+        abort.abort();
+        await until(() => at.stopped() !== null);
+        expect(at.stopped()).toBe("stream cut: no finish");
+        expect(at.calls[0]?.costUsd).toBeNull();
+        expect(at.spentUsd()).toBeCloseTo(at.calls[0]?.reservedUsd ?? 0, 12);
+        expect(open.asked()).toBe(1);
     });
 
     it("keeps the reservation and stops when Pi cancels a reply", async () => {
