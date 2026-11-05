@@ -75,11 +75,15 @@ increment A, is done and merged in #129: the native interface in a
 pseudo-terminal, recovery after a killed launcher, and a bounded live
 Featherless run, which passed
 ([report](./reports/2026-11-03_pi-delivery.md),
-[deferred](./deferred/2026-11-03_pi-delivery-deferred.md)). Increment B,
-stewardship, is next; the phase stays in Ahead until it is done.
+[deferred](./deferred/2026-11-03_pi-delivery-deferred.md)). Increment B's
+runner and offline tests are built; its live gate waits on user-signed
+worker homes and a budget
+([report](./reports/2026-11-03_pi-stewardship.md),
+[deferred](./deferred/2026-11-03_pi-stewardship-deferred.md)).
 
-- **Status**: Highest Priority; Delivery Merged; its Production Wiring
-  Check Waiting on the User; Stewardship Next
+- **Status**: Highest Priority; Delivery Merged; Stewardship Runner
+  Built, its Live Gate Waiting on the User; its Production Wiring Check
+  Waiting on the User
 - **Required**: Existing Identity, Memory Service and Model Providers
 - **Rationale**: The user has selected Pi for the stewardship capability
   they most want. Delivery gave it a launcher, an extension, shared
@@ -90,7 +94,10 @@ stewardship, is next; the phase stays in Ahead until it is done.
   checkout's secrets and `config.toml` route, has never run in a test,
   as one would decrypt `secrets.json`. `dorothy --pi --dump` and one
   real launch settle it, before stewardship's tasks edit the same
-  runner and at the latest before its live trial.
+  runner and at the latest before its live trial. Stewardship's live
+  trial waits on two temporary worker homes the user signs in, an
+  approved Featherless budget and quota room; the runner never copies a
+  subscription credential and records the gate as pending without them.
 
 ### Dorothy's Memory
 
@@ -338,6 +345,12 @@ Found but not scheduled, each with its source.
   (reasoning replay seen once, compaction, resume and fork against the
   scripted provider alone, `dorothy.tool-final` with no real case, and
   a fixture that reads Pi's screen text).
+- Pi stewardship's deferred findings and limits
+  ([record](./deferred/2026-11-03_pi-stewardship-deferred.md)): the live
+  worker-home and budget gate, the same-user limit of owner receipts and
+  no OS confinement for workers, catalogue metadata continuing rather
+  than gating, live-only interruption and compaction evidence, and a
+  shared memory-launch helper.
 - Model Providers' deferred findings
   ([record](./deferred/2026-11-01_model-providers-deferred.md)): stream
   errors coded by word, an output limit of her own, thinking on the other
@@ -686,3 +699,10 @@ In order of completion.
   lookup, splitting `sweep.ts`, the launcher and the probe, Pi's
   packaged skills): stewardship is no easier, safer or smaller with any
   of them, and its own skill settles the first of the skills.
+- 2026-11-05: Pi's stewardship runner and offline tests are built, and
+  the live gate stays pending on two user-signed worker homes and a
+  budget. Its proxy now settles a validated `[DONE]` rather than only
+  HTTP EOF, after a live supplemental turn lost usage and stopped. The
+  phase stays first; Candidates gain its deferred findings and limits
+  (the pending live gate, same-user owner receipts without OS
+  confinement, the metadata gate and live-only evidence).

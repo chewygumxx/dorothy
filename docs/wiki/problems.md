@@ -492,6 +492,23 @@ what it is.
 - **Evidence**:
   [deferred](../deferred/2026-11-03_pi-delivery-deferred.md#the-launcher).
 
+## A Pi probe stops with `stream cut: client gone` after a complete turn
+
+- **Cause**: Pi returns on the SSE `[DONE]` and may cancel before the
+  upstream HTTP body closes. The shared proxy settled only at EOF, so the
+  cancel stored an empty reply, lost usage, reserved the maximum and
+  refused every later call.
+- **Diagnosis**: A call with `[DONE]`, usage and a finish is still marked
+  `stream cut: client gone`; all later calls are `400`.
+- **Remedy**: Settle a validated `[DONE]`; keep a true cut, a timeout,
+  missing usage or a missing finish marker as unknown and stopped.
+- **State**: Fixed in the shared proxy with a regression. A provider that
+  sends no `[DONE]` still settles at ordinary EOF if finish and usage are
+  present.
+- **Evidence**:
+  [the trial
+  report](../reports/2026-11-03_pi-stewardship.md#the-proxy-lifecycle-bug).
+
 ## A slash command with an argument needs a second Enter in Pi
 
 - **Cause**: Pi's editor takes the first Enter of `/thinking off` as the

@@ -272,10 +272,12 @@ session. No later report says it has run.
 ## Pi
 
 Delivery built and merged (#129), checked live on a bounded Featherless
-run; the production wiring has not run, and stewardship is next. Pi is
-the user's highest priority. Unlike the others she runs in Pi's own
-terminal interface, the published `@earendil-works/pi-coding-agent` 1.5.0
-the CLI pins, under Node 22.19 or later, through `dorothy --pi`
+run; stewardship's runner and offline tests are built, while its live
+gate waits on user-signed worker homes and a budget. The production
+wiring has not run. Pi is the user's highest priority. Unlike the others
+she runs in Pi's own terminal interface, the published
+`@earendil-works/pi-coding-agent` 1.5.0 the CLI pins, under Node 22.19 or
+later, through `dorothy --pi`
 ([the hosts guide](../../../packages/cli/src/hosts/AGENTS.md#files)). Her
 model there is the first Featherless entry of the chat route, or the one
 `--model <provider:id>` names; no provider fallback runs inside Pi. Its
@@ -331,10 +333,13 @@ and the
 - Reasoning replay after a tool call was seen in the first live run only,
   and compaction, resume, fork and recovery ran against the scripted
   provider alone; the live run was two turns.
-- Pi's Node and version are pinned; the native fixture reads Pi's screen
+- Pi's Node and version is pinned; the native fixture reads Pi's screen
   text, so an upgrade needs the fixtures rerun.
-- Stewardship, coordinating Claude Code and Codex through herdr, is
-  increment B and has not started.
+- Stewardship's live trial waits on two temporary worker homes the user
+  signs in, an approved Featherless budget and quota room. The runner
+  never copies a subscription credential and leaves the gate pending
+  ([report](../../reports/2026-11-03_pi-stewardship.md#the-live-gate)).
+- The production wiring of `RUNNERS.pi` is the separate check above.
 
 ## Related
 

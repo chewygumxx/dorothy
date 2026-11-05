@@ -285,6 +285,13 @@ first.
   Research. Why Pi was excluded, what it now offers and a proposed trial.
 - [Pi stewardship plan](../plans/2026-11-03_pi-stewardship.md): Plan. A herdr
   fixture fleet, task accounting, native Pi tools and a bounded trial.
+- [Pi stewardship trial](../reports/2026-11-03_pi-stewardship.md): Report.
+  The live trial's runner, its offline tests and evidence, the proxy
+  lifecycle fix it exposed, and the pending live gate.
+- [Pi stewardship deferred
+  findings](../deferred/2026-11-03_pi-stewardship-deferred.md): Deferred.
+  The pending worker-home gate, the same-user limits of owner receipts,
+  live-only uncertainties and runner edges.
 
 ## Repository workflow
 
