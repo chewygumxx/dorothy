@@ -15,11 +15,12 @@
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { RECORDING_HOSTS } from "@dorothy/core";
 import type { FactStore } from "../facts/store.js";
 import { writeAtomic } from "../memory/sidecar.js";
 import type { Host } from "./sources.js";
 
-const HOSTS = new Set<string>(["claude-code", "codex", "hermes"]);
+const HOSTS = new Set<string>(RECORDING_HOSTS);
 type Marks = Partial<Record<Host, string>>;
 
 export const watermarkPath = (root: string) => join(root, "recording.json");

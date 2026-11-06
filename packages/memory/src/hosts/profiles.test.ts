@@ -38,6 +38,7 @@ describe("loadProfiles", () => {
             "hermes",
             "openclaw",
             "opencode",
+            "pi",
             "qwen-code",
         ]);
         expect(profiles.get("codex")?.instructions).toBe(512);
@@ -61,6 +62,14 @@ describe("loadProfiles", () => {
         expect(profiles.get("openclaw")?.blockBudget).toBe(4000);
         expect(profiles.get("goose")?.blockBudget).toBe(16000);
         expect(profiles.get("claude-code")?.delivery).toEqual(["hook", "mcp"]);
+        expect(profiles.get("pi")).toEqual({
+            id: "pi",
+            checked: ["1.5.0"],
+            blockBudget: 4000,
+            recallBudget: 4000,
+            delivery: ["plugin", "mcp"],
+            instructions: 2048,
+        });
     });
 
     it("names the file of a profile that is not JSON", async () => {

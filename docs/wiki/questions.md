@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-03
+mtime: 2026-11-06
 spdx: GPL-3.0-only
 title: Questions
 description: >-
@@ -102,10 +102,27 @@ A host is a harness that runs a model for someone, such as Claude Code. No
 one harness hosts Dorothy: one definition of her is carried into each, and
 one memory service serves them all. On 2026-10-19 the user chose Claude
 Code, Codex, OpenClaw and Hermes Agent as the four she is provided for and
-tested against. What each receives, and what has been run against each, is
+tested against, and on 2026-11-03 made Pi the highest priority, a fifth.
+What each receives, and what has been run against each, is
 on [harnesses](./profiles/harnesses.md); how the definition is carried is
 under [identity, harnesses and
 delivery](./topics/identity-and-harnesses.md#one-definition-of-her).
+
+### Can she run in Pi, and what has been checked?
+
+Yes: `dorothy --pi` runs the published Pi 1.5.0 in its own terminal
+interface, under Node 22.19 or later, with her identity, memory tools and
+a memory layer before each prompt, on a Featherless model. It was run in a
+pseudo-terminal against a scripted provider, and for three requests live,
+and merged in #129. The controller also completed an isolated production
+dump and native final-turn smoke, with direct-provider limits recorded.
+Stewardship's runner and offline tests are built, and its bounded native
+mixed-worker run passed all eleven checks at `b38393c` on synthetic
+API-backed homes and merged in #131. Open-weight spending was authorized,
+with an explicit numeric cap per run. See
+[harnesses](./profiles/harnesses.md#pi), the
+[delivery report](../reports/2026-11-03_pi-delivery.md) and the
+[stewardship report](../reports/2026-11-03_pi-stewardship.md).
 
 ### What is a service or a provider to her?
 

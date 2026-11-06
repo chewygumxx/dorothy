@@ -64,7 +64,12 @@ export type ServiceConfig = {
     claudeDirs: string[];
 };
 // The harnesses whose sessions the sweep can record.
-export const RECORDING_HOSTS = ["claude-code", "codex", "hermes"] as const;
+export const RECORDING_HOSTS = [
+    "claude-code",
+    "codex",
+    "hermes",
+    "pi",
+] as const;
 export type RecordingHost = (typeof RECORDING_HOSTS)[number];
 export type RecordingConfig = {
     // The harnesses swept; none by default.

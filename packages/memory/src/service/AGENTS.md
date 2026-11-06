@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-20
-mtime: 2026-10-21
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: packages/memory/src/service/AGENTS.md
 description: >-
@@ -50,7 +50,9 @@ This guide holds what binds [the sweep](../recording/AGENTS.md) to a store.
   while calling them, so nothing nests.
 - None of Claude Code, Codex or Hermes marks a session private in its
   store, so `isPrivate` is false for them; OpenClaw's incognito will answer
-  there when its reader joins.
+  there when its reader joins. A private Pi launch writes no file at all.
+- Pi's hooks send what the sweep would through the service's record
+  route, the same `acceptRecord`: one writer, deduplicated by sourceId.
 - `onRecorded` calls `noteRecorded`: a backfilled phrase joins the
   backfilled set, a live one is queued for extraction and unmarked; the
   project joins `touched`. Recorders also persist a sidecar mark under

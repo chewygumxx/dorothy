@@ -21,9 +21,12 @@ const HEADED = /\.(ts|tsx|mts|sh|toml|ya?ml|jsonc|md)$/;
 
 // Headed types that are not the repository's own writing: captured probe
 // scripts, agent memory entries (written by Dorothy's project sync and by
-// clients' memory, in their own format) and the template GitHub reads.
+// clients' memory, in their own format), the template GitHub reads, and
+// third-party files vendored byte for byte, each with its own licence and
+// provenance note beside it.
 const EXEMPT = [
     /^docs\/reports\/.+\/probe\//,
+    /^packages\/cli\/assets\/pi\/vendor\/[^/]+\/(?!PROVENANCE\.md$)/,
     /^\.agents\/memory\//,
     /^\.github\/pull_request_template\.md$/,
 ];

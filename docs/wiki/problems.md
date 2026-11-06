@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-03
+mtime: 2026-11-06
 spdx: GPL-3.0-only
 title: Problems
 description: >-
@@ -448,6 +448,96 @@ what it is.
 - **Evidence**:
   [the sweep's deferred findings](../reports/2026-10-19-roadmap-sweep.md#deferred)
   and [`package.json`](../../package.json).
+
+## A killed `dorothy --pi` leaves a launch directory behind
+
+- **Cause**: Each launch keeps private files in
+  `$XDG_RUNTIME_DIR/dorothy/pi-<id>` and removes them when Pi exits. A
+  launcher killed outright cannot. Nothing sweeps stale ones, unlike Claude
+  Code's launches.
+- **Diagnosis**: A `pi-<id>` directory there with no running `dorothy`. It
+  holds a manifest and the persona, never a key.
+- **Remedy**: Delete it; the runtime directory is also cleared at logout.
+  The session itself is safe: the sweep records what the hooks had not.
+- **State**: Known limitation, a roadmap candidate.
+- **Evidence**:
+  [the report's findings](../reports/2026-11-03_pi-delivery.md#findings),
+  [deferred](../deferred/2026-11-03_pi-delivery-deferred.md#the-launcher).
+
+## A Pi session halts with an `ownership` reason and `--reread` does not clear it
+
+- **Cause**: Pi rewrote a file so that an entry Dorothy had already
+  recorded moved to another segment. The sweep stops at that entry and
+  records nothing, as a reread meets the same entry again.
+- **Diagnosis**: The notice names a Pi session and the reason `ownership`,
+  and says `--reread` cannot clear it. A halt of another reason is
+  retried by `--reread`.
+- **Remedy**: `dorothy --sweep --dismiss pi <session>` stops the notice, or
+  delete the file's sidecar under `$XDG_STATE_HOME/dorothy/pi/recording` so
+  it is read afresh.
+- **State**: Known limitation: the halt is by design, its wording fixed.
+- **Evidence**:
+  [the Pi source's guide](../../packages/memory/src/recording/AGENTS.pi.md#invariants).
+
+## Pi's tool flags can drop her memory tools
+
+- **Cause**: `dorothy --pi` forwards `--tools`, `--no-tools` and
+  `--exclude-tools` after `--` to Pi, which honours them. It refuses
+  `--no-mcp`, the model and session-directory options by name, but not
+  these.
+- **Diagnosis**: The model has no `dorothy-memory` tools, though the
+  launch said it would.
+- **Remedy**: Do not pass them.
+- **State**: Known limitation, deferred.
+- **Evidence**:
+  [deferred](../deferred/2026-11-03_pi-delivery-deferred.md#the-launcher).
+
+## A Pi probe stops with `stream cut: client gone` after a complete turn
+
+- **Cause**: Pi returns on the SSE `[DONE]` and may cancel before the
+  upstream HTTP body closes. The shared proxy settled only at EOF, so the
+  cancel stored an empty reply, lost usage, reserved the maximum and
+  refused every later call.
+- **Diagnosis**: A call with `[DONE]`, usage and a finish is still marked
+  `stream cut: client gone`; all later calls are `400`.
+- **Remedy**: Settle a validated `[DONE]`; keep a true cut, a timeout,
+  missing usage or a missing finish marker as unknown and stopped.
+- **State**: Fixed in the shared proxy with a regression. A provider that
+  sends no `[DONE]` still settles at ordinary EOF if finish and usage are
+  present.
+- **Evidence**:
+  [the trial
+  report](../reports/2026-11-03_pi-stewardship.md#the-proxy-lifecycle-bug).
+
+## A same-pane worker replacement keeps its terminal id
+
+- **Cause**: Herdr's `terminal_id` names the stable terminal resource,
+  not the agent process. Fresh Codex can also have null `agent_session`.
+- **Diagnosis**: A new session or foreground PID appears with the old
+  name, pane, cwd and terminal. A terminal-only guard would send or
+  interrupt it. Interactive startup can also reset `CODEX_HOME`.
+- **Remedy**: Pin a validated session or Linux foreground group leader
+  and boot:start in ledger schema 2, then recheck under the pane lock.
+  Restore and verify worker homes after shell startup; use Codex
+  `--no-daemon`. Old rows without an occupant fail closed.
+- **State**: Fixed with same-terminal regressions. Native no-inference
+  observation confirmed identical terminal and different process/start.
+  The accepted native run then observed a real guarded worker exit and a
+  new occupant in the same terminal. Same-user raw shell access is still
+  not OS-confined.
+- **Evidence**:
+  [the trial report](../reports/2026-11-03_pi-stewardship.md).
+
+## A slash command with an argument needs a second Enter in Pi
+
+- **Cause**: Pi's editor takes the first Enter of `/thinking off` as the
+  completion of the command's name, so the argument is not yet sent.
+- **Diagnosis**: The line stays in the editor after the first Enter. This is
+  Pi's behaviour, not Dorothy's.
+- **Remedy**: Press Enter again.
+- **State**: Known limitation of Pi 1.5.0, seen in the live run.
+- **Evidence**:
+  [the report's findings](../reports/2026-11-03_pi-delivery.md#findings).
 
 ## Related
 

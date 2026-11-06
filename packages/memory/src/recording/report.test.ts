@@ -20,6 +20,7 @@ const result = (over: Partial<HostSweep>): HostSweep => ({
     waiting: 0,
     private: 0,
     halted: 0,
+    held: 0,
     failed: 0,
     error: null,
     ...over,
@@ -67,6 +68,15 @@ describe("a sweep told", () => {
             "codex: 1 event in 2 sessions",
             "codex: 0 events in 0 sessions",
         ]);
+    });
+
+    it("says how many forks wait for their parent", () => {
+        expect(hostLines([result({ host: "pi", held: 2 })])).toEqual([
+            "pi: 0 events in 0 sessions (2 held for a parent)",
+        ]);
+        expect(hostLines([result({ host: "pi", held: 1, halted: 1 })])).toEqual(
+            ["pi: 0 events in 0 sessions (1 halted, 1 held for a parent)"],
+        );
     });
 
     it("says why a host stopped", () => {

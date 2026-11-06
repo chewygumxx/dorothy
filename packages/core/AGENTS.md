@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-11-01
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: packages/core/AGENTS.md
 description: >-
@@ -73,7 +73,8 @@ below. It declares `niceware` alone, and never imports another
   `chooseClaudeToken`, for the eval alone, sets `CLAUDE_CODE_OAUTH_TOKEN`
   to the entry `DOROTHY_CLAUDE_TOKEN_VAR` names, or fails with
   `SECRETS_INVALID`.
-- `config.ts`: `config.toml` (`readConfig`, `parseConfig`).
+- `config.ts`: `config.toml` (`readConfig`, `parseConfig`); its
+  `RECORDING_HOSTS`, Pi's among them, are the sweep's `RecordingHost`.
 - `xdg.ts`: the XDG directories (`xdgDir`), the state directory among
   them.
 - `session-id.ts`: session phrases, and `isUuid` for the ids that name

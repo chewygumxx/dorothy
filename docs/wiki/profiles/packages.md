@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-03
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: Packages
 description: >-
@@ -85,7 +85,8 @@ Built. The `dorothy` program: it is run and not imported, and it wires
 every other package together, loading each lazily so that `--help`,
 `--list` and `--recall-server` never load the AI SDK. It also holds the
 launchers for other hosts, described on the
-[harnesses profile](./harnesses.md).
+[harnesses profile](./harnesses.md), and is the one package that declares
+Pi, pinned at 1.5.0 (`workspace.test.ts` checks it).
 
 - May import: `agent`, `core`, `gateway`, `identity`, `memory` and `tui`.
 - Entry points: none; it exports nothing.

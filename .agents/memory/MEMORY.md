@@ -16,9 +16,9 @@
 - [Memory priorities](./memory-priorities.md)
   Memory ranks compatibility, access, progressive disclosure, persistence
 - [Protocol-diverse Dorothy](./protocol-diverse-dorothy.md)
-  No one harness hosts Dorothy; her definition is generated into each; no pi
+  Shared identity and memory; Pi's old exclusion was superseded on 3 November
 - [Target harnesses](./target-harnesses.md)
-  Built for and tested against Claude Code, Codex, OpenClaw and Hermes
+  Pi comes first, in its own interface, to steward Claude Code and Codex
 - [Codex full send](./codex-full-send.md)
   Approve every Codex prompt yourself; never relay one to the user
 - [Trust to proceed](./trust-to-proceed.md)

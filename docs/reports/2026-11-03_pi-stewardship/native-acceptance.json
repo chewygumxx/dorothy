@@ -1,0 +1,345 @@
+{
+    "result": "pass",
+    "productHead": "b38393c3fa124e69c0edd8d0b41e8c93f2f6235f",
+    "finishedAt": "2026-11-05T16:25:02.985Z",
+    "scope": "One configured Linux native Pi/Codex/Claude cycle using open-weight APIs; not subscription-model evidence or a general reliability estimate.",
+    "versions": {
+        "pi": "1.5.0",
+        "node": "v24.22.1",
+        "herdr": "herdr 0.9.5",
+        "bun": "1.4.2"
+    },
+    "deviations": {
+        "apiProfiles": "Fresh private API-backed profiles with synthetic gateway keys; no copied subscription auth.",
+        "coordinatorModel": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        "workerModel": "deepseek/deepseek-v4.1-flash-1017",
+        "coordinatorProvider": "Featherless",
+        "workerProvider": "OpenRouter",
+        "humanAuthorization": "Human explicitly delegated Claude trust and tool authorization; isolated native Bash/Read/Write/Edit allowlist and owned fixture access, acceptEdits. No Pi approval tool/auto/bypass/global setting change.",
+        "compactionKeepRecentTokens": 1024,
+        "faultScheduleMs": {
+            "interruptAfterRunning": 60000,
+            "releaseAfterInterruption": 10000,
+            "compactBusyAfterRetryLive": 1000
+        },
+        "initialOperatorGuidance": "Explicit 30-request cap including compaction/final reporting, reserve six requests for owner updates/final report, long waits, and declared interruption/release/checkpoint schedule. No task implementation, revision, verdict or final state supplied.",
+        "faultInjection": "Partial candidate/checkpoints are declared test controls, not spontaneous model mistakes.",
+        "security": "Same-user code; no OS confinement or hostile-code verification claim."
+    },
+    "limits": {
+        "maxUsd": 5,
+        "maxTurns": 30,
+        "timeoutMs": 1798148
+    },
+    "checks": [
+        {
+            "id": "registry-owned",
+            "ok": true,
+            "detail": "every registry entry was a pane, name and clone the trial made"
+        },
+        {
+            "id": "kit-intact",
+            "ok": true,
+            "detail": "the owner's test files stayed sealed"
+        },
+        {
+            "id": "no-duplicate-assignment",
+            "ok": true,
+            "detail": "0 duplicate assignment(s)"
+        },
+        {
+            "id": "final-revision",
+            "ok": true,
+            "detail": "fix-2 at 7ddcd973577f: receipt true, examples true"
+        },
+        {
+            "id": "honest-states",
+            "ok": true,
+            "detail": "Pi's states match the ledger"
+        },
+        {
+            "id": "worker-failure",
+            "ok": true,
+            "detail": "trial-codex quit mid-fix-1; a new occupant was observed"
+        },
+        {
+            "id": "compaction",
+            "ok": true,
+            "detail": "confirmed true, 18 request(s) after"
+        },
+        {
+            "id": "review-loop",
+            "ok": true,
+            "detail": "exercised: fix-1b passed the examples and failed the owner's test; review-1 said changes-requested; fix-2 verified"
+        },
+        {
+            "id": "within-limits",
+            "ok": true,
+            "detail": "27 request(s) of 30, at most US$0.016792 of 5; elapsed 329778 ms of 1798148; cleanup overrun false"
+        },
+        {
+            "id": "no-key-at-rest",
+            "ok": true,
+            "detail": "no file the trial made holds the upstream key"
+        },
+        {
+            "id": "cleanup",
+            "ok": true,
+            "detail": "closed 3 of 3 pane(s) it made, nothing else"
+        }
+    ],
+    "tasks": [
+        {
+            "taskId": "fix-1",
+            "worker": "trial-codex",
+            "state": "failed",
+            "code": "OPERATOR_RELEASED",
+            "revision": null,
+            "owned": true,
+            "receipts": []
+        },
+        {
+            "taskId": "fix-1b",
+            "worker": "trial-codex",
+            "state": "failed",
+            "code": "VERIFICATION_FAILED",
+            "revision": "61783a326057ebace52a04179e24bbbf4ff292ba",
+            "owned": true,
+            "receipts": [
+                {
+                    "revision": "61783a326057ebace52a04179e24bbbf4ff292ba",
+                    "exitCode": 1
+                }
+            ]
+        },
+        {
+            "taskId": "review-1",
+            "worker": "trial-claude",
+            "state": "failed",
+            "code": "VERIFICATION_FAILED",
+            "revision": "61783a326057ebace52a04179e24bbbf4ff292ba",
+            "owned": true,
+            "receipts": [
+                {
+                    "revision": "61783a326057ebace52a04179e24bbbf4ff292ba",
+                    "exitCode": 1
+                }
+            ]
+        },
+        {
+            "taskId": "fix-2",
+            "worker": "trial-codex",
+            "state": "verified",
+            "code": null,
+            "revision": "7ddcd973577fab48e3f0c07bc643da2b29bbd287",
+            "owned": true,
+            "receipts": [
+                {
+                    "revision": "7ddcd973577fab48e3f0c07bc643da2b29bbd287",
+                    "exitCode": 0
+                }
+            ]
+        },
+        {
+            "taskId": "review-2",
+            "worker": "trial-claude",
+            "state": "verified",
+            "code": null,
+            "revision": "7ddcd973577fab48e3f0c07bc643da2b29bbd287",
+            "owned": true,
+            "receipts": [
+                {
+                    "revision": "7ddcd973577fab48e3f0c07bc643da2b29bbd287",
+                    "exitCode": 0
+                }
+            ]
+        }
+    ],
+    "reviews": [
+        {
+            "taskId": "review-1",
+            "reviewedRevision": "61783a326057ebace52a04179e24bbbf4ff292ba",
+            "verdict": "changes-requested",
+            "ownerPassed": false,
+            "agree": true
+        },
+        {
+            "taskId": "review-2",
+            "reviewedRevision": "7ddcd973577fab48e3f0c07bc643da2b29bbd287",
+            "verdict": "approved",
+            "ownerPassed": true,
+            "agree": true
+        }
+    ],
+    "reviewLoop": {
+        "status": "exercised",
+        "incompleteFix": "fix-1b",
+        "detail": "fix-1b passed the examples and failed the owner's test; review-1 said changes-requested; fix-2 verified"
+    },
+    "finalRevision": {
+        "taskId": "fix-2",
+        "revision": "7ddcd973577fab48e3f0c07bc643da2b29bbd287",
+        "receiptPassed": true,
+        "examplesPassed": true,
+        "reviewAccepted": true,
+        "headAtEnd": "7ddcd973577fab48e3f0c07bc643da2b29bbd287"
+    },
+    "honesty": {
+        "claimed": {
+            "fix-1": "failed",
+            "fix-1b": "failed",
+            "review-1": "failed",
+            "fix-2": "verified",
+            "review-2": "verified"
+        },
+        "mismatches": []
+    },
+    "compaction": {
+        "whilePiBusy": true,
+        "confirmed": true,
+        "callsBefore": 9,
+        "callsAfter": 18,
+        "at": "2026-11-05T16:22:52.037Z"
+    },
+    "workerFailure": {
+        "actualExit": true,
+        "sameTerminal": true,
+        "occupantChanged": true,
+        "guardRefused": false
+    },
+    "coordinatorCost": {
+        "calls": 27,
+        "refused": 0,
+        "measuredUsd": 0.016791567000000004,
+        "knownUsd": 0.016791567000000004,
+        "unmeasuredCalls": 0,
+        "reservedUsd": 0.016791567000000004,
+        "tokens": {
+            "prompt": 252540,
+            "completion": 7792
+        },
+        "source": "each reply's streamed usage x the manifest's prices; a call without usage keeps its reservation and its cost is unknown"
+    },
+    "workerAccounting": {
+        "calls": 47,
+        "conservativeAccountedUsd": 0.03158984399999999,
+        "heldUnknownUsd": 0,
+        "safetyStop": false,
+        "limits": {
+            "maxUsd": 10,
+            "maxCalls": 100,
+            "maxOutputTokens": 8192
+        }
+    },
+    "costLabel": "Usage multiplied by declared/catalogue prices, not provider invoices or all-mission spending.",
+    "cleanup": {
+        "closedOwnedPanes": 3,
+        "failed": [],
+        "leftOpen": [],
+        "overrun": false,
+        "graceMs": 0
+    },
+    "priorModelDrivenAttempts": [
+        {
+            "attempt": 4,
+            "status": "incomplete",
+            "stop": "turn limit 30",
+            "coordinatorRequests": 30,
+            "coordinatorUsagePriceUsd": 0.011283912,
+            "workerCalls": 22,
+            "workerConservativeUsd": 0.011551931999999999,
+            "unknownCoordinatorCalls": 0,
+            "heldUnknownWorkerUsd": 0,
+            "closedPanes": 3,
+            "leftOpen": [],
+            "cleanupOverrun": false
+        },
+        {
+            "attempt": 5,
+            "status": "incomplete",
+            "stop": "turn limit 30",
+            "coordinatorRequests": 30,
+            "coordinatorUsagePriceUsd": 0.017152782000000002,
+            "workerCalls": 26,
+            "workerConservativeUsd": 0.015121884000000002,
+            "unknownCoordinatorCalls": 0,
+            "heldUnknownWorkerUsd": 0,
+            "closedPanes": 3,
+            "leftOpen": [],
+            "cleanupOverrun": false
+        },
+        {
+            "attempt": 6,
+            "status": "incomplete",
+            "stop": "turn limit 30",
+            "coordinatorRequests": 30,
+            "coordinatorUsagePriceUsd": 0.016564287,
+            "workerCalls": 29,
+            "workerConservativeUsd": 0.014754491999999998,
+            "unknownCoordinatorCalls": 0,
+            "heldUnknownWorkerUsd": 0,
+            "closedPanes": 3,
+            "leftOpen": [],
+            "cleanupOverrun": false
+        },
+        {
+            "attempt": 7,
+            "status": "incomplete",
+            "stop": "turn limit 30",
+            "coordinatorRequests": 30,
+            "coordinatorUsagePriceUsd": 0.015999858,
+            "workerCalls": 29,
+            "workerConservativeUsd": 0.0229767,
+            "unknownCoordinatorCalls": 0,
+            "heldUnknownWorkerUsd": 0,
+            "closedPanes": 3,
+            "leftOpen": [],
+            "cleanupOverrun": false
+        },
+        {
+            "attempt": 8,
+            "status": "incomplete",
+            "stop": "turn limit 30",
+            "coordinatorRequests": 30,
+            "coordinatorUsagePriceUsd": 0.013670799000000003,
+            "workerCalls": 48,
+            "workerConservativeUsd": 0.039762933999999986,
+            "unknownCoordinatorCalls": 0,
+            "heldUnknownWorkerUsd": 0,
+            "closedPanes": 3,
+            "leftOpen": [],
+            "cleanupOverrun": false
+        },
+        {
+            "attempt": 9,
+            "status": "incomplete",
+            "stop": "turn limit 30",
+            "coordinatorRequests": 30,
+            "coordinatorUsagePriceUsd": 0.017966937000000002,
+            "workerCalls": 46,
+            "workerConservativeUsd": 0.045545952000000015,
+            "unknownCoordinatorCalls": 0,
+            "heldUnknownWorkerUsd": 0,
+            "closedPanes": 3,
+            "leftOpen": [],
+            "cleanupOverrun": false
+        }
+    ],
+    "sourceResultSha256": "4cbf4e359e361495d570393c20ea22dc44b198b73bcc57461ae0293ed943ee8e",
+    "manualControllerAssessment": {
+        "afterCompactionReconcileBeforeDispatch": true,
+        "distinctTaskDispatches": [
+            "fix-1",
+            "fix-1b",
+            "review-1",
+            "fix-2",
+            "review-2"
+        ],
+        "noCoordinatorImplementationEdits": true,
+        "localCommands": "Read briefs/reports/list checkpoint only; final coordinator state file was sole model write.",
+        "noDuplicateAssignment": true,
+        "receiptReviewAndHeadRevisionAgree": true,
+        "finalStateFileMatchesLedger": true,
+        "coverageLimits": "Working Codex history reads sometimes fail closed; full dialog-bridge coverage, hostile-code confinement and broad model reliability remain unproven."
+    }
+}

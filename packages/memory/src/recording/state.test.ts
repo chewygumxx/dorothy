@@ -28,8 +28,12 @@ import { codexSource } from "./sources.js";
 import {
     emptySweepState,
     forgetMissing,
+    loadPiSidecar,
     loadSweepState,
+    type PiSidecar,
+    piSidecarPath,
     rememberRead,
+    savePiSidecar,
     saveSweepState,
     sweepPath,
 } from "./state.js";
@@ -272,5 +276,89 @@ describe("recording sweep state", () => {
                 JSON.stringify(["hermes", "other"]),
             ].sort(),
         );
+    });
+});
+
+describe("Pi ancestry sidecars", () => {
+    const path = "/fixture/sessions/a.jsonl";
+    const sidecar = (): PiSidecar => ({
+        v: 1,
+        path,
+        fingerprint: {
+            kind: "file",
+            size: 1,
+            mtime: "1",
+            inode: "2",
+            device: "3",
+        },
+        complete: true,
+        ancestry: {
+            nativeSession: "fixture-session",
+            entries: {
+                user0001: {
+                    owner: "pi-a",
+                    origin: "fixture-session",
+                    parentId: null,
+                    payloadDigest: "d",
+                },
+            },
+        },
+        segments: [{ session: "pi-a", parent: null, anchor: null }],
+    });
+
+    it("keeps each file's under its own name in the private state root", () => {
+        expect(piSidecarPath(env, path)).toMatch(
+            new RegExp(
+                `^${join(root, "state/dorothy/pi/recording")}/[0-9a-f]{64}\\.json$`,
+            ),
+        );
+        expect(piSidecarPath(env, path)).not.toBe(
+            piSidecarPath(env, `${path}x`),
+        );
+        expect(() => piSidecarPath({}, path)).toThrow("recording state root");
+    });
+
+    it("loads what it saved, entry ids as data alone", async () => {
+        const saved = sidecar();
+        Object.defineProperty(saved.ancestry.entries, "__proto__", {
+            value: {
+                owner: "pi-a",
+                origin: "fixture-session",
+                parentId: null,
+                payloadDigest: "d",
+            },
+            enumerable: true,
+        });
+        await savePiSidecar(env, saved);
+        const loaded = await loadPiSidecar(env, path);
+        expect(Object.keys(loaded?.ancestry.entries ?? {})).toEqual([
+            "user0001",
+            "__proto__",
+        ]);
+        expect(loaded?.segments).toEqual(saved.segments);
+        expect(Object.getPrototypeOf(loaded?.ancestry.entries)).toBeNull();
+    });
+
+    it("trusts no sidecar of another path, version or shape", async () => {
+        await savePiSidecar(env, sidecar());
+        expect(await loadPiSidecar(env, "/fixture/other.jsonl")).toBeNull();
+        for (const change of [
+            { v: 2 },
+            { path: "/fixture/other.jsonl" },
+            { complete: "yes" },
+            { segments: [{ session: "pi-a" }] },
+            { speech: "Synthetic words." },
+        ]) {
+            await writeFile(
+                piSidecarPath(env, path),
+                JSON.stringify({ ...sidecar(), ...change }),
+            );
+            expect(await loadPiSidecar(env, path)).toBeNull();
+        }
+        await writeFile(piSidecarPath(env, path), "not JSON");
+        expect(await loadPiSidecar(env, path)).toBeNull();
+        await expect(
+            savePiSidecar(env, { ...sidecar(), complete: "yes" } as never),
+        ).rejects.toThrow("invalid Pi sidecar");
     });
 });

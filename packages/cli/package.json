@@ -2,7 +2,9 @@
     "name": "@dorothy/cli",
     "private": true,
     "type": "module",
-    "exports": {},
+    "exports": {
+        "./scrub": "./src/scrub.ts"
+    },
     "dependencies": {
         "@dorothy/agent": "workspace:*",
         "@dorothy/core": "workspace:*",
@@ -10,6 +12,7 @@
         "@dorothy/identity": "workspace:*",
         "@dorothy/memory": "workspace:*",
         "@dorothy/tui": "workspace:*",
+        "@earendil-works/pi-coding-agent": "1.5.0",
         "yaml": "2.9.1"
     }
 }

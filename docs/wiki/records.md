@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-03
+mtime: 2026-11-06
 spdx: GPL-3.0-only
 title: Records
 description: >-
@@ -207,6 +207,21 @@ first.
   hook command, Codex launcher and Hermes provider.
 - [Delivery report](../reports/2026-11-01-delivery.md): Report. Reviews,
   rulings, the no-model verification and the live probes that wait.
+- [Open WebUI feasibility](../notes/2026-11-03_open-webui-feasibility.md):
+  Research. Open WebUI as her interface or host, with Featherless and shared
+  memory.
+- [Dorothy in Pi](../specs/2026-11-03_pi-delivery.md): Specification. Pi's own
+  interface with her identity, shared memory and Featherless inference.
+- [Pi delivery plan](../plans/2026-11-03_pi-delivery.md): Plan. Task by task,
+  the pinned runtime, profiles, branch recording, extension and launcher.
+- [Pi delivery report](../reports/2026-11-03_pi-delivery.md): Report. The
+  offline and live probes, their cost and the gates still open.
+- [Pi delivery rulings](../reports/2026-11-04_pi-delivery-rulings.md):
+  Report. Each decision taken for the user while building it, with its cost
+  if wrong.
+- [Pi delivery deferred
+  findings](../deferred/2026-11-03_pi-delivery-deferred.md): Deferred.
+  Recording, launcher, extension and probe minors, and the live limits.
 
 ## Models and routing
 
@@ -266,6 +281,18 @@ first.
 - [Orchestration design](../specs/2026-11-02-orchestration-design.md):
   Specification. An MCP server running boxed Claude Code and Codex workers
   through acpx.
+- [Pi as her stewardship host](../notes/2026-11-03_pi-stewardship.md):
+  Research. Why Pi was excluded, what it now offers and a proposed trial.
+- [Pi stewardship plan](../plans/2026-11-03_pi-stewardship.md): Plan. A herdr
+  fixture fleet, task accounting, native Pi tools and a bounded trial.
+- [Pi stewardship trial](../reports/2026-11-03_pi-stewardship.md): Report.
+  The runner, its hardened identity and accounting tests, the proxy
+  lifecycle fix, the bounded native acceptance pass at `b38393c` and its
+  limits.
+- [Pi stewardship deferred
+  findings](../deferred/2026-11-03_pi-stewardship-deferred.md): Deferred.
+  The accepted native run's limits, same-user bounds, live-only
+  uncertainties and runner edges.
 
 ## Repository workflow
 

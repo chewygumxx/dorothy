@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-03
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: Dorothy's wiki
 description: >-
@@ -53,7 +53,8 @@ subject. It links the dated records in `specs/`, `plans/`, `reports/`,
 - [Evaluation](./wiki/topics/evaluation.md): how her memory is measured, the
   systems compared, what the results establish and their limits.
 - [Identity, harnesses and delivery](./wiki/topics/identity-and-harnesses.md):
-  how her identity is defined once, carried into a host and recorded back.
+  how her identity is defined once, carried into a host (the gateway, session
+  flags, Pi's extension) and recorded back.
 - [Models and routing](./wiki/topics/models-and-routing.md): her runtime,
   roles, providers, fallback and cost accounting.
 - [The terminal](./wiki/topics/terminal.md): the chat, input, Markdown
@@ -68,8 +69,8 @@ subject. It links the dated records in `specs/`, `plans/`, `reports/`,
 
 - [Packages](./wiki/profiles/packages.md): the eight workspace packages and
   what each may import.
-- [Harnesses](./wiki/profiles/harnesses.md): Claude Code, Codex, OpenClaw and
-  Hermes, and the state of her delivery to each.
+- [Harnesses](./wiki/profiles/harnesses.md): Claude Code, Codex, OpenClaw,
+  Hermes and Pi, and the state of her delivery to each.
 - [Protocols](./wiki/profiles/protocols.md): MCP, the model APIs, hook
   payloads, ACP and the standards the research weighed.
 - [Services and providers](./wiki/profiles/services-and-providers.md): the

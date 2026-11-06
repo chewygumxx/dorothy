@@ -8,11 +8,21 @@
 //
 //
 
+// The sweep's private state: `sweep.json`'s skip hints, and each Pi
+// file's ancestry sidecar. Neither is evidence of what the archive holds.
+
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import type { Env } from "@dorothy/core";
 import { privateDir, stateDir, writePrivate } from "../bodies/state.js";
-import type { Fingerprint, Host, SourceRead } from "./sources.js";
+import type { PiAncestry } from "./pi.js";
+import type {
+    FileFingerprint,
+    Fingerprint,
+    Host,
+    SourceRead,
+} from "./sources.js";
 
 export type SweepState = {
     v: 1;
@@ -139,4 +149,112 @@ export function forgetMissing(
         }
         if (owner === host && !listed.has(key)) delete state.sessions[key];
     }
+}
+
+// What a Pi file's last read found of its graph, keyed by the file's
+// canonical path: each entry's segment and origin and each segment's
+// anchor, never speech. `complete` when the read held no halt, torn tail
+// or unresolved parent, so a fork may inherit from it unchanged.
+export type PiSidecar = {
+    v: 1;
+    path: string;
+    fingerprint: FileFingerprint;
+    complete: boolean;
+    ancestry: PiAncestry;
+    segments: {
+        session: string;
+        parent: string | null;
+        anchor: string | null;
+    }[];
+};
+export function piSidecarPath(env: Env, path: string): string {
+    if (!isAbsolute(env.XDG_STATE_HOME ?? "") && !isAbsolute(env.HOME ?? ""))
+        throw new RangeError("missing recording state root");
+    const name = createHash("sha256").update(path).digest("hex");
+    return join(stateDir(env), "pi", "recording", `${name}.json`);
+}
+const nullable = (value: unknown) =>
+    value === null || typeof value === "string";
+function piSidecar(value: unknown, path: string): value is PiSidecar {
+    if (
+        !object(value) ||
+        !exact(value, [
+            "v",
+            "path",
+            "fingerprint",
+            "complete",
+            "ancestry",
+            "segments",
+        ]) ||
+        value.v !== 1 ||
+        value.path !== path ||
+        !fingerprint(value.fingerprint) ||
+        value.fingerprint.kind !== "file" ||
+        typeof value.complete !== "boolean" ||
+        !object(value.ancestry) ||
+        !exact(value.ancestry, ["nativeSession", "entries"]) ||
+        typeof value.ancestry.nativeSession !== "string" ||
+        !object(value.ancestry.entries) ||
+        !Array.isArray(value.segments)
+    )
+        return false;
+    return (
+        Object.values(value.ancestry.entries).every(
+            (entry) =>
+                object(entry) &&
+                exact(entry, [
+                    "owner",
+                    "origin",
+                    "parentId",
+                    "payloadDigest",
+                ]) &&
+                typeof entry.owner === "string" &&
+                typeof entry.origin === "string" &&
+                nullable(entry.parentId) &&
+                typeof entry.payloadDigest === "string",
+        ) &&
+        value.segments.every(
+            (segment: unknown) =>
+                object(segment) &&
+                exact(segment, ["session", "parent", "anchor"]) &&
+                typeof segment.session === "string" &&
+                nullable(segment.parent) &&
+                nullable(segment.anchor),
+        )
+    );
+}
+// The file's sidecar, or null when there is none or it cannot be trusted:
+// the source then recomputes it from the file.
+export async function loadPiSidecar(
+    env: Env,
+    path: string,
+): Promise<PiSidecar | null> {
+    try {
+        const value: unknown = JSON.parse(
+            await readFile(piSidecarPath(env, path), "utf8"),
+        );
+        if (!piSidecar(value, path)) return null;
+        // Entry ids are data: none may reach a prototype.
+        const entries: PiAncestry["entries"] = Object.create(null);
+        for (const [id, entry] of Object.entries(value.ancestry.entries))
+            Object.defineProperty(entries, id, {
+                value: { ...entry },
+                enumerable: true,
+                writable: true,
+                configurable: true,
+            });
+        return { ...value, ancestry: { ...value.ancestry, entries } };
+    } catch {
+        return null;
+    }
+}
+export async function savePiSidecar(
+    env: Env,
+    sidecar: PiSidecar,
+): Promise<void> {
+    if (!piSidecar(sidecar, sidecar.path))
+        throw new RangeError("invalid Pi sidecar");
+    const path = piSidecarPath(env, sidecar.path);
+    await privateDir(dirname(path));
+    await writePrivate(path, `${JSON.stringify(sidecar)}\n`);
 }

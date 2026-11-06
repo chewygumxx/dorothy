@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-03
+mtime: 2026-11-06
 spdx: GPL-3.0-only
 title: Priorities
 description: >-
@@ -50,6 +50,8 @@ Found but not scheduled, in the roadmap's order, which
 [lists them](../roadmap.md#candidates) with their sources.
 
 - A registry of herdr agents.
+- Pi delivery's deferred findings and limits.
+- Pi stewardship's deferred findings and limits.
 - Model Providers' deferred findings.
 - The sweep's remaining deferred minors.
 - Recording's deferred minors.

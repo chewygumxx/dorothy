@@ -38,7 +38,7 @@ const GRAPH: Record<string, string[]> = {
 
 const ENTRIES: Record<string, string[]> = {
     agent: ["."],
-    cli: [],
+    cli: ["./scrub"],
     core: ["."],
     eval: [],
     gateway: ["."],
@@ -52,6 +52,7 @@ const ENTRIES: Record<string, string[]> = {
         "./evaluation",
         "./host-hook",
         "./recall-server",
+        "./scrub",
         "./service",
     ],
     tui: [".", "./editor"],
@@ -61,6 +62,7 @@ const ENTRIES: Record<string, string[]> = {
 // packages, which only the agent may.
 const AGENT_SDK = "@anthropic-ai/claude-agent-sdk";
 const AI_SDK = /^(ai|@ai-sdk\/.+|@openrouter\/.+)$/;
+const PI = /^@earendil-works\/pi-.+$/;
 
 const manifest = async (name: string): Promise<Manifest> =>
     Bun.file(join(PACKAGES, name, "package.json")).json();
@@ -122,6 +124,34 @@ describe("the workspace", () => {
             }
         }
         expect(holders).toEqual(["agent"]);
+    });
+
+    it("leaves Pi packages to the CLI, with the runtime pinned", async () => {
+        const holders: string[] = [];
+        for (const name of Object.keys(GRAPH)) {
+            if (
+                Object.keys(declared(await manifest(name))).some((key) =>
+                    PI.test(key),
+                )
+            ) {
+                holders.push(name);
+            }
+        }
+        expect(holders).toEqual(["cli"]);
+        expect(
+            (await manifest("cli")).dependencies?.[
+                "@earendil-works/pi-coding-agent"
+            ],
+        ).toBe("1.5.0");
+        expect(
+            Object.keys(
+                declared(
+                    await Bun.file(
+                        join(import.meta.dir, "package.json"),
+                    ).json(),
+                ),
+            ).some((key) => PI.test(key)),
+        ).toBe(false);
     });
 
     it("lints an import of what a package does not declare", async () => {

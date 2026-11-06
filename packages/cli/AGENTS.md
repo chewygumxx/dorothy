@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-11-01
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: packages/cli/AGENTS.md
 description: >-
@@ -19,18 +19,18 @@ tags:
 
 # packages/cli/AGENTS.md
 
-`@dorothy/cli` is the `dorothy` program, run and not imported: it exports
-nothing and wires every other package together.
+`@dorothy/cli` wires every package into `dorothy`; its application has
+no imports, with only the evidence scrubber boundary below exported.
 
 ## Entry points and imports
 
-No entry points. `src/index.ts` runs each mode from `RUNNERS`, whose
-type has `tsc` require a runner for every mode, and each runner loads
-its package lazily (`await import(...)`): memory's commands, recall server
-and hooks through their own entry points (`@dorothy/memory/commands`,
-`/recall-server`, `/claude-hook`, `/host-hook`), and the agent only for the
-model modes, so `--help`, `--list` and `--recall-server` never load the AI
-SDK. Keep every new mode's import lazy.
+`src/scrub.ts` exports memory's scrubber as `@dorothy/cli/scrub` for evidence.
+`src/index.ts` runs each mode from `RUNNERS`; `tsc` requires every mode
+and each runner loads its package lazily (`await import(...)`): memory's
+commands, recall server and hooks through their own entry points
+(`@dorothy/memory/commands`, `/recall-server`, `/claude-hook`,
+`/host-hook`), and the agent only for model modes, so `--help`, `--list`
+and `--recall-server` never load the AI SDK. Keep new mode imports lazy.
 
 ## Files
 
@@ -86,15 +86,14 @@ SDK. Keep every new mode's import lazy.
 - `self.ts`: `selfCommand`, this program as `bun --no-env-file <entry>`, so a
   project's `.env` never reaches a hook or server (`selfServe`, `shellWord`);
   `mainEntry`, the main checkout's entry, which an install writes;
-  `runForwarding`, shared by `--claude` and `--codex`: `SIGINT` ignored (the
+  `runForwarding`, for `--claude`, `--codex` and `--pi`: `SIGINT` ignored (the
   terminal sends it to the host too), `SIGTERM` and `SIGHUP` forwarded.
-- `hosts/`: Codex's launcher, Hermes's install: [guide](./src/hosts/AGENTS.md)
+- `hosts/`: Codex, Hermes and Pi: [guide](./src/hosts/AGENTS.md).
 - `claude-dump.ts`: `runClaudeDump` for `--claude --dump-context`: the gateway's
   upstream is `captureServer` from `@dorothy/agent`, `claude` runs quietly in
   print mode without saving its session, and is stopped at the first request,
   which is printed with a warning if the gateway injected nothing, with the
-  block alone: no sync, recall or permissions. Imported lazily, so `--claude`
-  never loads the AI SDK.
+  block alone: no sync, recall or permissions.
 - `claude-hook.ts`: `runHook`, for `--claude-hook`, gives memory's
   `runClaudeHook` the environment `claude` gave the hook, in which it finds the
   launch, and reviews on the review route, whose entries name their own base
@@ -108,10 +107,10 @@ SDK. Keep every new mode's import lazy.
 - `index.ts` also runs `--serve` (memory's service through
   `@dorothy/memory/service`, with reviews from the agent, Dorothy's
   `secrets.json` loaded by path from this checkout; off, and said, if either
-  fails), its token commands, `--sweep`
-  (`runSweep`, `runSweepDismiss`), `--hook <host> <event>` (Codex's and Hermes's
-  hooks, via `@dorothy/memory/host-hook`) and `--mcp`, memory's stdio bridge
-  (`@dorothy/memory/bridge`), which starts `--serve` when none answers.
+  fails), its token commands, `--sweep` (`runSweep`, `runSweepDismiss`),
+  `--hook <host> <event>` and `--pi-hook` (`piHook`; Codex's, Hermes's and
+  Pi's hooks, via `@dorothy/memory/host-hook`) and `--mcp`, memory's stdio
+  bridge (`@dorothy/memory/bridge`), which starts `--serve` when none answers.
 - `review-backfill.ts`: `runBackfillReview`, for `--review-backfill`, runs
   memory's `runReviewBackfill` on `reviewAgent`'s agent (this checkout's
   secrets, her API key). It prints `<phrase>: <outcome>`, then a total; exits
@@ -134,10 +133,11 @@ SDK. Keep every new mode's import lazy.
   Code does, and memory is read without credentials. `--claude-hook`
   loads the checkout's `secrets.json` by path for reviews, never the
   working directory's; `claude`'s variables stay, no provider reads them.
+  `--pi` loads the selected key alone, after its route is checked.
 - The CLI passes `ambient()` to memory's history commands, and
-  `commandHistory(...)` of it to memory's commands, the fact and
-  project commands among them, and `editInEditor` (from
-  `@dorothy/tui/editor`) to `--memory` and `--edit-tags`.
+  `commandHistory(...)` of it to memory's commands, the fact and project
+  commands among them, and `editInEditor` (from `@dorothy/tui/editor`) to
+  `--memory` and `--edit-tags`.
 
 ## Tests
 

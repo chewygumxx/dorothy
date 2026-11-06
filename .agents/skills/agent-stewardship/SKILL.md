@@ -6,7 +6,7 @@ description: >-
   a wake-up, messaging another agent in herdr, or when your context
   passes 85% and you would compact yourself.
 ctime: 2026-10-31
-mtime: 2026-11-02
+mtime: 2026-11-05
 spdx: GPL-3.0-only
 tags:
   - agents
@@ -98,7 +98,10 @@ Read the one the work at hand needs:
 In [`scripts/`](./scripts), each printing its usage when misused:
 
 - [`send-prompt.sh`](./scripts/send-prompt.sh): a message to an agent,
-  now, at a dated time or after a span.
+  now, at a dated time or after a span. `--expect-session` or
+  `--expect-process` rechecks the occupant under the pane lock. Native
+  trials alone add `--deadline-at <epoch-ms>`: exit 10 is before text;
+  exit 11 leaves a partial send uncertain and never writes Enter.
 - [`compact-self.sh`](./scripts/compact-self.sh): compacts your own
   conversation once your turn ends.
 - [`job.sh`](./scripts/job.sh), with
@@ -108,5 +111,9 @@ In [`scripts/`](./scripts), each printing its usage when misused:
   account to spend.
 - [`at-limit.sh`](./scripts/at-limit.sh): reruns a command stopped by a
   plan's limit.
+- [`send-interrupt.sh`](./scripts/send-interrupt.sh): one Escape, or
+  `--key ctrl+c` for trial interruption, under its pane's lock. Occupant
+  mismatch exits 9 before writing; terminal stability is not identity.
+  Its trial deadline caps lock wait and exits 10 before the key.
 - [`pane-lock.sh`](./scripts/pane-lock.sh): the pane lock the senders
   share, sourced, never run.

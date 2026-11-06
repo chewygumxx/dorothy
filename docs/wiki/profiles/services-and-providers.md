@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-03
+mtime: 2026-11-04
 spdx: GPL-3.0-only
 title: Services and providers
 description: >-
@@ -238,10 +238,13 @@ Mistral. None was built or chosen.
   runtime the spec ruled LangChain.js out, because it brings message and
   graph state beside her JSONL; its middleware list serves as a checklist
   ([spec](../../specs/2026-11-01-model-providers-design.md#decisions)).
-- pi: compared and ruled out. The replacements research recommended
-  rebuilding her body on it, and the minutes of 2026-10-18 superseded that:
-  pi is not to be used
-  ([minutes](../../reports/2026-10-18-protocol-diversity.md#rulings)).
+- pi: compared and ruled out on 2026-10-18 as the base to rebuild her body
+  on ([minutes](../../reports/2026-10-18-protocol-diversity.md#rulings)),
+  then taken up on 2026-11-03 as a host: the user made Pi the highest
+  priority, and `dorothy --pi` runs the published Pi 1.5.0 with her
+  extension. Used, as a host, not as her runtime
+  ([harnesses](./harnesses.md#pi),
+  [decision](../decisions.md#pi-hosts-her-through-its-own-interface)).
 - The OpenAI Agents SDK, Mastra, and the two vendors' own SDKs were also
   tabulated and not chosen.
 
