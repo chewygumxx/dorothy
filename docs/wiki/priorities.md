@@ -49,6 +49,8 @@ In the roadmap's order; the first is next.
 Found but not scheduled, in the roadmap's order, which
 [lists them](../roadmap.md#candidates) with their sources.
 
+- **High priority:** an additional independent backup destination for
+  development evidence.
 - A registry of herdr agents.
 - Pi delivery's deferred findings and limits.
 - Pi stewardship's deferred findings and limits.
