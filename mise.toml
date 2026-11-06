@@ -60,6 +60,9 @@ node = "24"
 "aqua:getsops/sops"    = "3.13.3"
 "aqua:FiloSottile/age" = "1.3.2"
 
+# Evidence packaging streams GNU tar (Linux system prerequisite) through zstd.
+"conda:zstd" = { version = "1.5.7", channel = "conda-forge" }
+
 [settings]
 #
 # Refetch remote tasks each time one runs, so `act` follows `v1` as it
