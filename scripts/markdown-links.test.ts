@@ -88,6 +88,15 @@ it("counts inline entries whose label wraps onto the next line", () => {
     ]);
 });
 
+it("counts a wrapped inline title without also counting its label", () => {
+    const md =
+        '[record](./inline.md\n "Record title")\n' +
+        "[record]: ./reference.md\n";
+    expect(linkOccurrences(md)).toEqual([
+        { path: "./inline.md", fragment: undefined },
+    ]);
+});
+
 it("ignores code uses and definitions in both kinds of fences", () => {
     const md =
         "`[record]` `[entry][record]` `[inline](./inline.md)`\n" +

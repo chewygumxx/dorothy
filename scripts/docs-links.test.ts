@@ -156,3 +156,15 @@ it("ignores reference and inline entries shown only as code examples", () => {
         duplicates: [],
     });
 });
+
+it("counts duplicate inline records with a title on the following line", () => {
+    writeFileSync(join(root, "docs/record.md"), "# Record\n");
+    writeFileSync(
+        page,
+        '[First](./record.md)\n[Repeated](./record.md\n "Record title")\n',
+    );
+    expect(catalogueFailures(root, page, ["docs/record.md"])).toEqual({
+        missing: [],
+        duplicates: ["docs/record.md"],
+    });
+});

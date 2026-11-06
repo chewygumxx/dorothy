@@ -62,7 +62,7 @@ export const linkOccurrences = (markdown: string): Link[] => {
     );
     // Consuming the whole inline link keeps its label out of shortcut uses.
     const uses = new RegExp(
-        `\\[[^\\]]*${inlineTarget.source}[^\\n)]*\\)|` +
+        `\\[[^\\]]*${inlineTarget.source}[^)]*\\)|` +
             "\\[([^\\[\\]]+)\\](?:\\[([^\\[\\]]*)\\])?",
         "g",
     );

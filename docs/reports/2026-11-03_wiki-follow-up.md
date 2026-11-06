@@ -372,3 +372,55 @@ The previously deferred parser, editorial and source-conflict work stays
 deferred, with no new host or model evidence. The controller owns the
 single scoped re-review from `fc2d590`, push, CI and integration; none of
 those outcomes is claimed here.
+
+## Residual wrapped-title correction
+
+Scoped review of `fc2d590..a58939b` confirmed the original reference-use
+finding addressed, but found one new Important regression: an inline
+link with its title on the following line was omitted from occurrences.
+The old destination inventory counted that ordinary form. The controller
+allowed the smallest correction and a focused continuation of the same
+review gate, without reopening broader parser work.
+
+Added the review's exact two-entry example to the real catalogue helper
+fixtures and a parser fixture whose inline label also has a reference
+definition. Both fixtures were written before the correction. Fresh RED:
+
+```sh
+bun test scripts/docs-links.test.ts scripts/markdown-links.test.ts
+```
+
+```text
+ 32 pass
+ 2 fail
+ 37 expect() calls
+Ran 34 tests across 2 files. [23.00ms]
+```
+
+Exit status: 1. The helper returned `duplicates: []` instead of
+`["docs/record.md"]`. The parser returned `./reference.md` instead of
+`./inline.md`, demonstrating the same fallback to a shortcut reference.
+Raw expectation failures are in temporary `residual-red.log` under the
+plan workspace; this is a fresh RED from this continuation.
+
+The correction removes only the newline exclusion after an inline
+link's destination. The closing parenthesis still bounds consumption,
+and the existing parser APIs remain unchanged. Fresh GREEN:
+
+```sh
+bun test scripts/markdown-links.test.ts scripts/docs-links.test.ts \
+  docs.test.ts agents.test.ts
+```
+
+```text
+ 122 pass
+ 5 skip
+ 0 fail
+ 249 expect() calls
+Ran 127 tests across 4 files. [484.00ms]
+```
+
+Exit status: 0. Raw output is temporary `residual-targeted.log`.
+The full check is reserved for the final tree after merging current main.
+The scoped review gate remains open pending verification of this small
+correction by the controller's existing reviewer. No PR outcome is claimed.
