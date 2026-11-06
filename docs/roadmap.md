@@ -257,6 +257,16 @@ Links between conversations and semantic search beside FTS5.
 
 Found but not scheduled, each with its source.
 
+- **High priority: an additional independent backup destination for
+  development evidence.** The user assigned this priority on 2026-11-06.
+  The Pi archive currently has local and private Cloudflare R2 copies;
+  another directory on the same disk or another bucket in the same
+  account is not the additional independent destination sought. Choose
+  a destination with a separate failure and access boundary, retain the
+  catalogue and key recovery instructions, and verify a fresh restore.
+  Destination selection and setup remain outstanding. Source:
+  [Pi evidence preservation](./reports/2026-11-06_pi-evidence-preservation.md#spending-and-backup-status).
+
 - A registry of herdr agents. Unscheduled, but high priority: it has no
   place in Ahead's order, waits on no phase, and is taken up when the
   user says. It is not Dorothy's own orchestration
@@ -725,3 +735,7 @@ In order of completion.
   coverage) are Pi-specific and do not make an existing candidate
   load-bearing for Memory. Candidates keep every such limit with its
   source.
+- 2026-11-06: The user marks an additional independent backup
+  destination for development evidence high priority. It joins Candidates
+  with the existing archive as its source; no destination or third copy
+  is claimed, and the existing Ahead order is preserved.
