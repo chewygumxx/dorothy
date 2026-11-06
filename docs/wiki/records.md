@@ -369,6 +369,10 @@ first.
   plan](../plans/2026-11-06_development-evidence.md): Plan. Tested manifest,
   packaging and R2 transfer commands with a repository operator skill.
 
+- [Development evidence helper
+  report](../reports/2026-11-06_development-evidence.md): Report. Synthetic
+  helper verification, operator reference comparison and operational limits.
+
 ## Related
 
 - [Decisions](./decisions.md)

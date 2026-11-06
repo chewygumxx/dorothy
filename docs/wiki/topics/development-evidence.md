@@ -112,8 +112,9 @@ confirmed by the owner, estimated, or remains unknown. The owner's key
 backup is required for recovery but is not another copy of the data.
 
 For the Pi capture, the US$5 monthly amount is a target. Cloudflare budget
-alerts are informational and do not stop R2 usage. Bounds on logical
-commands and archive size do not cap SDK retries or other account usage.
+alerts are informational and do not stop R2 usage. The transfer helper
+disables SDK retries, but its logical-call and byte limits do not cap
+multipart HTTP traffic, charges or other account usage.
 [Budget alerts](https://developers.cloudflare.com/billing/manage/budget-alerts/)
 
 ## Authenticate without an interactive login
@@ -143,12 +144,20 @@ does not automatically read the encrypted file. A repository helper must
 load the required values through the existing secret loader and pass only
 the selected credentials to the intended client.
 
-For routine R2 transfers, the proposed helper credential names are:
+For routine R2 transfers, the helper loads these credential names:
 
 - `CLOUDFLARE_R2_ACCESS_KEY_ID`.
 - `CLOUDFLARE_R2_SECRET_ACCESS_KEY`.
-- `CLOUDFLARE_ACCOUNT_ID` for the intended account; this is an identifier,
-  not a password, but it need not be published in the catalogue.
+
+Both transfer modes require the intended account identifier through
+`--account-id`, and an explicit `--bucket` matching the trusted catalogue.
+The account identifier must contain 32 hexadecimal digits. It is not a
+password and need not be published in the catalogue. The helper derives
+the default-jurisdiction R2 endpoint from this explicit account selection;
+it does not trust account or endpoint metadata in a catalogue. Nonempty
+environment credential values take precedence over encrypted file values.
+Only the selected credential pair, account and bucket reach the client.
+Use `--secrets` for an explicit encrypted file when needed.
 
 Use Object Read and Write scoped to the archive bucket for an archiving
 operator, or Object Read-only for recovery alone. Bucket creation, public
@@ -158,12 +167,132 @@ placeholder values must not be presented as working authentication.
 
 ## Reusable helpers
 
-Focused helpers for manifest verification, encrypted packaging and
-credential-backed transfer are being designed. Their specification must
-preserve compatibility with the existing Pi catalogue and keep source
-selection and retention decisions with the operator. Until those helpers
-are implemented and verified, use the completed report's explicit
-procedure; this page does not claim an unbuilt command exists.
+The repository-owned [development evidence
+skill](../../../.agents/skills/development-evidence/SKILL.md) routes agents
+here. Run each helper's `--help` from the checkout root for its exact
+interface:
+
+```sh
+bun scripts/evidence-manifest.ts --help
+bun scripts/evidence-package.ts --help
+bun scripts/evidence-transfer.ts --help
+```
+
+These Linux helpers use Bun, GNU tar, zstd and age. `mise.toml` pins zstd
+and age; GNU tar is a system prerequisite. They operate on an explicit,
+quiescent staging tree, not on discovered source roots. They reject
+symlinked ancestry and special files, preserve literal payload links, and
+check observed changes. They provide neither atomic snapshots nor OS
+confinement against malicious concurrent ancestry replacement. Keep inputs
+stable throughout packaging and transfer.
+
+Defaults are 128 MiB parts, 4 GiB complete ciphertext and 100 logical
+store calls. The transfer catalogue has a separate 1 MiB ceiling. Package
+and download outputs retain both ciphertext and parts, requiring roughly
+twice the ciphertext size plus metadata. An upload plans two calls per
+part and two for its catalogue (HEAD and PUT); a download plans one GET
+per listed part. This is an operation admission limit, not a provider bill
+cap. Large-file multipart behavior and live R2 authentication remain
+untested; tests use synthetic files and local services. The
+[implementation report](../../reports/2026-11-06_development-evidence.md)
+records concrete verification and limits.
+
+### Prepare secrets and manifest
+
+Real bucket-scoped credential creation and population remain separate
+operator setup. Use the encrypted editor, preserving all existing fields,
+to add the two credential names above; never paste their values into a
+shell command or this documentation:
+
+```sh
+sops edit secrets.json
+```
+
+The examples below are templates, not performed transfers. Set `STAGE` to
+the selected private, already-copied staging tree; `PACKAGE` and `FETCH`
+to fresh output paths whose parents exist; `ARCHIVE_ID` and `PREFIX` to a
+unique capture identity and normalized relative prefix ending in `/`;
+`BUCKET` and `ACCOUNT_ID` to the authorized existing destination; and
+`RECIPIENT` to the verified native lowercase `age1` public recipient.
+Private key values never belong in these variables. No helper selects
+sources, creates buckets or schedules work.
+
+```sh
+bun scripts/evidence-manifest.ts create --root "$STAGE"
+```
+
+Set `MANIFEST_SHA256` to the returned `manifestSha256` and retain it in the
+sanitized recovery record. Creation exclusively writes `MANIFEST.json`
+with mode 0600 and excludes that file from its own inventory. Verification
+checks the pinned manifest digest, complete entry set, entry types, file
+sizes and hashes, and literal symlink targets. Historical Pi numeric
+nanosecond timestamps remain readable metadata; recovery need not match
+file modes or timestamps exactly.
+
+```sh
+bun scripts/evidence-manifest.ts verify \
+  --root "$STAGE" --expected-sha256 "$MANIFEST_SHA256"
+bun scripts/evidence-package.ts \
+  --root "$STAGE" --expected-sha256 "$MANIFEST_SHA256" \
+  --out "$PACKAGE" --id "$ARCHIVE_ID" --bucket "$BUCKET" \
+  --prefix "$PREFIX" --recipient "$RECIPIENT"
+```
+
+Packaging streams tar through zstd and age without a plaintext archive on
+disk, then hashes and splits the ciphertext. It verifies staging again
+before writing the completed `archive.json` with status `packaged`. SSH
+and plugin recipients are unsupported. The private output directory holds
+`archive.tar.zst.age`, `parts/` and `archive.json`; the prefix gains the
+ciphertext digest. Any failure leaves outputs incomplete for inspection,
+without a completed catalogue. Never treat retained partial output as a
+completed package or silently reuse its output path.
+
+### Transfer and verify recovery
+
+Review and retain the trusted catalogue independently before transfer.
+Its existing metadata is preserved byte for byte on transfer; legacy Pi
+catalogues remain readable. Use an exclusive capture prefix: all keys are
+preflighted before any upload, but HEAD cannot prevent a concurrent writer
+between the check and PUT. There is no automatic mutation retry or remote
+cleanup. Parts upload in catalogue order and the catalogue uploads last.
+
+```sh
+bun scripts/evidence-transfer.ts upload \
+  --catalogue "$PACKAGE/archive.json" --directory "$PACKAGE/parts" \
+  --account-id "$ACCOUNT_ID" --bucket "$BUCKET"
+bun scripts/evidence-transfer.ts download \
+  --catalogue "$PACKAGE/archive.json" --out "$FETCH" \
+  --account-id "$ACCOUNT_ID" --bucket "$BUCKET"
+```
+
+A successful download checks every listed part and the joined ciphertext,
+then retains exact trusted catalogue bytes as `archive.json`. Files are
+0600 under a new 0700 directory. Failures retain visibly partial output
+without a success catalogue. Download neither decrypts nor extracts; it
+does not prove complete recovery or update an uploaded package's status.
+
+For a trusted archive, review expected paths and link handling before
+extracting with an unprivileged account into fresh owned space. Set
+`RESTORE` to an absent path under a private parent and `KEY_FILE` to the
+recoverable identity file path, never to a private key value. Enable
+pipeline failure checking so any failed stage blocks a recovery claim:
+
+```sh
+set -o pipefail
+mkdir -m 700 -- "$RESTORE" && \
+  age --decrypt --identity "$KEY_FILE" "$FETCH/archive.tar.zst.age" | \
+  zstd --decompress --stdout --quiet | \
+  tar --extract --file=- --directory "$RESTORE" && \
+  bun scripts/evidence-manifest.ts verify \
+  --root "$RESTORE" --expected-sha256 "$MANIFEST_SHA256"
+```
+
+Check each exit status before continuing. A failed extraction remains
+incomplete, even if some files appeared. Verify derived databases through
+immutable reads where applicable, following the Pi report's concrete
+recovery checks. Record the actual recovery scope and results separately
+from packaging and upload. No helper deletes originals, extracts archives,
+configures cloud storage or completes the outstanding independent backup.
 
 [wrangler-auth]:
 https://developers.cloudflare.com/workers/wrangler/system-environment-variables/
