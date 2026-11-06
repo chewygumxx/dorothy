@@ -424,3 +424,143 @@ Exit status: 0. Raw output is temporary `residual-targeted.log`.
 The full check is reserved for the final tree after merging current main.
 The scoped review gate remains open pending verification of this small
 correction by the controller's existing reviewer. No PR outcome is claimed.
+
+## Scoped review and current-main integration
+
+The existing reviewer confirmed the original reference-use finding
+addressed at `a58939b`. Its focused continuation reviewed only
+`a58939b..84b0577` and confirmed the wrapped-title correction addressed,
+with no new Critical or Important breakage and no out-of-scope findings.
+The same scoped gate is clear through `84b0577`; no broad review was
+repeated. The scratch review artifact is `final-fix-rereview.md`.
+
+Merged `origin/main` at `350eee8` into the branch after the residual fix,
+preserving both parents in merge commit `e370077`:
+
+```sh
+git merge --no-ff origin/main \
+  -m 'chore: Merge main into wiki follow-up'
+```
+
+The merge exited 1 with conflicts only in `docs/roadmap.md` and
+`docs/wiki/topics/repository-workflow.md`. Resolution retains the wiki
+completion before the newer Pi completion in Done, and retains both
+revision histories. The merged Ahead section is byte-equal to current
+main's Ahead section. Main's newer Pi records, priorities and acceptance
+qualifications remain intact. The workflow page retains main's Node and
+probe guidance alongside the follow-up integrity-check prose. Roadmap,
+priorities and catalogue keep main's November 6 mtimes; the edited
+workflow page also uses November 6.
+
+Reread the merged root and docs instructions and current check command.
+Node is `v24.22.1`, satisfying the documented 22.19-or-later requirement.
+Installed the changed locked dependencies before completing the merge:
+
+```sh
+bun install
+git add docs/roadmap.md docs/wiki/topics/repository-workflow.md
+GIT_EDITOR=true git merge --continue
+```
+
+```text
+ 17 pass
+ 5 skip
+ 0 fail
+ 72 expect() calls
+Ran 22 tests across 1 file. [28.00ms]
+
+112 packages installed [672.00ms]
+Checked 98 files in 354ms. No fixes applied.
+[docs/wiki-follow-up e370077] chore: Merge main into wiki follow-up
+```
+
+Both commands exited 0. Installation ran the declared prepare workflow
+and its skill checks. The merge's normal commit hook passed, with no
+additional tracked dependency changes. The tree was clean after merge.
+The combined targeted check then ran:
+
+```sh
+bun test scripts/markdown-links.test.ts scripts/docs-links.test.ts \
+  docs.test.ts agents.test.ts
+```
+
+```text
+ 128 pass
+ 5 skip
+ 0 fail
+ 255 expect() calls
+Ran 133 tests across 4 files. [621.00ms]
+```
+
+Exit status: 0. These totals include the current-main guidance tests.
+
+The single full check on this final combined implementation ran at
+`e370077` with Node `v24.22.1`:
+
+```sh
+bun run check
+```
+
+```text
+Checked 559 files in 137ms. No fixes applied.
+Checked 560 files in 454ms. No fixes applied.
+Found 1 info.
+[NOTICE] Verification Passed:
+    Files parsed: 803
+    Repo line - Out-of-Sync: 0, Correct: 759, Not found: 44
+    Path line - Out-of-Sync: 0, Correct: 759, Not found: 44
+    Files unreadable: 0, Skipped: 4
+$ bun test
+bun test v1.4.2 (744846f84)
+
+ 4579 pass
+ 5 skip
+ 0 fail
+ 149428 expect() calls
+Ran 4584 tests across 217 files. [166.56s]
+```
+
+Exit status: 0. All check stages completed. The same existing Biome
+`lint/style/useTemplate` information remains at
+`packages/memory/src/memory/reviewer.test.ts:39:9`. Header validation
+prints 88 repo/path warnings for 44 existing files, now including the
+three Pi stewardship text/log artifacts and vendored herdr extension
+brought in from main. It reports no out-of-sync or unreadable file,
+and four skipped files. The five conditional agents skips remain.
+The full check runs offline tests; no live Pi delivery or stewardship
+probe, real-data operation or paid model run was performed here.
+
+Temporary raw evidence under the plan workspace is
+`integration-merge.log`, `integration-install.log`,
+`integration-merge-continue.log`, `integration-targeted.log` and
+`integration-check.log`. These scratch captures include complete command
+output and are removed when the plan workspace is cleaned. This report
+retains the commands and exact result excerpts.
+
+Self-review confirmed that merge commit `e370077` has parents
+`84b0577` and `350eee8`, preserves the reviewed fix commits, and changes
+no parser code during conflict resolution. The residual reviewer range
+is only `a58939b..84b0577`; the two documentation conflict resolutions
+can be inspected from the merge diff. The remaining historical parser,
+editorial and source-conflict limitations stay qualified. Local main
+integration and verification are complete; push, PR and CI/merge outcomes
+remain with the controller and are not claimed by this report.
+
+After recording the integration result, ran:
+
+```sh
+bun test docs.test.ts
+bun run lint:md
+git diff --check
+```
+
+```text
+ 4 pass
+ 0 fail
+ 4 expect() calls
+Ran 4 tests across 1 file. [36.00ms]
+```
+
+All commands exited 0; Markdown lint and the whitespace check emitted
+no diagnostic. Temporary captures are `integration-doc-tests.log` and
+`integration-docs.log`. No implementation changed after the full check.
