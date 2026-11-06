@@ -20,6 +20,7 @@ import { type Env, loadSecrets } from "../packages/core/src/index.js";
 import {
     type EvidenceCatalogue,
     parseCatalogue,
+    validBucketName,
 } from "./evidence-catalogue.js";
 import { hashFile } from "./evidence-manifest.js";
 import { createR2Store, type R2Config } from "./evidence-r2.js";
@@ -122,7 +123,7 @@ async function selection(options: Selection, upload: boolean) {
     const maxOperations = options.maxOperations ?? 100;
     if (
         !/^[a-f0-9]{32}$/i.test(options.accountId) ||
-        !/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(options.bucket) ||
+        !validBucketName(options.bucket) ||
         !options.catalogue ||
         !positive(maxBytes) ||
         !positive(maxOperations)

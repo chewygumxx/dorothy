@@ -15,6 +15,7 @@ import {
     type EvidenceCatalogue,
     type EvidenceObject,
     parseCatalogue,
+    validBucketName,
 } from "./evidence-catalogue.js";
 import { hashFile, verifyManifest } from "./evidence-manifest.js";
 
@@ -261,6 +262,7 @@ export async function packageEvidence(
         !positive(maxBytes) ||
         !options.root ||
         !options.out ||
+        !validBucketName(options.bucket) ||
         !/^[a-f0-9]{64}$/i.test(options.expectedSha256) ||
         !nativeRecipient(options.recipient)
     )

@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-06
-mtime: 2026-11-06
+mtime: 2026-11-07
 spdx: GPL-3.0-only
 title: Development evidence helper implementation
 description: >-
@@ -303,11 +303,37 @@ Scoped remark and markdownlint checks on every changed Markdown file
 also exited 0 before the full check. All three helper help commands exited
 0 and performed no operations.
 
-Only this report's text changed after the full check to record actual
-results. The final documentation checks rerun `bun run lint:md`,
+Before the post-review correction below, only this report's text changed
+after the full check to record actual results. The final documentation
+checks rerun `bun run lint:md`,
 `bun run lint:emdash`, the three asset/docs/header suites, and
 `git diff --cached --check`; all exit 0. The test result remains 107 pass,
 1 skip, 0 fail, 269 assertions. The full repository check is not repeated
 for this report-only update. The separate generic skill schema rejection
 above remains explicitly recorded and is not covered by the repository
 checks' passing result.
+
+## Post-review correction: 2026-11-07
+
+Packaging now applies the existing transfer bucket-name policy before
+creating output or invoking processes. Both workflows share the predicate
+in the independent catalogue module. Historical catalogue parsing still
+accepts legacy bucket spellings and retains unknown metadata.
+
+```sh
+bun test scripts/evidence-catalogue.test.ts \
+  scripts/evidence-package.test.ts scripts/evidence-transfer.test.ts
+bun run typecheck
+bunx biome check scripts/evidence-catalogue{,.test}.ts \
+  scripts/evidence-package{,.test}.ts scripts/evidence-transfer{,.test}.ts
+```
+
+The new packaging regression first failed because `Archive` completed
+packaging: 70 pass, 1 fail, 346 assertions, exit 1. After the correction,
+the same three suites passed: 71 pass, 0 fail, 342 assertions, exit 0.
+They also cover valid destinations, legacy catalogue compatibility and
+transfer rejection before credentials. Typecheck and scoped Biome exited
+0; Biome checked six files without fixes. Tests used temporary synthetic
+fixtures and injected processes, with no real keys, archive or cloud call.
+The local full check recorded above preceded this code correction and
+was not repeated. Normal PR CI must validate the final fixed head.

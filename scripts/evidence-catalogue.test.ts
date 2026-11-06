@@ -33,6 +33,14 @@ describe("evidence catalogue", () => {
         const value = catalogue();
         expect(parseCatalogue(value)).toEqual(value);
     });
+    it("keeps legacy bucket spelling and unknown metadata readable", () => {
+        const value = {
+            ...catalogue(),
+            bucket: "Archive",
+            legacyMetadata: { retained: true },
+        };
+        expect(parseCatalogue(value)).toEqual(value);
+    });
     it("accepts digest case without changing existing metadata", () => {
         const value = catalogue();
         value.cipherSha256 = hash.toUpperCase();

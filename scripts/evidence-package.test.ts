@@ -286,6 +286,21 @@ describe("evidence packaging", () => {
         }
         expect(await readdir(scratch)).toEqual(["stage"]);
     });
+    it("rejects an invalid destination bucket before creating output or invoking processes", async () => {
+        const { options, scratch } = await fixture();
+        let spawned = 0;
+        const deps = processFixture();
+        const spawn = deps.spawn as NonNullable<PackageDeps["spawn"]>;
+        deps.spawn = (argv, stdin) => {
+            spawned++;
+            return spawn(argv, stdin);
+        };
+        await expect(
+            packageEvidence({ ...options, bucket: "Archive" }, deps),
+        ).rejects.toThrow("EVIDENCE_USAGE");
+        expect(spawned).toBe(0);
+        expect(await readdir(scratch)).toEqual(["stage"]);
+    });
     it("rejects malformed and checksum-invalid native age recipients before creating output", async () => {
         const { options, scratch } = await fixture();
         for (const recipient of [

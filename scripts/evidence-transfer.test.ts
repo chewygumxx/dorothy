@@ -190,6 +190,21 @@ describe("scoped evidence transfer", () => {
             expect(f.calls).toEqual([]);
         }
     });
+    it("rejects invalid bucket spelling even when the legacy catalogue matches", async () => {
+        const f = await fixture();
+        await writeFile(
+            f.cataloguePath,
+            JSON.stringify({ ...f.catalogue, bucket: "Archive" }),
+        );
+        await expect(
+            uploadEvidence({ ...f.options, bucket: "Archive" }, f.deps),
+        ).rejects.toThrow("EVIDENCE_USAGE");
+        await expect(
+            downloadEvidence({ ...f.download, bucket: "Archive" }, f.deps),
+        ).rejects.toThrow("EVIDENCE_USAGE");
+        expect(f.loaded()).toBe(0);
+        expect(f.calls).toEqual([]);
+    });
     it("rejects malformed catalogue, wrong part size/hash and wrong joined cipher before keys", async () => {
         for (const change of ["json", "size", "part", "joined", "collision"]) {
             const f = await fixture();

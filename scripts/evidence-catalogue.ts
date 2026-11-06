@@ -36,6 +36,12 @@ export interface CatalogueLimits {
 
 const SHA256 = /^[a-f0-9]{64}$/i;
 const DEFAULT_MAX_BYTES = 4 * 1024 ** 3;
+
+/** Destination policy for new packages and transfer selection. */
+export function validBucketName(bucket: string): boolean {
+    return /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(bucket);
+}
+
 function invalid(): never {
     throw new Error("EVIDENCE_INVALID_CATALOGUE");
 }

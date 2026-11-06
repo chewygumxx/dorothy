@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-06
-mtime: 2026-11-06
+mtime: 2026-11-07
 spdx: GPL-3.0-only
 title: Development evidence
 description: >-
@@ -237,6 +237,11 @@ bun scripts/evidence-package.ts \
   --out "$PACKAGE" --id "$ARCHIVE_ID" --bucket "$BUCKET" \
   --prefix "$PREFIX" --recipient "$RECIPIENT"
 ```
+
+Packaging checks the bucket name against the transfer policy before
+creating output or invoking processes. Names use 3 to 63 lowercase
+letters, digits or hyphens, beginning and ending with a letter or digit.
+Historical catalogue parsing remains permissive for compatibility.
 
 Packaging streams tar through zstd and age without a plaintext archive on
 disk, then hashes and splits the ciphertext. It verifies staging again
