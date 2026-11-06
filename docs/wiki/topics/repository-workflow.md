@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-03
+mtime: 2026-11-06
 spdx: GPL-3.0-only
 title: Repository workflow
 description: >-
@@ -205,8 +205,14 @@ the same branch. The wiki has its own rule, from the
 `docs.test.ts` checks local links and fragments in the root `README.md`,
 `docs/README.md`, the roadmap, wiki pages and both root and docs
 `AGENTS.md`. It rejects missing records and duplicate catalogue entries
-after resolving aliases to the same record; repeated links to non-record
-pages are allowed. It also checks every wiki page is linked from home.
+after resolving aliases to the same record. Entries count inline links
+and ordinary full, collapsed and shortcut reference uses, matching labels
+without regard to case and with normalized whitespace. Unused definitions
+do not count as entries; link validation still checks their destinations.
+Repeated links to non-record pages are allowed. The occurrence inventory
+shares the parser's code-example exclusions and lightweight syntax limits;
+it is not a full Markdown renderer. It also checks every wiki page is
+linked from home.
 Temporary-file fixtures use the same helpers in `scripts/docs-links.ts`
 to test valid and broken destinations, fragments, root-relative paths
 and percent escapes. The

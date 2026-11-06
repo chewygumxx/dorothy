@@ -95,3 +95,64 @@ it("reports an expected record missing from the catalogue", () => {
         duplicates: [],
     });
 });
+
+for (const [name, markdown] of [
+    [
+        "full reference uses",
+        "- [First entry][record]\n- [Repeated entry][record]\n\n" +
+            "[record]: ./record.md\n",
+    ],
+    [
+        "collapsed reference uses",
+        "[record][] [record][]\n[record]: ./record.md\n",
+    ],
+    ["shortcut reference uses", "[record] [record]\n[record]: ./record.md\n"],
+    [
+        "reference labels with normalized case and whitespace",
+        "[first][  Some\t RECORD ] [some record][] [SOME RECORD]\n" +
+            "[Some   Record]: ./record.md\n",
+    ],
+] as const) {
+    it(`counts duplicate records from ${name}`, () => {
+        writeFileSync(join(root, "docs/record.md"), "# Record\n");
+        writeFileSync(page, markdown);
+        expect(catalogueFailures(root, page, ["docs/record.md"])).toEqual({
+            missing: [],
+            duplicates: ["docs/record.md"],
+        });
+    });
+}
+
+it("does not count an unused reference definition as a catalogue entry", () => {
+    writeFileSync(page, "[record]: ./record.md\n");
+    expect(catalogueFailures(root, page, ["docs/record.md"])).toEqual({
+        missing: ["docs/record.md"],
+        duplicates: [],
+    });
+});
+
+it("still validates unused reference definitions for broken destinations", () => {
+    writeFileSync(page, "[unused]: ./missing.md\n");
+    expect(linkFailures(root, [page])).toEqual(["docs/page.md: ./missing.md"]);
+});
+
+it("does not count inline link text again as a shortcut reference", () => {
+    writeFileSync(page, "[record](./record.md)\n[record]: ./record.md\n");
+    expect(catalogueFailures(root, page, ["docs/record.md"])).toEqual({
+        missing: [],
+        duplicates: [],
+    });
+});
+
+it("ignores reference and inline entries shown only as code examples", () => {
+    writeFileSync(
+        page,
+        "`[record]` `[entry][record]` `[record](./record.md)`\n" +
+            "```md\n[record][]\n```\n~~~md\n[entry][record]\n~~~\n" +
+            "[record]: ./record.md\n",
+    );
+    expect(catalogueFailures(root, page, ["docs/record.md"])).toEqual({
+        missing: ["docs/record.md"],
+        duplicates: [],
+    });
+});

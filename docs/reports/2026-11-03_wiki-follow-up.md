@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-03
+mtime: 2026-11-06
 spdx: GPL-3.0-only
 title: Wiki follow-up
 description: >-
@@ -219,3 +219,156 @@ wrapping are followed by the same targeted suite, `bun run lint:md`
 and `git diff --check`; their output is retained in `task-2-final.log`.
 Independent review and integration are owned by the controller; this
 report does not claim their outcome.
+
+## Final review fix wave on 2026-11-06
+
+The whole-branch review of `3e9875a..fc2d590` found one Important
+defect: two rendered reference entries sharing one definition escaped
+catalogue duplicate detection. There were no other new findings.
+The controller ruled that the design's duplicate-entry invariant takes
+precedence over the plan's direction to reuse `linkTargets`.
+
+The interrupted implementation was recovered as five unstaged files.
+This continuation inspected those changes and completed their report
+and verification; Tasks 1 and 2 were not repeated. The additive
+`linkOccurrences(markdown: string): Link[]` counts inline and ordinary
+full, collapsed and shortcut reference uses. Labels match without regard
+to case and with normalized whitespace. Unused definitions do not count
+as entries; ordinary link validation still checks their destinations.
+Shared fence/span stripping, target matching and destination splitting
+preserve the existing `links`, `linkTargets` and `headingSlugs` contracts.
+The workflow page records the behavior and its lightweight syntax limits.
+
+### Recorded RED
+
+The original implementer wrote catalogue fixtures before changing the
+implementation and captured this command in `final-fix-red.log`:
+
+```sh
+bun test scripts/docs-links.test.ts
+```
+
+The saved output contains real expectation failures for repeated full,
+collapsed and shortcut references, normalized labels, unused definitions,
+inline text counted again and code-only entries. Its result was:
+
+```text
+ 9 pass
+ 7 fail
+ 17 expect() calls
+Ran 16 tests across 1 file. [14.00ms]
+```
+
+Exit status: 1, as recorded for the interrupted fix. This is attributed
+historical RED evidence; this continuation did not rerun a RED state.
+The saved initial GREEN in `final-fix-targeted.log` records 120 pass,
+5 skip, 0 fail and 247 assertions across four files (327ms).
+
+### Fresh verification
+
+After inspecting the implementation and updating documentation mtimes,
+this continuation ran the required covering command from the root:
+
+```sh
+bun test scripts/markdown-links.test.ts scripts/docs-links.test.ts \
+  docs.test.ts agents.test.ts
+```
+
+```text
+bun test v1.4.2 (744846f84)
+
+ 120 pass
+ 5 skip
+ 0 fail
+ 247 expect() calls
+Ran 125 tests across 4 files. [664.00ms]
+```
+
+Exit status: 0. The fixtures cover the exact review case, all three
+reference forms, case and whitespace normalization, unused definitions,
+definition destination validation, inline text counted once, code
+examples, wrapped inline labels and the first duplicate definition.
+The unchanged parser fixtures still pass.
+
+The single full check on the finished implementation was:
+
+```sh
+bun run check
+```
+
+```text
+Checked 489 files in 125ms. No fixes applied.
+Checked 490 files in 414ms. No fixes applied.
+Found 1 info.
+[NOTICE] Verification Passed:
+    Files parsed: 716
+    Repo line - Out-of-Sync: 0, Correct: 676, Not found: 40
+    Path line - Out-of-Sync: 0, Correct: 676, Not found: 40
+    Files unreadable: 0, Skipped: 4
+$ bun test
+bun test v1.4.2 (744846f84)
+
+ 4014 pass
+ 5 skip
+ 0 fail
+ 143964 expect() calls
+Ran 4019 tests across 196 files. [55.06s]
+```
+
+Exit status: 0. Typechecking, formatting, Markdown, YAML, secrets,
+em-dash and header checks all completed before tests. The existing
+Biome `lint/style/useTemplate` information remains at
+`packages/memory/src/memory/reviewer.test.ts:39:9`. Header validation
+again prints 80 missing repo/path warnings for the same 40 existing
+memory notes and historical artifacts, with no out-of-sync or unreadable
+files and four skips. The five test skips are the same conditional
+agents cases listed in the earlier verification.
+
+While recording results, documentation lint found repeated blank lines
+(`MD012`) and `git diff --check` found a blank line at EOF. Removed
+those append-formatting errors and ran the final documentation checks:
+
+```sh
+bun test docs.test.ts
+bun run lint:md
+git diff --check
+```
+
+```text
+ 4 pass
+ 0 fail
+ 4 expect() calls
+Ran 4 tests across 1 file. [50.00ms]
+```
+
+All three commands exited 0; Markdown lint and the whitespace check
+emitted no diagnostic. Temporary captures are
+`final-fix-recovery-docs.log` for the first lint attempt,
+`final-fix-recovery-doc-tests.log` and
+`final-fix-recovery-docs-final.log` for the passing checks.
+
+Raw captures are temporary scratch evidence under
+`.superpowers/sdd/2026-11-03_wiki-follow-up/`: the saved
+`final-fix-red.log` and `final-fix-targeted.log`, and this continuation's
+`final-fix-recovery-targeted.log` and `final-fix-recovery-check.log`.
+All scratch captures named in this report are temporary, untracked
+evidence removed when the plan workspace is cleaned. The commands and
+result excerpts above preserve the evidence in this report.
+
+### Self-review and remaining limits
+
+Read all changed parser/helper code and fixtures against the dispatch.
+The occurrence helper reuses the existing code-example stripping and
+matching expressions without a dependency. The old parser APIs retain
+their destination inventory and slug behavior. The filesystem fixtures
+use isolated temporary roots and remove them after each case.
+Only the four TypeScript files, workflow prose and this tracked report
+belong to the fix commit; historical specs, plans and the original wiki
+report remain unchanged.
+
+The helper covers ordinary reference syntax within the existing
+lightweight parser's limits; it does not claim full Markdown rendering.
+The previously deferred parser, editorial and source-conflict work stays
+deferred, with no new host or model evidence. The controller owns the
+single scoped re-review from `fc2d590`, push, CI and integration; none of
+those outcomes is claimed here.

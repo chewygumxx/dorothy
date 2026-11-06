@@ -10,7 +10,7 @@
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
-import { headingSlugs, links, linkTargets } from "./markdown-links.js";
+import { headingSlugs, linkOccurrences, links } from "./markdown-links.js";
 
 const read = (path: string): string => readFileSync(path, "utf8");
 
@@ -65,7 +65,7 @@ export const catalogueFailures = (
 ): { missing: string[]; duplicates: string[] } => {
     const expected = new Set(records);
     const counts = new Map<string, number>();
-    for (const path of linkTargets(read(page))) {
+    for (const { path } of linkOccurrences(read(page))) {
         const record = relative(root, resolveLink(root, page, path));
         if (expected.has(record)) {
             counts.set(record, (counts.get(record) ?? 0) + 1);
