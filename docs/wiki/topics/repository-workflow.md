@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-04
+mtime: 2026-11-06
 spdx: GPL-3.0-only
 title: Repository workflow
 description: >-
@@ -41,7 +41,8 @@ as Bun's isolated linker fails an undeclared or internal import, and
 `workspace.test.ts` pins the graph and the entry points. The graph, each
 package's entry points and its guide are on
 [packages](../profiles/packages.md); the reason for the split is in the
-[workspace modularity spec](../../specs/2026-10-09-workspace-modularity-design.md#purpose).
+[workspace modularity
+spec](../../specs/2026-10-09-workspace-modularity-design.md#purpose).
 
 Before working in a package, read its `packages/<name>/AGENTS.md`. After
 removing a `@dorothy` dependency, reinstall from clean to see the boundary,
@@ -116,10 +117,12 @@ through `gh repo edit` (root [`AGENTS.md`](../../../AGENTS.md)).
 Everything agents rely on is declared in the repository, so that it does
 not depend on one user's settings or a hand-made step. The rule was the
 aim of the
-[agentic asset refactor](../../specs/2026-10-11-agentic-asset-refactor-design.md#purpose),
+[agentic asset
+refactor](../../specs/2026-10-11-agentic-asset-refactor-design.md#purpose),
 and the consolidation that followed moved the coordination procedures out
 of memory and scratch scripts into skills
-([consolidation spec](../../specs/2026-10-31-agentic-asset-consolidation-design.md#summary)).
+([consolidation
+spec](../../specs/2026-10-31-agentic-asset-consolidation-design.md#summary)).
 The assets are:
 
 - **Guidance** in `AGENTS.md` files: the root's, one in `docs/` and one per
@@ -202,9 +205,22 @@ the same branch. The wiki has its own rule, from the
   There is no second priority queue, since the roadmap alone orders work.
 - A page's `ctime` stays fixed and its `mtime` changes when the page does.
 
-`docs.test.ts` fails a broken link or fragment, an uncatalogued record or
-a page not linked from the wiki's home, so a renamed heading or a new
-record shows at once.
+`docs.test.ts` checks local links and fragments in the root `README.md`,
+`docs/README.md`, the roadmap, wiki pages and both root and docs
+`AGENTS.md`. It rejects missing records and duplicate catalogue entries
+after resolving aliases to the same record. Entries count inline links
+and ordinary full, collapsed and shortcut reference uses, matching labels
+without regard to case and with normalized whitespace. Unused definitions
+do not count as entries; link validation still checks their destinations.
+Repeated links to non-record pages are allowed. The occurrence inventory
+shares the parser's code-example exclusions and lightweight syntax limits;
+it is not a full Markdown renderer. It also checks every wiki page is
+linked from home.
+Temporary-file fixtures use the same helpers in `scripts/docs-links.ts`
+to test valid and broken destinations, fragments, root-relative paths
+and percent escapes. The
+[follow-up report](../../reports/2026-11-03_wiki-follow-up.md) records the
+coverage and remaining parser limits.
 
 ## Related
 

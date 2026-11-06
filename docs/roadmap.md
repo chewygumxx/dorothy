@@ -420,6 +420,15 @@ Found but not scheduled, each with its source.
   tell a peer's request, or the user's own scheduled message, from the
   user. To be settled later, by A2A, Agent Delegation Receipts or both
   (the user, 2026-10-31).
+- The repository wiki's remaining parser gaps, editorial work and source
+  conflicts ([original
+  findings](./reports/2026-11-03_repository-wiki.md#known-limits),
+  [triage](./reports/2026-11-03_wiki-follow-up.md#deferred-work)). Guidance
+  fragments, duplicate catalogue records and the selected parser and
+  filesystem fixtures are now checked. Multiline and nested Markdown,
+  query-bearing paths, catalogue wording and ordering, reference-page
+  scope and unresolved source evidence remain unscheduled; none needs
+  to precede Dorothy's Memory's next pieces.
 
 ## Done
 
@@ -479,6 +488,15 @@ In order of completion.
   [report](./reports/2026-11-01-model-providers.md),
   [deferred](./deferred/2026-11-01_model-providers-deferred.md); merged
   in #111 and #113.
+- **Repository wiki**:
+  [spec](./specs/2026-11-03_repository-wiki-design.md),
+  [plan](./plans/2026-11-03_repository-wiki.md),
+  [report](./reports/2026-11-03_repository-wiki.md); merged in
+  [#128](https://github.com/chewygumxx/dorothy/pull/128).
+  Integrity checks and roadmap close-out follow in the
+  [follow-up spec](./specs/2026-11-03_wiki-follow-up-design.md),
+  [plan](./plans/2026-11-03_wiki-follow-up.md) and
+  [report](./reports/2026-11-03_wiki-follow-up.md).
 - **Dorothy in Pi**:
   [delivery spec](./specs/2026-11-03_pi-delivery.md),
   [delivery plan](./plans/2026-11-03_pi-delivery.md),
@@ -652,6 +670,13 @@ In order of completion.
   but high priority, as herdr's agent names changed and the names
   written into the stewardship skill, memory and handover notes went
   stale.
+- 2026-11-03: The repository wiki merged in #128 and joins Done. Its
+  follow-up checks guidance fragments and duplicate catalogue records,
+  with fixtures for the selected parser and path cases. The remaining
+  parser, editorial and source-evidence findings join Candidates: they
+  do not make the next memory work safer or smaller enough to precede
+  it. Ahead keeps every existing phase in order, and the priorities
+  index gains the matching candidate.
 - 2026-11-03: The user makes Pi the highest priority, superseding its
   earlier exclusion. Dorothy in Pi goes first, for integration design
   and stewardship testing. The previous delivery targets remain;
