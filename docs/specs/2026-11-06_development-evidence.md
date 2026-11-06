@@ -23,8 +23,8 @@ tags:
 
 ## Status and intent
 
-Proposed for user review on 2026-11-06. The user selected the focused
-helper scope and requested a committed,
+Approved by the user on 2026-11-06 after selecting the focused helper
+scope. The user requested a committed,
 repeatable methodology, an appropriate agent skill, assisting scripts,
 secret-backed authentication and a high-priority record for an additional
 independent backup destination. The priority record is separate work;
@@ -62,8 +62,8 @@ exclusion configuration, interrupted-step reconciliation and broader
 integration tests. That is useful if unattended recurring capture becomes
 an explicit requirement; it is not required for the first reusable tools.
 
-The user selected the focused-helper scope. The interfaces below remain
-proposed for design review; the helpers and skill are not implemented yet.
+The user approved the focused-helper design. Implementation follows the
+[delivery plan](../plans/2026-11-06_development-evidence.md).
 
 ## Scope and authority
 

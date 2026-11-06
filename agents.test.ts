@@ -71,7 +71,12 @@ const EXCLUDED = [
 
 // The repository's own skills: committed beside the links, as
 // `.gitignore` negates them, and never recorded in the lock.
-const OWN = ["agent-pre-screening", "agent-stewardship", "worktrees"];
+const OWN = [
+    "agent-pre-screening",
+    "agent-stewardship",
+    "development-evidence",
+    "worktrees",
+];
 
 const LINKS = [".agents/skills", ".claude/skills"];
 
@@ -213,6 +218,43 @@ describe("the skills", () => {
             );
             expect(Object.keys(lock().skills)).not.toContain(name);
         }
+    });
+});
+
+describe("the development evidence operator skill", () => {
+    const path = at(".agents/skills/development-evidence/SKILL.md");
+
+    it("declares a repository-owned skill without a remote lock entry", () => {
+        expect(OWN).toContain("development-evidence");
+        expect(Object.keys(lock().skills)).not.toContain(
+            "development-evidence",
+        );
+    });
+
+    it("makes the reference discoverable by both agents", () => {
+        expect(lstatSync(dirname(path)).isDirectory()).toBe(true);
+        const claude = at(".claude/skills/development-evidence");
+        expect(lstatSync(claude).isSymbolicLink()).toBe(true);
+        expect(realpathSync(claude)).toBe(realpathSync(dirname(path)));
+    });
+
+    it("keeps triggering frontmatter, provenance and valid local references", () => {
+        const text = read(path);
+        const frontmatter = Bun.YAML.parse(
+            text.split("---")[1] ?? "",
+        ) as Record<string, unknown>;
+        expect(frontmatter.name).toBe("development-evidence");
+        expect(String(frontmatter.description)).toStartWith("Use when ");
+        for (const field of ["ctime", "mtime"]) {
+            expect(frontmatter[field]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        }
+        expect(frontmatter.spdx).toBe("GPL-3.0-only");
+        expect(frontmatter.tags).toBeArray();
+        expect(text.trim().split(/\s+/).length).toBeLessThan(500);
+        expect(brokenLinks(path)).toEqual([]);
+        expect(linkTargets(text)).toContain(
+            "../../../docs/wiki/topics/development-evidence.md",
+        );
     });
 });
 

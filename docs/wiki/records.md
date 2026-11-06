@@ -362,8 +362,16 @@ first.
   catalogue. Archive locations, content scope, recovery and backup limits.
 
 - [Reusable development evidence preservation
-  design](../specs/2026-11-06_development-evidence.md): Proposed specification.
+  design](../specs/2026-11-06_development-evidence.md): Specification.
   Focused helpers, a repository skill and scoped secret-backed transfers.
+
+- [Development evidence helper
+  plan](../plans/2026-11-06_development-evidence.md): Plan. Tested manifest,
+  packaging and R2 transfer commands with a repository operator skill.
+
+- [Development evidence helper
+  report](../reports/2026-11-06_development-evidence.md): Report. Synthetic
+  helper verification, operator reference comparison and operational limits.
 
 ## Related
 

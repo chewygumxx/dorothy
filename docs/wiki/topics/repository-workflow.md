@@ -129,9 +129,10 @@ The assets are:
   package, which Claude Code and Codex both read. No `CLAUDE.md` may exist
   in the tree, as one would switch `AGENTS.md` off for Claude Code
   (`agents.test.ts` checks).
-- **Skills** in `.agents/skills/`. The repository commits three of its own:
-  `agent-stewardship`, `agent-pre-screening` and `worktrees`. Third-party
-  skills are dependencies, declared in `package.json`, recorded in
+- **Skills** in `.agents/skills/`. The repository commits four of its own:
+  `agent-stewardship`, `agent-pre-screening`, `development-evidence` and
+  `worktrees`. Third-party skills are dependencies, declared in
+  `package.json`, recorded in
   `skills-lock.json` and pinned to a commit: superpowers (less four
   excluded skills) is linked by `bun install`, and herdr's, a remote one,
   by `bun run skills`.
@@ -175,14 +176,25 @@ This page names no secret, in keeping with the rules.
 ## Development evidence
 
 The [development evidence procedure](./development-evidence.md) covers
-selection, staging, encryption, authentication and recovery.
+selection, staging, encryption, authentication and recovery. The
+repository-owned `development-evidence` skill routes to that procedure;
+`scripts/evidence-manifest.ts`, `scripts/evidence-package.ts` and
+`scripts/evidence-transfer.ts` expose their current interfaces with
+`--help`. They preserve explicit stable staging inputs and encrypted
+outputs; transfer uses bucket-scoped S3 credentials loaded from encrypted
+secrets, with an explicit account and bucket in both modes. Local tests
+cover synthetic data and loopback S3 requests, not live R2 authentication
+or large-file multipart transfers. Upload is separate from verified
+download and full recovery.
 
 The Pi integration's private captures are preserved as encrypted bundles
 in private Cloudflare R2 Standard storage. The
 [catalogue and recovery guide](../../reports/2026-11-06_pi-evidence-preservation.md)
-link the ordered objects and hashes. Access needs an authorized Cloudflare
-session and the existing age private key. Raw captures stay outside Git;
-small sanitized findings and regression fixtures can be promoted later.
+link the ordered objects and hashes. That report records its authorized
+Cloudflare session; routine helper transfers need the S3 credential pair
+and recovery needs the existing age private key. Raw captures stay
+outside Git; small sanitized findings and regression fixtures can be
+promoted later.
 
 Local originals remain. An additional independent backup destination is
 outstanding. The owner's US$5 monthly target is not an R2 hard cap;
