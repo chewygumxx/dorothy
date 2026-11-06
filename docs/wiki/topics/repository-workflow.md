@@ -174,6 +174,9 @@ This page names no secret, in keeping with the rules.
 
 ## Development evidence
 
+The [development evidence procedure](./development-evidence.md) covers
+selection, staging, encryption, authentication and recovery.
+
 The Pi integration's private captures are preserved as encrypted bundles
 in private Cloudflare R2 Standard storage. The
 [catalogue and recovery guide](../../reports/2026-11-06_pi-evidence-preservation.md)

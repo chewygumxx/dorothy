@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-04
+mtime: 2026-11-06
 spdx: GPL-3.0-only
 title: Dorothy's wiki
 description: >-
@@ -61,6 +61,8 @@ subject. It links the dated records in `specs/`, `plans/`, `reports/`,
   replies, stats and layout of her TUI.
 - [Orchestration](./wiki/topics/orchestration.md): the toolset designed for
   Dorothy, not built, and the herdr tools coordinating her developers today.
+- [Development evidence](./wiki/topics/development-evidence.md): preserving
+  private captures, encrypted storage, authentication and verified recovery.
 - [Repository workflow](./wiki/topics/repository-workflow.md): package
   boundaries, worktrees, checks, agent assets, secrets and keeping the
   documentation current.
