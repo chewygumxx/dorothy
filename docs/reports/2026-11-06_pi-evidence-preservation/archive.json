@@ -1,0 +1,103 @@
+{
+    "schemaVersion": 1,
+    "archiveId": "pi-integration-2026-11-06",
+    "bucket": "development-archives",
+    "storageClass": "Standard",
+    "prefix": "dorothy/pi-integration/2026-11-06/1a2f9fb6bf99af7758afad052798de24764b6ef779ec4bfbb34232a4cb255d36/",
+    "format": "Concatenate ordered age parts, age decrypt, then zstd decompress and tar extract",
+    "cipherSha256": "1a2f9fb6bf99af7758afad052798de24764b6ef779ec4bfbb34232a4cb255d36",
+    "cipherBytes": 1059741480,
+    "objects": [
+        {
+            "key": "dorothy/pi-integration/2026-11-06/1a2f9fb6bf99af7758afad052798de24764b6ef779ec4bfbb34232a4cb255d36/part-000.agepart",
+            "bytes": 134217728,
+            "sha256": "368fb246cace75042a5f1393615cda5f403edd013ea89789191688f047b3f6ed"
+        },
+        {
+            "key": "dorothy/pi-integration/2026-11-06/1a2f9fb6bf99af7758afad052798de24764b6ef779ec4bfbb34232a4cb255d36/part-001.agepart",
+            "bytes": 134217728,
+            "sha256": "12493401790e42b90e5d3e3cbafb98c5da734f92678f7de10079ae132b15f08a"
+        },
+        {
+            "key": "dorothy/pi-integration/2026-11-06/1a2f9fb6bf99af7758afad052798de24764b6ef779ec4bfbb34232a4cb255d36/part-002.agepart",
+            "bytes": 134217728,
+            "sha256": "f15cef2be157f41006d14e85c3c4f30dd98a3f13c4df4157fa728d928f107a5c"
+        },
+        {
+            "key": "dorothy/pi-integration/2026-11-06/1a2f9fb6bf99af7758afad052798de24764b6ef779ec4bfbb34232a4cb255d36/part-003.agepart",
+            "bytes": 134217728,
+            "sha256": "315b515f07e90be1d11786a1eb2044e9c3b7c1587fffbbb695057e3d9f369afe"
+        },
+        {
+            "key": "dorothy/pi-integration/2026-11-06/1a2f9fb6bf99af7758afad052798de24764b6ef779ec4bfbb34232a4cb255d36/part-004.agepart",
+            "bytes": 134217728,
+            "sha256": "1d3dc56e67e92ea7a8efd36286e61820787633c4c42293335e8a3af3f159a5e8"
+        },
+        {
+            "key": "dorothy/pi-integration/2026-11-06/1a2f9fb6bf99af7758afad052798de24764b6ef779ec4bfbb34232a4cb255d36/part-005.agepart",
+            "bytes": 134217728,
+            "sha256": "e616c5b9c6ef1a221e9ee88de4dd8fde4ceb9c75367056d1c607fc4710b37a58"
+        },
+        {
+            "key": "dorothy/pi-integration/2026-11-06/1a2f9fb6bf99af7758afad052798de24764b6ef779ec4bfbb34232a4cb255d36/part-006.agepart",
+            "bytes": 134217728,
+            "sha256": "de9dca2222f60d0f9ff413c235e813f3fb8a389b16a67e180ddafc06ce596db9"
+        },
+        {
+            "key": "dorothy/pi-integration/2026-11-06/1a2f9fb6bf99af7758afad052798de24764b6ef779ec4bfbb34232a4cb255d36/part-007.agepart",
+            "bytes": 120217384,
+            "sha256": "94f5f3d041ec6849d75a81ff75fea1d7658fad77703c18ecb136f34578f7d06d"
+        }
+    ],
+    "payloadManifestSha256": "a080921fdda180327ccc24b3aea39ad37b4ebaeeaff2e099e13d2b8876f23a5f",
+    "payloadSummary": {
+        "files": 63272,
+        "symlinks": 74,
+        "directories": 24551,
+        "bytes": 3543507422,
+        "sqliteCandidates": 49,
+        "sqliteSuccessfulBackups": 49,
+        "sqliteFailures": [],
+        "manifestSha256": "a080921fdda180327ccc24b3aea39ad37b4ebaeeaff2e099e13d2b8876f23a5f",
+        "knownSecretMatches": 0,
+        "placeholderMatchFiles": 18,
+        "originalsRetained": true
+    },
+    "productCommit": "350eee86f6a28eb3a696e5dca43e2c71d67d3a60",
+    "access": "Private; authenticated bucket access and repository age private key required",
+    "originalsRetained": true,
+    "independentBackup": "Outstanding; local and R2 copies exist, no third destination",
+    "budget": {
+        "monthlyTargetUsd": 5,
+        "providerHardCap": false,
+        "alerts": {
+            "thresholdsUsd": [2, 5],
+            "status": "Owner confirms both created; not independently read through API"
+        },
+        "captureMaxCipherBytes": 4294967296,
+        "captureMaxLogicalObjectCommands": 100
+    },
+    "restoreVerification": {
+        "verifiedAt": "2026-11-06T06:48:51.439069+00:00",
+        "source": "Fresh R2 download, joined in catalogue order; ciphertext and per-part SHA256 verified before decryption",
+        "cipherSha256": "1a2f9fb6bf99af7758afad052798de24764b6ef779ec4bfbb34232a4cb255d36",
+        "payloadManifestSha256": "a080921fdda180327ccc24b3aea39ad37b4ebaeeaff2e099e13d2b8876f23a5f",
+        "manifestListedFiles": 63272,
+        "manifestAdditionalFile": 1,
+        "symlinks": 74,
+        "directories": 24551,
+        "allEntrySetTypesHashesSizesAndLinkTargetsVerified": true,
+        "sqliteBackupsQuickChecked": 49,
+        "publicRunbookPythonVerifierPassed": true,
+        "publicVerifierRejectsWrongManifestHash": true,
+        "ownershipAndPrivilegeRestoration": false
+    },
+    "storageProtection": {
+        "r2DevPublicAccess": false,
+        "customDomains": [],
+        "completedObjectExpiration": false,
+        "prefixLock": "Indefinite; account administrator can remove rule",
+        "location": "OC"
+    },
+    "catalogueKey": "dorothy/pi-integration/2026-11-06/1a2f9fb6bf99af7758afad052798de24764b6ef779ec4bfbb34232a4cb255d36/archive.json"
+}
