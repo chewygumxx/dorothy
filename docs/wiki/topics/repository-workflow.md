@@ -172,6 +172,20 @@ The rules for an agent:
 
 This page names no secret, in keeping with the rules.
 
+## Development evidence
+
+The Pi integration's private captures are preserved as encrypted bundles
+in private Cloudflare R2 Standard storage. The
+[catalogue and recovery guide](../../reports/2026-11-06_pi-evidence-preservation.md)
+link the ordered objects and hashes. Access needs an authorized Cloudflare
+session and the existing age private key. Raw captures stay outside Git;
+small sanitized findings and regression fixtures can be promoted later.
+
+Local originals remain. An additional independent backup destination is
+outstanding. The owner's US$5 monthly target is not an R2 hard cap;
+budget alerts are informational. The guide records actual verification
+and alert setup status, including any outstanding work.
+
 ## Keeping documentation current
 
 Documentation lives under `docs/`, in the directories
