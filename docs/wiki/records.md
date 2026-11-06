@@ -361,6 +361,10 @@ first.
   report](../reports/2026-11-06_pi-evidence-preservation.md): Report and
   catalogue. Archive locations, content scope, recovery and backup limits.
 
+- [Reusable development evidence preservation
+  design](../specs/2026-11-06_development-evidence.md): Proposed specification.
+  Focused helpers, a repository skill and scoped secret-backed transfers.
+
 ## Related
 
 - [Decisions](./decisions.md)
