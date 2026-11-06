@@ -337,3 +337,24 @@ transfer rejection before credentials. Typecheck and scoped Biome exited
 fixtures and injected processes, with no real keys, archive or cloud call.
 The local full check recorded above preceded this code correction and
 was not repeated. Normal PR CI must validate the final fixed head.
+
+## CI test correction: 2026-11-07
+
+The first CI run on `92bd582` caught a platform-dependent test assertion:
+the overlap test received the same two staging entries in reverse order.
+Its three overlap rejections passed. CI run `42242506257` recorded
+4686 pass, 5 optional skips, 1 fail and 149867 assertions on Bun 1.4.4.
+The test now sorts the complete entry list before comparing it, retaining
+the checks for missing or additional entries. Production code is unchanged.
+
+```sh
+bun test scripts/evidence-package.test.ts
+bun run typecheck
+bunx biome check scripts/evidence-package.test.ts
+```
+
+Local focused verification on Bun 1.4.2 passed: 17 pass, 0 fail and
+139 assertions; typecheck and scoped Biome exited 0. This records actual
+CI RED and local GREEN, without claiming a local reproduction of the CI
+failure. No full local check was repeated. CI on the corrected final head
+remains the gate for the complete suite.

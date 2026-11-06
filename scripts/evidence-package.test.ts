@@ -251,7 +251,7 @@ describe("evidence packaging", () => {
         await expect(
             packageEvidence({ ...options, out: scratch }, processFixture()),
         ).rejects.toThrow();
-        expect(await readdir(root)).toEqual([
+        expect((await readdir(root)).sort()).toEqual([
             "MANIFEST.json",
             "source ; $(touch nope)",
         ]);
