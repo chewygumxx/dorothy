@@ -8,7 +8,9 @@
 //
 //
 
-// @dorothy/identity: who Dorothy is, in text any host can give a model.
+//
+// @dorothy/identity: Eseence of Dorothy, her SOUL.md
+//
 
 export {
     type IdentityComponent,

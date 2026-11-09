@@ -12,7 +12,7 @@ import { label, type Route, type Turn } from "@dorothy/core";
 import { type IdentityComponent, identityComponents } from "@dorothy/identity";
 
 // Chat is Dorothy as the user meets her. Development mode is for the people
-// building her: she says which mode she is in, and describes her context
+// building her. she says which mode she is in, and describes her context
 // rather than keeping quiet about it.
 export type PersonaMode = "chat" | "development";
 
@@ -151,14 +151,14 @@ export function withHistory(prompt: string, turns: readonly Turn[]): string {
     return `${prompt}\n\nThe conversation so far, which you are continuing:\n\n${lines.join("\n\n")}`;
 }
 
-// Development mode's closing line: the chat route's models, in the
+// Development mode's closing line: The chat route's models, in the
 // order they are tried.
 export function routeLine(route: Route): string {
     return `Your chat runs on the first of these models to answer: ${route.map(label).join(", ")}.`;
 }
 
 // Identifies the persona version a transcript was recorded with. Not a
-// security measure: nothing reads it back, so a fast hash will do, and the
+// security measure, nothing reads it back, so a fast hash will do, and the
 // prefix names the algorithm should it ever change.
 export function promptHash(prompt: string = systemPrompt): string {
     return `xxh3:${Bun.hash.xxHash3(prompt).toString(16).padStart(16, "0")}`;
