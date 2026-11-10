@@ -439,6 +439,21 @@ Found but not scheduled, each with its source.
   query-bearing paths, catalogue wording and ordering, reference-page
   scope and unresolved source evidence remain unscheduled; none needs
   to precede Dorothy's Memory's next pieces.
+- Dorothy's secrets out of the checkout. `secrets.json` holds her runtime
+  credentials, yet sits at the repository root among the build assets,
+  which the build configuration restructuring (the user, 2026-11-10)
+  divorces from every other scope. Move it to `$XDG_CONFIG_HOME/dorothy/`
+  with its `.sops.yaml` beside it, as `saveSecret` requires, under a root
+  passed in as tests require, and encrypted to a key of its own. Settle in
+  its design how the encrypted file reaches another machine once git no
+  longer carries it. Any secret the build or development tooling later
+  needs, such as the evidence tooling's R2 credentials, gets its own file
+  under `.config/` and a new key, so revoking either key leaves the other
+  untouched. Source: the user, 2026-11-10.
+- A wiki skill: the conventions of `docs/wiki/` as an agent skill, beside
+  `documenting-configuration`, which the build configuration
+  restructuring adds to keep explanation out of configuration files.
+  Source: the user, 2026-11-10.
 
 ## Done
 
