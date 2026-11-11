@@ -79,7 +79,8 @@ the shared CI, not a probe, and an inference where marked:
 - `.moxide.toml` and `.worktreeinclude`: see [Markdown Oxide](#markdown-oxide)
   and [Worktrees](#worktrees).
 - `.repo-metadata.jsonc`: the default path of the shared standard
-  workflow's `metadata` input, in `chewygumxx/.github`'s `standard.yaml`.
+  workflow's `metadata-path` input, in `chewygumxx/.github`'s
+  `standard.yaml`.
 - `skills-lock.json`: an inference, unprobed: the skills CLI writes it
   beside `package.json`, where it is, and no option to move it is known.
 - `.github/`: GitHub reads workflows and Dependabot's configuration only
@@ -111,8 +112,8 @@ package missing from the lockfile. Each file-based task declares its
 `sources` (its files, its tool's configuration, `bun.lock`,
 `.config/mise/config.toml`, `scripts/with-files.sh`) and
 `outputs = { auto = true }`, so it skips itself when nothing it reads
-changed. `lint:types` and `test` declare none and always run. CI starts
-with no record, so it checks everything.
+changed. `lint:types`, `lint:header`, `lint:commit` and `test` declare
+none and always run. CI starts with no record, so it checks everything.
 
 `scripts/with-files.sh`, copied from `configuring-mise-tasks`, hands each
 tool its files. A full run passes the tracked files, so an untracked file
