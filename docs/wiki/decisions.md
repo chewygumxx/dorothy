@@ -1239,7 +1239,9 @@ The machinery behind these rules is on
 - **Reason**: Data by function: the root keeps what other systems read
   only there, and `.config/AGENTS.md` names what mise supplies each tool.
 - **Cost**: An editor or tool run outside mise may not find a moved
-  configuration, as with yamllint's.
+  configuration, as with yamllint's. The editor plugins for markdownlint
+  and remark look for theirs at the root or in `package.json`'s
+  `remarkConfig`, so they lose the house presets.
 - **Standing**: current
   ([build configuration](./topics/build-configuration.md#where-configuration-lives)).
 - **Sources**:

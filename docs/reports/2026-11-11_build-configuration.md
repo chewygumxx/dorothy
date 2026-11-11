@@ -342,7 +342,9 @@ was empty after.
   working-tree copies of the staged files, not the index's blobs.
 - **Editors outside mise.** An editor's yamllint run no longer finds the
   house style in the repository, as the variable lives in mise's
-  environment.
+  environment. The editor plugins for markdownlint and remark also look
+  for configuration at the root or in `package.json`'s `remarkConfig`, so
+  they lose the house presets after the move.
 - **An 84-character line.** `.github/.markdownlint-cli2.jsonc` holds an
   `MD041` why of 84 characters, which predates the work; lint passes it.
 - **Added references.** `.worktreeinclude` and `.moxide.toml` gained a

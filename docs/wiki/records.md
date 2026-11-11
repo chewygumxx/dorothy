@@ -387,7 +387,8 @@ first.
 
 - [Data by function deferred
   findings](../deferred/2026-11-11_data-by-function-deferred.md): Deferred.
-  The skill for keeping data by function, waiting on Dorothy's trial.
+  The skill for keeping data by function; Dorothy's trial is reported, and
+  the skill awaits its drafting.
 
 ## Related
 

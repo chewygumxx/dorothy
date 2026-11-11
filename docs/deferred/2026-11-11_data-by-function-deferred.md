@@ -4,8 +4,9 @@ mtime: 2026-11-11
 spdx: GPL-3.0-only
 title: Data by function deferred findings
 description: >-
-  A skill for keeping data by function waits on Dorothy's trial of the
-  doctrine; its settled rules are in the root AGENTS.md.
+  A skill for keeping data by function awaits its drafting; Dorothy's
+  trial of the doctrine is reported, and its settled rules are in the root
+  AGENTS.md.
 tags:
   - dorothy
   - agents
@@ -34,7 +35,9 @@ It has been tried once. A skill spreads its mistakes to every repository
 that adopts it, and this one would touch every file. Dorothy is its trial:
 the [build configuration](../specs/2026-11-10_build-configuration.md)
 spec audits her configuration comments and moves their narrative to the
-wiki. The questions the trial must answer:
+wiki. The trial is
+[reported](../reports/2026-11-11_build-configuration.md#comment-audit),
+and the skill awaits its drafting. The questions the trial had to answer:
 
 - Documentation in a `.d.ts` beside its `.ts`: TypeScript resolves imports
   to the `.ts` and ignores the `.d.ts`, so nothing checks they agree, and
