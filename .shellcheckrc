@@ -9,7 +9,6 @@
 #
 
 # https://www.shellcheck.net/wiki/Directive
-#
-# Follow sourced files, as `shellcheck -x` does, so a script checks on its
-# own when it alone changes.
+
+# Follow sourced files, so a script checks alone when it alone changes.
 external-sources=true

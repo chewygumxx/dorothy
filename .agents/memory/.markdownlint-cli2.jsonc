@@ -8,7 +8,7 @@
 //
 //
 
-// Merged over the root's configuration for the files in this directory.
+// Merged over the repository's configuration for this directory's files.
 {
     "config": {
         // A memory opens with its fact, its name in the front matter.
