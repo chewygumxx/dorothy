@@ -377,6 +377,10 @@ first.
   design](../specs/2026-11-10_build-configuration.md): Specification.
   mise tasks beside Bun's runtime layer, terse configuration, `.config/`.
 
+- [Data by function deferred
+  findings](../deferred/2026-11-11_data-by-function-deferred.md): Deferred.
+  The skill for keeping data by function, waiting on Dorothy's trial.
+
 ## Related
 
 - [Decisions](./decisions.md)
