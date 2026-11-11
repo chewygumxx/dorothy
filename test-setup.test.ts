@@ -13,6 +13,9 @@
 // index. test-setup.ts drops them.
 
 import { describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const gitVariables = (env: Record<string, unknown>): string[] =>
     Object.keys(env).filter((name) => name.startsWith("GIT_"));
@@ -36,5 +39,60 @@ describe("the test environment", () => {
     it("passes none to a child", () => {
         const child = Bun.spawnSync(["env"]);
         expect(gitVariables(lines(child.stdout))).toEqual([]);
+    });
+});
+
+// The cases above pass vacuously where no hook set a variable, as in CI.
+// This one starts a Bun with GIT_INDEX_FILE set and the preload loaded,
+// then reads what the children of that Bun see.
+const PROBE = `
+import { expect, it } from "bun:test";
+const names = (text) =>
+    text.split("\\n").filter((l) => l.startsWith("GIT_"));
+it("probe", async () => {
+    const sync = Bun.spawnSync(["env"]).stdout.toString();
+    const object = Bun.spawn({ cmd: ["env"], stdout: "pipe" });
+    const explicit = Bun.spawnSync(["env"], { env: { GIT_KEPT: "yes" } });
+    console.log("RESULT " + JSON.stringify({
+        own: Object.keys(process.env).filter((n) => n.startsWith("GIT_")),
+        sync: names(sync),
+        object: names(await new Response(object.stdout).text()),
+        explicit: names(explicit.stdout.toString()),
+    }));
+});
+`;
+
+describe("the preload", () => {
+    it("strips a hook's variables before any child sees them", () => {
+        const scratch = mkdtempSync(join(tmpdir(), "dorothy-setup-"));
+        try {
+            writeFileSync(join(scratch, "probe.test.ts"), PROBE);
+            const run = Bun.spawnSync(
+                [
+                    process.execPath,
+                    "test",
+                    "--preload",
+                    join(import.meta.dir, "test-setup.ts"),
+                    "probe.test.ts",
+                ],
+                {
+                    cwd: scratch,
+                    env: { ...process.env, GIT_INDEX_FILE: "/nonexistent" },
+                },
+            );
+            const result = run.stdout.toString() + run.stderr.toString();
+            const line = result
+                .split("\n")
+                .find((l) => l.startsWith("RESULT "));
+            expect(line, result).toBeDefined();
+            expect(JSON.parse((line ?? "").slice("RESULT ".length))).toEqual({
+                own: [],
+                sync: [],
+                object: [],
+                explicit: ["GIT_KEPT=yes"],
+            });
+        } finally {
+            rmSync(scratch, { recursive: true, force: true });
+        }
     });
 });

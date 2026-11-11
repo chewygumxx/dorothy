@@ -35,8 +35,10 @@ for (const name of Object.keys(process.env)) {
 }
 
 // Bun.spawn and Bun.spawnSync hand a child the environment the process
-// started with, not process.env as the loop above left it, unless given
-// an env; node:child_process and Bun's shell already read process.env.
+// started with, ignoring both deletions and assignments to process.env,
+// unless given an env; so this also carries the XDG_* and FORCE_COLOR
+// isolation above to their children. node:child_process and Bun's shell
+// already read process.env.
 type Spawn = (command: never, options?: never) => unknown;
 const inheritingEnv = (spawn: Spawn): Spawn =>
     ((command: unknown, options?: Record<string, unknown>) => {
