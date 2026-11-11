@@ -257,14 +257,14 @@ must pass under `mise run test` with mise's Node 24 on `PATH`.
   by `BIOME_CONFIG_PATH` or `--config-path` (probed 2026-11-11).
 
 A move is verified first; one that fails stays, its reason recorded on
-the wiki. These stay, as their tools or other
-systems read them only where they are: `.editorconfig`, `.gitignore`,
-`.gitattributes`, `bunfig.toml`, `tsconfig.json` (Bun reads it at run
-time), `.shellcheckrc` (the shared CI looks for it at the root),
-`.sops.yaml`, `secrets.json`, `.moxide.toml`, `.worktreeinclude`,
+the wiki. These stay, as their tools or other systems read them only
+where they are: `.editorconfig`, `.gitignore`, `.gitattributes`,
+`bunfig.toml`, `tsconfig.json` (Bun reads it at run time),
+`.shellcheckrc` (the shared CI looks for it at the root), `.sops.yaml`,
+`secrets.json`, `.moxide.toml`, `.worktreeinclude`,
 `.repo-metadata.jsonc`, `skills-lock.json`, `.github/`, `.husky/` (see
-Hooks) and `package.json`'s `config.commitizen`. The wiki records each
-and why.
+Hooks) and `package.json`'s `config.commitizen`. The wiki records each and
+why.
 
 `.config/AGENTS.md` lists each tool whose configuration is in
 `.config/`, and the flag or variable mise supplies to reach it, as the
