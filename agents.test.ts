@@ -159,7 +159,7 @@ describe("the skills", () => {
     });
 
     for (const [name, entry] of Object.entries(lock().skills)) {
-        // A remote skill (herdr) arrives with `skills add`, which the
+        // A remote skill arrives with `skills add`, which the
         // sync skips, or in a worktree's copy of the main checkout's;
         // never in CI, so it is checked only where it is installed.
         const fromPackage = entry.sourceType === "node_modules";
