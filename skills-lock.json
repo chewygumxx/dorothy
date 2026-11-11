@@ -47,13 +47,6 @@
       "version": "7.0.1",
       "computedHash": "4f571e7befb8b0946d9d7770232c818812412e9ab1dfb811f847edfba1fc6275"
     },
-    "herdr": {
-      "source": "herdrdev/herdr",
-      "ref": "2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01",
-      "sourceType": "github",
-      "skillPath": "skills/herdr/SKILL.md",
-      "computedHash": "72177e911f55467de8737174072ec6bb08e30bbf62bceabcb69678e944398b18"
-    },
     "i-have-adhd": {
       "source": "ayghri/i-have-adhd",
       "sourceType": "github",

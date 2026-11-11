@@ -67,15 +67,6 @@
             "path": "@chewygumxx/cz-commitlint"
         }
     },
-    "skills": [
-        {
-            "source": "herdrdev/herdr",
-            "ref": "2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01",
-            "skills": [
-                "herdr"
-            ]
-        }
-    ],
     "remarkConfig": {
         "plugins": [
             "@chewygumxx/remark-preset"

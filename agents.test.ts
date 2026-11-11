@@ -154,20 +154,6 @@ describe("the skills", () => {
         }
     });
 
-    it("pins every remote skill source to a commit", () => {
-        const manifest = JSON.parse(read(at("package.json"))) as {
-            skills: { source: string; ref?: string }[];
-        };
-        expect(manifest.skills.length).toBeGreaterThan(0);
-        for (const entry of manifest.skills) {
-            expect(entry.ref ?? "").toMatch(/^[0-9a-f]{40}$/);
-            const locked = Object.values(lock().skills).find(
-                (skill) => skill.source === entry.source,
-            );
-            expect(locked?.ref).toBe(entry.ref);
-        }
-    });
-
     it("syncs without reporting to skills.sh", () => {
         expect(skillsScript()).toStartWith("DO_NOT_TRACK=1 ");
     });
