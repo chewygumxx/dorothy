@@ -76,6 +76,8 @@ sources     = [
     ".github/actionlint.yaml",
     "bun.lock",
     ".config/mise/config.toml",
+    ".shellcheckrc",
+    "scripts/with-files.sh",
     "{% if usage.staged %}{{ exec(command=\"git rev-parse --path-format=absolute --git-path index\") }}{% endif %}",
 ]
 outputs     = { auto = true }
@@ -90,6 +92,7 @@ sources     = [
     ".biome.json",
     "bun.lock",
     ".config/mise/config.toml",
+    "scripts/with-files.sh",
     "{% if usage.staged %}{{ exec(command=\"git rev-parse --path-format=absolute --git-path index\") }}{% endif %}",
 ]
 outputs     = { auto = true }
@@ -104,6 +107,7 @@ sources     = [
     ".editorconfig",
     "bun.lock",
     ".config/mise/config.toml",
+    "scripts/with-files.sh",
     "{% if usage.staged %}{{ exec(command=\"git rev-parse --path-format=absolute --git-path index\") }}{% endif %}",
 ]
 outputs     = { auto = true }
@@ -117,6 +121,7 @@ sources     = [
     "!node_modules/**",
     "bun.lock",
     ".config/mise/config.toml",
+    "scripts/with-files.sh",
     "{% if usage.staged %}{{ exec(command=\"git rev-parse --path-format=absolute --git-path index\") }}{% endif %}",
 ]
 outputs     = { auto = true }
@@ -132,6 +137,7 @@ sources     = [
     "package.json",
     "bun.lock",
     ".config/mise/config.toml",
+    "scripts/with-files.sh",
     "{% if usage.staged %}{{ exec(command=\"git rev-parse --path-format=absolute --git-path index\") }}{% endif %}",
 ]
 outputs     = { auto = true }
@@ -164,6 +170,7 @@ sources     = [
     ".editorconfig",
     "bun.lock",
     ".config/mise/config.toml",
+    "scripts/with-files.sh",
     "{% if usage.staged %}{{ exec(command=\"git rev-parse --path-format=absolute --git-path index\") }}{% endif %}",
 ]
 outputs     = { auto = true }
@@ -181,6 +188,7 @@ sources     = [
     ".tombi.toml",
     "bun.lock",
     ".config/mise/config.toml",
+    "scripts/with-files.sh",
     "{% if usage.staged %}{{ exec(command=\"git rev-parse --path-format=absolute --git-path index\") }}{% endif %}",
 ]
 outputs     = { auto = true }
@@ -200,6 +208,7 @@ sources     = [
     ".editorconfig",
     "bun.lock",
     ".config/mise/config.toml",
+    "scripts/with-files.sh",
     "{% if usage.staged %}{{ exec(command=\"git rev-parse --path-format=absolute --git-path index\") }}{% endif %}",
 ]
 outputs     = { auto = true }
@@ -232,21 +241,25 @@ run         = 'bunx --bun --no-install commitlint --edit "$usage_file"'
 ["format:code"]
 description = "Format with Biome"
 usage       = 'flag "--staged"'
+wait_for    = [ "format:header" ]
 run         = "scripts/with-files.sh ${usage_staged:+--staged} -- bunx --bun --no-install biome format --write --files-ignore-unknown=true --no-errors-on-unmatched"
 
 ["format:yaml"]
 description = "Format YAML with Prettier"
 usage       = 'flag "--staged"'
+wait_for    = [ "format:header" ]
 run         = "scripts/with-files.sh ${usage_staged:+--staged} '*.yaml' '*.yml' -- bunx --bun --no-install prettier --write --log-level warn"
 
 ["format:shell"]
 description = "Format shell scripts with shfmt"
 usage       = 'flag "--staged"'
+wait_for    = [ "format:header" ]
 run         = "scripts/with-files.sh ${usage_staged:+--staged} '*.sh' '.husky/*' -- shfmt -w"
 
 ["format:toml"]
 description = "Format TOML with Tombi"
 usage       = 'flag "--staged"'
+wait_for    = [ "format:header" ]
 run         = "scripts/with-files.sh ${usage_staged:+--staged} '*.toml' -- tombi format"
 
 ["format:header"]
