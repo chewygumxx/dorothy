@@ -213,7 +213,8 @@ the main checkout, through Claude Code's own worktrees or worktrunk's
 `copy-ignored --require-include`. `bun install` links the skills from
 `node_modules`, but those installed with `skills add` exist only in the
 main checkout, so the skills directories are copied whole, and a copy
-skips whatever the install already made.
+skips whatever the install already made. Both tools read the file at the
+repository's root, so it stays there.
 
 ## Markdown Oxide
 
