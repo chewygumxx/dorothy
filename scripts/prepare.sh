@@ -11,6 +11,7 @@
 
 set -e
 
+# A production install has no development dependencies to set up.
 [ -d node_modules/husky ] || exit 0
 
 husky

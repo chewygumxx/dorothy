@@ -19,13 +19,9 @@ import { join } from "node:path";
 const ROOT = import.meta.dir;
 const read = (path: string): string => readFileSync(join(ROOT, path), "utf8");
 
-// Every inline code span of a Markdown text, in order.
-const codeSpans = (markdown: string): string[] =>
-    [...markdown.matchAll(/`([^`\n]+)`/g)].map((match) => match[1] ?? "");
-
-// A job is named by a bare lowercase word; commands, events and files
-// carry a space, an underscore or a dot.
-const isJob = (span: string): boolean => /^[a-z][a-z-]*$/.test(span);
+// The leading code span of each top-level bullet in a Markdown list.
+const bulletSpans = (markdown: string): string[] =>
+    [...markdown.matchAll(/^- `([^`\n]+)`/gm)].map((match) => match[1] ?? "");
 
 // The keys of a workflow's `jobs`.
 const jobs = (workflow: string): string[] =>
@@ -43,19 +39,25 @@ const ageRecipients = (secrets: string): string[] =>
         .map((entry) => entry.recipient)
         .sort();
 
-// The commands a shell script runs: its lines but for comments, blanks and
-// the control lines (`set`, and the guard test).
+// The commands a shell script runs: its lines, continuations joined, but
+// for comments, blanks, `set` and a guard that only exits. Any other line
+// starting with `[` is a command. A compound construct is not understood,
+// so it throws rather than hides a command.
+const GUARD = /^\[ .+ \] (\|\||&&) exit( \d+)?$/;
+const COMPOUND = /^(if|then|elif|else|fi|for|while|until|do|done|case|esac)\b/;
 const commands = (script: string): string[] =>
     script
+        .replaceAll(/\s*\\\n\s*/g, " ")
         .split("\n")
         .map((line) => line.trim())
-        .filter(
-            (line) =>
-                line !== "" &&
-                !line.startsWith("#") &&
-                !line.startsWith("set ") &&
-                !line.startsWith("["),
-        );
+        .filter((line) => line !== "" && !line.startsWith("#"))
+        .filter((line) => line !== "set -e" && !GUARD.test(line))
+        .map((line) => {
+            if (COMPOUND.test(line)) {
+                throw new Error(`Unsupported shell construct: ${line}`);
+            }
+            return line;
+        });
 
 // The leading code span of each numbered step in a Markdown list.
 const commandSpans = (markdown: string): string[] =>
@@ -68,13 +70,18 @@ describe("ci.md and ci.yaml", () => {
     const ci_yaml = read(".github/workflows/ci.yaml");
 
     it("names ci.yaml's jobs, and only those", () => {
-        expect(codeSpans(ci_md).filter(isJob)).toEqual(jobs(ci_yaml));
+        expect(bulletSpans(ci_md)).toEqual(jobs(ci_yaml));
     });
 
     it("notices a job the contract does not name", () => {
         const extra = `${ci_yaml}\n    deploy:\n        uses: ./x.yaml\n`;
         expect(jobs(extra)).toEqual([...jobs(ci_yaml), "deploy"]);
-        expect(codeSpans(ci_md).filter(isJob)).not.toEqual(jobs(extra));
+        expect(bulletSpans(ci_md)).not.toEqual(jobs(extra));
+    });
+
+    it("ignores prose that mentions a job elsewhere", () => {
+        const prose = `${ci_md}\nThe \`check\` job is mentioned again.\n`;
+        expect(bulletSpans(prose)).toEqual(jobs(ci_yaml));
     });
 });
 
@@ -113,5 +120,19 @@ describe("prepare.md and prepare.sh", () => {
             "bun run build",
         ]);
         expect(commandSpans(prepare_md)).not.toEqual(commands(extra));
+    });
+
+    it("notices a guarded command", () => {
+        const guarded = `${prepare_sh}\n[ -f x ] && bun foo\n`;
+        expect(commands(guarded)).toEqual([
+            ...commands(prepare_sh),
+            "[ -f x ] && bun foo",
+        ]);
+        expect(commandSpans(prepare_md)).not.toEqual(commands(guarded));
+    });
+
+    it("joins continuations and refuses compound constructs", () => {
+        expect(commands("bun a \\\n  --b\n")).toEqual(["bun a --b"]);
+        expect(() => commands("if true; then\n bun a\nfi\n")).toThrow();
     });
 });
