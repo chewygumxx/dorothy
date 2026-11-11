@@ -57,8 +57,8 @@ tasks implemented and reviewed one by one.
 
 ## Probes
 
-Run on 2026-11-11 by the controller in a throwaway worktree, before the
-plan, except where a task is named. Each was run on the tool as pinned.
+Run on 2026-11-11 in a throwaway worktree, before the plan, except where
+a task is named. Each was run on the tool as pinned.
 
 ### Biome
 
@@ -160,12 +160,15 @@ Made while carrying the plan out, each with its reason.
   headers fail commitlint, where `config` is a scope, not a type.
   `build(config):` follows the earlier `build(config): Pin Node for Pi`.
 - **"Each commit leaves `bun run check` passing" means no failure beyond
-  the baseline.** At the start, in the controller's agent environment, 48
-  tests failed on a pristine checkout (45 in
-  `scripts/agent-stewardship.test.ts`, two in `scripts/statusline.test.ts`
-  and one in `scripts/probe-pi-stewardship.test.ts`), the environment's, not
-  the code's: they pass under `mise run`, whose environment is cleaner.
-  From Task 3 on, every commit passed the whole suite through the hook.
+  the baseline.** At the start, in the coding agent's shell, 48 tests failed
+  on a pristine checkout (45 in `scripts/agent-stewardship.test.ts`, two in
+  `scripts/statusline.test.ts` and one in
+  `scripts/probe-pi-stewardship.test.ts`). They pass in the pre-commit hook
+  and under `mise run check`. The cause is undiagnosed, except that the
+  status line's test depends on the basename of `CLAUDE_CONFIG_DIR`. From
+  Task 4, when the hooks became `mise run check --staged`, every commit
+  passed the whole suite through the hook; earlier commits ran the old
+  pre-commit.
 - **Herdr's pin stays in its provenance.** Dropping the `skills` field broke
   `extension.test.ts`, which compared the vendored extension's `PROVENANCE.md`
   pin with `package.json`. The test now asserts only that the file carries a
@@ -185,9 +188,9 @@ Made while carrying the plan out, each with its reason.
   which does not clear them; fresh state and cache directories do.
 - **The skip floor stays.** A `lint` whose every task skips takes about 12
   seconds on mise 2026.11.4, which walks `node_modules` for each `**/*`
-  source set. The librarian found the fix upstream (mise 2026.11.6, below).
-  The repository keeps the skill's source form and lists no top-level
-  directories, as a new directory would then go unwatched.
+  source set. The agent library's steward found the fix upstream (mise
+  2026.11.6, below). The repository keeps the skill's source form and lists
+  no top-level directories, as a new directory would then go unwatched.
 - **Full runs check tracked files only.** A task given no `--staged` hands
   its tool the tracked files, so an untracked file goes unchecked until it is
   staged, where the pre-commit hook and CI check it.
@@ -215,14 +218,17 @@ counted.
 | Narratives                    | 28         | 24              | 0     |
 
 "Before the trim" is the commit that paired the contracts, before the
-narratives went to the wiki. Narratives were `.moxide.toml` 16 (copied from
-the tool's template, deleted), `bunfig.toml` 4, and `.shellcheckrc`,
-`.worktreeinclude`, `post-checkout` and `post-merge` 1 each; the
-multi-line contract was `.commitlintrc.mts`'s. Every removed narrative
-landed on the wiki page except `.moxide.toml`'s, which restated the tool's
-documentation and was replaced by its reference URL. The new
-`.config/mise/tasks.toml`, outside the audited set, has eight labels and one
-why. No narrative remains, and no contract is longer than a line.
+narratives went to the wiki. The counts differ from the spec's because
+Tasks 5 and 6 moved or deleted some first: `.yamllint.yaml` was deleted and
+three contracts were paired with their files. Narratives were
+`.moxide.toml` 16 (copied from the tool's template, deleted), `bunfig.toml`
+4, and `.shellcheckrc`, `.worktreeinclude`, `post-checkout` and
+`post-merge` 1 each; the multi-line contract was `.commitlintrc.mts`'s.
+Every removed narrative landed on the wiki page except `.moxide.toml`'s,
+which restated the tool's documentation and was replaced by its reference
+URL. The new `.config/mise/tasks.toml`, outside the audited set, has eight
+labels and one why. No narrative remains, and no contract is longer than a
+line.
 
 ## Verification
 
@@ -259,21 +265,25 @@ had not changed since the forced run (actions, shell, toml and yaml) said
 mise run lint
 mise run lint
 touch README.md && mise run lint
-git add README.md && mise run lint --staged
+mise run lint --staged
+mise run lint --staged
 ```
 
 The second run skipped all nine file-based tasks, leaving `lint:types` and
 `lint:header` (which declare no sources). After the touch `lint:md`,
 `lint:code`, `lint:editorconfig`, `lint:emdash` and `lint:secrets` reran,
-the `**/*` tasks, and actions, shell, toml and yaml skipped. The staged run
-handed `./README.md` alone to the Markdown tasks and nothing to the shell,
-TOML and YAML tasks; a second staged run skipped all nine.
+the `**/*` tasks, and actions, shell, toml and yaml skipped. A touch cannot
+stage a change, so for the staged run Task 3 appended one line to
+`README.md`, staged it alone and ran `mise run lint --staged`, then
+reverted the line. The staged run handed `./README.md` alone to the
+Markdown tasks and nothing to the shell, TOML and YAML tasks; a second
+staged run skipped all nine.
 
 ### CI's cold start
 
 With fresh `MISE_STATE_DIR` and `MISE_CACHE_DIR`, `mise run check` exited 0
 with no "skipping" line and 4688 passing and none failing, and wrote nine
-auto-output records. No trust prompt appeared. (Review focus 2.)
+auto-output records. No trust prompt appeared.
 
 ### Mise absent
 
@@ -281,7 +291,6 @@ In a scratch clone of the branch with `node_modules` removed and a stub
 `mise` first on `PATH` that logs and exits 99, `bun install` exited 0 (its
 `prepare` ran) and `bun run dev -- --help` exited 0 and printed the usage.
 The stub was never called, so no log was written. The clone was removed.
-(Review focus 3.)
 
 ### Hook isolation
 
@@ -292,13 +301,13 @@ in a scratch directory with an explicit environment holding
 child: `Bun.spawnSync` in array form, `Bun.spawn({ cmd })`, and one given an
 explicit `env`, whose `GIT_KEPT=yes` survives. Not stripping `GIT_` fails all
 three tests; removing the wrapper's default fails the child test and the
-preload test. (Review focus 1.)
+preload test.
 
 ### Overrides after the move
 
 `mise run --force lint:md` over `.github/pull_request_template.md` and
 `.agents/memory/` passed with the configuration at
-`.config/markdownlint-cli2.jsonc`. (Review focus 5.)
+`.config/markdownlint-cli2.jsonc`.
 
 ### Pairs
 
@@ -332,7 +341,8 @@ was empty after.
   the retried commit. It is timing-sensitive under the hook's load, a
   possible CI flake, and is not diagnosed.
 - **The agent environment's baseline.** The 48 failures that predate the
-  branch were never diagnosed here; they pass under `mise run`.
+  branch fail in the agent's shell and pass in the pre-commit hook and
+  under `mise run check`; they were never diagnosed here.
 - **Unprobed stays.** The reasons `skills-lock.json`, commitizen's
   configuration, `.moxide.toml` and `.worktreeinclude` stay at the root are
   the repository's reading of documentation; a later probe could move them.

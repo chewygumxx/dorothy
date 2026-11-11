@@ -92,7 +92,7 @@ Found but not scheduled, in the roadmap's order, which
 - A wiki skill, folded into the skill for keeping data by function.
 - Mise 2026.11.6's pruning of `node_modules`.
 - A flaky test in the commit hook.
-- Tests that read the agent's environment.
+- Tests that fail in the agent's shell.
 - The build configuration's remaining limits.
 
 ## Blocked on the user

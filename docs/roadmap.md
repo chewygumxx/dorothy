@@ -469,13 +469,15 @@ Found but not scheduled, each with its source.
   for 7, after 13.5 seconds) and passed twice alone. Undiagnosed; take it
   up on a second sighting, as a flake in the hook or CI blocks a merge.
   Source: the build configuration report, 2026-11-11.
-- Tests that read the agent's environment. On a pristine checkout, `bun
-  test` run in a coding agent's session fails 48 tests (45 in
+- Tests that fail in the agent's shell. On a pristine checkout, `bun test`
+  run in a coding agent's session fails 48 tests (45 in
   `scripts/agent-stewardship.test.ts`, two in `scripts/statusline.test.ts`
-  and one in `scripts/probe-pi-stewardship.test.ts`) that pass under
-  `mise run test`. The repository's rule is that every root, key and
-  environment is passed in; these do not yet. Source: the build
-  configuration report, 2026-11-11.
+  and one in `scripts/probe-pi-stewardship.test.ts`) that pass in the
+  pre-commit hook and under `mise run check`. The cause is undiagnosed,
+  except that the status line's test depends on the basename of
+  `CLAUDE_CONFIG_DIR`. The repository's rule is that every root, key and
+  environment is passed in. Source: the build configuration report,
+  2026-11-11.
 - The build configuration's remaining limits: the root stays no probe
   settled (`skills-lock.json`, commitizen's configuration, Markdown Oxide's
   `.moxide.toml`, worktrunk's reading of `.worktreeinclude`), `act` untried
@@ -795,14 +797,14 @@ In order of completion.
   to Done with its spec, plan, report and the data by function deferred
   findings. It was a repository change outside Ahead's order, so Ahead is
   unchanged and Dorothy's Memory stays first. Candidates gain mise
-  2026.11.6's pruning, a flake in the commit hook, tests that read the
-  agent's environment, and the configuration's remaining limits; the wiki
-  skill candidate now has its trial's record to write from, and the
+  2026.11.6's pruning, a flake in the commit hook, tests that fail in the
+  agent's shell, and the configuration's remaining limits; the wiki skill
+  candidate now has its trial's record to write from, and the
   secrets relocation candidate is unchanged. Each new candidate was asked
   whether Dorothy's Memory would be easier, safer or smaller with it done
   first. None is: the first only speeds a no-op `lint`, the second has
-  failed once in a hook that passes on retry, the third is avoided by
-  running the tests through `mise run`, and the last holds limits no
-  phase depends on. The flake and the environment-reading tests are the
-  nearest to Ahead, and rise if the flake recurs or an agent's `bun test`
-  hides a regression.
+  failed once in a hook that passes on retry, the third fails only in the
+  agent's shell and passes in the hook and under `mise run check`, and the
+  last holds limits no phase depends on. The flake and the failing tests
+  are the nearest to Ahead, and rise if the flake recurs or an agent's
+  `bun test` hides a regression.
