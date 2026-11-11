@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-06
+mtime: 2026-11-11
 spdx: GPL-3.0-only
 title: Decisions
 description: >-
@@ -1179,6 +1179,30 @@ The machinery behind these rules is on
 - **Sources**:
   [trust to proceed](../../.agents/memory/trust-to-proceed.md),
   [root AGENTS.md](../../AGENTS.md).
+
+### Data is kept by function, beside what it concerns
+
+- **Context**: Configuration files carried essays, `package.json` scripts
+  were hard to read, and the user found in-file metadata such as `#MISE`
+  directives a poor guard against drift. A trial in the user's agent
+  library, on mise's task file, kept tasks as TOML and their logic in
+  `scripts/`.
+- **Alternatives**: Documentation inline, as TSDoc and long comments;
+  pointers from each file to its documentation.
+- **Choice**: The user: data separated by function, stored as close as
+  possible, referenced by a standard convention. Directives and one-line
+  whys stay inline; contracts and narrative go beside their unit; files
+  pair by basename; an index stays whole; every split pair is checked.
+- **Reason**: Each kind of data is read alone, which spares an agent's
+  context, and a naming convention links files without pointers that rot.
+- **Cost**: Split data drifts unless a check pairs it, so every split
+  needs one.
+- **Standing**: current; on trial in the build configuration
+  restructuring, its skill deferred.
+- **Sources**:
+  [root AGENTS.md](../../AGENTS.md),
+  [build configuration spec](../specs/2026-11-10_build-configuration.md),
+  [deferred findings](../deferred/2026-11-11_data-by-function-deferred.md).
 
 ## Related
 
