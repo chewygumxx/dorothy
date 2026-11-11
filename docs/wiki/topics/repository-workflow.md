@@ -89,7 +89,8 @@ The tasks live in
 8. `lint:editorconfig`: files against `.editorconfig`.
 9. `lint:secrets`: `scripts/check-secrets.sh`, refusing a plaintext
    secret.
-10. `lint:emdash`: no em dash anywhere in tracked or untracked files.
+10. `lint:emdash`: no em dash in a tracked file, or in a staged one under
+    `--staged`.
 11. `lint:header`: every file's house header and breadcrumb match its path.
 12. `test`: `bun test`.
 
