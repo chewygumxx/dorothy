@@ -96,6 +96,9 @@ the shared CI, not a probe, and an inference where marked:
 `.config/mise/config.toml` pins the tools, settings and `[env]`; mise
 reads it natively there, and it includes `.config/mise/tasks.toml` through
 `[task_config]`. CI installs the same tools from it with `jdx/mise-action`.
+`min_version` is 2026.11.4, the release on which skipping was verified:
+per-argument records, template-rendered absolute sources and `wait_for`
+(probed 2026-11-11); older releases were not tried.
 Everything the repository runs that Bun does not install is pinned there,
 so a checkout never depends on what a contributor has on `PATH`; npm
 packages are pinned in `package.json` and installed by Bun, and the two

@@ -239,10 +239,10 @@ run         = 'bunx --bun --no-install commitlint --edit "$usage_file"'
 # -------
 
 ["format:code"]
-description = "Format with Biome"
+description = "Fix and format with Biome"
 usage       = 'flag "--staged"'
 wait_for    = [ "format:header" ]
-run         = "scripts/with-files.sh ${usage_staged:+--staged} -- bunx --bun --no-install biome format --write --files-ignore-unknown=true --no-errors-on-unmatched"
+run         = "scripts/with-files.sh ${usage_staged:+--staged} -- bunx --bun --no-install biome check --write --files-ignore-unknown=true --no-errors-on-unmatched"
 
 ["format:yaml"]
 description = "Format YAML with Prettier"
