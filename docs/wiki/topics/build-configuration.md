@@ -260,3 +260,4 @@ in [`.sops.md`](../../../.sops.md), and how the secrets are kept is on
 - [Repository workflow](./repository-workflow.md)
 - [Decisions](../decisions.md#repository-workflow)
 - [Records](../records.md#repository-workflow)
+- [Implementation report](../../reports/2026-11-11_build-configuration.md)

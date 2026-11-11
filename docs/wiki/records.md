@@ -381,6 +381,10 @@ first.
   plan](../plans/2026-11-11_build-configuration.md): Plan. Herdr's pins,
   test isolation, mise tasks, two layers, `.config/`, paired contracts.
 
+- [Build configuration restructuring
+  report](../reports/2026-11-11_build-configuration.md): Report. Probes of
+  each tool's configuration path, rulings, comment audit and verification.
+
 - [Data by function deferred
   findings](../deferred/2026-11-11_data-by-function-deferred.md): Deferred.
   The skill for keeping data by function, waiting on Dorothy's trial.
