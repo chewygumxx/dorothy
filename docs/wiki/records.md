@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-06
+mtime: 2026-11-11
 spdx: GPL-3.0-only
 title: Records
 description: >-
@@ -372,6 +372,10 @@ first.
 - [Development evidence helper
   report](../reports/2026-11-06_development-evidence.md): Report. Synthetic
   helper verification, operator reference comparison and operational limits.
+
+- [Build configuration restructuring
+  design](../specs/2026-11-10_build-configuration.md): Specification.
+  mise tasks beside Bun's runtime layer, terse configuration, `.config/`.
 
 ## Related
 
