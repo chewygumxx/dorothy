@@ -241,20 +241,23 @@ must pass under `mise run test` with mise's Node 24 on `PATH`.
 - `mise.toml` to `.config/mise/config.toml`: natively.
 - `.tombi.toml` to `.config/tombi.toml`: natively; the shared CI's scope
   lists it.
-- `.commitlintrc.mts` to `.config/commitlintrc.ts`: cosmiconfig searches
-  `.config/`, but not for `.mts`.
+- `.commitlintrc.mts` stays: commitlint replaces cosmiconfig's search
+  places with a list that omits `.config/`, and the shared CI runs
+  commitlint with no `--config` (probed 2026-11-11).
 - `.yamllint.yaml` deleted: mise's `[env]` sets `YAMLLINT_CONFIG_FILE`,
-  provided the shared CI's fallback is the same house style.
+  and the shared CI's fallback is the same house style (probed
+  2026-11-11).
 - `.markdownlint-cli2.jsonc` to `.config/markdownlint-cli2.jsonc`, by
-  `--config`, if the directory overrides in `.github/` and
-  `.agents/memory/` still merge over it.
+  `--config`; the directory overrides in `.github/` and `.agents/memory/`
+  still merge over it (probed 2026-11-11).
 - `remarkConfig` in `package.json` to `.config/remarkrc.json`, by
   `--rc-path`.
-- `.biome.json` to `.config/biome.json`, by `BIOME_CONFIG_PATH`, if
-  `files.includes` still resolves from the repository root.
+- `.biome.json` stays: Biome treats a configuration in a subdirectory as
+  a second, nested root and refuses to run, whether found by path or given
+  by `BIOME_CONFIG_PATH` or `--config-path` (probed 2026-11-11).
 
-A move marked "if" or "provided" is verified first; one that fails stays,
-its reason recorded on the wiki. These stay, as their tools or other
+A move is verified first; one that fails stays, its reason recorded on
+the wiki. These stay, as their tools or other
 systems read them only where they are: `.editorconfig`, `.gitignore`,
 `.gitattributes`, `bunfig.toml`, `tsconfig.json` (Bun reads it at run
 time), `.shellcheckrc` (the shared CI looks for it at the root),
