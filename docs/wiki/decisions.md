@@ -1281,9 +1281,10 @@ The machinery behind these rules is on
   has since codified it.
 - **Reason**: The CLIs keep running on Bun as before, and a check skips
   only when nothing it reads changed.
-- **Cost**: A `lint` that skips everything still takes about 12 seconds,
-  as mise walks `node_modules` for each `**/*` source set; the fix belongs
-  upstream.
+- **Cost**: On mise 2026.11.4, a `lint` that skips everything still took
+  about 12 seconds, as mise walked `node_modules` for each `**/*` source
+  set; mise 2026.11.6 prunes a trailing `!**/node_modules/**`, which the
+  skill will adopt once benchmarked.
 - **Standing**: current
   ([build configuration](./topics/build-configuration.md#mise)).
 - **Sources**:

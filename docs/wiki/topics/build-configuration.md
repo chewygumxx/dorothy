@@ -122,12 +122,17 @@ once it is staged, by the pre-commit hook's `--staged`, and in CI. Under
 include git's index by absolute path, so staging a change runs the task
 again.
 
-A `lint` whose every task skips still takes about 12 seconds: for each
-`**/*` source set mise walks the root `node_modules`, some fifty thousand
-files, despite `!node_modules/**`. Listing the top-level directories
-instead would be fast, but a new directory would then go unwatched and a
-task could skip wrongly, so the skill's form stays, and the fix belongs
-upstream, in mise or the skill.
+On mise 2026.11.4, a `lint` whose every task skips still took about 12
+seconds: for each `**/*` source set mise walked the root `node_modules`,
+some fifty thousand files, despite `!node_modules/**`. mise 2026.11.6,
+released on 2026-11-10, prunes the directories a trailing
+`!**/node_modules/**` excludes
+([jdx/mise#15499](https://github.com/jdx/mise/pull/15499), merged on
+2026-11-09). Listing the top-level directories instead would be fast, but
+a new directory would then go unwatched and a task could skip wrongly, so
+the repository keeps the source form of `configuring-mise-tasks` and adds
+no top-level inventory. The skill will move the exclusion last once it is
+benchmarked on 2026.11.6.
 
 ## Bun
 
