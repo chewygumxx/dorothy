@@ -38,6 +38,8 @@ isolated linker fails an undeclared or internal import.
 
 - `bun run check`: everything CI runs, ending with the tests;
   `mise run test` runs the tests alone.
+- `mise tasks ls` lists the development tasks; `lint`, `format` and
+  `check` take `--staged`.
 - `bun run dev`: the CLI from source.
 - `bun run skills` links packaged skills, not remote ones (`skills add`,
   `skills update`); `bun install` points Claude at `.agents/memory`.
@@ -61,7 +63,7 @@ isolated linker fails an undeclared or internal import.
 - Declare in this repository every agentic asset and utility it employs;
   never leave one to a user's own settings or a hand-made step.
 - Every new file carries the house header, copied from a sibling;
-  `lint:header` syncs headers, `header.test.ts` fails a missing one.
+  `format:header` syncs headers, `header.test.ts` fails a missing one.
 - A change to a package's architecture updates its `AGENTS.md`, and one
   to behaviour, decisions or priorities the wiki's pages, in the same branch.
 
