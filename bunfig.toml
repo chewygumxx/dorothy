@@ -11,35 +11,19 @@
 #
 # https://bun.com/docs/runtime/bunfig
 #
-# Runs every package script on Bun, the CLIs whose shebang names node
-# included: `bun run` puts a `node` that is Bun first on `PATH`, nested
-# scripts too, so a Node installed elsewhere, such as a CI runner's, never
-# runs them.
-#
 
+# Package scripts' CLIs run on Bun, never on a Node found on PATH.
 [run]
 bun = true
 
-#
-# Each package sees only what its package.json declares, so an undeclared
-# import fails to resolve under Bun and tsc alike.
-#
-
+# An undeclared import fails to resolve.
 [install]
 linker = "isolated"
 
-#
-# Core loads sops-encrypted secrets.json. Bun must not preload a .env
-# from the working directory into Dorothy's environment.
-#
-
+# No .env reaches Dorothy's environment; secrets.json holds her secrets.
 [env]
 file = false
 
-#
-# Tests compare rendered frames as plain text, whatever the shell's
-# FORCE_COLOR says (see test-setup.ts).
-#
-
+# Isolates the tests from the shell's colour, git and the user's data.
 [test]
 preload = [ "./test-setup.ts" ]

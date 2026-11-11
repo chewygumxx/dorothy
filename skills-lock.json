@@ -20,6 +20,12 @@
       "skillPath": "plugins/compact/skills/compact-summary/SKILL.md",
       "computedHash": "f35c3ad5f90b5c961990bcae2c81eb1467efe75e73d34771035956aa8813fade"
     },
+    "configuring-mise-tasks": {
+      "source": "chewygumxx/agent-library",
+      "sourceType": "github",
+      "skillPath": "skills/configuring-mise-tasks/SKILL.md",
+      "computedHash": "b18fda181a348f9e62bf805b5a9332211651cd0d8ba3f8e4db210d61bafbf116"
+    },
     "dispatching-parallel-agents": {
       "source": "superpowers",
       "sourceType": "node_modules",
@@ -46,13 +52,6 @@
       "skillPath": "skills/finishing-a-development-branch/SKILL.md",
       "version": "7.0.1",
       "computedHash": "4f571e7befb8b0946d9d7770232c818812412e9ab1dfb811f847edfba1fc6275"
-    },
-    "herdr": {
-      "source": "herdrdev/herdr",
-      "ref": "2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01",
-      "sourceType": "github",
-      "skillPath": "skills/herdr/SKILL.md",
-      "computedHash": "72177e911f55467de8737174072ec6bb08e30bbf62bceabcb69678e944398b18"
     },
     "i-have-adhd": {
       "source": "ayghri/i-have-adhd",

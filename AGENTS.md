@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-11-04
+mtime: 2026-11-11
 spdx: GPL-3.0-only
 title: AGENTS.md
 description: >-
@@ -36,8 +36,10 @@ isolated linker fails an undeclared or internal import.
 
 ## Commands
 
-- `bun run check`: everything CI runs, ending with the tests;
-  `bun run test` runs the tests alone.
+- `bun run check`: everything CI runs, the tests included;
+  `mise run test` runs the tests alone.
+- `mise tasks ls` lists the development tasks; `lint`, `format` and
+  `check` take `--staged`.
 - `bun run dev`: the CLI from source.
 - `bun run skills` links packaged skills, not remote ones (`skills add`,
   `skills update`); `bun install` points Claude at `.agents/memory`.
@@ -61,9 +63,22 @@ isolated linker fails an undeclared or internal import.
 - Declare in this repository every agentic asset and utility it employs;
   never leave one to a user's own settings or a hand-made step.
 - Every new file carries the house header, copied from a sibling;
-  `lint:header` syncs headers, `header.test.ts` fails a missing one.
+  `format:header` syncs headers, `header.test.ts` fails a missing one.
 - A change to a package's architecture updates its `AGENTS.md`, and one
   to behaviour, decisions or priorities the wiki's pages, in the same branch.
+
+## Data by function
+
+Keep each kind of data in its own file, beside what it concerns; the
+[decisions](./docs/wiki/decisions.md) say why:
+
+- Directives for tools stay inline: licence headers, modelines, schema
+  lines and lint suppressions.
+- A why tied to one line stays inline, in one line.
+- What a unit is for and what it promises goes in a file beside it.
+- Pair files by a shared basename, not by "see" pointers. An index, such as
+  a task file or the wiki's records, stays whole in one known place.
+- Every split pair has a check that fails when the two disagree.
 
 ## Commits
 
@@ -96,5 +111,6 @@ instructions say: `lint:md` and `lint:emdash` reject them.
 
 ## Before you start
 
-Before working in a package, read `packages/<name>/AGENTS.md`; before
-writing docs, `docs/AGENTS.md`; to find a topic, `docs/README.md`.
+Before working in a package, read `packages/<name>/AGENTS.md`; on
+configuration, `.config/AGENTS.md`; before writing docs, `docs/AGENTS.md`;
+to find a topic, `docs/README.md`.

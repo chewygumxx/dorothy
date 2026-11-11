@@ -892,12 +892,7 @@ describe("the vendored herdr extension", () => {
         expect(provenance).toContain(`sha256: \`${digest(state)}\``);
         expect(provenance).toContain(`\`${digest(licence)}\``);
         expect(licence.toString()).toContain("Apache License");
-        const root = JSON.parse(
-            await readFile(join(CLI_DIR, "../../package.json"), "utf8"),
-        ) as { skills: { source: string; ref: string }[] };
-        const pin = root.skills.find((s) => s.source === "herdrdev/herdr")?.ref;
-        expect(pin).toMatch(/^[0-9a-f]{40}$/);
-        expect(provenance).toContain(`Pin: \`${pin}\``);
+        expect(provenance).toMatch(/^- Pin: `[0-9a-f]{40}`/m);
         expect(state.toString()).toContain("HERDR_INTEGRATION_ID=pi");
     });
 });

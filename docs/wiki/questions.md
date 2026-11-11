@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-06
+mtime: 2026-11-11
 spdx: GPL-3.0-only
 title: Questions
 description: >-
@@ -245,8 +245,8 @@ spec places the first as an alternative to the second in time. See
 
 ### What do I run before committing, and what must I read first?
 
-`bun run check` runs everything CI runs, ending with the tests;
-`bun run test` runs the tests alone. Before working in a package, read its
+`bun run check` runs everything CI runs, the tests included;
+`mise run test` runs the tests alone. Before working in a package, read its
 `packages/<name>/AGENTS.md`, and before writing docs, `docs/AGENTS.md`.
 Commits are granular Conventional Commits with a header of at most 50
 characters. [The checks](./topics/repository-workflow.md#the-checks) lists

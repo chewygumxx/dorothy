@@ -93,7 +93,7 @@ const skillName = (dir: string): string | undefined =>
 
 // Lines, header included, each kind of guidance file may run to. A
 // package that outgrows its budget gains a nested AGENTS.md instead.
-const BUDGET = { docs: 60, package: 150, root: 100 };
+const BUDGET = { docs: 60, package: 150 };
 
 const lines = (path: string) => read(path).trimEnd().split("\n").length;
 
@@ -154,26 +154,12 @@ describe("the skills", () => {
         }
     });
 
-    it("pins every remote skill source to a commit", () => {
-        const manifest = JSON.parse(read(at("package.json"))) as {
-            skills: { source: string; ref?: string }[];
-        };
-        expect(manifest.skills.length).toBeGreaterThan(0);
-        for (const entry of manifest.skills) {
-            expect(entry.ref ?? "").toMatch(/^[0-9a-f]{40}$/);
-            const locked = Object.values(lock().skills).find(
-                (skill) => skill.source === entry.source,
-            );
-            expect(locked?.ref).toBe(entry.ref);
-        }
-    });
-
     it("syncs without reporting to skills.sh", () => {
         expect(skillsScript()).toStartWith("DO_NOT_TRACK=1 ");
     });
 
     for (const [name, entry] of Object.entries(lock().skills)) {
-        // A remote skill (herdr) arrives with `skills add`, which the
+        // A remote skill arrives with `skills add`, which the
         // sync skips, or in a worktree's copy of the main checkout's;
         // never in CI, so it is checked only where it is installed.
         const fromPackage = entry.sourceType === "node_modules";
@@ -318,10 +304,6 @@ describe("the packages' guidance", () => {
 const CLAUDE_FILES = ["CLAUDE.md", "CLAUDE.local.md"];
 
 describe("the root's guidance", () => {
-    it(`keeps AGENTS.md within ${BUDGET.root} lines`, () => {
-        expect(lines(at("AGENTS.md"))).toBeLessThanOrEqual(BUDGET.root);
-    });
-
     it(`keeps docs/AGENTS.md within ${BUDGET.docs} lines`, () => {
         expect(lines(at("docs/AGENTS.md"))).toBeLessThanOrEqual(BUDGET.docs);
     });

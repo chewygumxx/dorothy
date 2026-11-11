@@ -27,7 +27,7 @@
 // of its own. `--live` never runs without `--max-usd`. The result goes
 // to <dir>/result.json and <dir>/report.md, holding shapes, counts and
 // costs, never a key or a prompt. This is a probe, not a gateway: it is
-// never run by `bun run test`.
+// never run by `mise run test`.
 
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";

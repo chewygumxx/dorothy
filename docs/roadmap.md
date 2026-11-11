@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-11-06
+mtime: 2026-11-11
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -439,6 +439,51 @@ Found but not scheduled, each with its source.
   query-bearing paths, catalogue wording and ordering, reference-page
   scope and unresolved source evidence remain unscheduled; none needs
   to precede Dorothy's Memory's next pieces.
+- Dorothy's secrets out of the checkout. `secrets.json` holds her runtime
+  credentials, yet sits at the repository root among the build assets,
+  which the build configuration restructuring (the user, 2026-11-10)
+  divorces from every other scope. Move it to `$XDG_CONFIG_HOME/dorothy/`
+  with its `.sops.yaml` beside it, as `saveSecret` requires, under a root
+  passed in as tests require, and encrypted to a key of its own. Settle in
+  its design how the encrypted file reaches another machine once git no
+  longer carries it. Any secret the build or development tooling later
+  needs, such as the evidence tooling's R2 credentials, gets its own file
+  under `.config/` and a new key, so revoking either key leaves the other
+  untouched. Source: the user, 2026-11-10.
+- A wiki skill: the conventions of `docs/wiki/` as an agent skill. It may
+  fold into the skill for keeping data by function, which takes in
+  `documenting-configuration` and waited on Dorothy's trial
+  ([deferred](./deferred/2026-11-11_data-by-function-deferred.md)). The
+  trial is [reported](./reports/2026-11-11_build-configuration.md#comment-audit)
+  and the skill is written from that record, in the user's agent library.
+  Source: the user, 2026-11-10 and 2026-11-11.
+- Mise 2026.11.6's pruning of `node_modules`, which removes the 12-second
+  floor of a `lint` that skips every task. `configuring-mise-tasks` will
+  move its exclusion last once benchmarked there; then raise the
+  repository's mise pin and measure
+  ([the limit](./reports/2026-11-11_build-configuration.md#limits),
+  [wiki](./wiki/topics/build-configuration.md#mise)). Source: the build
+  configuration report, 2026-11-11.
+- A flaky test in the commit hook: `scripts/probe-pi-stewardship.test.ts`
+  "the live control boundary" failed once under the hook's load (exit 10
+  for 7, after 13.5 seconds) and passed twice alone. Undiagnosed; take it
+  up on a second sighting, as a flake in the hook or CI blocks a merge.
+  Source: the build configuration report, 2026-11-11.
+- Tests that fail in the agent's shell. On a pristine checkout, `bun test`
+  run in a coding agent's session fails 48 tests (45 in
+  `scripts/agent-stewardship.test.ts`, two in `scripts/statusline.test.ts`
+  and one in `scripts/probe-pi-stewardship.test.ts`) that pass in the
+  pre-commit hook and under `mise run check`. The cause is undiagnosed,
+  except that the status line's test depends on the basename of
+  `CLAUDE_CONFIG_DIR`. The repository's rule is that every root, key and
+  environment is passed in. Source: the build configuration report,
+  2026-11-11.
+- The build configuration's remaining limits: the root stays no probe
+  settled (`skills-lock.json`, commitizen's configuration, Markdown Oxide's
+  `.moxide.toml`, worktrunk's reading of `.worktreeinclude`), `act` untried
+  for want of Docker, a yamllint run in an editor outside mise finding no
+  house style, and `--staged` runs reading the working tree, not the index.
+  Source: the build configuration report, 2026-11-11.
 
 ## Done
 
@@ -523,6 +568,15 @@ In order of completion.
   API-backed cycle, with synthetic profiles, declared fault injection,
   explicit human operator assistance and same-user limits. It is not
   subscription evidence or a general reliability estimate.
+- **Build configuration restructuring**:
+  [spec](./specs/2026-11-10_build-configuration.md),
+  [plan](./plans/2026-11-11_build-configuration.md),
+  [report](./reports/2026-11-11_build-configuration.md),
+  [wiki](./wiki/topics/build-configuration.md),
+  [deferred](./deferred/2026-11-11_data-by-function-deferred.md). mise
+  tasks became the development interface beside Bun's runtime layer,
+  configuration moved into `.config/` where its tool can reach it, and
+  comments were cut to directives, labels and one-line whys.
 
 ## Revisions
 
@@ -739,3 +793,18 @@ In order of completion.
   destination for development evidence high priority. It joins Candidates
   with the existing archive as its source; no destination or third copy
   is claimed, and the existing Ahead order is preserved.
+- 2026-11-11: The build configuration restructuring is done, so it moves
+  to Done with its spec, plan, report and the data by function deferred
+  findings. It was a repository change outside Ahead's order, so Ahead is
+  unchanged and Dorothy's Memory stays first. Candidates gain mise
+  2026.11.6's pruning, a flake in the commit hook, tests that fail in the
+  agent's shell, and the configuration's remaining limits; the wiki skill
+  candidate now has its trial's record to write from, and the
+  secrets relocation candidate is unchanged. Each new candidate was asked
+  whether Dorothy's Memory would be easier, safer or smaller with it done
+  first. None is: the first only speeds a no-op `lint`, the second has
+  failed once in a hook that passes on retry, the third fails in the
+  agent's shell and passes in the hook and under `mise run check`, and the
+  last holds limits no phase depends on. The flake and the failing tests
+  are the nearest to Ahead, and rise if the flake recurs or an agent's
+  `bun test` hides a regression.

@@ -1,0 +1,306 @@
+# vim:set expandtab shiftwidth=4 filetype=toml:
+# SPDX-License-Identifier: GPL-3.0-only
+#:schema https://mise.jdx.dev/schema/mise-task.json
+
+#
+#
+# ~chewygumxx/dorothy.git
+# ::: :/.config/mise/tasks.toml
+#
+#
+
+#
+# https://mise.jdx.dev/tasks/task-configuration.html
+#
+
+# ---------
+# Standard
+# ---------
+
+[install]
+description = "Install the locked dependency tree"
+alias       = "i"
+run         = "bun ci"
+
+[lint]
+description = "Run every linter and format check"
+alias       = "l"
+usage       = 'flag "--staged" help="Lint staged files alone"'
+depends     = [
+    "lint:actions {% if usage.staged %}--staged{% endif %}",
+    "lint:code {% if usage.staged %}--staged{% endif %}",
+    "lint:editorconfig {% if usage.staged %}--staged{% endif %}",
+    "lint:emdash {% if usage.staged %}--staged{% endif %}",
+    "lint:md {% if usage.staged %}--staged{% endif %}",
+    "lint:secrets {% if usage.staged %}--staged{% endif %}",
+    "lint:shell {% if usage.staged %}--staged{% endif %}",
+    "lint:toml {% if usage.staged %}--staged{% endif %}",
+    "lint:yaml {% if usage.staged %}--staged{% endif %}",
+    "lint:header",
+    "lint:types",
+]
+
+[format]
+description = "Apply every formatter"
+alias       = "f"
+usage       = 'flag "--staged" help="Format staged files alone"'
+depends     = [
+    "format:code {% if usage.staged %}--staged{% endif %}",
+    "format:shell {% if usage.staged %}--staged{% endif %}",
+    "format:toml {% if usage.staged %}--staged{% endif %}",
+    "format:yaml {% if usage.staged %}--staged{% endif %}",
+    "format:header",
+]
+
+[test]
+description = "Run the tests"
+alias       = "t"
+run         = "bun test"
+
+[check]
+description = "Run everything CI runs: lint and test"
+alias       = "c"
+usage       = 'flag "--staged" help="Lint staged files alone; test in full"'
+depends     = [ "lint {% if usage.staged %}--staged{% endif %}", "test" ]
+
+# -------------------
+# Lint: file by file
+# -------------------
+
+["lint:actions"]
+description = "Lint GitHub workflows with actionlint"
+usage       = 'flag "--staged"'
+sources     = [
+    ".github/workflows/*.yaml",
+    ".github/workflows/*.yml",
+    ".github/actionlint.yaml",
+    "bun.lock",
+    ".config/mise/config.toml",
+    ".shellcheckrc",
+    "scripts/with-files.sh",
+    "{% if usage.staged %}{{ exec(command=\"git rev-parse --path-format=absolute --git-path index\") }}{% endif %}",
+]
+outputs     = { auto = true }
+run         = "scripts/with-files.sh ${usage_staged:+--staged} '.github/workflows/*.yaml' '.github/workflows/*.yml' -- actionlint"
+
+["lint:code"]
+description = "Lint and check formatting with Biome"
+usage       = 'flag "--staged"'
+sources     = [
+    "**/*",
+    "!node_modules/**",
+    ".biome.json",
+    "bun.lock",
+    ".config/mise/config.toml",
+    "scripts/with-files.sh",
+    "{% if usage.staged %}{{ exec(command=\"git rev-parse --path-format=absolute --git-path index\") }}{% endif %}",
+]
+outputs     = { auto = true }
+run         = "scripts/with-files.sh ${usage_staged:+--staged} -- bunx --bun --no-install biome check --files-ignore-unknown=true --no-errors-on-unmatched"
+
+["lint:editorconfig"]
+description = "Check files against .editorconfig"
+usage       = 'flag "--staged"'
+sources     = [
+    "**/*",
+    "!node_modules/**",
+    ".editorconfig",
+    "bun.lock",
+    ".config/mise/config.toml",
+    "scripts/with-files.sh",
+    "{% if usage.staged %}{{ exec(command=\"git rev-parse --path-format=absolute --git-path index\") }}{% endif %}",
+]
+outputs     = { auto = true }
+run         = "scripts/with-files.sh ${usage_staged:+--staged} -- editorconfig-checker -disable-indent-size"
+
+["lint:emdash"]
+description = "Refuse em dashes"
+usage       = 'flag "--staged"'
+sources     = [
+    "**/*",
+    "!node_modules/**",
+    "bun.lock",
+    ".config/mise/config.toml",
+    "scripts/with-files.sh",
+    "{% if usage.staged %}{{ exec(command=\"git rev-parse --path-format=absolute --git-path index\") }}{% endif %}",
+]
+outputs     = { auto = true }
+run         = '''scripts/with-files.sh ${usage_staged:+--staged} -- sh -c 'git grep -nIF "$(printf "\342\200\224")" -- "$@"; test $? -eq 1' sh'''
+
+["lint:md"]
+description = "Lint Markdown with remark and markdownlint"
+usage       = 'flag "--staged"'
+sources     = [
+    "**/*.md",
+    "!node_modules/**",
+    "**/.markdownlint-cli2.jsonc",
+    ".config/markdownlint-cli2.jsonc",
+    ".config/remarkrc.json",
+    "bun.lock",
+    ".config/mise/config.toml",
+    "scripts/with-files.sh",
+    "{% if usage.staged %}{{ exec(command=\"git rev-parse --path-format=absolute --git-path index\") }}{% endif %}",
+]
+outputs     = { auto = true }
+run         = [
+    "scripts/with-files.sh ${usage_staged:+--staged} '*.md' -- bunx --bun --no-install remark --rc-path .config/remarkrc.json --frail --quiet --no-stdout",
+    "scripts/with-files.sh ${usage_staged:+--staged} '*.md' -- bunx --bun --no-install markdownlint-cli2 --config .config/markdownlint-cli2.jsonc",
+]
+
+["lint:secrets"]
+description = "Refuse plaintext secrets with check-secrets.sh"
+usage       = 'flag "--staged"'
+sources     = [
+    "**/*",
+    "!node_modules/**",
+    "bun.lock",
+    ".config/mise/config.toml",
+    "{% if usage.staged %}{{ exec(command=\"git rev-parse --path-format=absolute --git-path index\") }}{% endif %}",
+]
+outputs     = { auto = true }
+run         = "sh scripts/check-secrets.sh {% if usage.staged %}--staged{% else %}--tracked{% endif %}"
+
+["lint:shell"]
+description = "Lint shell scripts with ShellCheck and shfmt"
+usage       = 'flag "--staged"'
+sources     = [
+    "**/*.sh",
+    ".husky/*",
+    "!node_modules/**",
+    ".shellcheckrc",
+    ".editorconfig",
+    "bun.lock",
+    ".config/mise/config.toml",
+    "scripts/with-files.sh",
+    "{% if usage.staged %}{{ exec(command=\"git rev-parse --path-format=absolute --git-path index\") }}{% endif %}",
+]
+outputs     = { auto = true }
+run         = [
+    "scripts/with-files.sh ${usage_staged:+--staged} '*.sh' '.husky/*' -- shellcheck",
+    "scripts/with-files.sh ${usage_staged:+--staged} '*.sh' '.husky/*' -- shfmt -d",
+]
+
+["lint:toml"]
+description = "Lint and check formatting of TOML with Tombi"
+usage       = 'flag "--staged"'
+sources     = [
+    "**/*.toml",
+    "!node_modules/**",
+    ".config/tombi.toml",
+    "bun.lock",
+    ".config/mise/config.toml",
+    "scripts/with-files.sh",
+    "{% if usage.staged %}{{ exec(command=\"git rev-parse --path-format=absolute --git-path index\") }}{% endif %}",
+]
+outputs     = { auto = true }
+run         = [
+    "scripts/with-files.sh ${usage_staged:+--staged} '*.toml' -- tombi lint",
+    "scripts/with-files.sh ${usage_staged:+--staged} '*.toml' -- tombi format --check",
+]
+
+["lint:yaml"]
+description = "Lint and check formatting of YAML with Prettier and yamllint"
+usage       = 'flag "--staged"'
+sources     = [
+    "**/*.yaml",
+    "**/*.yml",
+    "!node_modules/**",
+    ".editorconfig",
+    "bun.lock",
+    ".config/mise/config.toml",
+    "scripts/with-files.sh",
+    "{% if usage.staged %}{{ exec(command=\"git rev-parse --path-format=absolute --git-path index\") }}{% endif %}",
+]
+outputs     = { auto = true }
+run         = [
+    "scripts/with-files.sh ${usage_staged:+--staged} '*.yaml' '*.yml' -- bunx --bun --no-install prettier --check",
+    "scripts/with-files.sh ${usage_staged:+--staged} '*.yaml' '*.yml' -- yamllint --strict",
+]
+
+# --------------------
+# Lint: whole project
+# --------------------
+
+["lint:types"]
+description = "Type-check with tsc"
+run         = "bunx --bun --no-install tsc"
+
+["lint:header"]
+description = "Check house headers with sync-header-metadata"
+run         = "bunx --bun --no-install sync-header-metadata"
+
+["lint:commit"]
+description = "Lint a commit message file with commitlint"
+usage       = 'arg "<file>" help="The commit message file"'
+run         = 'bunx --bun --no-install commitlint --edit "$usage_file"'
+
+# -------
+# Format
+# -------
+
+["format:code"]
+description = "Fix and format with Biome"
+usage       = 'flag "--staged"'
+wait_for    = [ "format:header" ]
+run         = "scripts/with-files.sh ${usage_staged:+--staged} -- bunx --bun --no-install biome check --write --files-ignore-unknown=true --no-errors-on-unmatched"
+
+["format:yaml"]
+description = "Format YAML with Prettier"
+usage       = 'flag "--staged"'
+wait_for    = [ "format:header" ]
+run         = "scripts/with-files.sh ${usage_staged:+--staged} '*.yaml' '*.yml' -- bunx --bun --no-install prettier --write --log-level warn"
+
+["format:shell"]
+description = "Format shell scripts with shfmt"
+usage       = 'flag "--staged"'
+wait_for    = [ "format:header" ]
+run         = "scripts/with-files.sh ${usage_staged:+--staged} '*.sh' '.husky/*' -- shfmt -w"
+
+["format:toml"]
+description = "Format TOML with Tombi"
+usage       = 'flag "--staged"'
+wait_for    = [ "format:header" ]
+run         = "scripts/with-files.sh ${usage_staged:+--staged} '*.toml' -- tombi format"
+
+["format:header"]
+description = "Rewrite house headers with sync-header-metadata"
+run         = "bunx --bun --no-install sync-header-metadata --update"
+
+# ------------
+# Bun's layer
+# ------------
+
+[dev]
+description = "Run Dorothy's CLI from source"
+run         = "bun run dev"
+
+[start]
+description = "Start Dorothy's CLI"
+run         = "bun run start"
+
+[eval]
+description = "Run Dorothy's evaluations"
+run         = "bun run eval"
+
+[skills]
+description = "Link the skills skills-lock.json declares"
+run         = "bun run skills"
+
+# ------
+# Other
+# ------
+
+[commit]
+description = "Compose a commit with commitizen"
+run         = "bunx --bun --no-install cz"
+
+# Wrapper to refresh remote task data upon every execution.
+# https://github.com/chewygumxx/.github#readme
+[act]
+description = "Locally execute GitHub Actions (CI) with Docker"
+run         = "mise run --no-cache act-cached"
+
+[act-cached]
+description = "[Internal] Locally execute GitHub Actions (CI) with Docker"
+file        = "git::https://github.com/chewygumxx/.github.git//tasks/act?ref=v1"
+hide        = true

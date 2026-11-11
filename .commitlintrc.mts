@@ -10,8 +10,7 @@
 
 import { defineConfig } from "@chewygumxx/commitlint-config";
 
-// Types, limits and the prompt are shared; only the scopes are this
-// repository's own.
+// Types, limits and the prompt are shared; the scopes are this repository's.
 export default defineConfig({
     scopes: [
         {

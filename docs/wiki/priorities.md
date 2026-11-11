@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-06
+mtime: 2026-11-11
 spdx: GPL-3.0-only
 title: Priorities
 description: >-
@@ -88,6 +88,12 @@ Found but not scheduled, in the roadmap's order, which
 - Message provenance between agents.
 - The repository wiki's remaining parser, editorial and source-evidence
   findings ([triage](../reports/2026-11-03_wiki-follow-up.md#deferred-work)).
+- Dorothy's secrets out of the checkout.
+- A wiki skill, folded into the skill for keeping data by function.
+- Mise 2026.11.6's pruning of `node_modules`.
+- A flaky test in the commit hook.
+- Tests that fail in the agent's shell.
+- The build configuration's remaining limits.
 
 ## Blocked on the user
 

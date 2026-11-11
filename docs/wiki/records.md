@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-06
+mtime: 2026-11-11
 spdx: GPL-3.0-only
 title: Records
 description: >-
@@ -372,6 +372,23 @@ first.
 - [Development evidence helper
   report](../reports/2026-11-06_development-evidence.md): Report. Synthetic
   helper verification, operator reference comparison and operational limits.
+
+- [Build configuration restructuring
+  design](../specs/2026-11-10_build-configuration.md): Specification.
+  mise tasks beside Bun's runtime layer, terse configuration, `.config/`.
+
+- [Build configuration restructuring
+  plan](../plans/2026-11-11_build-configuration.md): Plan. Herdr's pins,
+  test isolation, mise tasks, two layers, `.config/`, paired contracts.
+
+- [Build configuration restructuring
+  report](../reports/2026-11-11_build-configuration.md): Report. Probes of
+  each tool's configuration path, rulings, comment audit and verification.
+
+- [Data by function deferred
+  findings](../deferred/2026-11-11_data-by-function-deferred.md): Deferred.
+  The skill for keeping data by function; Dorothy's trial is reported, and
+  the skill awaits its drafting.
 
 ## Related
 

@@ -18,7 +18,7 @@
 // does the turn limit, the wall time or the budget. The clock is
 // injectable, so its limits are tested without waiting. Also the
 // Featherless catalogue check and the live key's loading, both used live
-// alone. This is a probe's, not a gateway: never run by `bun run test`
+// alone. This is a probe's, not a gateway: never run by `mise run test`
 // against a real upstream.
 
 import { createHash } from "node:crypto";

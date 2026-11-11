@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-01
-mtime: 2026-11-04
+mtime: 2026-11-11
 spdx: GPL-3.0-only
 title: packages/cli/src/hosts/AGENTS.md
 description: >-
@@ -138,7 +138,7 @@ Dorothy in hosts other than Claude Code, whose launcher is `claude.ts`.
 - `scripts/probe-pi-delivery.ts` (repository root): the bounded smoke
   test, offline or live, through its own counting, budgeted forwarding
   proxy ([report](../../../../docs/reports/2026-11-03_pi-delivery.md)).
-  Never part of `bun run test`.
+  Never part of `mise run test`.
 - `scripts/probe-pi-stewardship.ts` (repository root): the stewardship
   probe. Offline it runs simulated workers and the owner's verification;
   live it builds the runner's real deps (`scripts/pi-stewardship-trial.ts`:

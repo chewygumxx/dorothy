@@ -26,3 +26,31 @@ process.env.XDG_CACHE_HOME = mkdtempSync(join(tmpdir(), "dorothy-cache-"));
 // user's.
 process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), "dorothy-state-"));
 process.env.XDG_RUNTIME_DIR = mkdtempSync(join(tmpdir(), "dorothy-run-"));
+
+// A pre-commit hook runs the tests with git's variables set, and a test
+// that runs git in a scratch repository would otherwise write the real
+// index.
+for (const name of Object.keys(process.env)) {
+    if (name.startsWith("GIT_")) delete process.env[name];
+}
+
+// Bun.spawn and Bun.spawnSync hand a child the environment the process
+// started with, ignoring both deletions and assignments to process.env,
+// unless given an env; so this also carries the XDG_* and FORCE_COLOR
+// isolation above to their children. node:child_process and Bun's shell
+// already read process.env.
+type Spawn = (command: never, options?: never) => unknown;
+const inheritingEnv = (spawn: Spawn): Spawn =>
+    ((command: unknown, options?: Record<string, unknown>) => {
+        if (Array.isArray(command)) {
+            const env = options?.env ?? process.env;
+            return spawn(command as never, { ...options, env } as never);
+        }
+        const given = command as { env?: unknown };
+        const env = given.env ?? process.env;
+        return spawn({ ...given, env } as never);
+    }) as Spawn;
+Bun.spawn = inheritingEnv(Bun.spawn as Spawn) as unknown as typeof Bun.spawn;
+Bun.spawnSync = inheritingEnv(
+    Bun.spawnSync as Spawn,
+) as unknown as typeof Bun.spawnSync;

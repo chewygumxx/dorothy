@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-06
+mtime: 2026-11-11
 spdx: GPL-3.0-only
 title: Decisions
 description: >-
@@ -1179,6 +1179,118 @@ The machinery behind these rules is on
 - **Sources**:
   [trust to proceed](../../.agents/memory/trust-to-proceed.md),
   [root AGENTS.md](../../AGENTS.md).
+
+### Data is kept by function, beside what it concerns
+
+- **Context**: Configuration files carried essays, `package.json` scripts
+  were hard to read, and the user found in-file metadata such as `#MISE`
+  directives a poor guard against drift. A trial in the user's agent
+  library, on mise's task file, kept tasks as TOML and their logic in
+  `scripts/`.
+- **Alternatives**: Documentation inline, as TSDoc and long comments;
+  pointers from each file to its documentation.
+- **Choice**: The user: data separated by function, stored as close as
+  possible, referenced by a standard convention. Directives and one-line
+  whys stay inline; contracts and narrative go beside their unit; files
+  pair by basename; an index stays whole; every split pair is checked.
+- **Reason**: Each kind of data is read alone, which spares an agent's
+  context, and a naming convention links files without pointers that rot.
+- **Cost**: Split data drifts unless a check pairs it, so every split
+  needs one.
+- **Standing**: current; on trial in the build configuration
+  restructuring, its skill deferred.
+- **Sources**:
+  [root AGENTS.md](../../AGENTS.md),
+  [build configuration spec](../specs/2026-11-10_build-configuration.md),
+  [deferred findings](../deferred/2026-11-11_data-by-function-deferred.md).
+
+### Development runs through mise, and Dorothy through Bun alone
+
+- **Context**: `package.json` held nineteen scripts, hard to read, and
+  `check` chained ten. The user wanted mise as the development interface,
+  but mise cannot be relied upon where Dorothy runs, and Bun is the only
+  utility expected everywhere.
+- **Alternatives**: not recorded.
+- **Choice**: The user, in the build configuration spec approved on
+  2026-11-11: two layers. Every development action is a mise task in
+  `.config/mise/tasks.toml`; `package.json` keeps `prepare`, `dev`,
+  `start`, `eval`, `skills` and `check`, the shim the shared CI calls. No
+  action is defined in both, and no task reaches a script that runs
+  `mise run` back.
+- **Reason**: mise's task definitions, with their descriptions, aliases
+  and dependencies, document what the repository can do, while install
+  and Dorothy herself must work without mise.
+- **Cost**: Two places to look, which the rule for each layer keeps
+  apart.
+- **Standing**: current
+  ([build configuration](./topics/build-configuration.md#two-layers)).
+- **Sources**:
+  [build configuration spec](../specs/2026-11-10_build-configuration.md#two-layers).
+
+### Configuration lives in .config wherever mise can reach it
+
+- **Context**: Every tool's configuration sat at the root beside the
+  repository's own files.
+- **Alternatives**: not recorded.
+- **Choice**: The user: configuration goes under `.config/` wherever its
+  tool finds it there, natively or by a flag or variable mise supplies.
+  Each move was probed first; one that failed stays, its reason on the
+  wiki. Biome, commitlint and `.husky/` stay at the root.
+- **Reason**: Data by function: the root keeps what other systems read
+  only there, and `.config/AGENTS.md` names what mise supplies each tool.
+- **Cost**: An editor or tool run outside mise may not find a moved
+  configuration, as with yamllint's. The editor plugins for markdownlint
+  and remark look for theirs at the root or in `package.json`'s
+  `remarkConfig`, so they lose the house presets.
+- **Standing**: current
+  ([build configuration](./topics/build-configuration.md#where-configuration-lives)).
+- **Sources**:
+  [build configuration spec](../specs/2026-11-10_build-configuration.md#where-configuration-lives).
+
+### Configuration keeps directives, labels and one-line whys
+
+- **Context**: Configuration files carried essays: an audit of 23
+  configuration files and hooks found 28 narrative comments and 7
+  contracts among 65.
+- **Alternatives**: All seven contracts leaving their files, each to a
+  paired file; counsel chose the lighter way, keeping the four that fit
+  a line.
+- **Choice**: The user, with counsel ruling the open questions on
+  2026-11-11: directives, labels, reference URLs and one-line whys stay;
+  a contract that fits a line stays as a label, the longer three move to
+  a file beside theirs, checked by `pairs.test.ts`; narratives move to the
+  wiki, and `.moxide.toml`'s template blocks are deleted. No configuration
+  points to its documentation.
+- **Reason**: Configuration reads as configuration, and an agent reading
+  a file spends its context on the settings alone.
+- **Cost**: A reason is a page away from its setting.
+- **Standing**: current
+  ([build configuration](./topics/build-configuration.md)).
+- **Sources**:
+  [build configuration spec](../specs/2026-11-10_build-configuration.md#comments).
+
+### Tasks run npm CLIs on Bun and skip by their sources
+
+- **Context**: Under `bun run`, `bunfig.toml` ran every npm CLI on Bun;
+  mise tasks run outside `bun run`, with mise's Node 24 on `PATH`.
+- **Alternatives**: CLIs by name with `node_modules/.bin` on mise's
+  `PATH`, shorter but moving them silently from Bun to Node; each task
+  computing its changed files against `main`, finest but duplicating the
+  shared CI's scoping.
+- **Choice**: The user chose the first approach: tasks call npm CLIs
+  through `bunx --bun --no-install` and skip themselves through mise's
+  `sources` and `outputs = { auto = true }`. `configuring-mise-tasks`
+  has since codified it.
+- **Reason**: The CLIs keep running on Bun as before, and a check skips
+  only when nothing it reads changed.
+- **Cost**: On mise 2026.11.4, a `lint` that skips everything still took
+  about 12 seconds, as mise walked `node_modules` for each `**/*` source
+  set; mise 2026.11.6 prunes a trailing `!**/node_modules/**`, which the
+  skill will adopt once benchmarked.
+- **Standing**: current
+  ([build configuration](./topics/build-configuration.md#mise)).
+- **Sources**:
+  [build configuration spec](../specs/2026-11-10_build-configuration.md#approaches).
 
 ## Related
 

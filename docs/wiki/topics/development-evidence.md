@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-06
-mtime: 2026-11-07
+mtime: 2026-11-11
 spdx: GPL-3.0-only
 title: Development evidence
 description: >-
@@ -178,13 +178,13 @@ bun scripts/evidence-package.ts --help
 bun scripts/evidence-transfer.ts --help
 ```
 
-These Linux helpers use Bun, GNU tar, zstd and age. `mise.toml` pins zstd
-and age; GNU tar is a system prerequisite. They operate on an explicit,
-quiescent staging tree, not on discovered source roots. They reject
-symlinked ancestry and special files, preserve literal payload links, and
-check observed changes. They provide neither atomic snapshots nor OS
-confinement against malicious concurrent ancestry replacement. Keep inputs
-stable throughout packaging and transfer.
+These Linux helpers use Bun, GNU tar, zstd and age.
+`.config/mise/config.toml` pins zstd and age; GNU tar is a system
+prerequisite. They operate on an explicit, quiescent staging tree, not on
+discovered source roots. They reject symlinked ancestry and special files,
+preserve literal payload links, and check observed changes. They provide
+neither atomic snapshots nor OS confinement against malicious concurrent
+ancestry replacement. Keep inputs stable throughout packaging and transfer.
 
 Defaults are 128 MiB parts, 4 GiB complete ciphertext and 100 logical
 store calls. The transfer catalogue has a separate 1 MiB ceiling. Package

@@ -157,8 +157,8 @@ it("runs published Pi offline, ignoring a hostile global pi", async () => {
     const marker = join(root, "decoy-ran");
     await write(decoy, `#!/bin/sh\nprintf decoy > '${marker}'\nexit 91\n`);
     await chmod(decoy, 0o755);
-    // `bun run test` prepends a node alias pointing to Bun. This probe
-    // exercises the published CLI with a real Node, even from that script.
+    // A `bun run` script prepends a node alias pointing to Bun. This probe
+    // exercises the published CLI with a real Node, even from such a script.
     const bun = await realpath(process.execPath);
     const path: string[] = [];
     for (const directory of (process.env.PATH ?? "").split(":")) {

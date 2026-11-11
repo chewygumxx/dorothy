@@ -1,6 +1,6 @@
 ---
 ctime: 2026-09-29
-mtime: 2026-11-06
+mtime: 2026-11-11
 spdx: GPL-3.0-only
 title: "dorothy"
 description: "Conversational LLM interface"
@@ -34,10 +34,10 @@ Messages API with her own system prompt, and the other providers
   chat route, with its key in `secrets.json`
 
 [mise](https://mise.jdx.dev) supplies Bun, sops, age and jq from
-`mise.toml`:
+`.config/mise/config.toml`, and runs the development tasks; Bun is the only
+runtime prerequisite, and `bun install` and `bun run dev` need no mise:
 
 ```sh
-mise trust
 mise install
 ```
 
@@ -793,16 +793,16 @@ behind it and what comes next.
 
 - `bun run dev` and `bun run start` run the CLI from source
   (`packages/cli/src/index.ts`).
-- `bun run commit` composes a commit interactively.
-- `bun run check` runs the typecheck, format check, lint, Markdown lint, YAML
-  checks (prettier, then yamllint with `@chewygumxx/yamllint-config`) and tests
-  that CI runs.
-- `bun run test` runs the `bun test` suite alone.
-- `bun run format` applies Biome formatting, and prettier's to YAML, which Biome
-  does not read.
+- `mise run commit` composes a commit interactively.
+- `mise run check` (or `bun run check`) runs the type check, the linters,
+  the format checks and the tests that CI runs; `mise tasks ls` lists the
+  rest, defined in `.config/mise/tasks.toml`.
+- `mise run test` runs the `bun test` suite alone.
+- `mise run format` applies every formatter.
 
-The pre-commit hook runs the same checks on staged files, and rejects em dashes
-and plaintext values in any env file.
+The pre-commit hook runs `mise run check --staged`, which lints the staged
+files, runs the tests, and rejects em dashes and plaintext values in any env
+file.
 The commit-msg hook runs commitlint.
 
 <!-- vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3: -->
