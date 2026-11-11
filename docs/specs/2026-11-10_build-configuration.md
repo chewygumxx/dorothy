@@ -29,7 +29,7 @@ answers, relayed by `agentic-librarian`, and after agent-library's PR #5
 shipped the `configuring-mise-tasks` skill, which this spec follows.
 Its open questions were answered the same day by `agentic-librarian`,
 as counsel under the user's delegation; the user may overrule any.
-Awaiting the user's approval. The work happens in a clone,
+Approved by the user on 2026-11-11. The work happens in a clone,
 `~/dev/dorothy-build-config`, on `build/cleanup-config`, whose git
 configuration no worktree shares.
 
