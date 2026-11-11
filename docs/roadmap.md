@@ -803,7 +803,7 @@ In order of completion.
   secrets relocation candidate is unchanged. Each new candidate was asked
   whether Dorothy's Memory would be easier, safer or smaller with it done
   first. None is: the first only speeds a no-op `lint`, the second has
-  failed once in a hook that passes on retry, the third fails only in the
+  failed once in a hook that passes on retry, the third fails in the
   agent's shell and passes in the hook and under `mise run check`, and the
   last holds limits no phase depends on. The flake and the failing tests
   are the nearest to Ahead, and rise if the flake recurs or an agent's

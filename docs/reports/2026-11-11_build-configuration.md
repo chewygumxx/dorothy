@@ -265,8 +265,11 @@ had not changed since the forced run (actions, shell, toml and yaml) said
 mise run lint
 mise run lint
 touch README.md && mise run lint
+# append one line to README.md, then:
+git add README.md
 mise run lint --staged
 mise run lint --staged
+# revert README.md
 ```
 
 The second run skipped all nine file-based tasks, leaving `lint:types` and
@@ -331,7 +334,7 @@ was empty after.
   mise 2026.11.4, as above. mise 2026.11.6, released on 2026-11-10, prunes
   the directories a trailing `!**/node_modules/**` excludes
   ([jdx/mise#15499](https://github.com/jdx/mise/pull/15499), merged on
-  2026-11-09). Neither the repository's pin (`min_version = "2026.9.0"`) nor
+  2026-11-09). Neither the repository's pin (`min_version = "2026.11.4"`) nor
   `configuring-mise-tasks` has adopted it: the skill will move the exclusion
   last once it is benchmarked on 2026.11.6. The report did not measure it.
 - **One flake.** In the hook of one commit,
