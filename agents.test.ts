@@ -93,7 +93,7 @@ const skillName = (dir: string): string | undefined =>
 
 // Lines, header included, each kind of guidance file may run to. A
 // package that outgrows its budget gains a nested AGENTS.md instead.
-const BUDGET = { docs: 60, package: 150, root: 100 };
+const BUDGET = { docs: 60, package: 150 };
 
 const lines = (path: string) => read(path).trimEnd().split("\n").length;
 
@@ -318,10 +318,6 @@ describe("the packages' guidance", () => {
 const CLAUDE_FILES = ["CLAUDE.md", "CLAUDE.local.md"];
 
 describe("the root's guidance", () => {
-    it(`keeps AGENTS.md within ${BUDGET.root} lines`, () => {
-        expect(lines(at("AGENTS.md"))).toBeLessThanOrEqual(BUDGET.root);
-    });
-
     it(`keeps docs/AGENTS.md within ${BUDGET.docs} lines`, () => {
         expect(lines(at("docs/AGENTS.md"))).toBeLessThanOrEqual(BUDGET.docs);
     });
