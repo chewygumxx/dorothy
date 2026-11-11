@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-04
-mtime: 2026-11-04
+mtime: 2026-11-11
 spdx: GPL-3.0-only
 title: herdr's Pi state extension
 description: >-
@@ -25,8 +25,8 @@ for byte and never edited. `LICENSE` is herdr's, Apache License 2.0,
 which covers that file alone; the rest of the repository is GPL-3.0-only.
 
 - Source: <https://github.com/herdrdev/herdr>
-- Pin: `2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01`, the `herdrdev/herdr`
-  ref the root `package.json` declares under `skills`
+- Pin: `2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01`, the herdr commit this
+  copy was taken from
 - Path: `src/integration/assets/pi/herdr-agent-state.ts`
   (`HERDR_INTEGRATION_VERSION=9`), the file
   `herdr integration install pi` writes
