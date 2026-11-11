@@ -65,6 +65,19 @@ isolated linker fails an undeclared or internal import.
 - A change to a package's architecture updates its `AGENTS.md`, and one
   to behaviour, decisions or priorities the wiki's pages, in the same branch.
 
+## Data by function
+
+Keep each kind of data in its own file, beside what it concerns; the
+[decisions](./docs/wiki/decisions.md) say why:
+
+- Directives for tools stay inline: licence headers, modelines, schema
+  lines and lint suppressions.
+- A why tied to one line stays inline, in one line.
+- What a unit is for and what it promises goes in a file beside it.
+- Pair files by a shared basename, not by "see" pointers. An index, such as
+  a task file or the wiki's records, stays whole in one known place.
+- Every split pair has a check that fails when the two disagree.
+
 ## Commits
 
 Commit granularly as you work, in Conventional Commits: one line where
