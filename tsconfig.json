@@ -22,6 +22,7 @@
         "test-setup.ts",
         "agents.test.ts",
         "workspace.test.ts",
-        "header.test.ts"
+        "header.test.ts",
+        "test-setup.test.ts"
     ]
 }
