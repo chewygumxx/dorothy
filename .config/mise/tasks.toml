@@ -134,7 +134,8 @@ sources     = [
     "**/*.md",
     "!node_modules/**",
     "**/.markdownlint-cli2.jsonc",
-    "package.json",
+    ".config/markdownlint-cli2.jsonc",
+    ".config/remarkrc.json",
     "bun.lock",
     ".config/mise/config.toml",
     "scripts/with-files.sh",
@@ -142,8 +143,8 @@ sources     = [
 ]
 outputs     = { auto = true }
 run         = [
-    "scripts/with-files.sh ${usage_staged:+--staged} '*.md' -- bunx --bun --no-install remark --frail --quiet --no-stdout",
-    "scripts/with-files.sh ${usage_staged:+--staged} '*.md' -- bunx --bun --no-install markdownlint-cli2",
+    "scripts/with-files.sh ${usage_staged:+--staged} '*.md' -- bunx --bun --no-install remark --rc-path .config/remarkrc.json --frail --quiet --no-stdout",
+    "scripts/with-files.sh ${usage_staged:+--staged} '*.md' -- bunx --bun --no-install markdownlint-cli2 --config .config/markdownlint-cli2.jsonc",
 ]
 
 ["lint:secrets"]
@@ -185,7 +186,7 @@ usage       = 'flag "--staged"'
 sources     = [
     "**/*.toml",
     "!node_modules/**",
-    ".tombi.toml",
+    ".config/tombi.toml",
     "bun.lock",
     ".config/mise/config.toml",
     "scripts/with-files.sh",
@@ -204,7 +205,6 @@ sources     = [
     "**/*.yaml",
     "**/*.yml",
     "!node_modules/**",
-    ".yamllint.yaml",
     ".editorconfig",
     "bun.lock",
     ".config/mise/config.toml",
