@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-11-04
+mtime: 2026-11-11
 spdx: GPL-3.0-only
 title: AGENTS.md
 description: >-
@@ -37,7 +37,7 @@ isolated linker fails an undeclared or internal import.
 ## Commands
 
 - `bun run check`: everything CI runs, ending with the tests;
-  `bun run test` runs the tests alone.
+  `mise run test` runs the tests alone.
 - `bun run dev`: the CLI from source.
 - `bun run skills` links packaged skills, not remote ones (`skills add`,
   `skills update`); `bun install` points Claude at `.agents/memory`.

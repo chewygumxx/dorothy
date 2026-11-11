@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-06
+mtime: 2026-11-11
 spdx: GPL-3.0-only
 title: Repository workflow
 description: >-
@@ -72,34 +72,43 @@ and `bun install` cannot link. A worktree's auto memory points at its own
 
 ## The checks
 
-`bun run check` runs everything CI runs, ending with the tests
-([`package.json`](../../../package.json)). In order, it runs:
+`mise run check` runs everything CI runs, and `bun run check` is its shim.
+The tasks live in
+[`.config/mise/tasks.toml`](../../../.config/mise/tasks.toml), and
+`mise tasks ls` lists them. `check` runs `lint` and `test` in parallel, and
+`lint` runs these kinds in parallel:
 
-1. `typecheck`: `tsc`.
-2. `format:check`: Biome's formatter over the files git knows.
-3. `lint`: Biome's linter over the same files.
-4. `lint:md`: remark with `--frail`, then markdownlint, over every tracked
+1. `lint:types`: `tsc`.
+2. `lint:code`: Biome's linter and format check over the files git knows.
+3. `lint:md`: remark with `--frail`, then markdownlint, over every tracked
    Markdown file.
-5. `lint:yaml`: Prettier and yamllint on YAML.
-6. `lint:secrets`: `scripts/check-secrets.sh`, refusing a plaintext
+4. `lint:yaml`: Prettier and yamllint on YAML.
+5. `lint:toml`: Tombi on TOML.
+6. `lint:shell`: ShellCheck and shfmt on shell scripts.
+7. `lint:actions`: actionlint on GitHub workflows.
+8. `lint:editorconfig`: files against `.editorconfig`.
+9. `lint:secrets`: `scripts/check-secrets.sh`, refusing a plaintext
    secret.
-7. `lint:emdash`: no em dash anywhere in tracked or untracked files.
-8. `lint:header`: every file's house header and breadcrumb match its path.
-9. `test`: `bun test`.
+10. `lint:emdash`: no em dash anywhere in tracked or untracked files.
+11. `lint:header`: every file's house header and breadcrumb match its path.
+12. `test`: `bun test`.
 
-`bun run test` runs the tests alone. `mise.toml` pins Bun and Node, since
-`--pi` and its tests run the published Pi under Node 22.19 or later, and
-CI installs both from it. `scripts/probe-pi-delivery.ts` is a probe, not a
-test file, so `check` never runs it. The tests also pin conventions that
-are prose elsewhere: `workspace.test.ts` the package graph,
-`agents.test.ts` the guidance budgets (the root `AGENTS.md` at 100 lines
-and `docs/AGENTS.md` within 60), the skills and the memory index,
-`header.test.ts` the house header on every new file, and `docs.test.ts`
-the wiki's links, fragments and catalogue.
+`mise run test` runs the tests alone, and `--staged` narrows `lint` and
+`check` to the staged files, the tests staying whole. `format` applies the
+formatters and `commit` composes a commit. Bun's own layer, which needs no
+mise, keeps `dev`, `start`, `eval`, `skills` and `prepare` as `bun run`
+scripts. `.config/mise/config.toml` pins Bun and Node, since `--pi` and its
+tests run the published Pi under Node 22.19 or later, and CI installs both
+from it. `scripts/probe-pi-delivery.ts` is a probe, not a test file, so
+`check` never runs it. The tests also pin conventions that are prose
+elsewhere: `workspace.test.ts` the package graph, `agents.test.ts` the
+guidance budgets (`docs/AGENTS.md` within 60 lines), the skills and the
+memory index, `header.test.ts` the house header on every new file, and
+`docs.test.ts` the wiki's links, fragments and catalogue.
 
-The pre-commit hook runs a lighter set on what is staged: the secrets
-check, `tsc`, Biome, remark on Markdown, the YAML checks and a refusal of
-an em dash. The commit-msg hook runs commitlint. Commits are granular, in
+The pre-commit hook runs `mise run check --staged`, and the commit-msg hook
+runs `mise run lint:commit`, which is commitlint. Each is one line, and
+`--no-verify` skips both, which is never done. Commits are granular, in
 Conventional Commits, with the package names, `config`, `claude` and `api`
 as scopes and agent assets under the `ai` type, and no agent trailers. A
 header is at most 50 characters and a body line at most 72, limits that

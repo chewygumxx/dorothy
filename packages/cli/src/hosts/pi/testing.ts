@@ -169,7 +169,7 @@ export function startFakeProvider(
     };
 }
 
-// The PATH with Bun's own `node` alias left out: `bun run test` prepends
+// The PATH with Bun's own `node` alias left out: a `bun run` script prepends
 // one, and Pi must run under a real Node.
 export async function nodePath(path = process.env.PATH ?? ""): Promise<string> {
     const bun = await realpath(process.execPath);
