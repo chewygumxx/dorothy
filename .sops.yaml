@@ -8,8 +8,6 @@
 #
 #
 
-# sops encrypts secrets.json to these age recipients; each holds the
-# private half in ~/.config/sops/age/keys.txt.
 # https://getsops.io/docs/
 creation_rules:
     - path_regex: (^|/)secrets\.json$

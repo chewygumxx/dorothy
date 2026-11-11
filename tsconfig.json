@@ -23,6 +23,7 @@
         "agents.test.ts",
         "workspace.test.ts",
         "header.test.ts",
+        "pairs.test.ts",
         "test-setup.test.ts"
     ]
 }
