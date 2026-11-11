@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-11-06
+mtime: 2026-11-11
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -450,10 +450,11 @@ Found but not scheduled, each with its source.
   needs, such as the evidence tooling's R2 credentials, gets its own file
   under `.config/` and a new key, so revoking either key leaves the other
   untouched. Source: the user, 2026-11-10.
-- A wiki skill: the conventions of `docs/wiki/` as an agent skill, beside
-  `documenting-configuration`, which the build configuration
-  restructuring adds to keep explanation out of configuration files.
-  Source: the user, 2026-11-10.
+- A wiki skill: the conventions of `docs/wiki/` as an agent skill. It may
+  fold into the skill for keeping data by function, which takes in
+  `documenting-configuration` and waits on Dorothy's trial
+  ([deferred](./deferred/2026-11-11_data-by-function-deferred.md)).
+  Source: the user, 2026-11-10 and 2026-11-11.
 
 ## Done
 
