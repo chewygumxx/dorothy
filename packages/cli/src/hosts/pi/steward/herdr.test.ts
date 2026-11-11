@@ -43,12 +43,14 @@ let codex: Worker;
 let claude: Worker;
 let cleanup: () => Promise<void>;
 let root: string;
+let scratch: string;
 
 beforeAll(async () => {
     const reg = await writeRegistry();
     const fleet = await readFleet(reg.path, NOW);
     [codex, claude] = fleet.workers as [Worker, Worker];
     cleanup = reg.cleanup;
+    scratch = reg.root;
     root = await mkdtemp(join(tmpdir(), "dorothy-herdr-run-"));
 });
 
@@ -117,7 +119,8 @@ describe("the synthetic fixtures", () => {
             herdrAgentOf(claude, "working"),
         ]);
         expect(text).not.toContain(process.env.HOME ?? "\0");
-        expect(text).not.toContain("w3");
+        // The scratch root is random, and may spell "w3" by chance.
+        expect(text.replaceAll(scratch, "<scratch>")).not.toContain("w3");
     });
 });
 
