@@ -120,11 +120,12 @@ none and always run. CI starts with no record, so it checks everything.
 
 `scripts/with-files.sh`, copied from `configuring-mise-tasks`, hands each
 tool its files. A full run passes the tracked files, so an untracked file
-is not checked, as it was under the old scripts; a new file is checked
-once it is staged, by the pre-commit hook's `--staged`, and in CI. Under
-`--staged` it passes the staged files alone, and the task's `sources`
-include git's index by absolute path, so staging a change runs the task
-again.
+is not checked. Under the old scripts Biome and the em dash check read
+untracked files too (`ls-files -co`, `--untracked`), and `lint:md` and
+`lint:yaml` did not. A new file is checked once it is staged, by the
+pre-commit hook's `--staged`, and in CI. Under `--staged` it passes the
+staged files alone, and the task's `sources` include git's index by
+absolute path, so staging a change runs the task again.
 
 On mise 2026.11.4, a `lint` whose every task skips still took about 12
 seconds: for each `**/*` source set mise walked the root `node_modules`,

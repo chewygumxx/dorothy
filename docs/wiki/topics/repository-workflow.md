@@ -92,29 +92,30 @@ The tasks live in
 10. `lint:emdash`: no em dash in a tracked file, or in a staged one under
     `--staged`.
 11. `lint:header`: every file's house header and breadcrumb match its path.
-12. `test`: `bun test`.
 
-`mise run test` runs the tests alone, and `--staged` narrows `lint` and
-`check` to the staged files, the tests staying whole. `format` applies the
-formatters and `commit` composes a commit. Bun's own layer, which needs no
-mise, keeps `dev`, `start`, `eval`, `skills` and `prepare` as `bun run`
-scripts. `.config/mise/config.toml` pins Bun and Node, since `--pi` and its
-tests run the published Pi under Node 22.19 or later, and CI installs both
-from it. `scripts/probe-pi-delivery.ts` is a probe, not a test file, so
-`check` never runs it. The tests also pin conventions that are prose
-elsewhere: `workspace.test.ts` the package graph, `agents.test.ts` the
-guidance budgets (`docs/AGENTS.md` within 60 lines), the skills and the
-memory index, `header.test.ts` the house header on every new file, and
-`docs.test.ts` the wiki's links, fragments and catalogue.
+`test` is `bun test`, and `mise run test` runs the tests alone. `--staged`
+narrows `lint` and `check` to the staged files, except that `lint:types`
+and `lint:header` still check the whole project and the tests run whole.
+`format` applies the formatters and `commit` composes a commit. Bun's own
+layer, which needs no mise, keeps `dev`, `start`, `eval`, `skills` and
+`prepare` as `bun run` scripts. `.config/mise/config.toml` pins Bun and
+Node, since `--pi` and its tests run the published Pi under Node 22.19 or
+later, and CI installs both from it. `scripts/probe-pi-delivery.ts` is a
+probe, not a test file, so `check` never runs it. The tests also pin
+conventions that are prose elsewhere: `workspace.test.ts` the package
+graph, `agents.test.ts` the guidance budgets (`docs/AGENTS.md` within 60
+lines), the skills and the memory index, `header.test.ts` the house header
+on every new file, and `docs.test.ts` the wiki's links, fragments and
+catalogue.
 
 The pre-commit hook runs `mise run check --staged`, and the commit-msg hook
 runs `mise run lint:commit`, which is commitlint. Each is one line, and
-`--no-verify` skips both, which is never done. Commits are granular, in
-Conventional Commits, with the package names, `config`, `claude` and `api`
-as scopes and agent assets under the `ai` type, and no agent trailers. A
-header is at most 50 characters and a body line at most 72, limits that
-come from the shared commitlint config and that a plan's commit steps
-must keep too
+`--no-verify` skips both, kept for a granular commit that cannot yet pass
+alone. Commits are granular, in Conventional Commits, with the package
+names, `config`, `claude` and `api` as scopes and agent assets under the
+`ai` type, and no agent trailers. A header is at most 50 characters and a
+body line at most 72, limits that come from the shared commitlint config
+and that a plan's commit steps must keep too
 ([plan commit headers](../../../.agents/memory/plan-commit-headers.md)).
 
 Branches are pushed and their pull requests opened by the agent, who

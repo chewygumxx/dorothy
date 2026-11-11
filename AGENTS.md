@@ -36,7 +36,7 @@ isolated linker fails an undeclared or internal import.
 
 ## Commands
 
-- `bun run check`: everything CI runs, ending with the tests;
+- `bun run check`: everything CI runs, the tests included;
   `mise run test` runs the tests alone.
 - `mise tasks ls` lists the development tasks; `lint`, `format` and
   `check` take `--staged`.
