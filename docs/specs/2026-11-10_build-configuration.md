@@ -27,7 +27,9 @@ tags:
 Drafted with the user on 2026-11-10, revised on 2026-11-11 after their
 answers, relayed by `agentic-librarian`, and after agent-library's PR #5
 shipped the `configuring-mise-tasks` skill, which this spec follows.
-Awaiting approval. The work happens in a clone,
+Its open questions were answered the same day by `agentic-librarian`,
+as counsel under the user's delegation; the user may overrule any.
+Awaiting the user's approval. The work happens in a clone,
 `~/dev/dorothy-build-config`, on `build/cleanup-config`, whose git
 configuration no worktree shares.
 
@@ -73,6 +75,10 @@ why, in their words and by their choices:
 - Changing the shared workflows in `chewygumxx/.github`.
 - Changing what a check accepts, beyond adding the five linters and
   fixing what they flag.
+- The `documenting-configuration` skill: it folds into the skill for
+  keeping data by function, deferred until this trial is reported
+  ([deferred](../deferred/2026-11-11_data-by-function-deferred.md));
+  `.config/AGENTS.md` holds what it would have.
 - A wiki skill, and a skill for the data-by-function doctrine: the first
   is a roadmap candidate, the second waits until Dorothy has tried the
   doctrine (agent-library's `AGENTS.md`).
@@ -168,6 +174,14 @@ must pass under `mise run test` with mise's Node 24 on `PATH`.
 
 ### Tasks
 
+- Implementation starts by installing the skill, so its
+  `scripts/with-files.sh` and `assets/tasks.toml` arrive as it ships
+  them, and `skills-lock.json` declares it:
+
+  ```sh
+  bunx skills add chewygumxx/agent-library --skill configuring-mise-tasks
+  ```
+
 - `.config/mise/config.toml` holds the tools and settings and includes
   `.config/mise/tasks.toml`, which holds every task as TOML. A task's
   `run` is a line or a short list of lines; anything longer is a script
@@ -208,7 +222,10 @@ must pass under `mise run test` with mise's Node 24 on `PATH`.
 
 ### Hooks
 
-- Hooks move to `.config/husky/`; `prepare` runs `husky .config/husky`.
+- Hooks stay in `.husky/`: `core.hooksPath` is shared by every worktree
+  of a checkout, so moving it leaves the branches not yet rebased with
+  no hooks. `configuring-mise-tasks` asks only that hooks call
+  `mise run`; agent-library kept `.husky/` for the same reason.
 - `pre-commit` is `mise run check --staged`, which now runs the full
   tests on every commit. `git commit --no-verify` makes a granular commit
   that cannot yet pass.
@@ -235,7 +252,6 @@ must pass under `mise run test` with mise's Node 24 on `PATH`.
   `--rc-path`.
 - `.biome.json` to `.config/biome.json`, by `BIOME_CONFIG_PATH`, if
   `files.includes` still resolves from the repository root.
-- `.husky/` to `.config/husky/`.
 
 A move marked "if" or "provided" is verified first; one that fails stays,
 its reason recorded on the wiki. These stay, as their tools or other
@@ -243,8 +259,9 @@ systems read them only where they are: `.editorconfig`, `.gitignore`,
 `.gitattributes`, `bunfig.toml`, `tsconfig.json` (Bun reads it at run
 time), `.shellcheckrc` (the shared CI looks for it at the root),
 `.sops.yaml`, `secrets.json`, `.moxide.toml`, `.worktreeinclude`,
-`.repo-metadata.jsonc`, `skills-lock.json`, `.github/` and
-`package.json`'s `config.commitizen`.
+`.repo-metadata.jsonc`, `skills-lock.json`, `.github/`, `.husky/` (see
+Hooks) and `package.json`'s `config.commitizen`. The wiki records each
+and why.
 
 `.config/AGENTS.md` lists each tool whose configuration is in
 `.config/`, and the flag or variable mise supplies to reach it, as the
@@ -258,8 +275,20 @@ By the data-by-function rules:
   lint suppressions.
 - Labels stay: banners, group names, the tool's reference URL.
 - A why tied to one line stays, in one line.
-- Contracts, what a unit is for and promises, leave the file (see Open
-  questions for where).
+- Contracts, what a unit is for and promises: the four that fit in a
+  line stay as labels (`.commitlintrc.mts`'s shared types, the two
+  markdownlint overrides, `mise.toml`'s purpose line). The other three
+  move to a file beside theirs, sharing its basename, each with a test
+  that fails when the pair disagree:
+  - `.github/workflows/ci.md`: what the workflow runs and promises. Its
+    test: the job ids it names are `ci.yaml`'s `jobs`.
+  - `.sops.md`: whom `secrets.json` is encrypted to and where each
+    holds the private half. Its test: the age recipients it names are
+    `.sops.yaml`'s and those in `secrets.json`'s `sops` metadata.
+  - `scripts/prepare.md`: when it runs, its production no-op, its steps.
+    Its test: the commands it names are those `prepare.sh` runs.
+
+  The tests go in a new `pairs.test.ts` at the root (my call).
 - Narratives go to a new wiki page,
   `docs/wiki/topics/build-configuration.md`, a section per tool.
   `.moxide.toml`'s 16 template blocks are deleted, not moved: they copy
@@ -273,8 +302,9 @@ none.
 
 ### Guidance and wiki
 
-- The root `AGENTS.md`'s 100-line budget leaves `agents.test.ts`; the
-  `docs/` and package budgets stay.
+- The root `AGENTS.md`'s line budget is already lifted (`c5a2bc0`), and
+  its Data by function section already states the comment rules
+  (`1d09556`).
 - The root `AGENTS.md`'s Commands section names mise tasks.
 - `repository-workflow.md` describes the checks and hooks through mise;
   `decisions.md` records the two layers, `.config/`, the comment rules and
@@ -300,17 +330,13 @@ still names the herdr skill, which herdr's own installation now supplies
 - Commits are granular Conventional Commits: scope `config` for
   configuration, `ai` for agent assets, headers within 50 characters.
 
-## Open questions
+## Answered questions
 
-1. Where do the seven contracts go? The doctrine puts them beside their
-   file, paired by a shared basename, with a check that fails when the
-   pair disagrees.
-2. The `documenting-configuration` skill the user asked for: write it
-   here, or fold it into the deferred doctrine skill?
-3. After the merge, the main checkout's next `bun install` points every
-   worktree sharing its git configuration at `.config/husky/`, and the
-   branches not yet rebased lose their hooks until they are. Is that
-   window accepted?
+By counsel, 2026-11-11:
+
+1. The seven contracts: the lighter way, under Comments.
+2. `documenting-configuration` is not written here; see Non-goals.
+3. Hooks stay in `.husky/`; see Hooks.
 
 ## Left to the builder
 
@@ -328,5 +354,6 @@ still names the herdr skill, which herdr's own installation now supplies
   from `PATH`.
 - `package.json`'s scripts are the six above; `git grep 'bun run'` names
   only those.
-- No configuration holds a contract or a narrative.
+- No configuration holds a narrative, or a contract longer than a
+  line; `pairs.test.ts` passes for the three pairs.
 - A fresh clone installs, links skills and installs hooks unaided.
