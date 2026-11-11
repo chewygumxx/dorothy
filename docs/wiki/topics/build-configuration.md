@@ -48,34 +48,47 @@ kept because the shared CI calls it.
 
 Configuration goes under `.config/` wherever its tool finds it there,
 natively or by a flag or variable mise supplies: mise's own, Tombi's,
-remark's and markdownlint's. yamllint needs no file at all. Each move was
-probed first, and these stay where they are, as their tools or other
-systems read them only there:
+remark's and markdownlint's. yamllint needs no file at all. Each move to
+`.config/` was probed first, as the tool sections record; Biome's and
+commitlint's failed, and `.husky/` stays for the reason under
+[Git hooks](#git-hooks).
 
-- `.biome.json` and `.commitlintrc.mts`: see [Biome](#biome) and
+The rest stay because their tools or the shared CI read them where they
+are. That is the repository's reading of each tool's documentation or of
+the shared CI, not a probe, and an inference where marked:
+
+- `.biome.json` and `.commitlintrc.mts`: probed; see [Biome](#biome) and
   [commitlint](#commitlint).
 - `.husky/`: see [Git hooks](#git-hooks).
 - `.editorconfig`: editors and editorconfig-checker look for it from each
-  file upward, and `root = true` ends the search here.
+  file upward, and `root = true` ends the search here
+  ([EditorConfig](https://editorconfig.org/)).
 - `.gitignore` and `.gitattributes`: git reads them in the tree they
-  govern.
-- `bunfig.toml`: Bun reads it from the project root, and Bun's layer
-  cannot rely on mise to point it elsewhere.
-- `tsconfig.json`: Bun reads it at run time, and `tsc` and editors find
-  it at the root.
-- `.shellcheckrc`: the shared CI looks for it at the root.
+  govern ([gitignore](https://git-scm.com/docs/gitignore),
+  [gitattributes](https://git-scm.com/docs/gitattributes)).
+- `bunfig.toml`: Bun reads it from the project root
+  ([bunfig](https://bun.com/docs/runtime/bunfig)), and Bun's layer cannot
+  rely on mise to point it elsewhere.
+- `tsconfig.json`: Bun reads it at run time, as the spec records, and
+  `tsc` run without `--project` looks for it from the working directory
+  upward
+  ([tsconfig](https://www.typescriptlang.org/docs/handbook/tsconfig-json.html)).
+- `.shellcheckrc`: the shared CI's scope looks for it at the root.
 - `.sops.yaml` and `secrets.json`: Dorothy's runtime configuration, whose
   move is a roadmap candidate of its own; see [sops](#sops).
 - `.moxide.toml` and `.worktreeinclude`: see [Markdown Oxide](#markdown-oxide)
   and [Worktrees](#worktrees).
-- `.repo-metadata.jsonc`: the shared CI's metadata sync reads it at the
-  root.
-- `skills-lock.json`: the skills CLI keeps it beside `package.json`.
+- `.repo-metadata.jsonc`: the default path of the shared standard
+  workflow's `metadata` input, in `chewygumxx/.github`'s `standard.yaml`.
+- `skills-lock.json`: an inference, unprobed: the skills CLI writes it
+  beside `package.json`, where it is, and no option to move it is known.
 - `.github/`: GitHub reads workflows and Dependabot's configuration only
   there. What the workflow runs and promises is in
   [`ci.md`](../../../.github/workflows/ci.md), beside it.
-- `package.json`'s `config.commitizen`: commitizen reads its adapter from
-  `package.json` or a file at the root, not from `.config/`.
+- `package.json`'s `config.commitizen`: commitizen's README names
+  `package.json` and a `.czrc` as where its adapter is configured, and
+  does not mention `.config/`
+  ([cz-cli](https://github.com/commitizen/cz-cli#readme)); unprobed.
 
 ## mise
 
@@ -213,13 +226,18 @@ the main checkout, through Claude Code's own worktrees or worktrunk's
 `copy-ignored --require-include`. `bun install` links the skills from
 `node_modules`, but those installed with `skills add` exist only in the
 main checkout, so the skills directories are copied whole, and a copy
-skips whatever the install already made. Both tools read the file at the
-repository's root, so it stays there.
+skips whatever the install already made. Claude Code reads the file at
+the project root
+([Claude Code worktrees](https://code.claude.com/docs/en/worktrees));
+where worktrunk reads it is unchecked, so the file stays at the root.
 
 ## Markdown Oxide
 
-`.moxide.toml` configures Markdown Oxide, the Markdown language server,
-which reads it at the root of the folder it serves. The comments copied
+`.moxide.toml` configures Markdown Oxide, the Markdown language server.
+Its [configuration page](https://oxide.md/Configuration) names
+`.moxide.toml` or `~/.config/moxide/settings.toml` but not where
+`.moxide.toml` must be; that it is read at the root of the folder the
+server serves, so it stays there, is unprobed. The comments copied
 from the tool's template were deleted, as they restated its
 documentation, which the file's reference URL now gives.
 
