@@ -22,8 +22,8 @@ tags:
 Tool configuration lives here wherever the tool can be pointed at it.
 Each line names a tool, its file and what mise supplies to reach it.
 
-- mise: `mise/config.toml` (tools, `[env]`) and `mise/tasks.toml` (tasks);
-  mise reads both natively, nothing is supplied.
+- mise: `mise/config.toml` (tools, `[env]`), read natively, includes
+  `mise/tasks.toml` (tasks) by `[task_config]`; nothing is supplied.
 - Tombi: `tombi.toml`; Tombi finds it natively, nothing is supplied.
 - remark: `remarkrc.json`; the `lint:md` task passes
   `--rc-path .config/remarkrc.json`.
@@ -35,4 +35,6 @@ Each line names a tool, its file and what mise supplies to reach it.
 
 Biome (`.biome.json`) and commitlint (`.commitlintrc.mts`) stay at the
 root: Biome refuses a configuration in a subdirectory as a second root,
-and commitlint's search omits `.config/`.
+and commitlint's search omits `.config/`. The reasons for each tool's
+configuration, and what else stays at the root, are on the wiki's
+[build configuration](../docs/wiki/topics/build-configuration.md) page.

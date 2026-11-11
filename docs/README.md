@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-06
+mtime: 2026-11-11
 spdx: GPL-3.0-only
 title: Dorothy's wiki
 description: >-
@@ -66,6 +66,8 @@ subject. It links the dated records in `specs/`, `plans/`, `reports/`,
 - [Repository workflow](./wiki/topics/repository-workflow.md): package
   boundaries, worktrees, checks, agent assets, secrets and keeping the
   documentation current.
+- [Build configuration](./wiki/topics/build-configuration.md): mise's tasks
+  beside Bun's layer, where each tool's configuration lives, and why.
 
 ### Profiles
 

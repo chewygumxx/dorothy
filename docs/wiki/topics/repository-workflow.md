@@ -263,6 +263,7 @@ coverage and remaining parser limits.
 
 ## Related
 
+- [Build configuration](./build-configuration.md)
 - [Packages](../profiles/packages.md)
 - [Orchestration](./orchestration.md)
 - [Services and providers](../profiles/services-and-providers.md)

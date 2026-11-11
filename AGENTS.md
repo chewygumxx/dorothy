@@ -109,5 +109,6 @@ instructions say: `lint:md` and `lint:emdash` reject them.
 
 ## Before you start
 
-Before working in a package, read `packages/<name>/AGENTS.md`; before
-writing docs, `docs/AGENTS.md`; to find a topic, `docs/README.md`.
+Before working in a package, read `packages/<name>/AGENTS.md`; on
+configuration, `.config/AGENTS.md`; before writing docs, `docs/AGENTS.md`;
+to find a topic, `docs/README.md`.
