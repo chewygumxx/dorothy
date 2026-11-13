@@ -12,7 +12,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/plans/2026-10-08-memory-history.md
    -
    -->
@@ -276,7 +276,7 @@ Create `src/history/boundary.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/boundary.test.ts
 //
 //
@@ -338,7 +338,7 @@ Create `src/history/lint.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/lint.test.ts
 //
 //
@@ -464,7 +464,7 @@ Create `src/history/lint.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/lint.ts
 //
 //
@@ -617,7 +617,7 @@ Create `src/history/seal.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/seal.test.ts
 //
 //
@@ -741,7 +741,7 @@ Create `src/history/seal.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/seal.ts
 //
 //
@@ -922,7 +922,7 @@ Create `src/history/repo.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/repo.ts
 //
 //
@@ -1030,7 +1030,7 @@ Create `src/history/testing.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/testing.ts
 //
 //
@@ -1091,7 +1091,7 @@ Task 4 can run it against the second engine from this same file.
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/repo.test.ts
 //
 //
@@ -1318,7 +1318,7 @@ Create `src/history/binary.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/binary.test.ts
 //
 //
@@ -1477,7 +1477,7 @@ Create `src/history/binary.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/binary.ts
 //
 //
@@ -1938,7 +1938,7 @@ Create `src/history/cross.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/cross.test.ts
 //
 //
@@ -2052,7 +2052,7 @@ Create `src/history/open.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/open.test.ts
 //
 //
@@ -2102,7 +2102,7 @@ Create `src/history/iso.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/iso.ts
 //
 //
@@ -2474,7 +2474,7 @@ Create `src/history/open.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/open.ts
 //
 //
@@ -2582,7 +2582,7 @@ Create `src/history/heal.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/heal.test.ts
 //
 //
@@ -2774,7 +2774,7 @@ Create `src/history/heal.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/heal.ts
 //
 //
@@ -3088,7 +3088,7 @@ Create `src/history/lock.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/lock.test.ts
 //
 //
@@ -3154,7 +3154,7 @@ Create `src/history/history.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/history.test.ts
 //
 //
@@ -3463,7 +3463,7 @@ Create `src/history/lock.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/lock.ts
 //
 //
@@ -3529,7 +3529,7 @@ Create `src/history/history.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/history.ts
 //
 //
@@ -4728,7 +4728,7 @@ Create `src/history/commands.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/commands.test.ts
 //
 //
@@ -4809,7 +4809,7 @@ Create `src/history/commands.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/commands.ts
 //
 //
@@ -4956,7 +4956,7 @@ Create `src/history/mirror.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/mirror.test.ts
 //
 //
@@ -5191,7 +5191,7 @@ Create `src/history/mirror.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/mirror.ts
 //
 //
@@ -5453,7 +5453,7 @@ Replace `src/history/commands.test.ts` with:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/commands.test.ts
 //
 //
@@ -5950,7 +5950,7 @@ Replace `src/history/commands.ts` with:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/history/commands.ts
 //
 //

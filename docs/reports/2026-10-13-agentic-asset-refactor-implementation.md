@@ -15,7 +15,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/reports/2026-10-13-agentic-asset-refactor-implementation.md
    -
    -->

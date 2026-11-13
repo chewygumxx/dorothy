@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# ~chewygumxx/dorothy.git
+# ~xxdorothy/dorothy.git
 # ::: :/docs/reports/2026-10-20-recording/2-backfill.txt
 
 Probe: A backfill records the waiting sessions, once

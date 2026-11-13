@@ -16,7 +16,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/specs/2026-10-15-memory-bodies-design.md
    -
    -->

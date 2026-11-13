@@ -15,7 +15,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/plans/2026-11-03_repository-wiki.md
    -
    -->
@@ -65,7 +65,7 @@ presets); Bun and TypeScript for the test; `bun:test`.
 
   <!--
      -
-     - ~chewygumxx/dorothy.git
+     - ~xxdorothy/dorothy.git
      - ::: :/docs/wiki/<path>.md
      -
      -->

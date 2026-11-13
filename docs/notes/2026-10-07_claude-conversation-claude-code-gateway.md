@@ -18,7 +18,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/notes/2026-10-07_claude-conversation-claude-code-gateway.md
    -
    -->

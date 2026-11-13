@@ -15,7 +15,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/plans/2026-10-12-agentic-asset-refactor.md
    -
    -->
@@ -200,7 +200,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/reports/2026-10-12-agentic-asset-refactor.md
    -
    -->
@@ -302,7 +302,7 @@ Create `agents.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/agents.test.ts
 //
 //
@@ -686,7 +686,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/packages/core/AGENTS.md
    -
    -->
@@ -753,7 +753,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/packages/memory/AGENTS.md
    -
    -->
@@ -887,7 +887,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/packages/agent/AGENTS.md
    -
    -->
@@ -977,7 +977,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/packages/tui/AGENTS.md
    -
    -->
@@ -1049,7 +1049,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/packages/cli/AGENTS.md
    -
    -->
@@ -1213,7 +1213,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/AGENTS.md
    -
    -->
@@ -1317,7 +1317,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/AGENTS.md
    -
    -->
@@ -1521,7 +1521,7 @@ install, so no one sets it by hand. Create `scripts/agent-memory.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/scripts/agent-memory.ts
 //
 //
@@ -1658,7 +1658,7 @@ it only when a checkout or merge changes the dependencies. Create
 
 #
 #
-# ~chewygumxx/dorothy.git
+# ~xxdorothy/dorothy.git
 # ::: :/.husky/post-checkout
 #
 #
@@ -1681,7 +1681,7 @@ Create `.husky/post-merge`:
 
 #
 #
-# ~chewygumxx/dorothy.git
+# ~xxdorothy/dorothy.git
 # ::: :/.husky/post-merge
 #
 #

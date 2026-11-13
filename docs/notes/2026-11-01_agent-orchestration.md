@@ -16,7 +16,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/notes/2026-11-01_agent-orchestration.md
    -
    -->

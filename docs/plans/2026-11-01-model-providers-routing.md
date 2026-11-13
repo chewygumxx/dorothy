@@ -15,7 +15,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/plans/2026-11-01-model-providers-routing.md
    -
    -->
@@ -448,7 +448,7 @@ index 0000000..ef92bca
 +
 +//
 +//
-+// ~chewygumxx/dorothy.git
++// ~xxdorothy/dorothy.git
 +// ::: :/packages/core/src/models/routing.test.ts
 +//
 +//
@@ -1014,7 +1014,7 @@ index 0000000..4de4640
 +
 +//
 +//
-+// ~chewygumxx/dorothy.git
++// ~xxdorothy/dorothy.git
 +// ::: :/packages/core/src/models/routing.ts
 +//
 +//
@@ -1445,7 +1445,7 @@ index 0000000..b0d2a02
 +
 +//
 +//
-+// ~chewygumxx/dorothy.git
++// ~xxdorothy/dorothy.git
 +// ::: :/packages/core/src/contracts/structured.test.ts
 +//
 +//
@@ -2448,7 +2448,7 @@ index 0000000..1cab9fe
 +
 +//
 +//
-+// ~chewygumxx/dorothy.git
++// ~xxdorothy/dorothy.git
 +// ::: :/packages/agent/src/stream.ts
 +//
 +//
@@ -2916,7 +2916,7 @@ index 0000000..e23aa30
 +
 +//
 +//
-+// ~chewygumxx/dorothy.git
++// ~xxdorothy/dorothy.git
 +// ::: :/packages/agent/src/wire.test.ts
 +//
 +//
@@ -4084,7 +4084,7 @@ index 0000000..42bee62
 +
 +//
 +//
-+// ~chewygumxx/dorothy.git
++// ~xxdorothy/dorothy.git
 +// ::: :/packages/cli/src/models.test.ts
 +//
 +//

@@ -12,7 +12,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/plans/2026-10-05-conversation-catalogue.md
    -
    -->
@@ -73,7 +73,7 @@ Agent SDK (`outputFormat`, `structured_output`), Ink 7, React 19,
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/src/memory/<file>.ts
 //
 //

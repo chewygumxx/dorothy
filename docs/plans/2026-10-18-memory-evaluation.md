@@ -16,7 +16,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/plans/2026-10-18-memory-evaluation.md
    -
    -->
@@ -188,7 +188,7 @@ Each `.ts` file has a `.test.ts` beside it where it holds logic.
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/memory/src/engine/fixture.ts
 //
 //
@@ -352,7 +352,7 @@ both the same way, and match it.
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/memory/src/engine/archive.test.ts
 //
 //
@@ -538,7 +538,7 @@ Expected: FAIL, "Cannot find module './archive.js'".
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/memory/src/engine/archive.ts
 //
 //
@@ -797,7 +797,7 @@ recall events and the sidecar's appraisals.
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/memory/src/evaluation.ts
 //
 //
@@ -1025,7 +1025,7 @@ Then check: `wc -l AGENTS.md` prints 100.
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/errors.ts
 //
 //
@@ -1043,7 +1043,7 @@ export class UsageError extends Error {}
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/command.ts
 //
 //
@@ -1120,7 +1120,7 @@ export function intOf(
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/testing.ts
 //
 //
@@ -1332,7 +1332,7 @@ export async function snapshotFixture(root: string): Promise<string> {
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/snapshot/snapshot.test.ts
 //
 //
@@ -1478,7 +1478,7 @@ Expected: FAIL, "Cannot find module './snapshot.js'".
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/snapshot/snapshot.ts
 //
 //
@@ -1633,7 +1633,7 @@ Expected: PASS, 7 tests.
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/cli.test.ts
 //
 //
@@ -1708,7 +1708,7 @@ describe("bun run eval", () => {
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/snapshot/command.ts
 //
 //
@@ -1751,7 +1751,7 @@ export const snapshotCommand: Command = {
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/cli.ts
 //
 //
@@ -1824,7 +1824,7 @@ export async function runCli(argv: string[], io: Io): Promise<number> {
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/main.ts
 //
 //
@@ -1892,7 +1892,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/packages/eval/AGENTS.md
    -
    -->
@@ -1992,7 +1992,7 @@ directory, which every later command reads instead of her archive."
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/questions/file.test.ts
 //
 //
@@ -2144,7 +2144,7 @@ Expected: FAIL, "Cannot find module './file.js'".
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/questions/file.ts
 //
 //
@@ -2349,7 +2349,7 @@ git commit -m "feat(eval): Keep questions in a file"
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/questions/mine.test.ts
 //
 //
@@ -2481,7 +2481,7 @@ Expected: FAIL, "Cannot find module './mine.js'".
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/questions/mine.ts
 //
 //
@@ -2780,7 +2780,7 @@ export function stubConfig(url: string, key: string | null = null): string {
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/models/config.test.ts
 //
 //
@@ -2886,7 +2886,7 @@ describe("a model's vendor", () => {
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/models/client.test.ts
 //
 //
@@ -3046,7 +3046,7 @@ Expected: FAIL, "Cannot find module './config.js'".
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/models/config.ts
 //
 //
@@ -3159,7 +3159,7 @@ export const vendorOf = (model: string) =>
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/models/client.ts
 //
 //
@@ -3456,7 +3456,7 @@ role. Calls retry a rate limit or a fault twice and stop at a cap."
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/systems/systems.test.ts
 //
 //
@@ -3615,7 +3615,7 @@ Expected: FAIL, "Cannot find module './corpus.js'".
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/systems/terms.ts
 //
 //
@@ -3665,7 +3665,7 @@ Biome will reflow the list one word a line; leave its layout.
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/systems/corpus.ts
 //
 //
@@ -3792,7 +3792,7 @@ export function passage(
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/systems/system.ts
 //
 //
@@ -3880,7 +3880,7 @@ undefined at load, move `packItems` and the types into
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/systems/lexical.ts
 //
 //
@@ -3958,7 +3958,7 @@ export function lexicalSystem(corpus: Corpus): System {
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/systems/full.ts
 //
 //
@@ -4011,7 +4011,7 @@ export function fullSystem(corpus: Corpus): System {
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/systems/dorothy.ts
 //
 //
@@ -4169,7 +4169,7 @@ a full-context bound from above, each over the snapshot's archive."
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/questions/generate.test.ts
 //
 //
@@ -4521,7 +4521,7 @@ Expected: FAIL, "Cannot find module './generate.js'".
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/questions/generate.ts
 //
 //
@@ -4972,7 +4972,7 @@ export function latestDay(corpus: Corpus): string | null {
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/questions/generate-command.ts
 //
 //
@@ -5191,7 +5191,7 @@ checks as drafts for the owner."
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/questions/review.test.ts
 //
 //
@@ -5339,7 +5339,7 @@ Expected: FAIL, "eval: no command review".
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/questions/review.ts
 //
 //
@@ -5624,7 +5624,7 @@ git commit -m "feat(eval): Review drafts one at a time"
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/report/report.test.ts
 //
 //
@@ -5855,7 +5855,7 @@ Expected: FAIL, "Cannot find module '../run/record.js'".
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/run/record.ts
 //
 //
@@ -5973,7 +5973,7 @@ export async function readRunInfo(work: string, id: string): Promise<RunInfo> {
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/report/summary.ts
 //
 //
@@ -6140,7 +6140,7 @@ export function summarise(info: RunInfo, records: RunRecord[]): Summary {
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/report/markdown.ts
 //
 //
@@ -6316,7 +6316,7 @@ differ from this code; the arithmetic is the spec's rule.
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/report/command.ts
 //
 //
@@ -6461,7 +6461,7 @@ git commit -m "feat(eval): Report runs and compare them"
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/run/run.test.ts
 //
 //
@@ -6775,7 +6775,7 @@ Expected: FAIL, "Cannot find module './run.js'".
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/run/judges.ts
 //
 //
@@ -6895,7 +6895,7 @@ export function answerPrompt(question: Question, context: string): Message[] {
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/run/run.ts
 //
 //
@@ -7191,7 +7191,7 @@ export async function runEvaluation(
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/eval/src/run/command.ts
 //
 //
