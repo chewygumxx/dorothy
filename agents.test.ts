@@ -92,13 +92,13 @@ type Declared = { source: string; ref: string; skills: string[] };
 const declared = (): Declared[] =>
     JSON.parse(read(at("package.json"))).skills ?? [];
 
-// prepare.sh's sync, its continuations joined.
-const syncLine = (): string =>
+// prepare.sh's syncs, the first and its retry, continuations joined.
+const syncLines = (): string[] =>
     read(at("scripts/prepare.sh"))
         .replaceAll(/\s*\\\n\s*/g, " ")
         .split("\n")
-        .find((line) => line.includes("experimental_sync"))
-        ?.trim() ?? "";
+        .filter((line) => line.includes("experimental_sync"))
+        .map((line) => line.trim());
 
 // A mise task's run, as a list of its commands.
 const taskRun = (file: string, task: string): string[] => {
@@ -196,7 +196,10 @@ describe("the skills", () => {
     });
 
     it("syncs without reporting to skills.sh", () => {
-        expect(syncLine()).toStartWith("DO_NOT_TRACK=1 ");
+        expect(syncLines()).not.toEqual([]);
+        for (const line of syncLines()) {
+            expect(line).toStartWith("DO_NOT_TRACK=1 ");
+        }
         expect(taskRun("other", "skills")[0]).toStartWith("DO_NOT_TRACK=1 ");
         expect(taskRun("lint", "lint:skills")[0]).toStartWith(
             "DO_NOT_TRACK=1 ",
@@ -472,7 +475,7 @@ describe("agent memory", () => {
 
 // Run the real prepare and memory setup in a disposable checkout. Other
 // prepare steps are no-ops here; only the memory script uses the real Bun.
-const preparedCheckout = () => {
+const preparedCheckout = (skills = "#!/bin/sh\nexit 0\n") => {
     const root = mkdtempSync(join(tmpdir(), "agent-memory-prepare-"));
     const bin = join(root, "bin");
     mkdirSync(bin);
@@ -481,9 +484,8 @@ const preparedCheckout = () => {
     for (const name of ["prepare.sh", "agent-memory.ts"]) {
         copyFileSync(at("scripts", name), join(root, "scripts", name));
     }
-    for (const name of ["husky", "skills"]) {
-        writeFileSync(join(bin, name), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
-    }
+    writeFileSync(join(bin, "husky"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    writeFileSync(join(bin, "skills"), skills, { mode: 0o755 });
     writeFileSync(
         join(bin, "bun"),
         [
@@ -645,6 +647,47 @@ describe("agent memory preparation", () => {
             }
         });
     }
+});
+
+// A stand-in sync that records its arguments, failing as a fetch does
+// offline unless told `--no-remote`, or always.
+const failingSync = (always: boolean) =>
+    [
+        "#!/bin/sh",
+        'echo "$*" >>"$(dirname "$0")/syncs"',
+        always ? "exit 1" : 'case "$*" in *--no-remote*) exit 0 ;; esac',
+        "exit 1",
+        "",
+    ].join("\n");
+
+describe("the skills' preparation", () => {
+    it("warns and links the package's skills alone when a fetch fails", () => {
+        const checkout = preparedCheckout(failingSync(false));
+        try {
+            const result = checkout.run();
+            expect(result.exitCode).toBe(0);
+            expect(result.stderr.toString()).toContain(
+                "prepare: fetching remote skills failed",
+            );
+            const syncs = read(join(checkout.root, "bin", "syncs"))
+                .trim()
+                .split("\n");
+            expect(syncs).toHaveLength(2);
+            expect(syncs[0]).not.toContain("--no-remote");
+            expect(syncs[1]).toEndWith("--no-remote");
+        } finally {
+            checkout.remove();
+        }
+    });
+
+    it("fails the install when the sync fails without fetching", () => {
+        const checkout = preparedCheckout(failingSync(true));
+        try {
+            expect(checkout.run().exitCode).not.toBe(0);
+        } finally {
+            checkout.remove();
+        }
+    });
 });
 
 // A scratch repository for the install hooks, its git shut out of the

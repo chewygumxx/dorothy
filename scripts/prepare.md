@@ -30,12 +30,17 @@ commands named here and the ones in `prepare.sh` differ.
 
 1. `husky`
    installs the git hooks.
-2. `DO_NOT_TRACK=1 skills experimental_sync -y --agent claude-code codex ${CI:+--no-remote}`
+2. `DO_NOT_TRACK=1 skills experimental_sync -y --agent claude-code codex
+   ${CI:+--no-remote} || { echo "prepare: fetching remote skills failed;
+   linking package skills alone" >&2; DO_NOT_TRACK=1 skills
+   experimental_sync -y --agent claude-code codex --no-remote; }`
    links every skill `package.json`'s `skills` array declares, fetching
    each git source at its commit, and the packaged ones in
-   `@dorothy/skills`. A failed fetch, as offline, leaves the install to
-   succeed: the sync still exits 0 and links the packaged skills. Under
-   `CI` it adds `--no-remote`, so CI fetches nothing.
+   `@dorothy/skills`. Under `CI` it adds `--no-remote`, so CI fetches
+   nothing. A failed fetch, as offline, makes the sync exit 1: prepare
+   then warns and re-runs it with `--no-remote`, linking the package's
+   skills alone, and the install succeeds. A failure of that retry, such
+   as a broken array or package, fails the install.
 3. `bun test --bail agents.test.ts --test-name-pattern 'the skills'`
    checks the skills. The sync logs a skill it skips, such as one whose
    destination is a link elsewhere, and still exits 0, so these checks
