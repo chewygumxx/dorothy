@@ -178,8 +178,11 @@ git commit -m "docs: Specify and plan agent asset config"
     Promise<string>`: `chooseMemoryDir(root)` when `recorded` is
     undefined; `recorded` when it is a directory under `root`; else the
     first of `MEMORY_DIRS` present; else `recorded`.
-- `sync.ts:355` becomes
-  `const memoryDir = await resolveMemoryDir(project.root, known?.memoryDir);`
+- `sync.ts:355` passes the root's own last-synced directory, else the
+  project's, as `recorded`:
+  `const memoryDir = await resolveMemoryDir(project.root,
+  own(known?.synced, project.root)?.last ?? known?.memoryDir);`, with
+  `own` exported from `registry.ts`.
 
 - [ ] **Step 1: Write the failing registry tests**
 

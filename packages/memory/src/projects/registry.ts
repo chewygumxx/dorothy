@@ -235,7 +235,7 @@ const sorted = <T>(entries: Record<string, T>) =>
         ),
     );
 
-const own = <T>(entries: Record<string, T> | undefined, key: string) =>
+export const own = <T>(entries: Record<string, T> | undefined, key: string) =>
     entries !== undefined && Object.hasOwn(entries, key)
         ? entries[key]
         : undefined;

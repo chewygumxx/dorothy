@@ -64,6 +64,7 @@ import { identify, type Project } from "./identify.js";
 import {
     EMPTY_REGISTRY,
     memoryDirProblem,
+    own,
     projectsPath,
     readRegistry,
     resolveMemoryDir,
@@ -352,7 +353,10 @@ async function reconcile(
     const registry =
         registryRead.kind === "ok" ? registryRead.registry : EMPTY_REGISTRY;
     const known = registry.projects[project.id];
-    const memoryDir = await resolveMemoryDir(project.root, known?.memoryDir);
+    const memoryDir = await resolveMemoryDir(
+        project.root,
+        own(known?.synced, project.root)?.last ?? known?.memoryDir,
+    );
     const dir = await safeDir(project.root, memoryDir);
     const scope: Scope = { kind: "project", id: project.id };
     const repo = await readRepo(dir);
