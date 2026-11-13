@@ -94,7 +94,8 @@ unused.
 - `persona.ts`: the persona, composed from `personaComponents` (the core
   from `@dorothy/identity` first; capabilities, plumbing and memory its
   own), joined with two newlines, in chat or development mode. With
-  recall, memory tells her to keep lasting facts with `remember`.
+  recall, capabilities name her memory and persona tools, and memory tells
+  her to keep lasting facts with `remember`.
   Development mode (`--dev`) adds a mode component, has Dorothy describe
   her context, and ends with `routeLine`, the chat route's models;
   `promptHash` (`xxh3:<hex>`), which transcripts record and nothing

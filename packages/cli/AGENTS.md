@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-11-04
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: packages/cli/AGENTS.md
 description: >-
@@ -20,7 +20,7 @@ tags:
 # packages/cli/AGENTS.md
 
 `@dorothy/cli` wires every package into `dorothy`; its application has
-no imports, with only the evidence scrubber boundary below exported.
+no imports; only the evidence scrubber is a package export.
 
 ## Entry points and imports
 
@@ -36,7 +36,7 @@ and `--recall-server` never load the AI SDK. Keep new mode imports lazy.
 
 - `index.ts`: the entry guard, which runs the mode `parseArgs` gives from
   `RUNNERS`, each runner returning its exit code, or nothing where it set its
-  own (`runOneShot`).
+  own (`runOneShot`); `recallServerOptions` and `serviceOptions` add her layers.
 - `ambient.ts`: `ambient`, the process's environment, streams and entry script,
   passed to memory's history commands.
 - `args.ts`: the flags (`parseArgs`, `USAGE`) and the modes they give:

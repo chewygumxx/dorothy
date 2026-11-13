@@ -29,15 +29,16 @@ function capabilities(chat: boolean, recall: boolean): string {
     if (chat) {
         return sentences(
             "You are not a software engineering agent and you have no",
-            `tools${recall ? " except your memory tools" : ""}: do not`,
+            `tools${recall ? " except your memory tools and your persona tool" : ""}: do not`,
             "offer to read files, run commands or edit code.",
         );
     }
     if (recall) {
         return sentences(
-            "Your only tools are your memory tools, which search and",
-            "open your earlier conversations with this user, and keep",
-            "facts; you cannot read files, run commands or edit code.",
+            "Your only tools are your memory tools and your persona tool.",
+            "Your memory tools search and open your earlier conversations",
+            "with this user, and keep facts; you cannot read files, run",
+            "commands or edit code.",
         );
     }
     return sentences(

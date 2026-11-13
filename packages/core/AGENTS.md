@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-11-04
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: packages/core/AGENTS.md
 description: >-
@@ -61,7 +61,7 @@ below. It declares `niceware` alone, and never imports another
 - `contracts/editor.ts`: `Editor`, the external editor's contract.
 - `contracts/recall.ts`: the memory tools' names and shapes: chat's server
   and Claude Code's, `toolOf` on either server, the lookups, `remember`,
-  and search and open over facts.
+  `persona` alongside memory, and search and open over facts.
 - `contracts/memory.ts`: the memory contract's types, ids and constants,
   which `memory` gives zod schemas.
 - `secrets.ts`: `loadSecrets` reads sops-encrypted JSON into an injected

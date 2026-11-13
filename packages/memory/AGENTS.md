@@ -28,9 +28,8 @@ reviews and compaction take core's `StructuredCall` and `MemoryPrompts`.
 - `"."` (`src/index.ts`): `openMemory`, `previewStart`, what `--claude` asks;
   `"./claude-hook"` (`runClaudeHook`), `"./host-hook"` (`runHostHook`, Pi's
   `runPiHostHook`, `readPi`), guides: [bodies](./src/bodies/AGENTS.md), [hooks](./src/hooks/AGENTS.md).
-- `"./commands"` (`src/commands.ts`): `--list`, `--memory`, `--tags`,
-  `--edit-tags`, `--facts`, `--retire`, `--revive`, `--verify`, `--sync`,
-  `--projects`, the history commands and `commandHistory()`.
+- `"./commands"` (`src/commands.ts`): memory, tags, facts, projects and history
+  commands, with `commandHistory()`.
 - `"./recall-server"` (`src/recall-server.ts`): `runRecallServer` alone;
   `"./service"`, `"./client"`, `"./bridge"`, `"./evaluation"`: [the contract's guide](./src/contract/AGENTS.md).
 
@@ -79,7 +78,8 @@ reviews and compaction take core's `StructuredCall` and `MemoryPrompts`.
   `server.ts` serves them over MCP on stdio as `dorothy --recall-server`, one
   call at a time, history opened without the mirror. Reviews appraise each read
   into the sidecar, and `salience()` (`rank.ts`) weighs appraised reads.
-- `persona/tool.ts`: both servers' tool over structural, injected layers.
+- `persona/tool.ts`: injected layers, read at service start. Restart for
+  Codex, Pi and Hermes updates; Hermes's `SOUL.md` changes only on reinstall.
 - `compaction/`: past `[compaction] soft` tokens, at the next idle (past
   `hard`, before the next message), `compact()` splits the turns before
   the verbatim tail into topical clusters with an abstract each; read

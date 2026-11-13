@@ -90,7 +90,7 @@ const CHAT = [
 ].join("\n\n");
 const CHAT_RECALL = CHAT.replace(
     "you have no tools:",
-    "you have no tools except your memory tools:",
+    "you have no tools except your memory tools and your persona tool:",
 )
     .replace(
         "not cover, say",
@@ -171,6 +171,22 @@ describe("personaComponents", () => {
 });
 
 describe("personaPrompt", () => {
+    it.each(["chat", "development"] as const)(
+        "mentions the persona tool only with recall in %s mode",
+        (mode) => {
+            const capabilities = (recall: boolean) =>
+                personaComponents({ mode, recall }).find(
+                    (component) => component.name === "capabilities",
+                )?.text;
+            expect(capabilities(true)).toContain(
+                mode === "chat"
+                    ? "no tools except your memory tools and your persona tool"
+                    : "Your only tools are your memory tools and your persona tool",
+            );
+            expect(capabilities(false)).not.toContain("persona tool");
+        },
+    );
+
     it("is the chat persona, byte for byte", () => {
         expect(personaPrompt({ recall: false })).toBe(CHAT);
         expect(personaPrompt({ recall: true })).toBe(CHAT_RECALL);
@@ -199,7 +215,7 @@ describe("personaPrompt", () => {
     it("gives her memory tools, and has her look before she forgets", () => {
         const prompt = personaPrompt({ recall: true });
         expect(prompt).toContain(
-            "you have no tools except your memory tools: do not offer",
+            "you have no tools except your memory tools and your persona tool: do not offer",
         );
         expect(prompt).toContain(
             "cover, look it up; if you cannot find it, say you do not remember it rather than invent detail.",

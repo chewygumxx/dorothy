@@ -141,8 +141,12 @@ a tool error naming the available layers. Without layers the tool is
 absent. These layers are who Dorothy is, not what she remembers, and are
 for her alone, not an agent she dispatches. Memory declares their shape
 structurally and never imports identity
-([`tool.ts`](../../../packages/memory/src/persona/tool.ts)). The
-[persona plan](../../plans/2026-11-14_persona.md) tracks the CLI wiring.
+([`tool.ts`](../../../packages/memory/src/persona/tool.ts)). The CLI passes
+identity's layers to both servers at start. Chat keeps the persona tool
+alongside its memory tools, and Claude Code's launch allows it. A persona
+change reaches Codex, Pi and Hermes after the service restarts; Hermes's
+`SOUL.md` changes only on reinstall. The
+[persona plan](../../plans/2026-11-14_persona.md) records the work.
 
 Dorothy opens past conversations on demand, never pushed, and afterwards
 appraises each read as none, slight, useful or essential. The appraisals
