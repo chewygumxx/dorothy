@@ -4,7 +4,7 @@ description: "Memory ranks compatibility, access, progressive disclosure, persis
 metadata:
   node_type: memory
   ctime: 2026-10-18
-  mtime: 2026-10-18
+  mtime: 2026-11-14
   spdx: GPL-3.0-only
   type: feedback
   originSessionId: 9b8a5730-029b-494c-b538-d7dfaf105285
@@ -14,7 +14,7 @@ metadata:
 <!--
    -
    - ~xxdorothy/dorothy.git
-   - ::: :/.agents/memory/memory-priorities.md
+   - ::: :/docs/memory/memory-priorities.md
    -
    -->
 
@@ -29,7 +29,7 @@ her current memory weak beside other architectures.
 **Why:** a research pass judged replacements by whether they reproduce
 Dorothy's own design, so it wrongly found that nothing could replace her
 memory; the user corrected it
-([the note](../../docs/notes/2026-10-18_open-source-replacements.md)).
+([the note](../notes/2026-10-18_open-source-replacements.md)).
 
 **How to apply:** judge memory designs and replacements by these four, in
 order, not by parity with the current code, and measure retrieval rather

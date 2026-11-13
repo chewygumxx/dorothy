@@ -4,7 +4,7 @@ description: "Approve every Codex prompt yourself; never relay one to the user"
 metadata:
   node_type: memory
   ctime: 2026-10-20
-  mtime: 2026-10-31
+  mtime: 2026-11-14
   spdx: GPL-3.0-only
   type: feedback
   originSessionId: fb965535-b7ef-4fd4-8065-6767fb16ee58
@@ -14,7 +14,7 @@ metadata:
 <!--
    -
    - ~xxdorothy/dorothy.git
-   - ::: :/.agents/memory/codex-full-send.md
+   - ::: :/docs/memory/codex-full-send.md
    -
    -->
 
@@ -26,5 +26,5 @@ herdr rather than relay it to them.
 waiting on them stalls the work.
 
 **How to apply:** approve Codex's prompts yourself, as
-[agent-stewardship](../skills/agent-stewardship/SKILL.md)'s Codex
+[agent-stewardship](../../.agents/skills/agent-stewardship/SKILL.md)'s Codex
 reference says. Claude Code's own permission prompts are not covered.

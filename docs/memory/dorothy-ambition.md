@@ -22,7 +22,7 @@ Stated 2026-10-15, after comparing OpenClaw and Hermes Agent as hosts:
   OpenRouter when usage runs out or a different model suits the task. On
   2026-10-18 the user was weighing leaving Anthropic altogether for more
   permissive, cheaper models
-  ([replacements](../../docs/notes/2026-10-18_open-source-replacements.md)).
+  ([replacements](../notes/2026-10-18_open-source-replacements.md)).
 - Sceptical of Hermes's self-improvement loop over a scheduled run of
   the claude-md-management or claude-code-setup plugins.
 - Memory comes first, and may be reworked whole. Its principle: "Wherever

@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-11
-mtime: 2026-11-11
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: scripts/prepare.md
 description: >-
@@ -37,4 +37,4 @@ commands named here and the ones in `prepare.sh` differ.
    destination is a link elsewhere, and still exits 0, so these checks
    fail the install instead.
 4. `bun scripts/agent-memory.ts`
-   points Claude at `.agents/memory`.
+   points Claude at `docs/memory`.

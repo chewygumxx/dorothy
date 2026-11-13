@@ -14,7 +14,7 @@ metadata:
 <!--
    -
    - ~xxdorothy/dorothy.git
-   - ::: :/.agents/memory/maintenance-design-agreed.md
+   - ::: :/docs/memory/maintenance-design-agreed.md
    -
    -->
 

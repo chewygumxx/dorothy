@@ -336,7 +336,7 @@ describe("the root's guidance", () => {
     });
 });
 
-const MEMORY = at(".agents/memory");
+const MEMORY = at("docs/memory");
 
 // The memories an index links, as `./name.md` (the house form) or as
 // `name.md` (the form Claude Code's own memory instructions write).
@@ -346,8 +346,9 @@ const indexEntries = (index: string): string[] =>
         .sort();
 
 describe("agent memory", () => {
-    it("lives in .agents/memory, not .claude/memory", () => {
+    it("lives in docs/memory, not .agents/memory or .claude/memory", () => {
         expect(existsSync(join(MEMORY, "MEMORY.md"))).toBe(true);
+        expect(existsSync(at(".agents/memory"))).toBe(false);
         expect(existsSync(at(".claude/memory"))).toBe(false);
     });
 
@@ -380,7 +381,7 @@ describe("agent memory", () => {
             writeFileSync(path, '{ "enabledMcpjsonServers": ["github"] }\n');
             pointMemoryDirectory(root, () => true);
             expect(JSON.parse(read(path))).toEqual({
-                autoMemoryDirectory: join(root, ".agents", "memory"),
+                autoMemoryDirectory: join(root, "docs", "memory"),
                 enabledMcpjsonServers: ["github"],
             });
             expect(statSync(path).mode & 0o777).toBe(0o600);
@@ -407,13 +408,13 @@ describe("agent memory", () => {
         }
     });
 
-    it("points auto memory at .agents/memory, keeping other settings", () => {
+    it("points auto memory at docs/memory, keeping other settings", () => {
         const settings = {
             autoMemoryDirectory: "/checkout/.claude/memory",
             enabledMcpjsonServers: ["github"],
         };
         expect(withMemoryDirectory(settings, "/checkout")).toEqual({
-            autoMemoryDirectory: "/checkout/.agents/memory",
+            autoMemoryDirectory: "/checkout/docs/memory",
             enabledMcpjsonServers: ["github"],
         });
     });
@@ -476,7 +477,7 @@ describe("agent memory preparation", () => {
         try {
             expect(checkout.run().exitCode).toBe(0);
             expect(JSON.parse(read(checkout.path))).toEqual({
-                autoMemoryDirectory: join(checkout.root, ".agents", "memory"),
+                autoMemoryDirectory: join(checkout.root, "docs", "memory"),
             });
             expect(statSync(checkout.path).mode & 0o777).toBe(0o600);
         } finally {
@@ -536,11 +537,7 @@ describe("agent memory preparation", () => {
                 );
                 expect(checkout.run().exitCode).toBe(0);
                 expect(JSON.parse(read(checkout.path))).toEqual({
-                    autoMemoryDirectory: join(
-                        checkout.root,
-                        ".agents",
-                        "memory",
-                    ),
+                    autoMemoryDirectory: join(checkout.root, "docs", "memory"),
                     permissions: { allow: ["Read"], deny: ["Write"] },
                     env: { FIXTURE: "kept" },
                     enabledMcpjsonServers: ["fixture"],
@@ -555,7 +552,7 @@ describe("agent memory preparation", () => {
     it("does not rewrite or chmod settings already pointing at this checkout", () => {
         const checkout = preparedCheckout();
         try {
-            const text = `{ "other": 2, "autoMemoryDirectory": ${JSON.stringify(join(checkout.root, ".agents", "memory"))} }\n`;
+            const text = `{ "other": 2, "autoMemoryDirectory": ${JSON.stringify(join(checkout.root, "docs", "memory"))} }\n`;
             checkout.write(text);
             const before = statSync(checkout.path);
             expect(checkout.run().exitCode).toBe(0);

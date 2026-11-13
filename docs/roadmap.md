@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-11-11
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -187,7 +187,7 @@ conversations from their notes, in background passes that can be undone.
 Its undo and log are to be revisited against memory history, and what it
 maintains against Dorothy's Memory, whose engine is to consolidate
 knowledge. The design agreed so far is in
-[agent memory](../.agents/memory/maintenance-design-agreed.md).
+[agent memory](./memory/maintenance-design-agreed.md).
 
 - **Status**: Design Agreed, Pending Specification
 - **Required**: Dorothy's Memory

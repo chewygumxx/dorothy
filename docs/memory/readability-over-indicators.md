@@ -4,7 +4,7 @@ description: "Fix what makes code hard to read, not the metric or tool output th
 metadata:
   node_type: memory
   ctime: 2026-10-18
-  mtime: 2026-10-18
+  mtime: 2026-11-14
   spdx: GPL-3.0-only
   type: feedback
   originSessionId: 47233e46-7657-45bc-931f-233c26152dcb
@@ -14,7 +14,7 @@ metadata:
 <!--
    -
    - ~xxdorothy/dorothy.git
-   - ::: :/.agents/memory/readability-over-indicators.md
+   - ::: :/docs/memory/readability-over-indicators.md
    -
    -->
 
@@ -25,7 +25,7 @@ are not the goal. They rejected a ripgrep `.ignore` for `docs/plans/` as
 enabling a complexity lint rule as useless.
 
 **Why:** the token usage note
-([2026-10-16](../../docs/notes/2026-10-16_claude-conversation-token-usage.md))
+([2026-10-16](../notes/2026-10-16_claude-conversation-token-usage.md))
 traced cost to hard-to-read code and heavy process; hiding the symptoms
 changes neither.
 

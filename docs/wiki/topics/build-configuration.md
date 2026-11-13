@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-11
-mtime: 2026-11-13
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: Build configuration
 description: >-
@@ -210,7 +210,7 @@ reads its style from `.editorconfig`.
 remark's configuration is `.config/remarkrc.json`, given by `--rc-path`,
 and markdownlint-cli2's is `.config/markdownlint-cli2.jsonc`, given by
 `--config`; both extend the house presets. The overrides in `.github/` and
-`.agents/memory/` still merge over it for their own files (probed
+`docs/memory/` still merge over it for their own files (probed
 2026-11-11): the pull request template's sections are its headings, and a
 memory opens with its fact, so neither starts with a top-level heading.
 

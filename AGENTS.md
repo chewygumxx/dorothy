@@ -42,7 +42,7 @@ isolated linker fails an undeclared or internal import.
   `check` take `--staged`.
 - `bun run dev`: the CLI from source.
 - `bun run skills` links packaged skills, not remote ones (`skills add`,
-  `skills update`); `bun install` points Claude at `.agents/memory`.
+  `skills update`); `bun install` points Claude at `docs/memory`.
 - After removing a `@dorothy` dependency, reinstall from clean to see the
   boundary: `rm -rf node_modules packages/*/node_modules && bun install`.
 
@@ -104,7 +104,7 @@ work found along the way where it serves best.
 
 ## Memory
 
-Agent memory is in `.agents/memory/`, indexed by its `MEMORY.md`, each
+Agent memory is in `docs/memory/`, indexed by its `MEMORY.md`, each
 entry a list item linking `./<name>.md`, its hook on the next line. Link
 memories by relative Markdown link, never `[[...]]`, and write no em dash
 and no line over 80 characters, whatever a client's own memory

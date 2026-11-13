@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-03
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: Pi as Dorothy's stewardship host
 description: >-
@@ -381,9 +381,9 @@ cost estimate for those integrations was measured in this study.
 [webui-note]: ./2026-11-03_open-webui-feasibility.md
 [replacements]: ./2026-10-18_open-source-replacements.md
 [minutes]: ../reports/2026-10-18-protocol-diversity.md
-[protocol-memory]: ../../.agents/memory/protocol-diverse-dorothy.md
-[targets]: ../../.agents/memory/target-harnesses.md
-[priorities]: ../../.agents/memory/memory-priorities.md
+[protocol-memory]: ../memory/protocol-diverse-dorothy.md
+[targets]: ../memory/target-harnesses.md
+[priorities]: ../memory/memory-priorities.md
 [featherless-note]: ./2026-11-02_featherless-orchestrator.md
 [stewardship]: ../../.agents/skills/agent-stewardship/SKILL.md
 [roadmap]: ../roadmap.md

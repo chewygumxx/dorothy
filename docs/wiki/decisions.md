@@ -28,7 +28,7 @@ planned, were made. The topic pages say what exists now; an entry here
 links them and does not explain the mechanism again. Entries are grouped
 by the seven subjects of the [records catalogue](./records.md), and each
 rests on a ruling, a specification's decision, a roadmap revision or a
-`feedback` memory in `.agents/memory/` where the user set a direction.
+`feedback` memory in `docs/memory/` where the user set a direction.
 Minor implementation rulings stay in their reports.
 
 Each entry is one list of bold lead-ins:
@@ -74,7 +74,7 @@ How the memory is built is on [memory](./topics/memory.md).
   access ([spec](../specs/2026-10-18-memory-evaluation-design.md#purpose)).
   The rule it loosened has its own entry below, "Nothing is forgotten".
 - **Sources**:
-  [memory priorities](../../.agents/memory/memory-priorities.md),
+  [memory priorities](../memory/memory-priorities.md),
   [open-source replacements](../notes/2026-10-18_open-source-replacements.md),
   [protocol diversity, ruling 5](../reports/2026-10-18-protocol-diversity.md#rulings).
 
@@ -123,8 +123,8 @@ How the memory is built is on [memory](./topics/memory.md).
   ([memory](./topics/memory.md#what-is-stored)).
 - **Sources**:
   [store spec](../specs/2026-10-15-memory-store-design.md#decisions),
-  [Dorothy's ambition](../../.agents/memory/dorothy-ambition.md),
-  [memory priorities](../../.agents/memory/memory-priorities.md),
+  [Dorothy's ambition](../memory/dorothy-ambition.md),
+  [memory priorities](../memory/memory-priorities.md),
   [roadmap candidates](../roadmap.md#candidates).
 
 ### Unconfirmed knowledge is fenced, not dropped
@@ -196,7 +196,7 @@ How the memory is built is on [memory](./topics/memory.md).
   design is agreed and awaits a spec.
 - **Sources**:
   [tags spec](../specs/2026-10-07-tags-design.md#decisions),
-  [maintenance design](../../.agents/memory/maintenance-design-agreed.md).
+  [maintenance design](../memory/maintenance-design-agreed.md).
 
 ### The data directory is a git repository with a sealed mirror
 
@@ -483,7 +483,7 @@ Which host receives what, and what has been run against it, is on
 - **Sources**:
   [protocol diversity minutes](../reports/2026-10-18-protocol-diversity.md#rulings),
   [objectives](../reports/2026-10-15-objectives.md#rulings),
-  [protocol-diverse Dorothy](../../.agents/memory/protocol-diverse-dorothy.md).
+  [protocol-diverse Dorothy](../memory/protocol-diverse-dorothy.md).
 
 ### The four harnesses are Claude Code, Codex, OpenClaw and Hermes
 
@@ -501,7 +501,7 @@ Which host receives what, and what has been run against it, is on
   each host, and what waits on the user, is on
   [harnesses](./profiles/harnesses.md).
 - **Sources**:
-  [target harnesses](../../.agents/memory/target-harnesses.md),
+  [target harnesses](../memory/target-harnesses.md),
   [roadmap revision 2026-10-19](../roadmap.md#revisions).
 
 ### A gateway and a marker carry her identity into Claude Code
@@ -782,7 +782,7 @@ them are on [services and providers](./profiles/services-and-providers.md).
   budget is not.
 - **Sources**:
   [objectives](../reports/2026-10-15-objectives.md#rulings),
-  [Dorothy's ambition](../../.agents/memory/dorothy-ambition.md),
+  [Dorothy's ambition](../memory/dorothy-ambition.md),
   [roadmap revision 2026-10-15](../roadmap.md#revisions).
 
 ### She runs on her own runtime, the Vercel AI SDK, and the Agent SDK retires
@@ -1053,7 +1053,7 @@ develop her.
   covered.
 - **Standing**: current
   ([orchestration](./topics/orchestration.md#how-her-developers-are-coordinated-today)).
-- **Sources**: [Codex full send](../../.agents/memory/codex-full-send.md).
+- **Sources**: [Codex full send](../memory/codex-full-send.md).
 
 ### Work is routed by usage budget
 
@@ -1070,7 +1070,7 @@ develop her.
 - **Cost**: not recorded.
 - **Standing**: current; the order is carried by the stewardship skill.
   The registry above would remove the names written into it.
-- **Sources**: [usage limits](../../.agents/memory/usage-limits.md),
+- **Sources**: [usage limits](../memory/usage-limits.md),
   [stewardship skill](../../.agents/skills/agent-stewardship/SKILL.md).
 
 ### Procedures are skills, and recovery is armed before a limit
@@ -1100,7 +1100,7 @@ develop her.
 - **Sources**:
   [consolidation spec](../specs/2026-10-31-agentic-asset-consolidation-design.md#decisions),
   [report](../reports/2026-10-31-agentic-asset-consolidation.md#rulings),
-  [self-compaction](../../.agents/memory/self-compaction.md).
+  [self-compaction](../memory/self-compaction.md).
 
 ## Repository workflow
 
@@ -1188,7 +1188,7 @@ The machinery behind these rules is on
 - **Cost**: not recorded.
 - **Standing**: current.
 - **Sources**:
-  [readability over indicators](../../.agents/memory/readability-over-indicators.md),
+  [readability over indicators](../memory/readability-over-indicators.md),
   [token usage note](../notes/2026-10-16_claude-conversation-token-usage.md).
 
 ### Agents carry on with agreed steps and merge their own pull requests
@@ -1208,7 +1208,7 @@ The machinery behind these rules is on
 - **Standing**: current
   ([repository workflow](./topics/repository-workflow.md#the-checks)).
 - **Sources**:
-  [trust to proceed](../../.agents/memory/trust-to-proceed.md),
+  [trust to proceed](../memory/trust-to-proceed.md),
   [root AGENTS.md](../../AGENTS.md).
 
 ### Data is kept by function, beside what it concerns

@@ -14,7 +14,7 @@ metadata:
 <!--
    -
    - ~xxdorothy/dorothy.git
-   - ::: :/.agents/memory/trust-to-proceed.md
+   - ::: :/docs/memory/trust-to-proceed.md
    -
    -->
 

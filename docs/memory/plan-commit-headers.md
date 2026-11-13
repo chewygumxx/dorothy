@@ -14,7 +14,7 @@ metadata:
 <!--
    -
    - ~xxdorothy/dorothy.git
-   - ::: :/.agents/memory/plan-commit-headers.md
+   - ::: :/docs/memory/plan-commit-headers.md
    -
    -->
 

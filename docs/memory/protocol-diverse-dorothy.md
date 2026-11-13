@@ -4,7 +4,7 @@ description: Shared identity and memory; Pi's earlier exclusion is superseded
 metadata:
   node_type: memory
   ctime: 2026-10-18
-  mtime: 2026-11-03
+  mtime: 2026-11-14
   spdx: GPL-3.0-only
   type: project
   originSessionId: 9b8a5730-029b-494c-b538-d7dfaf105285
@@ -14,7 +14,7 @@ metadata:
 <!--
    -
    - ~xxdorothy/dorothy.git
-   - ::: :/.agents/memory/protocol-diverse-dorothy.md
+   - ::: :/docs/memory/protocol-diverse-dorothy.md
    -
    -->
 
@@ -29,10 +29,10 @@ adopted as rulesync) are researched before anything bespoke.
 
 **Why:** the user rejected the inherited framing of Hermes against
 OpenClaw as hosts, and a single body
-([minutes](../../docs/reports/2026-10-18-protocol-diversity.md)).
+([minutes](../reports/2026-10-18-protocol-diversity.md)).
 
 On 2026-11-03 the user explicitly made Pi the highest priority, following
-the [Pi research](../../docs/notes/2026-11-03_pi-stewardship.md). This
+the [Pi research](../notes/2026-11-03_pi-stewardship.md). This
 supersedes the exclusion of Pi. Their chief interest is stewardship and
 orchestration of Claude Code and Codex through herdr. Choosing Pi first
 does not itself decide whether Dorothy's existing runtime is replaced.

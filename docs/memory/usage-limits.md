@@ -4,7 +4,7 @@ description: "Route work by usage budget: Codex if it fits, else Claude on the p
 metadata:
   node_type: memory
   ctime: 2026-10-29
-  mtime: 2026-11-02
+  mtime: 2026-11-14
   spdx: GPL-3.0-only
   type: feedback
   originSessionId: 23f06ef0-8bfb-4a45-b87d-d5ac8dcf1296
@@ -14,7 +14,7 @@ metadata:
 <!--
    -
    - ~xxdorothy/dorothy.git
-   - ::: :/.agents/memory/usage-limits.md
+   - ::: :/docs/memory/usage-limits.md
    -
    -->
 
@@ -30,6 +30,6 @@ often by a promotion, so the user said to spend them freely.
 59% left ran out halfway. The user then set out the order above.
 
 **How to apply:** follow
-[agent-stewardship](../skills/agent-stewardship/SKILL.md): its rules,
+[agent-stewardship](../../.agents/skills/agent-stewardship/SKILL.md): its rules,
 and its budgets reference for reading each plan and choosing an account.
 See also [codex-full-send](./codex-full-send.md).

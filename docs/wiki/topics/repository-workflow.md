@@ -68,7 +68,7 @@ main checkout, so two declared steps set one up whichever tool made it:
 `.husky/post-checkout` runs `bun install`, and `.worktreeinclude` has
 Claude Code and worktrunk copy the skills that `skills add` installed
 and `bun install` cannot link. A worktree's auto memory points at its own
-`.agents/memory/`, so a memory written there is committed on its branch.
+`docs/memory/`, so a memory written there is committed on its branch.
 
 ## The checks
 
@@ -116,7 +116,7 @@ names, `config`, `claude` and `api` as scopes and agent assets under the
 `ai` type, and no agent trailers. A header is at most 50 characters and a
 body line at most 72, limits that come from the shared commitlint config
 and that a plan's commit steps must keep too
-([plan commit headers](../../../.agents/memory/plan-commit-headers.md)).
+([plan commit headers](../../memory/plan-commit-headers.md)).
 
 Branches are pushed and their pull requests opened by the agent, who
 merges its own once CI passes, as the user approved. Repository settings
@@ -150,13 +150,13 @@ The assets are:
   commit by `bun.lock` and linked by `bun install`. Remote skills are
   recorded in `skills-lock.json` by source and content hash, installed
   with `skills add` and refreshed with `skills update`.
-- **Memory** in `.agents/memory/`, indexed by its `MEMORY.md`, each entry
+- **Memory** in `docs/memory/`, indexed by its `MEMORY.md`, each entry
   a link with its hook on the next line. It holds the user's preferences and
   their reasons, not procedures, which belong in skills. Memories link
   one another by relative Markdown link, and carry no em dash and no line
   over 80 characters, whatever a client's own memory instructions say.
 
-`bun install` points Claude's auto memory at `.agents/memory/`. The
+`bun install` points Claude's auto memory at `docs/memory/`. The
 coordination of agents that the stewardship skill governs is the subject of
 [orchestration](./orchestration.md#how-her-developers-are-coordinated-today).
 
