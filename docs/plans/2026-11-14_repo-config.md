@@ -279,9 +279,12 @@ passes.
 
 - [ ] **Step 10: Gate**
 
-Ask the user to update the main checkout to the
-merge and restart any running `dorothy --serve`, and wait for their
-confirmation. Only then does Task 3 begin.
+Ask the user to quit any Claude session in a
+checkout before pulling, to update the main checkout to the merge, to
+restart any running `dorothy --serve`, and, after updating, to check
+every checkout for a surviving `.agents/memory`
+(`git status --ignored`); wait for their confirmation. Only then does
+Task 3 begin.
 
 ---
 

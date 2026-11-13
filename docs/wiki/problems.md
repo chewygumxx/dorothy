@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-06
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: Problems
 description: >-
@@ -83,8 +83,9 @@ what it is.
   136-draft review sent to Codex at `xhigh` with 59% left ran out halfway
   ([usage limits](../../.agents/memory/usage-limits.md)).
 - **Diagnosis**: Each client reports its own budget. Claude Code gives its
-  plan's `rate_limits` to the status line alone, so the project's status line
-  writes them to a file the agent reads before dispatching
+  plan's `rate_limits` to the status line alone, so the user's own status
+  line, running `scripts/statusline.sh`, writes them to a file the agent
+  reads before dispatching
   ([report](../reports/2026-10-30-eval-review-tools.md#reading-claudes-budget)).
 - **Remedy**: Estimate what a job will spend, then route it to Codex if it
   fits, else a Claude subagent on the primary account that leaves room for

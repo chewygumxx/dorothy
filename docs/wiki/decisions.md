@@ -1150,6 +1150,8 @@ The machinery behind these rules is on
 - **Cost**: not recorded.
 - **Standing**: current; `agents.test.ts` pins the layout and the budgets
   ([repository workflow](./topics/repository-workflow.md#agent-assets)).
+  A harness's own settings are not among the assets declared here
+  ([A harness's settings are the user's](#a-harnesss-settings-are-the-users)).
 - **Sources**:
   [asset refactor spec](../specs/2026-10-11-agentic-asset-refactor-design.md#decisions),
   [report](../reports/2026-10-13-agentic-asset-refactor-implementation.md).
