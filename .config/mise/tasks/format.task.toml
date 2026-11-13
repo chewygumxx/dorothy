@@ -1,0 +1,59 @@
+# vim:set expandtab shiftwidth=4 filetype=toml:
+# SPDX-License-Identifier: GPL-3.0-only
+#:schema https://mise.jdx.dev/schema/mise-task.json
+
+#
+#
+# ~xxdorothy/dorothy.git
+# ::: :/.config/mise/tasks/format.task.toml
+#
+#
+
+#
+# format and its sub-tasks
+# https://mise.jdx.dev/tasks/task-configuration.html
+#
+
+[format]
+description = "Apply every formatter"
+alias       = "f"
+usage       = 'flag "--staged" help="Format staged files alone"'
+depends     = [
+    "format:code {% if usage.staged %}--staged{% endif %}",
+    "format:shell {% if usage.staged %}--staged{% endif %}",
+    "format:toml {% if usage.staged %}--staged{% endif %}",
+    "format:yaml {% if usage.staged %}--staged{% endif %}",
+    "format:header",
+]
+
+# -------
+# Format
+# -------
+
+["format:code"]
+description = "Fix and format with Biome"
+usage       = 'flag "--staged"'
+wait_for    = [ "format:header" ]
+run         = "scripts/with-files.sh ${usage_staged:+--staged} -- bunx --bun --no-install biome check --write --files-ignore-unknown=true --no-errors-on-unmatched"
+
+["format:yaml"]
+description = "Format YAML with Prettier"
+usage       = 'flag "--staged"'
+wait_for    = [ "format:header" ]
+run         = "scripts/with-files.sh ${usage_staged:+--staged} '*.yaml' '*.yml' -- bunx --bun --no-install prettier --write --log-level warn"
+
+["format:shell"]
+description = "Format shell scripts with shfmt"
+usage       = 'flag "--staged"'
+wait_for    = [ "format:header" ]
+run         = "scripts/with-files.sh ${usage_staged:+--staged} '*.sh' '.husky/*' -- shfmt -w"
+
+["format:toml"]
+description = "Format TOML with Tombi"
+usage       = 'flag "--staged"'
+wait_for    = [ "format:header" ]
+run         = "scripts/with-files.sh ${usage_staged:+--staged} '*.toml' -- tombi format"
+
+["format:header"]
+description = "Rewrite house headers with sync-header-metadata"
+run         = "bunx --bun --no-install sync-header-metadata --update"

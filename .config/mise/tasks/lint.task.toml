@@ -5,22 +5,14 @@
 #
 #
 # ~xxdorothy/dorothy.git
-# ::: :/.config/mise/tasks.toml
+# ::: :/.config/mise/tasks/lint.task.toml
 #
 #
 
 #
+# lint and its sub-tasks
 # https://mise.jdx.dev/tasks/task-configuration.html
 #
-
-# ---------
-# Standard
-# ---------
-
-[install]
-description = "Install the locked dependency tree"
-alias       = "i"
-run         = "bun ci"
 
 [lint]
 description = "Run every linter and format check"
@@ -39,29 +31,6 @@ depends     = [
     "lint:header",
     "lint:types",
 ]
-
-[format]
-description = "Apply every formatter"
-alias       = "f"
-usage       = 'flag "--staged" help="Format staged files alone"'
-depends     = [
-    "format:code {% if usage.staged %}--staged{% endif %}",
-    "format:shell {% if usage.staged %}--staged{% endif %}",
-    "format:toml {% if usage.staged %}--staged{% endif %}",
-    "format:yaml {% if usage.staged %}--staged{% endif %}",
-    "format:header",
-]
-
-[test]
-description = "Run the tests"
-alias       = "t"
-run         = "bun test"
-
-[check]
-description = "Run everything CI runs: lint and test"
-alias       = "c"
-usage       = 'flag "--staged" help="Lint staged files alone; test in full"'
-depends     = [ "lint {% if usage.staged %}--staged{% endif %}", "test" ]
 
 # -------------------
 # Lint: file by file
@@ -233,74 +202,3 @@ run         = "bunx --bun --no-install sync-header-metadata"
 description = "Lint a commit message file with commitlint"
 usage       = 'arg "<file>" help="The commit message file"'
 run         = 'bunx --bun --no-install commitlint --edit "$usage_file"'
-
-# -------
-# Format
-# -------
-
-["format:code"]
-description = "Fix and format with Biome"
-usage       = 'flag "--staged"'
-wait_for    = [ "format:header" ]
-run         = "scripts/with-files.sh ${usage_staged:+--staged} -- bunx --bun --no-install biome check --write --files-ignore-unknown=true --no-errors-on-unmatched"
-
-["format:yaml"]
-description = "Format YAML with Prettier"
-usage       = 'flag "--staged"'
-wait_for    = [ "format:header" ]
-run         = "scripts/with-files.sh ${usage_staged:+--staged} '*.yaml' '*.yml' -- bunx --bun --no-install prettier --write --log-level warn"
-
-["format:shell"]
-description = "Format shell scripts with shfmt"
-usage       = 'flag "--staged"'
-wait_for    = [ "format:header" ]
-run         = "scripts/with-files.sh ${usage_staged:+--staged} '*.sh' '.husky/*' -- shfmt -w"
-
-["format:toml"]
-description = "Format TOML with Tombi"
-usage       = 'flag "--staged"'
-wait_for    = [ "format:header" ]
-run         = "scripts/with-files.sh ${usage_staged:+--staged} '*.toml' -- tombi format"
-
-["format:header"]
-description = "Rewrite house headers with sync-header-metadata"
-run         = "bunx --bun --no-install sync-header-metadata --update"
-
-# ------------
-# Bun's layer
-# ------------
-
-[dev]
-description = "Run Dorothy's CLI from source"
-run         = "bun run dev"
-
-[start]
-description = "Start Dorothy's CLI"
-run         = "bun run start"
-
-[eval]
-description = "Run Dorothy's evaluations"
-run         = "bun run eval"
-
-[skills]
-description = "Link the skills skills-lock.json declares"
-run         = "bun run skills"
-
-# ------
-# Other
-# ------
-
-[commit]
-description = "Compose a commit with commitizen"
-run         = "bunx --bun --no-install cz"
-
-# Wrapper to refresh remote task data upon every execution.
-# https://github.com/chewygumxx/.github#readme
-[act]
-description = "Locally execute GitHub Actions (CI) with Docker"
-run         = "mise run --no-cache act-cached"
-
-[act-cached]
-description = "[Internal] Locally execute GitHub Actions (CI) with Docker"
-file        = "git::https://github.com/chewygumxx/.github.git//tasks/act?ref=v1"
-hide        = true

@@ -1,0 +1,30 @@
+# vim:set expandtab shiftwidth=4 filetype=toml:
+# SPDX-License-Identifier: GPL-3.0-only
+#:schema https://mise.jdx.dev/schema/mise-task.json
+
+#
+#
+# ~xxdorothy/dorothy.git
+# ::: :/.config/mise/tasks/other.task.toml
+#
+#
+
+#
+# Tasks outside the standard set
+# https://mise.jdx.dev/tasks/task-configuration.html
+#
+
+[commit]
+description = "Compose a commit with commitizen"
+run         = "bunx --bun --no-install cz"
+
+# Wrapper to refresh remote task data upon every execution.
+# https://github.com/chewygumxx/.github#readme
+[act]
+description = "Locally execute GitHub Actions (CI) with Docker"
+run         = "mise run --no-cache act-cached"
+
+[act-cached]
+description = "[Internal] Locally execute GitHub Actions (CI) with Docker"
+file        = "git::https://github.com/chewygumxx/.github.git//tasks/act?ref=v1"
+hide        = true
