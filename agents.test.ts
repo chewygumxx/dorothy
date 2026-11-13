@@ -260,6 +260,19 @@ describe("the skills", () => {
     });
 });
 
+describe("the agent directories", () => {
+    it("tracks nothing under .agents or .claude", () => {
+        const git = (...args: string[]) =>
+            Bun.spawnSync(["git", ...args], { cwd: ROOT });
+        const tracked = git("ls-files", ".agents", ".claude");
+        expect(tracked.stdout.toString()).toBe("");
+        // check-ignore -q takes one path, so each is asked alone.
+        for (const path of [".agents/x", ".claude/x"]) {
+            expect(git("check-ignore", "-q", path).exitCode).toBe(0);
+        }
+    });
+});
+
 describe("the development evidence operator skill", () => {
     const path = join(OWN_SKILLS, "development-evidence", "SKILL.md");
 

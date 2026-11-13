@@ -19,9 +19,6 @@ node_modules/
 /.herdr/
 /.superpowers/
 /.remember/
-# The skills CLI's links; the repository's own skills are in packages/skills.
-/.agents/skills/
-/.claude/skills/
-# Claude Code's own worktrees, where no hook puts them elsewhere.
-/.claude/worktrees/
-
+# Generated or written by tools; the repository declares them elsewhere.
+/.agents/
+/.claude/
