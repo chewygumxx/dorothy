@@ -1,6 +1,6 @@
 ---
 ctime: 2026-09-29
-mtime: 2026-11-11
+mtime: 2026-11-13
 spdx: GPL-3.0-only
 title: "dorothy"
 description: "Conversational LLM interface"
@@ -796,7 +796,7 @@ behind it and what comes next.
 - `mise run commit` composes a commit interactively.
 - `mise run check` (or `bun run check`) runs the type check, the linters,
   the format checks and the tests that CI runs; `mise tasks ls` lists the
-  rest, defined in `.config/mise/tasks.toml`.
+  rest, defined in `.config/mise/tasks/`.
 - `mise run test` runs the `bun test` suite alone.
 - `mise run format` applies every formatter.
 

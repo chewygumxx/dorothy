@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-11
-mtime: 2026-11-11
+mtime: 2026-11-13
 spdx: GPL-3.0-only
 title: .config/AGENTS.md
 description: >-
@@ -23,7 +23,11 @@ Tool configuration lives here wherever the tool can be pointed at it.
 Each line names a tool, its file and what mise supplies to reach it.
 
 - mise: `mise/config.toml` (tools, `[env]`), read natively, includes
-  `mise/tasks.toml` (tasks) by `[task_config]`; nothing is supplied.
+  `mise/tasks/*.task.toml` (tasks) by `[task_config]`; nothing is
+  supplied. Each task file holds a family: `lint.task.toml` holds `lint`
+  and every `lint:*`, `format.task.toml` likewise; `standard.task.toml`
+  holds `install`, `test` and `check`, `bun.task.toml` the tasks
+  wrapping Bun's layer and `other.task.toml` the rest.
 - Tombi: `tombi.toml`; Tombi finds it natively, nothing is supplied.
 - remark: `remarkrc.json`; the `lint:md` task passes
   `--rc-path .config/remarkrc.json`.
