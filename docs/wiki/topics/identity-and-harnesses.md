@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-04
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: Identity, harnesses and delivery
 description: >-
@@ -165,6 +165,17 @@ Which hosts each serves, and their state, is on
 These routes and the gateway carry the same text, because all read
 `identityPrompt()`. The delivery design records that rule: one source for
 her persona.
+
+The core and persona layers are for Dorothy alone. Her Codex launcher
+disables native subagents with `agents.enabled=false`: fresh-context
+children otherwise inherit her developer instructions and persona tool.
+Plain packaged Pi has no native subagent tool, and its launcher disables
+extension discovery. A memory server itself has no caller-role check:
+any Claude Code agent sharing it can access `persona`, subject to host
+permissions. The versioned probes, their limits and private record paths
+are in the [hosts guide][subagent-guide].
+
+[subagent-guide]: ../../../packages/cli/src/hosts/AGENTS.md#subagents
 
 ### What a host is given beside her identity
 

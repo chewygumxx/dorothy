@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-01
-mtime: 2026-11-11
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: packages/cli/src/hosts/AGENTS.md
 description: >-
@@ -19,13 +19,11 @@ tags:
 
 # packages/cli/src/hosts/AGENTS.md
 
-Dorothy in hosts other than Claude Code, whose launcher is `claude.ts`.
-
 ## Files
 
 - `codex.ts`: `dorothy --codex`. `codexArgs` gives her persona as
   `developer_instructions` (the user's own after it), her MCP server,
-  her two hooks and Codex's memories off, all as session flags;
+  her hooks, memories off and native subagents off, as session flags;
   nothing of Codex's is written, and hook trust is Codex's prompt,
   never bypassed. `--codex --dump` prints the command.
 - `hermes.ts`: `dorothy --install hermes`, a profile `dorothy` made by
@@ -34,32 +32,27 @@ Dorothy in hosts other than Claude Code, whose launcher is `claude.ts`.
 - `../../assets/hermes/`: her provider, Python's standard library
   alone, running `--hook hermes`; `test_dorothy.py` stubs Hermes's
   base, and `hermes-plugin.test.ts` runs it under `bun test`.
-- `pi/runtime.ts`: `resolvePiRuntime(cliDir, env)` checks the CLI's
-  exact `1.5.0` dependency and installed package metadata as files,
-  resolves its public `node_modules/.bin/pi` link and checks the Node
-  selected by the passed `PATH` against `>=22.19.0`. The command uses
-  that Node and the resolved package binary, never a global `pi`.
-  Failures expose codes and paths, without probe output or environment.
-  The packaged executable test uses offline mode, private roots and
-  an environment without inherited credentials.
-- `pi/models.ts`: `selectPiModel` picks the first Featherless entry of the
-  chat route, or the exact `provider:model` asked for. It offers only that
-  provider's checked models, never falls back, and names an unlisted
-  model. A route price overrides input and output prices and says so in
-  `sources`. `readPiCatalog` reads `../../assets/pi/models.json`, the
-  checked limits and prices; revalidate before a paid run, never update
-  silently. `sessionDirFor` is `<sha256(cwd)>/--<Pi's name>--`.
-  `PiLaunchManifest` holds no credential, only the key's variable name.
+- `pi/runtime.ts`: `resolvePiRuntime(cliDir, env)` checks the exact
+  `1.5.0` dependency, installed metadata and public `.bin/pi` link.
+  It uses the passed `PATH`'s Node `>=22.19.0`, never a global `pi`.
+  Failures give codes and paths alone; its executable test is offline,
+  on private roots, without inherited credentials.
+- `pi/models.ts`: `selectPiModel` picks the first Featherless chat entry
+  or exact requested `provider:model`, offering its provider's checked
+  models alone, never falling back. Route prices override the catalog
+  and say so in `sources`. `readPiCatalog` reads
+  `../../assets/pi/models.json`: revalidate before paid runs, never
+  update silently. `sessionDirFor` is `<sha256(cwd)>/--<Pi's name>--`;
+  `PiLaunchManifest` names a key variable, never a credential.
 - `pi/profile.ts`: `preparePiProfile` claims `$XDG_CONFIG_HOME/dorothy/pi`
-  with the exclusive marker `dorothy-owner.json`, refusing an unmarked
-  nonempty directory, and never touches settings, keybindings or trust.
-  Sessions go below `$XDG_DATA_HOME/dorothy/pi/sessions`. Each launch has
-  private files (0600, atomic) in `pi-<id>` of Dorothy's runtime directory;
-  `cleanup` removes that alone, also on setup failure. It reads Pi's MCP
-  files (`<agent dir>/mcp.json`, `<cwd>/.pi/mcp.json`) as data, refuses a
-  `dorothy-memory` name and lists the rest in `mcpServers`. `piProfileArgs`
-  gives `--session-dir`, discovered extensions and skills off, built-in MCP
-  kept, then Dorothy's by path.
+  with `dorothy-owner.json`, refusing an unmarked nonempty directory;
+  settings, keybindings and trust stay. Sessions live below
+  `$XDG_DATA_HOME/dorothy/pi/sessions`; atomic 0600 launch files in
+  runtime's `pi-<id>`, removed alone by `cleanup`, also on setup failure.
+  Profile and project MCP files are read as data; `dorothy-memory` is
+  refused, the rest listed in `mcpServers`. `piProfileArgs` sets sessions,
+  disables discovered extensions and skills, keeps built-in MCP and
+  loads Dorothy's assets by path.
 - `pi/launch.ts`: `runPi`, for `dorothy --pi [--model <provider:id>]
   [--steward <registry>] [--dump] [-- <Pi arguments>]` (`args.ts` reads
   hers before `--`). With `--steward` see [its guide](./pi/steward/AGENTS.md).
@@ -106,45 +99,51 @@ Dorothy in hosts other than Claude Code, whose launcher is `claude.ts`.
   memory answers `pi_request_invalid`.
 - `../../assets/pi/`: her extension, which Pi loads under Node with the
   manifest `DOROTHY_PI_MANIFEST` names: [its guide](../../assets/pi/AGENTS.md).
-- `pi/testing.ts`: `startFakeProvider`, a scripted Chat Completions
-  endpoint on loopback, its replies a list or chosen per request (and
-  held back, as a killed turn needs); `piRoots`, private roots; a
-  stand-in `dorothy` for `--pi-hook` and `--mcp`, logging beside itself
-  unless told where;
-  `runPi`, the published CLI under Node. `pi/extension.test.ts` drives
-  the extension through a fake Pi API, `pi/wire.test.ts` the CLI on the
-  wire, with a synthetic key alone. `pi/launch.test.ts` injects every
-  dependency of the launcher, then runs it through the published Pi:
-  new, `-c`, `--fork` and `--session` launches, two paths Pi names
-  alike, preferences kept, Pi's `APPEND_SYSTEM.md` beside her persona,
-  and Bun's alias first on `PATH`.
-- `pi/native-launch.ts`: `runPi` as a process, for a pseudo-terminal,
-  from a plan file (`NativePlan`: roots' env, cwd, `self`, base URL, Pi's
-  arguments); the routing and a synthetic key are injected, so nothing
-  decrypts `secrets.json`. Never drive `index.ts --pi` in a test: it
-  would. `pi/delivery-testing.ts`: her real memory service on the roots
-  (`startMemoryService`, from `@dorothy/memory/service`, never `--serve`,
-  which loads secrets), `launchNative` (Bun's `terminal` spawn: type,
-  wait for text, kill the process group), `sweepOnce` (this checkout's
-  `--sweep`) and `archive`. `pi/wire.test.ts` "Pi in its own terminal"
-  runs the native interface with the real `--pi-hook` and `--mcp`: tool
-  calls, one interrupted, `/reload`, `--resume`, `/compact`, `/fork`,
-  the launcher killed mid-turn, two sweeps, each event once.
+- `pi/testing.ts`: `startFakeProvider` scripts loopback Chat Completions,
+  with held replies for killed turns; `piRoots` isolates roots, a fake
+  `dorothy` logs hook and MCP calls, and `runPi` runs published Pi.
+  `extension.test.ts` drives a fake API, `wire.test.ts` the native wire,
+  and `launch.test.ts` injected and published launches, resume/fork,
+  path collisions, preferences, prompt discovery and Bun's Node alias.
+- `pi/native-launch.ts` runs `runPi` from a `NativePlan` with injected
+  routes and synthetic key. Tests never run `index.ts --pi` or `--serve`:
+  those decrypt secrets. `pi/delivery-testing.ts` starts memory directly
+  on private roots, drives a PTY (`launchNative`), sweeps and archives.
+  `wire.test.ts` covers real hooks/MCP, interruption, reload, resume,
+  compaction, fork, killed launches and idempotent sweeps.
 - `pi/steward/`: stewardship, Dorothy in Pi coordinating declared Codex
   and Claude workers in herdr panes: the strict registry, the herdr
-  observation, the SQLite task ledger, the engine, `--pi-steward`'s
-  helper and the fixtures ([guide](./pi/steward/AGENTS.md)). Plain
-  `--pi` registers no worker tool and needs no herdr.
-- `scripts/probe-pi-delivery.ts` (repository root): the bounded smoke
-  test, offline or live, through its own counting, budgeted forwarding
-  proxy ([report](../../../../docs/reports/2026-11-03_pi-delivery.md)).
-  Never part of `mise run test`.
-- `scripts/probe-pi-stewardship.ts` (repository root): the stewardship
-  probe. Offline it runs simulated workers and the owner's verification;
-  live it builds the runner's real deps (`scripts/pi-stewardship-trial.ts`:
-  herdr, worker login checks, memory service, Featherless proxy, versions)
-  and leaves a missing home or budget pending, and `--release <task-id>`
-  frees a stranded task by hand from the runner's state. It imports the
-  CLI by relative path, as the delivery probe does, a documented
-  exception for probes
+  observation, SQLite ledger, engine, helper and fixtures
+  ([guide](./pi/steward/AGENTS.md)). Plain Pi needs no herdr or worker tool.
+- Root `scripts/probe-pi-delivery.ts`: budgeted offline/live smoke probe,
+  never a test ([report](../../../../docs/reports/2026-11-03_pi-delivery.md)).
+  `scripts/probe-pi-stewardship.ts`: simulated workers offline; live
+  `pi-stewardship-trial.ts` supplies herdr, logins, memory, proxy and
+  versions, leaving missing home/budget pending. `--release <task-id>`
+  frees stranded tasks. Probes may import CLI files by relative path
   ([fixture guide](../../assets/pi/stewardship/fixture/AGENTS.md)).
+
+## Subagents
+
+The core and layers are Dorothy's alone. Probes on 2026-11-14 used this
+CLI and private roots. Records are in `~/dev/xxdy/eval`, branch `persona`:
+
+- Codex 0.167.0 inherits her instructions and `persona` tool even with
+  `fork_turns=none`: `persona/hosts/20261114/codex.json`.
+  `codexArgs` now sets documented `agents.enabled=false`. No spawn tool
+  was offered, even over an agents-enabled user config:
+  `persona/hosts/20261114/codex-guarded.json`. Native delegation is off.
+- Packaged Pi 1.5.0 has no native subagents. `--no-extensions` disables
+  discovery; plain Pi loads only built-in MCP and Dorothy's extension.
+  Its live tool inventory and provider payload offer no delegation:
+  `persona/hosts/20261114/pi.json`. The observer registered no tools;
+  the parent retains `persona`. Extra extensions and `--steward`'s
+  separate worker protocol were not tested by this probe.
+- Claude Code: both memory servers expose `persona` without a caller-role
+  check. Any agent sharing the server can list and call its layers,
+  subject to host permissions; the tool's description enforces nothing.
+  This follows the registrations, not a live Claude subagent probe;
+  the installed CLI was 2.1.322.
+
+Raw logs are under `persona/hosts/20261114/raw/`. These guards cover the
+loadout above, not code launching hosts or explicit tool-config changes.

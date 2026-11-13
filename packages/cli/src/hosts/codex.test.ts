@@ -47,6 +47,11 @@ it("keeps the user's own instructions after hers, quoted", () => {
     );
 });
 
+it("disables native subagents to keep her persona private", () => {
+    const set = flags(codexArgs({ self, persona: "Hers.", theirs: null }));
+    expect(set).toContain("agents.enabled=false");
+});
+
 it("reads the user's instructions, the project's winning, or none", () => {
     const user = 'developer_instructions = "Be brief."\n';
     expect(userInstructions(user, null)).toBe("Be brief.");
