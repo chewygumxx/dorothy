@@ -406,3 +406,13 @@ first.
 - [Questions](./questions.md)
 - [Problems](./problems.md)
 - [Priorities](./priorities.md)
+
+- [Dorothy's persona
+  design](../specs/2026-11-14_persona-design.md): Specification. Her
+  persona as a constant core, `soul.md`, with three layers opened through
+  a `persona` tool, replacing the one-sentence identity.
+
+- [Dorothy's persona plan](../plans/2026-11-14_persona.md): Plan. The
+  header strip, `soul.md` and its layers, the identity package and chat
+  persona on them, the `persona` tool and its recording, the subagent
+  guard, and a check across models kept in `eval`.
