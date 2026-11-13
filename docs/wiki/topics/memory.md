@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-04
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: Memory
 description: >-
@@ -101,8 +101,9 @@ Everything is a file under `$XDG_DATA_HOME/dorothy/`, except the index.
   confirmed when the user wrote or verified it; the rest is fenced as
   unconfirmed wherever it appears
   ([store spec](../../specs/2026-10-15-memory-store-design.md)).
-- A project, with its own facts, synced to its repository so that agents
-  without Dorothy still read them
+- A project, with its own facts, synced to its repository's `docs/memory/`,
+  `.agents/memory/` or `.claude/memory/`, whichever it holds, so that
+  agents without Dorothy still read them
   ([projects guide](../../../packages/memory/src/projects/AGENTS.md)).
 - The recall index, a derived SQLite FTS5 database in the cache directory,
   synced from the transcripts and sidecars before every query. Deleting it

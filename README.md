@@ -1,6 +1,6 @@
 ---
 ctime: 2026-09-29
-mtime: 2026-11-13
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: "dorothy"
 description: "Conversational LLM interface"
@@ -337,9 +337,10 @@ Beside her notes on each chat, Dorothy keeps facts: what she knows of
 you, your work and what has worked, one Markdown file each under
 `knowledge/` in the data directory. A fact is personal or a project's, and a
 project is the git repository you are in, named by its `origin`. A
-project's facts are synced with its repository's `.agents/memory/`, the
-format Claude Code's auto-memory reads, so its other contributors' agents
-read them too; personal facts never leave her store. Nothing is
+project's facts are synced with its repository's `docs/memory/`,
+`.agents/memory/` or `.claude/memory/`, whichever it holds, in the format
+Claude Code's auto-memory reads, so its other contributors' agents read
+them too; personal facts never leave her store. Nothing is
 forgotten: a fact you retire leaves the repository and her context but
 stays searchable, and can be revived.
 

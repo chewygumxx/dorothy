@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-13
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: Decisions
 description: >-
@@ -309,6 +309,35 @@ How the memory is built is on [memory](./topics/memory.md).
   [first evaluation](../reports/2026-10-31-first-evaluation.md#what-it-shows),
   [roadmap](../roadmap.md#relations-and-embeddings-5), and the figures
   explained on [evaluation](./topics/evaluation.md#the-current-results).
+
+### Moving the memory directory redirects a root
+
+- **Context**: The memory store spec let the user edit a project's
+  `memoryDir` in `projects.json`. To move this repository's memory to
+  `docs/memory` without retiring a fact, fact sync now takes each root's
+  own record of the directory it synced last over `memoryDir`, and
+  judges between directories by which holds that record's facts. A
+  root that has synced therefore ignores a hand edit of `memoryDir`,
+  and its next sync writes its own directory back.
+- **Alternatives**: Honouring a hand edit over the root's record, which
+  would have to be told apart from the record sync itself writes; not
+  taken.
+- **Choice**: Keep the behaviour: moving the directory, its files with
+  it, is how a root is redirected. Ruled in the review of the
+  repository configuration's first pull request on 2026-11-14; the
+  record does not say the user ruled.
+- **Reason**: The root's record, judged by content, is what lets sync
+  follow a move, ignore a stray or recreated directory beside it, and
+  still retire the facts of a real deletion. A second way in would
+  weaken that judgement for a step no one is known to take.
+- **Cost**: A user who edits `memoryDir` by hand sees no effect on a
+  root that has synced, until they move the directory itself.
+- **Standing**: current; supersedes the store spec's allowance to edit
+  `memoryDir`
+  ([projects guide](../../packages/memory/src/projects/AGENTS.md)).
+- **Sources**:
+  [store spec](../specs/2026-10-15-memory-store-design.md#the-registry),
+  [repository configuration spec](../specs/2026-11-14_repo-config.md#memory).
 
 ## Evaluation
 
@@ -1121,6 +1150,8 @@ The machinery behind these rules is on
 - **Cost**: not recorded.
 - **Standing**: current; `agents.test.ts` pins the layout and the budgets
   ([repository workflow](./topics/repository-workflow.md#agent-assets)).
+  A harness's own settings are not among the assets declared here
+  ([A harness's settings are the user's](#a-harnesss-settings-are-the-users)).
 - **Sources**:
   [asset refactor spec](../specs/2026-10-11-agentic-asset-refactor-design.md#decisions),
   [report](../reports/2026-10-13-agentic-asset-refactor-implementation.md).
@@ -1309,6 +1340,29 @@ The machinery behind these rules is on
 - **Standing**: current
   ([build configuration](./topics/build-configuration.md#mise)).
 - **Sources**: not recorded.
+
+### A harness's settings are the user's
+
+- **Context**: `.claude/settings.json` committed Claude Code's attribution,
+  its enabled plugins and its status line, and `agents.test.ts` pinned the
+  plugin list, so each user's own choice of them was overridden or tested
+  against.
+- **Alternatives**: Keeping the file and its test, so that every checkout
+  enables the same plugins; the user's removal of it rejects that.
+- **Choice**: The user, on 2026-11-14, removed the file and ruled the
+  three settings outside the repository's purview; the test went with it.
+  The root `AGENTS.md` now says a harness's own settings are the user's.
+- **Reason**: Attribution, plugins and the status line are each user's own
+  to choose; the repository declares the assets it employs, not a
+  harness's configuration.
+- **Cost**: The status line that writes the budget reading is no longer
+  set by the repository: where the user's own `statusLine` does not run
+  `scripts/statusline.sh`, no reading exists and `with-claude.sh` tries
+  the primary account.
+- **Standing**: current
+  ([repository workflow](./topics/repository-workflow.md#agent-assets)).
+- **Sources**:
+  [repository configuration spec](../specs/2026-11-14_repo-config.md#status-and-intent).
 
 ## Related
 

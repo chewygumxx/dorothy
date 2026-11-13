@@ -13,11 +13,12 @@
 // directory by directory, the hash of each fact as both sides last held
 // it there.
 
-import { lstat, readFile } from "node:fs/promises";
+import { lstat, readdir, readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { FACT_NAME, hiddenCharacter } from "../facts/file.js";
 import { isProjectId } from "../facts/store.js";
 import { writeAtomic } from "../memory/sidecar.js";
+import { nameOfStem } from "./export.js";
 import type { Project } from "./identify.js";
 
 // What a root last synced with one memory directory: the hash of every
@@ -51,6 +52,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
 // A hash, or the one removed from the repository for a retired fact.
 const HASH = /^(?:removed:)?[0-9a-f]{64}$/;
+const REMOVED = "removed:";
 const codeOf = (error: unknown) => (error as { code?: unknown }).code;
 
 // Null when dir is a relative path that stays inside the repository.
@@ -182,6 +184,11 @@ export function writeRegistry(path: string, registry: Registry): Promise<void> {
     return writeAtomic(path, `${JSON.stringify(registry, null, 2)}\n`);
 }
 
+const own = <T>(entries: Record<string, T> | undefined, key: string) =>
+    entries !== undefined && Object.hasOwn(entries, key)
+        ? entries[key]
+        : undefined;
+
 const isDirectory = async (path: string) => {
     try {
         return (await lstat(path)).isDirectory();
@@ -190,15 +197,108 @@ const isDirectory = async (path: string) => {
     }
 };
 
-// Where a repository keeps its memory: .agents/memory if it exists, else
-// .claude/memory if that does, else .agents/memory.
-export async function chooseMemoryDir(root: string): Promise<string> {
-    if (await isDirectory(join(root, ".agents", "memory"))) {
-        return ".agents/memory";
+const exists = async (path: string) => {
+    try {
+        await lstat(path);
+        return true;
+    } catch {
+        return false;
     }
-    return (await isDirectory(join(root, ".claude", "memory")))
-        ? ".claude/memory"
-        : ".agents/memory";
+};
+
+// The directories a repository may keep its memory in, by preference.
+export const MEMORY_DIRS = [
+    "docs/memory",
+    ".agents/memory",
+    ".claude/memory",
+] as const;
+
+// One of MEMORY_DIRS the repository holds. docs/memory counts only with
+// a MEMORY.md, since it may be documentation about memory.
+const holdsMemory = async (root: string, dir: string) =>
+    (await isDirectory(join(root, dir))) &&
+    (dir !== "docs/memory" || (await exists(join(root, dir, "MEMORY.md"))));
+
+const firstPresent = async (root: string) => {
+    for (const dir of MEMORY_DIRS) {
+        if (await holdsMemory(root, dir)) {
+            return dir;
+        }
+    }
+    return undefined;
+};
+
+// Where a repository keeps its memory: the first of MEMORY_DIRS it
+// holds, else .agents/memory.
+export async function chooseMemoryDir(root: string): Promise<string> {
+    return (await firstPresent(root)) ?? ".agents/memory";
+}
+
+// How many of these facts have a file in the directory, by the stem
+// logic sync reads it with; none for a directory absent.
+async function heldIn(
+    root: string,
+    dir: string,
+    facts: ReadonlySet<string>,
+): Promise<number> {
+    if (!(await isDirectory(join(root, dir)))) {
+        return 0;
+    }
+    let names: string[];
+    try {
+        names = await readdir(join(root, dir));
+    } catch {
+        return 0;
+    }
+    const held = new Set(
+        names
+            .filter((name) => name.endsWith(".md"))
+            .map((name) => nameOfStem(name.slice(0, -3)))
+            .filter((name) => name !== null && facts.has(name)),
+    );
+    return held.size;
+}
+
+// The directory to sync. A root that has synced takes, of the directory
+// it synced last and those of MEMORY_DIRS present, the one holding the
+// most files of the live facts recorded for that directory, ties going
+// to it, then by MEMORY_DIRS: a move is followed, a stray or recreated
+// directory is not, and a deletion keeps the directory and retires.
+// Without a root's record or a live fact in it: the directory recorded
+// while it exists, else the first of MEMORY_DIRS present, else the
+// recorded one; with no project, the choice.
+export async function resolveMemoryDir(
+    root: string,
+    entry: ProjectEntry | undefined,
+): Promise<string> {
+    if (entry === undefined) {
+        return chooseMemoryDir(root);
+    }
+    const sync = own(entry.synced, root);
+    const recorded = sync?.last ?? entry.memoryDir;
+    const facts = new Set(
+        Object.entries(own(sync?.dirs, recorded) ?? {})
+            .filter(([, hash]) => !hash.startsWith(REMOVED))
+            .map(([name]) => name),
+    );
+    if (facts.size === 0) {
+        if (await isDirectory(join(root, recorded))) {
+            return recorded;
+        }
+        return (await firstPresent(root)) ?? recorded;
+    }
+    let best = recorded;
+    let most = await heldIn(root, recorded, facts);
+    for (const dir of MEMORY_DIRS) {
+        if (dir !== recorded && (await holdsMemory(root, dir))) {
+            const held = await heldIn(root, dir, facts);
+            if (held > most) {
+                best = dir;
+                most = held;
+            }
+        }
+    }
+    return best;
 }
 
 const sorted = <T>(entries: Record<string, T>) =>
@@ -207,11 +307,6 @@ const sorted = <T>(entries: Record<string, T>) =>
             a < b ? -1 : a > b ? 1 : 0,
         ),
     );
-
-const own = <T>(entries: Record<string, T> | undefined, key: string) =>
-    entries !== undefined && Object.hasOwn(entries, key)
-        ? entries[key]
-        : undefined;
 
 // The record a root last synced with a memory directory, or none. A
 // directory absent from disk keeps its record only if this root synced

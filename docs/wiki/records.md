@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-11
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: Records
 description: >-
@@ -389,6 +389,16 @@ first.
   findings](../deferred/2026-11-11_data-by-function-deferred.md): Deferred.
   The skill for keeping data by function; Dorothy's trial is reported, and
   the skill awaits its drafting.
+
+- [Repository configuration of agent assets
+  design](../specs/2026-11-14_repo-config.md): Specification. Skills by
+  package.json's array and a package, memory in `docs/memory`, `.agents`
+  and `.claude` ignored.
+
+- [Repository configuration of agent assets
+  plan](../plans/2026-11-14_repo-config.md): Plan. Settings dropped and
+  fact sync following a moved directory, then memory, the skills package,
+  the skills array and the ignores, over two pull requests.
 
 ## Related
 
