@@ -5,7 +5,7 @@ description: >-
   worktree of Dorothy's repository, or when a worktree lacks skills, git
   hooks or node_modules.
 ctime: 2026-10-15
-mtime: 2026-10-15
+mtime: 2026-11-13
 spdx: GPL-3.0-only
 tags:
   - agents
@@ -50,8 +50,9 @@ whole:
 2. [`.worktreeinclude`](../../../.worktreeinclude): Claude Code, and
    worktrunk's `wt step copy-ignored --require-include`, copy the skill
    directories from the main checkout. That brings the skills installed
-   with `skills add`, such as herdr, which install cannot link. A copy
-   skips whatever exists, so it never undoes install's links.
+   with `skills add`, such as `configuring-mise-tasks`, which install
+   cannot link. A copy skips whatever exists, so it never undoes
+   install's links.
 
 The repository's own skills, this one among them, are committed and come
 with the checkout.
