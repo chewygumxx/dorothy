@@ -17,8 +17,8 @@
 
 import { createHash } from "node:crypto";
 import { lstat, open, readFile } from "node:fs/promises";
-import { join } from "node:path";
 import type { Env } from "@dorothy/core";
+import { sendInterrupt, sendPrompt } from "@dorothy/skills";
 import {
     createHerdrRun,
     type HerdrRun,
@@ -57,23 +57,10 @@ import {
 
 // The label a dispatch carries: `[from dorothy] Read <brief> for task <id>.`
 export const COORDINATOR = "dorothy";
-// The repository's labelled sender, under its pane lock.
-export const SENDER = join(
-    import.meta.dir,
-    "..",
-    "..",
-    "..",
-    "..",
-    "..",
-    "..",
-    ".agents",
-    "skills",
-    "agent-stewardship",
-    "scripts",
-    "send-prompt.sh",
-);
+// The stewardship skill's labelled sender, under its pane lock.
+export const SENDER = sendPrompt;
 // The skill's interrupt: one Escape, under the same pane lock.
-export const INTERRUPTER = join(SENDER, "..", "send-interrupt.sh");
+export const INTERRUPTER = sendInterrupt;
 export const SEND_TIMEOUT_MS = 15_000;
 // The interrupt waits this long for the pane's lock, within its timeout.
 export const LOCK_WAIT_S = 5;

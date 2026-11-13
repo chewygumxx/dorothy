@@ -53,6 +53,7 @@ graph LR
     cli --> gateway
     cli --> identity
     cli --> memory
+    cli --> skills
     cli --> tui
     eval --> core
     eval --> memory
@@ -88,7 +89,8 @@ launchers for other hosts, described on the
 [harnesses profile](./harnesses.md), and is the one package that declares
 Pi, pinned at 1.5.0 (`workspace.test.ts` checks it).
 
-- May import: `agent`, `core`, `gateway`, `identity`, `memory` and `tui`.
+- May import: `agent`, `core`, `gateway`, `identity`, `memory`, `skills`
+  and `tui`.
 - Entry points: none; it exports nothing.
 - Guide:
   [packages/cli/AGENTS.md](../../../packages/cli/AGENTS.md#entry-points-and-imports).
