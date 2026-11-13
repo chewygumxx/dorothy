@@ -28,7 +28,7 @@ planned, were made. The topic pages say what exists now; an entry here
 links them and does not explain the mechanism again. Entries are grouped
 by the seven subjects of the [records catalogue](./records.md), and each
 rests on a ruling, a specification's decision, a roadmap revision or a
-`feedback` memory in `.agents/memory/` where the user set a direction.
+`feedback` memory in `docs/memory/` where the user set a direction.
 Minor implementation rulings stay in their reports.
 
 Each entry is one list of bold lead-ins:
@@ -74,7 +74,7 @@ How the memory is built is on [memory](./topics/memory.md).
   access ([spec](../specs/2026-10-18-memory-evaluation-design.md#purpose)).
   The rule it loosened has its own entry below, "Nothing is forgotten".
 - **Sources**:
-  [memory priorities](../../.agents/memory/memory-priorities.md),
+  [memory priorities](../memory/memory-priorities.md),
   [open-source replacements](../notes/2026-10-18_open-source-replacements.md),
   [protocol diversity, ruling 5](../reports/2026-10-18-protocol-diversity.md#rulings).
 
@@ -123,8 +123,8 @@ How the memory is built is on [memory](./topics/memory.md).
   ([memory](./topics/memory.md#what-is-stored)).
 - **Sources**:
   [store spec](../specs/2026-10-15-memory-store-design.md#decisions),
-  [Dorothy's ambition](../../.agents/memory/dorothy-ambition.md),
-  [memory priorities](../../.agents/memory/memory-priorities.md),
+  [Dorothy's ambition](../memory/dorothy-ambition.md),
+  [memory priorities](../memory/memory-priorities.md),
   [roadmap candidates](../roadmap.md#candidates).
 
 ### Unconfirmed knowledge is fenced, not dropped
@@ -196,7 +196,7 @@ How the memory is built is on [memory](./topics/memory.md).
   design is agreed and awaits a spec.
 - **Sources**:
   [tags spec](../specs/2026-10-07-tags-design.md#decisions),
-  [maintenance design](../../.agents/memory/maintenance-design-agreed.md).
+  [maintenance design](../memory/maintenance-design-agreed.md).
 
 ### The data directory is a git repository with a sealed mirror
 
@@ -483,7 +483,7 @@ Which host receives what, and what has been run against it, is on
 - **Sources**:
   [protocol diversity minutes](../reports/2026-10-18-protocol-diversity.md#rulings),
   [objectives](../reports/2026-10-15-objectives.md#rulings),
-  [protocol-diverse Dorothy](../../.agents/memory/protocol-diverse-dorothy.md).
+  [protocol-diverse Dorothy](../memory/protocol-diverse-dorothy.md).
 
 ### The four harnesses are Claude Code, Codex, OpenClaw and Hermes
 
@@ -501,7 +501,7 @@ Which host receives what, and what has been run against it, is on
   each host, and what waits on the user, is on
   [harnesses](./profiles/harnesses.md).
 - **Sources**:
-  [target harnesses](../../.agents/memory/target-harnesses.md),
+  [target harnesses](../memory/target-harnesses.md),
   [roadmap revision 2026-10-19](../roadmap.md#revisions).
 
 ### A gateway and a marker carry her identity into Claude Code
@@ -782,7 +782,7 @@ them are on [services and providers](./profiles/services-and-providers.md).
   budget is not.
 - **Sources**:
   [objectives](../reports/2026-10-15-objectives.md#rulings),
-  [Dorothy's ambition](../../.agents/memory/dorothy-ambition.md),
+  [Dorothy's ambition](../memory/dorothy-ambition.md),
   [roadmap revision 2026-10-15](../roadmap.md#revisions).
 
 ### She runs on her own runtime, the Vercel AI SDK, and the Agent SDK retires
@@ -1053,7 +1053,7 @@ develop her.
   covered.
 - **Standing**: current
   ([orchestration](./topics/orchestration.md#how-her-developers-are-coordinated-today)).
-- **Sources**: [Codex full send](../../.agents/memory/codex-full-send.md).
+- **Sources**: [Codex full send](../memory/codex-full-send.md).
 
 ### Work is routed by usage budget
 
@@ -1070,8 +1070,8 @@ develop her.
 - **Cost**: not recorded.
 - **Standing**: current; the order is carried by the stewardship skill.
   The registry above would remove the names written into it.
-- **Sources**: [usage limits](../../.agents/memory/usage-limits.md),
-  [stewardship skill](../../.agents/skills/agent-stewardship/SKILL.md).
+- **Sources**: [usage limits](../memory/usage-limits.md),
+  [stewardship skill](../../packages/skills/skills/agent-stewardship/SKILL.md).
 
 ### Procedures are skills, and recovery is armed before a limit
 
@@ -1100,7 +1100,7 @@ develop her.
 - **Sources**:
   [consolidation spec](../specs/2026-10-31-agentic-asset-consolidation-design.md#decisions),
   [report](../reports/2026-10-31-agentic-asset-consolidation.md#rulings),
-  [self-compaction](../../.agents/memory/self-compaction.md).
+  [self-compaction](../memory/self-compaction.md).
 
 ## Repository workflow
 
@@ -1124,9 +1124,11 @@ The machinery behind these rules is on
   reinstall from clean to see the boundary.
 - **Standing**: revisited from 2026-10-15, when the identity and gateway
   packages were added, and 2026-10-19, when the evaluation was built. The
-  graph is now eight packages and `workspace.test.ts` pins it; "the agent
-  is the only SDK user" now holds for the AI SDK, the Agent SDK having gone
-  ([packages](./profiles/packages.md)).
+  graph was then eight packages and `workspace.test.ts` pins it (nine
+  since `skills` was added, see
+  [agent assets](#agent-assets-are-declared-outside-agents-and-claude));
+  "the agent is the only SDK user" now holds for the AI SDK, the Agent SDK
+  having gone ([packages](./profiles/packages.md)).
 - **Sources**:
   [workspace modularity spec](../specs/2026-10-09-workspace-modularity-design.md#decisions),
   [report](../reports/2026-10-09-workspace-modularity.md).
@@ -1148,7 +1150,10 @@ The machinery behind these rules is on
 - **Reason**: Claude Code and Codex both read `AGENTS.md`, and per-package
   guidance costs nothing until an agent works in that package.
 - **Cost**: not recorded.
-- **Standing**: current; `agents.test.ts` pins the layout and the budgets
+- **Standing**: current, but for where skills and memory now are
+  ([Agent assets are declared outside .agents and
+  .claude](#agent-assets-are-declared-outside-agents-and-claude));
+  `agents.test.ts` pins the layout and the budgets
   ([repository workflow](./topics/repository-workflow.md#agent-assets)).
   A harness's own settings are not among the assets declared here
   ([A harness's settings are the user's](#a-harnesss-settings-are-the-users)).
@@ -1188,7 +1193,7 @@ The machinery behind these rules is on
 - **Cost**: not recorded.
 - **Standing**: current.
 - **Sources**:
-  [readability over indicators](../../.agents/memory/readability-over-indicators.md),
+  [readability over indicators](../memory/readability-over-indicators.md),
   [token usage note](../notes/2026-10-16_claude-conversation-token-usage.md).
 
 ### Agents carry on with agreed steps and merge their own pull requests
@@ -1208,7 +1213,7 @@ The machinery behind these rules is on
 - **Standing**: current
   ([repository workflow](./topics/repository-workflow.md#the-checks)).
 - **Sources**:
-  [trust to proceed](../../.agents/memory/trust-to-proceed.md),
+  [trust to proceed](../memory/trust-to-proceed.md),
   [root AGENTS.md](../../AGENTS.md).
 
 ### Data is kept by function, beside what it concerns
@@ -1363,6 +1368,49 @@ The machinery behind these rules is on
   ([repository workflow](./topics/repository-workflow.md#agent-assets)).
 - **Sources**:
   [repository configuration spec](../specs/2026-11-14_repo-config.md#status-and-intent).
+
+### Agent assets are declared outside .agents and .claude
+
+- **Context**: `package.json`'s `skills` script and `skills add` left
+  remote skills in `skills-lock.json` and as tracked links, the own
+  skills and the memory sat in `.agents/`, and `.worktreeinclude` copied
+  what `bun install` could not link. `.agents/` and `.claude/` held both
+  what tools generate and what the repository edits.
+- **Alternatives**: B, a root `skills/` and a linking script of the
+  repository's own, which keeps eight packages but adds a second linker
+  beside sync, with its own tests; C, the own skills moved to
+  `chewygumxx/agent-library`, which serve this repository alone and would
+  span two repositories in each change. Both rejected.
+- **Choice**: The user, on 2026-11-14: `package.json`'s `skills` array
+  declares every third-party skill, each source pinned to a commit and
+  narrowed to the skills taken; the own skills are the ninth package,
+  `@dorothy/skills`; `skills experimental_sync` links them all, from
+  `prepare` and `mise run skills`; agent memory is `docs/memory`; and
+  `.gitignore` ignores `/.agents/` and `/.claude/` whole, so nothing in
+  either is tracked.
+- **Reason**: Every agent asset is in files the repository owns, by one
+  mechanism each, and the two directories hold only what tools generate
+  from them. A fresh clone or worktree needs `bun install` alone.
+- **Cost**: A ninth package, against the eight-package rule. A plain
+  `bun install` downloads every remote skill, and offline it warns and
+  links the package's alone. The sync is experimental. Each checkout
+  needs `bun install` to link the skills and repoint memory. An existing
+  checkout, the main one and each worktree, needs one reset first, as the
+  sync never replaces its old directories and links:
+
+  ```sh
+  rm -rf .agents/skills .claude/skills && bun install
+  ```
+
+  A Claude session started before it still writes the old directory.
+- **Standing**: current
+  ([repository workflow](./topics/repository-workflow.md#agent-assets),
+  [build configuration](./topics/build-configuration.md#worktrees)).
+  Supersedes the memory and third-party skill rows of
+  [Guidance is AGENTS.md files](#guidance-is-agentsmd-files-and-every-agentic-asset-is-declared-here).
+- **Sources**:
+  [repository configuration spec](../specs/2026-11-14_repo-config.md#status-and-intent),
+  [plan](../plans/2026-11-14_repo-config.md).
 
 ## Related
 

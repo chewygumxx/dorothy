@@ -1,10 +1,10 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-04
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: Packages
 description: >-
-  Dorothy's eight workspace packages: what each is for, what it may import,
+  Dorothy's nine workspace packages: what each is for, what it may import,
   its entry points and where its guide is.
 tags:
   - wiki
@@ -23,7 +23,7 @@ tags:
 
 [Wiki home](../../README.md)
 
-Dorothy is eight Bun workspace packages under `packages/`, each named
+Dorothy is nine Bun workspace packages under `packages/`, each named
 `@dorothy/<name>`. Bun runs them from source; there is no build. Each
 package has its own guide, which is the authority for its files and
 invariants. This page says what each is for and which may import which.
@@ -53,6 +53,7 @@ graph LR
     cli --> gateway
     cli --> identity
     cli --> memory
+    cli --> skills
     cli --> tui
     eval --> core
     eval --> memory
@@ -62,8 +63,8 @@ graph LR
     tui --> core
 ```
 
-`core` and `identity` import no other package. The packages follow in the
-order of `GRAPH`.
+`core`, `identity` and `skills` import no other package. The packages
+follow in the order of `GRAPH`.
 
 ## agent
 
@@ -88,7 +89,8 @@ launchers for other hosts, described on the
 [harnesses profile](./harnesses.md), and is the one package that declares
 Pi, pinned at 1.5.0 (`workspace.test.ts` checks it).
 
-- May import: `agent`, `core`, `gateway`, `identity`, `memory` and `tui`.
+- May import: `agent`, `core`, `gateway`, `identity`, `memory`, `skills`
+  and `tui`.
 - Entry points: none; it exports nothing.
 - Guide:
   [packages/cli/AGENTS.md](../../../packages/cli/AGENTS.md#entry-points-and-imports).
@@ -171,6 +173,22 @@ and `zod` for schemas.
   that it loads only what a mode needs.
 - Guide:
   [packages/memory/AGENTS.md](../../../packages/memory/AGENTS.md#entry-points-and-imports).
+
+## skills
+
+Built. The repository's own agent skills, `agent-pre-screening`,
+`agent-stewardship`, `development-evidence` and `worktrees`, each under
+`skills/<name>/`. The root declares it as a development dependency, so the
+skills CLI's sync links its skills for every agent through `node_modules`
+on `bun install`, as it does a dependency's; agents reach them only that
+way. The CLI's Pi stewardship runs the stewardship skill's sender and
+interrupt through its exports.
+
+- May import: nothing; it does no I/O.
+- Entry points: one, `"."` (`sendPrompt` and `sendInterrupt`, the
+  scripts' paths).
+- Guide:
+  [packages/skills/AGENTS.md](../../../packages/skills/AGENTS.md#entry-points-and-imports).
 
 ## tui
 

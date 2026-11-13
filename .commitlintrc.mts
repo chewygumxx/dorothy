@@ -76,5 +76,11 @@ export default defineConfig({
             fullName: "Eval",
             description: "The memory evaluation, ie. packages/eval/",
         },
+        {
+            name: "skills",
+            fullName: "Skills",
+            description:
+                "The repository's own agent skills, ie. packages/skills/",
+        },
     ],
 });

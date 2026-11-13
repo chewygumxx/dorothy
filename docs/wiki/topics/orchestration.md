@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-03
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: Orchestration
 description: >-
@@ -49,7 +49,7 @@ State: designed. Nothing of it is built.
   Dorothy's Gateway
   ([spec](../../specs/2026-11-02-orchestration-design.md#documentation));
   the roadmap does not yet say so, and only the roadmap orders work.
-- There is no `orchestra` package in `packages/`; the eight packages are
+- There is no `orchestra` package in `packages/`; the nine packages are
   listed in [packages](../profiles/packages.md). No plan or report for it
   exists in the records. Any prototype is local and unmerged, and is not
   cited here.
@@ -145,12 +145,12 @@ The agents that develop Dorothy run in herdr panes, coordinated by a
 Claude Code session that types into the others' terminals and reads their
 panes. Codex runs with full access, so that it never asks
 ([spec](../../specs/2026-11-02-orchestration-design.md#summary);
-[Codex full send](../../../.agents/memory/codex-full-send.md)).
+[Codex full send](../../memory/codex-full-send.md)).
 
 The practice is written as a skill in this repository, as the rule that
 every agentic asset be declared here requires (see
 [repository workflow](./repository-workflow.md#agent-assets)). The
-[agent stewardship skill](../../../.agents/skills/agent-stewardship/SKILL.md)
+[agent stewardship skill](../../../packages/skills/skills/agent-stewardship/SKILL.md)
 holds the rules and points to a reference for each client and topic:
 
 - compaction past 85% of the context, at a turn boundary;
@@ -170,10 +170,10 @@ The skill names the roles that fill the panes: a coordinating agent, a
 reserve that resumes the work when the coordinator is limited by usage or
 billing, and Codex. Which herdr names and accounts fill them changes, so
 this page names none; the skill holds the current list. The user's
-preferences behind the rules are agent memory: [usage limits](../../../.agents/memory/usage-limits.md),
-[Codex full send](../../../.agents/memory/codex-full-send.md) and
-[self-compaction](../../../.agents/memory/self-compaction.md). The
-[herdr reference](../../../.agents/skills/agent-stewardship/references/herdr.md)
+preferences behind the rules are agent memory: [usage limits](../../memory/usage-limits.md),
+[Codex full send](../../memory/codex-full-send.md) and
+[self-compaction](../../memory/self-compaction.md). The
+[herdr reference](../../../packages/skills/skills/agent-stewardship/references/herdr.md)
 covers the panes and how a message is sent.
 
 ### The registry of herdr agents

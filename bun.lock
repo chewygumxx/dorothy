@@ -16,6 +16,7 @@
         "@chewygumxx/remark-preset": "^1.0.3",
         "@chewygumxx/yamllint-config": "^1.0.1",
         "@commitlint/cli": "^21.2.2",
+        "@dorothy/skills": "workspace:*",
         "@types/bun": "^1.4.3",
         "commitizen": "^4.3.2",
         "husky": "^9.1.7",
@@ -23,7 +24,6 @@
         "prettier": "^3.9.10",
         "remark-cli": "^12.0.1",
         "skills": "^1.7.5",
-        "superpowers": "github:obra/superpowers",
         "sync-header-metadata": "2.4.2",
         "typescript": "^7.0.2",
       },
@@ -49,6 +49,7 @@
         "@dorothy/gateway": "workspace:*",
         "@dorothy/identity": "workspace:*",
         "@dorothy/memory": "workspace:*",
+        "@dorothy/skills": "workspace:*",
         "@dorothy/tui": "workspace:*",
         "@earendil-works/pi-coding-agent": "1.5.0",
         "yaml": "2.9.1",
@@ -90,6 +91,9 @@
         "yaml": "2.9.1",
         "zod": "^4.6.7",
       },
+    },
+    "packages/skills": {
+      "name": "@dorothy/skills",
     },
     "packages/tui": {
       "name": "@dorothy/tui",
@@ -256,6 +260,8 @@
     "@dorothy/identity": ["@dorothy/identity@workspace:packages/identity"],
 
     "@dorothy/memory": ["@dorothy/memory@workspace:packages/memory"],
+
+    "@dorothy/skills": ["@dorothy/skills@workspace:packages/skills"],
 
     "@dorothy/tui": ["@dorothy/tui@workspace:packages/tui"],
 
@@ -1416,8 +1422,6 @@
     "strip-bom": ["strip-bom@4.0.0", "", {}, "sha512-3xurFv5tEgii33Zi8Jtp55wEIILR9eh34FAW00PZf+JnSsTmV/ioewSgQl97JHvgjoRGwPShsWm+IdrxB35d0w=="],
 
     "strip-json-comments": ["strip-json-comments@3.1.1", "", {}, "sha512-6fPc+R4ihwqP6N/aIv2f1gMH8lOVtWQHoqC4yK6oSDVVocumAsfCqjkXnqiYMhmMwS/mEHLp7Vehlt3ql6lEig=="],
-
-    "superpowers": ["superpowers@github:obra/superpowers#2ce8aa1", {}, "obra-superpowers-2ce8aa1", "sha512-//2g0M5KBN+ssyc2KhVye0dDGTEbGccYtnxQadU/QPdxMibN+0A7VpvIDIia3M6hoRI9sANzIeUQ4cl8GBWULQ=="],
 
     "supports-color": ["supports-color@5.5.0", "", { "dependencies": { "has-flag": "^3.0.0" } }, "sha512-QjVjwdXIt408MIiAqCX4oUKsgU2EqAGzs2Ppkm4aQYbjm+ZEWEcW4SfFNTr4uMNZma0ey4f5lgLrkB0aX0QMow=="],
 

@@ -60,15 +60,14 @@ worktree goes is the user's tools' to say: worktrunk's
 never chooses a path itself, and never uses superpowers'
 `using-git-worktrees` or a `.worktrees/` directory; where a skill asks for
 either, `AGENTS.md` wins. The
-[worktrees skill](../../../.agents/skills/worktrees/SKILL.md) holds the
+[worktrees skill](../../../packages/skills/skills/worktrees/SKILL.md) holds the
 procedure to make, check, repair and remove one.
 
 A worktree shares neither dependencies, git hooks nor skill links with the
-main checkout, so two declared steps set one up whichever tool made it:
-`.husky/post-checkout` runs `bun install`, and `.worktreeinclude` has
-Claude Code and worktrunk copy the skills that `skills add` installed
-and `bun install` cannot link. A worktree's auto memory points at its own
-`.agents/memory/`, so a memory written there is committed on its branch.
+main checkout, so one declared step sets it up whichever tool made it:
+`.husky/post-checkout` runs `bun install`, whose `prepare` links every
+skill and points auto memory at the worktree's own `docs/memory/`, so a
+memory written there is committed on its branch.
 
 ## The checks
 
@@ -116,7 +115,7 @@ names, `config`, `claude` and `api` as scopes and agent assets under the
 `ai` type, and no agent trailers. A header is at most 50 characters and a
 body line at most 72, limits that come from the shared commitlint config
 and that a plan's commit steps must keep too
-([plan commit headers](../../../.agents/memory/plan-commit-headers.md)).
+([plan commit headers](../../memory/plan-commit-headers.md)).
 
 Branches are pushed and their pull requests opened by the agent, who
 merges its own once CI passes, as the user approved. Repository settings
@@ -143,20 +142,38 @@ The assets are:
   package, which Claude Code and Codex both read. No `CLAUDE.md` may exist
   in the tree, as one would switch `AGENTS.md` off for Claude Code
   (`agents.test.ts` checks).
-- **Skills** in `.agents/skills/`. The repository commits four of its own:
-  `agent-stewardship`, `agent-pre-screening`, `development-evidence` and
-  `worktrees`. Third-party skills are dependencies. Superpowers (less four
-  excluded skills) is a package, declared in `package.json`, pinned to a
-  commit by `bun.lock` and linked by `bun install`. Remote skills are
-  recorded in `skills-lock.json` by source and content hash, installed
-  with `skills add` and refreshed with `skills update`.
-- **Memory** in `.agents/memory/`, indexed by its `MEMORY.md`, each entry
-  a link with its hook on the next line. It holds the user's preferences and
-  their reasons, not procedures, which belong in skills. Memories link
-  one another by relative Markdown link, and carry no em dash and no line
-  over 80 characters, whatever a client's own memory instructions say.
+- **Skills** linked in `.agents/skills/` and `.claude/skills/`, which
+  nothing tracks. The repository's own four, `agent-stewardship`,
+  `agent-pre-screening`, `development-evidence` and `worktrees`, are the
+  `@dorothy/skills` package (`packages/skills/`), a development
+  dependency. Every third-party skill is an entry in `package.json`'s
+  `skills` array, a git source pinned to a full commit and narrowed to the
+  skills taken, so superpowers' unwanted four are never linked.
+  `skills experimental_sync`, which `bun install`'s `prepare` and
+  `mise run skills` run, links the package's skills offline and fetches
+  the rest, and `skills-lock.json` records them all. Offline, `prepare`
+  warns and links the package's alone; under `CI` it fetches nothing.
+  `lint:skills` fails a commit whose skills and lock disagree.
+- **Memory** in `docs/memory/`, which Claude Code's auto memory and
+  Dorothy's fact sync both read and write, indexed by its `MEMORY.md`,
+  each entry a link with its hook on the next line. It holds the user's
+  preferences and their reasons, not procedures, which belong in skills.
+  Memories link one another by relative Markdown link, and carry no em
+  dash and no line over 80 characters, whatever a client's own memory
+  instructions say.
 
-`bun install` points Claude's auto memory at `.agents/memory/`. The
+`.gitignore` ignores `/.agents/` and `/.claude/` whole, so nothing in
+either is tracked or edited by hand
+([decision](../decisions.md#agent-assets-are-declared-outside-agents-and-claude)).
+`bun install` points Claude's auto memory at `docs/memory/`. A checkout
+that predates the array, the main one and each worktree, needs one reset
+first, as its old skill directories and links would otherwise stay:
+
+```sh
+rm -rf .agents/skills .claude/skills && bun install
+```
+
+The
 coordination of agents that the stewardship skill governs is the subject of
 [orchestration](./orchestration.md#how-her-developers-are-coordinated-today).
 

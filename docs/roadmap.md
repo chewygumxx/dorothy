@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-09
-mtime: 2026-11-11
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: Roadmap
 description: >-
@@ -187,7 +187,7 @@ conversations from their notes, in background passes that can be undone.
 Its undo and log are to be revisited against memory history, and what it
 maintains against Dorothy's Memory, whose engine is to consolidate
 knowledge. The design agreed so far is in
-[agent memory](../.agents/memory/maintenance-design-agreed.md).
+[agent memory](./memory/maintenance-design-agreed.md).
 
 - **Status**: Design Agreed, Pending Specification
 - **Required**: Dorothy's Memory
@@ -395,8 +395,10 @@ Found but not scheduled, each with its source.
   editor, Markdown replies and status line specs, Out of scope).
 - Dorothy's own tool loop, should serving behind clients fall short
   (agentic asset refactor).
-- `repo-memory` preferring `.agents/memory/` upstream, so other
-  repositories can move their memory too (agentic asset refactor).
+- `repo-memory` following the memory directory layout upstream
+  (`docs/memory`, `.agents/memory` or `.claude/memory`), so other
+  repositories can move their memory too; Dorothy's own sync already
+  follows it (repository configuration spec, Memory).
 - An OpenAI-protocol adapter for the gateway, and a `--codex` launcher
   beside `--claude`, which delivery to Codex may call for; `--opencode`
   waits, as OpenCode is not a target (identity spec, Later).
@@ -479,10 +481,10 @@ Found but not scheduled, each with its source.
   environment is passed in. Source: the build configuration report,
   2026-11-11.
 - The build configuration's remaining limits: the root stays no probe
-  settled (`skills-lock.json`, commitizen's configuration, Markdown Oxide's
-  `.moxide.toml`, worktrunk's reading of `.worktreeinclude`), `act` untried
-  for want of Docker, a yamllint run in an editor outside mise finding no
-  house style, and `--staged` runs reading the working tree, not the index.
+  settled (commitizen's configuration, Markdown Oxide's `.moxide.toml`),
+  `act` untried for want of Docker, a yamllint run in an editor outside
+  mise finding no house style, and `--staged` runs reading the working
+  tree, not the index.
   Source: the build configuration report, 2026-11-11.
 
 ## Done
@@ -577,6 +579,13 @@ In order of completion.
   tasks became the development interface beside Bun's runtime layer,
   configuration moved into `.config/` where its tool can reach it, and
   comments were cut to directives, labels and one-line whys.
+- **Repository configuration of agent assets**:
+  [spec](./specs/2026-11-14_repo-config.md),
+  [plan](./plans/2026-11-14_repo-config.md),
+  [wiki](./wiki/topics/repository-workflow.md#agent-assets). Skills
+  became a `package.json` array and the `@dorothy/skills` package, agent
+  memory moved to `docs/memory`, and `.agents/` and `.claude/` are
+  ignored whole.
 
 ## Revisions
 

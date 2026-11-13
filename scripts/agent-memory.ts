@@ -8,7 +8,7 @@
 //
 //
 
-// Points Claude Code's auto memory at .agents/memory/. The setting must be
+// Points Claude Code's auto memory at docs/memory/. The setting must be
 // absolute, so it can live only in the gitignored settings.local.json;
 // `prepare` runs this on every install, from the checkout's own path, so
 // no one sets it by hand.
@@ -25,14 +25,14 @@ import { dirname, join } from "node:path";
 
 type Settings = Record<string, unknown>;
 
-// The settings with auto memory pointed at the checkout's .agents/memory/,
+// The settings with auto memory pointed at the checkout's docs/memory/,
 // every other setting left as it was.
 export const withMemoryDirectory = (
     settings: Settings,
     root: string,
 ): Settings => ({
     ...settings,
-    autoMemoryDirectory: join(root, ".agents", "memory"),
+    autoMemoryDirectory: join(root, "docs", "memory"),
 });
 
 // The local settings a file holds. Anything but a JSON object names the

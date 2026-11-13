@@ -29,6 +29,7 @@ depends     = [
     "lint:toml {% if usage.staged %}--staged{% endif %}",
     "lint:yaml {% if usage.staged %}--staged{% endif %}",
     "lint:header",
+    "lint:skills",
     "lint:types",
 ]
 
@@ -189,6 +190,16 @@ run         = [
 # --------------------
 # Lint: whole project
 # --------------------
+
+["lint:skills"]
+description = "Check skills-lock.json against the skills"
+sources     = [
+    "packages/skills/skills/**",
+    "skills-lock.json",
+    "package.json",
+]
+outputs     = { auto = true }
+run         = "DO_NOT_TRACK=1 bunx --bun --no-install skills experimental_sync -y --agent claude-code codex --no-remote --frozen-lockfile --dry-run"
 
 ["lint:types"]
 description = "Type-check with tsc"

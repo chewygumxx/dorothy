@@ -27,7 +27,7 @@ const HEADED = /\.(ts|tsx|mts|sh|toml|ya?ml|jsonc|md)$/;
 const EXEMPT = [
     /^docs\/reports\/.+\/probe\//,
     /^packages\/cli\/assets\/pi\/vendor\/[^/]+\/(?!PROVENANCE\.md$)/,
-    /^\.agents\/memory\//,
+    /^docs\/memory\//,
     /^\.github\/pull_request_template\.md$/,
 ];
 

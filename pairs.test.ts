@@ -39,10 +39,24 @@ const ageRecipients = (secrets: string): string[] =>
         .map((entry) => entry.recipient)
         .sort();
 
+// Lines grouped by command: a line ending in ` {` gathers those after it
+// until a lone `}`.
+const joinGroups = (groups: string[][], line: string): string[][] => {
+    const last = groups.at(-1);
+    const open = last?.[0]?.endsWith(" {") && last.at(-1) !== "}";
+    if (last && open) {
+        last.push(line);
+    } else {
+        groups.push([line]);
+    }
+    return groups;
+};
+
 // The commands a shell script runs: its lines, continuations joined, but
 // for comments, blanks, `set` and a guard that only exits. Any other line
-// starting with `[` is a command. A compound construct is not understood,
-// so it throws rather than hides a command.
+// starting with `[` is a command. A brace group opened at a line's end
+// joins that line, as `a || { b; c; }`. A compound construct is not
+// understood, so it throws rather than hides a command.
 const GUARD = /^\[ .+ \] (\|\||&&) exit( \d+)?$/;
 const COMPOUND = /^(if|then|elif|else|fi|for|while|until|do|done|case|esac)\b/;
 const commands = (script: string): string[] =>
@@ -57,12 +71,23 @@ const commands = (script: string): string[] =>
                 throw new Error(`Unsupported shell construct: ${line}`);
             }
             return line;
+        })
+        .reduce(joinGroups, [] as string[][])
+        .map(([head = "", ...body]) => {
+            if (!head.endsWith(" {")) {
+                return head;
+            }
+            if (body.at(-1) !== "}") {
+                throw new Error(`Unclosed brace group: ${head}`);
+            }
+            return `${head} ${body.slice(0, -1).join("; ")}; }`;
         });
 
-// The leading code span of each numbered step in a Markdown list.
+// The leading code span of each numbered step in a Markdown list, which
+// may wrap across lines as one command.
 const commandSpans = (markdown: string): string[] =>
-    [...markdown.matchAll(/^\d+\. `([^`\n]+)`/gm)].map(
-        (match) => match[1] ?? "",
+    [...markdown.matchAll(/^\d+\. `([^`]+)`/gm)].map((match) =>
+        (match[1] ?? "").replaceAll(/\s+/g, " "),
     );
 
 describe("ci.md and ci.yaml", () => {
@@ -134,5 +159,18 @@ describe("prepare.md and prepare.sh", () => {
     it("joins continuations and refuses compound constructs", () => {
         expect(commands("bun a \\\n  --b\n")).toEqual(["bun a --b"]);
         expect(() => commands("if true; then\n bun a\nfi\n")).toThrow();
+    });
+
+    it("joins a brace group into the command it follows", () => {
+        expect(commands("bun a || {\n    echo b >&2\n    bun c\n}\n")).toEqual([
+            "bun a || { echo b >&2; bun c; }",
+        ]);
+        expect(() => commands("bun a || {\n    bun c\n")).toThrow();
+    });
+
+    it("reads a step's command across lines", () => {
+        expect(commandSpans("1. `bun a\n   --b`\n   does a.\n")).toEqual([
+            "bun a --b",
+        ]);
     });
 });

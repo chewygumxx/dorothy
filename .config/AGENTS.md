@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-11
-mtime: 2026-11-13
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: .config/AGENTS.md
 description: >-
@@ -33,7 +33,7 @@ Each line names a tool, its file and what mise supplies to reach it.
   `--rc-path .config/remarkrc.json`.
 - markdownlint-cli2: `markdownlint-cli2.jsonc`; the `lint:md` task passes
   `--config .config/markdownlint-cli2.jsonc`, and the overrides in
-  `.github/` and `.agents/memory/` still merge over it.
+  `.github/` and `docs/memory/` still merge over it.
 - yamllint: no file here; `mise/config.toml`'s `[env]` sets
   `YAMLLINT_CONFIG_FILE` to `@chewygumxx/yamllint-config`.
 

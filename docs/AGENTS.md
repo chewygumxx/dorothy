@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-11-03
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: docs/AGENTS.md
 description: >-
@@ -37,6 +37,7 @@ no date; existing dated paths stay as they are.
 | `reports/`   | Implementation phase probes, rulings and verification with any captured output in a directory beside it of the same name |
 | `notes/`     | Research kept for reference                                                                                              |
 | `deferred/`  | findings left for later                                                                                                  |
+| `memory/`    | Agent memory, in Claude Code's format, named by fact, undated and not records                                            |
 | `wiki/`      | Maintained reference on topics, profiles, decisions, questions, problems and priorities, linking the records as evidence |
 | `README.md`  | The front door to the wiki: its routes and pages, and how reference differs from records                                 |
 | `roadmap.md` | Projected order of phase implementation                                                                                  |

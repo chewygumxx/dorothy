@@ -25,8 +25,9 @@ with other harnesses. Bun runs her from source; there is no build.
 
 ## Packages
 
-Eight Bun workspace packages under `packages/`, each `@dorothy/<name>`.
-`core` holds the contracts the others meet on, `identity` who Dorothy is;
+Nine Bun workspace packages under `packages/`, each `@dorothy/<name>`.
+`core` holds the contracts the others meet on, `identity` who Dorothy is,
+`skills` the repository's own agent skills, depending on nothing;
 `memory` and `tui` depend on `core` alone, `agent` and `gateway` on it
 and `identity`, never on each other, `eval` on `core` and `memory`; `cli`
 on all but `eval`, and wires them. A package exports only the entry points
@@ -41,8 +42,8 @@ isolated linker fails an undeclared or internal import.
 - `mise tasks ls` lists the development tasks; `lint`, `format` and
   `check` take `--staged`.
 - `bun run dev`: the CLI from source.
-- `bun run skills` links packaged skills, not remote ones (`skills add`,
-  `skills update`); `bun install` points Claude at `.agents/memory`.
+- `bun install` links every skill, fetching the remote ones, and points
+  Claude at `docs/memory`; `mise run skills` relinks without an install.
 - After removing a `@dorothy` dependency, reinstall from clean to see the
   boundary: `rm -rf node_modules packages/*/node_modules && bun install`.
 
@@ -95,8 +96,9 @@ Design work starts with `brainstorming`. Specs go in `docs/specs/`, plans
 in `docs/plans/`, written with `writing-plans` and carried out with
 `subagent-driven-development`. Bugs start with `systematic-debugging`, and
 nothing is claimed done without `verification-before-completion`. The
-skills are in `.agents/skills/`; where one names another path, these
-rules win, and a worktree goes wherever the user's tools put it.
+skills are linked in `.agents/skills/`, declared in `package.json` and
+`packages/skills/`; where one names another path, these rules win, and a
+worktree goes wherever the user's tools put it.
 
 `docs/roadmap.md` orders the phases. Once a phase merges, revise the
 roadmap as its Revising section says before starting the next, and add
@@ -104,7 +106,7 @@ work found along the way where it serves best.
 
 ## Memory
 
-Agent memory is in `.agents/memory/`, indexed by its `MEMORY.md`, each
+Agent memory is in `docs/memory/`, indexed by its `MEMORY.md`, each
 entry a list item linking `./<name>.md`, its hook on the next line. Link
 memories by relative Markdown link, never `[[...]]`, and write no em dash
 and no line over 80 characters, whatever a client's own memory

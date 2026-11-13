@@ -89,8 +89,9 @@ The work fails, however it runs, if:
 - Sync links every skill of every dependency whether the array names it
   or not, so an `npm:` entry cannot narrow superpowers. Superpowers
   therefore leaves `devDependencies`.
-- Sync exits 0 on an invalid array or a skipped skill, so a test after
-  each sync still fails the run, as `prepare` does today.
+- Sync exits 0 on a skipped skill, so a test after each sync still fails
+  the run, as `prepare` does today. It exits 1 on an invalid array or a
+  failed fetch (corrected on 2026-11-14 by Task 5's offline probe).
 - A skill in `skills-lock.json` installed by `skills add` is never
   shadowed by sync, so the remote entries recorded that way today must
   be removed before sync can manage them.
@@ -174,9 +175,12 @@ Linking:
       --agent claude-code codex ${CI:+--no-remote}
   ```
 
-- A failed fetch, as offline, leaves the install to succeed: the sync
-  exits 0, and the test after it tolerates an absent remote skill. The
-  package's skills link regardless.
+- A failed fetch, as offline, makes the sync exit 1. `prepare` then
+  warns on stderr and re-runs it with `--no-remote`, linking the
+  package's skills alone, so the install succeeds and the test after it
+  tolerates an absent remote skill. A failure of that retry, as from a
+  broken array or package, fails the install (the user's ruling: an
+  offline install only warns).
 - A mise `skills` task runs the same sync and test, to relink without
   an install, as after editing the array alone. It replaces
   `bun.task.toml`'s wrapper, moving to `other.task.toml`.
@@ -217,7 +221,8 @@ Linking:
     sync uses the recorded directory where it is present; else the
     first of the three present, recording it; else the recorded one.
     The registry already keeps a record per root and directory, and
-    the one synced last (`registry.ts:216`), which this relies on.
+    the one synced last (`RootSync` and `syncRecord`), which this
+    relies on.
   - Today a recorded directory gone from disk retires every fact
     (`sync.test.ts:903`), so a checkout losing `.agents/memory` under the
     old code would retire them all. The sync change therefore merges
