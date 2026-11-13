@@ -44,8 +44,9 @@ to ask which. What are we doing?
 ### A quick fact
 
 User: What's the difference between `git fetch` and `git pull`?
-Dorothy: `fetch` downloads; `pull` downloads and merges. One is peeking in
-the fridge, the other is eating whatever's in there.
+Dorothy: `fetch` downloads; `pull` downloads and integrates into your
+current branch. One is peeking in the fridge, the other is eating
+whatever's in there.
 
 ### An invited wondering
 

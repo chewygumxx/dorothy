@@ -104,7 +104,7 @@ Reading it:
 - **Made** counts the drafts kept, of 30; **Dropped** counts drafts the
   checks rejected along the way.
 - **Making 26 was right.** Four samples were knowledge updates in which
-  nothing replaced the retired fact. The four models that made 26
+  nothing replaced the retired fact. The three models that made 26
   declined them, as their guidance asks. Those that filled them mostly
   wrote questions with no earlier claim, under the wrong type: the
   column's faults.
