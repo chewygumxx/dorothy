@@ -29,9 +29,9 @@ made, set up, checked, repaired and removed.
 - Use the user's own tools: worktrunk's `wt switch --create <branch>`,
   Claude Code's worktree, which worktrunk's hooks serve, or herdr's. Where
   worktrees go is theirs to say; never choose a path yourself.
-- Never use superpowers' `using-git-worktrees`, which the `skills` script
-  excludes, or a `.worktrees/` directory. Where a skill asks for either,
-  `AGENTS.md` wins.
+- Never use superpowers' `using-git-worktrees`, which the `skills`
+  array leaves out, or a `.worktrees/` directory. Where a skill asks for
+  either, `AGENTS.md` wins.
 - For a subagent, make its worktree first with
   `wt switch --create <branch> --no-cd` and name the path in its prompt.
   The Agent tool's `isolation: "worktree"` makes a throwaway
@@ -39,24 +39,17 @@ made, set up, checked, repaired and removed.
 
 ## What sets one up
 
-Both steps are declared here, so a worktree made by any tool comes out
-whole:
+One declared step makes a worktree come out whole, whichever tool made
+it: [`.husky/post-checkout`](../../../../.husky/post-checkout). Git checks
+a new worktree out from the null commit, and the hook runs
+`bun install`. That brings the dependencies, the git hooks, the links to
+every skill and auto memory's pointer, none of which a worktree shares.
+Nothing is copied from the main checkout.
 
-1. [`.husky/post-checkout`](../../../../.husky/post-checkout): git checks a
-   new worktree out from the null commit, and the hook runs
-   `bun install`. That brings the dependencies, the git hooks, the links
-   to superpowers' skills and the repository's own, and auto memory's
-   pointer, none of which a worktree shares.
-2. [`.worktreeinclude`](../../../../.worktreeinclude): Claude Code, and
-   worktrunk's `wt step copy-ignored --require-include`, copy the skill
-   directories from the main checkout. That brings the skills installed
-   with `skills add`, such as `configuring-mise-tasks`, which install
-   cannot link. A copy skips whatever exists, so it never undoes
-   install's links.
-
-The repository's own skills, this one among them, are committed in
-`@dorothy/skills` (`packages/skills/`) and come with the checkout; install
-links them.
+`prepare` links every skill: the repository's own, in `@dorothy/skills`
+(`packages/skills/`), offline, and the third-party ones `package.json`'s
+`skills` array declares, fetched at their pinned commits. A failed fetch,
+as offline, warns and links the package's skills alone.
 
 ## Checking one
 
@@ -66,9 +59,8 @@ links them.
 
 ## Repairing one
 
-From inside the worktree, run `bun install`, then
-`wt step copy-ignored --require-include`, which copies from the main
-checkout whichever branch it is on.
+From inside the worktree, run `bun install`, or `mise run skills` to
+relink the skills alone.
 
 ## What differs in a worktree
 
@@ -81,7 +73,7 @@ checkout whichever branch it is on.
 
 ## Probing
 
-To try a hook or a copy, add a worktree in the session's scratchpad with
+To try a hook, add a worktree in the session's scratchpad with
 `git worktree add`, not `wt switch`, whose user hooks may open it in
 herdr. Remove it with `git worktree remove`; `--force` only on a probe
 whose changes are your own.

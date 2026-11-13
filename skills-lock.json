@@ -143,7 +143,7 @@
       "source": "@dorothy/skills",
       "sourceType": "node_modules",
       "skillPath": "skills/worktrees/SKILL.md",
-      "computedHash": "d251cf1b2568f23f8730a3bf1b101b774800a02243c429bc5dcd5d3d0d86941d"
+      "computedHash": "f094ccef4d2b754f590f186662fb68a6fe8fbad72e8d94e90f7a8cefb1d93181"
     },
     "writing-plans": {
       "source": "obra/superpowers",
