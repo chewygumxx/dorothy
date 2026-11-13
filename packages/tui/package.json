@@ -8,7 +8,7 @@
     },
     "dependencies": {
         "@dorothy/core": "workspace:*",
-        "ink": "^7.1.1",
+        "ink": "^8.0.0",
         "lowlight": "^3.3.0",
         "marked": "^18.1.1",
         "react": "^19.2.0",
