@@ -26,6 +26,6 @@ terminal does; the user would rather the agent manage its own context
 than wait to be told.
 
 **How to apply:** follow
-[agent-stewardship](../../.agents/skills/agent-stewardship/SKILL.md): never
-mid-task with work in flight, and typed input reads as the user's own,
-so type into your own pane for this alone.
+[agent-stewardship](../../packages/skills/skills/agent-stewardship/SKILL.md):
+never mid-task with work in flight, and typed input reads as the user's
+own, so type into your own pane for this alone.

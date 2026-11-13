@@ -60,7 +60,7 @@ worktree goes is the user's tools' to say: worktrunk's
 never chooses a path itself, and never uses superpowers'
 `using-git-worktrees` or a `.worktrees/` directory; where a skill asks for
 either, `AGENTS.md` wins. The
-[worktrees skill](../../../.agents/skills/worktrees/SKILL.md) holds the
+[worktrees skill](../../../packages/skills/skills/worktrees/SKILL.md) holds the
 procedure to make, check, repair and remove one.
 
 A worktree shares neither dependencies, git hooks nor skill links with the
@@ -143,9 +143,11 @@ The assets are:
   package, which Claude Code and Codex both read. No `CLAUDE.md` may exist
   in the tree, as one would switch `AGENTS.md` off for Claude Code
   (`agents.test.ts` checks).
-- **Skills** in `.agents/skills/`. The repository commits four of its own:
+- **Skills** linked in `.agents/skills/`. The repository's own four,
   `agent-stewardship`, `agent-pre-screening`, `development-evidence` and
-  `worktrees`. Third-party skills are dependencies. Superpowers (less four
+  `worktrees`, are the `@dorothy/skills` package (`packages/skills/`), a
+  development dependency the sync links through `node_modules`.
+  Third-party skills are dependencies. Superpowers (less four
   excluded skills) is a package, declared in `package.json`, pinned to a
   commit by `bun.lock` and linked by `bun install`. Remote skills are
   recorded in `skills-lock.json` by source and content hash, installed

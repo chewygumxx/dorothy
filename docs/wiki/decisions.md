@@ -1071,7 +1071,7 @@ develop her.
 - **Standing**: current; the order is carried by the stewardship skill.
   The registry above would remove the names written into it.
 - **Sources**: [usage limits](../memory/usage-limits.md),
-  [stewardship skill](../../.agents/skills/agent-stewardship/SKILL.md).
+  [stewardship skill](../../packages/skills/skills/agent-stewardship/SKILL.md).
 
 ### Procedures are skills, and recovery is armed before a limit
 

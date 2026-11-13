@@ -33,6 +33,7 @@ const GRAPH: Record<string, string[]> = {
     gateway: ["core", "identity"],
     identity: [],
     memory: ["core"],
+    skills: [],
     tui: ["core"],
 };
 
@@ -55,6 +56,7 @@ const ENTRIES: Record<string, string[]> = {
         "./scrub",
         "./service",
     ],
+    skills: ["."],
     tui: [".", "./editor"],
 };
 

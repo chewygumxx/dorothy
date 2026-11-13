@@ -1,6 +1,18 @@
 {
   "version": 1,
   "skills": {
+    "agent-pre-screening": {
+      "source": "@dorothy/skills",
+      "sourceType": "node_modules",
+      "skillPath": "skills/agent-pre-screening/SKILL.md",
+      "computedHash": "9454817413531f7a4f28811feedd5b1639eb90f09721d12d43d24f9ae4c27871"
+    },
+    "agent-stewardship": {
+      "source": "@dorothy/skills",
+      "sourceType": "node_modules",
+      "skillPath": "skills/agent-stewardship/SKILL.md",
+      "computedHash": "e404b4954e96835e710d07099ce2d4acf823d8b66aac538bb913e7316067bb31"
+    },
     "brainstorming": {
       "source": "superpowers",
       "sourceType": "node_modules",
@@ -25,6 +37,12 @@
       "sourceType": "github",
       "skillPath": "skills/configuring-mise-tasks/SKILL.md",
       "computedHash": "b18fda181a348f9e62bf805b5a9332211651cd0d8ba3f8e4db210d61bafbf116"
+    },
+    "development-evidence": {
+      "source": "@dorothy/skills",
+      "sourceType": "node_modules",
+      "skillPath": "skills/development-evidence/SKILL.md",
+      "computedHash": "2343ebaf28e7e33afa37bf8a0dbe7dee1129a89147801a5bda466a2bb243cf8a"
     },
     "dispatching-parallel-agents": {
       "source": "superpowers",
@@ -100,6 +118,12 @@
       "skillPath": "skills/verification-before-completion/SKILL.md",
       "version": "7.0.1",
       "computedHash": "b529822bdac4b197b180fe12225cff86b930b65910435103c10622df7f041651"
+    },
+    "worktrees": {
+      "source": "@dorothy/skills",
+      "sourceType": "node_modules",
+      "skillPath": "skills/worktrees/SKILL.md",
+      "computedHash": "f4fc53e03670bd782ab2e01879c6dd517f2c0973b8d55b842fda8f206115a990"
     },
     "writing-plans": {
       "source": "superpowers",

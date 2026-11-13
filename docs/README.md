@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-11
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: Dorothy's wiki
 description: >-
@@ -71,7 +71,7 @@ subject. It links the dated records in `specs/`, `plans/`, `reports/`,
 
 ### Profiles
 
-- [Packages](./wiki/profiles/packages.md): the eight workspace packages and
+- [Packages](./wiki/profiles/packages.md): the nine workspace packages and
   what each may import.
 - [Harnesses](./wiki/profiles/harnesses.md): Claude Code, Codex, OpenClaw,
   Hermes and Pi, and the state of her delivery to each.

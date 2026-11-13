@@ -26,5 +26,5 @@ herdr rather than relay it to them.
 waiting on them stalls the work.
 
 **How to apply:** approve Codex's prompts yourself, as
-[agent-stewardship](../../.agents/skills/agent-stewardship/SKILL.md)'s Codex
-reference says. Claude Code's own permission prompts are not covered.
+[agent-stewardship](../../packages/skills/skills/agent-stewardship/SKILL.md)'s
+Codex reference says. Claude Code's own permission prompts are not covered.

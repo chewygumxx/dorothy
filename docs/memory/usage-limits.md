@@ -30,6 +30,7 @@ often by a promotion, so the user said to spend them freely.
 59% left ran out halfway. The user then set out the order above.
 
 **How to apply:** follow
-[agent-stewardship](../../.agents/skills/agent-stewardship/SKILL.md): its rules,
-and its budgets reference for reading each plan and choosing an account.
+[agent-stewardship](../../packages/skills/skills/agent-stewardship/SKILL.md):
+its rules, and its budgets reference for reading each plan and choosing an
+account.
 See also [codex-full-send](./codex-full-send.md).

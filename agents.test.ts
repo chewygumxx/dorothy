@@ -21,6 +21,7 @@ import {
     mkdtempSync,
     readdirSync,
     readFileSync,
+    readlinkSync,
     realpathSync,
     rmSync,
     statSync,
@@ -69,8 +70,8 @@ const EXCLUDED = [
     "writing-skills",
 ];
 
-// The repository's own skills: committed beside the links, as
-// `.gitignore` negates them, and never recorded in the lock.
+// The repository's own skills, in `@dorothy/skills`, which the sync
+// links through node_modules and records as that package's.
 const OWN = [
     "agent-pre-screening",
     "agent-stewardship",
@@ -79,6 +80,8 @@ const OWN = [
 ];
 
 const LINKS = [".agents/skills", ".claude/skills"];
+
+const OWN_SKILLS = at("packages/skills/skills");
 
 const lock = (): Lock => JSON.parse(read(at("skills-lock.json")));
 
@@ -134,7 +137,7 @@ const PACKAGES = at("packages");
 describe("the skills", () => {
     it("records superpowers' skills less the excluded four", () => {
         const fromPackages = Object.entries(lock().skills)
-            .filter(([, entry]) => entry.sourceType === "node_modules")
+            .filter(([, entry]) => entry.source === "superpowers")
             .map(([name]) => name)
             .sort();
         expect(fromPackages).toEqual(SKILLS);
@@ -172,13 +175,15 @@ describe("the skills", () => {
                 expect(
                     lstatSync(at(".agents/skills", name)).isSymbolicLink(),
                 ).toBe(true);
-                expect(canonical).toContain("/node_modules/");
+                expect(readlinkSync(at(".agents/skills", name))).toContain(
+                    "node_modules/",
+                );
             }
         });
     }
 
     it("links nothing the lock does not record", () => {
-        const recorded = [...Object.keys(lock().skills), ...OWN];
+        const recorded = Object.keys(lock().skills);
         for (const dir of LINKS) {
             expect(
                 linked(dir).filter((name) => !recorded.includes(name)),
@@ -186,34 +191,31 @@ describe("the skills", () => {
         }
     });
 
-    it("commits its own skills, linked for every agent", () => {
-        const tracked = Bun.spawnSync(["git", "ls-files", ...LINKS], {
-            cwd: ROOT,
-        })
-            .stdout.toString()
-            .trim()
-            .split("\n");
+    it("ships its own skills in @dorothy/skills, linked for every agent", () => {
         for (const name of OWN) {
-            const dir = at(".agents/skills", name);
-            expect(lstatSync(dir).isDirectory()).toBe(true);
+            const dir = join(OWN_SKILLS, name);
             expect(skillName(dir)).toBe(name);
-            expect(tracked).toContain(`.agents/skills/${name}/SKILL.md`);
-            expect(tracked).toContain(`.claude/skills/${name}`);
+            expect(readlinkSync(at(".agents/skills", name))).toContain(
+                "node_modules/@dorothy/skills/skills/",
+            );
             expect(realpathSync(at(".claude/skills", name))).toBe(
                 realpathSync(dir),
             );
-            expect(Object.keys(lock().skills)).not.toContain(name);
+            expect(lock().skills[name]).toMatchObject({
+                source: "@dorothy/skills",
+                sourceType: "node_modules",
+            });
         }
     });
 });
 
 describe("the development evidence operator skill", () => {
-    const path = at(".agents/skills/development-evidence/SKILL.md");
+    const path = join(OWN_SKILLS, "development-evidence", "SKILL.md");
 
-    it("declares a repository-owned skill without a remote lock entry", () => {
+    it("declares a repository-owned skill, locked as the package's", () => {
         expect(OWN).toContain("development-evidence");
-        expect(Object.keys(lock().skills)).not.toContain(
-            "development-evidence",
+        expect(lock().skills["development-evidence"]?.source).toBe(
+            "@dorothy/skills",
         );
     });
 
@@ -239,7 +241,7 @@ describe("the development evidence operator skill", () => {
         expect(text.trim().split(/\s+/).length).toBeLessThan(500);
         expect(brokenLinks(path)).toEqual([]);
         expect(linkTargets(text)).toContain(
-            "../../../docs/wiki/topics/development-evidence.md",
+            "../../../../docs/wiki/topics/development-evidence.md",
         );
     });
 });

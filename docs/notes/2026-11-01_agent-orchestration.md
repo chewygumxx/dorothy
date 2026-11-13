@@ -32,7 +32,7 @@ permissive policy.
 `dorothy-main`, a Claude Code session, coordinates through herdr 0.9.5:
 it types into the other agents' terminals (`send-prompt.sh`), reads
 their panes, and waits on herdr's lifecycle states
-([herdr](../../.agents/skills/agent-stewardship/references/herdr.md)).
+([herdr](../../packages/skills/skills/agent-stewardship/references/herdr.md)).
 Codex runs with `approval_policy = "never"` and
 `sandbox_mode = "danger-full-access"`, so it never asks
 ([Codex full send](../memory/codex-full-send.md)); Claude Code's

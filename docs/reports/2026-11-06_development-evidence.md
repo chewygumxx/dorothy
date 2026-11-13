@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-06
-mtime: 2026-11-07
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: Development evidence helper implementation
 description: >-
@@ -24,7 +24,7 @@ tags:
 The [operator procedure](../wiki/topics/development-evidence.md) now
 explains implemented commands for explicit staging manifests, streamed
 encrypted packaging and scoped R2 transfer. The repository-owned
-[development evidence skill](../../.agents/skills/development-evidence/SKILL.md)
+[development evidence skill](../../packages/skills/skills/development-evidence/SKILL.md)
 is a concise navigation and command reference, discoverable through the
 existing Claude and Codex skill layout. It replaces no retention decision
 and authorizes no additional private-data or cloud operation.

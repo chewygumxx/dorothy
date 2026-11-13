@@ -385,7 +385,7 @@ cost estimate for those integrations was measured in this study.
 [targets]: ../memory/target-harnesses.md
 [priorities]: ../memory/memory-priorities.md
 [featherless-note]: ./2026-11-02_featherless-orchestrator.md
-[stewardship]: ../../.agents/skills/agent-stewardship/SKILL.md
+[stewardship]: ../../packages/skills/skills/agent-stewardship/SKILL.md
 [roadmap]: ../roadmap.md
 [orchestra]: ../specs/2026-11-02-orchestration-design.md
 [pi-release]: https://github.com/earendil-works/pi/releases/tag/v1.5.0

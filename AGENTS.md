@@ -25,8 +25,9 @@ with other harnesses. Bun runs her from source; there is no build.
 
 ## Packages
 
-Eight Bun workspace packages under `packages/`, each `@dorothy/<name>`.
-`core` holds the contracts the others meet on, `identity` who Dorothy is;
+Nine Bun workspace packages under `packages/`, each `@dorothy/<name>`.
+`core` holds the contracts the others meet on, `identity` who Dorothy is,
+`skills` the repository's own agent skills, depending on nothing;
 `memory` and `tui` depend on `core` alone, `agent` and `gateway` on it
 and `identity`, never on each other, `eval` on `core` and `memory`; `cli`
 on all but `eval`, and wires them. A package exports only the entry points
@@ -95,8 +96,9 @@ Design work starts with `brainstorming`. Specs go in `docs/specs/`, plans
 in `docs/plans/`, written with `writing-plans` and carried out with
 `subagent-driven-development`. Bugs start with `systematic-debugging`, and
 nothing is claimed done without `verification-before-completion`. The
-skills are in `.agents/skills/`; where one names another path, these
-rules win, and a worktree goes wherever the user's tools put it.
+skills are linked in `.agents/skills/`, the repository's own from
+`packages/skills/`; where one names another path, these rules win, and a
+worktree goes wherever the user's tools put it.
 
 `docs/roadmap.md` orders the phases. Once a phase merges, revise the
 roadmap as its Revising section says before starting the next, and add

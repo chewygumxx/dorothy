@@ -16,6 +16,7 @@
         "@chewygumxx/remark-preset": "^1.0.3",
         "@chewygumxx/yamllint-config": "^1.0.1",
         "@commitlint/cli": "^21.2.2",
+        "@dorothy/skills": "workspace:*",
         "@types/bun": "^1.4.3",
         "commitizen": "^4.3.2",
         "husky": "^9.1.7",
@@ -90,6 +91,9 @@
         "yaml": "2.9.1",
         "zod": "^4.6.7",
       },
+    },
+    "packages/skills": {
+      "name": "@dorothy/skills",
     },
     "packages/tui": {
       "name": "@dorothy/tui",
@@ -256,6 +260,8 @@
     "@dorothy/identity": ["@dorothy/identity@workspace:packages/identity"],
 
     "@dorothy/memory": ["@dorothy/memory@workspace:packages/memory"],
+
+    "@dorothy/skills": ["@dorothy/skills@workspace:packages/skills"],
 
     "@dorothy/tui": ["@dorothy/tui@workspace:packages/tui"],
 
