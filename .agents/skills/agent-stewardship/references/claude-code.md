@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-31
-mtime: 2026-11-02
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: Claude Code
 description: >-
@@ -26,7 +26,11 @@ its status line alone. This project's status line,
 [`scripts/statusline.sh`](../../../../scripts/statusline.sh), writes
 them at each render to `$XDG_RUNTIME_DIR/claude-usage-<account>.json`,
 the account being the last part of `CLAUDE_CONFIG_DIR`, such as
-`claude-2`:
+`claude-2`. The repository commits no Claude Code settings, so a
+reading exists only where the user's own `statusLine` setting runs
+`sh <checkout>/scripts/statusline.sh`; without one, `with-claude.sh`
+tries the primary account, as it does on any missing reading. The file
+holds:
 
 - `at`: when it was written, in UTC.
 - `rate_limits.five_hour` and `rate_limits.seven_day`: each a

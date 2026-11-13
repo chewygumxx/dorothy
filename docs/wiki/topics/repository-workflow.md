@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-13
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: Repository workflow
 description: >-
@@ -126,8 +126,11 @@ through `gh repo edit` (root [`AGENTS.md`](../../../AGENTS.md)).
 ## Agent assets
 
 Everything agents rely on is declared in the repository, so that it does
-not depend on one user's settings or a hand-made step. The rule was the
-aim of the
+not depend on one user's settings or a hand-made step. A harness's own
+settings, such as Claude Code's plugins, attribution and status line, are
+the user's, and the repository commits none
+([decision](../decisions.md#a-harnesss-settings-are-the-users)). The
+rule was the aim of the
 [agentic asset
 refactor](../../specs/2026-10-11-agentic-asset-refactor-design.md#purpose),
 and the consolidation that followed moved the coordination procedures out

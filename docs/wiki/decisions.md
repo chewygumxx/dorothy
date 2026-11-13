@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-13
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: Decisions
 description: >-
@@ -1309,6 +1309,29 @@ The machinery behind these rules is on
 - **Standing**: current
   ([build configuration](./topics/build-configuration.md#mise)).
 - **Sources**: not recorded.
+
+### A harness's settings are the user's
+
+- **Context**: `.claude/settings.json` committed Claude Code's attribution,
+  its enabled plugins and its status line, and `agents.test.ts` pinned the
+  plugin list, so each user's own choice of them was overridden or tested
+  against.
+- **Alternatives**: Keeping the file and its test, so that every checkout
+  enables the same plugins; the user's removal of it rejects that.
+- **Choice**: The user, on 2026-11-14, removed the file and ruled the
+  three settings outside the repository's purview; the test went with it.
+  The root `AGENTS.md` now says a harness's own settings are the user's.
+- **Reason**: Attribution, plugins and the status line are each user's own
+  to choose; the repository declares the assets it employs, not a
+  harness's configuration.
+- **Cost**: The status line that writes the budget reading is no longer
+  set by the repository: where the user's own `statusLine` does not run
+  `scripts/statusline.sh`, no reading exists and `with-claude.sh` tries
+  the primary account.
+- **Standing**: current
+  ([repository workflow](./topics/repository-workflow.md#agent-assets)).
+- **Sources**:
+  [repository configuration spec](../specs/2026-11-14_repo-config.md#status-and-intent).
 
 ## Related
 

@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-11-11
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: AGENTS.md
 description: >-
@@ -61,7 +61,8 @@ isolated linker fails an undeclared or internal import.
 - New subsystems stay independent of any model provider's SDK, speaking
   standard protocols, with SDK types at a thin edge.
 - Declare in this repository every agentic asset and utility it employs;
-  never leave one to a user's own settings or a hand-made step.
+  never leave one to a user's own settings or a hand-made step. A
+  harness's own settings, such as plugins or status line, are the user's.
 - Every new file carries the house header, copied from a sibling;
   `format:header` syncs headers, `header.test.ts` fails a missing one.
 - A change to a package's architecture updates its `AGENTS.md`, and one
