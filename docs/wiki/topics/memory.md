@@ -135,6 +135,15 @@ different tools:
   no `brief`, as chat takes its block directly
   ([`server.ts`](../../../packages/memory/src/recall/server.ts)).
 
+Both servers also accept injected persona layers. With nonempty layers,
+`persona` opens one exact layer name as plain text; an unknown name returns
+a tool error naming the available layers. Without layers the tool is
+absent. These layers are who Dorothy is, not what she remembers, and are
+for her alone, not an agent she dispatches. Memory declares their shape
+structurally and never imports identity
+([`tool.ts`](../../../packages/memory/src/persona/tool.ts)). The
+[persona plan](../../plans/2026-11-14_persona.md) tracks the CLI wiring.
+
 Dorothy opens past conversations on demand, never pushed, and afterwards
 appraises each read as none, slight, useful or essential. The appraisals
 feed salience, a score of reads decaying with a half-life

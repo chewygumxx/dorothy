@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-18
-mtime: 2026-10-20
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: packages/memory/src/contract/AGENTS.md
 description: >-
@@ -49,8 +49,9 @@ gives back, and the service that speaks it. The spec is
   unreadable source as its title and snippet. Recall and the
   evaluation's `dorothy` system deliver through it. `evidence.ts`: its
   source over the recall index, visible conversations only.
-- `tools.ts`: the four MCP tools, an unexpected error reading
-  `Memory failed.`; `testing.ts`: a fake engine.
+- `tools.ts`: the four memory MCP tools, an unexpected error reading
+  `Memory failed.`, plus `persona` when layers are injected, registered by
+  `../persona/tool.ts`; `testing.ts`: a fake engine.
 - `../engine/`: `MemoryEngine`, and the baseline over today's index,
   salience and reviewer; its hits carry matched turns and alternate
   knowledge with episodes through `merge.ts`'s `mergeHits`.
@@ -67,8 +68,8 @@ gives back, and the service that speaks it. The spec is
   and the bridge's fetch, which reaches loopback and the addresses in
   `[service] listen` over `node:http`, as Bun's fetch would take even
   loopback through `HTTP_PROXY`.
-  `recall/server.ts`, `tools.ts` and `../service/` alone import
-  `@modelcontextprotocol/sdk`.
+  `../recall/server.ts`, `tools.ts`, `../persona/tool.ts` and
+  `../service/` alone import `@modelcontextprotocol/sdk`.
 
 ## Invariants
 

@@ -30,7 +30,7 @@ import { EMPTY_SIDECAR, updateSidecar } from "../memory/sidecar.js";
 import { RecallIndex } from "../recall/store.js";
 import { transcriptDir, transcriptPath } from "../transcript.js";
 import { fakeEngine, knowledge } from "./testing.js";
-import { createContractServer, INSTRUCTIONS } from "./tools.js";
+import { createContractServer, INSTRUCTIONS, type ToolDeps } from "./tools.js";
 
 let root: string;
 let index: RecallIndex;
@@ -69,6 +69,7 @@ async function connect(
     host: MemoryEngine = engine,
     named: string | null = "codex",
     warn?: (message: string) => void,
+    layers?: ToolDeps["layers"],
 ) {
     const server = createContractServer({
         engine: host,
@@ -78,6 +79,7 @@ async function connect(
         host: named,
         profiles: PROFILES,
         resolveProject: async (value) => value,
+        layers,
         warn,
     });
     const [near, far] = InMemoryTransport.createLinkedPair();
@@ -109,6 +111,34 @@ const call = async (name: string, args: Record<string, unknown>) => {
 };
 
 describe("the contract's MCP server", () => {
+    it("serves an injected persona layer as plain text", async () => {
+        await client.close();
+        await connect(null, engine, "codex", undefined, { lore: "L" });
+        expect(
+            (await client.listTools()).tools.map((tool) => tool.name),
+        ).toContain("persona");
+        expect(await call("persona", { layer: "lore" })).toEqual({
+            isError: false,
+            text: "L",
+        });
+    });
+
+    it("reports an unknown persona layer as a tool error", async () => {
+        await client.close();
+        await connect(null, engine, "codex", undefined, { lore: "L" });
+        const result = await call("persona", { layer: "x" });
+        expect(result.isError).toBe(true);
+        expect(result.text).toContain("lore");
+    });
+
+    it.each([null, {}])("omits persona without layers: %j", async (layers) => {
+        await client.close();
+        await connect(null, engine, "codex", undefined, layers);
+        expect(
+            (await client.listTools()).tools.map((tool) => tool.name),
+        ).not.toContain("persona");
+    });
+
     it("offers four tools and short instructions", async () => {
         const { tools } = await client.listTools();
         expect(tools.map((tool) => tool.name).sort()).toEqual([

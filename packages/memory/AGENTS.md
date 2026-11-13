@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-11-04
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: packages/memory/AGENTS.md
 description: >-
@@ -20,9 +20,8 @@ tags:
 # packages/memory/AGENTS.md
 
 `@dorothy/memory` holds transcripts, notes, facts, projects, recall,
-compaction, tags and history. It imports neither the agent nor a model
-provider's SDK: reviews and compaction each take core's `StructuredCall`
-(`calls`) and prompts as text (`MemoryPrompts`).
+compaction, tags and history. No agent or model provider SDK is imported:
+reviews and compaction take core's `StructuredCall` and `MemoryPrompts`.
 
 ## Entry points and imports
 
@@ -80,6 +79,7 @@ provider's SDK: reviews and compaction each take core's `StructuredCall`
   `server.ts` serves them over MCP on stdio as `dorothy --recall-server`, one
   call at a time, history opened without the mirror. Reviews appraise each read
   into the sidecar, and `salience()` (`rank.ts`) weighs appraised reads.
+- `persona/tool.ts`: both servers' tool over structural, injected layers.
 - `compaction/`: past `[compaction] soft` tokens, at the next idle (past
   `hard`, before the next message), `compact()` splits the turns before
   the verbatim tail into topical clusters with an abstract each; read

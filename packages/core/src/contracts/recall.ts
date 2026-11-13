@@ -19,6 +19,7 @@ export const TOOLS = ["search", "open", "recollect", "tags"] as const;
 export type Tool = (typeof TOOLS)[number];
 // The one tool that writes memory, recorded as a tool event.
 export const REMEMBER = "remember";
+export const PERSONA = "persona";
 
 const named = (server: string, tool: string) => `mcp__${server}__${tool}`;
 // The tools allowed in every session with recall: every one but
