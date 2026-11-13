@@ -221,7 +221,8 @@ Linking:
     sync uses the recorded directory where it is present; else the
     first of the three present, recording it; else the recorded one.
     The registry already keeps a record per root and directory, and
-    the one synced last (`registry.ts:216`), which this relies on.
+    the one synced last (`RootSync` and `syncRecord`), which this
+    relies on.
   - Today a recorded directory gone from disk retires every fact
     (`sync.test.ts:903`), so a checkout losing `.agents/memory` under the
     old code would retire them all. The sync change therefore merges

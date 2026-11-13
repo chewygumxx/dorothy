@@ -42,8 +42,8 @@ isolated linker fails an undeclared or internal import.
 - `mise tasks ls` lists the development tasks; `lint`, `format` and
   `check` take `--staged`.
 - `bun run dev`: the CLI from source.
-- `bun run skills` links packaged skills, not remote ones (`skills add`,
-  `skills update`); `bun install` points Claude at `docs/memory`.
+- `bun install` links every skill, fetching the remote ones, and points
+  Claude at `docs/memory`; `mise run skills` relinks without an install.
 - After removing a `@dorothy` dependency, reinstall from clean to see the
   boundary: `rm -rf node_modules packages/*/node_modules && bun install`.
 
@@ -96,7 +96,7 @@ Design work starts with `brainstorming`. Specs go in `docs/specs/`, plans
 in `docs/plans/`, written with `writing-plans` and carried out with
 `subagent-driven-development`. Bugs start with `systematic-debugging`, and
 nothing is claimed done without `verification-before-completion`. The
-skills are linked in `.agents/skills/`, the repository's own from
+skills are linked in `.agents/skills/`, declared in `package.json` and
 `packages/skills/`; where one names another path, these rules win, and a
 worktree goes wherever the user's tools put it.
 

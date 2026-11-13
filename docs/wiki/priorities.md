@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-11
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: Priorities
 description: >-
@@ -76,7 +76,7 @@ Found but not scheduled, in the roadmap's order, which
 - Splitting `memory` along its subdirectories.
 - The TUI's deferred features.
 - Dorothy's own tool loop.
-- `repo-memory` preferring `.agents/memory/` upstream.
+- `repo-memory` following the memory directory layout upstream.
 - An OpenAI-protocol adapter for the gateway.
 - Probing how open models do behind Claude Code's prompt.
 - Testing whether the identity's place in Claude Code's prompt costs her.

@@ -39,10 +39,10 @@ mise is the development interface, but Bun is the only utility expected
 wherever Dorothy runs. So every development action is a mise task, defined
 once in `.config/mise/tasks/`, and every action that must run without
 mise stays in Bun's layer: `package.json`'s `prepare`, `dev`, `start`,
-`eval` and `skills`, and `scripts/`. `bun install`, `prepare` and
-Dorothy's entry points never call mise, and no task runs a `bun run`
-script that calls `mise run` back. `bun run check` is `mise run check`,
-kept because the shared CI calls it.
+`eval` and `scripts/`. `bun install`, `prepare` and Dorothy's entry
+points never call mise, and no task runs a `bun run` script that calls
+`mise run` back. `bun run check` is `mise run check`, kept because the
+shared CI calls it.
 
 ## Where configuration lives
 
@@ -76,8 +76,7 @@ the shared CI, not a probe, and an inference where marked:
 - `.shellcheckrc`: the shared CI's scope looks for it at the root.
 - `.sops.yaml` and `secrets.json`: Dorothy's runtime configuration, whose
   move is a roadmap candidate of its own; see [sops](#sops).
-- `.moxide.toml` and `.worktreeinclude`: see [Markdown Oxide](#markdown-oxide)
-  and [Worktrees](#worktrees).
+- `.moxide.toml`: see [Markdown Oxide](#markdown-oxide).
 - `.repo-metadata.jsonc`: the default path of the shared standard
   workflow's `metadata-path` input, in `chewygumxx/.github`'s
   `standard.yaml`.
@@ -232,15 +231,13 @@ configuration follows.
 
 ## Worktrees
 
-`.worktreeinclude` names the ignored files that a new worktree copies from
-the main checkout, through Claude Code's own worktrees or worktrunk's
-`copy-ignored --require-include`. `bun install` links the skills from
-`node_modules`, but those installed with `skills add` exist only in the
-main checkout, so the skills directories are copied whole, and a copy
-skips whatever the install already made. Claude Code reads the file at
-the project root
-([Claude Code worktrees](https://code.claude.com/docs/en/worktrees));
-where worktrunk reads it is unchecked, so the file stays at the root.
+A new worktree needs no file copied from the main checkout. The
+`post-checkout` hook runs `bun install`, whose `prepare` links every skill
+through `node_modules` or a fetch, and points auto memory at the
+worktree's own `docs/memory`. `.worktreeinclude`, which once had Claude
+Code and worktrunk copy the skills that `skills add` installed, went when
+the skills became a declared array
+([decision](../decisions.md#agent-assets-are-declared-outside-agents-and-claude)).
 
 ## Markdown Oxide
 

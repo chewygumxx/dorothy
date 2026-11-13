@@ -1148,7 +1148,10 @@ The machinery behind these rules is on
 - **Reason**: Claude Code and Codex both read `AGENTS.md`, and per-package
   guidance costs nothing until an agent works in that package.
 - **Cost**: not recorded.
-- **Standing**: current; `agents.test.ts` pins the layout and the budgets
+- **Standing**: current, but for where skills and memory now are
+  ([Agent assets are declared outside .agents and
+  .claude](#agent-assets-are-declared-outside-agents-and-claude));
+  `agents.test.ts` pins the layout and the budgets
   ([repository workflow](./topics/repository-workflow.md#agent-assets)).
   A harness's own settings are not among the assets declared here
   ([A harness's settings are the user's](#a-harnesss-settings-are-the-users)).
@@ -1363,6 +1366,42 @@ The machinery behind these rules is on
   ([repository workflow](./topics/repository-workflow.md#agent-assets)).
 - **Sources**:
   [repository configuration spec](../specs/2026-11-14_repo-config.md#status-and-intent).
+
+### Agent assets are declared outside .agents and .claude
+
+- **Context**: `package.json`'s `skills` script and `skills add` left
+  remote skills in `skills-lock.json` and as tracked links, the own
+  skills and the memory sat in `.agents/`, and `.worktreeinclude` copied
+  what `bun install` could not link. `.agents/` and `.claude/` held both
+  what tools generate and what the repository edits.
+- **Alternatives**: B, a root `skills/` and a linking script of the
+  repository's own, which keeps eight packages but adds a second linker
+  beside sync, with its own tests; C, the own skills moved to
+  `chewygumxx/agent-library`, which serve this repository alone and would
+  span two repositories in each change. Both rejected.
+- **Choice**: The user, on 2026-11-14: `package.json`'s `skills` array
+  declares every third-party skill, each source pinned to a commit and
+  narrowed to the skills taken; the own skills are the ninth package,
+  `@dorothy/skills`; `skills experimental_sync` links them all, from
+  `prepare` and `mise run skills`; agent memory is `docs/memory`; and
+  `.gitignore` ignores `/.agents/` and `/.claude/` whole, so nothing in
+  either is tracked.
+- **Reason**: Every agent asset is in files the repository owns, by one
+  mechanism each, and the two directories hold only what tools generate
+  from them. A fresh clone or worktree needs `bun install` alone.
+- **Cost**: A ninth package, against the eight-package rule. A plain
+  `bun install` downloads every remote skill, and offline it warns and
+  links the package's alone. The sync is experimental. Each checkout
+  needs one `bun install` to link the skills and repoint memory, and a
+  Claude session started before it still writes the old directory.
+- **Standing**: current
+  ([repository workflow](./topics/repository-workflow.md#agent-assets),
+  [build configuration](./topics/build-configuration.md#worktrees)).
+  Supersedes the memory and third-party skill rows of
+  [Guidance is AGENTS.md files](#guidance-is-agentsmd-files-and-every-agentic-asset-is-declared-here).
+- **Sources**:
+  [repository configuration spec](../specs/2026-11-14_repo-config.md#status-and-intent),
+  [plan](../plans/2026-11-14_repo-config.md).
 
 ## Related
 
