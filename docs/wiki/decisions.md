@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-11
+mtime: 2026-11-13
 spdx: GPL-3.0-only
 title: Decisions
 description: >-
@@ -1213,7 +1213,7 @@ The machinery behind these rules is on
 - **Alternatives**: not recorded.
 - **Choice**: The user, in the build configuration spec approved on
   2026-11-11: two layers. Every development action is a mise task in
-  `.config/mise/tasks.toml`; `package.json` keeps `prepare`, `dev`,
+  `.config/mise/tasks/`; `package.json` keeps `prepare`, `dev`,
   `start`, `eval`, `skills` and `check`, the shim the shared CI calls. No
   action is defined in both, and no task reaches a script that runs
   `mise run` back.
@@ -1291,6 +1291,24 @@ The machinery behind these rules is on
   ([build configuration](./topics/build-configuration.md#mise)).
 - **Sources**:
   [build configuration spec](../specs/2026-11-10_build-configuration.md#approaches).
+
+### Tasks are split by family into task files
+
+- **Context**: Every task sat in one `.config/mise/tasks.toml` of some
+  300 lines, as `configuring-mise-tasks` lays out.
+- **Alternatives**: One file to a task, finest but scattering the
+  single-line tasks.
+- **Choice**: The user, on 2026-11-13: tasks move to
+  `.config/mise/tasks/*.task.toml`, which `[task_config]` includes by
+  glob. A family shares a file: `lint` with every `lint:*`, `format` with
+  every `format:*`, then `standard`, `bun` and `other`.
+- **Reason**: A task is found by its name's family, in a file short
+  enough to read whole.
+- **Cost**: The repository departs from `configuring-mise-tasks`, which
+  still names one `tasks.toml`.
+- **Standing**: current
+  ([build configuration](./topics/build-configuration.md#mise)).
+- **Sources**: not recorded.
 
 ## Related
 

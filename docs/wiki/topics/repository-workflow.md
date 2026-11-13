@@ -74,7 +74,7 @@ and `bun install` cannot link. A worktree's auto memory points at its own
 
 `mise run check` runs everything CI runs, and `bun run check` is its shim.
 The tasks live in
-[`.config/mise/tasks.toml`](../../../.config/mise/tasks.toml), and
+[`.config/mise/tasks/`](../../../.config/mise/tasks), and
 `mise tasks ls` lists them. `check` runs `lint` and `test` in parallel, and
 `lint` runs these kinds in parallel:
 

@@ -1,0 +1,31 @@
+# vim:set expandtab shiftwidth=4 filetype=toml:
+# SPDX-License-Identifier: GPL-3.0-only
+#:schema https://mise.jdx.dev/schema/mise-task.json
+
+#
+#
+# ~xxdorothy/dorothy.git
+# ::: :/.config/mise/tasks/bun.task.toml
+#
+#
+
+#
+# Bun's layer: tasks wrapping package.json's entry points
+# https://mise.jdx.dev/tasks/task-configuration.html
+#
+
+[dev]
+description = "Run Dorothy's CLI from source"
+run         = "bun run dev"
+
+[start]
+description = "Start Dorothy's CLI"
+run         = "bun run start"
+
+[eval]
+description = "Run Dorothy's evaluations"
+run         = "bun run eval"
+
+[skills]
+description = "Link the skills skills-lock.json declares"
+run         = "bun run skills"

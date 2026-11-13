@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-11
-mtime: 2026-11-11
+mtime: 2026-11-13
 spdx: GPL-3.0-only
 title: Build configuration
 description: >-
@@ -37,7 +37,7 @@ and the design is the
 
 mise is the development interface, but Bun is the only utility expected
 wherever Dorothy runs. So every development action is a mise task, defined
-once in `.config/mise/tasks.toml`, and every action that must run without
+once in `.config/mise/tasks/`, and every action that must run without
 mise stays in Bun's layer: `package.json`'s `prepare`, `dev`, `start`,
 `eval` and `skills`, and `scripts/`. `bun install`, `prepare` and
 Dorothy's entry points never call mise, and no task runs a `bun run`
@@ -94,8 +94,9 @@ the shared CI, not a probe, and an inference where marked:
 ## mise
 
 `.config/mise/config.toml` pins the tools, settings and `[env]`; mise
-reads it natively there, and it includes `.config/mise/tasks.toml` through
-`[task_config]`. CI installs the same tools from it with `jdx/mise-action`.
+reads it natively there, and it includes `.config/mise/tasks/*.task.toml`
+through `[task_config]`, one file to a family of tasks. CI installs the
+same tools from it with `jdx/mise-action`.
 `min_version` is 2026.11.4, the release on which skipping was verified:
 per-argument records, template-rendered absolute sources and `wait_for`
 (probed 2026-11-11); older releases were not tried.
