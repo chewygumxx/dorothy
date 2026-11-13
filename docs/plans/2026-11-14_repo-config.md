@@ -172,17 +172,21 @@ git commit -m "docs: Specify and plan agent asset config"
   - `export const MEMORY_DIRS = ["docs/memory", ".agents/memory",
     ".claude/memory"] as const;`
   - `chooseMemoryDir(root: string): Promise<string>`: the first of
-    `MEMORY_DIRS` that is a directory under `root`, else
-    `".agents/memory"`.
-  - `resolveMemoryDir(root: string, recorded: string | undefined):
-    Promise<string>`: `chooseMemoryDir(root)` when `recorded` is
-    undefined; `recorded` when it is a directory under `root`; else the
-    first of `MEMORY_DIRS` present; else `recorded`.
-- `sync.ts:355` passes the root's own last-synced directory, else the
-  project's, as `recorded`:
-  `const memoryDir = await resolveMemoryDir(project.root,
-  own(known?.synced, project.root)?.last ?? known?.memoryDir);`, with
-  `own` exported from `registry.ts`.
+    `MEMORY_DIRS` that is a directory under `root`, `docs/memory` only
+    when it holds `MEMORY.md`, else `".agents/memory"`.
+  - `resolveMemoryDir(root: string, entry: ProjectEntry | undefined):
+    Promise<string>`: `chooseMemoryDir(root)` when `entry` is
+    undefined. Else `recorded` is the root's own `synced[root].last`,
+    falling back to `entry.memoryDir`, and the facts are the names in
+    the root's record for `recorded` whose hash is not `removed:`.
+    With facts, of `recorded` and each of `MEMORY_DIRS` present (as
+    `chooseMemoryDir` counts them), the one holding the most of those
+    facts' files, a file counting as its fact by `nameOfStem`; ties go
+    to `recorded`, then by `MEMORY_DIRS`. With none, `recorded` when
+    it is a directory under `root`; else the first of `MEMORY_DIRS`
+    present; else `recorded`.
+- `sync.ts:355` passes the project's registry entry:
+  `const memoryDir = await resolveMemoryDir(project.root, known);`.
 
 - [ ] **Step 1: Write the failing registry tests**
 

@@ -21,10 +21,19 @@ tags:
 
 A project is the git repository a path is in. Its facts live in the
 store under `facts/projects/<id>/` and are synced to the repository's
-memory directory: the first of `MEMORY_DIRS` (`docs/memory`,
-`.agents/memory`, `.claude/memory`) the repository holds, else
-`.agents/memory`. The recorded one is kept while present; if it is gone
-and another is present, sync follows to it (`resolveMemoryDir`).
+memory directory: on a first sync, the first of `MEMORY_DIRS`
+(`docs/memory`, `.agents/memory`, `.claude/memory`) the repository
+holds, `docs/memory` only with a `MEMORY.md`, else `.agents/memory`
+(`chooseMemoryDir`). After, a root syncs, of the directory it synced
+last and those of `MEMORY_DIRS` it holds, the one with the most files
+of the live facts in its record for that directory; ties keep the one
+synced last, then go by `MEMORY_DIRS` (`resolveMemoryDir`). With no
+live fact to judge by, a root keeps the directory it synced last, else
+the project's, while present, else follows to the first present. Moving the
+directory is how a root is redirected: one edited by hand in
+`projects.json` is ignored by a root with a record, and its next sync
+overwrites it
+([decision](../../../../docs/wiki/decisions.md#moving-the-memory-directory-redirects-a-root)).
 
 ## Files
 
@@ -89,8 +98,10 @@ and another is present, sync follows to it (`resolveMemoryDir`).
   with none it is a first sync, which retires nothing. Others are kept,
   never pruned. A directory absent from disk keeps its record only if
   the root synced it last, so only a deletion retires, never a move.
-- A memory directory is switched to only when present: deleting the one
-  directory retires every fact, moving it retires none.
+- A memory directory is switched to only when it holds more of the
+  root's recorded facts than the one synced last: deleting the one
+  directory, or some of its files, retires those facts; moving it, or a
+  stray or recreated directory beside it, retires none.
 - Sync never commits or pushes, never writes outside the memory
   directory, and refuses a memory directory that escapes by `..` or
   through a symlink at any step from the root down.

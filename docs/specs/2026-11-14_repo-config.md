@@ -199,15 +199,25 @@ Linking:
   format, its files named by the fact, undated, and not records.
 - Dorothy's fact sync:
   - `chooseMemoryDir` prefers `docs/memory`, then `.agents/memory`, then
-    `.claude/memory`, defaulting to `.agents/memory`.
-  - Sync uses the recorded directory where it is present in the root
-    being synced; else the first of `docs/memory`, `.agents/memory` and
-    `.claude/memory` present there, recording it; else the recorded one,
-    whose absence stays a deletion. A directory is switched to only when
-    present, so deleting the one memory directory still retires every
-    fact, while moving it retires none. The registry already keeps a
-    record per root and directory, and the one synced last
-    (`registry.ts:216`), which this relies on.
+    `.claude/memory`, defaulting to `.agents/memory`. `docs/memory`
+    counts only when it holds `MEMORY.md`, since a repository may keep
+    documentation about memory there.
+  - Sync judges by content. For a root with a record, it takes, of the
+    directory the root synced last and each of `docs/memory`,
+    `.agents/memory` and `.claude/memory` present there, the one holding
+    the most files of the live facts in the root's record for that
+    directory, a file counting as its fact by the stem logic sync reads
+    it with; ties go to the recorded directory, then by that order. A
+    stray or recreated `.agents/memory` beside a moved `docs/memory`
+    holds none of the facts, so sync follows the move. A real deletion
+    leaves no candidate holding them and keeps the recorded directory,
+    so deleting the one memory directory still retires every fact, and
+    a partial deletion inside it retires just those, while moving it
+    retires none. With no record for the root, or no live fact in it,
+    sync uses the recorded directory where it is present; else the
+    first of the three present, recording it; else the recorded one.
+    The registry already keeps a record per root and directory, and
+    the one synced last (`registry.ts:216`), which this relies on.
   - Today a recorded directory gone from disk retires every fact
     (`sync.test.ts:903`), so a checkout losing `.agents/memory` under the
     old code would retire them all. The sync change therefore merges
@@ -223,6 +233,10 @@ Linking:
     `.agents/memory`, as a worktree on an older branch is, and from the
     first, with a fact added on each side: neither sync retires or
     duplicates a fact, and each new fact reaches the other directory.
+  - Tests leave `.agents/memory` beside the moved `docs/memory`, empty
+    or holding a new file, before and after the root syncs
+    `docs/memory`: sync stays with `docs/memory`, retires nothing and
+    imports nothing from the stray directory.
   - No test or probe syncs the user's own store; their first sync after
     the merge is their own use of Dorothy.
 - The links follow: `AGENTS.md`, `.config/AGENTS.md`, `README.md`, the

@@ -9,13 +9,14 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
     chooseMemoryDir,
     EMPTY_REGISTRY,
     memoryDirProblem,
+    type ProjectEntry,
     parseRegistry,
     type Registry,
     readRegistry,
@@ -243,7 +244,16 @@ describe("chooseMemoryDir", () => {
         await mkdir(join(root, ".agents", "memory"), { recursive: true });
         expect(await chooseMemoryDir(root)).toBe(".agents/memory");
         await mkdir(join(root, "docs", "memory"), { recursive: true });
+        await writeFile(join(root, "docs", "memory", "MEMORY.md"), "");
         expect(await chooseMemoryDir(root)).toBe("docs/memory");
+    });
+
+    it("passes over a docs/memory without MEMORY.md, documentation's", async () => {
+        await mkdir(join(root, "docs", "memory"), { recursive: true });
+        await writeFile(join(root, "docs", "memory", "design.md"), "");
+        expect(await chooseMemoryDir(root)).toBe(".agents/memory");
+        await mkdir(join(root, ".claude", "memory"), { recursive: true });
+        expect(await chooseMemoryDir(root)).toBe(".claude/memory");
     });
 });
 
@@ -256,30 +266,170 @@ describe("resolveMemoryDir", () => {
         await rm(root, { recursive: true, force: true });
     });
 
+    // A memory directory holding MEMORY.md and a file for each stem.
+    const holding = async (dir: string, ...stems: string[]) => {
+        await mkdir(join(root, dir), { recursive: true });
+        await writeFile(join(root, dir, "MEMORY.md"), "");
+        for (const stem of stems) {
+            await writeFile(join(root, dir, `${stem}.md`), "");
+        }
+    };
+    // The project as this root last synced it, with these facts' hashes
+    // recorded for that directory; none, a root it has never synced.
+    const entry = (
+        memoryDir: string,
+        last?: string,
+        facts: Record<string, string> = {},
+    ): ProjectEntry => ({
+        name: "dorothy",
+        roots: [root],
+        memoryDir,
+        synced:
+            last === undefined
+                ? {}
+                : { [root]: { last, dirs: { [last]: facts } } },
+    });
+    const both = { a: HASH, b: HASH };
+
     it("chooses when nothing is recorded", async () => {
         await mkdir(join(root, ".claude", "memory"), { recursive: true });
-        expect(await resolveMemoryDir(root, undefined)).toBe(
-            await chooseMemoryDir(root),
-        );
+        expect(await resolveMemoryDir(root, undefined)).toBe(".claude/memory");
     });
 
-    it("keeps the recorded directory while present, though another is too", async () => {
-        await mkdir(join(root, "docs", "memory"), { recursive: true });
-        await mkdir(join(root, ".agents", "memory"), { recursive: true });
-        expect(await resolveMemoryDir(root, ".agents/memory")).toBe(
+    it("takes the project's directory for a root it never synced, while present", async () => {
+        await holding(".agents/memory");
+        await holding("docs/memory");
+        expect(await resolveMemoryDir(root, entry(".agents/memory"))).toBe(
             ".agents/memory",
         );
-    });
-
-    it("follows the memory when the recorded directory is gone", async () => {
-        await mkdir(join(root, "docs", "memory"), { recursive: true });
-        expect(await resolveMemoryDir(root, ".agents/memory")).toBe(
+        await rm(join(root, ".agents"), { recursive: true });
+        expect(await resolveMemoryDir(root, entry(".agents/memory"))).toBe(
             "docs/memory",
         );
     });
 
-    it("keeps a recorded directory gone with no other present", async () => {
-        expect(await resolveMemoryDir(root, "docs/memory")).toBe("docs/memory");
+    it("keeps the recorded directory holding the facts, though another is present", async () => {
+        await holding(".agents/memory", "a", "b");
+        await holding("docs/memory", "c");
+        expect(
+            await resolveMemoryDir(
+                root,
+                entry(".agents/memory", ".agents/memory", both),
+            ),
+        ).toBe(".agents/memory");
+    });
+
+    it("takes the directory holding the facts over a recorded one holding none", async () => {
+        await holding("docs/memory", "a", "b");
+        const recorded = entry(".agents/memory", ".agents/memory", both);
+        await mkdir(join(root, ".agents", "memory"), { recursive: true });
+        expect(await resolveMemoryDir(root, recorded)).toBe("docs/memory");
+        await writeFile(join(root, ".agents", "memory", "stray.md"), "");
+        expect(await resolveMemoryDir(root, recorded)).toBe("docs/memory");
+    });
+
+    it("takes the root's own record over the project's directory", async () => {
+        await holding("docs/memory", "a", "b");
+        await holding(".agents/memory");
+        expect(
+            await resolveMemoryDir(
+                root,
+                entry(".agents/memory", "docs/memory", both),
+            ),
+        ).toBe("docs/memory");
+    });
+
+    it("counts a snake-case file as its fact", async () => {
+        await holding("docs/memory", "feedback_testing");
+        await holding(".agents/memory");
+        expect(
+            await resolveMemoryDir(
+                root,
+                entry(".agents/memory", ".agents/memory", {
+                    "feedback-testing": HASH,
+                }),
+            ),
+        ).toBe("docs/memory");
+    });
+
+    it("keeps the recorded directory on a tie, then MEMORY_DIRS' order", async () => {
+        await holding(".agents/memory", "a");
+        await holding(".claude/memory", "a", "b");
+        await holding("docs/memory", "a");
+        expect(
+            await resolveMemoryDir(
+                root,
+                entry(".agents/memory", ".agents/memory", both),
+            ),
+        ).toBe(".claude/memory");
+        await holding("docs/memory", "a", "b");
+        expect(
+            await resolveMemoryDir(
+                root,
+                entry(".claude/memory", ".claude/memory", both),
+            ),
+        ).toBe(".claude/memory");
+        await rm(join(root, ".claude"), { recursive: true });
+        await holding(".agents/memory", "a", "b");
+        expect(
+            await resolveMemoryDir(
+                root,
+                entry("other/memory", "other/memory", both),
+            ),
+        ).toBe("docs/memory");
+    });
+
+    it("keeps a recorded directory gone when no other holds its facts", async () => {
+        expect(
+            await resolveMemoryDir(
+                root,
+                entry("docs/memory", "docs/memory", both),
+            ),
+        ).toBe("docs/memory");
+        await holding(".agents/memory", "c");
+        expect(
+            await resolveMemoryDir(
+                root,
+                entry("docs/memory", "docs/memory", both),
+            ),
+        ).toBe("docs/memory");
+    });
+
+    it("passes over a docs/memory without MEMORY.md", async () => {
+        await mkdir(join(root, "docs", "memory"), { recursive: true });
+        await writeFile(join(root, "docs", "memory", "a.md"), "");
+        expect(
+            await resolveMemoryDir(
+                root,
+                entry(".agents/memory", ".agents/memory", both),
+            ),
+        ).toBe(".agents/memory");
+        expect(await resolveMemoryDir(root, entry(".agents/memory"))).toBe(
+            ".agents/memory",
+        );
+    });
+
+    it("follows the memory as before with no live fact to judge by", async () => {
+        await holding("docs/memory", "a");
+        const nothingLive: Record<string, string>[] = [
+            {},
+            { a: `removed:${HASH}` },
+        ];
+        for (const facts of nothingLive) {
+            expect(
+                await resolveMemoryDir(
+                    root,
+                    entry(".agents/memory", ".agents/memory", facts),
+                ),
+            ).toBe("docs/memory");
+        }
+        await mkdir(join(root, ".agents", "memory"), { recursive: true });
+        expect(
+            await resolveMemoryDir(
+                root,
+                entry(".agents/memory", ".agents/memory", {}),
+            ),
+        ).toBe(".agents/memory");
     });
 });
 

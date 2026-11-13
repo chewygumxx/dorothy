@@ -729,7 +729,7 @@ describe("syncProject", () => {
         ).toEqual(["a"]);
     });
 
-    it("takes an edited memory directory as a first sync, retiring nothing", async () => {
+    it("takes a memory directory recorded by hand as a first sync, retiring nothing", async () => {
         await putRepo("a.md", repoFact("a", "First fact."));
         await putFact(data, SCOPE, storeFact("b"));
         expect(moved(await sync())).toEqual({
@@ -996,6 +996,65 @@ describe("syncProject", () => {
                         .sort(),
                 ).toEqual(["a.md", "b.md", "c.md", "d.md"]);
             }
+        });
+
+        // Synced with .agents/memory, the memory moved to docs/memory and
+        // .agents/memory made again, as a Claude Code session still
+        // pointed there would, holding these files.
+        const strayBeside = async (...stray: string[]) => {
+            await putRepo("a.md", repoFact("a", "First fact."));
+            await putRepo("b.md", repoFact("b", "Second fact."));
+            await sync();
+            await moveMemory();
+            await mkdir(join(repo, ".agents", "memory"));
+            for (const name of stray) {
+                await putRepo(`${name}.md`, repoFact(name, "Stray fact."));
+            }
+        };
+        const followed = async (report: SyncReport) => {
+            expect(report.memoryDir).toBe("docs/memory");
+            expect(moved(report)).toEqual(NOTHING);
+            expect((await facts()).map(({ name }) => name)).toEqual(["a", "b"]);
+            expect(await retirements()).toEqual([null, null]);
+            expect((await registered()).projects[ID].memoryDir).toBe(
+                "docs/memory",
+            );
+            expect(
+                (await readdir(join(repo, "docs", "memory"))).sort(),
+            ).toEqual(["MEMORY.md", "a.md", "b.md"]);
+        };
+
+        it("follows the memory past a stray .agents/memory holding a new file", async () => {
+            await strayBeside("stray");
+            await followed(await sync());
+            expect(await files()).toEqual(["stray.md"]);
+        });
+
+        it("follows the memory past an empty .agents/memory made again", async () => {
+            await strayBeside();
+            await followed(await sync());
+            expect(await files()).toEqual([]);
+        });
+
+        it("stays with docs/memory when a stray .agents/memory appears later", async () => {
+            await putRepo("a.md", repoFact("a", "First fact."));
+            await putRepo("b.md", repoFact("b", "Second fact."));
+            await sync();
+            await moveMemory();
+            expect(moved(await sync())).toEqual(NOTHING);
+            await putRepo("stray.md", repoFact("stray", "Stray fact."));
+            await followed(await sync());
+            expect(await files()).toEqual(["stray.md"]);
+        });
+
+        it("retires just the fact deleted from the moved memory, beside a stray", async () => {
+            await strayBeside("stray");
+            await followed(await sync());
+            await rm(join(repo, "docs", "memory", "b.md"));
+            const report = await sync();
+            expect(report.memoryDir).toBe("docs/memory");
+            expect(moved(report)).toEqual({ ...NOTHING, retired: ["b"] });
+            expect((await facts()).map(({ name }) => name)).toEqual(["a", "b"]);
         });
 
         it("retires every fact when a checkout deletes its lone directory after another synced", async () => {
