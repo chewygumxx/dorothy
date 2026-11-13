@@ -16,7 +16,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/specs/2026-10-20-recording-design.md
    -
    -->

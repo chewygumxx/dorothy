@@ -13,7 +13,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/deferred/2026-10-16_memory-bodies-deferred.md
    -
    -->

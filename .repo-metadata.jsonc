@@ -3,7 +3,7 @@
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/.repo-metadata.jsonc
 //
 //
@@ -11,8 +11,8 @@
 {
     "$schema": "https://raw.githubusercontent.com/chewygumxx/sync-repo-metadata/refs/tags/v2/schema.json",
     "name": "dorothy",
-    "owner": "chewygumxx",
-    "slug": "chewygumxx/dorothy",
+    "owner": "xxdorothy",
+    "slug": "xxdorothy/dorothy",
     "default_branch": "main",
     "description": "Conversational LLM interface",
     "category": "dorothy",

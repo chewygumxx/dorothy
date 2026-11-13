@@ -17,7 +17,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/plans/2026-10-18-memory-contract.md
    -
    -->
@@ -419,7 +419,7 @@ Create `packages/memory/src/facts/file.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/memory/src/facts/file.test.ts
 //
 //
@@ -1503,7 +1503,7 @@ Create `packages/memory/src/facts/migrate.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/memory/src/facts/migrate.test.ts
 //
 //
@@ -1764,7 +1764,7 @@ Create `packages/core/src/contracts/memory.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/core/src/contracts/memory.test.ts
 //
 //
@@ -2078,7 +2078,7 @@ Create `packages/memory/src/contract/schemas.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/memory/src/contract/schemas.test.ts
 //
 //
@@ -2450,7 +2450,7 @@ Create `packages/memory/src/hosts/profiles.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/memory/src/hosts/profiles.test.ts
 //
 //
@@ -2663,7 +2663,7 @@ Create `packages/memory/src/engine/baseline.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/memory/src/engine/baseline.test.ts
 //
 //
@@ -3222,7 +3222,7 @@ Create `packages/memory/src/contract/block.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/memory/src/contract/block.test.ts
 //
 //
@@ -3714,7 +3714,7 @@ Create `packages/memory/src/contract/recall.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/memory/src/contract/recall.test.ts
 //
 //
@@ -3927,7 +3927,7 @@ Create `packages/memory/src/contract/record.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/memory/src/contract/record.test.ts
 //
 //
@@ -4365,7 +4365,7 @@ Create `packages/memory/src/contract/remember.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/memory/src/contract/remember.test.ts
 //
 //
@@ -4852,7 +4852,7 @@ Create `packages/memory/src/contract/tools.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/memory/src/contract/tools.test.ts
 //
 //
@@ -5210,7 +5210,7 @@ Create `packages/memory/src/service/tokens.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/memory/src/service/tokens.test.ts
 //
 //
@@ -5434,7 +5434,7 @@ Create `packages/memory/src/service/service.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/memory/src/service/service.test.ts
 //
 //
@@ -6385,7 +6385,7 @@ Create `packages/memory/src/service/client.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/memory/src/service/client.test.ts
 //
 //
@@ -6857,7 +6857,7 @@ Create `packages/memory/src/service/bridge.test.ts`:
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/memory/src/service/bridge.test.ts
 //
 //

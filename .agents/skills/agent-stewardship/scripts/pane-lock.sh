@@ -4,7 +4,7 @@
 
 #
 #
-# ~chewygumxx/dorothy.git
+# ~xxdorothy/dorothy.git
 # ::: :/.agents/skills/agent-stewardship/scripts/pane-lock.sh
 #
 #

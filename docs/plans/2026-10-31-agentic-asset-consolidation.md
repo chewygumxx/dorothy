@@ -15,7 +15,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/plans/2026-10-31-agentic-asset-consolidation.md
    -
    -->

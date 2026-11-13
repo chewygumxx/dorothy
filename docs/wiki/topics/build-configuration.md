@@ -14,7 +14,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/wiki/topics/build-configuration.md
    -
    -->

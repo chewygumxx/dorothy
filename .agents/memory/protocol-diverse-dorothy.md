@@ -13,7 +13,7 @@ metadata:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/.agents/memory/protocol-diverse-dorothy.md
    -
    -->

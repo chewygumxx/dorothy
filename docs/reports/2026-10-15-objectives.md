@@ -15,7 +15,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/reports/2026-10-15-objectives.md
    -
    -->

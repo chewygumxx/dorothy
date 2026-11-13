@@ -14,7 +14,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/notes/2026-10-04_dorothy-conversation-memory-metadata.md
    -
    -->

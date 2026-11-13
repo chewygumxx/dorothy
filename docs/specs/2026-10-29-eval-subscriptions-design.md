@@ -15,7 +15,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/specs/2026-10-29-eval-subscriptions-design.md
    -
    -->

@@ -14,7 +14,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/roadmap.md
    -
    -->
@@ -547,7 +547,7 @@ In order of completion.
   [spec](./specs/2026-11-03_repository-wiki-design.md),
   [plan](./plans/2026-11-03_repository-wiki.md),
   [report](./reports/2026-11-03_repository-wiki.md); merged in
-  [#128](https://github.com/chewygumxx/dorothy/pull/128).
+  [#128](https://github.com/xxdorothy/dorothy/pull/128).
   Integrity checks and roadmap close-out follow in the
   [follow-up spec](./specs/2026-11-03_wiki-follow-up-design.md),
   [plan](./plans/2026-11-03_wiki-follow-up.md) and

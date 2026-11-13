@@ -14,7 +14,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/plans/2026-10-30-eval-review-tools.md
    -
    -->

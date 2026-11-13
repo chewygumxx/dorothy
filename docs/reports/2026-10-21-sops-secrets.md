@@ -15,7 +15,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/reports/2026-10-21-sops-secrets.md
    -
    -->

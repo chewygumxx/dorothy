@@ -15,7 +15,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/wiki/topics/evaluation.md
    -
    -->
@@ -47,7 +47,7 @@ Every command but `snapshot` runs in a work directory with every root
 passed in, so nothing touches the user's data. `snapshot` copies a data
 directory into it, and refuses a work directory inside the checkout. The
 test set, its reviews and the run records quote the user's sessions, so
-they are private, kept in `chewygumxx/dorothy-eval`; the records in this
+they are private, kept in `xxdorothy/eval`; the records in this
 repository hold aggregates alone
 ([first evaluation](../../reports/2026-10-31-first-evaluation.md#summary)).
 No test in the repository reads real data or calls a model.

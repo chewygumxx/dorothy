@@ -13,7 +13,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/packages/cli/assets/pi/stewardship/fixture/AGENTS.md
    -
    -->

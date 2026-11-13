@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# ~chewygumxx/dorothy.git
+# ~xxdorothy/dorothy.git
 # ::: :/docs/reports/2026-10-20-recording/3-evaluation.txt
 
 Probe: The evaluation on a backfilled snapshot

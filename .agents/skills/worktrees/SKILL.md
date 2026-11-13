@@ -13,7 +13,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/.agents/skills/worktrees/SKILL.md
    -
    -->

@@ -16,7 +16,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/notes/2026-10-15_claude-conversation-openclaw-hermes-agent.md
    -
    -->

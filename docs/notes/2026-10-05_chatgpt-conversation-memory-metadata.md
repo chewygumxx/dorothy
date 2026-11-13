@@ -15,7 +15,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/docs/notes/2026-10-05_chatgpt-conversation-memory-metadata.md
    -
    -->

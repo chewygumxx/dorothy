@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 #
-# ~chewygumxx/dorothy.git
+# ~xxdorothy/dorothy.git
 # ::: :/docs/reports/2026-10-19-code-review/chat-memory-notes.txt
 #
 
