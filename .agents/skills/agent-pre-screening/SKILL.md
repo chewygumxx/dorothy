@@ -15,7 +15,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/.agents/skills/agent-pre-screening/SKILL.md
    -
    -->

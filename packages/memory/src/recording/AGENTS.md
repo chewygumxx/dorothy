@@ -12,7 +12,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/packages/memory/src/recording/AGENTS.md
    -
    -->

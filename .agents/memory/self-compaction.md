@@ -11,7 +11,7 @@ metadata:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/.agents/memory/self-compaction.md
    -
    -->
