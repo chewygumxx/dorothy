@@ -395,6 +395,9 @@ function reduceEvent(state: ChatState, event: ConversationEvent): ChatState {
             };
         case "memory-cost":
             return reduce(state, { type: "memory-cost", usd: event.usd });
+        // Persona reads are transcript audit metadata, not display lines.
+        case "persona":
+            return state;
         case "lookup":
             return memoryLine(
                 state,

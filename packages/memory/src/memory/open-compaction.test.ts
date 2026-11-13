@@ -152,6 +152,18 @@ describe("a chat compacted end to end", () => {
             session.send(text(words[0] as string));
             const first = inners[0] as FakeSession;
             first.emit({ type: "ready", model: "m", sessionId: "s" });
+            first.emit({
+                type: "persona",
+                layer: "persona-sentinel",
+                ok: true,
+                offset: 0,
+            });
+            first.emit({
+                type: "persona",
+                layer: "missing-sentinel",
+                ok: false,
+                offset: 0,
+            });
             reply(first, text(words[1] as string), 900);
             session.send(text(words[2] as string));
             reply(first, text(words[3] as string), 1800);
@@ -169,8 +181,9 @@ describe("a chat compacted end to end", () => {
         }
 
         const dir = transcriptDir(env);
-        const turns = (await readTranscript(`${dir}/${memory.phrase}.jsonl`))
-            .turns;
+        const read = await readTranscript(`${dir}/${memory.phrase}.jsonl`);
+        expect(read.skipped).toBe(0);
+        const turns = read.turns;
         expect(turns.map((turn) => turn.text.slice(0, 6))).toEqual([
             "walnut",
             "kiln k",
@@ -204,6 +217,8 @@ describe("a chat compacted end to end", () => {
             );
         }
         expect(compactions[0]?.prompt).not.toContain('<turn n="5">');
+        expect(compactions[0]?.prompt).not.toContain("persona-sentinel");
+        expect(compactions[0]?.prompt).not.toContain("missing-sentinel");
 
         // The first session began whole; the second began after the clusters,
         // with the turns they leave and a way back to the ones they cover.

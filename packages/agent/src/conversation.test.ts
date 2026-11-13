@@ -662,6 +662,41 @@ describe("Conversation", () => {
 });
 
 describe("Conversation with recall", () => {
+    it.each([false, true])(
+        "emits persona reads from the tool stream (isError: %s)",
+        async (isError) => {
+            const fake = fakeRecall({
+                mcp__memory__persona: { text: "Her character.", isError },
+            });
+            const { conversation, events } = session(
+                [
+                    {
+                        chunks: toolChunks("p1", "mcp__memory__persona", {
+                            layer: "character",
+                        }),
+                    },
+                    { chunks: textChunks("I am Dorothy.") },
+                ],
+                { recall: RECALL, connect: async () => fake.recall },
+            );
+            try {
+                conversation.send("Who are you?");
+                await until(() => ended(events));
+                expect(of(events, "persona")).toEqual([
+                    {
+                        type: "persona",
+                        layer: "character",
+                        ok: !isError,
+                        offset: 0,
+                    },
+                ]);
+                expect(of(events, "lookup")).toEqual([]);
+            } finally {
+                await conversation.close();
+            }
+        },
+    );
+
     it("offers the recall tools, emitting each lookup where it happened", async () => {
         const fake = fakeRecall({
             mcp__memory__search: { text: '{"results":[]}' },

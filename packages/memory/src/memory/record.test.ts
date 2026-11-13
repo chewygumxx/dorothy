@@ -9,8 +9,15 @@
 //
 
 import { describe, expect, it } from "bun:test";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ChatSession, ConversationEvent, Notice } from "@dorothy/core";
-import type { TranscriptEntry } from "../transcript.js";
+import {
+    readTranscript,
+    type TranscriptEntry,
+    TranscriptWriter,
+} from "../transcript.js";
 import { FakeSession } from "./fake-session.js";
 import { EXPECTED, HASH, PHRASE, SCRIPT } from "./record.fixture.js";
 import { noticeChannel, sessionRecorder } from "./record.js";
@@ -43,6 +50,78 @@ function recorded(
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("sessionRecorder", () => {
+    it("writes successful and failed persona events and reads them without lookups", async () => {
+        const dir = await mkdtemp(join(tmpdir(), "dorothy-persona-record-"));
+        const path = join(dir, "conversation.jsonl");
+        const sink = await TranscriptWriter.open(path);
+        const warnings: string[] = [];
+        const inner = new FakeSession();
+        const session = sessionRecorder({
+            sink,
+            phrase: PHRASE,
+            promptHash: HASH,
+            resumed: false,
+            warn: (message) => warnings.push(message),
+        })(inner);
+        try {
+            session.send("Who are you?");
+            inner.emit({
+                type: "persona",
+                layer: "character",
+                ok: true,
+                offset: 3,
+            });
+            inner.emit({
+                type: "persona",
+                layer: "missing",
+                ok: false,
+                offset: 7,
+            });
+            inner.emit({
+                type: "error",
+                message: "interrupted",
+                partial: "I am Dorothy.",
+            });
+            await sink.flushed();
+            const entries = (await readFile(path, "utf8"))
+                .trim()
+                .split("\n")
+                .map((line) => JSON.parse(line));
+            expect(entries.slice(1, 3)).toEqual([
+                {
+                    v: 1,
+                    kind: "persona",
+                    at: expect.any(String),
+                    layer: "character",
+                    ok: true,
+                    offset: 3,
+                },
+                {
+                    v: 1,
+                    kind: "persona",
+                    at: expect.any(String),
+                    layer: "missing",
+                    ok: false,
+                    offset: 7,
+                },
+            ]);
+            expect(await readTranscript(path)).toEqual({
+                turns: [
+                    { role: "user", text: "Who are you?" },
+                    { role: "assistant", text: "I am Dorothy." },
+                ],
+                skipped: 0,
+                costUsd: 0,
+                claudeSession: null,
+            });
+            expect(warnings).toEqual([]);
+        } finally {
+            await session.close();
+            await sink.close();
+            await rm(dir, { recursive: true, force: true });
+        }
+    });
+
     // As App drives sessions: a send after an error closes the dead
     // session and opens a new one before sending.
     it("records the scripted chat as App did", async () => {

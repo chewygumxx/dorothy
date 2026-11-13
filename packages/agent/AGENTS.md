@@ -80,7 +80,7 @@ unused.
 - `conversation.ts`: `Conversation`, core's `ChatSession`, the messages
   held here, a turn per message through `runRoute` on the chat route,
   with at most `MAX_STEPS` tool steps. Events: `ready` (its `model` a
-  label), `delta`, `turn-end`, `sdk` (a stream part), `lookup`,
+  label), `delta`, `turn-end`, `sdk` (a stream part), `lookup`, `persona`,
   `remember`, `warning` (a fallback, ten tool steps, or a reply cut at the
   model's output limit) and `error`. Cache breakpoints sit on the system
   prompt and the latest user message, the second never stored. Reasoning
@@ -89,6 +89,8 @@ unused.
   session starts with from `SessionStart` and the persona, joining the
   memory block and the earlier section with `withSection` and the turns
   with `withHistory`; development mode ends with `routeLine`.
+  Persona events name the layer, success and call-time reply offset;
+  they carry no layer text and are separate from memory lookups.
 - `one-shot.ts`: `runOneShot`, a one-shot prompt streamed to stdout from
   a session of its own; a failure goes to stderr, exit status 1.
 - `persona.ts`: the persona, composed from `personaComponents` (the core

@@ -10,6 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { appendFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { transcriptPath } from "../transcript.js";
@@ -151,6 +152,52 @@ afterEach(() => {
 });
 
 describe("an archive", () => {
+    it("excludes persona reads from eval experience, knowledge and appraised reads", async () => {
+        const before = {
+            conversation: archive
+                ?.conversations()
+                .find((item) => item.phrase === reader),
+            knowledge: await archive?.knowledge(),
+            appraised: (await archive?.appraisedReads())?.reads.filter(
+                (item) => item.reader === reader,
+            ),
+        };
+        await appendFile(
+            transcriptPath(reader, env),
+            `${[true, false]
+                .map((ok) =>
+                    JSON.stringify({
+                        v: 1,
+                        kind: "persona",
+                        at,
+                        layer: "personasentinel",
+                        ok,
+                        offset: 0,
+                    }),
+                )
+                .join("\n")}\n`,
+        );
+        await archive?.engine.index();
+        expect(
+            archive?.conversations().find((item) => item.phrase === reader),
+        ).toEqual(before.conversation);
+        expect(await archive?.knowledge()).toEqual(before.knowledge);
+        expect(
+            (await archive?.appraisedReads())?.reads.filter(
+                (item) => item.reader === reader,
+            ),
+        ).toEqual(before.appraised);
+        expect(
+            await archive?.engine.search({
+                query: "personasentinel",
+                within: "all",
+                kind: "all",
+                limit: 10,
+                project: null,
+            }),
+        ).toEqual([]);
+    });
+
     it("lists the visible conversations with their turns", () => {
         const found = archive?.conversations() ?? [];
         expect(found.map((each) => each.id).sort()).toEqual(

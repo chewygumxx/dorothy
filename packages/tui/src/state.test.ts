@@ -118,6 +118,27 @@ describe("initialState", () => {
 });
 
 describe("reduce", () => {
+    it.each([false, true])(
+        "keeps persona audit events out of the chat display (%s)",
+        (ok) => {
+            const state = reduce(streaming(), {
+                type: "event",
+                event: { type: "delta", text: "Reading." },
+            });
+            expect(
+                reduce(state, {
+                    type: "event",
+                    event: {
+                        type: "persona",
+                        layer: "character",
+                        ok,
+                        offset: 8,
+                    },
+                }),
+            ).toBe(state);
+        },
+    );
+
     it("records a sent message and starts streaming", () => {
         const state = streaming();
         expect(state.lines.at(-1)).toEqual({ id: 0, role: "you", text: "hi" });

@@ -563,7 +563,7 @@ export class Conversation implements ChatSession {
             };
         } finally {
             watchdog.dispose();
-            // An Attempt never throws: a listener may, on a lookup.
+            // An Attempt never throws: a listener may, on a tool event.
             try {
                 turn.settleCalls();
             } catch {}

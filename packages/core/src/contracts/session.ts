@@ -52,6 +52,9 @@ export type ConversationEvent =
           model?: string;
       }
     | { type: "sdk"; message: RawMessage }
+    // A persona layer read, separate from memory experience. offset is
+    // the reply's length in UTF-16 code units when the call was made.
+    | { type: "persona"; layer: string; ok: boolean; offset: number }
     // A lookup Dorothy made; offset is where in the reply it happened.
     | {
           type: "lookup";

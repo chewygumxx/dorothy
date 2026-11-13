@@ -9,7 +9,7 @@
 //
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CONFIG, newPhrase, type StructuredCall } from "@dorothy/core";
@@ -74,6 +74,41 @@ const reviewer = (
     });
 
 describe("Reviewer", () => {
+    it("leaves persona reads out of experience and appraisals", async () => {
+        await appendFile(
+            join(dir, `${PHRASE}.jsonl`),
+            `${[true, false]
+                .map((ok) =>
+                    JSON.stringify({
+                        v: 1,
+                        kind: "persona",
+                        at: NOW.toISOString(),
+                        layer: "persona-sentinel",
+                        ok,
+                        offset: 0,
+                    }),
+                )
+                .join("\n")}\n`,
+        );
+        const requests: { prompt: string; schema: Record<string, unknown> }[] =
+            [];
+        const said: string[] = [];
+        const review = reviewer(async (request) => {
+            requests.push(request);
+            return { ok: true, output: NOTES, model: "m", costUsd: 0 };
+        }, said);
+        expect(
+            (await review.review(PHRASE, new AbortController().signal)).kind,
+        ).toBe("reviewed");
+        expect(requests).toHaveLength(1);
+        expect(requests[0]?.prompt).toContain("User: tea?");
+        expect(requests[0]?.prompt).toContain("Dorothy: At four.");
+        expect(requests[0]?.prompt).not.toContain("persona-sentinel");
+        expect(requests[0]?.prompt).not.toContain("<reads>");
+        expect(requests[0]?.schema).not.toHaveProperty("properties.appraisals");
+        expect(said).toEqual([]);
+    });
+
     it.each([false, true])(
         "records the vocabulary only when it wrote concepts (%s)",
         async (coin) => {

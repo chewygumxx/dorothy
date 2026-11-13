@@ -15,7 +15,9 @@
 import {
     type ConversationEvent,
     describeLookup,
+    PERSONA,
     REMEMBER_TOOL,
+    SERVER_NAME,
     type StepUsage,
     type Tool,
     type TurnStats,
@@ -24,6 +26,7 @@ import {
 
 type PendingCall = { tool: Tool; input: unknown; offset: number };
 type PendingRemember = { input: unknown; offset: number };
+type PendingPersona = { layer: string; offset: number };
 
 // Characters as the note limits count them, four to a token.
 export const estimate = (text: string) => Math.ceil([...text].length / 4);
@@ -59,9 +62,10 @@ export class TurnState {
     };
     #lastInput = 0;
     // The next text starts a new step of the reply.
-    #afterLookup = false;
+    #afterTool = false;
     readonly #calls = new Map<string, PendingCall>();
     readonly #remembers = new Map<string, PendingRemember>();
+    readonly #personas = new Map<string, PendingPersona>();
 
     constructor(emit: (event: ConversationEvent) => void, began: number) {
         this.#emit = emit;
@@ -72,17 +76,17 @@ export class TurnState {
         if (delta === "") {
             return;
         }
-        // Text after a lookup starts a new step of the reply.
+        // Text after a recorded tool starts a new step of the reply.
         const text =
-            this.#afterLookup && this.reply !== "" ? `\n\n${delta}` : delta;
-        this.#afterLookup = false;
+            this.#afterTool && this.reply !== "" ? `\n\n${delta}` : delta;
+        this.#afterTool = false;
         this.reply += text;
         this.started = true;
         this.ttftMs ??= Math.round(at - this.#began);
         this.#emit({ type: "delta", text });
     }
 
-    // A call of recall's or of remember, kept until its result comes.
+    // A recall, remember or persona call, kept until its result comes.
     call(id: string, name: string, input: unknown): void {
         const pending = { input, offset: this.reply.length };
         const tool = toolOf(name);
@@ -92,6 +96,16 @@ export class TurnState {
         if (name === REMEMBER_TOOL && !this.#remembers.has(id)) {
             this.#remembers.set(id, pending);
             this.started = true;
+        }
+        if (
+            name === `mcp__${SERVER_NAME}__${PERSONA}` &&
+            !this.#personas.has(id)
+        ) {
+            const layer = (input as { layer?: unknown } | null)?.layer;
+            this.#personas.set(id, {
+                layer: typeof layer === "string" ? layer : "",
+                offset: pending.offset,
+            });
         }
     }
 
@@ -109,10 +123,17 @@ export class TurnState {
     }
 
     #settle(id: string, ok: boolean, content: unknown): void {
+        const persona = this.#personas.get(id);
+        if (persona !== undefined) {
+            this.#personas.delete(id);
+            this.#afterTool = true;
+            this.#emit({ type: "persona", ...persona, ok });
+            return;
+        }
         const kept = this.#remembers.get(id);
         if (kept !== undefined) {
             this.#remembers.delete(id);
-            this.#afterLookup = true;
+            this.#afterTool = true;
             this.#emit({
                 type: "remember",
                 id,
@@ -126,7 +147,7 @@ export class TurnState {
         const call = this.#calls.get(id);
         if (call !== undefined) {
             this.#calls.delete(id);
-            this.#afterLookup = true;
+            this.#afterTool = true;
             this.#emit({
                 type: "lookup",
                 id,
@@ -143,10 +164,14 @@ export class TurnState {
 
     // Calls the turn ended without answering, as when it was interrupted.
     settleCalls(): void {
-        for (const id of [...this.#calls.keys(), ...this.#remembers.keys()]) {
+        for (const id of [
+            ...this.#calls.keys(),
+            ...this.#remembers.keys(),
+            ...this.#personas.keys(),
+        ]) {
             this.#settle(id, false, "");
         }
-        this.#afterLookup = false;
+        this.#afterTool = false;
     }
 
     step(usage: StepUsage): void {

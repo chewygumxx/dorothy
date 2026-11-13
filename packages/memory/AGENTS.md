@@ -39,6 +39,7 @@ reviews and compaction take core's `StructuredCall` and `MemoryPrompts`.
   Sessions name their `source`, events their `sourceUuid`. Tool text is
   scrubbed (`scrub.ts`) and trimmed to 2,000 characters a side. Chat's
   appends and backfill unmarks share `TranscriptWriter`'s common lock.
+  `persona` entries keep layer, success and offset, outside experience.
 - `memory/open.ts`: `openMemory` opens a chat's memory and returns its
   `createSession(turns)`, whose sessions are compacting, tracked by memory
   and recorded by `sessionRecorder` (`record.ts`). Each starts from the
@@ -129,10 +130,9 @@ reviews and compaction take core's `StructuredCall` and `MemoryPrompts`.
 
 ## Tests
 
-- Pass every root, key and environment in; tests keep to temporary
-  directories (`history/testing.ts` has `tempRoot` and `TEST_ENV`).
-- Git tests isolate config; local HTTPS uses git http-backend and OpenSSL.
-- One contract test runs against both history engines, and across them.
+- Pass roots, keys and environments; use `history/testing.ts`'s
+  `tempRoot` and `TEST_ENV`. Git config is isolated.
+- Local HTTPS uses git http-backend and OpenSSL; tests cross both engines.
 - `memory/fake-session.ts` fakes a `ChatSession`; `*-testing.ts` share fixtures.
 
 ## See also
