@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-11
+mtime: 2026-11-13
 spdx: GPL-3.0-only
 title: Repository workflow
 description: >-
@@ -142,11 +142,11 @@ The assets are:
   (`agents.test.ts` checks).
 - **Skills** in `.agents/skills/`. The repository commits four of its own:
   `agent-stewardship`, `agent-pre-screening`, `development-evidence` and
-  `worktrees`. Third-party skills are dependencies, declared in
-  `package.json`, recorded in
-  `skills-lock.json` and pinned to a commit: superpowers (less four
-  excluded skills) is linked by `bun install`, and herdr's, a remote one,
-  by `bun run skills`.
+  `worktrees`. Third-party skills are dependencies. Superpowers (less four
+  excluded skills) is a package, declared in `package.json`, pinned to a
+  commit by `bun.lock` and linked by `bun install`. Remote skills are
+  recorded in `skills-lock.json` by source and content hash, installed
+  with `skills add` and refreshed with `skills update`.
 - **Memory** in `.agents/memory/`, indexed by its `MEMORY.md`, each entry
   a link with its hook on the next line. It holds the user's preferences and
   their reasons, not procedures, which belong in skills. Memories link
