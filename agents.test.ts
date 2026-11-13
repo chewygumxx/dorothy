@@ -48,7 +48,7 @@ type Lock = {
     >;
 };
 
-// Superpowers' skills less the four the `skills` script excludes.
+// Superpowers' skills less the four package.json's array leaves out.
 const SKILLS = [
     "brainstorming",
     "dispatching-parallel-agents",
@@ -85,8 +85,28 @@ const OWN_SKILLS = at("packages/skills/skills");
 
 const lock = (): Lock => JSON.parse(read(at("skills-lock.json")));
 
-const skillsScript = (): string =>
-    JSON.parse(read(at("package.json"))).scripts.skills;
+// package.json's `skills` array: each git source at a commit, with the
+// skills taken from it.
+type Declared = { source: string; ref: string; skills: string[] };
+
+const declared = (): Declared[] =>
+    JSON.parse(read(at("package.json"))).skills ?? [];
+
+// prepare.sh's sync, its continuations joined.
+const syncLine = (): string =>
+    read(at("scripts/prepare.sh"))
+        .replaceAll(/\s*\\\n\s*/g, " ")
+        .split("\n")
+        .find((line) => line.includes("experimental_sync"))
+        ?.trim() ?? "";
+
+// A mise task's run, as a list of its commands.
+const taskRun = (file: string, task: string): string[] => {
+    const tasks = Bun.TOML.parse(
+        read(at(".config/mise/tasks", `${file}.task.toml`)),
+    ) as Record<string, { run?: string | string[] }>;
+    return [tasks[task]?.run ?? []].flat();
+};
 
 const linked = (dir: string): string[] =>
     existsSync(at(dir)) ? readdirSync(at(dir)).sort() : [];
@@ -135,21 +155,24 @@ const brokenLinks = (path: string): string[] =>
 const PACKAGES = at("packages");
 
 describe("the skills", () => {
-    it("records superpowers' skills less the excluded four", () => {
-        const fromPackages = Object.entries(lock().skills)
-            .filter(([, entry]) => entry.source === "superpowers")
-            .map(([name]) => name)
-            .sort();
-        expect(fromPackages).toEqual(SKILLS);
+    it("pins every source to a full commit", () => {
+        expect(declared()).not.toEqual([]);
+        for (const entry of declared()) {
+            expect(entry.ref).toMatch(/^[0-9a-f]{40}$/);
+            expect(entry.skills.length).toBeGreaterThan(0);
+        }
     });
 
-    it("excludes the four in the skills script, and links none", () => {
-        const named = [
-            ...skillsScript().matchAll(/--exclude '[^#']+#([^']+)'/g),
-        ]
-            .map((match) => match[1] as string)
-            .sort();
-        expect(named).toEqual(EXCLUDED);
+    it("takes superpowers' skills less the four", () => {
+        const superpowers = declared().find(
+            (entry) => entry.source === "obra/superpowers",
+        );
+        expect(superpowers?.skills).toEqual(SKILLS);
+        for (const entry of declared()) {
+            expect(
+                entry.skills.filter((name) => EXCLUDED.includes(name)),
+            ).toEqual([]);
+        }
         for (const dir of LINKS) {
             expect(
                 linked(dir).filter((name) => EXCLUDED.includes(name)),
@@ -157,8 +180,33 @@ describe("the skills", () => {
         }
     });
 
+    it("records exactly the declared skills and its own", () => {
+        const names = declared().flatMap((entry) => entry.skills);
+        expect(Object.keys(lock().skills).sort()).toEqual(
+            [...names, ...OWN].sort(),
+        );
+    });
+
+    it("records each declared skill at its commit", () => {
+        for (const entry of declared()) {
+            for (const name of entry.skills) {
+                expect(lock().skills[name]?.ref).toBe(entry.ref);
+            }
+        }
+    });
+
     it("syncs without reporting to skills.sh", () => {
-        expect(skillsScript()).toStartWith("DO_NOT_TRACK=1 ");
+        expect(syncLine()).toStartWith("DO_NOT_TRACK=1 ");
+        expect(taskRun("other", "skills")[0]).toStartWith("DO_NOT_TRACK=1 ");
+        expect(taskRun("lint", "lint:skills")[0]).toStartWith(
+            "DO_NOT_TRACK=1 ",
+        );
+    });
+
+    it("declares superpowers nowhere as a package", () => {
+        const manifest = JSON.parse(read(at("package.json")));
+        expect(manifest.devDependencies).not.toHaveProperty("superpowers");
+        expect(manifest.scripts).not.toHaveProperty("skills");
     });
 
     for (const [name, entry] of Object.entries(lock().skills)) {
@@ -433,7 +481,9 @@ const preparedCheckout = () => {
     for (const name of ["prepare.sh", "agent-memory.ts"]) {
         copyFileSync(at("scripts", name), join(root, "scripts", name));
     }
-    writeFileSync(join(bin, "husky"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    for (const name of ["husky", "skills"]) {
+        writeFileSync(join(bin, name), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    }
     writeFileSync(
         join(bin, "bun"),
         [

@@ -5,7 +5,7 @@ description: >-
   evidence, transferring archive parts to or from R2, or assessing recovery
   and independent backup status.
 ctime: 2026-11-06
-mtime: 2026-11-06
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 tags:
   - agents

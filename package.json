@@ -38,7 +38,6 @@
         "prettier": "^3.9.10",
         "remark-cli": "^12.0.1",
         "skills": "^1.7.5",
-        "superpowers": "github:obra/superpowers",
         "sync-header-metadata": "2.4.2",
         "typescript": "^7.0.2"
     },
@@ -47,9 +46,62 @@
         "dev": "bun packages/cli/src/index.ts",
         "eval": "bun packages/eval/src/main.ts",
         "prepare": "sh scripts/prepare.sh",
-        "skills": "DO_NOT_TRACK=1 skills experimental_sync -y --agent claude-code codex --exclude 'superpowers#using-git-worktrees' --exclude 'superpowers#using-superpowers' --exclude 'superpowers#diagnosing-superpowers' --exclude 'superpowers#writing-skills'",
         "start": "bun packages/cli/src/index.ts"
     },
+    "skills": [
+        {
+            "source": "obra/superpowers",
+            "ref": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+            "skills": [
+                "brainstorming",
+                "dispatching-parallel-agents",
+                "executing-plans",
+                "finishing-a-development-branch",
+                "receiving-code-review",
+                "requesting-code-review",
+                "subagent-driven-development",
+                "systematic-debugging",
+                "test-driven-development",
+                "verification-before-completion",
+                "writing-plans"
+            ]
+        },
+        {
+            "source": "chewygumxx/agent-library",
+            "ref": "aea953d507ad5eee40f00c10347c1a0ae296c245",
+            "skills": [
+                "configuring-mise-tasks"
+            ]
+        },
+        {
+            "source": "chewygumxx/claude-library",
+            "ref": "69327fc0c7fd3bc27f53a7c322556b2f4ea73b73",
+            "skills": [
+                "compact-summary"
+            ]
+        },
+        {
+            "source": "addyosmani/agent-skills",
+            "ref": "301b02b12bff98e4688e6984af6556802322bbde",
+            "skills": [
+                "code-simplification"
+            ]
+        },
+        {
+            "source": "vercel-labs/skills",
+            "ref": "b716f9dc2ba36b6aa8f0080615e5a3a6caeac63b",
+            "skills": [
+                "find-skills"
+            ]
+        },
+        {
+            "source": "ayghri/i-have-adhd",
+            "ref": "1ecea1993b7fce257ffbd686c070948b5e07eda6",
+            "skills": [
+                "i-have-adhd"
+            ]
+        }
+    ],
     "config": {
         "commitizen": {
             "path": "@chewygumxx/cz-commitlint"

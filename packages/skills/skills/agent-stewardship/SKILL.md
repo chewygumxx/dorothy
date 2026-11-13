@@ -6,7 +6,7 @@ description: >-
   a wake-up, messaging another agent in herdr, or when your context
   passes 85% and you would compact yourself.
 ctime: 2026-10-31
-mtime: 2026-11-05
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 tags:
   - agents

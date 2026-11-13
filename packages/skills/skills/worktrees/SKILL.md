@@ -5,7 +5,7 @@ description: >-
   worktree of Dorothy's repository, or when a worktree lacks skills, git
   hooks or node_modules.
 ctime: 2026-10-15
-mtime: 2026-11-13
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 tags:
   - agents

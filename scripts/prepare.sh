@@ -15,7 +15,8 @@ set -e
 [ -d node_modules/husky ] || exit 0
 
 husky
-bun run skills --no-remote
+DO_NOT_TRACK=1 skills experimental_sync -y \
+    --agent claude-code codex ${CI:+--no-remote}
 
 # The sync exits 0 on a skipped skill, so the skills' checks fail instead.
 bun test --bail agents.test.ts --test-name-pattern 'the skills'

@@ -6,7 +6,7 @@ description: >-
   applying their decisions, and the owner's spot-check and reopening of
   what they accepted.
 ctime: 2026-10-31
-mtime: 2026-10-31
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 tags:
   - agents
