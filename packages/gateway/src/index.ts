@@ -3,7 +3,7 @@
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/gateway/src/index.ts
 //
 //

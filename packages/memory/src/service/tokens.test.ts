@@ -3,7 +3,7 @@
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/memory/src/service/tokens.test.ts
 //
 //

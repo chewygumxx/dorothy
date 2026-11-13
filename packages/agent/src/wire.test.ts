@@ -3,7 +3,7 @@
 
 //
 //
-// ~chewygumxx/dorothy.git
+// ~xxdorothy/dorothy.git
 // ::: :/packages/agent/src/wire.test.ts
 //
 //

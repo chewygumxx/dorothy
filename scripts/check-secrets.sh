@@ -4,7 +4,7 @@
 
 #
 #
-# ~chewygumxx/dorothy.git
+# ~xxdorothy/dorothy.git
 # ::: :/scripts/check-secrets.sh
 #
 #

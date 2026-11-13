@@ -3,7 +3,7 @@
 
 #
 #
-# ~chewygumxx/dorothy.git
+# ~xxdorothy/dorothy.git
 # ::: :/packages/cli/assets/hermes/dorothy/__init__.py
 #
 #

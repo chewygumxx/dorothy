@@ -14,7 +14,7 @@ tags:
 
 <!--
    -
-   - ~chewygumxx/dorothy.git
+   - ~xxdorothy/dorothy.git
    - ::: :/packages/cli/assets/pi/stewardship/capabilities.md
    -
    -->
