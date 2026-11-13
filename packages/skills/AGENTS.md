@@ -32,8 +32,9 @@ Only through the skills CLI's sync, which `prepare` runs on every
 dependency, and the sync links each skill into `.agents/skills/<name>`
 through `node_modules/@dorothy/skills`, links `.claude/skills/<name>` to
 that, and records it in `skills-lock.json` as this package's. Neither
-directory is edited by hand; after adding, renaming or removing a skill,
-run `bun install` and commit the lock it writes.
+directory is edited by hand; after adding, editing, renaming or removing
+a skill, run `mise run skills` (or `bun install`) and commit
+`skills-lock.json`, or `lint:skills` fails the commit.
 
 ## Entry points and imports
 

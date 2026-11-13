@@ -662,6 +662,12 @@ In two: `build(config): Ignore .agents and
 - [ ] **Step 8: Ship PR 2**
 
 Push, open the pull request, merge once CI
-passes. Tell the user that each checkout needs one `bun install` to
-link the skills and repoint memory, and that Claude sessions started
-before it still write to the old directory.
+passes. Tell the user that each existing checkout, the main one and every
+worktree, needs a one-time reset to link the skills and repoint memory:
+
+```sh
+rm -rf .agents/skills .claude/skills && bun install
+```
+
+Fresh clones and new worktrees need `bun install` alone. Claude sessions
+started before it still write to the old directory.

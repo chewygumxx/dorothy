@@ -165,7 +165,15 @@ The assets are:
 `.gitignore` ignores `/.agents/` and `/.claude/` whole, so nothing in
 either is tracked or edited by hand
 ([decision](../decisions.md#agent-assets-are-declared-outside-agents-and-claude)).
-`bun install` points Claude's auto memory at `docs/memory/`. The
+`bun install` points Claude's auto memory at `docs/memory/`. A checkout
+that predates the array, the main one and each worktree, needs one reset
+first, as its old skill directories and links would otherwise stay:
+
+```sh
+rm -rf .agents/skills .claude/skills && bun install
+```
+
+The
 coordination of agents that the stewardship skill governs is the subject of
 [orchestration](./orchestration.md#how-her-developers-are-coordinated-today).
 

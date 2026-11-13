@@ -1124,9 +1124,11 @@ The machinery behind these rules is on
   reinstall from clean to see the boundary.
 - **Standing**: revisited from 2026-10-15, when the identity and gateway
   packages were added, and 2026-10-19, when the evaluation was built. The
-  graph is now eight packages and `workspace.test.ts` pins it; "the agent
-  is the only SDK user" now holds for the AI SDK, the Agent SDK having gone
-  ([packages](./profiles/packages.md)).
+  graph was then eight packages and `workspace.test.ts` pins it (nine
+  since `skills` was added, see
+  [agent assets](#agent-assets-are-declared-outside-agents-and-claude));
+  "the agent is the only SDK user" now holds for the AI SDK, the Agent SDK
+  having gone ([packages](./profiles/packages.md)).
 - **Sources**:
   [workspace modularity spec](../specs/2026-10-09-workspace-modularity-design.md#decisions),
   [report](../reports/2026-10-09-workspace-modularity.md).
@@ -1392,8 +1394,15 @@ The machinery behind these rules is on
 - **Cost**: A ninth package, against the eight-package rule. A plain
   `bun install` downloads every remote skill, and offline it warns and
   links the package's alone. The sync is experimental. Each checkout
-  needs one `bun install` to link the skills and repoint memory, and a
-  Claude session started before it still writes the old directory.
+  needs `bun install` to link the skills and repoint memory. An existing
+  checkout, the main one and each worktree, needs one reset first, as the
+  sync never replaces its old directories and links:
+
+  ```sh
+  rm -rf .agents/skills .claude/skills && bun install
+  ```
+
+  A Claude session started before it still writes the old directory.
 - **Standing**: current
   ([repository workflow](./topics/repository-workflow.md#agent-assets),
   [build configuration](./topics/build-configuration.md#worktrees)).

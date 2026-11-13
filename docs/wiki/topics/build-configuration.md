@@ -80,8 +80,8 @@ the shared CI, not a probe, and an inference where marked:
 - `.repo-metadata.jsonc`: the default path of the shared standard
   workflow's `metadata-path` input, in `chewygumxx/.github`'s
   `standard.yaml`.
-- `skills-lock.json`: an inference, unprobed: the skills CLI writes it
-  beside `package.json`, where it is, and no option to move it is known.
+- `skills-lock.json`: the skills CLI reads the lock beside `package.json`
+  (`readLocalLock(cwd)` in its `dist/cli.mjs`), so it stays at the root.
 - `.github/`: GitHub reads workflows and Dependabot's configuration only
   there. What the workflow runs and promises is in
   [`ci.md`](../../../.github/workflows/ci.md), beside it.
