@@ -16,7 +16,7 @@ export function stripHouseHeader(source: string): string {
         .replace(/<!--[\s\S]*?-->/, (comment) =>
             comment.includes(":::") ? "" : comment,
         )
-        .replace(/(?:^|\n)<!-- vim:[^\n]*-->[ \t]*\n?$/, "")
+        .replace(/(?:^|\n)<!-- vim:[^\n]*-->[ \t\n]*$/, "")
         .trim();
 
     if (!body) {

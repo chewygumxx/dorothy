@@ -9,7 +9,7 @@
 //
 
 import { label, type Route, type Turn } from "@dorothy/core";
-import { type IdentityComponent, identityComponents } from "@dorothy/identity";
+import { identityPrompt } from "@dorothy/identity";
 
 // Chat is Dorothy as the user meets her. Development mode is for the people
 // building her. she says which mode she is in, and describes her context
@@ -19,28 +19,11 @@ export type PersonaMode = "chat" | "development";
 export type PersonaOptions = { recall: boolean; mode?: PersonaMode };
 
 export type PersonaComponent = {
-    name:
-        | "identity"
-        | "voice"
-        | "mode"
-        | "capabilities"
-        | "plumbing"
-        | "provenance"
-        | "memory";
+    name: "identity" | "mode" | "capabilities" | "plumbing" | "memory";
     text: string;
 };
 
 const sentences = (...lines: string[]) => lines.join(" ");
-
-// Who she is, how she speaks and what she says of what runs her are the
-// same in every host, so they come from @dorothy/identity.
-function shared(name: IdentityComponent["name"]): PersonaComponent {
-    const component = identityComponents().find((c) => c.name === name);
-    if (component === undefined) {
-        throw new Error(`@dorothy/identity has no ${name} component`);
-    }
-    return component;
-}
 
 function capabilities(chat: boolean, recall: boolean): string {
     if (chat) {
@@ -70,8 +53,7 @@ export function personaComponents({
 }: PersonaOptions): PersonaComponent[] {
     const chat = mode === "chat";
     return [
-        shared("identity"),
-        shared("voice"),
+        { name: "identity", text: identityPrompt() },
         ...(chat
             ? []
             : [
@@ -108,7 +90,6 @@ export function personaComponents({
                       "you are unsure.",
                   ),
         },
-        shared("provenance"),
         {
             name: "memory",
             text: sentences(
@@ -133,7 +114,7 @@ export function personaComponents({
 export function personaPrompt(options: PersonaOptions): string {
     return personaComponents(options)
         .map((component) => component.text)
-        .join(" ");
+        .join("\n\n");
 }
 
 // Reviews and one-shot replies have no tools.

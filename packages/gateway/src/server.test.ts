@@ -180,7 +180,9 @@ describe("startGateway", () => {
             ["GET", "/v1/models?limit=1"],
             ["POST", "/v1/other"],
         ]);
-        expect(upstream.seen[0]?.body).toContain(identityPrompt());
+        expect(JSON.parse(upstream.seen[0]?.body ?? "").system[1].text).toBe(
+            identityPrompt(),
+        );
         expect(upstream.seen[2]?.body).toBe(marked);
     });
 

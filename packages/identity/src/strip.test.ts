@@ -33,6 +33,12 @@ describe("stripHouseHeader", () => {
         expect(stripHouseHeader(fixture())).toBe(BODY);
     });
 
+    it("strips a final modeline followed by blank lines", () => {
+        for (const ending of ["\n\n", "\n\n\n", "\n \t\n"]) {
+            expect(stripHouseHeader(`${fixture()}${ending}`)).toBe(BODY);
+        }
+    });
+
     it("ignores the header's dates", () => {
         expect(stripHouseHeader(fixture(BODY, "2026-11-14"))).toBe(
             stripHouseHeader(fixture(BODY, "2026-11-15")),
