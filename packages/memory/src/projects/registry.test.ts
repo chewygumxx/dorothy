@@ -19,6 +19,7 @@ import {
     parseRegistry,
     type Registry,
     readRegistry,
+    resolveMemoryDir,
     syncRecord,
     withProject,
     writeRegistry,
@@ -235,12 +236,50 @@ describe("chooseMemoryDir", () => {
         await rm(root, { recursive: true, force: true });
     });
 
-    it("takes .agents/memory, else .claude/memory, else .agents/memory", async () => {
+    it("takes docs/memory, else .agents/memory, else .claude/memory, else .agents/memory", async () => {
         expect(await chooseMemoryDir(root)).toBe(".agents/memory");
         await mkdir(join(root, ".claude", "memory"), { recursive: true });
         expect(await chooseMemoryDir(root)).toBe(".claude/memory");
         await mkdir(join(root, ".agents", "memory"), { recursive: true });
         expect(await chooseMemoryDir(root)).toBe(".agents/memory");
+        await mkdir(join(root, "docs", "memory"), { recursive: true });
+        expect(await chooseMemoryDir(root)).toBe("docs/memory");
+    });
+});
+
+describe("resolveMemoryDir", () => {
+    let root = "";
+    beforeEach(async () => {
+        root = await mkdtemp(join(tmpdir(), "dorothy-resolve-"));
+    });
+    afterEach(async () => {
+        await rm(root, { recursive: true, force: true });
+    });
+
+    it("chooses when nothing is recorded", async () => {
+        await mkdir(join(root, ".claude", "memory"), { recursive: true });
+        expect(await resolveMemoryDir(root, undefined)).toBe(
+            await chooseMemoryDir(root),
+        );
+    });
+
+    it("keeps the recorded directory while present, though another is too", async () => {
+        await mkdir(join(root, "docs", "memory"), { recursive: true });
+        await mkdir(join(root, ".agents", "memory"), { recursive: true });
+        expect(await resolveMemoryDir(root, ".agents/memory")).toBe(
+            ".agents/memory",
+        );
+    });
+
+    it("follows the memory when the recorded directory is gone", async () => {
+        await mkdir(join(root, "docs", "memory"), { recursive: true });
+        expect(await resolveMemoryDir(root, ".agents/memory")).toBe(
+            "docs/memory",
+        );
+    });
+
+    it("keeps a recorded directory gone with no other present", async () => {
+        expect(await resolveMemoryDir(root, "docs/memory")).toBe("docs/memory");
     });
 });
 

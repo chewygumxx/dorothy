@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import * as filesystem from "node:fs/promises";
 import {
     chmod,
+    lstat,
     mkdir,
     mkdtemp,
     readdir,
@@ -116,8 +117,8 @@ const facts = async () =>
 const files = async () =>
     (await readdir(join(repo, ".agents", "memory"))).sort();
 
-async function sync(): Promise<SyncReport> {
-    const result = await syncProject(repo, options());
+async function sync(checkout = repo): Promise<SyncReport> {
+    const result = await syncProject(checkout, options());
     if (result.kind !== "ok") {
         throw new Error(JSON.stringify(result));
     }
@@ -862,15 +863,15 @@ describe("syncProject", () => {
             await rename(claude, agents);
             await useMemoryDir(".agents/memory");
             expect(moved(await sync())).toEqual(NOTHING);
-            // Back to the directory moved away, which has a record but is
-            // not the one this root last synced: nothing was deleted.
+            // The directory moved away has a record, but is gone and not
+            // the one this root last synced: sync follows the memory.
             await useMemoryDir(".claude/memory");
-            expect(moved(await sync())).toEqual({
-                ...NOTHING,
-                exported: ["a", "b"],
-            });
-            await useMemoryDir(".agents/memory");
             expect(moved(await sync())).toEqual(NOTHING);
+            const registry = JSON.parse(
+                await readFile(projectsPath(data), "utf8"),
+            );
+            expect(registry.projects[ID].memoryDir).toBe(".agents/memory");
+            await expect(lstat(claude)).rejects.toThrow();
             expect((await facts()).map(({ retired }) => retired)).toEqual([
                 null,
                 null,
@@ -882,7 +883,7 @@ describe("syncProject", () => {
             ]);
         });
 
-        it("retires every fact when the directory last synced is gone", async () => {
+        const setUpGone = async () => {
             await putRepo("a.md", repoFact("a", "First fact."));
             await putRepo("b.md", repoFact("b", "Second fact."));
             await sync();
@@ -892,11 +893,105 @@ describe("syncProject", () => {
                 ...NOTHING,
                 exported: ["a", "b"],
             });
+        };
+
+        it("switches to a present directory when the one last synced is gone", async () => {
+            await setUpGone();
             await rm(join(repo, "docs", "memory"), { recursive: true });
+            expect(moved(await sync())).toEqual(NOTHING);
+            expect((await facts()).map(({ retired }) => retired)).toEqual([
+                null,
+                null,
+            ]);
+        });
+
+        it("retires every fact when the directory last synced is gone and no other is present", async () => {
+            await setUpGone();
+            await rm(join(repo, "docs", "memory"), { recursive: true });
+            await rm(join(repo, ".agents", "memory"), { recursive: true });
             expect(moved(await sync())).toEqual({
                 ...NOTHING,
                 retired: ["a", "b"],
             });
+        });
+    });
+
+    describe("when the memory directory moves", () => {
+        const other = () => join(base, "other");
+        const moveMemory = async () => {
+            await mkdir(join(repo, "docs"));
+            await rename(
+                join(repo, ".agents", "memory"),
+                join(repo, "docs", "memory"),
+            );
+        };
+        const registered = async () =>
+            JSON.parse(await readFile(projectsPath(data), "utf8"));
+        const retirements = async () =>
+            (await facts()).map(({ retired }) => retired);
+
+        it("follows the memory to docs/memory, retiring nothing", async () => {
+            await putRepo("a.md", repoFact("a", "First fact."));
+            await putRepo("b.md", repoFact("b", "Second fact."));
+            await sync();
+            await moveMemory();
+            expect(moved(await sync())).toEqual(NOTHING);
+            expect(await retirements()).toEqual([null, null]);
+            expect((await registered()).projects[ID].memoryDir).toBe(
+                "docs/memory",
+            );
+            expect(
+                (await readdir(join(repo, "docs", "memory"))).sort(),
+            ).toEqual(["MEMORY.md", "a.md", "b.md"]);
+        });
+
+        it("keeps checkouts on either directory in step, retiring nothing", async () => {
+            await putRepo("a.md", repoFact("a", "First fact."));
+            await putRepo("b.md", repoFact("b", "Second fact."));
+            await sync();
+            await moveMemory();
+            expect(moved(await sync())).toEqual(NOTHING);
+            await mkdir(join(other(), ".git"), { recursive: true });
+            await mkdir(join(other(), ".agents", "memory"), {
+                recursive: true,
+            });
+            await writeFile(
+                join(other(), ".git", "config"),
+                await readFile(join(repo, ".git", "config")),
+            );
+            const reports = [await sync(other())];
+            expect(moved(reports[0] as SyncReport)).toEqual({
+                ...NOTHING,
+                exported: ["a", "b"],
+            });
+            await writeFile(
+                join(other(), ".agents", "memory", "c.md"),
+                repoFact("c", "Third fact."),
+            );
+            reports.push(await sync(other()), await sync());
+            expect(moved(reports[1] as SyncReport).imported).toEqual(["c"]);
+            expect(moved(reports[2] as SyncReport).exported).toEqual(["c"]);
+            await writeFile(
+                join(repo, "docs", "memory", "d.md"),
+                repoFact("d", "Fourth fact."),
+            );
+            reports.push(await sync(), await sync(other()));
+            expect(moved(reports[3] as SyncReport).imported).toEqual(["d"]);
+            expect(moved(reports[4] as SyncReport).exported).toEqual(["d"]);
+            for (const report of reports) {
+                expect(report.retired).toEqual([]);
+            }
+            expect(await retirements()).toEqual([null, null, null, null]);
+            for (const dir of [
+                join(repo, "docs", "memory"),
+                join(other(), ".agents", "memory"),
+            ]) {
+                expect(
+                    (await readdir(dir))
+                        .filter((file) => file !== "MEMORY.md")
+                        .sort(),
+                ).toEqual(["a.md", "b.md", "c.md", "d.md"]);
+            }
         });
     });
 

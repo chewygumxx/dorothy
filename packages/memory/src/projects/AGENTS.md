@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-15
-mtime: 2026-10-20
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: packages/memory/src/projects/AGENTS.md
 description: >-
@@ -21,7 +21,10 @@ tags:
 
 A project is the git repository a path is in. Its facts live in the
 store under `facts/projects/<id>/` and are synced to the repository's
-memory directory, `.agents/memory/` by default.
+memory directory: the first of `MEMORY_DIRS` (`docs/memory`,
+`.agents/memory`, `.claude/memory`) the repository holds, else
+`.agents/memory`. The recorded one is kept while present; if it is gone
+and another is present, sync follows to it (`resolveMemoryDir`).
 
 ## Files
 
@@ -86,6 +89,8 @@ memory directory, `.agents/memory/` by default.
   with none it is a first sync, which retires nothing. Others are kept,
   never pruned. A directory absent from disk keeps its record only if
   the root synced it last, so only a deletion retires, never a move.
+- A memory directory is switched to only when present: deleting the one
+  directory retires every fact, moving it retires none.
 - Sync never commits or pushes, never writes outside the memory
   directory, and refuses a memory directory that escapes by `..` or
   through a symlink at any step from the root down.

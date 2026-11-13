@@ -190,15 +190,42 @@ const isDirectory = async (path: string) => {
     }
 };
 
-// Where a repository keeps its memory: .agents/memory if it exists, else
-// .claude/memory if that does, else .agents/memory.
-export async function chooseMemoryDir(root: string): Promise<string> {
-    if (await isDirectory(join(root, ".agents", "memory"))) {
-        return ".agents/memory";
+// The directories a repository may keep its memory in, by preference.
+export const MEMORY_DIRS = [
+    "docs/memory",
+    ".agents/memory",
+    ".claude/memory",
+] as const;
+
+const firstPresent = async (root: string) => {
+    for (const dir of MEMORY_DIRS) {
+        if (await isDirectory(join(root, dir))) {
+            return dir;
+        }
     }
-    return (await isDirectory(join(root, ".claude", "memory")))
-        ? ".claude/memory"
-        : ".agents/memory";
+    return undefined;
+};
+
+// Where a repository keeps its memory: the first of MEMORY_DIRS that
+// exists, else .agents/memory.
+export async function chooseMemoryDir(root: string): Promise<string> {
+    return (await firstPresent(root)) ?? ".agents/memory";
+}
+
+// The directory to sync: the one recorded while it exists, else the
+// first of MEMORY_DIRS present (the memory moved), else the recorded one
+// (it was deleted); with none recorded, the choice.
+export async function resolveMemoryDir(
+    root: string,
+    recorded: string | undefined,
+): Promise<string> {
+    if (recorded === undefined) {
+        return chooseMemoryDir(root);
+    }
+    if (await isDirectory(join(root, recorded))) {
+        return recorded;
+    }
+    return (await firstPresent(root)) ?? recorded;
 }
 
 const sorted = <T>(entries: Record<string, T>) =>
