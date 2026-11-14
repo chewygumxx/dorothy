@@ -12,7 +12,7 @@ import { describe, expect, it } from "bun:test";
 import { identityPrompt, personaVersion } from "./index.js";
 
 // Change it only when Dorothy is meant to change.
-const VERSION = "xxh3:0336a5f77c8da12f";
+const VERSION = "xxh3:a2cae1e36f727b74";
 
 describe("identityPrompt", () => {
     it("is soul.md without its header", () => {

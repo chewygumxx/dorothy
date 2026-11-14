@@ -99,6 +99,11 @@ each.
 | `claude-haiku-5-5` | Claude plan | 26 | 5 | 0 of 0 | 152 s | plan |
 | `gpt-6.1-terra` | ChatGPT plan | 26 | 5 | 0 of 0 | 112 s | plan |
 
+**Updates with no older claim** counts faults, not successes: of the
+knowledge-update questions a model wrote, how many had no earlier claim to
+update. Lower is better: `3 of 4` means three of four were faulty, and
+`0 of 0` means the model rightly wrote none.
+
 Reading it:
 
 - **Made** counts the drafts kept, of 30; **Dropped** counts drafts the
