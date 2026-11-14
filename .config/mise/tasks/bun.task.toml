@@ -25,7 +25,3 @@ run         = "bun run start"
 [eval]
 description = "Run Dorothy's evaluations"
 run         = "bun run eval"
-
-[skills]
-description = "Link the skills skills-lock.json declares"
-run         = "bun run skills"

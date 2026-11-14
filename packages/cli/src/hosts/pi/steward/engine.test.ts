@@ -280,7 +280,7 @@ describe("dispatch", () => {
 
     it("sends through the repository's sender by default", async () => {
         expect(SENDER).toEndWith(
-            "/.agents/skills/agent-stewardship/scripts/send-prompt.sh",
+            "/packages/skills/skills/agent-stewardship/scripts/send-prompt.sh",
         );
         expect(await Bun.file(SENDER).exists()).toBe(true);
     });
@@ -1128,7 +1128,7 @@ describe("cancel", () => {
 
     it("interrupts through the skill's locked sender by default", async () => {
         expect(INTERRUPTER).toEndWith(
-            "/.agents/skills/agent-stewardship/scripts/send-interrupt.sh",
+            "/packages/skills/skills/agent-stewardship/scripts/send-interrupt.sh",
         );
         expect(await Bun.file(INTERRUPTER).exists()).toBe(true);
     });

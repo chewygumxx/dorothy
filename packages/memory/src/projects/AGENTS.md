@@ -101,7 +101,9 @@ overwrites it
 - A memory directory is switched to only when it holds more of the
   root's recorded facts than the one synced last: deleting the one
   directory, or some of its files, retires those facts; moving it, or a
-  stray or recreated directory beside it, retires none.
+  stray or recreated directory beside it, retires none. A root whose
+  record holds no live fact has none to judge by, and keeps the recorded
+  directory while present, else takes the first present.
 - Sync never commits or pushes, never writes outside the memory
   directory, and refuses a memory directory that escapes by `..` or
   through a symlink at any step from the root down.

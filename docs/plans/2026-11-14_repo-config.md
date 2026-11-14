@@ -556,8 +556,9 @@ Expected: FAIL.
 Add the array; remove `superpowers` from
 devDependencies and `skills` from scripts; `prepare.sh` runs the sync
 command above in place of `bun run skills --no-remote`, and
-`prepare.md` step 2 names it, saying a failed fetch leaves the install
-to succeed and CI fetches nothing. The `skills` task (in
+`prepare.md` step 2 names it, saying a failed fetch warns and re-runs
+the sync with `--no-remote`, leaving the install to succeed, and CI
+fetches nothing. The `skills` task (in
 `other.task.toml`, description "Link every declared skill") runs the
 sync command, then
 `bun test --bail agents.test.ts --test-name-pattern 'the skills'`.
@@ -586,7 +587,8 @@ Same command as Step 2. Expected: PASS.
 - CI: `CI=1 bun install --frozen-lockfile`. Expected: exit 0.
 - Offline (Review Focus 4): `rm -rf .agents/skills`, then
   `HTTPS_PROXY=http://127.0.0.1:9 HTTP_PROXY=http://127.0.0.1:9
-  bun run prepare`. Expected: exit 0, the four own skills linked.
+  bun run prepare`. Expected: exit 0, prepare's warning on stderr, the
+  four own skills linked.
   Then `bun install` to restore.
 - Stale lock (Review Focus 5): append a blank line to
   `packages/skills/skills/worktrees/SKILL.md`; `mise run lint:skills`.
@@ -660,6 +662,12 @@ In two: `build(config): Ignore .agents and
 - [ ] **Step 8: Ship PR 2**
 
 Push, open the pull request, merge once CI
-passes. Tell the user that each checkout needs one `bun install` to
-link the skills and repoint memory, and that Claude sessions started
-before it still write to the old directory.
+passes. Tell the user that each existing checkout, the main one and every
+worktree, needs a one-time reset to link the skills and repoint memory:
+
+```sh
+rm -rf .agents/skills .claude/skills && bun install
+```
+
+Fresh clones and new worktrees need `bun install` alone. Claude sessions
+started before it still write to the old directory.

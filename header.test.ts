@@ -56,7 +56,7 @@ describe("the house header", () => {
             "LICENSE",
             ".gitignore",
             "docs/reports/2026-10-08-tags/probe/say.sh",
-            ".agents/memory/MEMORY.md",
+            "docs/memory/MEMORY.md",
             ".github/pull_request_template.md",
             "packages/cli/assets/pi/vendor/herdr/herdr-agent-state.ts",
         ]) {

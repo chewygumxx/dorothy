@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-03
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: Protocols
 description: >-
@@ -189,7 +189,7 @@ built, for the repository's own use.
 
 - `SKILL.md`, Agent Skills: the repository's skills sit in
   `.agents/skills/`, declared in `package.json` and `skills-lock.json` and
-  linked by `bun run skills`, as the root
+  linked by `bun install` or `mise run skills`, as the root
   [AGENTS.md](../../../AGENTS.md#commands) says. The research of
   2026-10-18 advised adopting it for her skills: stable, with progressive
   disclosure built in, and in the client showcase of Hermes and OpenClaw.

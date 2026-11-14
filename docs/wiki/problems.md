@@ -37,7 +37,7 @@ is one of three, and the entry never blurs them:
 
 The entries rest on `docs/deferred/`, the
 [repository code review](../reports/2026-10-19-code-review.md), the reports'
-limitations and findings, and the `feedback` memories in `.agents/memory/`.
+limitations and findings, and the `feedback` memories in `docs/memory/`.
 A report's workaround is not called necessary now unless the code or a later
 record was checked, and the entry says when it was not. What a host has been
 shown to do is on [harnesses](./profiles/harnesses.md), not here.
@@ -81,7 +81,7 @@ what it is.
   outlasts one stops. The user's memory records that both plans hit their
   limits often, and it names the occasion that set the rule: on 2026-10-29 a
   136-draft review sent to Codex at `xhigh` with 59% left ran out halfway
-  ([usage limits](../../.agents/memory/usage-limits.md)).
+  ([usage limits](../memory/usage-limits.md)).
 - **Diagnosis**: Each client reports its own budget. Claude Code gives its
   plan's `rate_limits` to the status line alone, so the user's own status
   line, running `scripts/statusline.sh`, writes them to a file the agent
@@ -383,7 +383,7 @@ what it is.
   from it, as the preload fixes their colour; other output a background
   session colours may still differ.
 - **Evidence**:
-  [the memory](../../.agents/memory/bg-session-force-color.md) and
+  [the memory](../memory/bg-session-force-color.md) and
   [`test-setup.ts`](../../test-setup.ts).
 
 ## `claude -c` or `claude purge` acts on the live session
@@ -401,7 +401,7 @@ what it is.
   transcripts by hand. This is the memory's instruction, not rechecked here.
 - **State**: Workflow pitfall.
 - **Evidence**:
-  [the memory](../../.agents/memory/nested-claude-session-env.md).
+  [the memory](../memory/nested-claude-session-env.md).
 
 ## secrets not loaded (SOPS_FAILED) on a temporary root
 
@@ -431,16 +431,16 @@ what it is.
   characters, scope included, and bodies wrapped at 72.
 - **State**: Workflow pitfall.
 - **Evidence**:
-  [the memory](../../.agents/memory/plan-commit-headers.md) and
+  [the memory](../memory/plan-commit-headers.md) and
   [the checks](./topics/repository-workflow.md#the-checks).
 
 ## `bun run check` fails on a memory file after a sync export
 
 - **Cause**: Sync exports model-written bodies as they are, and `lint:md` and
-  `lint:emdash` cover `.agents/memory/`, so an export into the checkout of a
+  `lint:emdash` cover `docs/memory/`, so an export into the checkout of a
   fact with an em dash or a body line over 80 characters fails the check
   until the file is edited.
-- **Diagnosis**: The failure names a file under `.agents/memory/` and its
+- **Diagnosis**: The failure names a file under `docs/memory/` and its
   line.
 - **Remedy**: Edit the file. The root `AGENTS.md` still tells memory authors
   to write no em dash and no line over 80 characters. The sweep recorded the

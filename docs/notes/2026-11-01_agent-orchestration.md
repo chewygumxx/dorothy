@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-01
-mtime: 2026-11-01
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: An orchestration layer for less permissive agents
 description: >-
@@ -32,10 +32,10 @@ permissive policy.
 `dorothy-main`, a Claude Code session, coordinates through herdr 0.9.5:
 it types into the other agents' terminals (`send-prompt.sh`), reads
 their panes, and waits on herdr's lifecycle states
-([herdr](../../.agents/skills/agent-stewardship/references/herdr.md)).
+([herdr](../../packages/skills/skills/agent-stewardship/references/herdr.md)).
 Codex runs with `approval_policy = "never"` and
 `sandbox_mode = "danger-full-access"`, so it never asks
-([Codex full send](../../.agents/memory/codex-full-send.md)); Claude Code's
+([Codex full send](../memory/codex-full-send.md)); Claude Code's
 own permission prompts are not covered at all. herdr recognises an agent
 `blocked` on an approval dialog, but answering one means reading the
 pane and sending keys, and herdr's own guidance is to ask the user

@@ -9,8 +9,8 @@
 //
 
 // The agent-stewardship skill's scripts, run against stand-ins for herdr
-// and systemd-run on a temporary PATH. The skill lives in a hidden
-// directory, which Bun's test discovery skips, so its tests live here.
+// and systemd-run on a temporary PATH. The skill, in `@dorothy/skills`,
+// holds only what agents read, so its tests live here.
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
@@ -32,7 +32,8 @@ import { join } from "node:path";
 const scripts = join(
     import.meta.dir,
     "..",
-    ".agents",
+    "packages",
+    "skills",
     "skills",
     "agent-stewardship",
     "scripts",
@@ -1538,7 +1539,7 @@ describe("with-claude.sh", () => {
             '["CLAUDE_CODE_OAUTH_TOKEN_CLAUDE2"]',
         ]);
         expect(call[4]).toBe(
-            join(await realpath(join(scripts, "../../../..")), "secrets.json"),
+            join(await realpath(join(import.meta.dir, "..")), "secrets.json"),
         );
     });
 
@@ -1577,22 +1578,46 @@ describe("with-claude.sh", () => {
 
     it("finds one checkout through the .claude/skills link", async () => {
         const checkout = join(root, "checkout");
-        const skill = join(checkout, ".agents", "skills", "agent-stewardship");
+        const skill = join(
+            checkout,
+            "packages",
+            "skills",
+            "skills",
+            "agent-stewardship",
+        );
         await mkdir(join(skill, "scripts"), { recursive: true });
-        await mkdir(join(checkout, ".claude", "skills"), { recursive: true });
         await copyFile(withClaude, join(skill, "scripts", "with-claude.sh"));
         await chmod(join(skill, "scripts", "with-claude.sh"), 0o755);
-        await symlink(
-            "../../.agents/skills/agent-stewardship",
-            join(checkout, ".claude", "skills", "agent-stewardship"),
-        );
+        for (const [target, ...link] of [
+            ["../../packages/skills", "node_modules", "@dorothy", "skills"],
+            [
+                "../../node_modules/@dorothy/skills/skills/agent-stewardship",
+                ".agents",
+                "skills",
+                "agent-stewardship",
+            ],
+            [
+                "../../.agents/skills/agent-stewardship",
+                ".claude",
+                "skills",
+                "agent-stewardship",
+            ],
+        ] as const) {
+            const path = join(checkout, ...link);
+            await mkdir(join(path, ".."), { recursive: true });
+            await symlink(target, path);
+        }
         const expected = join(await realpath(checkout), "secrets.json");
-        for (const base of [".agents", ".claude"]) {
+        for (const base of [
+            "packages/skills/skills",
+            "node_modules/@dorothy/skills/skills",
+            ".agents/skills",
+            ".claude/skills",
+        ]) {
             await rm(join(root, "calls.log"), { force: true });
             const script = join(
                 checkout,
                 base,
-                "skills",
                 "agent-stewardship",
                 "scripts",
                 "with-claude.sh",

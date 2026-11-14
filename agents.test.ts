@@ -21,6 +21,7 @@ import {
     mkdtempSync,
     readdirSync,
     readFileSync,
+    readlinkSync,
     realpathSync,
     rmSync,
     statSync,
@@ -47,7 +48,7 @@ type Lock = {
     >;
 };
 
-// Superpowers' skills less the four the `skills` script excludes.
+// Superpowers' skills less the four package.json's array leaves out.
 const SKILLS = [
     "brainstorming",
     "dispatching-parallel-agents",
@@ -69,8 +70,8 @@ const EXCLUDED = [
     "writing-skills",
 ];
 
-// The repository's own skills: committed beside the links, as
-// `.gitignore` negates them, and never recorded in the lock.
+// The repository's own skills, in `@dorothy/skills`, which the sync
+// links through node_modules and records as that package's.
 const OWN = [
     "agent-pre-screening",
     "agent-stewardship",
@@ -80,10 +81,32 @@ const OWN = [
 
 const LINKS = [".agents/skills", ".claude/skills"];
 
+const OWN_SKILLS = at("packages/skills/skills");
+
 const lock = (): Lock => JSON.parse(read(at("skills-lock.json")));
 
-const skillsScript = (): string =>
-    JSON.parse(read(at("package.json"))).scripts.skills;
+// package.json's `skills` array: each git source at a commit, with the
+// skills taken from it.
+type Declared = { source: string; ref: string; skills: string[] };
+
+const declared = (): Declared[] =>
+    JSON.parse(read(at("package.json"))).skills ?? [];
+
+// prepare.sh's syncs, the first and its retry, continuations joined.
+const syncLines = (): string[] =>
+    read(at("scripts/prepare.sh"))
+        .replaceAll(/\s*\\\n\s*/g, " ")
+        .split("\n")
+        .filter((line) => line.includes("experimental_sync"))
+        .map((line) => line.trim());
+
+// A mise task's run, as a list of its commands.
+const taskRun = (file: string, task: string): string[] => {
+    const tasks = Bun.TOML.parse(
+        read(at(".config/mise/tasks", `${file}.task.toml`)),
+    ) as Record<string, { run?: string | string[] }>;
+    return [tasks[task]?.run ?? []].flat();
+};
 
 const linked = (dir: string): string[] =>
     existsSync(at(dir)) ? readdirSync(at(dir)).sort() : [];
@@ -132,21 +155,24 @@ const brokenLinks = (path: string): string[] =>
 const PACKAGES = at("packages");
 
 describe("the skills", () => {
-    it("records superpowers' skills less the excluded four", () => {
-        const fromPackages = Object.entries(lock().skills)
-            .filter(([, entry]) => entry.sourceType === "node_modules")
-            .map(([name]) => name)
-            .sort();
-        expect(fromPackages).toEqual(SKILLS);
+    it("pins every source to a full commit", () => {
+        expect(declared()).not.toEqual([]);
+        for (const entry of declared()) {
+            expect(entry.ref).toMatch(/^[0-9a-f]{40}$/);
+            expect(entry.skills.length).toBeGreaterThan(0);
+        }
     });
 
-    it("excludes the four in the skills script, and links none", () => {
-        const named = [
-            ...skillsScript().matchAll(/--exclude '[^#']+#([^']+)'/g),
-        ]
-            .map((match) => match[1] as string)
-            .sort();
-        expect(named).toEqual(EXCLUDED);
+    it("takes superpowers' skills less the four", () => {
+        const superpowers = declared().find(
+            (entry) => entry.source === "obra/superpowers",
+        );
+        expect(superpowers?.skills).toEqual(SKILLS);
+        for (const entry of declared()) {
+            expect(
+                entry.skills.filter((name) => EXCLUDED.includes(name)),
+            ).toEqual([]);
+        }
         for (const dir of LINKS) {
             expect(
                 linked(dir).filter((name) => EXCLUDED.includes(name)),
@@ -154,14 +180,41 @@ describe("the skills", () => {
         }
     });
 
+    it("records exactly the declared skills and its own", () => {
+        const names = declared().flatMap((entry) => entry.skills);
+        expect(Object.keys(lock().skills).sort()).toEqual(
+            [...names, ...OWN].sort(),
+        );
+    });
+
+    it("records each declared skill at its commit", () => {
+        for (const entry of declared()) {
+            for (const name of entry.skills) {
+                expect(lock().skills[name]?.ref).toBe(entry.ref);
+            }
+        }
+    });
+
     it("syncs without reporting to skills.sh", () => {
-        expect(skillsScript()).toStartWith("DO_NOT_TRACK=1 ");
+        expect(syncLines()).not.toEqual([]);
+        for (const line of syncLines()) {
+            expect(line).toStartWith("DO_NOT_TRACK=1 ");
+        }
+        expect(taskRun("other", "skills")[0]).toStartWith("DO_NOT_TRACK=1 ");
+        expect(taskRun("lint", "lint:skills")[0]).toStartWith(
+            "DO_NOT_TRACK=1 ",
+        );
+    });
+
+    it("declares superpowers nowhere as a package", () => {
+        const manifest = JSON.parse(read(at("package.json")));
+        expect(manifest.devDependencies).not.toHaveProperty("superpowers");
+        expect(manifest.scripts).not.toHaveProperty("skills");
     });
 
     for (const [name, entry] of Object.entries(lock().skills)) {
-        // A remote skill arrives with `skills add`, which the
-        // sync skips, or in a worktree's copy of the main checkout's;
-        // never in CI, so it is checked only where it is installed.
+        // A remote skill arrives with the sync's fetch, which is
+        // absent in CI and offline; it is checked only where installed.
         const fromPackage = entry.sourceType === "node_modules";
         const present = fromPackage || existsSync(at(".agents/skills", name));
         it.if(present)(`links ${name} for every agent`, () => {
@@ -172,13 +225,15 @@ describe("the skills", () => {
                 expect(
                     lstatSync(at(".agents/skills", name)).isSymbolicLink(),
                 ).toBe(true);
-                expect(canonical).toContain("/node_modules/");
+                expect(readlinkSync(at(".agents/skills", name))).toContain(
+                    "node_modules/",
+                );
             }
         });
     }
 
     it("links nothing the lock does not record", () => {
-        const recorded = [...Object.keys(lock().skills), ...OWN];
+        const recorded = Object.keys(lock().skills);
         for (const dir of LINKS) {
             expect(
                 linked(dir).filter((name) => !recorded.includes(name)),
@@ -186,34 +241,44 @@ describe("the skills", () => {
         }
     });
 
-    it("commits its own skills, linked for every agent", () => {
-        const tracked = Bun.spawnSync(["git", "ls-files", ...LINKS], {
-            cwd: ROOT,
-        })
-            .stdout.toString()
-            .trim()
-            .split("\n");
+    it("ships its own skills in @dorothy/skills, linked for every agent", () => {
         for (const name of OWN) {
-            const dir = at(".agents/skills", name);
-            expect(lstatSync(dir).isDirectory()).toBe(true);
+            const dir = join(OWN_SKILLS, name);
             expect(skillName(dir)).toBe(name);
-            expect(tracked).toContain(`.agents/skills/${name}/SKILL.md`);
-            expect(tracked).toContain(`.claude/skills/${name}`);
+            expect(readlinkSync(at(".agents/skills", name))).toContain(
+                "node_modules/@dorothy/skills/skills/",
+            );
             expect(realpathSync(at(".claude/skills", name))).toBe(
                 realpathSync(dir),
             );
-            expect(Object.keys(lock().skills)).not.toContain(name);
+            expect(lock().skills[name]).toMatchObject({
+                source: "@dorothy/skills",
+                sourceType: "node_modules",
+            });
+        }
+    });
+});
+
+describe("the agent directories", () => {
+    it("tracks nothing under .agents or .claude", () => {
+        const git = (...args: string[]) =>
+            Bun.spawnSync(["git", ...args], { cwd: ROOT });
+        const tracked = git("ls-files", ".agents", ".claude");
+        expect(tracked.stdout.toString()).toBe("");
+        // check-ignore -q takes one path, so each is asked alone.
+        for (const path of [".agents/x", ".claude/x"]) {
+            expect(git("check-ignore", "-q", path).exitCode).toBe(0);
         }
     });
 });
 
 describe("the development evidence operator skill", () => {
-    const path = at(".agents/skills/development-evidence/SKILL.md");
+    const path = join(OWN_SKILLS, "development-evidence", "SKILL.md");
 
-    it("declares a repository-owned skill without a remote lock entry", () => {
+    it("declares a repository-owned skill, locked as the package's", () => {
         expect(OWN).toContain("development-evidence");
-        expect(Object.keys(lock().skills)).not.toContain(
-            "development-evidence",
+        expect(lock().skills["development-evidence"]?.source).toBe(
+            "@dorothy/skills",
         );
     });
 
@@ -239,7 +304,7 @@ describe("the development evidence operator skill", () => {
         expect(text.trim().split(/\s+/).length).toBeLessThan(500);
         expect(brokenLinks(path)).toEqual([]);
         expect(linkTargets(text)).toContain(
-            "../../../docs/wiki/topics/development-evidence.md",
+            "../../../../docs/wiki/topics/development-evidence.md",
         );
     });
 });
@@ -336,7 +401,7 @@ describe("the root's guidance", () => {
     });
 });
 
-const MEMORY = at(".agents/memory");
+const MEMORY = at("docs/memory");
 
 // The memories an index links, as `./name.md` (the house form) or as
 // `name.md` (the form Claude Code's own memory instructions write).
@@ -346,8 +411,9 @@ const indexEntries = (index: string): string[] =>
         .sort();
 
 describe("agent memory", () => {
-    it("lives in .agents/memory, not .claude/memory", () => {
+    it("lives in docs/memory, not .agents/memory or .claude/memory", () => {
         expect(existsSync(join(MEMORY, "MEMORY.md"))).toBe(true);
+        expect(existsSync(at(".agents/memory"))).toBe(false);
         expect(existsSync(at(".claude/memory"))).toBe(false);
     });
 
@@ -380,7 +446,7 @@ describe("agent memory", () => {
             writeFileSync(path, '{ "enabledMcpjsonServers": ["github"] }\n');
             pointMemoryDirectory(root, () => true);
             expect(JSON.parse(read(path))).toEqual({
-                autoMemoryDirectory: join(root, ".agents", "memory"),
+                autoMemoryDirectory: join(root, "docs", "memory"),
                 enabledMcpjsonServers: ["github"],
             });
             expect(statSync(path).mode & 0o777).toBe(0o600);
@@ -407,13 +473,13 @@ describe("agent memory", () => {
         }
     });
 
-    it("points auto memory at .agents/memory, keeping other settings", () => {
+    it("points auto memory at docs/memory, keeping other settings", () => {
         const settings = {
             autoMemoryDirectory: "/checkout/.claude/memory",
             enabledMcpjsonServers: ["github"],
         };
         expect(withMemoryDirectory(settings, "/checkout")).toEqual({
-            autoMemoryDirectory: "/checkout/.agents/memory",
+            autoMemoryDirectory: "/checkout/docs/memory",
             enabledMcpjsonServers: ["github"],
         });
     });
@@ -421,7 +487,7 @@ describe("agent memory", () => {
 
 // Run the real prepare and memory setup in a disposable checkout. Other
 // prepare steps are no-ops here; only the memory script uses the real Bun.
-const preparedCheckout = () => {
+const preparedCheckout = (skills = "#!/bin/sh\nexit 0\n") => {
     const root = mkdtempSync(join(tmpdir(), "agent-memory-prepare-"));
     const bin = join(root, "bin");
     mkdirSync(bin);
@@ -431,6 +497,7 @@ const preparedCheckout = () => {
         copyFileSync(at("scripts", name), join(root, "scripts", name));
     }
     writeFileSync(join(bin, "husky"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    writeFileSync(join(bin, "skills"), skills, { mode: 0o755 });
     writeFileSync(
         join(bin, "bun"),
         [
@@ -476,7 +543,7 @@ describe("agent memory preparation", () => {
         try {
             expect(checkout.run().exitCode).toBe(0);
             expect(JSON.parse(read(checkout.path))).toEqual({
-                autoMemoryDirectory: join(checkout.root, ".agents", "memory"),
+                autoMemoryDirectory: join(checkout.root, "docs", "memory"),
             });
             expect(statSync(checkout.path).mode & 0o777).toBe(0o600);
         } finally {
@@ -536,11 +603,7 @@ describe("agent memory preparation", () => {
                 );
                 expect(checkout.run().exitCode).toBe(0);
                 expect(JSON.parse(read(checkout.path))).toEqual({
-                    autoMemoryDirectory: join(
-                        checkout.root,
-                        ".agents",
-                        "memory",
-                    ),
+                    autoMemoryDirectory: join(checkout.root, "docs", "memory"),
                     permissions: { allow: ["Read"], deny: ["Write"] },
                     env: { FIXTURE: "kept" },
                     enabledMcpjsonServers: ["fixture"],
@@ -555,7 +618,7 @@ describe("agent memory preparation", () => {
     it("does not rewrite or chmod settings already pointing at this checkout", () => {
         const checkout = preparedCheckout();
         try {
-            const text = `{ "other": 2, "autoMemoryDirectory": ${JSON.stringify(join(checkout.root, ".agents", "memory"))} }\n`;
+            const text = `{ "other": 2, "autoMemoryDirectory": ${JSON.stringify(join(checkout.root, "docs", "memory"))} }\n`;
             checkout.write(text);
             const before = statSync(checkout.path);
             expect(checkout.run().exitCode).toBe(0);
@@ -596,6 +659,47 @@ describe("agent memory preparation", () => {
             }
         });
     }
+});
+
+// A stand-in sync that records its arguments, failing as a fetch does
+// offline unless told `--no-remote`, or always.
+const failingSync = (always: boolean) =>
+    [
+        "#!/bin/sh",
+        'echo "$*" >>"$(dirname "$0")/syncs"',
+        always ? "exit 1" : 'case "$*" in *--no-remote*) exit 0 ;; esac',
+        "exit 1",
+        "",
+    ].join("\n");
+
+describe("the skills' preparation", () => {
+    it("warns and links the package's skills alone when a fetch fails", () => {
+        const checkout = preparedCheckout(failingSync(false));
+        try {
+            const result = checkout.run();
+            expect(result.exitCode).toBe(0);
+            expect(result.stderr.toString()).toContain(
+                "prepare: fetching remote skills failed",
+            );
+            const syncs = read(join(checkout.root, "bin", "syncs"))
+                .trim()
+                .split("\n");
+            expect(syncs).toHaveLength(2);
+            expect(syncs[0]).not.toContain("--no-remote");
+            expect(syncs[1]).toEndWith("--no-remote");
+        } finally {
+            checkout.remove();
+        }
+    });
+
+    it("fails the install when the sync fails without fetching", () => {
+        const checkout = preparedCheckout(failingSync(true));
+        try {
+            expect(checkout.run().exitCode).not.toBe(0);
+        } finally {
+            checkout.remove();
+        }
+    });
 });
 
 // A scratch repository for the install hooks, its git shut out of the

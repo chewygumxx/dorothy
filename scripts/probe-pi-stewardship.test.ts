@@ -91,6 +91,24 @@ describe("the arguments", () => {
 
 const oneLine = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
 
+// Waits until another process holds the lock: `flock -n` exits with the
+// conflict code only while it is held. Fails the test past the bound.
+const waitForLockHeld = async (lock: string, boundMs = 5000) => {
+    const conflict = 200;
+    const deadline = Date.now() + boundMs;
+    while (Date.now() < deadline) {
+        const probe = Bun.spawn(
+            ["flock", "-n", "-E", String(conflict), lock, "true"],
+            { stdin: "ignore", stdout: "ignore", stderr: "ignore" },
+        );
+        if ((await probe.exited) === conflict) {
+            return;
+        }
+        await Bun.sleep(20);
+    }
+    throw new Error(`the lock ${lock} was not held within ${boundMs} ms`);
+};
+
 const fakeHerdr = async ({
     path,
     log,
@@ -319,7 +337,7 @@ describe("the live control boundary", () => {
             },
         );
         try {
-            await Bun.sleep(100);
+            await waitForLockHeld(lock);
             expect(
                 (
                     await interruptWorker(

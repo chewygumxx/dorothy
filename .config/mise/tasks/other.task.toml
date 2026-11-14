@@ -14,6 +14,14 @@
 # https://mise.jdx.dev/tasks/task-configuration.html
 #
 
+# The same sync and test as prepare.sh, to relink without an install.
+[skills]
+description = "Link every declared skill"
+run         = [
+    "DO_NOT_TRACK=1 bunx --bun --no-install skills experimental_sync -y --agent claude-code codex ${CI:+--no-remote}",
+    "bun test --bail agents.test.ts --test-name-pattern 'the skills'",
+]
+
 [commit]
 description = "Compose a commit with commitizen"
 run         = "bunx --bun --no-install cz"
