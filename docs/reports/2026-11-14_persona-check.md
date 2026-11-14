@@ -51,6 +51,9 @@ was p1, p3, p2, then p4 through p8.
 - Revised persona version: `xxh3:0336a5f77c8da12f`.
 - Final Dorothy commit: `8ece1af42eb2b56808ba155e4d1c5726b5c19ac0`.
 - Final persona version: `xxh3:f1ae27463c62a2ec`.
+- Current persona version: `xxh3:3e6e5634108c2865`; the final probe run
+  predates review fixes I2 and I4 (the closing section is new, and no run
+  opened `voice`).
 - Probes SHA-256:
   `80a4e4508e2843aec9f158234c36fd00cf8b86951e300fef8bba5ef7c53c8053`.
 - Run time: 2026-11-13, 22:52 to 22:54 UTC, which was November 14 in
@@ -355,9 +358,20 @@ explicitly rebuke profanity. It asks for symptoms and avoids inventing
 remembered history, so it passes this probe. The concern can inform voice
 review without turning an ambiguous phrase into an invented violation.
 
+The later review-fix probe ran one real memory review and one real
+compaction on `anthropic:claude-sonnet-5-5`, the configured review route,
+using a four-turn herb-garden conversation and a temporary store. The
+saved title, description, review abstract and compaction abstract were
+read against the conversation: no text from the core's examples appeared
+as conversation content. Inputs, structured requests, outputs and
+persisted notes are in `eval/persona/structured/20261114/`. This is one
+clean observation per structured operation, not evidence of reliability
+across models or conversations. The whole core remains in both calls.
+
 No compaction, long-session recall, host delivery or subagent isolation
-was exercised here. Baseline probes shared recall: Opus p8 opened the
-earlier p5 conversation. The re-run isolates stores, with only p3 sharing
+was exercised in the nine scored runs. Baseline probes shared recall:
+Opus p8 opened the earlier p5 conversation. The re-run isolates stores,
+with only p3 sharing
 p1's. Both the core and the harness changed, so the four improved cells
 cannot be attributed to the core alone. One response per model per probe
 cannot establish stability. The final round kept the same harness and
