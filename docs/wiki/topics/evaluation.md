@@ -1,12 +1,12 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-03
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: Evaluation
 description: >-
   How Dorothy's memory is measured on the user's own sessions: the
   questions, the systems compared, what the results establish and where
-  they stop.
+  they stop, plus the separate persona check across models.
 tags:
   - wiki
   - evaluation
@@ -277,6 +277,38 @@ none compares with the rerun's.
   judge's noise. The user judged the preference result inadequate, which
   overturned the first ruling, and the judges were then changed
   ([the first decision](../../reports/2026-10-31-memory-engine.md#the-first-decision)).
+
+## Persona check
+
+The separate [persona check](../../reports/2026-11-14_persona-check.md)
+exercises her core and on-demand layers through chat with recall enabled,
+on Claude Haiku 5.5, Claude Opus 5.5 and DeepSeek V4.1 Flash. It uses
+`persona/run.ts` and `persona/probes.jsonl` in the private `xxdorothy/eval`
+repository, rather than the memory evaluation commands above. Temporary
+XDG roots keep it away from the real store.
+
+Eight probes cover short answers, personality-free output for another
+agent, correction, hostility, distress, origins, model recommendations
+and profanity. For origins and recommendations, scoring compares claimed
+reads with the actual `persona` transcript entries before the answer.
+The entries establish access; they do not establish that she interpreted
+what she opened correctly.
+
+The final round on 2026-11-14 passed all eight probes on each model,
+24 of 24 responses. The preserved baseline passed 17 of 24, and the
+first re-run 21 of 24. Raw metadata, whole transcripts, events and scores
+stay in `~/dev/xxdy/eval/persona/runs/`; the report lists every directory,
+version, change and evidence limit. A re-run creates a fresh directory
+with a UTC timestamp and persona-version suffix, preserving earlier runs.
+
+These are single responses per model and probe, not reliability estimates
+or model rankings. The baseline shared recall between probes and missed
+two initial user rows; later rounds used isolated stores, except p3
+continuing p1, and captured every input. No host delivery, subagent
+isolation, compaction or long-session recall was exercised. Distress
+detection by a pre-prompt classifier is
+[decided, not yet built](../decisions.md#situational-behaviour-by-pre-prompt-classifier);
+the prompt-only rounds inform that later work.
 
 ## Records
 

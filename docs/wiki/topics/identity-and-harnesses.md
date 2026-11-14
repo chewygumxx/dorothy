@@ -39,34 +39,68 @@ page says a mechanism is built, it means code and tests exist.
 
 ## One definition of her
 
-`@dorothy/identity` holds who Dorothy is as text. Built. It has three
-components, joined in order by `identityPrompt()`: her identity (she is
-Dorothy), her voice (warm, curious and accommodating) and her provenance,
-a stance on what runs her. The provenance text tells her to introduce
-herself simply as Dorothy, to treat an identity line from the software
-hosting her as naming her host and not her, to volunteer no company, model
-or software, and to answer plainly from what her context shows when asked
-([`identity.ts`](../../../packages/identity/src/identity.ts)).
+`@dorothy/identity` holds who Dorothy is as text. Built. Its always-loaded
+core is [`soul.md`](../../../packages/identity/soul.md): her character,
+values, conduct, expression, provenance and when to open a layer.
+`identityPrompt()` returns that core with the house header stripped
+([`identity.ts`](../../../packages/identity/src/identity.ts)). She
+introduces herself simply as Dorothy, treats a host's identity line as
+naming the host, volunteers no company, model or software, and answers
+plainly from her context when asked.
+
+Three files in `packages/identity/layers/` supply what she opens on demand:
+`lore.md` for her borrowed origins and nature, `voice.md` for how she
+speaks, and `judgement.md` before comparing or choosing models and tools.
+`personaLayers()` returns their stripped text. The core tells her to open
+a triggered layer before answering in the same turn, and never claim a
+read she did not make. These are her persona, separate from remembered
+experience.
 
 Three properties matter downstream
 ([package guide](../../../packages/identity/AGENTS.md)):
 
-- It names no host, protocol or provider, and does no I/O. What a host
-  lets her do, and how it runs her, belong to the host's own delivery.
+- The core names no host, protocol or provider. Bun imports the Markdown
+  at module load; calls do no file I/O. What a host lets her do, and how
+  it runs her, belong to the host's own delivery.
 - It is the same text on every call. A request carrying it keeps its
   prompt cache, so nothing in it may vary by time, host or environment.
-- `identity.test.ts` pins it byte for byte. It changes only when Dorothy is
-  meant to change, and the chat persona's pin moves with it.
+- `personaVersion()` hashes the stripped core and every layer in fixed
+  order. `identity.test.ts` pins that version; header-only edits leave it
+  unchanged. Intentional persona changes move the pin, and core changes
+  also move the chat prompt's pin.
 
-Her own chat uses it too. `agent`'s persona takes the three components
-from `identityComponents()` and adds its own (a mode, her capabilities,
-plumbing and memory)
+Her own chat uses it too. `agent`'s persona takes `identityPrompt()` as
+one identity component and adds its own (a mode, her capabilities,
+plumbing and memory). With recall enabled, her capabilities name both
+memory and persona tools
 ([agent guide](../../../packages/agent/AGENTS.md#files)). The
 [design](../../specs/2026-10-15-identity-gateway-design.md#decisions)
 records why the provenance stance replaced the chat persona's earlier,
 more discreet one: so that one stance holds everywhere. The identity does
 not replace a host's whole system prompt; the host's tool guidance and
 conventions stay.
+
+### Opening layers and recording reads
+
+The CLI supplies the layers to both memory MCP servers: the shared
+contract service and chat's recall server. Each registers `persona` when
+layers are supplied; `persona` takes one exact `layer` name and returns
+its text. An unknown name gives a tool error listing the choices. Chat
+retains the tool beside its memory tools, and the Claude Code launcher
+allows it ([memory](./memory.md#how-recall-finds)).
+
+Chat records each read as a `persona` transcript entry, with its layer,
+success and the reply offset where the call began. No layer text is
+recorded. These audit entries stay out of remembered turns, reviews,
+compaction and recall. They let a checker compare a claimed read with
+the actual call; the [persona check](./evaluation.md#persona-check)
+uses them for that purpose.
+
+The service reads its layers at startup. Restart the memory service
+after editing layers so Codex, Pi and Hermes receive the new text.
+Start a new launch for an updated core. Hermes also needs
+`dorothy --install hermes` again to rewrite its profile's `SOUL.md`;
+a service restart alone does not update that file.
 
 ## Carrying her into a host
 
@@ -281,10 +315,10 @@ What each reader has met is on [harnesses](../profiles/harnesses.md).
 
 ## Mechanisms and what lies outside them
 
-- The mechanisms above: the identity text and its pin; the gateway and its
-  Anthropic adapter; the Claude Code launcher; the Codex launcher; the
-  Hermes install and provider; the Pi launcher, extension and hook; the
-  hook command; and the sweep with its readers.
+- The mechanisms above: the core, layers, persona tool and version pin;
+  the gateway and its Anthropic adapter; the Claude Code and Codex
+  launchers; the Hermes install and provider; the Pi launcher, extension
+  and hook; the hook command; and the sweep with its readers.
 - Not a mechanism yet: an OpenAI-protocol adapter for the gateway, named in
   the identity spec's Later section.
 - Out of scope by the identity design: removing or rewriting anything a

@@ -546,11 +546,32 @@ Which host receives what, and what has been run against it, is on
 - **Reason**: not recorded; the spec states the stance and does not give a
   reason for it.
 - **Cost**: not recorded.
-- **Standing**: current; `identity.test.ts` pins the text byte for byte
+- **Standing**: current; `identity.test.ts` pins the core and layers by
+  `personaVersion()`
   ([identity and harnesses](./topics/identity-and-harnesses.md#one-definition-of-her)).
 - **Sources**:
   [identity spec](../specs/2026-10-15-identity-gateway-design.md#decisions),
   [identity guide](../../packages/identity/AGENTS.md).
+
+### Situational behaviour by pre-prompt classifier
+
+- **Context**: The persona check exposed inconsistent distress handling
+  across models, even with examples and anti-examples in `soul.md`.
+- **Alternatives**: Continuing to handle distress through the core prompt
+  alone, as the three recorded rounds did.
+- **Choice**: The user, on 2026-11-14: move distress detection to a
+  pre-prompt classifier that injects a per-turn note outside the system
+  prompt. `soul.md` keeps a brief baseline. Design it in a separate spec
+  after the persona branch.
+- **Reason**: Prompt-only distress handling needed repeated changes in
+  the recorded checks. The retained runs inform the classifier work.
+- **Cost**: A classifier and its per-turn delivery need design, building
+  and evaluation; their accuracy has not been measured here.
+- **Standing**: decided, not yet built. The final prompt-only round's
+  three distress passes do not establish classifier accuracy or reliable
+  distress detection.
+- **Sources**:
+  [persona check](../reports/2026-11-14_persona-check.md#changes-before-the-final-run).
 
 ### Other hosts' sessions are recorded by a sweep, not hooks
 
