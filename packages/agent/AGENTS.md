@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-11-01
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: packages/agent/AGENTS.md
 description: >-
@@ -80,7 +80,7 @@ unused.
 - `conversation.ts`: `Conversation`, core's `ChatSession`, the messages
   held here, a turn per message through `runRoute` on the chat route,
   with at most `MAX_STEPS` tool steps. Events: `ready` (its `model` a
-  label), `delta`, `turn-end`, `sdk` (a stream part), `lookup`,
+  label), `delta`, `turn-end`, `sdk` (a stream part), `lookup`, `persona`,
   `remember`, `warning` (a fallback, ten tool steps, or a reply cut at the
   model's output limit) and `error`. Cache breakpoints sit on the system
   prompt and the latest user message, the second never stored. Reasoning
@@ -89,14 +89,17 @@ unused.
   session starts with from `SessionStart` and the persona, joining the
   memory block and the earlier section with `withSection` and the turns
   with `withHistory`; development mode ends with `routeLine`.
+  Persona events name the layer, success and call-time reply offset;
+  they carry no layer text and are separate from memory lookups.
 - `one-shot.ts`: `runOneShot`, a one-shot prompt streamed to stdout from
   a session of its own; a failure goes to stderr, exit status 1.
-- `persona.ts`: the persona, composed from `personaComponents` (identity,
-  voice and provenance from `@dorothy/identity`; capabilities, plumbing
-  and memory its own, memory telling her to keep lasting facts with
-  `remember` when she has recall) in chat mode or development mode
-  (`--dev`: a mode component, Dorothy describes her context, and
-  `routeLine` ends it with the chat route's models);
+- `persona.ts`: the persona, composed from `personaComponents` (the core
+  from `@dorothy/identity` first; capabilities, plumbing and memory its
+  own), joined with two newlines, in chat or development mode. With
+  recall, capabilities name her memory and persona tools, and memory tells
+  her to keep lasting facts with `remember`.
+  Development mode (`--dev`) adds a mode component, has Dorothy describe
+  her context, and ends with `routeLine`, the chat route's models;
   `promptHash` (`xxh3:<hex>`), which transcripts record and nothing
   reads back.
 - `capture.ts`: `captureServer`, a loopback stand-in for the API that

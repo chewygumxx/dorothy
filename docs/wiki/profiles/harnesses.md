@@ -1,6 +1,6 @@
 ---
 ctime: 2026-11-03
-mtime: 2026-11-06
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: Harnesses
 description: >-
@@ -62,6 +62,14 @@ explains them. A profile is not a delivery: `openclaw.json` exists, but
 nothing delivers her to OpenClaw. Its `"checked": ["2026.10.4"]` names a
 version, though OpenClaw was never installed or probed here and no record
 says what was checked.
+
+Each delivered host receives the core from `packages/identity/soul.md`.
+The `lore`, `voice` and `judgement` layers in `packages/identity/layers/`
+are opened through `persona` on either memory server. The service reads
+layers at startup, so restart it after changes for Codex, Pi and Hermes.
+A new launch picks up core changes; Hermes also needs a reinstall to
+update its profile's `SOUL.md`
+([mechanism](../topics/identity-and-harnesses.md#opening-layers-and-recording-reads)).
 
 ## Claude Code
 
@@ -125,8 +133,8 @@ None waiting. The probes above passed on real Claude Code, the latest on
 
 ## Codex
 
-Delivery built, with no live check yet: the persona, hooks and tools are
-built and tested, and the live probes against Codex wait on the user.
+Delivery built. The full delivery checks below still wait on the user;
+a narrower native-subagent guard was probed on 2026-11-14.
 
 ### Persona
 
@@ -137,6 +145,13 @@ following hers, all as session flags that write none of Codex's files
 Codex accepts that key without an unknown-key warning, and treats it as
 additive, is an open probe that waits on the user
 ([probes](../../reports/2026-11-01-delivery/probes.md#codexs-additive-instructions-key)).
+
+The launcher sets `agents.enabled=false`: Codex children otherwise
+inherit her developer instructions and persona tool, even with
+`fork_turns=none`. A private-root probe on Codex 0.167.0 found no spawn
+tool in the guarded launch, including over an agents-enabled user config.
+This checks native delegation, not the full delivery flow
+([hosts guide](../../../packages/cli/src/hosts/AGENTS.md#subagents)).
 
 ### Recording
 
@@ -175,7 +190,8 @@ lists what the run will show: the trust screen, whether hooks given as
 session flags are offered for trust at all (otherwise a plugin route
 would be built instead), whether the instructions key is accepted,
 whether the payloads match the fixtures, and that the sweep records the
-rollout. No later report says it has run.
+rollout. The 2026-11-14 native-subagent probe above does not establish
+these full delivery checks.
 
 ## OpenClaw
 
@@ -226,6 +242,8 @@ profile named `dorothy` with Hermes's own `profile create --no-alias
 --clone`, and writes her identity as that profile's `SOUL.md`, replacing
 the clone's only when the file is still the clone's or still hers. Plain
 `hermes` stays without her; she is reached with `hermes -p dorothy`.
+After a core edit, run `dorothy --install hermes` again: a service
+restart updates the layers, but not the installed `SOUL.md`.
 Whether her `SOUL.md` and block reach the system prompt in a real Hermes
 session has not been run
 ([waiting](../../reports/2026-11-01-delivery.md#waiting-for-the-user)).

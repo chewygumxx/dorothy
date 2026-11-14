@@ -148,6 +148,7 @@ describe("runClaudeDump", () => {
             "/bin/claude",
             "--append-system-prompt",
             MARKER,
+            '--settings={"permissions":{"deny":["Agent","Task"]}}',
             "--model",
             "sonnet",
             "-p",
@@ -164,30 +165,31 @@ describe("runClaudeDump", () => {
         expect(capture.stopped).toBe(true);
     });
 
-    it("dumps with the block alone: no sync, recall or permissions", async () => {
+    it("dumps with the block and subagent guard, without recall grants", async () => {
         const { calls, deps, memory } = harness();
         expect(await runClaudeDump([], "hi", deps)).toBe(0);
         expect(memory.synced).toEqual([]);
         expect(calls.section).toBe("<memory>m</memory>");
-        expect(
-            calls.cmd.some(
-                (arg) =>
-                    arg.startsWith("--settings") ||
-                    arg.startsWith("--mcp-config"),
-            ),
-        ).toBe(false);
+        expect(calls.cmd).toContain(
+            '--settings={"permissions":{"deny":["Agent","Task"]}}',
+        );
+        expect(calls.cmd.some((arg) => arg.startsWith("--mcp-config"))).toBe(
+            false,
+        );
         expect(calls.cmd.join(" ")).not.toContain("--claude-hook");
         expect(calls.cmd.join(" ")).not.toContain("--session-id");
     });
 
-    it("passes the user's own --settings on untouched, writing no file", async () => {
+    it("merges the subagent guard into user settings and cleans up", async () => {
         const { calls, deps } = harness();
         expect(
             await runClaudeDump(["--settings", "mine.json"], "hi", deps),
         ).toBe(0);
-        expect(calls.cmd).toContain("mine.json");
-        expect(calls.written).toEqual([]);
-        expect(calls.removed).toEqual([]);
+        expect(calls.cmd).toContain("--settings=/run/dorothy/s.json");
+        expect(calls.written.map((text) => JSON.parse(text))).toEqual([
+            { model: "x", permissions: { deny: ["Agent", "Task"] } },
+        ]);
+        expect(calls.removed).toEqual(["/run/dorothy/s.json"]);
     });
 
     it("warns when the gateway put no identity in", async () => {

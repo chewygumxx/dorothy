@@ -48,6 +48,7 @@ import { type Entry, indexCatalogue } from "../memory/catalogue.js";
 import { launchHistory } from "../memory/open.js";
 import { Reviewer } from "../memory/reviewer.js";
 import { vocabularyPath } from "../memory/vocabulary.js";
+import type { PersonaLayers } from "../persona/tool.js";
 import { identify } from "../projects/identify.js";
 import { indexPath, RecallIndex, SCHEMA_VERSION } from "../recall/store.js";
 import { transcriptDir } from "../transcript.js";
@@ -67,6 +68,7 @@ const MAX_VERSIONS = 128;
 const MAX_HELD = 200;
 
 export type ServiceOptions = {
+    layers?: PersonaLayers | null;
     env: Env;
     config: Config;
     profiles: Profiles;
@@ -397,6 +399,7 @@ export async function startService(
                     const project = url.searchParams.get("project");
                     const host = url.searchParams.get("host");
                     const server = createContractServer({
+                        layers: options.layers,
                         engine,
                         index,
                         store,

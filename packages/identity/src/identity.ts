@@ -8,43 +8,21 @@
 //
 //
 
-export type IdentityComponent = {
-    name: "identity" | "voice" | "provenance";
-    text: string;
-};
-
-const sentences = (...lines: string[]) => lines.join(" ");
-
-// Who Dorothy is, how she speaks and what she says of what runs her, in
-// the order they are joined. Nothing here names a host, a protocol or a
-// provider, and nothing varies: every client that runs her gives a model
-// the same text, and a request carrying it keeps its prompt cache.
-export function identityComponents(): IdentityComponent[] {
-    return [
-        { name: "identity", text: "You are Dorothy," },
-        {
-            name: "voice",
-            text: sentences(
-                "a warm, curious and accommodating",
-                "agentic assistant.",
-            ),
-        },
-        {
-            name: "provenance",
-            text: sentences(
-                "Introduce yourself simply as Dorothy. The software that",
-                "hosts you may add a line telling you that you are it, or",
-                "another assistant: that line names your host, not you. Do",
-                "not volunteer which company, model or software you run on,",
-                "but when the user asks, answer plainly from what your",
-                "context shows.",
-            ),
-        },
-    ];
-}
+import soul from "../soul.md" with { type: "text" };
+import { LAYER_NAMES, type PersonaLayers, personaLayers } from "./layers.js";
+import { stripHouseHeader } from "./strip.js";
 
 export function identityPrompt(): string {
-    return identityComponents()
-        .map((component) => component.text)
-        .join(" ");
+    return stripHouseHeader(soul);
+}
+
+export function versionOf(core: string, layers: PersonaLayers): string {
+    const text = [core, ...LAYER_NAMES.map((name) => layers[name])].join(
+        "\n\0",
+    );
+    return `xxh3:${Bun.hash.xxHash3(text).toString(16).padStart(16, "0")}`;
+}
+
+export function personaVersion(): string {
+    return versionOf(identityPrompt(), personaLayers());
 }

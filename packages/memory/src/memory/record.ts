@@ -73,6 +73,13 @@ export function sessionRecorder({
                 offset: event.offset,
                 ...event.lookup,
             });
+        } else if (event.type === "persona") {
+            record({
+                kind: "persona",
+                layer: event.layer,
+                ok: event.ok,
+                offset: event.offset,
+            });
         } else if (event.type === "remember") {
             // What she wrote herself, marked so no review learns it as new.
             record(

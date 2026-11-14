@@ -143,14 +143,18 @@ growing it with memory, budgets and model routing, which is not built.
 
 ## identity
 
-Built. Who Dorothy is, how she speaks and what she says of what runs her,
-in text that names no host, protocol or provider. Her chat persona
-(`agent`) and the gateway behind `dorothy --claude` both take it, and the
-launchers for Codex and Hermes use the same text, so she is the same
-Dorothy in each. Its prompt is the same on every call, so a request that
-carries it keeps its prompt cache.
+Built. Her always-loaded core in `soul.md`, returned by
+`identityPrompt()`, and the on-demand `lore`, `voice` and `judgement`
+files in `layers/`, returned by `personaLayers()`. The core names no host,
+protocol or provider. Chat, the gateway and host delivery all take the
+same core; the CLI injects the layers into both memory servers for their
+`persona` tool. `personaVersion()` hashes the stripped core and layers,
+so a header-only edit leaves it unchanged. The prompt is constant across
+calls, preserving its prompt cache
+([identity](../topics/identity-and-harnesses.md#one-definition-of-her)).
 
-- May import: nothing, not even `core`; it does no I/O.
+- May import: nothing, not even `core`; Bun imports its Markdown at module
+  load, and calls do no file I/O.
 - Entry points: one, `"."`.
 - Guide:
   [packages/identity/AGENTS.md](../../../packages/identity/AGENTS.md#entry-points-and-imports).

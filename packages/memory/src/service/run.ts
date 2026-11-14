@@ -14,6 +14,7 @@
 
 import { type Env, readConfig, type StructuredCall } from "@dorothy/core";
 import { loadProfiles } from "../hosts/profiles.js";
+import type { PersonaLayers } from "../persona/tool.js";
 import { deviceTokenPath } from "./client.js";
 import { startService } from "./service.js";
 import { tokenStore, tokensPath } from "./tokens.js";
@@ -29,7 +30,9 @@ export async function runService({
     err = process.stderr,
     review,
     noReviews,
+    layers,
 }: {
+    layers?: PersonaLayers | null;
     env?: Env;
     err?: Output;
     review: { call: StructuredCall; persona: string } | null;
@@ -43,6 +46,7 @@ export async function runService({
     let running: Awaited<ReturnType<typeof startService>>;
     try {
         running = await startService({
+            layers,
             env,
             config,
             profiles: await loadProfiles(),

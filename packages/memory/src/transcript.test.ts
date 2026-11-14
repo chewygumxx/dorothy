@@ -78,6 +78,26 @@ it("serialises appends with a restore under the shared write lock", async () => 
 const AT = new Date("2026-10-03T00:00:00.000Z");
 const clock = () => AT;
 
+it("ignores persona entries when resuming turns and collecting lookups", () => {
+    const read = parseTranscript(
+        [
+            { kind: "user", text: "Hello." },
+            { kind: "persona", layer: "character", ok: true, offset: 0 },
+            { kind: "persona", layer: "missing", ok: false, offset: 4 },
+            { kind: "assistant", text: "Hello there." },
+        ]
+            .map((entry) =>
+                JSON.stringify({ v: 1, at: AT.toISOString(), ...entry }),
+            )
+            .join("\n"),
+    );
+    expect(read.skipped).toBe(0);
+    expect(read.turns).toEqual([
+        { role: "user", text: "Hello." },
+        { role: "assistant", text: "Hello there." },
+    ]);
+});
+
 let dir = "";
 beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), "dorothy-transcript-"));

@@ -8,9 +8,10 @@
 //
 //
 
-// The contract's four MCP tools, the same in every host: brief, search,
-// open and remember. A call's project is its own argument, else the
-// connection's, else none; open and remember keep to a connection's own.
+// The contract's memory tools, the same in every host: brief, search,
+// open and remember, plus persona when layers are supplied. A call's
+// project is its own argument, else the connection's, else none; open and
+// remember keep to a connection's own.
 
 import {
     CONTRACT_SERVER_NAME,
@@ -23,6 +24,7 @@ import { conversationProject } from "../engine/baseline.js";
 import type { MemoryEngine, Within } from "../engine/engine.js";
 import type { FactStore } from "../facts/store.js";
 import type { Profiles } from "../hosts/profiles.js";
+import { type PersonaLayers, registerPersonaTool } from "../persona/tool.js";
 import { openConversation, openFact, RecallError } from "../recall/query.js";
 import type { RecallIndex } from "../recall/store.js";
 import { buildBlock } from "./block.js";
@@ -54,6 +56,7 @@ const REMEMBER_DESCRIPTION =
     "Keep a piece of knowledge: add with title, text, type (user, feedback, project or reference) and scope (personal or project); revise one by id with title, text and type; retire one by id with why. What the user or a repository wrote cannot be changed.";
 
 export type ToolDeps = {
+    layers?: PersonaLayers | null;
     engine: MemoryEngine;
     index: RecallIndex;
     store: FactStore;
@@ -163,6 +166,7 @@ export function createContractServer(deps: ToolDeps): McpServer {
         { name: CONTRACT_SERVER_NAME, version: "1.0.0" },
         { instructions: INSTRUCTIONS },
     );
+    registerPersonaTool(server, deps.layers);
     const projectOf = async (value: string | undefined) =>
         value === undefined ? deps.project : deps.resolveProject(value);
     // What brief, open and remember read and write keeps to a connection's

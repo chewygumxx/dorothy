@@ -12,8 +12,16 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Env, SecretsCode } from "@dorothy/core";
-import { loadCredentials, piHook, reviewAgent } from "./index.js";
+import { connectRecall } from "@dorothy/agent";
+import type { Env, SecretsCode, StructuredCall } from "@dorothy/core";
+import { personaLayers } from "@dorothy/identity";
+import {
+    loadCredentials,
+    piHook,
+    recallServerOptions,
+    reviewAgent,
+    serviceOptions,
+} from "./index.js";
 
 let root: string;
 beforeEach(() => {
@@ -201,4 +209,99 @@ describe("--pi-hook", () => {
             warning: "pi_hook_failed",
         });
     });
+});
+
+describe("persona layers at the CLI boundary", () => {
+    it("hands the recall server its mode and persona layers", () => {
+        expect(
+            recallServerOptions({
+                kind: "recall-server",
+                exclude: "a-conversation",
+                recollect: true,
+                project: "/synthetic/project",
+            }),
+        ).toEqual({
+            exclude: "a-conversation",
+            recollect: true,
+            project: "/synthetic/project",
+            layers: personaLayers(),
+        });
+    });
+
+    it("hands the service its review configuration and persona layers", () => {
+        const call: StructuredCall = async () => ({
+            ok: false,
+            reason: "unused",
+            costUsd: 0,
+        });
+        const review = { review: { call, persona: "review persona" } };
+        expect(serviceOptions(review)).toEqual({
+            ...review,
+            layers: personaLayers(),
+        });
+        expect(serviceOptions({ review: null, noReviews: "off" })).toEqual({
+            review: null,
+            noReviews: "off",
+            layers: personaLayers(),
+        });
+    });
+
+    it.each([true, false])(
+        "connectRecall exposes persona only when the real server has layers (%s)",
+        async (withLayers) => {
+            const server = import.meta.resolve("@dorothy/memory/recall-server");
+            const options = {
+                exclude: null,
+                recollect: false,
+                project: null,
+                ...(withLayers ? { layers: { lore: "L" } } : {}),
+            };
+            const recall = await connectRecall(
+                {
+                    command: process.execPath,
+                    args: [
+                        "--no-env-file",
+                        "-e",
+                        `
+                    import { runRecallServer } from ${JSON.stringify(server)};
+                    await runRecallServer(${JSON.stringify(options)});
+                `,
+                    ],
+                },
+                false,
+                {
+                    HOME: root,
+                    XDG_CONFIG_HOME: join(root, "config"),
+                    XDG_DATA_HOME: join(root, "data"),
+                    XDG_CACHE_HOME: join(root, "cache"),
+                    XDG_STATE_HOME: join(root, "state"),
+                },
+            );
+            try {
+                if (!withLayers) {
+                    expect(recall.tools).not.toHaveProperty(
+                        "mcp__memory__persona",
+                    );
+                    return;
+                }
+                expect(recall.tools).toHaveProperty("mcp__memory__persona");
+                const tool = recall.tools.mcp__memory__persona as {
+                    execute(input: unknown, options: unknown): Promise<unknown>;
+                };
+                const result = await tool.execute(
+                    { layer: "lore" },
+                    {
+                        toolCallId: "persona-test",
+                        messages: [],
+                    },
+                );
+                expect(result).toEqual({
+                    content: [{ type: "text", text: "L" }],
+                    isError: false,
+                });
+            } finally {
+                await recall.close();
+            }
+        },
+    );
 });

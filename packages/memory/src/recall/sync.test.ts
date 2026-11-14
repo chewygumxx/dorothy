@@ -32,6 +32,7 @@ import {
     readsByTarget,
     sessionPhrase,
     syncIndex,
+    transcriptTurns,
     visitsByPhrase,
 } from "./sync.js";
 
@@ -93,6 +94,52 @@ const row = (of: string) =>
         .get(of) as Record<string, unknown> | null;
 
 describe("syncIndex", () => {
+    it("ignores persona metadata in search, reads, visits and hidden turns", async () => {
+        await writeFile(
+            transcript(A),
+            [
+                session(0),
+                user(1, "hello"),
+                event("persona", 20, {
+                    layer: "persona-sentinel",
+                    ok: true,
+                    offset: 0,
+                }),
+                event("persona", 21, {
+                    layer: "missing-sentinel",
+                    ok: false,
+                    offset: 0,
+                }),
+                reply(2, "hi there"),
+            ].join(""),
+        );
+        expect(await syncIndex(index, dir)).toEqual([]);
+        expect(turns(A)).toEqual([
+            { n: 1, role: "user", text: "hello" },
+            { n: 2, role: "assistant", text: "hi there" },
+        ]);
+        expect(row(A)).toMatchObject({
+            sessions: 1,
+            turns: 2,
+            first_at: Date.parse(T(1)),
+            last_at: Date.parse(T(2)),
+        });
+        expect(index.db.query("SELECT * FROM reads").all()).toEqual([]);
+        expect(index.db.query("SELECT user_turns FROM visits").all()).toEqual([
+            { user_turns: 1 },
+        ]);
+        expect(
+            (await transcriptTurns(dir, A)).map(({ turn, role, text }) => ({
+                turn,
+                role,
+                text,
+            })),
+        ).toEqual([
+            { turn: 1, role: "user", text: "hello" },
+            { turn: 2, role: "assistant", text: "hi there" },
+        ]);
+    });
+
     it("indexes turns as parseTranscript numbers them", async () => {
         await writeFile(
             transcript(A),

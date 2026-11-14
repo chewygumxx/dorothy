@@ -58,6 +58,7 @@ export function codexArgs(options: {
         `hooks.UserPromptSubmit=${hook(self, "prompt")}`,
         "memories.use_memories=false",
         "memories.generate_memories=false",
+        "agents.enabled=false",
     ];
     return ["--enable", "hooks", ...set.flatMap((flag) => ["-c", flag])];
 }

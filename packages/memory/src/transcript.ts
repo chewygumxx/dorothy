@@ -92,6 +92,15 @@ export type CompactionEvent = {
     through: number;
     clusters: number;
 };
+// A persona read is audit metadata, never a memory lookup or experience.
+export type PersonaEvent = {
+    v: 1;
+    kind: "persona";
+    at: string;
+    layer: string;
+    ok: boolean;
+    offset: number;
+};
 export type TranscriptEvent =
     | SessionEvent
     | UserEvent
@@ -99,6 +108,7 @@ export type TranscriptEvent =
     | StatsEvent
     | CompactionEvent
     | ToolEvent
+    | PersonaEvent
     | RecallEvent;
 
 // An event as callers write it; the writer stamps `v` and `at`.
@@ -178,6 +188,7 @@ export function toTurn(event: unknown): Turn | "ignore" | "malformed" {
     return kind === "session" ||
         kind === "stats" ||
         kind === "compaction" ||
+        kind === "persona" ||
         kind === "tool"
         ? "ignore"
         : "malformed";

@@ -546,11 +546,53 @@ Which host receives what, and what has been run against it, is on
 - **Reason**: not recorded; the spec states the stance and does not give a
   reason for it.
 - **Cost**: not recorded.
-- **Standing**: current; `identity.test.ts` pins the text byte for byte
+- **Standing**: current; `identity.test.ts` pins the core and layers by
+  `personaVersion()`
   ([identity and harnesses](./topics/identity-and-harnesses.md#one-definition-of-her)).
 - **Sources**:
   [identity spec](../specs/2026-10-15-identity-gateway-design.md#decisions),
   [identity guide](../../packages/identity/AGENTS.md).
+
+### Native subagents off; subagents through a multiplexer
+
+- **Context**: Native children could inherit Dorothy's core and access
+  her persona layers. Codex demonstrated the leak; Claude Code shared
+  the memory server and its tool permissions.
+- **Alternatives**: Accept native inheritance, or add caller-role guards
+  for each harness. The original persona design proposed guards.
+- **Choice**: On 2026-11-14 the user disabled every harness's native
+  subagents. Dorothy manages separate workers through a terminal
+  multiplexer, foremost herdr. Claude Code denies `Agent` and `Task`;
+  Codex disables agents; plain Pi loads no subagent extension. Archived
+  Hermes remains unchanged.
+- **Reason**: Keep Dorothy's core and layers out of agents she briefs.
+- **Cost**: Native delegation is unavailable; orchestration uses separate
+  workers through the multiplexer. Explicit configuration changes and
+  shell-launched harnesses are outside these launch guards.
+- **Standing**: current, 2026-11-14. This replaces the proposed guards
+  that would have let native children run without her persona.
+- **Sources**: [persona amendment](../specs/2026-11-14_persona-design.md#amendment-native-subagents-off-2026-11-14),
+  [launch guards and probes](../../packages/cli/src/hosts/AGENTS.md#subagents).
+
+### Situational behaviour by pre-prompt classifier
+
+- **Context**: The persona check exposed inconsistent distress handling
+  across models, even with examples and anti-examples in `soul.md`.
+- **Alternatives**: Continuing to handle distress through the core prompt
+  alone, as the three recorded rounds did.
+- **Choice**: The user, on 2026-11-14: move distress detection to a
+  pre-prompt classifier that injects a per-turn note outside the system
+  prompt. `soul.md` keeps a brief baseline. Design it in a separate spec
+  after the persona branch.
+- **Reason**: Prompt-only distress handling needed repeated changes in
+  the recorded checks. The retained runs inform the classifier work.
+- **Cost**: A classifier and its per-turn delivery need design, building
+  and evaluation; their accuracy has not been measured here.
+- **Standing**: decided, not yet built. The final prompt-only round's
+  three distress passes do not establish classifier accuracy or reliable
+  distress detection.
+- **Sources**:
+  [persona check](../reports/2026-11-14_persona-check.md#changes-before-the-final-run).
 
 ### Other hosts' sessions are recorded by a sweep, not hooks
 

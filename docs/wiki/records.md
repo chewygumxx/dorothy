@@ -222,6 +222,10 @@ first.
 - [Pi delivery deferred
   findings](../deferred/2026-11-03_pi-delivery-deferred.md): Deferred.
   Recording, launcher, extension and probe minors, and the live limits.
+- [Persona check across three
+  models](../reports/2026-11-14_persona-check.md): Report. Eight probes on
+  each of three models across baseline, revised and final rounds,
+  recorded layer reads, applied changes and 24 of 24 final passes.
 
 ## Models and routing
 
@@ -406,3 +410,13 @@ first.
 - [Questions](./questions.md)
 - [Problems](./problems.md)
 - [Priorities](./priorities.md)
+
+- [Dorothy's persona
+  design](../specs/2026-11-14_persona-design.md): Specification. Her
+  persona as a constant core, `soul.md`, with three layers opened through
+  a `persona` tool, replacing the one-sentence identity.
+
+- [Dorothy's persona plan](../plans/2026-11-14_persona.md): Plan. The
+  header strip, `soul.md` and its layers, the identity package and chat
+  persona on them, the `persona` tool and its recording, the subagent
+  guard, and a check across models kept in `eval`.

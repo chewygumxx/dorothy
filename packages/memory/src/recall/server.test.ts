@@ -98,6 +98,48 @@ describe("inSequence", () => {
 });
 
 describe("the recall server", () => {
+    it("serves an injected persona layer as plain text", async () => {
+        const client = await connect({ layers: { lore: "L" } });
+        try {
+            expect(
+                (await client.listTools()).tools.map((tool) => tool.name),
+            ).toContain("persona");
+            const result = await client.callTool({
+                name: "persona",
+                arguments: { layer: "lore" },
+            });
+            expect(result.isError).toBeFalsy();
+            expect(result.content).toEqual([{ type: "text", text: "L" }]);
+        } finally {
+            await client.close();
+        }
+    });
+
+    it("reports an unknown persona layer as a tool error", async () => {
+        const client = await connect({ layers: { lore: "L" } });
+        try {
+            const result = await client.callTool({
+                name: "persona",
+                arguments: { layer: "x" },
+            });
+            expect(result.isError).toBe(true);
+            expect(textOf(result)).toContain("lore");
+        } finally {
+            await client.close();
+        }
+    });
+
+    it.each([null, {}])("omits persona without layers: %j", async (layers) => {
+        const client = await connect({ layers });
+        try {
+            expect(
+                (await client.listTools()).tools.map((tool) => tool.name),
+            ).not.toContain("persona");
+        } finally {
+            await client.close();
+        }
+    });
+
     it("offers search and open", async () => {
         const client = await connect();
         const { tools } = await client.listTools();

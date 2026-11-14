@@ -17,6 +17,7 @@ import { FACT_TYPES } from "../facts/file.js";
 import { dataRoot, type FactStore } from "../facts/store.js";
 import type { HistoryHandle, OpenHistory } from "../memory/sidecar.js";
 import { vocabularyPath } from "../memory/vocabulary.js";
+import { type PersonaLayers, registerPersonaTool } from "../persona/tool.js";
 import { identify } from "../projects/identify.js";
 import { transcriptDir } from "../transcript.js";
 import {
@@ -88,6 +89,7 @@ export const TAGS_DESCRIPTION = [
 ].join(" ");
 
 export type RecallServerOptions = {
+    layers?: PersonaLayers | null;
     openIndex: () => RecallIndex;
     // The transcripts directory.
     dir: string;
@@ -133,6 +135,7 @@ export function inSequence(): <T>(call: () => Promise<T>) => Promise<T> {
 
 export function createRecallServer(options: RecallServerOptions): McpServer {
     const server = new McpServer({ name: SERVER_NAME, version: "1.0.0" });
+    registerPersonaTool(server, options.layers);
     const now = options.now ?? Date.now;
     let index: RecallIndex | null = null;
     const excluded = async (index: RecallIndex): Promise<string | null> => {
@@ -371,7 +374,13 @@ export async function runRecallServer(
         exclude,
         recollect: serveRecollect,
         project,
-    }: { exclude: string | null; recollect: boolean; project: string | null },
+        layers,
+    }: {
+        exclude: string | null;
+        recollect: boolean;
+        project: string | null;
+        layers?: PersonaLayers | null;
+    },
     env: Env = process.env,
 ): Promise<number> {
     const { config } = await readConfig(env);
@@ -381,6 +390,7 @@ export async function runRecallServer(
     // conversation, may too when chat runs inside her Claude Code.
     const launch = env.DOROTHY_LAUNCH ?? "";
     const server = createRecallServer({
+        layers,
         openIndex: () => RecallIndex.open(indexPath(env)),
         dir: transcriptDir(env),
         vocabulary: vocabularyPath(env),

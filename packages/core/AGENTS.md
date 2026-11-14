@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-11-04
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: packages/core/AGENTS.md
 description: >-
@@ -33,6 +33,8 @@ below. It declares `niceware` alone, and never imports another
 
 - `contracts/session.ts`: `ChatSession`, its `ConversationEvent`s, `Turn`
   and `RawMessage`, the type of any stream part, its text a text part's.
+  A `persona` event records a layer read and its call-time reply offset,
+  separate from memory lookups.
 - `contracts/start.ts`: `SessionStart`, the values a session starts from,
   and `withSection`, which joins a section (the memory block, the earlier
   turns' abstracts) to a system prompt.
@@ -61,7 +63,7 @@ below. It declares `niceware` alone, and never imports another
 - `contracts/editor.ts`: `Editor`, the external editor's contract.
 - `contracts/recall.ts`: the memory tools' names and shapes: chat's server
   and Claude Code's, `toolOf` on either server, the lookups, `remember`,
-  and search and open over facts.
+  `persona` alongside memory, and search and open over facts.
 - `contracts/memory.ts`: the memory contract's types, ids and constants,
   which `memory` gives zod schemas.
 - `secrets.ts`: `loadSecrets` reads sops-encrypted JSON into an injected

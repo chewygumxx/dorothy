@@ -92,6 +92,51 @@ describe("TurnState", () => {
         expect(events).toEqual([]);
     });
 
+    it.each([false, true])(
+        "records one persona read at its call offset (isError: %s)",
+        (isError) => {
+            const { events, state } = turn();
+            state.text("Reading 🫖", 1_100);
+            state.call("p1", "mcp__memory__persona", { layer: "character" });
+            state.call("p1", "mcp__memory__persona", { layer: "voice" });
+            expect(events).toHaveLength(1);
+            state.text("...", 1_200);
+            state.result("p1", {
+                content: [{ type: "text", text: "Her layer." }],
+                isError,
+            });
+            state.result("p1", { content: [], isError });
+            expect(events.slice(2)).toEqual([
+                {
+                    type: "persona",
+                    layer: "character",
+                    ok: !isError,
+                    offset: 10,
+                },
+            ]);
+            state.text("Read.", 1_300);
+            expect(state.reply).toBe("Reading 🫖...\n\nRead.");
+        },
+    );
+
+    it.each(["error", "settleCalls"] as const)(
+        "settles an unanswered persona read as failed through %s",
+        (method) => {
+            const { events, state } = turn();
+            state.call("p1", "mcp__memory__persona", { layer: "soul" });
+            expect(state.started).toBe(false);
+            if (method === "error") {
+                state.error("p1");
+            } else {
+                state.settleCalls();
+            }
+            state.settleCalls();
+            expect(events).toEqual([
+                { type: "persona", layer: "soul", ok: false, offset: 0 },
+            ]);
+        },
+    );
+
     it("sums usage into stats, and measures the context from the last step", () => {
         const { state } = turn();
         state.step({ noCache: 100, cacheRead: 50, cacheWrite: 10, output: 20 });

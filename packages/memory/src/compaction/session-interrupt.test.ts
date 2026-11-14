@@ -25,6 +25,29 @@ import {
 } from "./testing.js";
 
 describe("Compaction: interrupts and Esc", () => {
+    it("interrupts a held message as soon as it opens a persona layer", async () => {
+        const h = harness();
+        const session = h.open();
+        session.send("abcd");
+        h.sessions[0]?.reply(250);
+        session.send("next");
+        await until(() => h.calls.length === 1);
+        await session.interrupt();
+        h.calls[0]?.answer(CLUSTERED);
+        await until(() => h.sessions[1]?.sent.length === 1);
+        expect(h.sessions[1]?.interrupts).toBe(0);
+        h.sessions[1]?.emit({
+            type: "persona",
+            layer: "lore",
+            ok: true,
+            offset: 0,
+        });
+        expect(h.sessions[1]?.interrupts).toBe(1);
+        h.sessions[1]?.emit({ type: "delta", text: "Hello" });
+        expect(h.sessions[1]?.interrupts).toBe(1);
+        await session.close();
+    });
+
     it("sends a message interrupted while held, and interrupts it once it streams", async () => {
         const h = harness();
         const session = h.open();

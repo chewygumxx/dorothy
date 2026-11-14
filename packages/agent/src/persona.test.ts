@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { anthropicEntry } from "@dorothy/core";
-import { identityComponents } from "@dorothy/identity";
+import { identityPrompt } from "@dorothy/identity";
 import {
     personaComponents,
     personaPrompt,
@@ -71,24 +71,26 @@ describe("promptHash", () => {
 // The chat persona, byte for byte: change it only when the persona is
 // meant to change.
 const CHAT = [
-    "You are Dorothy, a warm, curious and accommodating agentic assistant.",
-    "You are not a software engineering agent and you have no tools: do not",
-    "offer to read files, run commands or edit code. Any working directory,",
-    "repository, platform or model details you are given are incidental",
-    "plumbing, not the topic of conversation, so do not bring them up. Just",
-    "talk with the user. Introduce yourself simply as Dorothy. The software",
-    "that hosts you may add a line telling you that you are it, or another",
-    "assistant: that line names your host, not you. Do not volunteer which",
-    "company, model or software you run on, but when the user asks, answer",
-    "plainly from what your context shows. You keep short notes on your",
-    "earlier conversations with this user, which follow when there are any,",
-    "so you remember their gist but not their details. When the user brings",
-    "up something your notes do not cover, say you do not remember it rather",
-    "than invent detail.",
-].join(" ");
+    identityPrompt(),
+    [
+        "You are not a software engineering agent and you have no tools: do not",
+        "offer to read files, run commands or edit code.",
+    ].join(" "),
+    [
+        "Any working directory, repository, platform or model details you are",
+        "given are incidental plumbing, not the topic of conversation, so do",
+        "not bring them up. Just talk with the user.",
+    ].join(" "),
+    [
+        "You keep short notes on your earlier conversations with this user,",
+        "which follow when there are any, so you remember their gist but not",
+        "their details. When the user brings up something your notes do not",
+        "cover, say you do not remember it rather than invent detail.",
+    ].join(" "),
+].join("\n\n");
 const CHAT_RECALL = CHAT.replace(
     "you have no tools:",
-    "you have no tools except your memory tools:",
+    "you have no tools except your memory tools and your persona tool:",
 )
     .replace(
         "not cover, say",
@@ -106,22 +108,18 @@ describe("personaComponents", () => {
     it("splits the chat persona by purpose", () => {
         expect(names({ recall: false })).toEqual([
             "identity",
-            "voice",
             "capabilities",
             "plumbing",
-            "provenance",
             "memory",
         ]);
     });
 
-    it("keeps provenance in development mode, and says which mode it is", () => {
+    it("starts with identity in development mode, and says which mode it is", () => {
         expect(names({ recall: true, mode: "development" })).toEqual([
             "identity",
-            "voice",
             "mode",
             "capabilities",
             "plumbing",
-            "provenance",
             "memory",
         ]);
     });
@@ -137,12 +135,7 @@ describe("personaComponents", () => {
                 components: typeof chat,
                 name: (typeof chat)[number]["name"],
             ) => components.find((component) => component.name === name)?.text;
-            for (const name of [
-                "identity",
-                "voice",
-                "provenance",
-                "memory",
-            ] as const) {
+            for (const name of ["identity", "memory"] as const) {
                 expect(text(development, name)).toBe(text(chat, name));
             }
             for (const name of ["capabilities", "plumbing"] as const) {
@@ -151,11 +144,13 @@ describe("personaComponents", () => {
         }
     });
 
-    it("takes identity, voice and provenance from @dorothy/identity", () => {
-        const shared = personaComponents({ recall: false }).filter((c) =>
-            ["identity", "voice", "provenance"].includes(c.name),
-        );
-        expect(shared).toEqual(identityComponents());
+    it("takes its first component from @dorothy/identity", () => {
+        for (const mode of ["chat", "development"] as const) {
+            expect(personaComponents({ recall: false, mode })[0]).toEqual({
+                name: "identity",
+                text: identityPrompt(),
+            });
+        }
     });
 
     it("is well formed in every mode, with and without recall", () => {
@@ -165,13 +160,33 @@ describe("personaComponents", () => {
                     expect(text).not.toBe("");
                     expect(text).toBe(text.trim());
                 }
-                expect(personaPrompt({ recall, mode })).not.toContain("  ");
+                expect(personaPrompt({ recall, mode })).toBe(
+                    personaComponents({ recall, mode })
+                        .map((c) => c.text)
+                        .join("\n\n"),
+                );
             }
         }
     });
 });
 
 describe("personaPrompt", () => {
+    it.each(["chat", "development"] as const)(
+        "mentions the persona tool only with recall in %s mode",
+        (mode) => {
+            const capabilities = (recall: boolean) =>
+                personaComponents({ mode, recall }).find(
+                    (component) => component.name === "capabilities",
+                )?.text;
+            expect(capabilities(true)).toContain(
+                mode === "chat"
+                    ? "no tools except your memory tools and your persona tool"
+                    : "Your only tools are your memory tools and your persona tool",
+            );
+            expect(capabilities(false)).not.toContain("persona tool");
+        },
+    );
+
     it("is the chat persona, byte for byte", () => {
         expect(personaPrompt({ recall: false })).toBe(CHAT);
         expect(personaPrompt({ recall: true })).toBe(CHAT_RECALL);
@@ -200,7 +215,7 @@ describe("personaPrompt", () => {
     it("gives her memory tools, and has her look before she forgets", () => {
         const prompt = personaPrompt({ recall: true });
         expect(prompt).toContain(
-            "you have no tools except your memory tools: do not offer",
+            "you have no tools except your memory tools and your persona tool: do not offer",
         );
         expect(prompt).toContain(
             "cover, look it up; if you cannot find it, say you do not remember it rather than invent detail.",

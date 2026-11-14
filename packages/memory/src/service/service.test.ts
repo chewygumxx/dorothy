@@ -550,6 +550,75 @@ describe("the memory service", () => {
         });
     });
 
+    it("serves injected persona layers over HTTP", async () => {
+        await start(false, config, { layers: { lore: "L" } });
+        const client = new Client({ name: "test", version: "1.0.0" });
+        try {
+            await client.connect(
+                new StreamableHTTPClientTransport(
+                    new URL(`${running?.url}/mcp`),
+                ),
+            );
+            expect(
+                (await client.listTools()).tools.map((tool) => tool.name),
+            ).toContain("persona");
+            const result = await client.callTool({
+                name: "persona",
+                arguments: { layer: "lore" },
+            });
+            expect(result.content).toEqual([{ type: "text", text: "L" }]);
+        } finally {
+            await client.close();
+        }
+    });
+
+    it("passes runService's persona layers to its HTTP tools", async () => {
+        const probe = Bun.serve({
+            hostname: "127.0.0.1",
+            port: 0,
+            fetch: () => new Response(),
+        });
+        const port = probe.port;
+        await probe.stop(true);
+        const settings = join(home, "config", "dorothy");
+        mkdirSync(settings, { recursive: true });
+        writeFileSync(
+            join(settings, "config.toml"),
+            `[service]\nport = ${port}\n[history]\nenabled = false\n`,
+        );
+        const script = [
+            `import { runService } from ${JSON.stringify(join(import.meta.dir, "run.ts"))};`,
+            'import { Client } from "@modelcontextprotocol/sdk/client/index.js";',
+            'import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";',
+            "let ready; const started = new Promise(resolve => { ready = resolve; });",
+            `const serving = runService({ env: ${JSON.stringify(env)}, review: null, layers: { lore: "L" }, err: { write(text) { if (text.includes("memory service at")) ready(text.trim().split(" at ")[1]); } } });`,
+            "const url = await started;",
+            'const client = new Client({ name: "test", version: "1.0.0" });',
+            'await client.connect(new StreamableHTTPClientTransport(new URL(url + "/mcp")));',
+            "console.log(JSON.stringify(await client.listTools()));",
+            'await client.close(); process.emit("SIGTERM"); process.exit(await serving);',
+        ].join("\n");
+        const child = Bun.spawn([process.execPath, "-e", script], {
+            cwd: join(import.meta.dir, "../.."),
+            env: { ...env, PATH: process.env.PATH ?? "" },
+            stdout: "pipe",
+            stderr: "pipe",
+        });
+        const timeout = setTimeout(() => child.kill(), 8000);
+        try {
+            const output = await new Response(child.stdout).text();
+            const errors = await new Response(child.stderr).text();
+            expect(errors).toBe("");
+            expect(await child.exited).toBe(0);
+            const listed = JSON.parse(output) as { tools: { name: string }[] };
+            expect(listed.tools.map((tool) => tool.name)).toContain("persona");
+        } finally {
+            clearTimeout(timeout);
+            child.kill();
+            await child.exited;
+        }
+    }, 10_000);
+
     it("serves the four tools over MCP", async () => {
         await start();
         const client = new Client({ name: "test", version: "1.0.0" });

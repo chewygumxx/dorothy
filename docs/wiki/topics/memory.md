@@ -135,6 +135,28 @@ different tools:
   no `brief`, as chat takes its block directly
   ([`server.ts`](../../../packages/memory/src/recall/server.ts)).
 
+Both servers also accept injected persona layers. With nonempty layers,
+`persona` opens one exact layer name as plain text; an unknown name returns
+a tool error naming the available layers. Without layers the tool is
+absent. These layers are who Dorothy is, not what she remembers, and are
+for her alone, not an agent she dispatches. Memory declares their shape
+structurally and never imports identity
+([`tool.ts`](../../../packages/memory/src/persona/tool.ts)). The CLI passes
+identity's layers to both servers at start. Chat keeps the persona tool
+alongside its memory tools, and Claude Code's launch allows it. A persona
+change reaches Codex, Pi and Hermes after the service restarts; Hermes's
+`SOUL.md` changes only on reinstall. The
+[persona plan](../../plans/2026-11-14_persona.md) records the work.
+
+Chat records each persona call once its result arrives, with the layer,
+success or failure and the reply's length when the call began, in UTF-16
+code units. A thrown or unanswered call is recorded as failed. These
+`persona` transcript entries carry no layer text. They stay outside
+experience: resuming, reviews, compaction, recall search and the memory
+evaluation leave them out of turns, lookups and facts
+([`record.ts`](../../../packages/memory/src/memory/record.ts),
+[`transcript.ts`](../../../packages/memory/src/transcript.ts)).
+
 Dorothy opens past conversations on demand, never pushed, and afterwards
 appraises each read as none, slight, useful or essential. The appraisals
 feed salience, a score of reads decaying with a half-life

@@ -1,6 +1,6 @@
 ---
 ctime: 2026-10-12
-mtime: 2026-11-04
+mtime: 2026-11-14
 spdx: GPL-3.0-only
 title: packages/memory/AGENTS.md
 description: >-
@@ -20,18 +20,16 @@ tags:
 # packages/memory/AGENTS.md
 
 `@dorothy/memory` holds transcripts, notes, facts, projects, recall,
-compaction, tags and history. It imports neither the agent nor a model
-provider's SDK: reviews and compaction each take core's `StructuredCall`
-(`calls`) and prompts as text (`MemoryPrompts`).
+compaction, tags and history. No agent or model provider SDK is imported:
+reviews and compaction take core's `StructuredCall` and `MemoryPrompts`.
 
 ## Entry points and imports
 
 - `"."` (`src/index.ts`): `openMemory`, `previewStart`, what `--claude` asks;
   `"./claude-hook"` (`runClaudeHook`), `"./host-hook"` (`runHostHook`, Pi's
   `runPiHostHook`, `readPi`), guides: [bodies](./src/bodies/AGENTS.md), [hooks](./src/hooks/AGENTS.md).
-- `"./commands"` (`src/commands.ts`): `--list`, `--memory`, `--tags`,
-  `--edit-tags`, `--facts`, `--retire`, `--revive`, `--verify`, `--sync`,
-  `--projects`, the history commands and `commandHistory()`.
+- `"./commands"` (`src/commands.ts`): memory, tags, facts, projects and history
+  commands, with `commandHistory()`.
 - `"./recall-server"` (`src/recall-server.ts`): `runRecallServer` alone;
   `"./service"`, `"./client"`, `"./bridge"`, `"./evaluation"`: [the contract's guide](./src/contract/AGENTS.md).
 
@@ -41,6 +39,7 @@ provider's SDK: reviews and compaction each take core's `StructuredCall`
   Sessions name their `source`, events their `sourceUuid`. Tool text is
   scrubbed (`scrub.ts`) and trimmed to 2,000 characters a side. Chat's
   appends and backfill unmarks share `TranscriptWriter`'s common lock.
+  `persona` entries keep layer, success and offset, outside experience.
 - `memory/open.ts`: `openMemory` opens a chat's memory and returns its
   `createSession(turns)`, whose sessions are compacting, tracked by memory
   and recorded by `sessionRecorder` (`record.ts`). Each starts from the
@@ -80,6 +79,8 @@ provider's SDK: reviews and compaction each take core's `StructuredCall`
   `server.ts` serves them over MCP on stdio as `dorothy --recall-server`, one
   call at a time, history opened without the mirror. Reviews appraise each read
   into the sidecar, and `salience()` (`rank.ts`) weighs appraised reads.
+- `persona/tool.ts`: injected layers, read at service start. Restart for
+  Codex, Pi and Hermes updates; Hermes's `SOUL.md` changes only on reinstall.
 - `compaction/`: past `[compaction] soft` tokens, at the next idle (past
   `hard`, before the next message), `compact()` splits the turns before
   the verbatim tail into topical clusters with an abstract each; read
@@ -129,10 +130,9 @@ provider's SDK: reviews and compaction each take core's `StructuredCall`
 
 ## Tests
 
-- Pass every root, key and environment in; tests keep to temporary
-  directories (`history/testing.ts` has `tempRoot` and `TEST_ENV`).
-- Git tests isolate config; local HTTPS uses git http-backend and OpenSSL.
-- One contract test runs against both history engines, and across them.
+- Pass roots, keys and environments; use `history/testing.ts`'s
+  `tempRoot` and `TEST_ENV`. Git config is isolated.
+- Local HTTPS uses git http-backend and OpenSSL; tests cross both engines.
 - `memory/fake-session.ts` fakes a `ChatSession`; `*-testing.ts` share fixtures.
 
 ## See also

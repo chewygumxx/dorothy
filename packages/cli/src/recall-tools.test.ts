@@ -14,12 +14,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connectRecall, recallEnv } from "@dorothy/agent";
 import { defaultRoutes } from "@dorothy/core";
+import { personaLayers } from "@dorothy/identity";
 import { recallLaunch } from "./recall-launch.js";
 
 type Execute = (
     input: unknown,
     options: unknown,
-) => Promise<{ isError?: boolean }>;
+) => Promise<{
+    content: { type: "text"; text: string }[];
+    isError?: boolean;
+}>;
 
 // Whether a process of this machine has the marker in its arguments.
 async function running(marker: string): Promise<boolean> {
@@ -58,10 +62,23 @@ describe("her recall server, through the agent's client", () => {
         try {
             expect(Object.keys(recall.tools).sort()).toEqual([
                 "mcp__memory__open",
+                "mcp__memory__persona",
                 "mcp__memory__remember",
                 "mcp__memory__search",
                 "mcp__memory__tags",
             ]);
+            const persona = recall.tools.mcp__memory__persona as unknown as {
+                execute: Execute;
+            };
+            expect(
+                await persona.execute(
+                    { layer: "lore" },
+                    { toolCallId: "persona", messages: [] },
+                ),
+            ).toEqual({
+                content: [{ type: "text", text: personaLayers().lore ?? "" }],
+                isError: false,
+            });
             const search = recall.tools.mcp__memory__search as unknown as {
                 execute: Execute;
             };

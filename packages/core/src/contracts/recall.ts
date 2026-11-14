@@ -19,15 +19,21 @@ export const TOOLS = ["search", "open", "recollect", "tags"] as const;
 export type Tool = (typeof TOOLS)[number];
 // The one tool that writes memory, recorded as a tool event.
 export const REMEMBER = "remember";
+export const PERSONA = "persona";
 
 const named = (server: string, tool: string) => `mcp__${server}__${tool}`;
-// The tools allowed in every session with recall: every one but
-// recollect, which reads only the live conversation's clusters.
+// The external memory tools: every one but recollect, which reads only
+// the live conversation's clusters.
 const EXTERNAL = [...TOOLS.filter((tool) => tool !== "recollect"), REMEMBER];
-export const ALLOWED_TOOLS = EXTERNAL.map((tool) => named(SERVER_NAME, tool));
-export const CLAUDE_ALLOWED_TOOLS = EXTERNAL.map((tool) =>
-    named(CLAUDE_SERVER_NAME, tool),
-);
+// Persona is allowed alongside memory, but is not a memory lookup.
+export const ALLOWED_TOOLS = [
+    ...EXTERNAL.map((tool) => named(SERVER_NAME, tool)),
+    named(SERVER_NAME, PERSONA),
+];
+export const CLAUDE_ALLOWED_TOOLS = [
+    ...EXTERNAL.map((tool) => named(CLAUDE_SERVER_NAME, tool)),
+    named(CLAUDE_SERVER_NAME, PERSONA),
+];
 // The internal tool, over this conversation's clusters, allowed only in a
 // session seeded with clusters.
 export const RECOLLECT_TOOL = named(SERVER_NAME, "recollect");

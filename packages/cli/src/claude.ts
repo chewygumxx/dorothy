@@ -718,20 +718,21 @@ async function noteLaunch(
     }
 }
 
-// The settings Dorothy adds to claude's: recall's tools allowed, and
-// the hooks that record a noted launch. null for none.
+// The settings Dorothy adds: native subagents denied, recall tools
+// allowed, and the hooks that record a noted launch.
 function launchSettings(
     recall: boolean,
     noted: boolean,
     self: readonly string[],
-): Json | null {
+): Json {
     const settings: Json = {
-        ...(recall
-            ? { permissions: { allow: [...CLAUDE_ALLOWED_TOOLS] } }
-            : {}),
+        permissions: {
+            deny: ["Agent", "Task"],
+            ...(recall ? { allow: [...CLAUDE_ALLOWED_TOOLS] } : {}),
+        },
         ...(noted ? hookSettings(self) : {}),
     };
-    return Object.keys(settings).length > 0 ? settings : null;
+    return settings;
 }
 
 // The environment claude runs in: the user's shell's, pointed at the

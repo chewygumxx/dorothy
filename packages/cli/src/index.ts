@@ -12,6 +12,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Env, SecretsCode, StructuredCall } from "@dorothy/core";
+import { personaLayers } from "@dorothy/identity";
 import type { PiHookReply } from "@dorothy/memory/host-hook";
 import { ambient } from "./ambient.js";
 import { type Mode, parseArgs, USAGE } from "./args.js";
@@ -87,6 +88,24 @@ export async function reviewAgent(
         write(`dorothy: reviews are off: ${noReviews}\n`);
         return { review: null, noReviews };
     }
+}
+
+// Both memory servers read her layers once, when the CLI starts them.
+export function recallServerOptions(
+    mode: Extract<Mode, { kind: "recall-server" }>,
+) {
+    return {
+        exclude: mode.exclude,
+        recollect: mode.recollect,
+        project: mode.project,
+        layers: personaLayers(),
+    };
+}
+
+export function serviceOptions(
+    review: Awaited<ReturnType<typeof reviewAgent>>,
+) {
+    return { ...review, layers: personaLayers() };
 }
 
 export type CredentialDeps = CheckoutSecretsDeps &
@@ -288,15 +307,11 @@ const RUNNERS: Runners = {
         const { runRecallServer } = await import(
             "@dorothy/memory/recall-server"
         );
-        return runRecallServer({
-            exclude: mode.exclude,
-            recollect: mode.recollect,
-            project: mode.project,
-        });
+        return runRecallServer(recallServerOptions(mode));
     },
     serve: async () => {
         const { runService } = await service();
-        return runService(await reviewAgent());
+        return runService(serviceOptions(await reviewAgent()));
     },
     "token-add": async (mode) => {
         const { runTokenAdd } = await service();

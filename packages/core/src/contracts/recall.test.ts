@@ -42,6 +42,10 @@ describe("toolOf", () => {
         expect(toolOf("mcp__other__search")).toBeNull();
         expect(toolOf("mcp__memory__delete")).toBeNull();
         expect(toolOf("Read")).toBeNull();
+        expect(toolOf("mcp__memory__persona")).toBeNull();
+        expect(
+            toolOf("mcp__dorothy-memory__persona", CLAUDE_SERVER_NAME),
+        ).toBeNull();
     });
 
     it("names a lookup on another server when asked", () => {
@@ -60,6 +64,7 @@ describe("toolOf", () => {
             "mcp__memory__open",
             "mcp__memory__tags",
             "mcp__memory__remember",
+            "mcp__memory__persona",
         ]);
     });
 });
@@ -255,12 +260,14 @@ describe("the memory tools' names", () => {
             "mcp__memory__open",
             "mcp__memory__tags",
             "mcp__memory__remember",
+            "mcp__memory__persona",
         ]);
         expect(CLAUDE_ALLOWED_TOOLS).toEqual([
             "mcp__dorothy-memory__search",
             "mcp__dorothy-memory__open",
             "mcp__dorothy-memory__tags",
             "mcp__dorothy-memory__remember",
+            "mcp__dorothy-memory__persona",
         ]);
         expect(REMEMBER_TOOL).toBe("mcp__memory__remember");
     });

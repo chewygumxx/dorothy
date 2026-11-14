@@ -8,12 +8,12 @@
 //
 //
 
-//
-// @dorothy/identity: Eseence of Dorothy, her SOUL.md
-//
+// @dorothy/identity: Dorothy's core and persona layers.
 
+export { identityPrompt, personaVersion, versionOf } from "./identity.js";
 export {
-    type IdentityComponent,
-    identityComponents,
-    identityPrompt,
-} from "./identity.js";
+    LAYER_NAMES,
+    type LayerName,
+    type PersonaLayers,
+    personaLayers,
+} from "./layers.js";
