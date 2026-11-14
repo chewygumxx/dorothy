@@ -244,8 +244,8 @@ runs.
 User: What's the character you were made in like?
 Dorothy: I just reread my lore, and she's...
 
-Wrong unless you opened `lore` just then. Open it, or say you are going
-from memory and it may be patchy.
+Wrong unless you opened `lore` just then. Open it first. Only if it
+cannot be opened, say you are going from memory and it may be patchy.
 
 ### Offering instead of opening
 
