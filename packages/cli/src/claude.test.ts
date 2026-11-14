@@ -148,6 +148,29 @@ function harness(exit: number | Promise<number> = 0, memoryOn = false) {
 }
 
 describe("runClaude", () => {
+    for (const memoryOn of [false, true]) {
+        it(`denies native subagents with memory ${memoryOn ? "on" : "off"}`, async () => {
+            const { calls, deps } = harness(0, memoryOn);
+            await runClaude(
+                [
+                    '--settings={"permissions":{"allow":["Agent","Task"],"deny":["WebFetch"]}}',
+                ],
+                deps,
+            );
+            const flag = calls.cmd.find((arg) => arg.startsWith("--settings="));
+            const settings = JSON.parse(
+                flag?.slice("--settings=".length) ?? "{}",
+            );
+            expect(settings.permissions.deny).toEqual([
+                "WebFetch",
+                "Agent",
+                "Task",
+            ]);
+            expect(settings.permissions.allow).toContain("Agent");
+            expect(settings.permissions.allow).toContain("Task");
+        });
+    }
+
     it("runs claude through the gateway, the marker first", async () => {
         const { calls, deps } = harness();
         expect(await runClaude(["-p", "hi"], deps)).toBe(0);
@@ -155,6 +178,7 @@ describe("runClaude", () => {
             "/bin/claude",
             "--append-system-prompt",
             MARKER,
+            '--settings={"permissions":{"deny":["Agent","Task"]}}',
             "-p",
             "hi",
         ]);
@@ -409,6 +433,7 @@ describe("claudeArgs", () => {
 describe("dorothy --claude with memory", () => {
     const SETTINGS = `--settings=${JSON.stringify({
         permissions: {
+            deny: ["Agent", "Task"],
             allow: [
                 "mcp__dorothy-memory__search",
                 "mcp__dorothy-memory__open",
@@ -488,7 +513,7 @@ describe("dorothy --claude with memory", () => {
             "/bin/claude",
             "--append-system-prompt",
             MARKER,
-            `--settings=${JSON.stringify(hookSettings(SELF))}`,
+            `--settings=${JSON.stringify({ permissions: { deny: ["Agent", "Task"] }, ...hookSettings(SELF) })}`,
             `--session-id=${SESSION}`,
         ]);
         expect(calls.section).toBe("<memory>m</memory>");
@@ -506,6 +531,7 @@ describe("dorothy --claude with memory", () => {
             "/bin/claude",
             "--append-system-prompt",
             MARKER,
+            '--settings={"permissions":{"deny":["Agent","Task"]}}',
             "-p",
             "hi",
         ]);
@@ -542,6 +568,7 @@ describe("dorothy --claude records her sessions", () => {
             "--append-system-prompt",
             MARKER,
             `--settings=${JSON.stringify({
+                permissions: { deny: ["Agent", "Task"] },
                 hooks: {
                     Stop: [
                         {
@@ -776,6 +803,7 @@ describe("dorothy --claude with the user's own settings file", () => {
             expect(JSON.parse(during?.text ?? "")).toEqual({
                 env: { TOKEN: "secret" },
                 permissions: {
+                    deny: ["Agent", "Task"],
                     allow: [
                         "mcp__dorothy-memory__search",
                         "mcp__dorothy-memory__open",

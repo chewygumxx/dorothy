@@ -62,13 +62,13 @@ and `--recall-server` never load the AI SDK. Keep new mode imports lazy.
   starts in, gives the gateway chat's memory block as its section, and sets
   `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`; with `recall` too, `--mcp-config=` offers
   the recall server as `dorothy-memory` with `--project`, and `--settings=`
-  allows its tools, a user's own `--settings` merged in (`dorothyFlags`). A
-  merged settings file may hold secrets and argv is world-readable, so the merge
-  goes to a private file (mode 0600, in `$XDG_RUNTIME_DIR/dorothy` or a 0700
-  `dorothy-<uid>` under the temporary directory; `privateWriter`) passed by
-  path, removed by `Launch.cleanup` when `claude` exits; inline JSON stays
-  inline. If the private write fails, the user's original arguments are kept and
-  a warning says Dorothy's settings could not be added. With `[memory] enabled`
+  allows its tools and merges the user's `--settings` (`dorothyFlags`).
+  Every launch denies `Agent` and `Task`; argv is world-readable. Settings
+  may hold secrets, so the merge goes by private file (0600, in
+  `$XDG_RUNTIME_DIR/dorothy` or a 0700 `dorothy-<uid>` under temp;
+  `privateWriter`). `Launch.cleanup` removes it when `claude` exits; inline
+  JSON stays inline. If writing fails, the user's arguments stay, with a
+  warning that Dorothy's settings could not be added. With `[memory] enabled`
   it also notes the launch (`DOROTHY_LAUNCH`), passes `Stop` and `SessionEnd`
   hooks running `dorothy --claude-hook` (`hookSettings`) and, for a new session,
   `--session-id` (`claudeSession`: a resume decides wherever a `--session-id`
@@ -93,7 +93,7 @@ and `--recall-server` never load the AI SDK. Keep new mode imports lazy.
   upstream is `captureServer` from `@dorothy/agent`, `claude` runs quietly in
   print mode without saving its session, and is stopped at the first request,
   which is printed with a warning if the gateway injected nothing, with the
-  block alone: no sync, recall or permissions.
+  block alone: no sync, recall grants or hooks.
 - `claude-hook.ts`: `runHook`, for `--claude-hook`, gives memory's
   `runClaudeHook` the environment `claude` gave the hook, in which it finds the
   launch, and reviews on the review route, whose entries name their own base

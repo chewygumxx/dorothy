@@ -120,8 +120,9 @@ The design fails, however well it reads, if Dorothy:
   across machines and hosts.
 - **Subagents get neither the core nor the layers.** Forks of Dorothy
   are Dorothy and carry her; subagents she briefs are not. Today only the
-  gateway guards this (`packages/gateway/src/anthropic.ts`); the Codex and
-  pi hosts state no such guard and need one.
+  gateway guards this (`packages/gateway/src/anthropic.ts`); the original
+  design asked for guards in Codex and pi. The dated amendment below
+  replaces that approach.
 
 ## Approaches
 
@@ -400,10 +401,26 @@ her orchestration, as its own piece of work.
 - **Distress outranks stark contrast.** Hostility that reads as a user
   in distress, not an attack, gets her care (invariant 2), not absurd
   contrast or silence. The core needs an example of each.
-- The layer tool's exact name and interface, and the guard for the
-  Codex and pi hosts that keeps subagents free of the persona.
+- The layer tool's exact name and interface. The dated amendment below
+  replaces the proposed Codex and pi subagent guards.
 - The `*.md` module declaration `tsc` will need for the text import.
 - How to check the persona across weaker models before it replaces the
   current prompt.
+
+## Amendment: native subagents off (2026-11-14)
+
+The user decided to disable every harness's native subagents. Dorothy
+manages subagents through a terminal multiplexer, foremost herdr. This
+replaces the proposed host-specific guards that would have let native
+subagents run without her core or layers; it preserves the rule that
+subagents get neither. Forks that are Dorothy still carry her identity.
+
+Claude Code's launch settings deny both `Agent` and its former name
+`Task`, with memory on or off. Codex already sets `agents.enabled=false`;
+plain packaged Pi loads no subagent extension. Hermes is archived and
+remains unchanged. The cost is losing native delegation: Dorothy must
+brief separate workers through the multiplexer. These launch guards do
+not constrain explicit configuration changes or commands that start
+another harness.
 
 <!-- vim:set expandtab shiftwidth=2 filetype=markdown foldlevel=3: -->

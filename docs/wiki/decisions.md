@@ -553,6 +553,27 @@ Which host receives what, and what has been run against it, is on
   [identity spec](../specs/2026-10-15-identity-gateway-design.md#decisions),
   [identity guide](../../packages/identity/AGENTS.md).
 
+### Native subagents off; subagents through a multiplexer
+
+- **Context**: Native children could inherit Dorothy's core and access
+  her persona layers. Codex demonstrated the leak; Claude Code shared
+  the memory server and its tool permissions.
+- **Alternatives**: Accept native inheritance, or add caller-role guards
+  for each harness. The original persona design proposed guards.
+- **Choice**: On 2026-11-14 the user disabled every harness's native
+  subagents. Dorothy manages separate workers through a terminal
+  multiplexer, foremost herdr. Claude Code denies `Agent` and `Task`;
+  Codex disables agents; plain Pi loads no subagent extension. Archived
+  Hermes remains unchanged.
+- **Reason**: Keep Dorothy's core and layers out of agents she briefs.
+- **Cost**: Native delegation is unavailable; orchestration uses separate
+  workers through the multiplexer. Explicit configuration changes and
+  shell-launched harnesses are outside these launch guards.
+- **Standing**: current, 2026-11-14. This replaces the proposed guards
+  that would have let native children run without her persona.
+- **Sources**: [persona amendment](../specs/2026-11-14_persona-design.md#amendment-native-subagents-off-2026-11-14),
+  [launch guards and probes](../../packages/cli/src/hosts/AGENTS.md#subagents).
+
 ### Situational behaviour by pre-prompt classifier
 
 - **Context**: The persona check exposed inconsistent distress handling

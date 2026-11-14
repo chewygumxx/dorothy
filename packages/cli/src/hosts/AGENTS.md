@@ -125,8 +125,10 @@ tags:
 
 ## Subagents
 
-The core and layers are Dorothy's alone. Probes on 2026-11-14 used this
-CLI and private roots. Records are in `~/dev/xxdy/eval`, branch `persona`:
+On 2026-11-14 the user chose native subagents off: Dorothy's core and
+layers stay hers alone; she manages workers through a terminal multiplexer,
+foremost herdr. Probes used this CLI and private roots; records are in
+`xxdorothy/eval` at `~/dev/xxdy/eval`, branch `persona`:
 
 - Codex 0.167.0 inherits her instructions and `persona` tool even with
   `fork_turns=none`: `persona/hosts/20261114/codex.json`.
@@ -134,16 +136,15 @@ CLI and private roots. Records are in `~/dev/xxdy/eval`, branch `persona`:
   was offered, even over an agents-enabled user config:
   `persona/hosts/20261114/codex-guarded.json`. Native delegation is off.
 - Packaged Pi 1.5.0 has no native subagents. `--no-extensions` disables
-  discovery; plain Pi loads only built-in MCP and Dorothy's extension.
-  Its live tool inventory and provider payload offer no delegation:
-  `persona/hosts/20261114/pi.json`. The observer registered no tools;
-  the parent retains `persona`. Extra extensions and `--steward`'s
-  separate worker protocol were not tested by this probe.
-- Claude Code: both memory servers expose `persona` without a caller-role
-  check. Any agent sharing the server can list and call its layers,
-  subject to host permissions; the tool's description enforces nothing.
-  This follows the registrations, not a live Claude subagent probe;
-  the installed CLI was 2.1.322.
+  discovery; plain Pi loads built-in MCP and Dorothy's extension only.
+  Its tool inventory and provider payload offer no delegation:
+  `persona/hosts/20261114/pi.json`. The observer added no tools; the parent
+  keeps `persona`. Extra extensions and `--steward` workers were not probed.
+- Claude Code 2.1.322 denies `Agent` and former name `Task`, memory on or
+  off. Neither was offered or found by tool search, even with both allowed:
+  `persona/hosts/20261114/claude.json` records zero subagents. Memory servers
+  have no caller-role check; the launch guard prevents native children.
+- Hermes is archived; its native delegation was not changed or probed.
 
 Raw logs are under `persona/hosts/20261114/raw/`. These guards cover the
 loadout above, not code launching hosts or explicit tool-config changes.
