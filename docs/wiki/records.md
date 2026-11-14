@@ -222,6 +222,10 @@ first.
 - [Pi delivery deferred
   findings](../deferred/2026-11-03_pi-delivery-deferred.md): Deferred.
   Recording, launcher, extension and probe minors, and the live limits.
+- [Persona check across three
+  models](../reports/2026-11-14_persona-check.md): Report. Eight probes on
+  each of three models, recorded layer reads, cross-family scores and
+  proposed core changes awaiting the user's decision.
 
 ## Models and routing
 
